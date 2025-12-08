@@ -1,0 +1,302 @@
+INVENTAR ENDPOINT-URI • decamino-web
+Generat: 2025-11-10
+
+Notă generală:
+- Toate valorile `routes.*` se rezolvă în production la `https://n8n.decaminoservicios.com/<path>` (prin `src/utils/routes.js`).
+- În development, aceleași rute se apelează prin proxy Vite folosind doar calea (`/webhook/...`).
+- Endpoint-urile marcate cu „(direct)” sunt hardcodate în fișiere și nu trec prin helper-ul `routes`.
+
+══════════════════════════════════════════════════════════════════════════════
+PAGINI (src/pages)
+══════════════════════════════════════════════════════════════════════════════
+
+AdminDashboard.tsx
+- Nu face apeluri directe; depinde de componentele din `src/components/admin`.
+
+AprobacionesPage.jsx verificat
+- API_ENDPOINTS.GET_CAMBIOS_PENDIENTES → /webhook/lista-solicitudes-e6d15c117779
+- API_ENDPOINTS.APPROVE_CAMBIO → /webhook/update-8a0c-4f04-96b1-a25adff1b8a1
+- API_ENDPOINTS.REJECT_CAMBIO → /webhook/rechazada-a2c3f9cb0ffd
+- (direct) WhatsApp suport: https://wa.me/34635289087?text=Hola,...
+
+centro/IncidenciasCentroPage.jsx inactiv de moment
+
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) /webhook/48ab52db-0279-4e86-aef7-2c8548fb0f5b?centroTrabajo=...
+
+centro/PaqueteriaCentroPage.jsx inactiv de moment
+
+- (direct) callApi('getClientes') → se așteaptă să folosească routes.getClientes
+- (direct) /webhook/6d752a3a-bed9-4c48-a6a9-8a2583875ef9?centroTrabajo=...
+
+centro/TareasCentroPage.jsx inactiv de moment
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.getTareasCentro → /webhook-test/f2035fa7-7fb7-4a28-bcc9-d24b7cc5294b?centroTrabajo=...&fecha=...
+
+ClienteDetallePage.jsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- (direct) /contracts?nif=...&tipo=cliente
+- (direct) /download-contract?nif=... (prin fetch relativ)
+- (direct) Google Maps: https://www.google.com/maps/search/?api=1&query=...
+
+ClientesPage.jsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.getProveedores → /webhook/b3fd1c12-bfc0-438f-8246-2e4d63adb291
+- routes.renovarContracto → /webhook/renovar-contracto
+- (direct) /webhook/21bc4b40-eed7-461c-8765-ba2a89cded01 (export)
+- (direct) /webhook/P1/c7987861-3fe6-4314-9037-348bc80f7296 (sincronizare)
+- (direct) https://${proveedor.URL.split(...)} (link furnizor)
+- (direct) Google Maps & WhatsApp link de suport
+
+ControlCorreoPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getUsuarios → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getRegistros → /webhook/get-registros-EgZjaHJv
+- (direct) /webhook/6d752a3a-bed9-4c48-a6a9-8a2583875ef9?centroTrabajo=...
+- (direct) /webhook/028926ba-398d-45a4-96b5-f145fb687fa6 (creare colet)
+- (direct) /webhook/9a16282e-3651-4ac6-a3da-c31ad18c480b (editare colet)
+- (direct) PDFMake CDN, WhatsApp suport
+
+CuadernosPage.jsx / CuadernosPorCentroPage.jsx
+- Fără apeluri de rețea.
+
+CuadrantesEmpleadoPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) /webhook/get-cuadrantes-yyBov0qVQZEhX2TL trecut pe routes
+- (direct) /webhook/95551bd2-fba3-401f-a14e-08e3ca037ce7?codigo=...&luna=...  trecut pe routes
+- (direct) /webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb?codigo=...  trecut pe routes
+- (direct) /webhook/save-fichaje-pendiente
+- (direct) Nominatim reverse geocoding, WhatsApp suport
+
+CuadrantesPage.jsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) /webhook/get-cuadrantes-yyBov0qVQZEhX2TL
+- (direct) /webhook/get-cuadrantes-yyBov0qVQZEhy2s?...
+- (direct) /webhook/guardar-cuadrante-yyBov0qVQZEhX2TL
+- (direct) /webhook/update/bce8a5c5-1ca7-4005-9646-22d6016945ab
+
+DashboardPage.jsx  optimizat
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142 
+- routes.getAvatar → /webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731
+
+DatosPage.jsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) /webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731
+- (direct) /webhook/datosempleado-jEeH9qRnBPLKKSxG
+
+demo-schedule.tsx
+- Fără apeluri (folosește demo local).
+
+DocumentosEmpleadosPage.jsx
+- routes.getAvatar → /webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getDocumentos → /webhook/499ffc98-99de-4fcf-9597-25eb7ff8d617
+- routes.getDocumentosOficiales → /webhook/171d8236-6ef1-4b97-8605-096476bc1d8b
+- routes.getNominas → /webhook/get-nomina-ZeTqQIbs8kwia
+- routes.uploadNomina → /webhook/de8acf5c-79fa-4e6e-b694-2ce33d9f8f2f
+- routes.uploadDocumento → /webhook/886f6dd7-8b4d-479b-85f4-fb888ba8f731
+- routes.uploadDocumentoOficial → /webhook/fc6c99f6-4900-4b42-a2ab-1d67849808f3
+- routes.downloadNomina → /webhook/93c7df81-4765-4e68-b005-c6a268821e39
+- routes.downloadDocumento → /webhook/descargar-documento-sWRT8s
+- routes.downloadDocumentoOficial → /webhook/0f16c1e5-b9c6-4bcd-9e1d-2a7c8c62a29f
+- routes.deleteNomina → /webhook/e4d49321-6591-4c41-9a50-9347d4411733
+- routes.deleteDocumento → /webhook/6df8d233-10e9-4758-9a9d-cd36153860cd
+- routes.deleteDocumentoOficial → /webhook/240973b3-a0a2-45da-a436-b142436749d9
+- routes.guardarDocumentoSemnat → /webhook/715f8808-ca25-4a42-a49f-a7a3337d3eeb
+- (direct) /webhook/v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4 (post semnătură AutoFirma)
+- (direct) diverse linkuri WhatsApp suport
+
+DocumentosPage.jsx
+- routes.getDocumentos → /webhook/499ffc98-99de-4fcf-9597-25eb7ff8d617
+- routes.getDocumentosOficiales → /webhook/171d8236-6ef1-4b97-8605-096476bc1d8b
+- routes.getNominas → /webhook/get-nomina-ZeTqQIbs8kwia
+- routes.uploadDocumento → /webhook/886f6dd7-8b4d-479b-85f4-fb888ba8f731
+- routes.downloadNomina → /webhook/93c7df81-4765-4e68-b005-c6a268821e39
+- routes.downloadDocumento → /webhook/descargar-documento-sWRT8s
+- routes.downloadDocumentoOficial → /webhook/0f16c1e5-b9c6-4bcd-9e1d-2a7c8c62a29f
+- routes.guardarDocumentoSemnat → /webhook/715f8808-ca25-4a42-a49f-a7a3337d3eeb
+- routes.autofirmaPrepare → /webhook/918cd7f3-c0b6-49da-9218-46723702224d
+- routes.autofirmaWebhook → /webhook/v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4
+- (direct) https://n8n.decaminoservicios.com (pentru debug)
+- (direct) WhatsApp suport
+
+EmpleadoPedidosPage.tsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) /webhook/catalogo/bae4f329-a1be-4e66-9792-6b35aa2f4a51
+- (direct) /webhook/8c8aa198-5b57-4203-bdd7-7f8ff060bf68
+- (direct) /webhook/b127e72a-df77-4c07-acc3-1e9d931d4f95
+- (direct) /webhook/3ff7b3a7-840c-4385-8eac-689c1a91967f
+
+EmpleadosPage.jsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.sendNotificacion → /webhook/notificare-email-aec36db4
+- API_ENDPOINTS.USERS → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- API_ENDPOINTS.UPDATE_USER → /webhook/853e19f8-877a-4c85-b63c-199f3ec84049
+- (direct) /webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731 (preview)
+- (direct) /webhook/3d136672-a025-40b0-8bc2-cfe18ad604ad (export)
+- (direct) PDFMake CDN
+
+EstadisticasCuadrantesPage.jsx
+- (direct) /webhook/get-cuadrantes-yyBov0qVQZEhX2TL
+
+EstadisticasEmpleadosPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getFichajes → /webhook/95551bd2-fba3-401f-a14e-08e3ca037ce7
+
+EstadisticasFichajesPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getFichajes → /webhook/95551bd2-fba3-401f-a14e-08e3ca037ce7
+
+EstadisticasPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getFichajes → /webhook/95551bd2-fba3-401f-a14e-08e3ca037ce7
+- routes.getSolicitudesByEmail → /webhook/lista-solicitudes-email-yyBov0qVQZEhX2TL
+- (direct) /webhook/2e9a332d-5e08-4993-889a-fac54d282c6e
+
+Fichaje.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getRegistros → /webhook/get-registros-EgZjaHJv
+- API_ENDPOINTS.USERS → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- API_ENDPOINTS.FICHAJE_ADD → /webhook/registrohorario-WUqDggA
+- API_ENDPOINTS.FICHAJE_UPDATE → /webhook/f8378016-1d88-4c1e-af56-3175d41d1652
+- API_ENDPOINTS.REGISTROS_EMPLEADOS → /webhook/47305af1-939e-4002-a140-7f581bdaf392
+- API_ENDPOINTS.REGISTROS_PERIODO → /webhook/v1/e9424047-c9ae-4442-a9b6-2ac9e378eaa2
+- (direct) https://worldtimeapi.org/api/timezone/Europe/Madrid
+- (direct) https://nominatim.openstreetmap.org/reverse?...
+- (direct) https://www.google.com/maps/search/?api=1&query=...
+- (direct) PDFMake CDN, WhatsApp suport
+
+IncidenciasPage.jsx
+- (direct) /webhook/48ab52db-0279-4e86-aef7-2c8548fb0f5b?centroTrabajo=...
+- (direct) /webhook/c3a21775-6010-4708-9c0a-dd2f978e54da
+- (direct) /webhook/31f2b085-58f1-4f61-9368-3703566323f9
+- (direct) /webhook/get-registros-EgZjaHJv?CODIGO=...&MES=...
+- (direct) /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) callApi('/api/n8n/webhook/get-incidencias-webhook-id', ...) pentru proxy local
+- (direct) PDFMake CDN, WhatsApp suport
+
+InspeccionesPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- API_ENDPOINTS.GET_INSPECCIONES → /webhook/1ef2caab-fa60-4cf2-922d-e9ba2c5ea398
+- (direct) WhatsApp suport
+
+lazy/LazyPages.jsx
+- Fără apeluri.
+
+LoginPage.jsx
+- Fără fetch direct (login-ul este în AuthContext).
+- (direct) linkuri marketing: https://decaminoservicios.com/...
+
+MisInspeccionesPage.jsx
+- routes.getMisInspecciones → /webhook/e1590f70-8beb-4c9c-a04c-65fb4d571c90
+- API_ENDPOINTS.DOWNLOAD_INSPECTION_DOCUMENT → /webhook/f4d97660-c73f-45d3-ba3e-dfaf8eefece5
+- (direct) WhatsApp suport
+
+PedidosPage.tsx
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- (direct) WhatsApp suport
+
+ProveedorDetallePage.jsx
+- routes.getProveedores → /webhook/b3fd1c12-bfc0-438f-8246-2e4d63adb291
+- routes.renovarContracto → /webhook/renovar-contracto
+- (direct) Google Maps, link domeniu furnizor
+
+SolicitudesPage.jsx
+- routes.getSolicitudesByEmail → /webhook/lista-solicitudes-email-yyBov0qVQZEhX2TL
+- API_ENDPOINTS.USERS → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) /webhook/solicitud-empleados
+- (direct) /webhook/actualizar-estado-5Wogblin
+- (direct) /webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb
+- (direct) PDFMake CDN, WhatsApp suport
+
+TareasPage.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getUsuarios → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getRegistros → /webhook/get-registros-EgZjaHJv
+- (direct) /webhook/18868d2f-7808-434f-8d04-14848ff550fe?centroTrabajo=...&fecha=...
+- (direct) /webhook/37aaf6bd-8be6-4ccf-9aec-185ee4f926bb
+- (direct) /webhook/trimiteemail/5c8b7352-280f-416d-b946-43eefade75d5
+- (direct) PDFMake CDN, WhatsApp suport
+
+══════════════════════════════════════════════════════════════════════════════
+COMPONENTE CU APELURI API (src/components)
+══════════════════════════════════════════════════════════════════════════════
+
+admin/AccessMatrix.jsx
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getPermissions → /webhook/get-permissions-Rws95
+- routes.getPermissionsAdmin → /webhook/be960529-6a0b-4a6d-b0b9-2c0eed38576e
+- routes.savePermissions → /webhook/save-permissions-2c0ee
+
+admin/ActivityLog.jsx
+- routes.getActivityLog → /webhook/get-activity-log-iM1jIgoWNn2a
+- routes.getActivityLogDB → /webhook/get-logs-db
+- routes.getAllLogs → /webhook/get-all-logs
+
+admin/UserStats.jsx
+- routes.getAdminStats → /webhook/get-admin-stats-ZEhX2TL
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- (direct) fallback demo endpoints (multiple `/webhook/` URL-uri hardcodate în componentă)
+
+analytics/ChartsSection.jsx
+- (direct) /webhook/2e9a332d-5e08-4993-889a-fac54d282c6e
+- (direct) /webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b
+- (direct) /webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb
+
+ChatBot.jsx
+- routes.chatAI → /webhook/chat-ai-6Ts3sq
+
+clientes/ClienteDetails.jsx
+- (direct) /webhook/get-angajati
+- (direct) /webhook/get-centros-trabajo
+- (direct) https://${cliente.URL.split(...)} (profil furnizor)
+
+ContractSigner.jsx
+- routes.guardarDocumentoSemnat → /webhook/715f8808-ca25-4a42-a49f-a7a3337d3eeb
+
+employees/EmployeePDFGenerator.jsx
+- routes.addUser → /webhook/5c15e864-0bfc-43bb-b398-58bd8fabf3c2
+
+GeocodingAddress.jsx
+- (direct) https://maps.googleapis.com/maps/api/geocode/json?latlng=...&key=...
+
+HorasPermitidas.tsx
+- (direct) /webhook/01f4f2d1-7776-4ac2-9614-fd287b68716e
+- (direct) /webhook/8bfc8e84-2620-4255-9747-f0766402a111
+
+HorasTrabajadas.tsx
+- (direct) /webhook/4d72fc30-1843-4473-9614-e06f8583f3b5
+- (direct) /webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b
+
+inspections/InspectionForm.jsx
+- routes.addInspeccion → /webhook/inspeccion-s6Whscq2
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- routes.getEmpleados → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- (direct) https://nominatim.openstreetmap.org/reverse?...
+
+inspections/InspectionList.jsx
+- routes.getInspecciones → /webhook/1ef2caab-fa60-4cf2-922d-e9ba2c5ea398
+- routes.getClientes → /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+- API_ENDPOINTS.USERS → /webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142
+- API_ENDPOINTS.DOWNLOAD_INSPECTION_DOCUMENT → /webhook/f4d97660-c73f-45d3-ba3e-dfaf8eefece5
+
+inspections/InspectionPDFGenerator.tsx
+- routes.generateInspectionPDF → /webhook/generate-inspection-pdf
+
+PDFViewerAndroid.jsx
+- (direct) https://unpkg.com/pdfjs-dist@3.11.174/cmaps/
+
+ServerMonitor.jsx
+- (direct) https://app.netdata.cloud (metrici infrastructură)
+
+══════════════════════════════════════════════════════════════════════════════
+CONTEXT SUPLIMENTAR
+══════════════════════════════════════════════════════════════════════════════
+- `AuthContext.jsx` efectuează login prin `routes.login` → /webhook/login-yyBov0qVQZEhX2TL.
+- `useApi.js` este helper generic; endpoint-ul concret vine din parametrii transmiși de pagini/componente.
+- Folderul `old/` nu a fost scanat/consemnat (cerință utilizator).
+

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cuadrantes</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; }
+        .error { background-color: #f8d7da; }
+        .info { background-color: #d1ecf1; }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Cuadrantes DeCamino</h1>
+    
+    <div class="test-section info">
+        <h2>1. Test API Angajați</h2>
+        <button onclick="testAngajatiAPI()">Testează API Angajați</button>
+        <div id="angajati-result" class="result"></div>
+    </div>
+    
+    <div class="test-section info">
+        <h2>2. Test API Cuadrantes</h2>
+        <button onclick="testCuadrantesAPI()">Testează API Cuadrantes</button>
+        <div id="cuadrantes-result" class="result"></div>
+    </div>
+    
+    <div class="test-section info">
+        <h2>3. Test Autentificare</h2>
+        <button onclick="testAuth()">Testează Autentificare</button>
+        <div id="auth-result" class="result"></div>
+    </div>
+
+    <script>
+        async function testAngajatiAPI() {
+            const resultDiv = document.getElementById('angajati-result');
+            resultDiv.innerHTML = 'Testând...';
+            
+            try {
+                const response = await fetch('https://n8n.decaminoservicios.com/webhook/aec36db4-58d4-4175-8429-84d1c487e142');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const lista = Array.isArray(data) ? data : [data];
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ API Angajați funcționează!<br>
+                        Status: ${response.status}<br>
+                        Angajați găsiți: ${lista.length}<br>
+                        Primul angajat: ${lista[0]?.['NOMBRE / APELLIDOS'] || 'N/A'}
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        ❌ Eroare API Angajați: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        async function testCuadrantesAPI() {
+            const resultDiv = document.getElementById('cuadrantes-result');
+            resultDiv.innerHTML = 'Testând...';
+            
+            try {
+                const response = await fetch('https://n8n.decaminoservicios.com/webhook/get-cuadrantes-yyBov0qVQZEhX2TL', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const lista = Array.isArray(data) ? data : [data];
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        ✅ API Cuadrantes funcționează!<br>
+                        Status: ${response.status}<br>
+                        Cuadrantes găsite: ${lista.length}
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        ❌ Eroare API Cuadrantes: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        async function testAuth() {
+            const resultDiv = document.getElementById('auth-result');
+            resultDiv.innerHTML = 'Testând...';
+            
+            try {
+                const response = await fetch('https://n8n.decaminoservicios.com/webhook/aec36db4-58d4-4175-8429-84d1c487e142');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const users = Array.isArray(data) ? data : [data];
+                
+                // Simulează login cu un utilizator din lista
+                const testUser = users.find(u => u['CORREO ELECTRONICO'] && u['D.N.I. / NIE']);
+                
+                if (testUser) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            ✅ Autentificare testată!<br>
+                            Utilizator test: ${testUser['NOMBRE / APELLIDOS'] || 'N/A'}<br>
+                            Email: ${testUser['CORREO ELECTRONICO'] || 'N/A'}<br>
+                            Grupo: ${testUser['GRUPO'] || 'N/A'}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            ❌ Nu s-au găsit utilizatori pentru test
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        ❌ Eroare test autentificare: ${error.message}
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html> 

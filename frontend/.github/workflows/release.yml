@@ -1,0 +1,31 @@
+name: Mobile Release (Scaffold)
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  android:
+    if: ${{ false }} # Scaffold only; enable when native project exists
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run version:bump
+      - run: echo "Android build would run here"
+
+  ios:
+    if: ${{ false }} # Scaffold only; enable when native project exists
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: echo "iOS build would run here"
+
+

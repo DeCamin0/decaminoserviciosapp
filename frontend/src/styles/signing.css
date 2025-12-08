@@ -1,0 +1,91 @@
+/* Stiluri pentru componenta de semnare cu AutoFirma */
+
+.signing-button {
+  /* Stiluri de bază pentru buton */
+  transition: all 0.2s ease-in-out;
+}
+
+.signing-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.signing-button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.signing-button:not(:disabled):active {
+  transform: translateY(0);
+}
+
+/* Animații pentru stările de loading */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.signing-button[aria-busy="true"] {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Stiluri pentru modal */
+.install-autofirma-modal {
+  backdrop-filter: blur(4px);
+}
+
+.install-autofirma-modal .modal-content {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Stiluri pentru pașii de instalare */
+.install-step {
+  transition: all 0.2s ease-in-out;
+}
+
+.install-step:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+  border-radius: 8px;
+  padding: 8px;
+  margin: -8px;
+}
+
+/* Stiluri pentru butonul de descărcare */
+.download-button {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transition: all 0.2s ease-in-out;
+}
+
+.download-button:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+/* Responsive design */
+@media (max-width: 640px) {
+  .install-autofirma-modal .modal-content {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem);
+  }
+  
+  .signing-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

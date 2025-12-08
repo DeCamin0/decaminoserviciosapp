@@ -1,0 +1,99 @@
+{
+  "empleados": {
+    "total": 6,
+    "activos": 6,
+    "inactivos": 0,
+    "porCentro": {
+      "Madrid": 3,
+      "Barcelona": 2,
+      "Valencia": 1
+    },
+    "porRol": {
+      "Admin": 1,
+      "Manager": 1,
+      "Supervisor": 1,
+      "Empleado": 3
+    }
+  },
+  "fichajes": {
+    "total": 8,
+    "aprobados": 5,
+    "pendientes": 2,
+    "rechazados": 1,
+    "promedioHoras": 7.9,
+    "porMes": {
+      "2024-10": 8
+    }
+  },
+  "solicitudes": {
+    "total": 6,
+    "pendientes": 2,
+    "aprobadas": 3,
+    "rechazadas": 1,
+    "porTipo": {
+      "vacaciones": 2,
+      "asuntos_propios": 2,
+      "permiso_medico": 1,
+      "formacion": 1
+    }
+  },
+  "facturas": {
+    "total": 4,
+    "borrador": 1,
+    "enviado": 1,
+    "pagado": 1,
+    "efactura_pendiente": 1,
+    "totalFacturado": 10043.00,
+    "pendienteCobro": 6050.00
+  },
+  "gastos": {
+    "total": 4,
+    "cargado": 1,
+    "pendiente": 1,
+    "procesado": 2,
+    "totalGastos": 1391.50,
+    "porCategoria": {
+      "Oficina": 181.50,
+      "IT": 363.00,
+      "Limpieza": 242.00,
+      "Seguridad": 605.00
+    }
+  },
+  "clientes": {
+    "total": 5,
+    "activos": 4,
+    "inactivos": 1,
+    "porSector": {
+      "Tecnología": 1,
+      "Servicios": 1,
+      "Consultoría": 1,
+      "Logística": 1,
+      "Construcción": 1
+    }
+  },
+  "proveedores": {
+    "total": 5,
+    "activos": 5,
+    "porCategoria": {
+      "Oficina": 1,
+      "IT": 1,
+      "Limpieza": 1,
+      "Seguridad": 1,
+      "Logística": 1
+    }
+  },
+  "inspecciones": {
+    "total": 4,
+    "completadas": 2,
+    "programadas": 2,
+    "porTipo": {
+      "seguridad": 2,
+      "higiene": 1,
+      "calidad": 1
+    },
+    "resultados": {
+      "conforme": 1,
+      "no_conforme": 1
+    }
+  }
+}

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ro" data-version="2025.12.04.1251">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <link rel="shortcut icon" href="./logo.svg" />
+    <link rel="apple-touch-icon" href="./logo.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    
+    <!-- Social preview (Open Graph / Twitter) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DE CAMINO SERVICIOS AUXILIARES" />
+    <meta property="og:title" content="DE CAMINO SERVICIOS AUXILIARES" />
+    <meta property="og:description" content="Portal Empresarial - Gestión de empleados, documentos y servicios auxiliares." />
+    <meta property="og:image" content="/logo.png" />
+    <meta property="og:image:alt" content="DE CAMINO - Logo" />
+    <meta property="og:url" content="/" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DE CAMINO SERVICIOS AUXILIARES" />
+    <meta name="twitter:description" content="Portal Empresarial - Gestión de empleados, documentos y servicios auxiliares." />
+    <meta name="twitter:image" content="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Permissions-Policy" content="unload=*, geolocation=*" />
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="unsafe-none" />
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin" />
+    <!-- Forțează upgrade la HTTPS pentru orice resursă încărcată (mitigare mixed-content pe client) -->
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <!-- Fix pentru Edge -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>DE CAMINO SERVICIOS AUXILIARES</title>
+    
+    <!-- ⚠️ CRITICAL: Global error suppression - MUST be FIRST script -->
+    <script>
+    (function() {
+      'use strict';
+      
+      // Suppress Google Maps errors: 'get', 'CJ', 'google is not defined'
+      const suppressError = function(msg, stack) {
+        const msgStr = String(msg || '');
+        const stackStr = String(stack || '');
+        
+        // Suprimă erorile Google Maps specifice
+        const isGoogleMapsError = 
+          (msgStr.includes('google is not defined') || stackStr.includes('google is not defined')) ||
+          ((msgStr.includes('Cannot read properties of undefined') || 
+            stackStr.includes('Cannot read properties of undefined')) &&
+           (msgStr.includes('reading \'get\'') || msgStr.includes('reading \'CJ\'') ||
+            stackStr.includes('reading \'get\'') || stackStr.includes('reading \'CJ\'')));
+        
+        return isGoogleMapsError;
+      };
+      
+      // Override console.error IMMEDIATELY
+      const originalConsoleError = console.error;
+      console.error = function() {
+        const msg = arguments[0];
+        const stack = arguments[1]?.stack || '';
+        if (suppressError(msg, stack)) return;
+        originalConsoleError.apply(console, arguments);
+      };
+      
+      // Global error handler - catch ALL errors
+      window.addEventListener('error', function(event) {
+        if (suppressError(event.message, event.error?.stack)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          return false;
+        }
+      }, true);
+      
+      // Promise rejection handler
+      window.addEventListener('unhandledrejection', function(event) {
+        const msg = event.reason?.message || event.reason?.toString() || '';
+        const stack = event.reason?.stack || '';
+        if (suppressError(msg, stack)) {
+          event.preventDefault();
+          return false;
+        }
+      }, true);
+      
+      // Window.onerror - ultimate catch
+      window.onerror = function(msg, url, line, col, error) {
+        if (suppressError(msg, error?.stack)) return true;
+        return false;
+      };
+    })();
+    </script>
+    
+    <!-- Enforce HTTPS dacă pagina e deschisă accidental pe http -->
+    <script>
+      if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+      }
+    </script>
+
+    <!-- AutoScript pentru semnarea cu AutoFirma -->
+    <script type="text/javascript" src="/vendor/autoscript.js"></script>
+
+    <!-- Detectare mod de interacțiune -->
+    <script>
+      (function(){
+        function setMode(){
+          const d = document.documentElement;
+          if (matchMedia('(hover: none) and (pointer: fine)').matches)
+            d.setAttribute('data-mode','tv');
+          else if (matchMedia('(hover: none) and (pointer: coarse)').matches)
+            d.setAttribute('data-mode','touch');
+          else d.setAttribute('data-mode','desktop');
+        }
+        setMode();
+        matchMedia('(hover: none) and (pointer: fine)').addEventListener('change', setMode);
+        matchMedia('(hover: none) and (pointer: coarse)').addEventListener('change', setMode);
+      })();
+    </script>
+
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

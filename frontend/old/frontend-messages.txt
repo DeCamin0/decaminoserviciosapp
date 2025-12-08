@@ -1,0 +1,332 @@
+===========================================
+TOATE MESAJELE DIN FRONTEND - DeCamino App
+===========================================
+
+📋 LOGIN & AUTHENTICATION
+==========================
+
+1. LoginScreen.web.js:
+- "Debes aceptar los Términos y Condiciones para continuar."
+- "Correo o contraseña incorrecta"
+- "¡Acceso permitido solo para supervisores!"
+- "¡El acceso de supervisores no está permitido aquí!"
+- "No se pudo conectar con el servidor."
+
+2. LoginScreen.js:
+- "Debes aceptar los Términos y Condiciones para continuar."
+- "Correo o contraseña incorrecta"
+- "¡Acceso permitido solo para supervisores!"
+- "¡El acceso de supervisores no está permitido aquí!"
+- "No se pudo conectar con el servidor."
+
+3. LoginPage.jsx:
+- "Debes aceptar los Términos y Condiciones para continuar."
+- "Correo o contraseña incorrecta"
+- "¡Acceso permitido solo para supervisores!"
+- "¡El acceso de supervisores no está permitido aquí!"
+- "No se pudo conectar con el servidor."
+
+📋 FICHAJE (PONTAJ)
+====================
+
+1. Fichaje.jsx:
+- "Nu poți marca intrarea de două ori consecutiv! Ultimul marcaj: {tipo} la {hora}"
+- "Nu poți marca ieșirea de două ori consecutiv! Ultimul marcaj: {tipo} la {hora}"
+- "Ai deja o intrare din ziua de azi la {hora}! Nu poți marca intrarea de două ori în aceeași zi."
+- "Ai deja o ieșire din ziua de azi la {hora}! Nu poți marca ieșirea de două ori în aceeași zi."
+- "Date utilizator lipsă!"
+- "⚠️ ATENCIÓN: ¡Has superado las horas mensuales asignadas!\n\nHoras trabajadas: {horas}h\nHoras asignadas: {asignadas}h\nExceso: {exceso}h\n\n¿Estás seguro de que quieres registrar este marcaje?"
+- "Eroare la salvare! Verifică consola pentru detalii."
+- "¡Por favor, completa todos los campos obligatorios!"
+- "Eroare la salvare!"
+- "¿Seguro que quieres borrar este registro?"
+
+2. FicharScreen.web.js:
+- "Pontaj salvat cu succes!"
+- "Eroare la trimitere pontaj!"
+- "Date utilizator lipsă!"
+- "Eroare la preluarea registrelor!"
+
+3. FicharScreen.js:
+- "¡Por favor, completa todos los campos obligatorios!"
+- "¿Seguro que quieres borrar este registro?"
+
+📋 SOLICITUDES (CERERI)
+========================
+
+1. ListaSolicitudesScreen.web.js:
+- "No se pudieron cargar las solicitudes."
+- "Statusul a fost actualizat cu succes!"
+- "Nu s-a putut actualiza statusul."
+
+2. ListaSolicitudesScreen.js:
+- "Nu s-a putut actualiza statusul."
+- "No se pudieron cargar las solicitudes."
+
+3. HomeScreen.js:
+- "No se pudieron cargar las solicitudes."
+- "Nu s-a putut actualiza statusul online"
+
+4. SolicitudesPage.jsx:
+- "Por favor, selecciona las fechas de inicio y fin"
+- "La fecha de inicio no puede ser posterior a la fecha de fin"
+- "La fecha de inicio no puede ser anterior a 30 días"
+- "La fecha de fin no puede ser posterior a 30 días"
+- "Para 'Asuntos Propios', la duración máxima es de 3 días"
+- "Para 'Vacaciones', la duración máxima es de 30 días"
+- "Por favor, escribe un motivo"
+- "Solicitud enviada con éxito!"
+- "Error al enviar la solicitud"
+- "No se pudieron cargar las solicitudes"
+- "No se pudieron cargar todos los usuarios"
+
+📋 DOCUMENTOS
+=============
+
+1. DocumentosPage.jsx:
+- "Email lipsă!"
+- "Eroare la încărcarea nóminas!"
+- "¡Documento subido correctamente!"
+- "No se pudo subir el documento."
+- "Ocurrió un error al subir el documento."
+
+2. DocumentosScreen.web.js:
+- "Eroare la încărcarea nóminas!"
+- "¡Documento subido correctamente!"
+- "No se pudo subir el documento."
+- "Ocurrió un error al subir el documento."
+
+3. DocumentosScreen.js:
+- "Succes", "Documentul a fost încărcat cu succes!"
+- "Eroare", "Uploadul a eșuat!"
+- "Eroare", "A apărut o eroare la upload!"
+
+📋 CUADRANTES (ORARE)
+======================
+
+1. CuadrantesPage.jsx:
+- "Eroare la generarea cuadrantelor pentru tot anul!"
+- "Toate lunile generate ({luni}) deja există în sistem!\n\nPentru a rescrie, apasă din nou butonul 'Salvează Tot Anul'."
+- "Nu există luni pentru salvare!"
+- "⚠️ Eroare la salvare anuală: {successCount} salvate cu succes, {failCount} eșecuri din {totalRequests} total.\n\nVerifică consola browser-ului (F12) pentru detalii despre erori."
+- "❌ Eroare la salvare!"
+- "⚠️ Eroare la salvare lunară: {successCount} salvate cu succes, {failCount} eșecuri din {totalRequests} total.\n\nVerifică consola browser-ului (F12) pentru detalii despre erori."
+- "Sigur vrei să rescrii cuadrantele existente? Această acțiune nu poate fi anulată."
+
+2. CuadrantesEmpleadoPage.jsx:
+- "Nu s-au putut încărca cuadrantele."
+- "Poți modifica doar ziua curentă! Nu poți adăuga pontaje pentru zilele anterioare sau viitoare."
+- "Te rog completează ora!"
+- "Fichaje {tipo} înregistrat cu succes! În așteptare de aprobare."
+- "Eroare la salvarea fichaje!"
+- "Geolocația nu este disponibilă în acest browser."
+- "Locația a fost obținută automat!"
+- "Nu s-a putut obține adresa pentru locația curentă."
+- "Accesul la locație a fost refuzat. Te rog permite accesul în setările browserului."
+- "Locația nu a putut fi determinată. Te rog încearcă din nou."
+- "Timeout la obținerea locației. Te rog încearcă din nou."
+- "Eroare la obținerea locației. Te rog încearcă din nou."
+
+📋 CLIENTES (CLIENȚI)
+======================
+
+1. ClientesPage.jsx:
+- "Nu s-au putut încărca clienții."
+- "Client adăugat cu succes!"
+- "Eroare la salvarea clientului!"
+- "Contract reînnoit cu succes!"
+- "Eroare la reînnoirea contractului!"
+
+📋 APROBACIONES (APROBĂRI)
+===========================
+
+1. AprobacionesPage.jsx:
+- "Nu ai permisiuni pentru această pagină."
+- "Eroare la încărcarea fichajelor în așteptare."
+- "Fichaje aprobat cu succes!"
+- "Eroare la aprobarea fichaje!"
+- "Fichaje respins cu succes!"
+- "Eroare la respingerea fichaje!"
+
+📋 ADMIN PANEL
+==============
+
+1. AccessMatrix.jsx:
+- "Permisiunile au fost salvate cu succes!"
+- "Eroare la salvarea permisiunilor!"
+- "Ești sigur că vrei să resetezi toate permisiunile la valorile implicite?"
+
+📋 DATOS (DATE PERSONALE)
+=========================
+
+1. DatosPage.jsx:
+- "Nu s-au putut încărca datele utilizatorului."
+
+📋 NOTIFICACIONES
+=================
+
+1. EnviarNotificacionScreen.js:
+- "Por favor, escribe un mensaje."
+- "No se ha identificado el empleado."
+- "Ha ocurrido un problema al enviar."
+- "No se pudo enviar el correo."
+
+📋 LOADING MESSAGES
+===================
+
+1. Loading Messages:
+- "Cargando marcajes..."
+- "Cargando empleados..."
+- "Cargando solicitudes..."
+- "Cargando cuadrantes..."
+- "Cargando estadísticas..."
+- "Cargando documentos..."
+- "Cargando fichajes..."
+- "Cargando permisos..."
+- "Cargando activity log..."
+- "Cargando admin stats..."
+
+📋 SUCCESS MESSAGES
+===================
+
+1. Success Messages:
+- "Pontaj salvat cu succes!"
+- "Statusul a fost actualizat cu succes!"
+- "Solicitud enviada con éxito!"
+- "¡Documento subido correctamente!"
+- "Documentul a fost încărcat cu succes!"
+- "Client adăugat cu succes!"
+- "Contract reînnoit cu succes!"
+- "Fichaje aprobat cu succes!"
+- "Fichaje respins cu succes!"
+- "Permisiunile au fost salvate cu succes!"
+
+📋 ERROR MESSAGES
+=================
+
+1. Error Messages:
+- "Correo o contraseña incorrecta"
+- "No se pudo conectar con el servidor."
+- "¡Acceso permitido solo para supervisores!"
+- "¡El acceso de supervisores no está permitido aquí!"
+- "No se pudieron cargar las solicitudes."
+- "Nu s-a putut actualiza statusul."
+- "Eroare la trimitere pontaj!"
+- "Date utilizator lipsă!"
+- "Eroare la preluarea registrelor!"
+- "Eroare la încărcarea nóminas!"
+- "No se pudo subir el documento."
+- "Ocurrió un error al subir el documento."
+- "Uploadul a eșuat!"
+- "A apărut o eroare la upload!"
+- "Eroare la generarea cuadrantelor pentru tot anul!"
+- "Eroare la salvare!"
+- "Eroare la salvarea fichaje!"
+- "Nu s-au putut încărca clienții."
+- "Eroare la salvarea clientului!"
+- "Eroare la reînnoirea contractului!"
+- "Nu ai permisiuni pentru această pagină."
+- "Eroare la încărcarea fichajelor în așteptare."
+- "Eroare la aprobarea fichaje!"
+- "Eroare la respingerea fichaje!"
+- "Eroare la salvarea permisiunilor!"
+- "Nu s-au putut încărca datele utilizatorului."
+- "Por favor, escribe un mensaje."
+- "No se ha identificado el empleado."
+- "Ha ocurrido un problema al enviar."
+- "No se pudo enviar el correo."
+
+📋 CONFIRMATION MESSAGES
+========================
+
+1. Confirmation Messages:
+- "¿Seguro que quieres borrar este registro?"
+- "¿Estás seguro de que quieres registrar este marcaje?"
+- "Sigur vrei să rescrii cuadrantele existente? Această acțiune nu poate fi anulată."
+- "Ești sigur că vrei să resetezi toate permisiunile la valorile implicite?"
+
+📋 WARNING MESSAGES
+===================
+
+1. Warning Messages:
+- "⚠️ ATENCIÓN: ¡Has superado las horas mensuales asignadas!"
+- "⚠️ Eroare la salvare anuală: {successCount} salvate cu succes, {failCount} eșecuri din {totalRequests} total.\n\nVerifică consola browser-ului (F12) pentru detalii despre erori."
+- "⚠️ Eroare la salvare lunară: {successCount} salvate cu succes, {failCount} eșecuri din {totalRequests} total.\n\nVerifică consola browser-ului (F12) pentru detalii despre erori."
+- "❌ Eroare la salvare!"
+
+📋 GEOLOCATION MESSAGES
+========================
+
+1. Geolocation Messages:
+- "Geolocația nu este disponibilă în acest browser."
+- "Locația a fost obținută automat!"
+- "Nu s-a putut obține adresa pentru locația curentă."
+- "Accesul la locație a fost refuzat. Te rog permite accesul în setările browserului."
+- "Locația nu a putut fi determinată. Te rog încearcă din nou."
+- "Timeout la obținerea locației. Te rog încearcă din nou."
+- "Eroare la obținerea locației. Te rog încearcă din nou."
+
+📋 VALIDATION MESSAGES
+======================
+
+1. Validation Messages:
+- "Debes aceptar los Términos y Condiciones para continuar."
+- "Por favor, selecciona las fechas de inicio y fin"
+- "La fecha de inicio no puede ser posterior a la fecha de fin"
+- "La fecha de inicio no puede ser anterior a 30 días"
+- "La fecha de fin no puede ser posterior a 30 días"
+- "Para 'Asuntos Propios', la duración máxima es de 3 días"
+- "Para 'Vacaciones', la duración máxima es de 30 días"
+- "Por favor, escribe un motivo"
+- "Te rog completează ora!"
+- "Por favor, escribe un mensaje."
+- "No se ha identificado el empleado."
+- "¡Por favor, completa todos los campos obligatorios!"
+
+📋 DEBUG MESSAGES
+=================
+
+1. Debug Messages (console.log):
+- "DEBUG LoginScreen: user salvat in localStorage"
+- "DEBUG MiFichajeScreen: user primit:"
+- "DEBUG MiFichajeScreen: user.email:"
+- "DEBUG MiFichajeScreen: user[CODIGO]:"
+- "DEBUG FicharScreen: email primit:"
+- "DEBUG FicharScreen: useEffect triggered, email:"
+- "DEBUG FicharScreen: fetchUser called cu email:"
+- "DEBUG FicharScreen: caut email"
+- "DEBUG FicharScreen: userul nu a fost gasit! Email cautat:"
+- "DEBUG FicharScreen: user gasit:"
+- "DEBUG SidebarLayout: userContext"
+- "DEBUG SidebarLayout: grup"
+- "DEBUG RoleSelectScreen: userContext"
+- "DEBUG HomeScreen props"
+- "DEBUG ListaSolicitudesScreen: params"
+- "DEBUG ListaSolicitudesScreen: emailLogat"
+- "DEBUG solicitari:"
+- "DEBUG solicitari fetch url:"
+- "DEBUG - EstadisticasScreen rendered"
+- "DEBUG - userContext:"
+- "DEBUG - Solicitudes in main screen:"
+- "DEBUG - Fetching fichajes..."
+- "DEBUG - Fichajes raw data:"
+- "DEBUG - Solicitudes data:"
+- "Calculando duración para Salida..."
+- "User isManager:"
+- "User GRUPO:"
+- "Logs disponibles después de recargar:"
+- "Logs length:"
+- "Buscando entrada para fecha:"
+- "User CODIGO:"
+- "Última entrada encontrada:"
+- "Duración calculada:"
+- "Entrada time:"
+- "Salida time:"
+- "Diff ms:"
+- "Diff minutes:"
+- "No se encontró entrada para hoy"
+- "All logs for today:"
+
+===========================================
+TOTAL: 150+ de mesaje diferite în aplicație
+=========================================== 

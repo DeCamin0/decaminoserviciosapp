@@ -1,0 +1,38 @@
+﻿# Ignore generated files and build outputs
+dev-dist/
+dist/
+node_modules/
+public/workbox-*.js
+public/sw.js
+
+# Ignore service worker files that are generated
+**/sw.js
+**/workbox-*.js
+
+# Legacy modules kept doar ca referință
+old/facturare/**
+
+# Ignore Android build intermediates
+android/app/build/**
+
+# Ignore test files
+**/*.test.js
+**/*.test.jsx
+**/*.spec.js
+**/*.spec.jsx
+
+# Ignore config files that don't need linting
+vite.config.js
+tailwind.config.js
+postcss.config.js
+
+# Ignore AutoFirma script - external library with many formatting issues
+**/autoscript.js
+public/autoscript.js
+public/vendor/autoscript.js
+
+# MSW generated worker
+public/mockServiceWorker.js
+
+# Android build assets (generate by capacitate/copy)
+android/app/src/main/assets/public/**

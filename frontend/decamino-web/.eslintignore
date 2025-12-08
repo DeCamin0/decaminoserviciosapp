@@ -1,0 +1,31 @@
+# Ignore generated files and build outputs
+dev-dist/
+dist/
+node_modules/
+public/workbox-*.js
+public/sw.js
+
+# Ignore service worker files that are generated
+**/sw.js
+**/workbox-*.js
+
+# Ignore test files
+**/*.test.js
+**/*.test.jsx
+**/*.spec.js
+**/*.spec.jsx
+
+# Ignore config files that don't need linting
+vite.config.js
+tailwind.config.js
+postcss.config.js
+
+# Ignore AutoFirma script - external library with many formatting issues
+src/lib/autofirma/autoscript.js
+public/autoscript.js
+public/vendor/autoscript.js
+**/autoscript.js
+
+# Ignore test files in root
+test-*.js
+test-*.jsx

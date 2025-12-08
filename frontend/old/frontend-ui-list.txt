@@ -1,0 +1,313 @@
+===========================================
+LISTA COMPLETĂ A ELEMENTELOR VIZIBILE ÎN FRONTEND - DeCamino App
+===========================================
+
+---
+PAGINA LOGIN (LoginPage.jsx / LoginScreen.web.js)
+---
+- Logo: DeCamino Logo
+- Titlu: DE CAMINO SERVICIOS AUXILIARES SL
+- Subtitlu: Iniciar Sesión
+- Input: Email (placeholder: Email)
+- Input: Contraseña (placeholder: Contraseña)
+- Select: Tipo de Acceso
+  - Opțiuni: Empleados, Supervisores, Developer
+- Checkbox: Acepto los Términos y Condiciones
+- Buton: Iniciar Sesión
+- Loading: Cargando... (când se încarcă)
+- Demo: Folosește datele reale din sistemul DeCamino
+- Eroare: (mesaj dinamic)
+
+---
+LAYOUT PRINCIPAL (MainLayout.jsx)
+---
+- Logo: DeCamino Logo
+- Titlu Navbar: DE CAMINO
+- Subtitlu Navbar: SERVICIOS AUXILIARES
+- Nume utilizator (dinamic)
+- Rol utilizator: Supervisor / Empleado (dinamic)
+- Grup utilizator (dinamic)
+- Buton: Logout
+
+---
+DASHBOARD (DashboardPage.jsx)
+---
+- Titlu: Dashboard DeCamino
+- Subtitlu: Bun venit în aplicația DeCamino Web! Aceasta este pagina principală după autentificare.
+- Card informativ: Funcționalități Demo
+  - Autentificare cu email și parolă
+  - Protecție a rutelor pentru utilizatori neautentificați
+  - Layout principal cu navbar și logout
+  - Persistența stării utilizatorului în localStorage
+  - Pagina de date personale cu funcționalitate de editare
+  - Solicitudes pentru asuntos propios și vacaciones
+  - Gestionarea angajaților (doar pentru manageri)
+- Acces rapid:
+  - Link: Date personale ("Vizualizează și editează datele angajatului")
+  - Link: Solicitudes ("Solicita días de asuntos propios o vacaciones")
+  - Link: Gestionar Empleados ("Administra lista de angajați și adaugă noi utilizatori")
+  - Link: Fichar ("Marquează intrarea și ieșirea din serviciu")
+  - Link: Documentos ("Gestionați nóminas și documentele")
+  - Link: Cuadrantes ("Generează programe de lucru pentru angajați" / "Vezi programul de lucru")
+
+---
+DATE PERSONALE (DatosPage.jsx)
+---
+- Buton: Regresar a Dashboard
+- Titlu: Date personale
+- Nume utilizator (dinamic)
+- Badge: GRUPO (dinamic)
+- Badge: ESTADO (dinamic)
+- Buton: Editați datele
+- Email utilizator (dinamic)
+- Câmpuri date personale:
+  - CODIGO
+  - NACIONALIDAD
+  - DIRECCION
+  - D.N.I. / NIE
+  - SEG. SOCIAL
+  - Nº Cuenta
+  - TELEFONO
+  - FECHA NACIMIENTO
+  - FECHA DE ALTA
+  - CENTRO TRABAJO
+  - TIPO DE CONTRATO
+  - SUELDO BRUTO MENSUAL
+  - HORAS DE CONTRATO
+  - EMPRESA
+  - FECHA BAJA
+  - Fecha Antigüedad
+  - Antigüedad
+- Modal editare: Editare date personale
+- Loading: Se încarcă datele...
+- Eroare: Nu s-a putut încărca utilizatorul.
+
+---
+PONTAJ (Fichaje.jsx)
+---
+- Titlu: Mi Fichaje
+- Ora curentă (dinamic)
+- Buton: Entrada
+- Buton: Salida
+- Loading: Cargando marcajes...
+- Lista marcaje:
+  - Tip marcaj (Entrada/Salida)
+  - Data și ora
+  - Adresa
+  - Durata (pentru Salida)
+  - Modificat de
+- Modal confirmare: ¿Estás seguro de que quieres registrar este marcaje?
+- Avertizare ore lunare: ⚠️ ATENCIÓN: ¡Has superado las horas mensuales asignadas!
+- Eroare: Date utilizator lipsă!
+- Succes: Pontaj salvat cu succes!
+- Eroare: Eroare la trimitere pontaj!
+
+---
+SOLICITUDES (SolicitudesPage.jsx)
+---
+- Tabs:
+  - Lista (solicitările personale)
+  - Nueva (solicitare nouă)
+  - Todas (pentru manageri)
+- Formular solicitare nouă:
+  - Select: Tipo (Asuntos Propios, Vacaciones)
+  - Input: Fecha de inicio
+  - Input: Fecha de fin
+  - Input: Motivo
+  - Buton: Enviar Solicitud
+- Lista solicitări:
+  - Status: Pendiente, Aprobado, Rechazado
+  - Tip: Asuntos Propios, Vacaciones
+  - Data început și sfârșit
+  - Motivo
+  - Butoane acțiuni (pentru manageri)
+- Pentru manageri:
+  - Filtre: Tip, Status, Lună, Utilizator
+  - Buton: Export CSV
+  - Buton: Export PDF
+- Loading: Cargando solicitudes...
+- Succes: Solicitud enviada con éxito!
+- Eroare: Error al enviar la solicitud
+
+---
+DOCUMENTOS (DocumentosPage.jsx)
+---
+- Titlu: Documentos
+- Secțiunea Nómina:
+  - Titlu: Nómina
+  - Lista nóminas: Luna/An
+  - Buton: 📄 Descargar PDF
+  - Text: PDF indisponibil
+  - Buton: 🔄 Refresh Nóminas
+  - Loading: Cargando nóminas...
+  - Text: No hay nóminas disponibles.
+- Secțiunea Documentos:
+  - Titlu: Documentos
+  - Tipuri documente:
+    - Justificante médico
+    - Certificado de matrimonio
+    - Justificante de ausencia
+    - Otro documento
+  - Buton: 📤 Subir
+  - Loading: Subiendo...
+  - Succes: ¡Documento subido correctamente!
+  - Eroare: No se pudo subir el documento.
+- Buton: Regresar a Dashboard
+- Eroare: Email lipsă!
+- Eroare: Eroare la încărcarea nóminas!
+
+---
+CUADRANTES (CuadrantesPage.jsx)
+---
+- Titlu: Cuadrantes
+- Subtitlu: Gestionați programele de lucru pentru angajați
+- Buton: Regresar a Dashboard
+- Tabs:
+  - Generar Cuadrante
+  - Estadísticas
+- Secțiunea Generar:
+  - Label: Lună
+  - Select: Lunile anului
+  - Label: Centru
+  - Select: Selectează centru
+  - Label: Grup (pentru manageri)
+  - Select: Toate grupurile
+  - Buton: Generar Cuadrante
+  - Buton: Generar Tot Anul
+  - Buton: Salvează Luna
+  - Buton: Salvează Tot Anul
+- Secțiunea Estadísticas:
+  - Statistici lunare
+  - Grafice și tabele
+- Loading: Se generează...
+- Loading: Se salvează...
+- Avertizare: Atenție! Următoarele luni sunt deja salvate în sistem
+- Confirmare: Sigur vrei să rescrii cuadrantele existente?
+
+---
+CLIENȚI (ClientesPage.jsx)
+---
+- Titlu: Clienți
+- Subtitlu: Gestionare clienți și furnizori
+- Buton: + Adaugă Client
+- Buton: Înapoi la Dashboard
+- Filtre:
+  - Label: Căutare
+  - Input: Nume, NIF, email...
+  - Label: Tip
+  - Select: Toate tipurile, Clienți, Furnizori
+  - Label: Stare
+  - Select: Toate, Activi, Inactivi
+  - Buton: 🔄 Actualizează
+- Statistici:
+  - Card: Total Clienți
+  - Card: Activi
+  - Card: Inactivi
+  - Card: Furnizori
+- Lista clienți:
+  - Nume
+  - NIF/CIF
+  - Tip (Client/Furnizor)
+  - Stare (Activ/Inactiv)
+  - Butoane acțiuni
+- Modal adăugare client
+- Succes: Client adăugat cu succes!
+- Eroare: Eroare la salvarea clientului!
+
+---
+APROBĂRI (AprobacionesPage.jsx)
+---
+- Titlu: Aprobaciones
+- Subtitlu: Aprobări fichajes în așteptare
+- Lista fichajes în așteptare:
+  - Nume angajat
+  - Data și ora
+  - Tip marcaj
+  - Motivo
+  - Buton: Aprobă
+  - Buton: Respinge
+  - Buton: Vezi detalii
+- Loading: Cargando fichajes...
+- Succes: Fichaje aprobat cu succes!
+- Succes: Fichaje respins cu succes!
+- Eroare: Eroare la aprobarea fichaje!
+- Eroare: Eroare la respingerea fichaje!
+- Eroare: Nu ai permisiuni pentru această pagină.
+
+---
+ADMIN PANEL
+---
+- Titlu: Admin Dashboard
+- Statistici generale
+- Activity Log
+- Access Matrix
+- User Stats
+- Butoane acțiuni administrative
+
+---
+COMPONENTE UI GENERALE
+---
+- LoadingSpinner: Cargando...
+- Button variants:
+  - Primary (roșu)
+  - Secondary (gri)
+  - Outline (contur)
+  - Danger (roșu)
+  - Success (verde)
+  - Warning (galben)
+- Modal:
+  - Titlu
+  - Conținut
+  - Buton închidere (×)
+- Card:
+  - Header
+  - Body
+  - Footer
+- Input:
+  - Label
+  - Placeholder
+  - Error message
+- Select:
+  - Label
+  - Options
+  - Placeholder
+
+---
+ELEMENTE REACTIVE (dinamice)
+---
+- Nume utilizator (din localStorage)
+- Rol utilizator (Manager/Empleado)
+- Grup utilizator
+- Email utilizator
+- Data curentă
+- Ora curentă
+- Status solicitări
+- Lista marcaje
+- Statistici
+- Mesaje de eroare
+- Mesaje de succes
+- Loading states
+
+---
+ELEMENTE DE NAVIGARE
+---
+- Link-uri între pagini
+- Butoane de navigare
+- Breadcrumbs
+- Tabs
+- Sidebar (dacă există)
+
+---
+ELEMENTE DE FEEDBACK
+---
+- Alert-uri de succes
+- Alert-uri de eroare
+- Alert-uri de avertizare
+- Confirmări
+- Loading indicators
+- Progress bars
+- Toast notifications
+
+===========================================
+TOTAL: Peste 200 de elemente vizibile diferite în aplicație
+=========================================== 
