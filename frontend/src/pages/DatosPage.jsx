@@ -244,7 +244,8 @@ const [editLoading, setEditLoading] = useState(false);
         fileSize: profileImage.size
       });
 
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731', {
+      // Use proxy in dev, direct n8n in production
+      const response = await fetch(routes.getAvatar, {
         method: 'POST',
         body: formData
       });
@@ -311,7 +312,8 @@ const [editLoading, setEditLoading] = useState(false);
         nombre: user?.['NOMBRE / APELLIDOS'] || authUser?.['NOMBRE / APELLIDOS']
       });
 
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731', {
+      // Use proxy in dev, direct n8n in production
+      const response = await fetch(routes.getAvatar, {
         method: 'POST',
         body: formData
       });
@@ -367,7 +369,8 @@ const [editLoading, setEditLoading] = useState(false);
         nombre: user?.['NOMBRE / APELLIDOS'] || authUser?.['NOMBRE / APELLIDOS']
       });
 
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731', {
+      // Use proxy in dev, direct n8n in production
+      const response = await fetch(routes.getAvatar, {
         method: 'POST',
         body: formData
       });
@@ -417,7 +420,8 @@ const [editLoading, setEditLoading] = useState(false);
         nombre: resolvedNombre
       });
 
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731', {
+      // Use proxy in dev, direct n8n in production
+      const response = await fetch(routes.getAvatar, {
         method: 'POST',
         body: formData
       });

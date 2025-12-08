@@ -6,6 +6,7 @@ import Footer from './Footer';
 import LocationDisplay from './LocationDisplay';
 import DemoBadge from './DemoBadge';
 import ThemeToggle from './ThemeToggle';
+import NotificationsBell from './NotificationsBell';
 // Folosește logo-ul din public (accesibil prin ngrok)
 const getLogoUrl = () => {
   // Verifică dacă suntem pe ngrok și folosește SVG inline
@@ -125,6 +126,9 @@ const MainLayout = ({ children }) => {
               </div>
             </div>
               
+              {/* Notifications Bell */}
+              <NotificationsBell />
+              
               {/* Theme Toggle */}
               <ThemeToggle />
               
@@ -172,8 +176,9 @@ const MainLayout = ({ children }) => {
               </h1>
             </div>
 
-            {/* Theme Toggle și Buton Salir */}
+            {/* Notifications, Theme Toggle și Buton Salir */}
             <div className="flex items-center space-x-2">
+              <NotificationsBell />
               <ThemeToggle className="flex-shrink-0" />
               <button
                 onClick={handleLogout}

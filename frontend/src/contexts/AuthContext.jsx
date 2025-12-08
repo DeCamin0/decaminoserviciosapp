@@ -196,7 +196,13 @@ export const AuthProvider = ({ children }) => {
       debug('AuthContext - userObj.DerechoPedidos:', userObj.DerechoPedidos);
       debug('AuthContext - userObj keys final:', Object.keys(userObj));
       
-      // Guardar en localStorage y state
+      // Guardar token si user en localStorage y state
+      // Salvează token-ul JWT dacă există în răspuns
+      if (data.accessToken) {
+        localStorage.setItem('auth_token', data.accessToken);
+        auth('Token salvat în localStorage');
+      }
+      
       localStorage.setItem('user', JSON.stringify(userObj));
       setUser(userObj);
       
@@ -243,6 +249,7 @@ export const AuthProvider = ({ children }) => {
     // Navighează imediat fără să aștepte logging-ul
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('auth_token'); // Șterge și token-ul JWT
     sessionStorage.removeItem('lastPath');
     navigate('/login', { replace: true });
   };

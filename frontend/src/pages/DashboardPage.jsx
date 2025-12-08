@@ -5,6 +5,7 @@ import { Notification } from '../components/ui';
 import { routes, getN8nUrl } from '../utils/routes';
 import QuickAccessOrb from '../components/QuickAccessOrb';
 import { useAdminApi } from '../hooks/useAdminApi';
+import SendNotificationModal from '../components/SendNotificationModal';
 import {
   BarChart3,
   Calendar,
@@ -42,6 +43,7 @@ const InicioPage = () => {
   const [empleadoCompleto, setEmpleadoCompleto] = useState(null);
   const [userPermissions, setUserPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   // Extrage informațiile corecte din obiectul user
   const userName = user?.['NOMBRE / APELLIDOS'] || user?.name || 'Utilizator';
@@ -507,13 +509,21 @@ const InicioPage = () => {
           ? `${routes.getEmpleados}${routes.getEmpleados.includes('?') ? '&' : '?'}${searchParams.toString()}`
           : routes.getEmpleados;
 
+        // Adaugă token-ul JWT dacă există
+        const headers = {
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-Client-Type': 'web-browser',
+          'User-Agent': 'DeCamino-Web-Client/1.0'
+        };
+        
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
         const res = await fetch(endpoint, {
-          headers: {
-            'X-App-Source': 'DeCamino-Web-App',
-            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-            'X-Client-Type': 'web-browser',
-            'User-Agent': 'DeCamino-Web-Client/1.0'
-          }
+          headers
         });
 
         // Verifică dacă răspunsul este JSON valid
@@ -533,7 +543,59 @@ const InicioPage = () => {
         }
 
         const data = await res.json();
-        const users = Array.isArray(data) ? data : [data];
+        
+        // Extrage utilizatorii din răspuns (suportă multiple formate)
+        let users = [];
+        if (Array.isArray(data)) {
+          users = data;
+        } else if (data && Array.isArray(data.data)) {
+          users = data.data;
+        } else if (data && Array.isArray(data.body)) {
+          users = data.body;
+        } else if (data && Array.isArray(data.result)) {
+          users = data.result;
+        } else if (data && typeof data === 'object') {
+          // Verifică dacă este un răspuns de tip "not-modified" sau alt mesaj de status
+          if (data.status === 'not-modified' || data.status || data.message || data.error) {
+            // Ignoră răspunsurile de status, nu sunt utilizatori
+            users = [];
+          } else if (data.CODIGO || data['CORREO ELECTRONICO'] || data.CORREO_ELECTRONICO) {
+            // Este un singur obiect utilizator, îl punem într-un array
+            users = [data];
+          } else {
+            users = [];
+          }
+        } else {
+          users = [];
+        }
+        
+        // Verifică dacă răspunsul este de tip "not-modified" (datele nu s-au schimbat)
+        const isNotModified = data && typeof data === 'object' && data.status === 'not-modified';
+        
+        if (isNotModified) {
+          // Răspuns valid - datele nu s-au schimbat, nu trebuie să facem nimic
+          console.log('ℹ️ [Dashboard] Backend-ul a returnat "not-modified" - datele nu s-au schimbat');
+          return; // Ieșim fără să schimbăm starea
+        }
+        
+        // Filtrează doar obiectele care sunt utilizatori (au CODIGO sau CORREO ELECTRONICO)
+        users = users.filter(u => 
+          u && typeof u === 'object' && 
+          (u.CODIGO || u['CORREO ELECTRONICO'] || u.CORREO_ELECTRONICO)
+        );
+        
+        // Debug: log datele primite
+        console.log('🔍 [Dashboard] Date primite de la backend:', {
+          rawDataType: Array.isArray(data) ? 'array' : typeof data,
+          rawDataKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+          rawDataPreview: data && typeof data === 'object' ? JSON.stringify(data).substring(0, 200) : data,
+          usersCount: users.length,
+          userCODIGO: user?.CODIGO,
+          userEmail: user?.email,
+          firstUserKeys: users[0] ? Object.keys(users[0]) : [],
+          firstUserPreview: users[0] ? JSON.stringify(users[0]).substring(0, 200) : null
+        });
+        
         // Caută angajatul curent logat în listă
         if (users.length > 0) {
           const empleadoCurent = users.find(emp => 
@@ -546,7 +608,20 @@ const InicioPage = () => {
             console.log('✅ [Dashboard] Angajat găsit - DerechoPedidos:', empleadoCurent.DerechoPedidos);
             setEmpleadoCompleto(empleadoCurent);
           } else {
-            console.warn('⚠️ [Dashboard] Angajatul curent nu a fost găsit în backend');
+            console.warn('⚠️ [Dashboard] Angajatul curent nu a fost găsit în backend', {
+              searchingFor: { CODIGO: user?.CODIGO, email: user?.email },
+              availableUsers: users.map(u => ({ CODIGO: u.CODIGO, email: u['CORREO ELECTRONICO'] || u.CORREO_ELECTRONICO }))
+            });
+            // Nu resetăm empleadoCompleto dacă deja există (păstrăm datele existente)
+            if (!empleadoCompleto) {
+              setEmpleadoCompleto(null);
+            }
+          }
+        } else {
+          // Nu afișăm warning dacă nu avem utilizatori - poate fi un răspuns valid
+          // Doar resetăm dacă nu avem deja date salvate
+          if (!empleadoCompleto) {
+            console.warn('⚠️ [Dashboard] Backend-ul nu a returnat niciun utilizator');
             setEmpleadoCompleto(null);
           }
         }
@@ -685,6 +760,7 @@ const InicioPage = () => {
       formData.append('CODIGO', user.CODIGO);
       formData.append('nombre', userName || '');
 
+      // Use proxy in dev, direct n8n in production
       const response = await fetch(routes.getAvatar, {
         method: 'POST',
         body: formData
@@ -698,20 +774,37 @@ const InicioPage = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Verifică dacă răspunsul este JSON valid pentru avatar
+      // Check if response is actually JSON
       const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const textResponse = await response.text();
-        console.error('❌ [Dashboard] Avatar endpoint returned non-JSON response:', {
-          status: response.status,
-          contentType,
-          response: textResponse.substring(0, 200) + '...'
-        });
-        throw new Error(`Avatar endpoint returned ${contentType || 'unknown content type'} instead of JSON. Status: ${response.status}`);
+      console.log('🔍 [Inicio] Response contentType:', contentType);
+      
+      let result;
+      if (contentType && contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        // If not JSON, try to parse as text first
+        const textResult = await response.text();
+        console.log('⚠️ [Inicio] Response is not JSON, text result:', textResult.substring(0, 100));
+        if (!textResult || textResult.trim() === '') {
+          console.warn('⚠️ [Inicio] Empty response from avatar endpoint');
+          return;
+        }
+        try {
+          result = JSON.parse(textResult);
+        } catch (e) {
+          console.error('❌ [Inicio] Failed to parse response as JSON:', e);
+          console.error('❌ [Inicio] Response text:', textResult);
+          return;
+        }
       }
-
-      const result = await response.json();
+      
       console.log('✅ [Inicio] Avatar cargado:', result);
+      console.log('🔍 [Inicio] Avatar result type:', typeof result, 'isArray:', Array.isArray(result));
+      console.log('🔍 [Inicio] Avatar result value:', result);
+      console.log('🔍 [Inicio] Avatar result length:', typeof result === 'string' ? result.length : 'not string');
+      if (typeof result === 'string' && result.trim() === '') {
+        console.warn('⚠️ [Inicio] Avatar response is empty string - backend might not be forwarding FormData correctly');
+      }
       
       // Backend retorna un array con el avatar
       let avatarData = null;
@@ -765,6 +858,13 @@ const InicioPage = () => {
 
   return (
     <div className="space-y-6">
+      {/* Modal pentru trimiterea notificărilor */}
+      <SendNotificationModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+        currentUser={user}
+      />
+
       {alertNotification && (
         <Notification
           type={alertNotification.type}
@@ -863,6 +963,53 @@ const InicioPage = () => {
                 </span>{' '}
                 y mucho más.
               </p>
+              
+              {/* Butoane pentru notificări (doar pentru developeri, supervizori și manageri) */}
+              {(isDeveloper || isManager) && (
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setShowNotificationModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+                  >
+                    <span>📨</span>
+                    Enviar Notificación
+                  </button>
+                  
+                  {isDeveloper && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const baseUrl = import.meta.env.DEV 
+                            ? 'http://localhost:3000' 
+                            : (import.meta.env.VITE_API_BASE_URL || '');
+                          const response = await fetch(`${baseUrl}/api/notifications/test`, {
+                            method: 'POST',
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Content-Type': 'application/json',
+                            },
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            alert('✅ Notificare trimisă! Verifică iconița de notificări.');
+                          } else {
+                            alert('❌ Eroare: ' + data.message);
+                          }
+                        } catch (error) {
+                          console.error('Error sending test notification:', error);
+                          alert('❌ Eroare la trimiterea notificării: ' + error.message);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+                    >
+                      <span>🔔</span>
+                      Testează Notificare Push
+                    </button>
+                  )}
+                </div>
+              )}
+              
               <div className="flex items-center justify-center md:justify-start">
                 <div className="h-px flex-1 max-w-xs bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
                 <div className="mx-3 h-2 w-2 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 opacity-60" />

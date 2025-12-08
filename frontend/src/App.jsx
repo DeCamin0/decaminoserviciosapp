@@ -5,6 +5,7 @@ import { useAuth } from './contexts/AuthContextBase';
 import { GoogleMapsProvider } from './contexts/GoogleMapsContext';
 import { LocationProvider } from './contexts/LocationContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { NotificationsProvider } from './contexts/NotificationsContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './components/MainLayout';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
@@ -62,6 +63,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <NotificationsProvider>
         <GoogleMapsProvider>
           <PeriodoProvider>
             <LocationProvider>
@@ -74,6 +76,7 @@ function App() {
             </LocationProvider>
           </PeriodoProvider>
         </GoogleMapsProvider>
+        </NotificationsProvider>
       </AuthProvider>
     </ThemeProvider>
   );
