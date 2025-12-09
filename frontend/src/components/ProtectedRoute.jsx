@@ -1,13 +1,12 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContextBase';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAdminApi } from '../hooks/useAdminApi';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading, user } = useAuth();
   const { getPermissions } = useAdminApi();
   const location = useLocation();
-  const [checkingPermissions, setCheckingPermissions] = useState(false);
   const lastCheckedPath = useRef('');
 
   // Gestionare navigare pentru browser back button
@@ -26,7 +25,6 @@ const ProtectedRoute = ({ children }) => {
     // Se execută doar când se schimbă ruta și utilizatorul este autentificat
     if (isAuthenticated && user && location.pathname !== lastCheckedPath.current) {
       const checkPermissions = async () => {
-        setCheckingPermissions(true);
         lastCheckedPath.current = location.pathname;
         
         try {
@@ -56,16 +54,15 @@ const ProtectedRoute = ({ children }) => {
           
         } catch (error) {
           console.error('❌ ProtectedRoute: Error checking permissions:', error);
-        } finally {
-          setCheckingPermissions(false);
         }
       };
       
+      // Fire-and-forget; nu mai blocăm randarea UI pe permisiuni
       checkPermissions();
     }
   }, [location.pathname, isAuthenticated, user, getPermissions]); // Doar când se schimbă ruta
 
-  if (loading || checkingPermissions) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>

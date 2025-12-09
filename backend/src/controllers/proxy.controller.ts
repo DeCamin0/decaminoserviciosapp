@@ -75,6 +75,23 @@ export class ProxyController {
             } else {
               console.error('[Proxy] ERROR: req.body is empty after multer!');
             }
+
+            // Add files parsed by multer (buffer-based)
+            const files = (req as any).files || [];
+            if (Array.isArray(files) && files.length > 0) {
+              files.forEach((file: any) => {
+                if (!file || !file.buffer) return;
+                const fname = file.originalname || file.fieldname || 'upload.bin';
+                const ftype = file.mimetype || 'application/octet-stream';
+                formData.append(file.fieldname || 'file', file.buffer, {
+                  filename: fname,
+                  contentType: ftype,
+                });
+                console.log(`[Proxy] Added file: field=${file.fieldname} name=${fname} type=${ftype} size=${file.size}`);
+              });
+            } else {
+              console.warn('[Proxy] No files found in multer parsing.');
+            }
             
             requestBody = formData;
             

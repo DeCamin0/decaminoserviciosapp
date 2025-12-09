@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Notification } from '../components/ui';
 import { routes, getN8nUrl } from '../utils/routes';
+import { fetchAvatarOnce, getCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 import QuickAccessOrb from '../components/QuickAccessOrb';
 import { useAdminApi } from '../hooks/useAdminApi';
 import SendNotificationModal from '../components/SendNotificationModal';
@@ -34,6 +35,7 @@ const InicioPage = () => {
   const { getPermissions } = useAdminApi();
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loadingAvatar, setLoadingAvatar] = useState(false);
+  const [uiReady, setUiReady] = useState(false); // decuplează UX de fetch-uri lente
   const avatarLoadedRef = useRef(false);
   const currentUserIdRef = useRef(null);
   const [monthlyAlerts, setMonthlyAlerts] = useState(null);
@@ -44,6 +46,34 @@ const InicioPage = () => {
   const [userPermissions, setUserPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
+
+  // Skeleton UI pentru percepție rapidă de încărcare
+  const renderSkeleton = () => (
+    <div className="space-y-6 animate-pulse">
+      <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white shadow-lg">
+        <div className="p-6 flex flex-col md:flex-row md:items-start gap-6">
+          <div className="h-28 w-28 rounded-full bg-gray-200" />
+          <div className="flex-1 space-y-3">
+            <div className="h-6 w-48 bg-gray-200 rounded" />
+            <div className="h-4 w-64 bg-gray-200 rounded" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-10 rounded bg-gray-100" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+        <div className="h-5 w-40 bg-gray-200 rounded mb-3" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="h-20 rounded-lg bg-gray-100" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
   // Extrage informațiile corecte din obiectul user
   const userName = user?.['NOMBRE / APELLIDOS'] || user?.name || 'Utilizator';
@@ -237,18 +267,16 @@ const InicioPage = () => {
         return;
       }
 
+      // Nu blocăm UI; marcăm loading false imediat și populăm când sosesc
+      setLoadingPermissions(false);
       try {
-        setLoadingPermissions(true);
-        console.log('🔐 DashboardPage: Loading permissions for grupo:', userGrupo);
+        console.log('🔐 DashboardPage: Loading permissions for grupo (non-blocking):', userGrupo);
         const permissions = await getPermissions(userGrupo);
         console.log('✅ DashboardPage: Permissions loaded:', permissions);
         setUserPermissions(permissions);
       } catch (error) {
         console.error('❌ DashboardPage: Error loading permissions:', error);
-        // În caz de eroare, folosim permisiunile implicite
         setUserPermissions(null);
-      } finally {
-        setLoadingPermissions(false);
       }
     };
 
@@ -257,7 +285,8 @@ const InicioPage = () => {
 
   const quickAccessItems = useMemo(() => {
     // Dacă permisiunile nu sunt încă încărcate, folosim verificările hardcodate ca fallback
-    const useBackendPermissions = userPermissions && !loadingPermissions;
+    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+    const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
     
     // Verifică dacă există permisiuni pentru grupul utilizatorului în backend
     const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
@@ -745,9 +774,9 @@ const InicioPage = () => {
   const loadExistingAvatar = useCallback(async () => {
     if (!user?.CODIGO) return;
     
-    // Evitar cargar múltiples veces para el mismo usuario
+    // Evitar fetch-uri multiple pentru același user
     if (avatarLoadedRef.current && currentUserIdRef.current === user?.CODIGO) {
-      console.log('🔄 [Inicio] Avatar ya cargado para este usuario, saltando...');
+      console.log('🔄 [Inicio] Avatar ya cargado para este usuario, saltando (cache en memoria).');
       return;
     }
 
@@ -755,94 +784,34 @@ const InicioPage = () => {
     currentUserIdRef.current = user?.CODIGO;
 
     try {
-      const formData = new FormData();
-      formData.append('motivo', 'get');
-      formData.append('CODIGO', user.CODIGO);
-      formData.append('nombre', userName || '');
+      // 1) Verifică cache local
+      const cachedPayload = getCachedAvatar(user.CODIGO);
+      const cachedUrl = cachedPayload?.url || cachedPayload || null;
+      if (cachedUrl) {
+        setAvatarUrl(cachedUrl);
+        avatarLoadedRef.current = true;
+        console.log('✅ [Inicio] Avatar tomado din cache (localStorage).');
+        return;
+      }
 
-      // Use proxy in dev, direct n8n in production
-      const response = await fetch(routes.getAvatar, {
-        method: 'POST',
-        body: formData
+      // 2) Fetch o singură dată (in-flight guard în helper)
+      const avatarUrl = await fetchAvatarOnce({
+        codigo: user.CODIGO,
+        nombre: userName || '',
+        endpoint: routes.getAvatar,
+        version: user?.avatarVersion,
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          console.log('ℹ️ [Inicio] No se encontró avatar para este usuario');
-          return;
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      // Check if response is actually JSON
-      const contentType = response.headers.get('content-type');
-      console.log('🔍 [Inicio] Response contentType:', contentType);
-      
-      let result;
-      if (contentType && contentType.includes('application/json')) {
-        result = await response.json();
+      if (avatarUrl) {
+        setAvatarUrl(avatarUrl);
+        console.log('✅ [Inicio] Avatar obtinut și salvat în cache.');
       } else {
-        // If not JSON, try to parse as text first
-        const textResult = await response.text();
-        console.log('⚠️ [Inicio] Response is not JSON, text result:', textResult.substring(0, 100));
-        if (!textResult || textResult.trim() === '') {
-          console.warn('⚠️ [Inicio] Empty response from avatar endpoint');
-          return;
-        }
-        try {
-          result = JSON.parse(textResult);
-        } catch (e) {
-          console.error('❌ [Inicio] Failed to parse response as JSON:', e);
-          console.error('❌ [Inicio] Response text:', textResult);
-          return;
-        }
+        console.log('ℹ️ [Inicio] No se encontró avatar para este usuario.');
+        setAvatarUrl(DEFAULT_AVATAR);
       }
-      
-      console.log('✅ [Inicio] Avatar cargado:', result);
-      console.log('🔍 [Inicio] Avatar result type:', typeof result, 'isArray:', Array.isArray(result));
-      console.log('🔍 [Inicio] Avatar result value:', result);
-      console.log('🔍 [Inicio] Avatar result length:', typeof result === 'string' ? result.length : 'not string');
-      if (typeof result === 'string' && result.trim() === '') {
-        console.warn('⚠️ [Inicio] Avatar response is empty string - backend might not be forwarding FormData correctly');
-      }
-      
-      // Backend retorna un array con el avatar
-      let avatarData = null;
-      
-      if (Array.isArray(result) && result.length > 0) {
-        avatarData = result[0];
-      } else if (result && typeof result === 'object') {
-        avatarData = result;
-      }
-      
-      console.log('🔍 [Inicio] Avatar data procesado:', avatarData);
-      
-      // Verificar si tiene AVATAR_B64 (base64) o URL
-      if (avatarData) {
-        let avatarUrl = null;
-        
-        if (avatarData.AVATAR_B64) {
-          // Convertir base64 a data URL
-          const base64Clean = avatarData.AVATAR_B64.replace(/\n/g, ''); // Limpiar saltos de línea
-          avatarUrl = `data:image/jpeg;base64,${base64Clean}`;
-          console.log('✅ [Inicio] Avatar B64 convertido a data URL');
-        } else if (avatarData.avatar || avatarData.url || avatarData.imageUrl || avatarData.AVATAR) {
-          avatarUrl = avatarData.avatar || avatarData.url || avatarData.imageUrl || avatarData.AVATAR;
-          console.log('✅ [Inicio] Avatar URL encontrado:', avatarUrl);
-        }
-        
-        if (avatarUrl) {
-          setAvatarUrl(avatarUrl);
-          console.log('✅ [Inicio] Avatar seteado en state');
-        } else {
-          console.log('ℹ️ [Inicio] No se encontró AVATAR_B64 ni URL en la respuesta');
-        }
-      } else {
-        console.log('ℹ️ [Inicio] No se encontró data de avatar en la respuesta');
-      }
-      
     } catch (error) {
-      console.error('❌ [Inicio] Error cargando avatar:', error);
+      console.error('❌ [Inicio] Error cargando avatar (con cache):', error);
+      setAvatarUrl((prev) => prev || DEFAULT_AVATAR);
     } finally {
       setLoadingAvatar(false);
       avatarLoadedRef.current = true;
@@ -855,6 +824,41 @@ const InicioPage = () => {
       loadExistingAvatar();
     }
   }, [loadExistingAvatar, user?.CODIGO, user?.isDemo]);
+
+  // UI ready fallback: afișează skeleton după max 700ms chiar dacă fetch-urile rulează
+  useEffect(() => {
+    const timeout = setTimeout(() => setUiReady(true), 700);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // Dacă nu mai încărcăm datele principale, marcăm UI ready mai devreme
+  useEffect(() => {
+    if (!loadingAvatar && !loadingAlerts) {
+      setUiReady(true);
+    }
+  }, [loadingAvatar, loadingAlerts]);
+
+  // Watchdog + logging pentru state-urile de gating
+  useEffect(() => {
+    console.info('[Inicio] gating states', {
+      uiReady,
+      loadingAvatar,
+      loadingAlerts,
+      loadingPermissions,
+      hasUser: !!user,
+    });
+    const watchdog = setTimeout(() => {
+      if (!uiReady) {
+        console.warn('[Inicio] watchdog forcing uiReady=true (timeout fallback)');
+        setUiReady(true);
+      }
+    }, 1200);
+    return () => clearTimeout(watchdog);
+  }, [uiReady, loadingAvatar, loadingAlerts, loadingPermissions, user]);
+
+  if (!uiReady) {
+    return renderSkeleton();
+  }
 
   return (
     <div className="space-y-6">

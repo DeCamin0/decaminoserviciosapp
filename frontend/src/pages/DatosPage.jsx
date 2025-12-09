@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes.js';
+import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, clearAvatarCacheFor, DEFAULT_AVATAR } from '../utils/avatarCache';
 import { Notification } from '../components/ui';
 import Edit3DButton from '../components/Edit3DButton.jsx';
 import Back3DButton from '../components/Back3DButton.jsx';
@@ -72,6 +73,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 export default function DatosPage() {
   const { user: authUser } = useAuth();
   const [user, setUser] = useState(null);
+  const [uiReady, setUiReady] = useState(false); // decuplează percepția UI de fetch
   const [error, setError] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState(null);
@@ -152,6 +154,34 @@ const [editLoading, setEditLoading] = useState(false);
       </span>
     );
   };
+
+  // Skeleton UI pentru percepție rapidă la încărcare
+  const renderSkeleton = () => (
+    <div className="space-y-6 animate-pulse">
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+        <div className="flex items-center gap-4">
+          <div className="h-16 w-16 rounded-full bg-gray-200" />
+          <div className="space-y-2 flex-1">
+            <div className="h-4 w-48 bg-gray-200 rounded" />
+            <div className="h-4 w-64 bg-gray-200 rounded" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
+          {[...Array(9)].map((_, i) => (
+            <div key={i} className="h-10 rounded bg-gray-100" />
+          ))}
+        </div>
+      </div>
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+        <div className="h-4 w-32 bg-gray-200 rounded mb-3" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-24 rounded-lg bg-gray-100" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
   // Funcții pentru încărcarea pozei de profil
   const validateImage = (file) => {
@@ -234,7 +264,9 @@ const [editLoading, setEditLoading] = useState(false);
       formData.append('motivo', motivo);
       formData.append('CODIGO', user?.CODIGO || authUser?.CODIGO || '');
       formData.append('nombre', user?.['NOMBRE / APELLIDOS'] || authUser?.['NOMBRE / APELLIDOS'] || '');
-      formData.append('file', profileImage);
+      // Ensure filename is sent so n8n detects binary correctly (accepts 'file' or 'archivo')
+      formData.append('file', profileImage, profileImage.name);
+      formData.append('archivo', profileImage, profileImage.name);
 
       console.log('📤 Enviando avatar:', {
         motivo,
@@ -244,14 +276,17 @@ const [editLoading, setEditLoading] = useState(false);
         fileSize: profileImage.size
       });
 
-      // Use proxy in dev, direct n8n in production
-      const response = await fetch(routes.getAvatar, {
+      // Folosește backend proxy (routes.getAvatar) ca înainte, pentru a evita CORS/failed to fetch
+      const avatarEndpoint = routes.getAvatar;
+
+      const response = await fetch(avatarEndpoint, {
         method: 'POST',
-        body: formData
+        body: formData,
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const txt = await response.text().catch(() => '');
+        throw new Error(`HTTP error! status: ${response.status} ${txt}`);
       }
 
       const result = await response.json();
@@ -265,11 +300,31 @@ const [editLoading, setEditLoading] = useState(false);
       // Actualizar el user state con la nueva imagen
       if (result.avatar || result.url) {
         const newAvatarUrl = result.avatar || result.url;
-        setUser(prev => ({
-          ...prev,
-          AVATAR: newAvatarUrl,
-          avatar: newAvatarUrl
-        }));
+        const newVersion = Date.now();
+        setUser(prev => {
+          // Folosește baza completă: authUser (preferat), apoi prev dacă are CODIGO/GRUPO, altfel localStorage
+          const lsUser = JSON.parse(localStorage.getItem('user') || '{}');
+          const hasCore = (u) => (u?.CODIGO || u?.email || u?.['CORREO ELECTRONICO']) && (u?.GRUPO || u?.role);
+          const baseUser = hasCore(authUser) ? authUser : hasCore(prev) ? prev : hasCore(lsUser) ? lsUser : {};
+          const newUser = {
+            ...baseUser,
+            AVATAR: newAvatarUrl,
+            avatar: newAvatarUrl,
+            avatarVersion: newVersion,
+          };
+          if (hasCore(newUser)) {
+            localStorage.setItem('user', JSON.stringify(newUser));
+          }
+          return newUser;
+        });
+        setCachedAvatar(user?.CODIGO || authUser?.CODIGO, newAvatarUrl, newVersion);
+        // Notify SW to drop old cached avatar entries
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'avatarUpdated',
+            url: avatarEndpoint
+          });
+        }
         // Actualizar también el preview
         setImagePreview(newAvatarUrl);
       }
@@ -326,12 +381,29 @@ const [editLoading, setEditLoading] = useState(false);
       console.log('✅ Avatar eliminado (buton mic):', result);
       
       // Eliminar avatar del state local
-      setUser(prev => ({
-        ...prev,
-        AVATAR: null,
-        avatar: null
-      }));
-      setImagePreview(null);
+      setUser(prev => {
+        const lsUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const hasCore = (u) => (u?.CODIGO || u?.email || u?.['CORREO ELECTRONICO']) && (u?.GRUPO || u?.role);
+        const baseUser = hasCore(authUser) ? authUser : hasCore(prev) ? prev : hasCore(lsUser) ? lsUser : {};
+        const newUser = {
+          ...baseUser,
+          AVATAR: null,
+          avatar: null,
+          avatarVersion: null,
+        };
+        if (hasCore(newUser)) {
+          localStorage.setItem('user', JSON.stringify(newUser));
+        }
+        return newUser;
+      });
+      setImagePreview(DEFAULT_AVATAR);
+      clearAvatarCacheFor(user?.CODIGO || authUser?.CODIGO);
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'avatarDeleted',
+          url: routes.getAvatar
+        });
+      }
       
       setNotification({
         type: 'success',
@@ -388,11 +460,18 @@ const [editLoading, setEditLoading] = useState(false);
       });
       
       // Limpiar el avatar del user state
-      setUser(prev => ({
-        ...prev,
-        AVATAR: null,
-        avatar: null
-      }));
+      setUser(prev => {
+        const newUser = {
+          ...prev,
+          AVATAR: null,
+          avatar: null,
+          avatarVersion: null,
+        };
+        localStorage.setItem('user', JSON.stringify(newUser));
+        return newUser;
+      });
+      setImagePreview(DEFAULT_AVATAR);
+      clearAvatarCacheFor(user?.CODIGO || authUser?.CODIGO);
       
       // Reset form
       handleImageRemove();
@@ -408,78 +487,47 @@ const [editLoading, setEditLoading] = useState(false);
     if (!resolvedCodigo) return;
 
     try {
-      const formData = new FormData();
-      
-      formData.append('motivo', 'get');
-      formData.append('CODIGO', resolvedCodigo);
-      formData.append('nombre', resolvedNombre);
-
-      console.log('📥 Cargando avatar existente:', {
-        motivo: 'get',
-        CODIGO: resolvedCodigo,
-        nombre: resolvedNombre
-      });
-
-      // Use proxy in dev, direct n8n in production
-      const response = await fetch(routes.getAvatar, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        // Si no hay avatar (404 o similar), no es un error crítico
-        if (response.status === 404) {
-          console.log('ℹ️ No se encontró avatar para este usuario');
-          return;
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const cachedPayload = getCachedAvatar(resolvedCodigo);
+      const cachedUrl = cachedPayload?.url || cachedPayload || null;
+      const cachedVersion = cachedPayload?.version || null;
+      if (cachedUrl) {
+        setUser(prev => ({
+          ...prev,
+          AVATAR: cachedUrl,
+          avatar: cachedUrl,
+          avatarVersion: prev?.avatarVersion || cachedVersion || null
+        }));
+        setImagePreview(cachedUrl);
+        return;
       }
 
-      const result = await response.json();
-      console.log('✅ Avatar cargado:', result);
-      
-      // Backend retorna un array con el avatar
-      let avatarData = null;
-      
-      if (Array.isArray(result) && result.length > 0) {
-        avatarData = result[0];
-      } else if (result && typeof result === 'object') {
-        avatarData = result;
-      }
-      
-      console.log('🔍 Avatar data procesado:', avatarData);
-      
-      // Verificar si tiene AVATAR_B64 (base64) o URL
-      if (avatarData) {
-        let avatarUrl = null;
-        
-        if (avatarData.AVATAR_B64) {
-          // Convertir base64 a data URL
-          const base64Clean = avatarData.AVATAR_B64.replace(/\n/g, ''); // Limpiar saltos de línea
-          avatarUrl = `data:image/jpeg;base64,${base64Clean}`;
-          console.log('✅ Avatar B64 convertido a data URL');
-        } else if (avatarData.avatar || avatarData.url || avatarData.imageUrl || avatarData.AVATAR) {
-          avatarUrl = avatarData.avatar || avatarData.url || avatarData.imageUrl || avatarData.AVATAR;
-          console.log('✅ Avatar URL encontrado:', avatarUrl);
-        }
-        
-        if (avatarUrl) {
-          setUser(prev => ({
+      const avatarUrl = await fetchAvatarOnce({
+        codigo: resolvedCodigo,
+        nombre: resolvedNombre || '',
+        endpoint: routes.getAvatar,
+        version: user?.avatarVersion || authUser?.avatarVersion || null,
+      });
+
+      if (avatarUrl) {
+        const newVersion = Date.now();
+        setUser(prev => {
+          const newUser = {
             ...prev,
             AVATAR: avatarUrl,
-            avatar: avatarUrl
-          }));
-          
-          setImagePreview(avatarUrl);
-          console.log('✅ Avatar seteado en state y preview');
-        } else {
-          console.log('ℹ️ No se encontró AVATAR_B64 ni URL en la respuesta');
-        }
+            avatar: avatarUrl,
+            avatarVersion: newVersion,
+          };
+          localStorage.setItem('user', JSON.stringify(newUser));
+          return newUser;
+        });
+        setImagePreview(avatarUrl);
+        setCachedAvatar(resolvedCodigo, avatarUrl, newVersion);
       } else {
-        console.log('ℹ️ No se encontró data de avatar en la respuesta');
+        setImagePreview(DEFAULT_AVATAR);
       }
     } catch (error) {
       console.error('❌ Error al cargar avatar:', error);
+      setImagePreview((prev) => prev || DEFAULT_AVATAR);
       // No mostramos error al usuario porque no tener avatar no es un error
     }
   }, [resolvedCodigo, resolvedNombre]);
@@ -597,6 +645,18 @@ const [editLoading, setEditLoading] = useState(false);
       const users = Array.isArray(data) ? data : [data];
       console.log('DatosPage raw data from backend:', users);
       
+      // Evită să suprascrii user-ul cu răspunsuri de tip {status: "not-modified"}
+      if (users.length === 1 && users[0] && users[0].status === 'not-modified') {
+        console.log('ℹ️ [DatosPage] Response is status:not-modified - păstrez user-ul existent.');
+        // dacă nu avem user în state, folosește authUser ca fallback pentru a evita ecranul de eroare
+        if (!user && authUser) {
+          setUser(authUser);
+        }
+        setError(null);
+        setOperationLoading('user', false);
+        return;
+      }
+      
       if (users.length > 0) {
         const empleado = users[0];
         console.log('🔍 [DatosPage] Datele complete despre angajat din backend:', empleado);
@@ -655,6 +715,7 @@ const [editLoading, setEditLoading] = useState(false);
           AVATAR: prev?.AVATAR || null,
           avatar: prev?.avatar || null
         }));
+        setError(null);
       } else {
         // Păstrez avatarul existent când setez user-ul nou
         setUser(prev => ({
@@ -662,6 +723,7 @@ const [editLoading, setEditLoading] = useState(false);
           AVATAR: prev?.AVATAR || null,
           avatar: prev?.avatar || null
         }));
+        setError(null);
       }
     } catch (e) {
       setError('No se pudieron cargar los datos del usuario.');
@@ -681,6 +743,37 @@ const [editLoading, setEditLoading] = useState(false);
   useEffect(() => {
     loadExistingAvatar();
   }, [loadExistingAvatar]);
+
+  // UI ready fallback după max 650ms pentru a afișa skeleton imediat
+  useEffect(() => {
+    const timeout = setTimeout(() => setUiReady(true), 650);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // Dacă datele principale nu mai încarcă, marcăm UI ready imediat
+  useEffect(() => {
+    if (!isOperationLoading('user') && !imageLoading) {
+      setUiReady(true);
+    }
+  }, [isOperationLoading, imageLoading]);
+
+  // Logging + watchdog pentru a identifica blocaje de gating
+  useEffect(() => {
+    console.info('[Datos] gating states', {
+      uiReady,
+      loadingUser: isOperationLoading('user'),
+      imageLoading,
+      hasUser: !!user,
+      authUserEmail: authUser?.email,
+    });
+    const watchdog = setTimeout(() => {
+      if (!uiReady) {
+        console.warn('[Datos] watchdog forcing uiReady=true (timeout fallback)');
+        setUiReady(true);
+      }
+    }, 1200);
+    return () => clearTimeout(watchdog);
+  }, [uiReady, isOperationLoading, imageLoading, user, authUser]);
 
   const SHEET_FIELDS = [
     'CODIGO',
@@ -708,23 +801,21 @@ const [editLoading, setEditLoading] = useState(false);
     'TrabajaFestivos',
   ];
 
-  if (isOperationLoading('user')) {
-    return (
-      <div className="flex-1 flex justify-center items-center bg-gray-50 min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <p className="text-red-600 font-bold text-xl">Se încarcă datele utilizatorului...</p>
-        </div>
-      </div>
-    );
+  if (!uiReady) {
+    return renderSkeleton();
   }
 
-  if (error) {
+  // Dacă încă nu avem user dar un fetch e în curs, mai arătăm skeleton; nu afișăm eroarea până nu știm sigur că nu vine user-ul
+  if (error && !user && !isOperationLoading('user')) {
     return (
       <div className="flex-1 flex justify-center items-center bg-gray-50 min-h-screen">
         <p className="text-red-600 font-bold text-xl">{error}</p>
       </div>
     );
+  }
+
+  if (!user) {
+    return renderSkeleton();
   }
 
   return (

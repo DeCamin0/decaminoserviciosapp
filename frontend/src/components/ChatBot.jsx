@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
-import axios from 'axios';
 import Chatbot from 'react-chatbot-kit';
 import 'react-chatbot-kit/build/main.css';
 import './ChatBot.css';
@@ -54,34 +53,52 @@ const ChatBot = () => {
 
       console.log('📤 Trimite mesaj către AI:', requestData);
 
-      const response = await axios.post(routes.chatAI, requestData, {
-        timeout: 30000,
+      const response = await fetch(routes.chatAI, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify(requestData),
       });
 
-      console.log('📥 Răspuns AI complet:', response.data);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+
+      let data = null;
+      const contentType = response.headers.get('content-type') || '';
+      try {
+        if (contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          const text = await response.text();
+          data = text;
+        }
+      } catch (_) {
+        data = await response.text().catch(() => null);
+      }
+
+      console.log('📥 Răspuns AI complet:', data);
 
       // Procesare flexibilă a răspunsului
       let aiResponse = '';
       
-      if (response.data) {
+      if (data) {
         // Încearcă diferite formate posibile
-        if (typeof response.data === 'string') {
-          aiResponse = response.data;
-        } else if (response.data.respuesta) {
-          aiResponse = response.data.respuesta;
-        } else if (response.data.message) {
-          aiResponse = response.data.message;
-        } else if (response.data.content) {
-          aiResponse = response.data.content;
-        } else if (response.data.text) {
-          aiResponse = response.data.text;
-        } else if (response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
-          aiResponse = response.data.choices[0].message.content;
+        if (typeof data === 'string') {
+          aiResponse = data;
+        } else if (data.respuesta) {
+          aiResponse = data.respuesta;
+        } else if (data.message) {
+          aiResponse = data.message;
+        } else if (data.content) {
+          aiResponse = data.content;
+        } else if (data.text) {
+          aiResponse = data.text;
+        } else if (data.choices && data.choices[0] && data.choices[0].message) {
+          aiResponse = data.choices[0].message.content;
         } else {
-          aiResponse = JSON.stringify(response.data);
+          aiResponse = JSON.stringify(data);
         }
       }
 
@@ -113,14 +130,10 @@ const ChatBot = () => {
       
       let errorMessage = '❌ Eroare la comunicarea cu AI.';
       
-      if (error.code === 'ECONNABORTED') {
+      if (error.message?.includes('HTTP')) {
+        errorMessage = `❌ ${error.message}`;
+      } else if (error.name === 'AbortError') {
         errorMessage = '⏰ Timeout - răspunsul a durat prea mult. Te rog să încerci din nou.';
-      } else if (error.response?.status === 404) {
-        errorMessage = '🔍 Endpoint-ul nu a fost găsit. Verifică configurația.';
-      } else if (error.response?.status === 500) {
-        errorMessage = '⚡ Eroare internă a serverului. Te rog să încerci din nou.';
-      } else if (error.response?.status) {
-        errorMessage = `❌ Eroare ${error.response.status}: ${error.response.statusText}`;
       }
       
       return errorMessage;

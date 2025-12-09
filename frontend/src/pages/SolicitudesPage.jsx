@@ -9,6 +9,7 @@ import { routes } from '../utils/routes.js';
 import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
 import { ChevronLeft, ChevronRight, Edit, Trash2 } from 'lucide-react';
+import { usePolling } from '../hooks/usePolling';
 
 const MONTHS = [
   'Todas las meses', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1345,17 +1346,14 @@ export default function SolicitudesPage() {
 
 
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchSolicitudes();
-      if (isManager) {
-        fetchAllSolicitudes();
-        fetchAllAusencias();
-      }
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [fetchSolicitudes, fetchAllSolicitudes, fetchAllAusencias, isManager]);
+  // Polling cu pause/resume automat când tab-ul nu e activ + jitter
+  usePolling(() => {
+    fetchSolicitudes();
+    if (isManager) {
+      fetchAllSolicitudes();
+      fetchAllAusencias();
+    }
+  }, 60000, true, 12000); // 60s base + max 12s jitter
 
   const validateDates = () => {
     if (!fechaInicio || !fechaFin) {
@@ -3158,7 +3156,9 @@ export default function SolicitudesPage() {
                               </>
                             ) : (
                               <>
-                                <h3 className="font-semibold text-gray-900 text-lg">{getUserName(item.email)}</h3>
+                                <h3 className="font-semibold text-gray-900 text-lg">
+                                  {item.NOMBRE || item.nombre || getUserName(item.email)}
+                                </h3>
                                 <p className="text-sm text-gray-600">{item.email}</p>
                                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                                   <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">

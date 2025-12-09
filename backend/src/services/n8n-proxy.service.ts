@@ -7,6 +7,16 @@ import FormData from 'form-data';
 export class N8nProxyService {
   private readonly axiosInstance: AxiosInstance;
   private readonly n8nBaseUrl: string;
+  // Simple token-bucket regulator (in-memory, per-instance)
+  private tokens: number;
+  private readonly maxBurst: number;
+  private readonly replenishPerSecond: number;
+  private readonly maxQueue: number;
+  private readonly baseBackoffMs: number;
+  private readonly maxRetries: number;
+  private readonly jitterMs: number;
+  private readonly queue: Array<() => void> = [];
+  private refillTimer: NodeJS.Timeout | null = null;
 
   constructor(private configService: ConfigService) {
     this.n8nBaseUrl = this.configService.get<string>('n8n.baseUrl') || 
@@ -20,6 +30,82 @@ export class N8nProxyService {
         'User-Agent': 'DeCamino-Backend/1.0',
       },
     });
+
+    // Regulator config (can be tuned via env/config later)
+    this.maxBurst = this.configService.get<number>('n8n.rateLimit.maxBurst') || 10;
+    this.replenishPerSecond = this.configService.get<number>('n8n.rateLimit.rps') || 5;
+    this.maxQueue = this.configService.get<number>('n8n.rateLimit.maxQueue') || 500;
+    this.baseBackoffMs = this.configService.get<number>('n8n.backoff.baseMs') || 200;
+    this.maxRetries = this.configService.get<number>('n8n.backoff.maxRetries') || 4;
+    this.jitterMs = this.configService.get<number>('n8n.backoff.jitterMs') || 150;
+    this.tokens = this.maxBurst;
+    this.startRefill();
+  }
+
+  private startRefill() {
+    if (this.refillTimer) return;
+    this.refillTimer = setInterval(() => {
+      this.tokens = Math.min(this.maxBurst, this.tokens + this.replenishPerSecond);
+      this.drainQueue();
+    }, 1000);
+  }
+
+  private drainQueue() {
+    while (this.tokens > 0 && this.queue.length > 0) {
+      const next = this.queue.shift();
+      if (next) {
+        this.tokens -= 1;
+        next();
+      }
+    }
+  }
+
+  private schedule<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const run = () => {
+        this.withBackoff(task).then(resolve).catch(reject);
+      };
+
+      if (this.tokens > 0) {
+        this.tokens -= 1;
+        run();
+        return;
+      }
+
+      if (this.queue.length >= this.maxQueue) {
+        return reject(new HttpException(
+          { message: 'Rate limit queue full', statusCode: HttpStatus.TOO_MANY_REQUESTS },
+          HttpStatus.TOO_MANY_REQUESTS,
+        ));
+      }
+
+      this.queue.push(run);
+    });
+  }
+
+  private async withBackoff<T>(fn: () => Promise<T>): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      try {
+        const res: any = await fn();
+        // Axios response-like objects have status; treat 429/5xx as retryable
+        const status = res?.status ?? res?.statusCode;
+        if (![429, 500, 502, 503, 504].includes(status)) {
+          return res;
+        }
+        if (attempt >= this.maxRetries) {
+          return res;
+        }
+      } catch (error) {
+        if (attempt >= this.maxRetries) {
+          throw error;
+        }
+      }
+      const jitter = Math.random() * this.jitterMs;
+      const delay = this.baseBackoffMs * Math.pow(2, attempt) + jitter;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      attempt += 1;
+    }
   }
 
   /**
@@ -111,7 +197,7 @@ export class N8nProxyService {
         });
       }
 
-      const response: AxiosResponse = await this.axiosInstance.request(config);
+      const response: AxiosResponse = await this.schedule(() => this.axiosInstance.request(config));
       
       // 304 Not Modified is a valid success response (caching)
       if (response.status === 304) {

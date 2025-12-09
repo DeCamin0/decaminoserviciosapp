@@ -7,6 +7,7 @@ import InspectionList from '../components/inspections/InspectionList'; // Update
 import { routes } from '../utils/routes';
 import { API_ENDPOINTS } from '../utils/constants';
 import Back3DButton from '../components/Back3DButton.jsx';
+import { usePolling } from '../hooks/usePolling';
 
 export default function InspeccionesPage() {
   const { user: authUser } = useAuth();
@@ -545,11 +546,8 @@ function RecentInspections() {
     loadInspections();
   }, [loadInspections]);
 
-  // Refresh la fiecare 30 secunde
-  useEffect(() => {
-    const interval = setInterval(loadInspections, 30000);
-    return () => clearInterval(interval);
-  }, [loadInspections]);
+  // Polling cu pause/resume automat când tab-ul nu e activ + jitter
+  usePolling(loadInspections, 30000, true, 6000); // 30s base + max 6s jitter
 
   if (loading) {
     return (
