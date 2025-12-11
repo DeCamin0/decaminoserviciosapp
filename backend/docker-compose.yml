@@ -22,7 +22,7 @@ services:
       # Router principal pentru api.decaminoservicios.com
       - "traefik.http.routers.backend-api.rule=Host(`api.decaminoservicios.com`)"
       - "traefik.http.routers.backend-api.entrypoints=websecure"
-      - "traefik.http.routers.backend-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-api.tls.certresolver=myresolver"
       - "traefik.http.routers.backend-api.middlewares=backend-headers"
       
       # Service - portul container-ului backend
