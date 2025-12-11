@@ -34,6 +34,12 @@ COPY package*.json ./
 # Instalează doar dependențele de producție
 RUN npm ci --only=production && npm cache clean --force
 
+# Copiază Prisma schema
+COPY prisma ./prisma
+
+# Generează Prisma client în producție
+RUN npx prisma generate
+
 # Copiază build-ul din builder
 COPY --from=builder /app/dist ./dist
 
