@@ -28,6 +28,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Instalează OpenSSL pentru Prisma
+RUN apk add --no-cache openssl1.1-compat
+
 # Copiază package files
 COPY package*.json ./
 
