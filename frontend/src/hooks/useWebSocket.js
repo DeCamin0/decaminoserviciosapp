@@ -10,6 +10,8 @@ export const useWebSocket = (namespace = '/notifications') => {
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const [socket, setSocket] = useState(null);
+  const socketRef = useRef(null); // Ref pentru a evita dependențe circulare
+  const connectRef = useRef(null); // Ref pentru apelul recursiv
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
@@ -35,9 +37,13 @@ export const useWebSocket = (namespace = '/notifications') => {
       return;
     }
 
-    // Dacă există deja o conexiune, o închidem
-    if (socket) {
-      socket.disconnect();
+    // Dacă există deja o conexiune, o închidem curat
+    if (socketRef.current) {
+      // Elimină event listener-ele pentru a evita warning-uri
+      socketRef.current.removeAllListeners();
+      // Închide conexiunea fără reconectare
+      socketRef.current.disconnect();
+      socketRef.current = null;
     }
 
     const socketUrl = getSocketUrl();
@@ -81,7 +87,9 @@ export const useWebSocket = (namespace = '/notifications') => {
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             reconnectAttemptsRef.current++;
             console.log(`🔄 [WebSocket] Reconnecting (attempt ${reconnectAttemptsRef.current})...`);
-            connect();
+            if (connectRef.current) {
+              connectRef.current();
+            }
           }
         }, 2000);
       }
@@ -96,6 +104,7 @@ export const useWebSocket = (namespace = '/notifications') => {
       console.log('✅ [WebSocket] Server confirmed connection:', data);
     });
 
+    socketRef.current = newSocket;
     setSocket(newSocket);
 
     return () => {
@@ -103,15 +112,25 @@ export const useWebSocket = (namespace = '/notifications') => {
     };
   }, [user, namespace]);
 
+  // Actualizează ref-ul pentru apelul recursiv
+  connectRef.current = connect;
+
   // Deconectare
   const disconnect = useCallback(() => {
-    if (socket) {
+    if (socketRef.current) {
       console.log('🔌 [WebSocket] Disconnecting...');
-      socket.disconnect();
+      // Verifică dacă socket-ul este conectat sau în proces de conectare
+      if (socketRef.current.connected || socketRef.current.connecting) {
+        // Elimină event listener-ele pentru a evita warning-uri
+        socketRef.current.removeAllListeners();
+        // Închide conexiunea fără reconectare
+        socketRef.current.disconnect();
+      }
+      socketRef.current = null;
       setSocket(null);
       setIsConnected(false);
     }
-  }, [socket]);
+  }, []);
 
   // Join room
   const joinRoom = useCallback((room) => {
@@ -136,22 +155,22 @@ export const useWebSocket = (namespace = '/notifications') => {
     }
 
     return () => {
-      disconnect();
+      // Cleanup: închide conexiunea și anulează timeout-urile
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        if (socketRef.current.connected || socketRef.current.connecting) {
+          socketRef.current.disconnect();
+        }
+        socketRef.current = null;
+      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
+      setSocket(null);
+      setIsConnected(false);
     };
-  }, [user]);
-
-  // Cleanup la unmount
-  useEffect(() => {
-    return () => {
-      disconnect();
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, []);
+  }, [user, connect]);
 
   return {
     socket,

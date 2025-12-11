@@ -1,12 +1,12 @@
 /*
-  Simplified Service Worker for DeCamino PWA
-  - Minimal functionality to avoid InvalidStateError
-  - Provides basic offline fallback
-  - Safe update handling
-  - Push notifications support
+  Service Worker for DeCamino
+  - Offline fallback
+  - Push notifications
+  - Avatar cache via Cache API (AVATAR_CACHE)
 */
 
 const CACHE_NAME = 'decamino-cache-v3';
+const AVATAR_CACHE = 'avatar-cache-v1';
 const OFFLINE_URL = '/index.html';
 
 self.addEventListener('install', (event) => {
@@ -17,8 +17,21 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// Activate: clean old caches except current app cache and avatar cache
 self.addEventListener('activate', (event) => {
-  event.waitUntil
+  event.waitUntil(
+    caches.keys()
+      .then((keys) =>
+        Promise.all(
+          keys.map((k) => {
+            if (k === CACHE_NAME || k === AVATAR_CACHE) return Promise.resolve();
+            return caches.delete(k);
+          })
+        )
+      )
+      .then(() => self.clients.claim())
+  );
+});
 
 // ===== PUSH NOTIFICATIONS =====
 // Gestionează notificări push când aplicația este închisă
@@ -111,12 +124,44 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Network-first for navigations with offline fallback
+// Fetch handler
 self.addEventListener('fetch', (event) => {
-  if (event.request.mode === 'navigate') {
+  const { request } = event;
+
+  // Only handle GET for avatar cache; let POST/others pass through (e.g., uploads)
+  if (request.method !== 'GET') {
+    return;
+  }
+
+  const isAvatar =
+    request.url.includes('/avatar') ||
+    request.url.includes('/avatars/');
+
+  if (isAvatar) {
     event.respondWith(
-      fetch(event.request)
-        .catch(() => caches.match(OFFLINE_URL))
+      caches.open(AVATAR_CACHE).then(async (cache) => {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        try {
+          const response = await fetch(request);
+          if (response && response.ok) {
+            // Cache only successful avatar responses
+            cache.put(request, response.clone());
+          }
+          return response;
+        } catch (e) {
+          // Let the page handle fallback; do not cache fallback here
+          throw e;
+        }
+      })
+    );
+    return;
+  }
+
+  // Network-first for navigation
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(OFFLINE_URL))
     );
   }
 });
@@ -124,8 +169,24 @@ self.addEventListener('fetch', (event) => {
 // Handle messages from the main thread
 self.addEventListener('message', (event) => {
   const data = event.data || {};
-  
+
   if (data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+
+  // Invalidate avatar cache entry for a given URL/pattern
+  if (data.type === 'avatarUpdated' || data.type === 'avatarDeleted') {
+    const targetUrl = data.url;
+    if (!targetUrl) return;
+    event.waitUntil(
+      caches.open(AVATAR_CACHE).then(async (cache) => {
+        const requests = await cache.keys();
+        await Promise.all(
+          requests
+            .filter((req) => req.url.includes(targetUrl))
+            .map((req) => cache.delete(req))
+        );
+      })
+    );
   }
 });

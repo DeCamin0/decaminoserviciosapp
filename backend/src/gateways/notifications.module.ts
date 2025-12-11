@@ -1,18 +1,16 @@
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { Module, forwardRef } from '@nestjs/common';
 import { NotificationsGateway } from './notifications.gateway';
 import { NotificationsService } from '../services/notifications.service';
 import { NotificationsController } from '../controllers/notifications.controller';
-import { Notification } from '../entities/notification.entity';
-import { User } from '../entities/user.entity';
+import { ChatModule } from '../chat/chat.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Notification, User]),
     JwtModule,
     ConfigModule,
+    forwardRef(() => ChatModule), // Import ChatModule to use PresenceManager
   ],
   controllers: [NotificationsController],
   providers: [NotificationsGateway, NotificationsService],

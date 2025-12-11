@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Send, Search, User, XCircle } from 'lucide-react';
 
 /**
@@ -18,40 +18,13 @@ const SendNotificationModal = ({ isOpen, onClose, currentUser }) => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
 
-  // Încarcă lista de angajați
-  useEffect(() => {
-    if (isOpen) {
-      fetchEmployees();
-      // Resetează selecțiile când se deschide modalul
-      setSelectedEmployees([]);
-      setSearchTerm('');
-      setShowEmployeeList(false);
-    }
-  }, [isOpen]);
-
-  // Filtrează angajații după căutare
-  useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredEmployees(employees);
-    } else {
-      const term = searchTerm.toLowerCase();
-      const filtered = employees.filter(emp => {
-        const name = (emp['NOMBRE / APELLIDOS'] || emp.nombre || '').toLowerCase();
-        const email = (emp['CORREO ELECTRONICO'] || emp.email || '').toLowerCase();
-        const codigo = (emp.CODIGO || emp.codigo || '').toLowerCase();
-        return name.includes(term) || email.includes(term) || codigo.includes(term);
-      });
-      setFilteredEmployees(filtered);
-    }
-  }, [searchTerm, employees]);
-
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const baseUrl = import.meta.env.DEV 
         ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || '');
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
       
       // Folosește endpoint-ul pentru angajați
       const response = await fetch(`${baseUrl}/api/n8n/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142`, {
@@ -86,7 +59,34 @@ const SendNotificationModal = ({ isOpen, onClose, currentUser }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser]);
+
+  // Încarcă lista de angajați
+  useEffect(() => {
+    if (isOpen) {
+      fetchEmployees();
+      // Resetează selecțiile când se deschide modalul
+      setSelectedEmployees([]);
+      setSearchTerm('');
+      setShowEmployeeList(false);
+    }
+  }, [isOpen, fetchEmployees]);
+
+  // Filtrează angajații după căutare
+  useEffect(() => {
+    if (searchTerm.trim() === '') {
+      setFilteredEmployees(employees);
+    } else {
+      const term = searchTerm.toLowerCase();
+      const filtered = employees.filter(emp => {
+        const name = (emp['NOMBRE / APELLIDOS'] || emp.nombre || '').toLowerCase();
+        const email = (emp['CORREO ELECTRONICO'] || emp.email || '').toLowerCase();
+        const codigo = (emp.CODIGO || emp.codigo || '').toLowerCase();
+        return name.includes(term) || email.includes(term) || codigo.includes(term);
+      });
+      setFilteredEmployees(filtered);
+    }
+  }, [searchTerm, employees]);
 
   const toggleEmployee = (emp) => {
     const empId = emp.CODIGO || emp.codigo;
@@ -132,7 +132,7 @@ const SendNotificationModal = ({ isOpen, onClose, currentUser }) => {
     try {
       const baseUrl = import.meta.env.DEV 
         ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || '');
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
       
       const token = localStorage.getItem('auth_token');
 

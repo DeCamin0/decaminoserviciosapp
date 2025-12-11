@@ -10,7 +10,7 @@ import Notification from './ui/Notification';
  * și un dropdown cu lista de notificări
  */
 const NotificationsBell = () => {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(null);
   const [hasPermission, setHasPermission] = useState(isNotificationPermissionGranted());
@@ -54,8 +54,6 @@ const NotificationsBell = () => {
     }
     setIsOpen(false);
   };
-
-  const unreadNotifications = notifications.filter(n => !n.read);
 
   return (
     <>

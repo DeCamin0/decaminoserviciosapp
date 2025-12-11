@@ -31,6 +31,7 @@ const PaqueteriaCentroPage = lazy(() => import('../centro/PaqueteriaCentroPage')
 const IncidenciasCentroPage = lazy(() => import('../centro/IncidenciasCentroPage'));
 const PedidosPage = lazy(() => import('../PedidosPage'));
 const EmpleadoPedidosPage = lazy(() => import('../EmpleadoPedidosPage'));
+const ChatPage = lazy(() => import('../ChatPage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -285,6 +286,14 @@ export const LazyEmpleadoPedidosPage = (props) => {
   );
 };
 
+export const LazyChatPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando chat..." />}>
+      <ChatPage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -313,5 +322,6 @@ export default {
   LazyPaqueteriaCentroPage,
   LazyIncidenciasCentroPage,
   LazyPedidosPage,
-  LazyEmpleadoPedidosPage
+  LazyEmpleadoPedidosPage,
+  LazyChatPage
 };

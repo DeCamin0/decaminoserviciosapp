@@ -23,7 +23,7 @@ export class AuthController {
         email: loginDto.email,
         hasPassword: !!loginDto.password,
       });
-      
+
       const result = await this.authService.login(
         loginDto.email,
         loginDto.password,

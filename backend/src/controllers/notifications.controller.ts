@@ -1,4 +1,14 @@
-import { Controller, Post, Body, UseGuards, Get, Query, Param, Delete, Put } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  Get,
+  Query,
+  Param,
+  Delete,
+  Put,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { NotificationsService } from '../services/notifications.service';
@@ -27,7 +37,9 @@ export class NotificationsController {
       offset ? parseInt(offset, 10) : 0,
     );
 
-    const unreadCount = await this.notificationsService.getUnreadCount(user.userId);
+    const unreadCount = await this.notificationsService.getUnreadCount(
+      user.userId,
+    );
 
     return {
       success: true,
@@ -52,11 +64,19 @@ export class NotificationsController {
    * Marchează o notificare ca citită
    */
   @Put(':id/read')
-  async markAsRead(@CurrentUser() user: any, @Param('id') notificationId: string) {
-    const success = await this.notificationsService.markAsRead(notificationId, user.userId);
+  async markAsRead(
+    @CurrentUser() user: any,
+    @Param('id') notificationId: string,
+  ) {
+    const success = await this.notificationsService.markAsRead(
+      notificationId,
+      user.userId,
+    );
     return {
       success,
-      message: success ? 'Notificare marcată ca citită' : 'Notificare nu a fost găsită',
+      message: success
+        ? 'Notificare marcată ca citită'
+        : 'Notificare nu a fost găsită',
     };
   }
 
@@ -77,8 +97,14 @@ export class NotificationsController {
    * Șterge o notificare
    */
   @Delete(':id')
-  async deleteNotification(@CurrentUser() user: any, @Param('id') notificationId: string) {
-    const success = await this.notificationsService.deleteNotification(notificationId, user.userId);
+  async deleteNotification(
+    @CurrentUser() user: any,
+    @Param('id') notificationId: string,
+  ) {
+    const success = await this.notificationsService.deleteNotification(
+      notificationId,
+      user.userId,
+    );
     return {
       success,
       message: success ? 'Notificare ștearsă' : 'Notificare nu a fost găsită',
@@ -103,7 +129,8 @@ export class NotificationsController {
     if (!this.canUserSendNotifications(user)) {
       return {
         success: false,
-        message: 'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
+        message:
+          'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
       };
     }
 
@@ -117,7 +144,10 @@ export class NotificationsController {
       testNotification: true,
     };
 
-    console.log('[NotificationsController] Test notification data:', JSON.stringify(testData, null, 2));
+    console.log(
+      '[NotificationsController] Test notification data:',
+      JSON.stringify(testData, null, 2),
+    );
 
     await this.notificationsService.notifyUser(user.userId, user.userId, {
       type: 'info',
@@ -139,19 +169,30 @@ export class NotificationsController {
   @Post('send')
   async sendNotification(
     @CurrentUser() currentUser: any,
-    @Body() body: { userId: string; title: string; message: string; type?: 'success' | 'error' | 'warning' | 'info'; data?: any },
+    @Body()
+    body: {
+      userId: string;
+      title: string;
+      message: string;
+      type?: 'success' | 'error' | 'warning' | 'info';
+      data?: any;
+    },
   ) {
     // Verifică permisiunile
     if (!this.canUserSendNotifications(currentUser)) {
       return {
         success: false,
-        message: 'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
+        message:
+          'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
       };
     }
 
     const { userId, title, message, type = 'info', data } = body;
 
-    console.log('[NotificationsController] Received body:', JSON.stringify(body, null, 2));
+    console.log(
+      '[NotificationsController] Received body:',
+      JSON.stringify(body, null, 2),
+    );
     console.log('[NotificationsController] Data from body:', data);
     console.log('[NotificationsController] Data type:', typeof data);
 
@@ -202,7 +243,8 @@ export class NotificationsController {
     if (!this.canUserSendNotifications(currentUser)) {
       return {
         success: false,
-        message: 'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
+        message:
+          'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
       };
     }
 
@@ -237,7 +279,8 @@ export class NotificationsController {
     if (!this.canUserSendNotifications(user)) {
       return {
         success: false,
-        message: 'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
+        message:
+          'No tienes permiso para enviar notificaciones. Solo supervisores y desarrolladores pueden enviar notificaciones.',
       };
     }
 

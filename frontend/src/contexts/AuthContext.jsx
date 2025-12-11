@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import activityLogger from '../utils/activityLogger';
+import { clearAvatarCache } from '../utils/avatarCache';
 import { routes } from '../utils/routes.js';
 import { auth, debug } from '../utils/logger';
 import { useErrorHandler } from '../hooks/useErrorHandler';
@@ -9,20 +10,61 @@ import { AuthContext } from './AuthContextBase';
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('auth_token') || null);
   const navigate = useNavigate();
   const { handleApiError, handleNetworkError } = useErrorHandler();
 
   useEffect(() => {
     // Verifică dacă există un utilizator salvat în localStorage
     const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      debug('AuthContext - Loading user from localStorage:', parsedUser);
-      debug('AuthContext - User keys:', Object.keys(parsedUser));
-      debug('AuthContext - User CENTRO TRABAJO:', parsedUser['CENTRO TRABAJO']);
-      setUser(parsedUser);
-    }
-    setLoading(false);
+    const savedToken = localStorage.getItem('auth_token');
+    setAuthToken(savedToken); // Update authToken state
+
+    const loadMe = async () => {
+      // Dacă avem user salvat și pare valid, îl punem imediat pentru a evita flicker
+      if (savedUser) {
+        const parsedUser = JSON.parse(savedUser);
+        const hasCore =
+          (parsedUser?.CODIGO || parsedUser?.email || parsedUser?.['CORREO ELECTRONICO']) &&
+          (parsedUser?.GRUPO || parsedUser?.role);
+        if (hasCore) {
+          setUser(parsedUser);
+        }
+      }
+
+      // Dacă avem token, încercăm refresh la /api/me pentru date canonice
+      if (savedToken) {
+        try {
+          const res = await fetch(routes.me, {
+            headers: {
+              Authorization: `Bearer ${savedToken}`,
+              Accept: 'application/json',
+            },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.success && data?.user) {
+              const mergedUser = {
+                ...data.user,
+                // backward compat pentru câmpuri uzate în UI
+                role: data.user.role || data.user.GRUPO || data.user.grupo || data.user.GRUPO || 'EMPLEADOS',
+              };
+              localStorage.setItem('user', JSON.stringify(mergedUser));
+              setUser(mergedUser);
+              debug('AuthContext - /api/me refreshed user from backend.');
+            }
+          } else {
+            debug('AuthContext - /api/me failed with status:', res.status);
+          }
+        } catch (e) {
+          console.warn('AuthContext - /api/me error:', e);
+        }
+      }
+
+      setLoading(false);
+    };
+
+    loadMe();
   }, []);
 
   // Gestionare navigare pentru browser back button
@@ -200,11 +242,45 @@ export const AuthProvider = ({ children }) => {
       // Salvează token-ul JWT dacă există în răspuns
       if (data.accessToken) {
         localStorage.setItem('auth_token', data.accessToken);
+        setAuthToken(data.accessToken); // Update state
         auth('Token salvat în localStorage');
       }
       
       localStorage.setItem('user', JSON.stringify(userObj));
       setUser(userObj);
+
+      // Încercăm să luăm user canonic din backend (/api/me) dacă avem token
+      if (data.accessToken) {
+        try {
+          const meRes = await fetch(routes.me, {
+            headers: {
+              Authorization: `Bearer ${data.accessToken}`,
+              Accept: 'application/json',
+            },
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (meData?.success && meData?.user) {
+              const mergedUser = {
+                ...meData.user,
+                role:
+                  meData.user.role ||
+                  meData.user.GRUPO ||
+                  meData.user.grupo ||
+                  userObj.role ||
+                  'EMPLEADOS',
+              };
+              localStorage.setItem('user', JSON.stringify(mergedUser));
+              setUser(mergedUser);
+              debug('AuthContext - user refreshed from /api/me after login');
+            }
+          } else {
+            auth('AuthContext - /api/me refresh failed', meRes.status, meRes.statusText);
+          }
+        } catch (e) {
+          console.warn('AuthContext - error refreshing /api/me:', e);
+        }
+      }
       
       // Verifică dacă DerechoPedidos se salvează corect în localStorage
       const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -250,6 +326,8 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('auth_token'); // Șterge și token-ul JWT
+    setAuthToken(null); // Update state
+    clearAvatarCache();
     sessionStorage.removeItem('lastPath');
     navigate('/login', { replace: true });
   };
@@ -332,7 +410,8 @@ export const AuthProvider = ({ children }) => {
     loginDemo,
     logout,
     isAuthenticated: !!user,
-    loading
+    loading,
+    authToken, // Export token for API calls
   };
 
   return (

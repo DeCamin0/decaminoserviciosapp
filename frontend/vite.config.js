@@ -10,7 +10,8 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 // https://vitejs.dev/config/
 export default defineConfig({
   // Deploy pe subdomeniu la rădăcină → servește din root
-  base: '/',
+  // Pentru test environment pe /html/app-test, setează VITE_BASE_PATH=/html/app-test/
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [
     nodePolyfills({
       include: ['process', 'buffer', 'util', 'stream', 'crypto', 'path'],
@@ -70,7 +71,7 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         // Configurație pentru a preveni conflicts
-        navigateFallback: '/index.html',
+        navigateFallback: (process.env.VITE_BASE_PATH || '/') + 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/webhook\//],
         // Cache strategy pentru a preveni conflicts
         runtimeCaching: [
@@ -88,8 +89,8 @@ export default defineConfig({
         ]
       },
       manifest: {
-        name: 'DE CAMINO SERVICIOS AUXILIARES',
-        short_name: 'De Camino',
+        name: 'DE CAMINO SERVICIOS AUXILIARES V2',
+        short_name: 'De Camino V2',
         description: 'Aplicación web para gestión de empleados y servicios auxiliares',
         theme_color: '#E53935',
         background_color: '#ffffff',

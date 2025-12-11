@@ -1,8 +1,9 @@
-// Pentru development folosim backend-ul NestJS (proxy), pentru production folosim URL-ul complet al n8n
-const BACKEND_PROXY_URL = 'http://localhost:3000/api/n8n';
+// Pentru development folosim backend-ul NestJS local, pentru production backend-ul de pe VPS
+const BACKEND_DEV_URL = 'http://localhost:3000';
+const BACKEND_PROD_URL = 'https://api.decaminoservicios.com';
 export const BASE_URL = import.meta.env.DEV 
-  ? BACKEND_PROXY_URL  // Development: folosește backend NestJS proxy
-  : (import.meta.env.VITE_N8N_BASE_URL || 'https://n8n.decaminoservicios.com'); // Production: direct la n8n
+  ? BACKEND_DEV_URL  // Development: folosește backend NestJS local
+  : BACKEND_PROD_URL; // Production: folosește backend NestJS de pe VPS
 
 console.log('🔧 BASE_URL value:', BASE_URL);
 console.log('🔧 import.meta.env.DEV:', import.meta.env.DEV);
@@ -10,9 +11,10 @@ console.log('🔧 Using backend proxy in dev:', import.meta.env.DEV ? 'YES' : 'N
 
 // Helper function pentru a construi URL-uri din endpoint-uri
 export const getN8nUrl = (endpoint) => {
-  // În development, toate request-urile merg prin backend proxy
-  // În production, merg direct la n8n
-  return `${BASE_URL}${endpoint}`;
+  // În development, toate request-urile merg prin backend local (localhost:3000)
+  // În production, merg prin backend de pe VPS (api.decaminoservicios.com)
+  // Backend-ul face proxy către n8n cu rate limiting și backoff
+  return `${BASE_URL}/api/n8n${endpoint}`;
 };
 
 // Debug - verifică ce URL se construiește pentru getUsuarios
@@ -21,12 +23,22 @@ console.log('🔧 getUsuarios URL constructed:', getUsuariosUrl);
 
 export const routes = {
   // Authentication & Users
-  // Login: folosește backend-ul în development, n8n direct în production
+  // Login: folosește backend-ul în development și production
   login: import.meta.env.DEV 
     ? 'http://localhost:3000/api/auth/login'  // Backend endpoint în development
-    : getN8nUrl('/webhook/login-yyBov0qVQZEhX2TL'),  // n8n direct în production
+    : 'https://api.decaminoservicios.com/api/auth/login',  // Backend endpoint în production
+  me: import.meta.env.DEV
+    ? 'http://localhost:3000/api/me'
+    : 'https://api.decaminoservicios.com/api/me',
+  permissions: import.meta.env.DEV
+    ? 'http://localhost:3000/api/permissions'
+    : 'https://api.decaminoservicios.com/api/permissions',
   getUsuarios: getUsuariosUrl,
   getEmpleados: getN8nUrl('/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142'),
+  // Profil angajat (backend nou, fără n8n)
+  getEmpleadoMe: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/me'
+    : 'https://api.decaminoservicios.com/api/empleados/me',
   updateUser: getN8nUrl('/webhook/853e19f8-877a-4c85-b63c-199f3ec84049'),
   // Endpoint de producție pentru creare angajat (PDF + payload complet)
   addUser: getN8nUrl('/webhook/5c15e864-0bfc-43bb-b398-58bd8fabf3c2'),
@@ -71,8 +83,24 @@ export const routes = {
   getDocumentos: getN8nUrl('/webhook/499ffc98-99de-4fcf-9597-25eb7ff8d617'), // Endpoint de producție pentru listarea documentelor per angajat
   downloadDocumento: getN8nUrl('/webhook/descargar-documento-sWRT8s'), // Endpoint pentru descărcarea documentelor
   
-  // Avatares empleados
-  getAvatar: getN8nUrl('/webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731'),
+  // Avatares empleados (backend nou, fără n8n)
+  getAvatar: import.meta.env.DEV
+    ? 'http://localhost:3000/api/avatar'
+    : 'https://api.decaminoservicios.com/api/avatar',
+  getAvatarMe: import.meta.env.DEV
+    ? 'http://localhost:3000/api/avatar/me'
+    : 'https://api.decaminoservicios.com/api/avatar/me',
+  getAvatarBulk: import.meta.env.DEV
+    ? 'http://localhost:3000/api/avatar/bulk'
+    : 'https://api.decaminoservicios.com/api/avatar/bulk',
+  
+  // Monthly Alerts (backend nou, fără n8n)
+  getMonthlyAlerts: import.meta.env.DEV
+    ? 'http://localhost:3000/api/monthly-alerts'
+    : 'https://api.decaminoservicios.com/api/monthly-alerts',
+  getMonthlyAlertsResumen: import.meta.env.DEV
+    ? 'http://localhost:3000/api/monthly-alerts/resumen'
+    : 'https://api.decaminoservicios.com/api/monthly-alerts/resumen',
   
   // Notificaciones
   getNotificaciones: getN8nUrl('/webhook/notificaciones'),
@@ -129,6 +157,59 @@ export const routes = {
   
   // Chat AI
   chatAI: '/webhook/chat-ai-6Ts3sq', // local path
+  
+  // Chat (REST API - backend NestJS)
+  chatRooms: import.meta.env.DEV
+    ? 'http://localhost:3000/chat/rooms'
+    : 'https://api.decaminoservicios.com/chat/rooms',
+  chatColleagues: import.meta.env.DEV
+    ? 'http://localhost:3000/chat/colleagues'
+    : 'https://api.decaminoservicios.com/chat/colleagues',
+  chatSupervisors: import.meta.env.DEV
+    ? 'http://localhost:3000/chat/supervisors'
+    : 'https://api.decaminoservicios.com/chat/supervisors',
+  chatCreateSupervisorGroup: import.meta.env.DEV
+    ? 'http://localhost:3000/chat/rooms/supervisor-group'
+    : 'https://api.decaminoservicios.com/chat/rooms/supervisor-group',
+    chatRoomPresence: (roomId) => {
+      const base = import.meta.env.DEV
+        ? 'http://localhost:3000'
+        : 'https://api.decaminoservicios.com';
+      return `${base}/chat/rooms/${roomId}/presence`;
+    },
+    chatMarkMessagesRead: (roomId) => {
+      const base = import.meta.env.DEV
+        ? 'http://localhost:3000'
+        : 'https://api.decaminoservicios.com';
+      return `${base}/chat/rooms/${roomId}/messages/read`;
+    },
+  chatRoomMessages: (roomId, after, limit) => {
+    const base = import.meta.env.DEV
+      ? 'http://localhost:3000'
+      : 'https://api.decaminoservicios.com';
+    const params = new URLSearchParams();
+    if (after) params.append('after', after);
+    if (limit) params.append('limit', limit);
+    return `${base}/chat/rooms/${roomId}/messages${params.toString() ? '?' + params.toString() : ''}`;
+  },
+  chatSendMessage: (roomId) => {
+    const base = import.meta.env.DEV
+      ? 'http://localhost:3000'
+      : 'https://api.decaminoservicios.com';
+    return `${base}/chat/rooms/${roomId}/messages`;
+  },
+    chatCreateCentro: import.meta.env.DEV
+      ? 'http://localhost:3000/chat/rooms/centro'
+      : 'https://api.decaminoservicios.com/chat/rooms/centro',
+    chatCreateDM: import.meta.env.DEV
+    ? 'http://localhost:3000/chat/rooms/dm'
+    : 'https://api.decaminoservicios.com/chat/rooms/dm',
+  chatDeleteRoom: (roomId) => {
+    const base = import.meta.env.DEV
+      ? 'http://localhost:3000'
+      : 'https://api.decaminoservicios.com';
+    return `${base}/chat/rooms/${roomId}`;
+  },
   
   // Paquete/Control Correo
   getPaquetes: getN8nUrl('/webhook/6d752a3a-bed9-4c48-a6a9-8a2583875ef9'), // ✅ Endpoint real pentru lista paquetes

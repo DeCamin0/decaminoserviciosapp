@@ -4,13 +4,15 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger, UseGuards } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { PresenceManager } from '../chat/presence-manager.service';
 
 /**
  * WebSocket Gateway pentru notificări în timp real
@@ -18,6 +20,7 @@ import { ConfigService } from '@nestjs/config';
  * - Autentificare cu JWT
  * - Rooms per utilizator, grup, centru
  * - Notificări broadcast și targeted
+ * - Prezență (online/offline) - sincronizată cu chat
  */
 @WebSocketGateway({
   cors: {
@@ -27,7 +30,7 @@ import { ConfigService } from '@nestjs/config';
   namespace: '/notifications',
 })
 export class NotificationsGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
 {
   @WebSocketServer()
   server: Server;
@@ -38,7 +41,18 @@ export class NotificationsGateway
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly presenceManager: PresenceManager,
   ) {}
+
+  /**
+   * Called when gateway is initialized
+   */
+  afterInit(server: Server) {
+    this.logger.log(
+      'NotificationsGateway initialized, registering server with PresenceManager',
+    );
+    this.presenceManager.registerServer('/notifications', server);
+  }
 
   /**
    * Gestionează conexiunea unui client
@@ -65,17 +79,22 @@ export class NotificationsGateway
       }
 
       // Salvează conexiunea
-      const userId = payload.userId;
+      const userId = String(payload.userId);
       this.connectedUsers.set(client.id, userId);
 
       // Join la room-urile utilizatorului
       await client.join(`user:${userId}`);
-      
+
       if (payload.grupo) {
         await client.join(`grupo:${payload.grupo}`);
       }
 
       this.logger.log(`User ${userId} connected (socket: ${client.id})`);
+
+      // Gestionează prezența - emite pe namespace-ul /notifications (care e activ când userul e logat)
+      // Folosim this.server (notifications namespace) pentru a emite evenimentele
+      // PresenceManager va emite pe server-ul dat, astfel încât toți cei conectați la /notifications vor primi evenimentele
+      this.presenceManager.userConnected(client.id, userId, this.server);
 
       // Trimite confirmare conexiune
       client.emit('connected', {
@@ -95,6 +114,10 @@ export class NotificationsGateway
     const userId = this.connectedUsers.get(client.id);
     if (userId) {
       this.logger.log(`User ${userId} disconnected (socket: ${client.id})`);
+
+      // Gestionează prezența - emite pe namespace-ul /notifications
+      this.presenceManager.userDisconnected(client.id, this.server);
+
       this.connectedUsers.delete(client.id);
     }
   }

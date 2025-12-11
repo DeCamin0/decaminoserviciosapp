@@ -11,7 +11,6 @@ import { useEffect, useRef, useCallback } from 'react';
  */
 export const usePolling = (callback, intervalMs, enabled = true, jitterMs = null) => {
   const callbackRef = useRef(callback);
-  const intervalRef = useRef(null);
   const timeoutRef = useRef(null);
   const isVisibleRef = useRef(!document.hidden);
   

@@ -1,0 +1,835 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  CODIGO               String  @id @map("CODIGO") @db.VarChar(50)
+  NOMBRE_APELLIDOS     String? @map("NOMBRE / APELLIDOS") @db.VarChar(255)
+  NACIONALIDAD         String? @db.VarChar(100)
+  DIRECCION            String? @db.VarChar(700)
+  DNI_NIE              String? @map("D.N.I. / NIE") @db.VarChar(50)
+  SEG__SOCIAL          String? @map("SEG. SOCIAL") @db.VarChar(50)
+  N__Cuenta            String? @map("Nº Cuenta") @db.VarChar(100)
+  TELEFONO             String? @db.VarChar(30)
+  CORREO_ELECTRONICO   String? @map("CORREO ELECTRONICO") @db.VarChar(255)
+  FECHA_NACIMIENTO     String? @map("FECHA NACIMIENTO") @db.VarChar(100)
+  FECHA_DE_ALTA        String? @map("FECHA DE ALTA") @db.VarChar(100)
+  CENTRO_TRABAJO       String? @map("CENTRO TRABAJO") @db.VarChar(300)
+  TIPO_DE_CONTRATO     String? @map("TIPO DE CONTRATO") @db.VarChar(300)
+  SUELDO_BRUTO_MENSUAL String? @map("SUELDO BRUTO MENSUAL") @db.VarChar(300)
+  HORAS_DE_CONTRATO    String? @map("HORAS DE CONTRATO") @db.VarChar(50)
+  EMPRESA              String? @db.VarChar(100)
+  GRUPO                String? @map("GRUPO") @db.VarChar(200)
+  ESTADO               String? @map("ESTADO") @db.VarChar(50)
+  FECHA_BAJA           String? @map("FECHA BAJA") @db.VarChar(100)
+  Fecha_Antig_edad     String? @map("Fecha Antigüedad") @db.VarChar(100)
+  Antig_edad           String? @map("Antigüedad") @db.VarChar(500)
+  CONTRASENA           String? @map("Contraseña") @db.VarChar(255)
+  DerechoPedidos       String? @db.VarChar(100)
+  TrabajaFestivos      String? @db.VarChar(50)
+
+  @@index([DNI_NIE], map: "idx_datos_dni")
+  @@index([CENTRO_TRABAJO], map: "idx_datos_empleados_centro")
+  @@index([ESTADO], map: "idx_datos_empleados_estado")
+  @@index([GRUPO], map: "idx_datos_empleados_grupo")
+  @@index([NOMBRE_APELLIDOS], map: "idx_datos_nom")
+  @@index([SEG__SOCIAL], map: "idx_datos_ss")
+  @@map("DatosEmpleados")
+}
+
+model Permissions {
+  grupo_module String  @id @db.VarChar(100)
+  permitted    String? @db.VarChar(50)
+  last_updated String? @db.VarChar(50)
+  updated_by   String? @db.VarChar(50)
+
+  @@map("Permissions")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  senderId  String?   @map("sender_id") @db.VarChar(50)
+  userId    String    @map("user_id") @db.VarChar(50)
+  type      String    @default("info") @db.VarChar(20)
+  title     String    @db.VarChar(255)
+  message   String    @db.Text
+  read      Boolean   @default(false) @map("read")
+  data      String?   @db.Text
+  grupo     String?   @db.VarChar(100)
+  centro    String?   @db.VarChar(100)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  readAt    DateTime? @map("read_at") @db.Timestamp(0)
+
+  @@index([senderId], map: "idx_sender")
+  @@index([userId, createdAt], map: "idx_user_created")
+  @@index([userId, read], map: "idx_user_read")
+  @@map("notifications")
+}
+
+model ChatRoom {
+  id         BigInt           @id @default(autoincrement())
+  firma_id   BigInt
+  tipo       ChatRoomType
+  centro_id  BigInt?
+  created_by BigInt
+  created_at DateTime         @default(now()) @db.Timestamp(0)
+  messages   ChatMessage[]
+  members    ChatRoomMember[]
+
+  @@index([firma_id], map: "idx_chat_rooms_firma")
+  @@index([centro_id], map: "idx_chat_rooms_centro")
+  @@index([tipo], map: "idx_chat_rooms_tipo")
+  @@map("chat_rooms")
+}
+
+model ChatRoomMember {
+  id          BigInt             @id @default(autoincrement())
+  room_id     BigInt
+  user_id     BigInt
+  rol_in_room ChatRoomMemberRole @default(member)
+  created_at  DateTime           @default(now()) @db.Timestamp(0)
+  room        ChatRoom           @relation(fields: [room_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_chat_room_members_room")
+
+  @@unique([room_id, user_id], map: "uq_chat_room_member_room_user")
+  @@index([user_id], map: "idx_chat_room_member_user")
+  @@map("chat_room_members")
+}
+
+model ChatMessage {
+  id         BigInt            @id @default(autoincrement())
+  room_id    BigInt
+  user_id    BigInt
+  message    String            @db.Text
+  created_at DateTime          @default(now()) @db.Timestamp(0)
+  reads      ChatMessageRead[]
+  room       ChatRoom          @relation(fields: [room_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_chat_messages_room")
+
+  @@index([room_id, created_at], map: "idx_chat_messages_room_created")
+  @@index([user_id], map: "idx_chat_messages_user")
+  @@map("chat_messages")
+}
+
+model ChatMessageRead {
+  id         BigInt      @id @default(autoincrement())
+  message_id BigInt
+  user_id    BigInt
+  read_at    DateTime    @default(now()) @db.Timestamp(0)
+  message    ChatMessage @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_chat_message_reads_message")
+
+  @@unique([message_id, user_id], map: "uq_chat_message_read_message_user")
+  @@index([message_id], map: "idx_chat_message_read_message")
+  @@index([user_id], map: "idx_chat_message_read_user")
+  @@map("chat_message_reads")
+}
+
+model Avatar {
+  CODIGO       String   @id @map("CODIGO") @db.VarChar(50)
+  NOMBRE       String   @map("NOMBRE") @db.VarChar(255)
+  AVATAR       Bytes    @map("AVATAR")
+  FECHA_SUBIDA DateTime @default(now()) @map("FECHA_SUBIDA") @db.Timestamp(0)
+
+  @@map("Avatar")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ArhivosFacturasRecibidas {
+  id               Int     @default(autoincrement()) @db.UnsignedInt
+  numar_operatiune String  @db.VarChar(100)
+  created_at       String? @default("current_timestamp()") @db.VarChar(100)
+  Descripcion      String? @db.VarChar(100)
+  mimeType         String? @db.VarChar(100)
+  filename         String? @db.VarChar(300)
+  file             Bytes?
+
+  @@unique([id, filename], map: "uq_factura_filename")
+  @@ignore
+}
+
+model Ausencias {
+  id              Int       @id @default(autoincrement())
+  solicitud_id    String    @db.VarChar(100)
+  CODIGO          String    @db.VarChar(50)
+  NOMBRE          String    @db.VarChar(150)
+  TIPO            String    @db.VarChar(100)
+  FECHA           String    @db.VarChar(50)
+  HORA            DateTime? @db.Time(0)
+  LOCACION        String?   @db.VarChar(150)
+  MOTIVO          String?   @db.Text
+  DURACION        String?   @db.Text
+  UNIDAD_DURACION String    @default("dias") @db.VarChar(50)
+  created_at      DateTime  @default(now()) @db.Timestamp(0)
+
+  @@unique([solicitud_id, CODIGO], map: "uk_aus_sol_cod")
+  @@index([CODIGO, FECHA], map: "idx_ausencias_cod_fecha")
+  @@index([CODIGO, TIPO, FECHA, HORA], map: "idx_ausencias_codigo_tipo_fecha_hora")
+}
+
+model CarpetasDocumentos {
+  doc_id             Int     @id @default(autoincrement())
+  id                 String  @db.VarChar(50)
+  correo_electronico String? @db.VarChar(255)
+  tipo_documento     String? @db.VarChar(255)
+  nombre_archivo     String? @db.VarChar(255)
+  nombre_empleado    String? @db.VarChar(500)
+  fecha_creacion     String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  archivo            Bytes?
+}
+
+model CatologoProductos {
+  id                      Int                 @id @default(autoincrement())
+  N_mero_de_art_culo      String              @map("Número de artículo") @db.VarChar(50)
+  Descripci_n_de_art_culo String              @map("Descripción de artículo") @db.Text
+  Precio_por_unidad       Decimal             @map("Precio por unidad") @db.Decimal(10, 4)
+  fotoproducto            Bytes?
+  PermisosProductos       PermisosProductos[]
+}
+
+model Clientes {
+  id                       Int                 @id @default(autoincrement())
+  NIF                      String?             @unique(map: "NIF") @db.VarChar(30)
+  NOMBRE_O_RAZON_SOCIAL    String?             @map("NOMBRE O RAZON SOCIAL") @db.VarChar(500)
+  TIPO                     String?             @db.VarChar(50)
+  EMAIL                    String?             @db.VarChar(255)
+  TELEFONO                 String?             @db.VarChar(50)
+  MOVIL                    String?             @db.VarChar(50)
+  FAX                      String?             @db.VarChar(50)
+  DIRECCION                String?             @db.VarChar(500)
+  CODIGO_POSTAL            String?             @map("CODIGO POSTAL") @db.VarChar(20)
+  POBLACION                String?             @db.VarChar(200)
+  PROVINCIA                String?             @db.VarChar(200)
+  PAIS                     String?             @db.VarChar(100)
+  URL                      String?             @db.VarChar(255)
+  DESCUENTO_POR_DEFECTO    Decimal?            @map("DESCUENTO POR DEFECTO") @db.Decimal(5, 2)
+  LATITUD                  String?             @db.VarChar(100)
+  LONGITUD                 String?             @db.VarChar(100)
+  NOTAS_PRIVADAS           String?             @map("NOTAS PRIVADAS") @db.Text
+  CUENTAS_BANCARIAS        String?             @map("CUENTAS BANCARIAS") @db.Text
+  Fecha_Ultima_Renovacion  String?             @map("Fecha Ultima Renovacion") @db.VarChar(100)
+  Fecha_Proxima_Renovacion String?             @map("Fecha Proxima Renovacion") @db.VarChar(100)
+  ESTADO                   String?             @db.VarChar(100)
+  CONTRACTO                Bytes?
+  CuantoPuedeGastar        String?             @db.VarChar(100)
+  ContratosClientes        ContratosClientes[]
+  PermisosProductos        PermisosProductos[]
+}
+
+model ContratosClientes {
+  id               Int      @id @default(autoincrement())
+  cliente_nif      String   @db.VarChar(30)
+  tipo_contrato    String   @db.VarChar(255)
+  fecha_subida     String?  @default(dbgenerated("(curdate())")) @db.VarChar(50)
+  fecha_renovacion String?  @db.VarChar(50)
+  archivo_base64   String?  @db.LongText
+  Clientes         Clientes @relation(fields: [cliente_nif], references: [NIF], onDelete: Cascade, map: "fk_cliente_nif")
+
+  @@unique([cliente_nif, tipo_contrato], map: "uniq_cliente_tipo")
+}
+
+model CuadernoIncidencias {
+  id                 Int       @id @default(autoincrement())
+  fecha              DateTime? @db.Date
+  hora               DateTime? @db.Time(0)
+  tipo               String?   @db.VarChar(100)
+  ubicacion          String?   @db.VarChar(255)
+  descripcion        String?   @db.Text
+  prioridad          String?   @db.VarChar(50)
+  estado             String?   @db.VarChar(50)
+  observaciones      String?   @db.Text
+  codigo             String?   @db.VarChar(50)
+  nombre             String?   @db.VarChar(150)
+  email              String?   @db.VarChar(150)
+  centroTrabajo      String?   @db.VarChar(255)
+  address            String?   @db.VarChar(255)
+  source             String?   @db.VarChar(100)
+  resolucionFecha    DateTime? @db.Date
+  resolucionHora     DateTime? @db.Time(0)
+  resolucionAuxiliar String?   @db.VarChar(150)
+  auxiliar           String?   @db.VarChar(150)
+  personaInformada   String?   @db.VarChar(150)
+  created_at         DateTime  @default(now()) @db.Timestamp(0)
+}
+
+model DocumentosOficiales {
+  doc_id                 Int     @id @default(autoincrement())
+  id                     String  @db.VarChar(50)
+  correo_electronico     String? @db.VarChar(255)
+  tipo_documento         String? @db.VarChar(255)
+  nombre_archivo         String? @db.VarChar(255)
+  nombre_empleado        String? @db.VarChar(500)
+  fecha_creacion         String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  archivo                Bytes?
+  Permisso_Para_Empleado String? @map("Permisso Para Empleado") @db.VarChar(50)
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Facturas {
+  id             String   @db.VarChar(200)
+  Serie          String?  @db.VarChar(50)
+  num_factura    String   @db.VarChar(100)
+  fecha          DateTime @db.Date
+  cliente_nombre String?  @db.VarChar(255)
+  cliente_nif    String?  @db.VarChar(50)
+  base_imponible String?  @db.Text
+  retencion      String?  @db.Text
+  iva            String?  @db.Text
+  total          String?  @db.Text
+  estado         String?  @default("emitida") @db.VarChar(50)
+  observaciones  String?  @db.Text
+  created_at     String?  @default(dbgenerated("(current_timestamp())")) @db.Text
+  PDF            Bytes?
+  EFactura       Bytes?
+
+  @@index([Serie], map: "fk_serie")
+  @@ignore
+}
+
+model FacturasRecibidas {
+  id               Int     @id @default(autoincrement())
+  magazin          String? @db.VarChar(255)
+  adresa           String? @db.VarChar(255)
+  telefon          String? @db.VarChar(50)
+  cif              String? @db.VarChar(50)
+  tip_bon          String? @db.VarChar(100)
+  numar_operatiune String? @db.VarChar(100)
+  data             String? @db.VarChar(55)
+  ora              String? @db.VarChar(55)
+  produse_text     String? @db.Text
+  baza_impozabila  String? @db.Text
+  tva              String? @db.Text
+  cota_tva         String? @db.Text
+  total_platit     String? @db.Text
+  moneda           String? @db.VarChar(10)
+  metoda_plata     String? @db.VarChar(50)
+  rest             String? @db.Text
+  File             Bytes?
+  Estado           String? @db.VarChar(100)
+  TipoGasto        String? @db.VarChar(100)
+  Descripcion      String? @db.Text
+  TipRetencion     String? @db.VarChar(100)
+  CotaRetencion    String? @db.VarChar(100)
+  BaseRetencion    String? @db.VarChar(100)
+  ValorRetencion   String? @db.VarChar(100)
+  Imputable        String? @db.VarChar(100)
+}
+
+model Fichaje {
+  fichaje_pk         Int     @id @default(autoincrement())
+  CODIGO             String? @db.VarChar(50)
+  NOMBRE___APELLIDOS String? @map("NOMBRE / APELLIDOS") @db.VarChar(200)
+  CORREO_ELECTRONICO String? @map("CORREO ELECTRONICO") @db.VarChar(200)
+  TIPO               String? @db.VarChar(50)
+  HORA               String? @db.VarChar(50)
+  DIRECCION          String? @db.VarChar(200)
+  MODIFICADO_POR     String? @db.VarChar(50)
+  FECHA              String? @db.VarChar(50)
+  DURACION           String? @db.VarChar(50)
+  Estado             String? @db.VarChar(100)
+  Motivo             String? @db.VarChar(500)
+  ID                 String? @db.VarChar(100)
+
+  @@index([CODIGO, FECHA], map: "idx_fichaje_cod_fecha")
+}
+
+model InspeccionesDocumentos {
+  id                String  @id @db.VarChar(50)
+  tipo_inspeccion   String? @db.VarChar(100)
+  codigo_empleado   String? @db.VarChar(50)
+  nombre_empleado   String? @db.VarChar(150)
+  archivo           Bytes?
+  nombre_archivo    String? @db.VarChar(255)
+  fecha_subida      String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  Nombre_Supervisor String? @map("Nombre Supervisor") @db.VarChar(200)
+  Centro            String? @db.VarChar(300)
+  Locacion          String? @db.VarChar(500)
+}
+
+model LeadsDigitalizacion {
+  id                    Int      @id @default(autoincrement())
+  source                String   @db.VarChar(50)
+  name                  String   @db.VarChar(255)
+  category              String?  @db.VarChar(100)
+  phone                 String?  @db.VarChar(50)
+  email                 String?  @db.VarChar(255)
+  website               String?  @db.VarChar(255)
+  address               String?  @db.Text
+  city                  String?  @db.VarChar(120)
+  country               String?  @default("ES") @db.VarChar(80)
+  maps_url              String?  @db.Text
+  rating                Decimal? @db.Decimal(3, 2)
+  reviews               Int?
+  website_need_score    Int?
+  automation_need_score Int?
+  website_flags         String?  @db.LongText
+  automation_flags      String?  @db.LongText
+  detected_at           DateTime @default(now()) @db.Timestamp(0)
+
+  @@index([city], map: "idx_city")
+  @@index([email], map: "idx_email")
+  @@index([name, phone], map: "idx_name_phone")
+  @@index([automation_need_score, website_need_score], map: "idx_scores")
+  @@index([website], map: "idx_website")
+}
+
+model Logs {
+  id        Int     @id @default(autoincrement())
+  timestamp String? @db.VarChar(255)
+  action    String? @db.VarChar(100)
+  user      String? @db.VarChar(100)
+  email     String? @db.VarChar(255)
+  grupo     String? @db.VarChar(100)
+  updateby  String? @db.Text
+  userAgent String? @db.Text
+  url       String? @db.Text
+  sessionId String? @db.VarChar(255)
+  ip        String? @db.VarChar(100)
+}
+
+model MutuaCasos {
+  id                                       Int       @id @default(autoincrement())
+  Codigo_Empleado                          String?   @db.VarChar(64)
+  NIF                                      String?   @db.VarChar(20)
+  NASS                                     String?   @db.VarChar(30)
+  Trabajador                               String?   @db.VarChar(255)
+  R_gimen                                  String?   @map("Régimen") @db.VarChar(50)
+  CIF                                      String?   @db.VarChar(20)
+  CCC                                      String?   @db.VarChar(25)
+  Raz_n_Social                             String?   @map("Razón Social") @db.VarChar(255)
+  Tipo                                     String?   @db.VarChar(100)
+  Reca_da                                  Boolean?  @map("Recaída")
+  Fecha_baja                               DateTime? @map("Fecha baja") @db.Date
+  Fecha_de_alta_prevista_SPS               DateTime? @map("Fecha de alta prevista SPS") @db.Date
+  Fecha_de_alta                            DateTime? @map("Fecha de alta") @db.Date
+  D_as_de_baja                             Int?      @map("Días de baja")
+  D_as_previstos_Servicio_P_blico_de_Salud Int?      @map("Días previstos Servicio Público de Salud")
+  Fecha_inicio_subrogaci_n                 DateTime? @map("Fecha inicio subrogación") @db.Date
+  Jornadas_perdidas_desde_la_subrogaci_n   Int?      @map("Jornadas perdidas desde la subrogación")
+  Jornadas_perdidas_fijos_discontinuos     Int?      @map("Jornadas perdidas fijos discontinuos")
+  Situaci_n                                String?   @map("Situación") @db.VarChar(100)
+  Inicio_pago_delegado                     DateTime? @map("Inicio pago delegado") @db.Date
+  Fin_pago_delegado                        DateTime? @map("Fin pago delegado") @db.Date
+  Pendiente_validaci_n_INSS                Boolean?  @map("Pendiente validación INSS")
+  ltima_gesti_n_Mutua                      DateTime? @map("Última gestión Mutua") @db.Date
+  Pr_xima_gesti_n_Mutua                    DateTime? @map("Próxima gestión Mutua") @db.Date
+  Demora_recepci_n_del_parte_de_baja       Int?      @map("Demora recepción del parte de baja")
+  ltimo_Parte_de_Confirmaci_n              DateTime? @map("Último Parte de Confirmación") @db.Date
+  C_digo_Nacional_de_Ocupaci_n             String?   @map("Código Nacional de Ocupación") @db.VarChar(50)
+  Id_Caso                                  String    @map("Id.Caso") @db.VarChar(100)
+  Id_Posici_n                              String    @map("Id.Posición") @db.VarChar(100)
+  fuente                                   String?   @db.VarChar(50)
+  updated_at                               DateTime  @default(now()) @db.Timestamp(0)
+
+  @@unique([Id_Caso, Id_Posici_n], map: "uk_caso_posicion")
+  @@index([Codigo_Empleado], map: "idx_mutuacasos_cod")
+  @@index([Fecha_baja, Fecha_de_alta], map: "idx_mutuacasos_fechas")
+}
+
+model Nominas {
+  id           Int      @id @default(autoincrement()) @db.UnsignedInt
+  nombre       String?  @db.VarChar(255)
+  archivo      Bytes?
+  tipo_mime    String?  @db.VarChar(100)
+  fecha_subida DateTime @default(now()) @db.DateTime(0)
+  Mes          String?  @db.VarChar(100)
+  Ano          String?  @db.VarChar(100)
+}
+
+model NotificariFichaje {
+  id          Int                    @id @default(autoincrement())
+  empleado_id Int?
+  data        DateTime?              @db.Date
+  tip         NotificariFichaje_tip?
+  trimis_at   DateTime?              @default(now()) @db.DateTime(0)
+
+  @@unique([empleado_id, data, tip], map: "uniq_notif")
+}
+
+model Paqueteria {
+  id                 Int       @id @default(autoincrement())
+  codigo             String?   @db.VarChar(50)
+  nombre             String?   @db.VarChar(150)
+  email              String?   @db.VarChar(150)
+  centroTrabajo      String?   @db.VarChar(150)
+  address            String?   @db.VarChar(255)
+  created_at         DateTime  @default(now()) @db.Timestamp(0)
+  fecha              DateTime  @db.Date
+  hora               DateTime  @db.Time(0)
+  tipo               String?   @db.VarChar(50)
+  empresa            String?   @db.VarChar(100)
+  propietario        String?   @db.VarChar(100)
+  portalPisoLetra    String?   @db.VarChar(100)
+  observaciones      String?   @db.Text
+  estado             String?   @db.VarChar(100)
+  fecha_entrega      DateTime? @db.Date
+  hora_entrega       DateTime? @db.Time(0)
+  entregado_por      String?   @db.Text
+  persona_entrega    String?   @db.Text
+  observacionentrega String?   @db.Text
+}
+
+model PedidosTodos {
+  id                      Int       @id @default(autoincrement())
+  pedido_uid              String    @db.VarChar(64)
+  empleado_id             String?   @db.VarChar(50)
+  empleado_nombre         String?   @db.VarChar(255)
+  empleado_email          String?   @db.VarChar(255)
+  comunidad_id            Int?
+  comunidad_nombre        String?   @db.VarChar(255)
+  comunidad_direccion     String?   @db.VarChar(255)
+  comunidad_codigo_postal String?   @db.VarChar(20)
+  comunidad_localidad     String?   @db.VarChar(100)
+  comunidad_provincia     String?   @db.VarChar(100)
+  comunidad_telefono      String?   @db.VarChar(50)
+  comunidad_email         String?   @db.VarChar(255)
+  comunidad_nif           String?   @db.VarChar(50)
+  comunidad_limite_gasto  Decimal?  @db.Decimal(10, 2)
+  fecha                   DateTime? @db.DateTime(0)
+  moneda                  String?   @db.VarChar(10)
+  descuento_global        Decimal?  @db.Decimal(10, 3)
+  impuestos               Decimal?  @db.Decimal(10, 3)
+  subtotal                Decimal?  @db.Decimal(10, 3)
+  iva_total               Decimal?  @db.Decimal(10, 3)
+  total                   Decimal?  @db.Decimal(10, 3)
+  limite_excedido         Boolean?
+  exceso_limite           Decimal?  @db.Decimal(10, 3)
+  notas                   String?   @db.Text
+  producto_id             Int?
+  numero_articulo         String?   @db.VarChar(100)
+  descripcion             String?   @db.Text
+  cantidad                Decimal?  @db.Decimal(10, 3)
+  precio_unitario         Decimal?  @db.Decimal(10, 3)
+  subtotal_linea          Decimal?  @db.Decimal(10, 3)
+  descuento_linea         Decimal?  @db.Decimal(10, 3)
+  iva_porcentaje          Decimal?  @db.Decimal(5, 2)
+  iva_linea               Decimal?  @db.Decimal(10, 3)
+  total_linea             Decimal?  @db.Decimal(10, 3)
+  creado_en               DateTime  @default(now()) @db.Timestamp(0)
+}
+
+model PermisosProductos {
+  id                Int               @id @default(autoincrement())
+  cliente_id        Int
+  producto_id       Int
+  permitido         Boolean           @default(true)
+  fecha_asignacion  DateTime?         @default(now()) @db.DateTime(0)
+  Clientes          Clientes          @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "PermisosProductos_ibfk_1")
+  CatologoProductos CatologoProductos @relation(fields: [producto_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "PermisosProductos_ibfk_2")
+
+  @@unique([cliente_id, producto_id], map: "unique_permiso")
+  @@index([producto_id], map: "producto_id")
+}
+
+model Productos {
+  id                                                 Int     @id @default(autoincrement())
+  FAMILIA_SUBFAMILIA                                 String? @map("FAMILIA/SUBFAMILIA") @db.VarChar(64)
+  NOMBRE                                             String  @db.VarChar(255)
+  DESCRIPCI_N                                        String? @map("DESCRIPCIÓN") @db.VarChar(50)
+  NOTAS_PRIVADAS                                     String? @map("NOTAS PRIVADAS") @db.VarChar(50)
+  TIPO_DE_UNIDAD                                     String? @map("TIPO DE UNIDAD") @db.VarChar(50)
+  PRODUCTO_VISIBLE__ACTIVO_                          String? @map("PRODUCTO VISIBLE (ACTIVO)") @db.VarChar(50)
+  C_DIGO_DE_PRODUCTO__SKU_                           String? @map("CÓDIGO DE PRODUCTO (SKU)") @db.VarChar(50)
+  REFERENCIA_PROVEEDOR                               String? @map("REFERENCIA PROVEEDOR") @db.VarChar(50)
+  PRECIO_VENTA___BASE_IMPONIBLE                      String? @map("PRECIO VENTA - BASE IMPONIBLE") @db.VarChar(50)
+  PRECIO_VENTA_____DESCUENTO                         String? @map("PRECIO VENTA - % DESCUENTO") @db.VarChar(50)
+  PRECIO_VENTA_____IVA                               String? @map("PRECIO VENTA - % IVA") @db.VarChar(50)
+  PRECIO_VENTA_____RE                                String? @map("PRECIO VENTA - % RE") @db.VarChar(50)
+  P_V_P_                                             String? @map("P.V.P.") @db.VarChar(50)
+  COSTE_ADQUISICI_N___BASE_IMPONIBLE                 String? @map("COSTE ADQUISICIÓN - BASE IMPONIBLE") @db.VarChar(50)
+  COSTE_ADQUISICI_N_____IVA                          String? @map("COSTE ADQUISICIÓN - % IVA") @db.VarChar(50)
+  COSTE_ADQUISICI_N_____RE                           String? @map("COSTE ADQUISICIÓN - % RE") @db.VarChar(50)
+  COSTE_ADQUISICI_N_TOTAL                            String? @map("COSTE ADQUISICIÓN TOTAL") @db.VarChar(50)
+  CONTROLAR_STOCK                                    String? @map("CONTROLAR STOCK") @db.VarChar(50)
+  STOCK_ABSOLUTO                                     String? @map("STOCK ABSOLUTO") @db.VarChar(50)
+  PERMITIR_VENDER_SIN_STOCK                          String? @map("PERMITIR VENDER SIN STOCK") @db.VarChar(50)
+  ACTIVAR_ALARMA_DE_STOCK                            String? @map("ACTIVAR ALARMA DE STOCK") @db.VarChar(50)
+  AVISAR_CUANDO_EL_N_MERO_DE_UNIDADES_SEA_INFERIOR_A String? @map("AVISAR CUANDO EL NÚMERO DE UNIDADES SEA INFERIOR A") @db.VarChar(50)
+  AVISAR_EN_EL_DASHBOARD                             String? @map("AVISAR EN EL DASHBOARD") @db.VarChar(50)
+  AVISAR_MEDIANTE_NOTIFICACI_N                       String? @map("AVISAR MEDIANTE NOTIFICACIÓN") @db.VarChar(50)
+  AVISAR_MEDIANTE_CORREO_ELECTR_NICO                 String? @map("AVISAR MEDIANTE CORREO ELECTRÓNICO") @db.VarChar(50)
+}
+
+model Proveedores {
+  id                    Int      @id @default(autoincrement())
+  NIF                   String?  @db.VarChar(20)
+  NOMBRE_O_RAZ_N_SOCIAL String?  @map("NOMBRE O RAZÓN SOCIAL") @db.VarChar(255)
+  EMAIL                 String?  @db.VarChar(255)
+  TELEFONO              String?  @db.VarChar(50)
+  M_VIL                 String?  @map("MÓVIL") @db.VarChar(50)
+  FAX                   String?  @db.VarChar(50)
+  DIRECCI_N             String?  @map("DIRECCIÓN") @db.VarChar(255)
+  CODIGO_POSTAL         String?  @map("CODIGO POSTAL") @db.VarChar(20)
+  POBLACI_N             String?  @map("POBLACIÓN") @db.VarChar(100)
+  PROVINCIA             String?  @db.VarChar(100)
+  PA_S                  String?  @map("PAÍS") @db.VarChar(100)
+  URL                   String?  @db.VarChar(255)
+  DESCUENTO_POR_DEFECTO Decimal? @map("DESCUENTO POR DEFECTO") @db.Decimal(5, 2)
+  LATITUD               String?  @db.VarChar(200)
+  LONGITUD              String?  @db.VarChar(200)
+  NOTAS_PRIVADAS        String?  @map("NOTAS PRIVADAS") @db.Text
+  CUENTAS_BANCARIAS     String?  @map("CUENTAS BANCARIAS") @db.Text
+  fecha_creacion        DateTime @default(now()) @db.Timestamp(0)
+  fecha_actualizacion   DateTime @default(now()) @db.Timestamp(0)
+  ESTADO                String?  @db.VarChar(100)
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model SerieFormato {
+  Serie   String? @unique(map: "unique_serie") @db.VarChar(50)
+  Formato String? @db.VarChar(255)
+
+  @@ignore
+}
+
+model SignSessions {
+  sid        String              @id @db.VarChar(64)
+  status     SignSessions_status @default(PENDING)
+  original   Bytes
+  signed     Bytes?
+  created_at DateTime            @default(now()) @db.Timestamp(0)
+}
+
+model SolicitudesCambiosPersonales {
+  id                 String  @id @db.VarChar(55)
+  codigo             String? @db.VarChar(55)
+  NOMBRE             String? @db.VarChar(255)
+  campo              String? @db.Text
+  valoare_veche      String? @db.VarChar(255)
+  valoare_noua       String? @db.VarChar(255)
+  motiv              String? @db.VarChar(255)
+  status             String? @default("in asteptare") @db.VarChar(255)
+  data_creare        String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(255)
+  data_aprobare      String? @db.VarChar(255)
+  CORREO_ELECTRONICO String? @db.VarChar(200)
+}
+
+model TareasDiaria {
+  id            Int       @id @default(autoincrement()) @db.UnsignedInt
+  fecha         DateTime  @db.Date
+  hora          DateTime  @db.Time(0)
+  horaEdicion   DateTime? @db.Time(0)
+  descripcion   String?   @db.Text
+  codigo        String    @db.VarChar(20)
+  nombre        String    @db.VarChar(150)
+  email         String?   @db.VarChar(255)
+  centroTrabajo String?   @db.VarChar(200)
+  loc           String?   @db.VarChar(100)
+  locEdicion    String?   @db.VarChar(100)
+  address       String?   @db.VarChar(255)
+  ip            String?   @db.VarChar(45)
+  created_at    DateTime  @default(now()) @db.Timestamp(0)
+
+  @@index([codigo], map: "idx_codigo")
+  @@index([email], map: "idx_email")
+  @@index([fecha], map: "idx_fecha")
+}
+
+model TipoIngreso {
+  codigo      String @id @db.VarChar(10)
+  descripcion String @db.VarChar(255)
+}
+
+model Tipogasto {
+  codigo      String  @id @db.VarChar(10)
+  descripcion String? @db.Text
+  Grupo       String? @db.Text
+}
+
+model TiposContrato {
+  id   Int    @id @default(autoincrement())
+  tipo String @unique(map: "tipo") @db.VarChar(100)
+}
+
+model cuadrante {
+  id         Int     @id @default(autoincrement())
+  CODIGO     String? @db.VarChar(50)
+  EMAIL      String? @db.VarChar(100)
+  NOMBRE     String? @db.VarChar(100)
+  LUNA       String? @db.VarChar(20)
+  CENTRO     String? @db.VarChar(100)
+  ZI_1       String? @db.VarChar(50)
+  ZI_2       String? @db.VarChar(50)
+  ZI_3       String? @db.VarChar(50)
+  ZI_4       String? @db.VarChar(50)
+  ZI_5       String? @db.VarChar(50)
+  ZI_6       String? @db.VarChar(50)
+  ZI_7       String? @db.VarChar(50)
+  ZI_8       String? @db.VarChar(50)
+  ZI_9       String? @db.VarChar(50)
+  ZI_10      String? @db.VarChar(50)
+  ZI_11      String? @db.VarChar(50)
+  ZI_12      String? @db.VarChar(50)
+  ZI_13      String? @db.VarChar(50)
+  ZI_14      String? @db.VarChar(50)
+  ZI_15      String? @db.VarChar(50)
+  ZI_16      String? @db.VarChar(50)
+  ZI_17      String? @db.VarChar(50)
+  ZI_18      String? @db.VarChar(50)
+  ZI_19      String? @db.VarChar(50)
+  ZI_20      String? @db.VarChar(50)
+  ZI_21      String? @db.VarChar(50)
+  ZI_22      String? @db.VarChar(50)
+  ZI_23      String? @db.VarChar(50)
+  ZI_24      String? @db.VarChar(50)
+  ZI_25      String? @db.VarChar(50)
+  ZI_26      String? @db.VarChar(50)
+  ZI_27      String? @db.VarChar(50)
+  ZI_28      String? @db.VarChar(50)
+  ZI_29      String? @db.VarChar(50)
+  ZI_30      String? @db.VarChar(50)
+  ZI_31      String? @db.VarChar(50)
+  TotalHoras String? @db.VarChar(100)
+
+  @@unique([CODIGO, LUNA], map: "unique_codigo_luna")
+  @@index([LUNA], map: "idx_cuadrante_luna")
+}
+
+model fiestas {
+  id            Int       @id @default(autoincrement())
+  date          DateTime  @db.Date
+  name          String    @db.VarChar(160)
+  scope         String    @db.VarChar(100)
+  ccaa_code     String?   @db.VarChar(10)
+  observed_date DateTime? @db.Date
+  active        Boolean   @default(true)
+  notes         String?   @db.Text
+
+  @@unique([date, scope, ccaa_code], map: "uniq_f")
+  @@index([date], map: "idx_f_date")
+  @@index([scope], map: "idx_f_scope")
+  @@index([observed_date], map: "idx_fiestas_observed_date")
+  @@index([scope, ccaa_code, active], map: "idx_fiestas_scope_ccaa_active")
+}
+
+model horarios {
+  id                      Int       @id @default(autoincrement())
+  nombre                  String    @db.VarChar(120)
+  centro_nombre           String?   @db.VarChar(255)
+  grupo_nombre            String?   @db.VarChar(255)
+  vigente_desde           DateTime? @db.Date
+  vigente_hasta           DateTime? @db.Date
+  weekly_break_minutes    Int?      @default(0)
+  entry_margin_minutes    Int?      @default(0)
+  exit_margin_minutes     Int?      @default(0)
+  total_horas_semanales   Int?
+  total_minutos_semanales Int?
+  lun_in1                 DateTime? @db.Time(0)
+  lun_out1                DateTime? @db.Time(0)
+  lun_in2                 DateTime? @db.Time(0)
+  lun_out2                DateTime? @db.Time(0)
+  lun_in3                 DateTime? @db.Time(0)
+  lun_out3                DateTime? @db.Time(0)
+  mar_in1                 DateTime? @db.Time(0)
+  mar_out1                DateTime? @db.Time(0)
+  mar_in2                 DateTime? @db.Time(0)
+  mar_out2                DateTime? @db.Time(0)
+  mar_in3                 DateTime? @db.Time(0)
+  mar_out3                DateTime? @db.Time(0)
+  mie_in1                 DateTime? @db.Time(0)
+  mie_out1                DateTime? @db.Time(0)
+  mie_in2                 DateTime? @db.Time(0)
+  mie_out2                DateTime? @db.Time(0)
+  mie_in3                 DateTime? @db.Time(0)
+  mie_out3                DateTime? @db.Time(0)
+  joi_in1                 DateTime? @db.Time(0)
+  joi_out1                DateTime? @db.Time(0)
+  joi_in2                 DateTime? @db.Time(0)
+  joi_out2                DateTime? @db.Time(0)
+  joi_in3                 DateTime? @db.Time(0)
+  joi_out3                DateTime? @db.Time(0)
+  vin_in1                 DateTime? @db.Time(0)
+  vin_out1                DateTime? @db.Time(0)
+  vin_in2                 DateTime? @db.Time(0)
+  vin_out2                DateTime? @db.Time(0)
+  vin_in3                 DateTime? @db.Time(0)
+  vin_out3                DateTime? @db.Time(0)
+  sam_in1                 DateTime? @db.Time(0)
+  sam_out1                DateTime? @db.Time(0)
+  sam_in2                 DateTime? @db.Time(0)
+  sam_out2                DateTime? @db.Time(0)
+  sam_in3                 DateTime? @db.Time(0)
+  sam_out3                DateTime? @db.Time(0)
+  dum_in1                 DateTime? @db.Time(0)
+  dum_out1                DateTime? @db.Time(0)
+  dum_in2                 DateTime? @db.Time(0)
+  dum_out2                DateTime? @db.Time(0)
+  dum_in3                 DateTime? @db.Time(0)
+  dum_out3                DateTime? @db.Time(0)
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+
+  @@index([centro_nombre, grupo_nombre], map: "idx_horarios_centro_grupo")
+  @@index([vigente_desde, vigente_hasta], map: "idx_horarios_vigencia")
+}
+
+model horaspermitidas {
+  id              Int     @id @default(autoincrement())
+  GRUPO           String? @db.VarChar(100)
+  Horas_Anuales   String? @map("Horas Anuales") @db.VarChar(100)
+  Horas_Mensuales String? @map("Horas Mensuales") @db.VarChar(100)
+}
+
+model metodos_de_cobro {
+  id                      String @id @db.VarChar(50)
+  nombre                  String @db.VarChar(255)
+  tipo_metodo             String @db.VarChar(100)
+  numero_tarjeta_o_cuenta String @db.VarChar(100)
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model notas_facturas {
+  titulo      String  @db.VarChar(255)
+  descripcion String? @db.Text
+
+  @@ignore
+}
+
+model retenciones_irpf {
+  id         Int                        @id @default(autoincrement())
+  porcentaje Decimal                    @db.Decimal(5, 2)
+  nombre     String                     @db.VarChar(255)
+  categoria  retenciones_irpf_categoria
+}
+
+model solicitudes {
+  id              String    @id @db.VarChar(20)
+  codigo          String?   @db.VarChar(50)
+  nombre          String?   @db.VarChar(150)
+  email           String?   @db.VarChar(255)
+  tipo            String?   @db.VarChar(100)
+  estado          String?   @db.VarChar(50)
+  fecha_inicio    DateTime? @db.Date
+  fecha_fin       String?   @db.VarChar(50)
+  motivo          String?   @db.Text
+  fecha_solicitud DateTime  @default(now()) @db.DateTime(0)
+}
+
+enum ChatRoomType {
+  centro
+  dm
+}
+
+enum ChatRoomMemberRole {
+  member
+  supervisor
+  admin
+}
+
+enum SignSessions_status {
+  PENDING
+  SIGNED
+  FAILED
+}
+
+enum NotificariFichaje_tip {
+  entrada
+  salida
+}
+
+enum retenciones_irpf_categoria {
+  Actual
+  CeutaYMelilla
+  Antiguo
+}

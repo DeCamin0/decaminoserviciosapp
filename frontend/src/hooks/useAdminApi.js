@@ -233,7 +233,46 @@ export const useAdminApi = () => {
   // Permisiuni universale pentru toți utilizatorii
   const getPermissions = useCallback(async (userGrupo = null, module = null) => {
     try {
-      // Construiește URL-ul cu parametrul grupo_module în format "Grupo_Module"
+      // 1) Încearcă backend NestJS (direct DB)
+      let urlBackend = routes.permissions;
+      if (userGrupo) {
+        const params = new URLSearchParams();
+        params.set('grupo', userGrupo);
+        urlBackend += `?${params.toString()}`;
+      }
+
+      console.log('[Permissions] Fetching from backend:', urlBackend);
+
+      const backendRes = await fetch(urlBackend, { headers: { Accept: 'application/json' } });
+      if (backendRes.ok) {
+        const backendData = await backendRes.json();
+        if (backendData?.success && Array.isArray(backendData.permissions)) {
+          const permissions = {};
+          for (const item of backendData.permissions) {
+            const grupoModule = item.grupo_module;
+            const permitted = item.permitted;
+            if (grupoModule) {
+              const parts = String(grupoModule).split('_');
+              if (parts.length >= 2) {
+                const grupo = parts[0];
+                const module = parts.slice(1).join('_');
+                if (!permissions[grupo]) permissions[grupo] = {};
+                permissions[grupo][module] =
+                  permitted === 'true' || permitted === true || permitted === '1' || permitted === 1;
+              }
+            }
+          }
+          console.log('[Permissions] From backend processed:', permissions);
+          // Dacă nu sunt chei, mergem pe fallback n8n
+          if (Object.keys(permissions).length > 0) {
+            return permissions;
+          }
+        }
+      } else {
+        console.warn('[Permissions] Backend response not OK:', backendRes.status);
+      }
+
+      // 2) Fallback: n8n legacy
       let url = routes.getPermissions;
       if (userGrupo && module) {
         const grupoModule = `${userGrupo}_${module}`;
@@ -241,26 +280,25 @@ export const useAdminApi = () => {
       } else if (userGrupo) {
         url += `?grupo_module=${encodeURIComponent(userGrupo)}`;
       }
-      
-      console.log('Fetching permissions from:', url);
-      
+
+      console.log('[Permissions] Fallback to n8n:', url);
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
+      console.log('[Permissions] n8n status:', response.status);
 
       if (!response.ok) {
         throw new Error(`Error fetching permissions: ${response.status}`);
       }
 
       const responseText = await response.text();
-      console.log('Raw response text:', responseText);
+      console.log('[Permissions] n8n raw text:', responseText);
 
       if (!responseText || responseText.trim() === '') {
-        console.warn('Empty response received, using defaults');
+        console.warn('[Permissions] Empty response from n8n, using defaults');
         return getDefaultPermissions();
       }
 
@@ -268,31 +306,23 @@ export const useAdminApi = () => {
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
-        console.error('Failed to parse JSON response:', parseError);
+        console.error('[Permissions] Failed to parse JSON response:', parseError);
         console.error('Response text was:', responseText);
         throw new Error('Invalid JSON response from server');
       }
 
-      console.log('Permissions data received:', data);
-      
-      // Verifică dacă răspunsul conține un array de permisiuni
+      console.log('[Permissions] n8n data received:', data);
+
       if (data && Array.isArray(data)) {
-        console.log('Processing array of permissions:', data.length, 'items');
-        
-        // Procesează toate permisiunile din array cu noua structură grupo_module
         const permissions = {};
-        
         for (const item of data) {
           const grupoModule = item.grupo_module;
           const permitted = item.permitted;
-          
           if (grupoModule) {
-            // Separă grupo și module din grupo_module (ex: "Developer_dashboard")
             const parts = grupoModule.split('_');
             if (parts.length >= 2) {
               const grupo = parts[0];
-              const module = parts.slice(1).join('_'); // Pentru module cu underscore (ex: cuadrantes-empleado)
-              
+              const module = parts.slice(1).join('_');
               if (!permissions[grupo]) {
                 permissions[grupo] = {};
               }
@@ -300,34 +330,27 @@ export const useAdminApi = () => {
             }
           }
         }
-        
-        console.log('Processed all permissions:', permissions);
+        console.log('[Permissions] n8n processed:', permissions);
         return permissions;
       } else if (data && typeof data === 'object') {
-        console.log('Processing single permission object:', data);
-        
-        // Creează obiectul de permisiuni din obiectul primit cu noua structură
         const permissions = {};
         const grupoModule = data.grupo_module;
         const permitted = data.permitted;
-        
         if (grupoModule) {
           const parts = grupoModule.split('_');
           if (parts.length >= 2) {
             const grupo = parts[0];
             const module = parts.slice(1).join('_');
-            
             if (!permissions[grupo]) {
               permissions[grupo] = {};
             }
             permissions[grupo][module] = permitted === 'true' || permitted === true || permitted === '1' || permitted === 1;
           }
         }
-        
-        console.log('Processed single permission:', permissions);
+        console.log('[Permissions] n8n single processed:', permissions);
         return permissions;
       } else {
-        console.warn('No permissions found in response, using defaults');
+        console.warn('[Permissions] No permissions found in n8n response, using defaults');
         return getDefaultPermissions();
       }
     } catch (error) {

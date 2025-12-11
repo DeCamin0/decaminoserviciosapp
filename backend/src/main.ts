@@ -4,7 +4,7 @@ import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   // IMPORTANT: Skip body parsing for multipart/form-data
   // Express body parsers consume the stream, making it unavailable for multer
   app.use((req, res, next) => {
@@ -16,12 +16,12 @@ async function bootstrap() {
     // For other content types, use normal body parsing
     next();
   });
-  
+
   // Increase body size limit for file uploads
   app.use(json({ limit: '50mb' }));
   // Parse URL-encoded bodies
   app.use(urlencoded({ extended: true, limit: '50mb' }));
-  
+
   // Enable CORS for frontend communication
   app.enableCors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173', // Vite default port

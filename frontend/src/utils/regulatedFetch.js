@@ -56,15 +56,22 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const withBackoff = async (fn) => {
   let attempt = 0;
-  while (true) {
+  let shouldRetry = true;
+  while (shouldRetry) {
     try {
       const res = await fn();
       if (![429, 500, 502, 503, 504].includes(res?.status)) {
         return res;
       }
-      if (attempt >= config.maxRetries) return res;
+      if (attempt >= config.maxRetries) {
+        shouldRetry = false;
+        return res;
+      }
     } catch (err) {
-      if (attempt >= config.maxRetries) throw err;
+      if (attempt >= config.maxRetries) {
+        shouldRetry = false;
+        throw err;
+      }
     }
     const jitter = Math.random() * config.jitterMs;
     const delay = config.baseDelayMs * Math.pow(2, attempt) + jitter;

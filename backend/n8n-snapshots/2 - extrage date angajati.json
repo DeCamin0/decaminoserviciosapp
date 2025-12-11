@@ -1,0 +1,163 @@
+{
+  "name": "2 - extrage date angajati",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "v1/aec36db4-58d4-4175-8429-84d1c487e142",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9537993e-8a47-4b27-865c-c49d9a57a407",
+      "name": "primeste cererea",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        -144
+      ],
+      "webhookId": "aec36db4-58d4-4175-8429-84d1c487e142"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ac52bf7b-f4d5-4da2-856f-76226e8158d7",
+              "leftValue": "={{$json.headers[\"x-app-source\"]}}",
+              "rightValue": "DeCamino-Web-App",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        48,
+        -144
+      ],
+      "id": "4a8797df-9896-44d8-8b16-911f912364b9",
+      "name": "decide drumul"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        432,
+        -240
+      ],
+      "id": "0192b01e-5287-4fae-888e-f02d9670ab89",
+      "name": "raspunde la aplicatie"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"403\": false,\n  \"error\": \"Ia Muie!\"\n}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        464,
+        -48
+      ],
+      "id": "64cfb02e-5c3b-41a1-92f9-d3950d1e3c42",
+      "name": "raspunde cu eroare"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  `CODIGO`,\n  `NOMBRE / APELLIDOS`,\n  `NACIONALIDAD`,\n  `DIRECCION`,\n  `D.N.I. / NIE`,\n  `SEG. SOCIAL`,\n  `Nº Cuenta`,\n  `TELEFONO`,\n  `CORREO ELECTRONICO`,\n  `FECHA NACIMIENTO`,\n  `FECHA DE ALTA`,\n  `CENTRO TRABAJO`,\n  `TIPO DE CONTRATO`,\n  `SUELDO BRUTO MENSUAL`,\n  `HORAS DE CONTRATO`,\n  `EMPRESA`,\n  `GRUPO`,\n  `ESTADO`,\n  `FECHA BAJA`,\n  `Fecha Antigüedad`,\n  `Antigüedad`,\n  `DerechoPedidos`,\n  `TrabajaFestivos`\nFROM DatosEmpleados\nWHERE \n  {{ $json.query.codigo ? '`CODIGO` = \"' + $json.query.codigo + '\"' : '1=1' }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        256,
+        -240
+      ],
+      "id": "9a9fd104-002b-4edf-bca3-52935aa077e6",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "primeste cererea": {
+      "main": [
+        [
+          {
+            "node": "decide drumul",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "decide drumul": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "raspunde cu eroare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "raspunde la aplicatie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "73c8f6a6-ca89-445f-9aba-8353ac4d4848",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "zUuBd8wheFo362R5",
+  "tags": []
+}

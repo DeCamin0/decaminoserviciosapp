@@ -1,0 +1,201 @@
+{
+  "name": "4 - registros lunare sau anuale pentru ore",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "4d72fc30-1843-4473-9614-e06f8583f3b5",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ac1d8764-7d98-4e12-86d4-d9179a39793b",
+      "name": "Webhook",
+      "webhookId": "4d72fc30-1843-4473-9614-e06f8583f3b5"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "69635bc8-224d-4521-96a8-0f74d46b4337"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "56c3850e-3f45-437b-a892-1fbd9470d67b",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        832,
+        -112
+      ],
+      "id": "b3a2d379-047a-477a-8781-a7a90c0ad627",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        720,
+        128
+      ],
+      "id": "d5e8f471-518e-411c-b27e-a6d6a62ca04c",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM `Fichaje` f\nWHERE\n  f.`CODIGO` = '{{$json[\"query\"][\"empleadoId\"]}}'\n  AND f.`FECHA` LIKE CONCAT('{{$json[\"query\"][\"mes\"]}}', '%')\nORDER BY\n  f.`FECHA` ASC,\n  f.`HORA` ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        -112
+      ],
+      "id": "212561c7-e157-49c3-9526-2caa4e499a67",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM `Fichaje` f\nWHERE\n  f.`CODIGO` = '{{$json[\"query\"][\"empleadoId\"]}}'\n  AND f.`FECHA` LIKE CONCAT('{{$json[\"query\"][\"ano\"]}}', '-%')\nORDER BY\n  f.`FECHA` ASC,\n  f.`HORA` ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        512,
+        128
+      ],
+      "id": "d5b317e9-5ada-4119-a1a1-bcaa4f2f2e13",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook1": {
+      "main": [
+        []
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "a501ce84-7fa8-455c-ac2a-37a5eff579a5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "4DaJ5ZjLe4dHfsjY",
+  "tags": []
+}

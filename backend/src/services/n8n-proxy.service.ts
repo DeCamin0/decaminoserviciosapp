@@ -19,8 +19,9 @@ export class N8nProxyService {
   private refillTimer: NodeJS.Timeout | null = null;
 
   constructor(private configService: ConfigService) {
-    this.n8nBaseUrl = this.configService.get<string>('n8n.baseUrl') || 
-                     'https://n8n.decaminoservicios.com';
+    this.n8nBaseUrl =
+      this.configService.get<string>('n8n.baseUrl') ||
+      'https://n8n.decaminoservicios.com';
 
     this.axiosInstance = axios.create({
       baseURL: this.n8nBaseUrl,
@@ -32,12 +33,18 @@ export class N8nProxyService {
     });
 
     // Regulator config (can be tuned via env/config later)
-    this.maxBurst = this.configService.get<number>('n8n.rateLimit.maxBurst') || 10;
-    this.replenishPerSecond = this.configService.get<number>('n8n.rateLimit.rps') || 5;
-    this.maxQueue = this.configService.get<number>('n8n.rateLimit.maxQueue') || 500;
-    this.baseBackoffMs = this.configService.get<number>('n8n.backoff.baseMs') || 200;
-    this.maxRetries = this.configService.get<number>('n8n.backoff.maxRetries') || 4;
-    this.jitterMs = this.configService.get<number>('n8n.backoff.jitterMs') || 150;
+    this.maxBurst =
+      this.configService.get<number>('n8n.rateLimit.maxBurst') || 10;
+    this.replenishPerSecond =
+      this.configService.get<number>('n8n.rateLimit.rps') || 5;
+    this.maxQueue =
+      this.configService.get<number>('n8n.rateLimit.maxQueue') || 500;
+    this.baseBackoffMs =
+      this.configService.get<number>('n8n.backoff.baseMs') || 200;
+    this.maxRetries =
+      this.configService.get<number>('n8n.backoff.maxRetries') || 4;
+    this.jitterMs =
+      this.configService.get<number>('n8n.backoff.jitterMs') || 150;
     this.tokens = this.maxBurst;
     this.startRefill();
   }
@@ -45,7 +52,10 @@ export class N8nProxyService {
   private startRefill() {
     if (this.refillTimer) return;
     this.refillTimer = setInterval(() => {
-      this.tokens = Math.min(this.maxBurst, this.tokens + this.replenishPerSecond);
+      this.tokens = Math.min(
+        this.maxBurst,
+        this.tokens + this.replenishPerSecond,
+      );
       this.drainQueue();
     }, 1000);
   }
@@ -73,10 +83,15 @@ export class N8nProxyService {
       }
 
       if (this.queue.length >= this.maxQueue) {
-        return reject(new HttpException(
-          { message: 'Rate limit queue full', statusCode: HttpStatus.TOO_MANY_REQUESTS },
-          HttpStatus.TOO_MANY_REQUESTS,
-        ));
+        return reject(
+          new HttpException(
+            {
+              message: 'Rate limit queue full',
+              statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            },
+            HttpStatus.TOO_MANY_REQUESTS,
+          ),
+        );
       }
 
       this.queue.push(run);
@@ -130,26 +145,35 @@ export class N8nProxyService {
 
       // Handle FormData
       let requestData = data;
-      const isFormData = headers?.['content-type']?.includes('multipart/form-data');
-      
+      const isFormData = headers?.['content-type']?.includes(
+        'multipart/form-data',
+      );
+
       // Check if data is already a FormData instance (from form-data package)
-      const isFormDataInstance = data && typeof data === 'object' && 
-        (data.constructor?.name === 'FormData' || data.getHeaders || data.append);
-      
+      const isFormDataInstance =
+        data &&
+        typeof data === 'object' &&
+        (data.constructor?.name === 'FormData' ||
+          data.getHeaders ||
+          data.append);
+
       console.log('[N8nProxy] Data type check:', {
         isFormData: isFormData,
         isFormDataInstance: isFormDataInstance,
         dataType: typeof data,
         dataConstructor: data?.constructor?.name,
         hasGetHeaders: !!(data as any)?.getHeaders,
-        hasAppend: !!(data as any)?.append
+        hasAppend: !!(data as any)?.append,
       });
-      
+
       if (isFormData && Buffer.isBuffer(data)) {
         // Raw FormData buffer - pass directly to axios with original content-type
         requestData = data;
         // Keep original content-type with boundary - DON'T modify it
-        console.log('[N8nProxy] Forwarding raw FormData buffer to n8n, size:', data.length);
+        console.log(
+          '[N8nProxy] Forwarding raw FormData buffer to n8n, size:',
+          data.length,
+        );
         // Don't touch content-type header - axios will use it as-is
       } else if (isFormDataInstance) {
         // Data is already a FormData instance - use it directly
@@ -172,7 +196,11 @@ export class N8nProxyService {
         // Remove content-type so FormData can set it with boundary
         delete requestHeaders['content-type'];
         delete requestHeaders['Content-Type'];
-      } else if (!isFormData && !headers?.['Content-Type'] && !headers?.['content-type']) {
+      } else if (
+        !isFormData &&
+        !headers?.['Content-Type'] &&
+        !headers?.['content-type']
+      ) {
         requestHeaders['Content-Type'] = 'application/json';
       }
 
@@ -185,7 +213,10 @@ export class N8nProxyService {
         headers: requestHeaders,
       };
 
-      if (requestData && ['post', 'put', 'patch'].includes(method.toLowerCase())) {
+      if (
+        requestData &&
+        ['post', 'put', 'patch'].includes(method.toLowerCase())
+      ) {
         config.data = requestData;
         console.log('[N8nProxy] Request config:', {
           method: config.method,
@@ -193,17 +224,19 @@ export class N8nProxyService {
           hasData: !!config.data,
           dataType: typeof config.data,
           dataConstructor: (config.data as any)?.constructor?.name,
-          headersKeys: Object.keys(config.headers || {})
+          headersKeys: Object.keys(config.headers || {}),
         });
       }
 
-      const response: AxiosResponse = await this.schedule(() => this.axiosInstance.request(config));
-      
+      const response: AxiosResponse = await this.schedule(() =>
+        this.axiosInstance.request(config),
+      );
+
       // 304 Not Modified is a valid success response (caching)
       if (response.status === 304) {
         return response.data || { status: 'not-modified' };
       }
-      
+
       return response.data;
     } catch (error: any) {
       if (error.response) {
@@ -211,7 +244,7 @@ export class N8nProxyService {
         if (error.response.status === 304) {
           return error.response.data || { status: 'not-modified' };
         }
-        
+
         // n8n returned an error response
         throw new HttpException(
           {

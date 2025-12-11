@@ -106,7 +106,7 @@ const MainLayout = ({ children }) => {
                 </div>
                 
                   <h1 className="text-lg lg:text-xl font-bold text-gray-900 dark:text-white">
-                    DE CAMINO SERVICIOS AUXILIARES
+                    DE CAMINO SERVICIOS AUXILIARES V2
                   </h1>
               </div>
             </div>
@@ -172,7 +172,7 @@ const MainLayout = ({ children }) => {
               
               {/* Nume firmă - trunchiat dacă e prea lung */}
               <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
-                DE CAMINO SERVICIOS AUXILIARES
+                DE CAMINO SERVICIOS AUXILIARES V2
               </h1>
             </div>
 

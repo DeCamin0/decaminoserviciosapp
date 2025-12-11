@@ -1,0 +1,382 @@
+{
+  "name": "3 - AVATAR salveaza extrage sterge",
+  "nodes": [
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.body.motivo}}",
+                    "rightValue": "Guardar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "38e786f5-0aef-4162-b579-e745f30e40cc"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ee221add-59b5-4883-8d03-52d19ee8442b",
+                    "leftValue": "={{$json.body.motivo}}",
+                    "rightValue": "get",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3c688f98-5844-4732-9864-444d5bddfc33",
+                    "leftValue": "={{$json.body.motivo}}",
+                    "rightValue": "Eliminar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -688,
+        -32
+      ],
+      "id": "058c0188-0b4c-408f-8d13-f1732a8adfa6",
+      "name": "identifica ruta"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        -32
+      ],
+      "id": "d81ad650-de0e-4092-b1d9-86c463fff5d6",
+      "name": "primeste apelu",
+      "webhookId": "886f6dd7-8b4d-479b-85f4-fb888ba8f731"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Code (n8n) → Avatar: Guardar (ora Europe/Madrid) ===\n\n// 1) Item & body\nconst item = items[0] ?? { json: {}, binary: {} };\nconst body = item.json?.body ?? item.json ?? {};\n\n// 2) Utils\nfunction toScalar(v){ return Array.isArray(v) ? (v.length ? v[0] : null) : v; }\nfunction sqlString(v){\n  v = toScalar(v);\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\n// Transformă orice input în obiect Date valid\nfunction asDate(raw){\n  if (raw === null || raw === undefined) return new Date();\n  const s = String(toScalar(raw)).trim();\n  // Epoch numeric (sec sau ms)\n  if (/^\\d+$/.test(s)) {\n    const n = Number(s);\n    if (s.length <= 10) return new Date(n * 1000); // sec -> ms\n    return new Date(n); // ms\n  }\n  const d = new Date(s);\n  return isNaN(d.getTime()) ? new Date() : d;\n}\n\n// Format YYYY-MM-DD HH:mm:ss în Europe/Madrid\nfunction formatMadrid(dateLike){\n  const d = asDate(dateLike);\n  const parts = new Intl.DateTimeFormat('sv-SE', {\n    timeZone: 'Europe/Madrid',\n    year: 'numeric', month: '2-digit', day: '2-digit',\n    hour: '2-digit', minute: '2-digit', second: '2-digit',\n    hour12: false\n  }).formatToParts(d);\n  const get = (t) => parts.find(p => p.type===t)?.value ?? '00';\n  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;\n}\n\n// 3) Date din body\nconst CODIGO = toScalar(body.CODIGO) ?? null;\nconst NOMBRE = toScalar(body.nombre) ?? null;\n// dacă nu primești nimic, folosește acum în Europe/Madrid\nconst FECHA  = formatMadrid(body.fecha_subida);\n\n// 4) Fișier (binary). În webhook e cheie \"file\" (fallback \"archivo\")\nconst bin = item.binary?.file || item.binary?.archivo || null;\nif (!bin?.data) {\n  throw new Error(\"Nu găsesc fișierul în binary (cheie 'file' sau 'archivo'). Trimite-l ca multipart/form-data.\");\n}\nconst b64 = bin.data;\n\n// 5) Query: INSERT + UPSERT pe CODIGO\nconst query = `\nINSERT INTO Avatar (CODIGO, NOMBRE, AVATAR, FECHA_SUBIDA)\nVALUES (\n  ${sqlString(CODIGO)},\n  ${sqlString(NOMBRE)},\n  FROM_BASE64(${sqlString(b64)}),\n  ${sqlString(FECHA)}\n)\nON DUPLICATE KEY UPDATE\n  NOMBRE = VALUES(NOMBRE),\n  AVATAR = VALUES(AVATAR),\n  FECHA_SUBIDA = VALUES(FECHA_SUBIDA);\n`.trim();\n\n// 6) Output pentru nodul SQL\nreturn [{ json: { query, meta: { tabla: 'Avatar', CODIGO, NOMBRE, FECHA_MADRID: FECHA } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        -256
+      ],
+      "id": "282cdcc7-a6a1-46a6-a571-9a2dfaf5ecaa",
+      "name": "pregateste pentru salvarea avatar"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -224,
+        -256
+      ],
+      "id": "c52b0fc2-1d43-42e5-95e0-69eaa32a8bfb",
+      "name": "salveaza avatar",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = items[0] || { json: {}, binary: {} };\nconst body = (item.json && (item.json.body || item.json)) || {};\n\nfunction toScalar(v){ return Array.isArray(v) ? (v.length ? v[0] : null) : v; }\nfunction escSql(v){\n  v = toScalar(v);\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\nconst CODIGO = toScalar(body.CODIGO);\n\nlet query;\nif (CODIGO) {\n  // un singur angajat după CODIGO\n  query =\n    \"SELECT \" +\n    \" d.CODIGO,\" +\n    \" COALESCE(a.NOMBRE, d.`NOMBRE / APELLIDOS`) AS NOMBRE,\" +\n    \" DATE_FORMAT(a.FECHA_SUBIDA, '%Y-%m-%d %H:%i:%s') AS FECHA_SUBIDA,\" +\n    \" TO_BASE64(a.AVATAR) AS AVATAR_B64\" +\n    \" FROM DatosEmpleados d\" +\n    \" LEFT JOIN Avatar a ON a.CODIGO = d.CODIGO\" +\n    \" WHERE d.CODIGO = \" + escSql(CODIGO) +\n    \";\";\n} else {\n  // toți angajații, cu/ fără avatar\n  query =\n    \"SELECT \" +\n    \" d.CODIGO,\" +\n    \" d.`NOMBRE / APELLIDOS` AS NOMBRE,\" +\n    \" DATE_FORMAT(a.FECHA_SUBIDA, '%Y-%m-%d %H:%i:%s') AS FECHA_SUBIDA,\" +\n    \" TO_BASE64(a.AVATAR) AS AVATAR_B64\" +\n    \" FROM DatosEmpleados d\" +\n    \" LEFT JOIN Avatar a ON a.CODIGO = d.CODIGO\" +\n    \" ORDER BY d.`NOMBRE / APELLIDOS` ASC\" +\n    \";\";\n}\n\nreturn [{\n  json: {\n    query,\n    meta: {\n      tabla: \"DatosEmpleados ←→ Avatar\",\n      accion: CODIGO ? \"get\" : \"list\",\n      CODIGO: CODIGO || null\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -80
+      ],
+      "id": "3746d2f8-3e88-45ec-a63c-62ba8c094ae3",
+      "name": "pregateste extragere avatar"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -224,
+        -80
+      ],
+      "id": "32c6236b-4439-448c-8b5c-6524666869de",
+      "name": "serveste avatarul",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -224,
+        112
+      ],
+      "id": "555f7d40-ba88-44b0-a08f-b26f35d697df",
+      "name": "sterge avatarul",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Code → pregătește DELETE pentru Avatar (ruta: Eliminar) ===\nconst item = items[0] ?? { json: {}, binary: {} };\nconst body = item.json?.body ?? item.json ?? {};\n\nfunction toScalar(v){ return Array.isArray(v) ? (v.length ? v[0] : null) : v; }\nfunction sqlString(v){\n  v = toScalar(v);\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\nconst CODIGO = toScalar(body.CODIGO);\nif (!CODIGO) {\n  throw new Error(\"Faltă CODIGO în body pentru ruta 'eliminar'.\");\n}\n\n// Șterge înregistrarea avatarului pentru CODIGO\nconst query = `\nDELETE FROM Avatar\nWHERE CODIGO = ${sqlString(CODIGO)}\nLIMIT 1;\n`.trim();\n\nreturn [{\n  json: {\n    query,\n    meta: { tabla: 'Avatar', accion: 'eliminar', CODIGO }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        112
+      ],
+      "id": "dd511f32-c747-49fa-b64f-5f2c0ff61a3c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Code → pregătește SELECT pentru Avatar ===\nconst item = items[0] ?? { json: {}, binary: {} };\nconst body = item.json?.body ?? item.json ?? {};\n\nfunction toScalar(v){ return Array.isArray(v) ? (v.length ? v[0] : null) : v; }\nfunction sqlString(v){\n  v = toScalar(v);\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\nconst CODIGO = toScalar(body.CODIGO);\nif (!CODIGO) {\n  throw new Error(\"Faltă CODIGO în body pentru ruta 'get'.\");\n}\n\n// Notă: extragem BLOB-ul ca base64, ca să fie ușor de trimis în JSON\nconst query = `\nSELECT \n  CODIGO,\n  NOMBRE,\n  DATE_FORMAT(FECHA_SUBIDA, '%Y-%m-%d %H:%i:%s') AS FECHA_SUBIDA,\n  TO_BASE64(AVATAR) AS AVATAR_B64\nFROM Avatar\nWHERE CODIGO = ${sqlString(CODIGO)}\nLIMIT 1;\n`.trim();\n\nreturn [{ json: { query, meta: { tabla: 'Avatar', accion: 'get', CODIGO } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1232,
+        -288
+      ],
+      "id": "7f9f51bf-b754-4f64-b562-f3c48ede7fcb",
+      "name": "pregateste extragere avatar1"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        -80
+      ],
+      "id": "35a4618a-d3aa-43e1-9931-571b20b717ce",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        -256
+      ],
+      "id": "4eae6e77-837a-4c29-b869-90d230f06d3b",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        112
+      ],
+      "id": "5920ec56-58a8-4d3b-9573-fef140a4377e",
+      "name": "Respond to Webhook2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "identifica ruta": {
+      "main": [
+        [
+          {
+            "node": "pregateste pentru salvarea avatar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "pregateste extragere avatar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "primeste apelu": {
+      "main": [
+        [
+          {
+            "node": "identifica ruta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pregateste pentru salvarea avatar": {
+      "main": [
+        [
+          {
+            "node": "salveaza avatar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "pregateste extragere avatar": {
+      "main": [
+        [
+          {
+            "node": "serveste avatarul",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "sterge avatarul",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "serveste avatarul": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "salveaza avatar": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sterge avatarul": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "4980a105-bcfb-4eba-a6a7-b5b5e8a89dd7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "C8sBHcr3sqYNYrlf",
+  "tags": []
+}

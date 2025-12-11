@@ -64,17 +64,22 @@ export const normalizeDetalles = (detalleData) => {
 export const computeMonthlyAlertSummary = (detalleData) => {
   const detalles = normalizeDetalles(detalleData);
   if (!Array.isArray(detalles) || detalles.length === 0) {
+    console.log('🔍 [AlertSummary] No detalles found');
     return { total: 0, positivos: 0, negativos: 0 };
   }
 
   let positivos = 0;
   let negativos = 0;
+  const alertasDetalii = [];
 
-  detalles.forEach((item) => {
+  detalles.forEach((item, index) => {
+    const fecha = item?.fecha || `dia_${index + 1}`;
     const deltaValue = parseNumericValue(item?.delta);
     const excedenteValue = parseNumericValue(item?.excedente);
     const excedentePositivo = parseNumericValue(item?.excedentePositivo);
     const excedenteNegativo = parseNumericValue(item?.excedenteNegativo);
+    const plan = parseNumericValue(item?.plan);
+    const fichado = parseNumericValue(item?.fichado);
 
     const candidate =
       (Number.isFinite(deltaValue) ? deltaValue : undefined) ??
@@ -86,11 +91,42 @@ export const computeMonthlyAlertSummary = (detalleData) => {
       return;
     }
 
+    const alertaInfo = {
+      fecha,
+      plan: Number.isFinite(plan) ? plan : null,
+      fichado: Number.isFinite(fichado) ? fichado : null,
+      delta: Number.isFinite(deltaValue) ? deltaValue : null,
+      excedente: Number.isFinite(excedenteValue) ? excedenteValue : null,
+      candidate,
+      tipo: candidate > 0 ? 'exceso' : 'deficit'
+    };
+
     if (candidate > 0) {
       positivos += 1;
+      alertasDetalii.push(alertaInfo);
     } else {
       negativos += 1;
+      alertasDetalii.push(alertaInfo);
     }
+  });
+
+  console.log('📊 [AlertSummary] Calculated summary:', {
+    total: positivos + negativos,
+    positivos,
+    negativos,
+    detalles: alertasDetalii
+  });
+  
+  // Log detaliat pentru fiecare alerta
+  console.log('📋 [AlertSummary] Detalii complete pentru fiecare alerta:');
+  alertasDetalii.forEach((alerta, idx) => {
+    console.log(`  ${idx + 1}. ${alerta.fecha} - ${alerta.tipo}:`, {
+      plan: alerta.plan,
+      fichado: alerta.fichado,
+      delta: alerta.delta,
+      excedente: alerta.excedente,
+      candidate: alerta.candidate
+    });
   });
 
   return {
@@ -190,25 +226,34 @@ export const clearAllMonthlyAlertsNotified = () => {
 export const fetchMonthlyAlerts = async ({
   empleadoId,
   empleadoNombre,
-  month,
-  getUrl
+  month
 }) => {
-  if (!empleadoId || !empleadoNombre || !month || !getUrl) {
+  if (!empleadoId || !empleadoNombre || !month) {
     return { data: null, summary: { total: 0, positivos: 0, negativos: 0 } };
   }
 
   try {
-    const baseUrl = getUrl('/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5');
-    const url = `${baseUrl}?tipo=detallemensual&empleadoId=${encodeURIComponent(empleadoId)}&empleadoNombre=${encodeURIComponent(empleadoNombre)}&mes=${month}&lunaselectata=${month}`;
+    // Folosim direct endpoint-ul resumen care returnează datele procesate cu delta calculat
+    const { routes } = await import('./routes');
+    const token = localStorage.getItem('auth_token');
+    const url = `${routes.getMonthlyAlertsResumen}?tipo=mensual&lunaselectata=${month}&t=${Date.now()}`;
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    console.log('🔍 [MonthlyAlerts] Fetching resumen from new backend:', url);
+    
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers
     });
 
     if (!response.ok) {
-      console.warn('⚠️ fetchMonthlyAlerts - no se pudieron obtener alertas. Status:', response.status);
+      console.warn('⚠️ [MonthlyAlerts] Request failed. Status:', response.status, response.statusText);
       const emptySummary = { total: 0, positivos: 0, negativos: 0 };
       storeMonthlyAlerts(month, emptySummary);
       return { data: null, summary: emptySummary };
@@ -216,28 +261,109 @@ export const fetchMonthlyAlerts = async ({
 
     const text = await response.text();
     if (!text) {
+      console.warn('⚠️ [MonthlyAlerts] Empty response from backend');
       const emptySummary = { total: 0, positivos: 0, negativos: 0 };
       storeMonthlyAlerts(month, emptySummary);
       return { data: null, summary: emptySummary };
     }
 
     const data = JSON.parse(text);
-    let normalized = normalizeDetalles(data);
-    const hasDeltaFields = Array.isArray(normalized) && normalized.some(item => {
-      const deltaValue = parseNumericValue(item?.delta);
-      const excedenteValue = parseNumericValue(item?.excedente);
-      return Number.isFinite(deltaValue) || Number.isFinite(excedenteValue);
-    });
+    console.log('✅ [MonthlyAlerts] Resumen data received:', Array.isArray(data) ? `${data.length} empleados` : 'non-array response');
 
-    let summary = computeMonthlyAlertSummary(data);
+    // Găsim empleado-ul specificat
+    let empleado = null;
+    if (Array.isArray(data)) {
+      empleado = data.find(emp => {
+        const codigo = emp.CODIGO || emp.codigo || emp.empleadoId || emp.id;
+        return `${codigo}` === `${empleadoId}`;
+      });
+    }
 
-    if (!hasDeltaFields) {
-      const detalle = await fetchEmployeeDetalleResumen({ empleadoId, month, getUrl });
-      if (detalle) {
-        normalized = detalle;
-        summary = computeMonthlyAlertSummary(detalle);
+    if (!empleado) {
+      console.warn(`⚠️ [MonthlyAlerts] Empleado ${empleadoId} not found in resumen response`);
+      const emptySummary = { total: 0, positivos: 0, negativos: 0 };
+      storeMonthlyAlerts(month, emptySummary);
+      return { data: null, summary: emptySummary };
+    }
+
+    // Extragem detalii_zilnice
+    let detalii = empleado.detalii_zilnice || empleado.detaliiZilnice || [];
+    
+    // Parse detalii_zilnice dacă este string
+    if (typeof detalii === 'string') {
+      try {
+        detalii = JSON.parse(detalii);
+      } catch (e) {
+        console.warn('⚠️ [MonthlyAlerts] Error parsing detalii_zilnice:', e);
+        detalii = [];
       }
     }
+
+    if (!Array.isArray(detalii)) {
+      console.warn('⚠️ [MonthlyAlerts] detalii_zilnice is not an array');
+      detalii = [];
+    }
+
+    // Filtrează doar zilele până la data curentă (include ziua curentă)
+    // Folosim timezone local, nu UTC
+    const today = new Date();
+    const year = today.getFullYear();
+    const monthNum = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${monthNum}-${day}`; // Format: YYYY-MM-DD (timezone local)
+    
+    const detaliiPanaAstazi = detalii.filter(d => {
+      if (!d?.fecha) return false;
+      const fechaStr = typeof d.fecha === 'string' ? d.fecha.split('T')[0] : d.fecha;
+      return fechaStr <= todayStr; // <= pentru a include ziua curentă
+    });
+
+    console.log(`✅ [MonthlyAlerts] Found ${detalii.length} zile in detalii_zilnice (${detaliiPanaAstazi.length} până astăzi ${todayStr}) for empleado ${empleadoId}`);
+    
+    // Log toate zilele disponibile (după filtrare) pentru debugging
+    console.log('📅 [MonthlyAlerts] Toate zilele disponibile (până astăzi):', detaliiPanaAstazi.map(d => ({
+      fecha: d.fecha,
+      plan: d.plan,
+      fichado: d.fichado,
+      delta: d.delta
+    })));
+    
+    // Folosim doar zilele până astăzi (include ziua curentă)
+    detalii = detaliiPanaAstazi;
+    
+    // Log toate zilele cu delta != 0 pentru debugging
+    const zileCuDelta = detalii.filter(d => {
+      const delta = parseNumericValue(d?.delta);
+      return Number.isFinite(delta) && delta !== 0;
+    });
+    console.log(`📊 [MonthlyAlerts] Zile cu delta != 0: ${zileCuDelta.length} din ${detalii.length}`);
+    console.log('📋 [MonthlyAlerts] Toate zilele cu delta != 0:', zileCuDelta.map(d => ({
+      fecha: d.fecha,
+      plan: d.plan,
+      fichado: d.fichado,
+      delta: d.delta
+    })));
+    
+    // Log zilele cu delta = 0 sau lipsă pentru debugging
+    const zileFaraDelta = detalii.filter(d => {
+      const delta = parseNumericValue(d?.delta);
+      return !Number.isFinite(delta) || delta === 0;
+    });
+    console.log(`📊 [MonthlyAlerts] Zile fără alerta (delta = 0 sau lipsă): ${zileFaraDelta.length}`);
+    if (zileFaraDelta.length > 0) {
+      console.log('📋 [MonthlyAlerts] Zile fără alerta:', zileFaraDelta.slice(0, 10).map(d => ({
+        fecha: d.fecha,
+        plan: d.plan,
+        fichado: d.fichado,
+        delta: d.delta
+      })));
+    }
+    
+    // Normalizează și calculează summary
+    const normalized = normalizeDetalles(detalii);
+    const summary = computeMonthlyAlertSummary(detalii);
+
+    console.log('✅ [MonthlyAlerts] Calculated summary:', summary);
 
     storeMonthlyAlerts(month, summary);
 
@@ -248,59 +374,6 @@ export const fetchMonthlyAlerts = async ({
   }
 };
 
-const RESUMEN_ENDPOINT = '/webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b';
-
-const fetchEmployeeDetalleResumen = async ({ empleadoId, month, getUrl }) => {
-  try {
-    const baseUrl = getUrl(RESUMEN_ENDPOINT);
-    const url = `${baseUrl}?tipo=mensual&lunaselectata=${month}&t=${Date.now()}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      console.warn('⚠️ fetchEmployeeDetalleResumen - status:', response.status);
-      return null;
-    }
-
-    const text = await response.text();
-    if (!text) {
-      return null;
-    }
-
-    const data = JSON.parse(text);
-    let empleados = [];
-
-    if (Array.isArray(data)) {
-      empleados = data;
-    } else if (data?.empleados && Array.isArray(data.empleados)) {
-      empleados = data.empleados;
-    } else if (Array.isArray(data?.[0]?.empleados)) {
-      empleados = data[0].empleados;
-    }
-
-    if (!Array.isArray(empleados) || empleados.length === 0) {
-      return null;
-    }
-
-    const empleado = empleados.find(emp => {
-      const codigo = emp.CODIGO || emp.codigo || emp.empleadoId || emp.id;
-      return `${codigo}` === `${empleadoId}`;
-    });
-
-    if (!empleado) {
-      return null;
-    }
-
-    return empleado.detalii_zilnice || empleado.detaliiZilnice || [];
-  } catch (error) {
-    console.error('❌ fetchEmployeeDetalleResumen - error:', error);
-    return null;
-  }
-};
 
 
 

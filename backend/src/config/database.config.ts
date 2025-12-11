@@ -5,7 +5,7 @@ export default registerAs('database', () => {
   console.log('  DB_HOST:', process.env.DB_HOST);
   console.log('  DB_NAME:', process.env.DB_NAME);
   console.log('  DB_USERNAME:', process.env.DB_USERNAME);
-  
+
   return {
     type: process.env.DB_TYPE || 'mysql',
     host: process.env.DB_HOST || 'localhost',

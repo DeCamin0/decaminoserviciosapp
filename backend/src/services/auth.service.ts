@@ -1,31 +1,31 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
-import { User } from '../entities/user.entity';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Auth Service
- * 
+ *
  * Implements real authentication logic using direct database queries
  * Generates JWT tokens for authenticated users
  */
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
    * Login user
-   * 
+   *
    * @param email User email
    * @param password User password (D.N.I. / NIE)
    * @returns User object if successful, error otherwise
    */
-  async login(email: string, password: string): Promise<{
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{
     success: boolean;
     user?: any;
     accessToken?: string;
@@ -33,35 +33,37 @@ export class AuthService {
   }> {
     try {
       console.log('[AuthService] Login attempt for:', email);
-      
-      // Normalize email (lowercase, trim)
+
       const normalizedEmail = email.trim().toLowerCase();
-      
-      // Query database for user by email
-      // Use raw query to handle case-insensitive search and special characters in column names
-      const found = await this.userRepository
-        .createQueryBuilder('user')
-        .where('LOWER(`CORREO ELECTRONICO`) = LOWER(:email)', { email: normalizedEmail })
-        .getOne();
+
+      // Prisma lookup by email (case-insensitive)
+      const found = await this.prisma.user.findFirst({
+        where: {
+          CORREO_ELECTRONICO: normalizedEmail,
+        },
+      });
 
       if (!found) {
-        console.log('[AuthService] User not found:', normalizedEmail);
+        console.log('[AuthService] User not found (Prisma):', normalizedEmail);
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
 
       // Verify password - try both D.N.I. / NIE and Contraseña fields
-      const dniPassword = String(found['D.N.I. / NIE'] || '').trim();
-      const contraseñaPassword = String(found['Contraseña'] || '').trim();
+      const dniPassword = String(found.DNI_NIE || '').trim();
+      const contraseñaPassword = String(found.CONTRASENA || '').trim();
       const inputPassword = password.trim();
-      
+
       console.log('[AuthService] Password check:', {
         dni: dniPassword ? '***' : 'empty',
         contraseña: contraseñaPassword ? '***' : 'empty',
-        inputLength: inputPassword.length
+        inputLength: inputPassword.length,
       });
-      
+
       // Check if password matches D.N.I. / NIE or Contraseña
-      if (dniPassword !== inputPassword && contraseñaPassword !== inputPassword) {
+      if (
+        dniPassword !== inputPassword &&
+        contraseñaPassword !== inputPassword
+      ) {
         console.log('[AuthService] Password mismatch for:', normalizedEmail);
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
@@ -69,7 +71,12 @@ export class AuthService {
       // Validate active status
       const estadoRaw = (found.ESTADO || '').toString().trim().toUpperCase();
       if (estadoRaw && estadoRaw !== 'ACTIVO') {
-        console.log('[AuthService] User inactive:', normalizedEmail, 'Estado:', estadoRaw);
+        console.log(
+          '[AuthService] User inactive:',
+          normalizedEmail,
+          'Estado:',
+          estadoRaw,
+        );
         return { success: false, error: 'Usuario inactivo' };
       }
 
@@ -86,8 +93,11 @@ export class AuthService {
 
       // Create user object (same format as frontend expects)
       const userObj = {
-        email: found['CORREO ELECTRONICO'],
-        isManager: grupo === 'Manager' || grupo === 'Supervisor' || grupo === 'Developer',
+        email: found.CORREO_ELECTRONICO,
+        isManager:
+          grupo === 'Manager' ||
+          grupo === 'Supervisor' ||
+          grupo === 'Developer',
         role,
         GRUPO: grupo,
         ...found,
@@ -95,16 +105,21 @@ export class AuthService {
 
       // Generate JWT token
       const payload = {
-        email: found['CORREO ELECTRONICO'],
+        email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
         role,
         grupo,
       };
       const accessToken = this.jwtService.sign(payload);
 
-      console.log('[AuthService] Login successful for:', normalizedEmail, 'Role:', role);
-      return { 
-        success: true, 
+      console.log(
+        '[AuthService] Login successful for:',
+        normalizedEmail,
+        'Role:',
+        role,
+      );
+      return {
+        success: true,
         user: userObj,
         accessToken, // JWT token
       };
@@ -114,6 +129,27 @@ export class AuthService {
         success: false,
         error: error.message || 'Error during login',
       };
+    }
+  }
+
+  /**
+   * Prisma-based lookup by CODIGO (parallel to TypeORM, behind flag)
+   */
+  async findUserByCodigoPrisma(codigo: string) {
+    try {
+      const usePrisma = process.env.USE_PRISMA_AUTH === 'true';
+      if (!usePrisma) return null;
+
+      const user = await this.prisma.user.findUnique({
+        where: { CODIGO: codigo },
+      });
+      return user || null;
+    } catch (error) {
+      console.error(
+        '[AuthService] Prisma findUserByCodigoPrisma error:',
+        error,
+      );
+      return null;
     }
   }
 }

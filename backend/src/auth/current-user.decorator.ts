@@ -10,4 +10,3 @@ export const CurrentUser = createParamDecorator(
     return request.user; // Set by JwtStrategy.validate()
   },
 );
-

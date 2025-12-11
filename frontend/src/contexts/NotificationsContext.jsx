@@ -15,7 +15,7 @@ const NotificationsContext = createContext(null);
  */
 export const NotificationsProvider = ({ children }) => {
   const { user } = useAuth();
-  const { socket, isConnected, joinRoom, leaveRoom } = useWebSocket();
+  const { socket, isConnected, joinRoom } = useWebSocket();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +53,7 @@ export const NotificationsProvider = ({ children }) => {
 
         const baseUrl = import.meta.env.DEV 
           ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_BASE_URL || '');
+          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
         const response = await fetch(`${baseUrl}/api/notifications`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -250,6 +250,7 @@ export const NotificationsProvider = ({ children }) => {
 /**
  * Hook pentru a folosi NotificationsContext
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const useNotifications = () => {
   const context = useContext(NotificationsContext);
   if (!context) {

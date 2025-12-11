@@ -78,7 +78,7 @@ export const fetchAvatarOnce = async ({ codigo, nombre, endpoint, version }) => 
   // Try SW cache first (if available)
   try {
     if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      const reg = await navigator.serviceWorker.ready;
+      await navigator.serviceWorker.ready;
       const cache = await caches.open(AVATAR_SW_CACHE);
       const match = await cache.match(endpoint, { ignoreSearch: false });
       if (match) {
@@ -138,8 +138,17 @@ export const fetchAvatarOnce = async ({ codigo, nombre, endpoint, version }) => 
       formData.append('nombre', nombre || '');
 
       console.debug('[avatarCache] Source: fetch', { codigo, url: endpoint });
+      
+      // Adaugă token-ul JWT dacă există
+      const headers = {};
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(endpoint, {
         method: 'POST',
+        headers,
         body: formData,
       });
 

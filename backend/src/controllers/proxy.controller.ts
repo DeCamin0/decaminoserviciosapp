@@ -10,6 +10,7 @@ import {
 import { Request, Response } from 'express';
 import { N8nProxyService } from '../services/n8n-proxy.service';
 import multer from 'multer';
+import FormData from 'form-data';
 
 /**
  * Proxy controller for routing requests to n8n
@@ -42,9 +43,11 @@ export class ProxyController {
       }
 
       // Handle FormData with multer (body was NOT parsed by Express)
-      const isFormData = req.headers['content-type']?.includes('multipart/form-data');
+      const isFormData = req.headers['content-type']?.includes(
+        'multipart/form-data',
+      );
       let requestBody = body;
-      
+
       if (isFormData) {
         // Parse FormData using multer (body stream is still available)
         return new Promise((resolve, reject) => {
@@ -55,14 +58,16 @@ export class ProxyController {
               console.error('[Proxy] Multer error:', err);
               return reject(err);
             }
-            
+
             console.log('[Proxy] Multer parsed - req.body:', req.body);
-            console.log('[Proxy] req.body keys:', req.body ? Object.keys(req.body) : 'empty');
-            
+            console.log(
+              '[Proxy] req.body keys:',
+              req.body ? Object.keys(req.body) : 'empty',
+            );
+
             // Reconstruct FormData for axios
-            const FormDataNode = require('form-data');
-            const formData = new FormDataNode();
-            
+            const formData = new FormData();
+
             // Add fields from req.body (multer puts them here)
             if (req.body && Object.keys(req.body).length > 0) {
               Object.keys(req.body).forEach((key) => {
@@ -81,20 +86,23 @@ export class ProxyController {
             if (Array.isArray(files) && files.length > 0) {
               files.forEach((file: any) => {
                 if (!file || !file.buffer) return;
-                const fname = file.originalname || file.fieldname || 'upload.bin';
+                const fname =
+                  file.originalname || file.fieldname || 'upload.bin';
                 const ftype = file.mimetype || 'application/octet-stream';
                 formData.append(file.fieldname || 'file', file.buffer, {
                   filename: fname,
                   contentType: ftype,
                 });
-                console.log(`[Proxy] Added file: field=${file.fieldname} name=${fname} type=${ftype} size=${file.size}`);
+                console.log(
+                  `[Proxy] Added file: field=${file.fieldname} name=${fname} type=${ftype} size=${file.size}`,
+                );
               });
             } else {
               console.warn('[Proxy] No files found in multer parsing.');
             }
-            
+
             requestBody = formData;
-            
+
             try {
               const forwardHeaders: Record<string, string> = {};
               const excludeHeaders = ['host', 'connection', 'content-length'];
@@ -104,7 +112,9 @@ export class ProxyController {
                 }
               });
 
-              console.log('[Proxy] Calling n8nProxyService.proxyRequest with FormData');
+              console.log(
+                '[Proxy] Calling n8nProxyService.proxyRequest with FormData',
+              );
               const result = await this.n8nProxyService.proxyRequest(
                 req.method,
                 endpoint,
@@ -115,15 +125,23 @@ export class ProxyController {
               console.log('[Proxy] Got response from n8n for avatar:', {
                 type: typeof result,
                 isArray: Array.isArray(result),
-                keys: result && typeof result === 'object' ? Object.keys(result) : 'not object',
-                preview: JSON.stringify(result).substring(0, 200)
+                keys:
+                  result && typeof result === 'object'
+                    ? Object.keys(result)
+                    : 'not object',
+                preview: JSON.stringify(result).substring(0, 200),
               });
 
               return resolve(res.status(200).json(result) as any);
             } catch (error: any) {
               const statusCode = error.status || 500;
-              const message = error.response?.message || error.message || 'Proxy error';
-              return resolve(res.status(statusCode).json({ error: message, statusCode }) as any);
+              const message =
+                error.response?.message || error.message || 'Proxy error';
+              return resolve(
+                res
+                  .status(statusCode)
+                  .json({ error: message, statusCode }) as any,
+              );
             }
           });
         });
@@ -134,13 +152,14 @@ export class ProxyController {
         hasBody: !!body,
         queryParams: Object.keys(query).length,
         contentType: headers['content-type'],
-        bodyKeys: body && typeof body === 'object' ? Object.keys(body) : 'not object',
+        bodyKeys:
+          body && typeof body === 'object' ? Object.keys(body) : 'not object',
       });
 
       // Forward relevant headers (exclude host, connection, etc.)
       const forwardHeaders: Record<string, string> = {};
       const excludeHeaders = ['host', 'connection', 'content-length'];
-      
+
       Object.keys(headers).forEach((key) => {
         if (!excludeHeaders.includes(key.toLowerCase())) {
           forwardHeaders[key] = headers[key];
@@ -160,7 +179,9 @@ export class ProxyController {
       console.log(`[Proxy] Response for ${endpoint}:`, {
         type: typeof result,
         isArray: Array.isArray(result),
-        length: Array.isArray(result) ? result.length : Object.keys(result || {}).length,
+        length: Array.isArray(result)
+          ? result.length
+          : Object.keys(result || {}).length,
         preview: resultStr.substring(0, 200),
       });
 
@@ -177,7 +198,7 @@ export class ProxyController {
       // Handle errors from n8n
       const statusCode = error.status || 500;
       const message = error.response?.message || error.message || 'Proxy error';
-      
+
       return res.status(statusCode).json({
         error: message,
         statusCode,

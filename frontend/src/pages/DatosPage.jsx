@@ -101,9 +101,14 @@ const [editLoading, setEditLoading] = useState(false);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
-  const email = authUser?.email;
+  const email = authUser?.email || user?.email || user?.CORREO_ELECTRONICO || authUser?.CORREO_ELECTRONICO || '';
   const resolvedCodigo = user?.CODIGO || authUser?.CODIGO || '';
-  const resolvedNombre = user?.['NOMBRE / APELLIDOS'] || authUser?.['NOMBRE / APELLIDOS'] || '';
+  const resolvedNombre =
+    user?.['NOMBRE / APELLIDOS'] ||
+    user?.NOMBRE_APELLIDOS ||
+    authUser?.['NOMBRE / APELLIDOS'] ||
+    authUser?.NOMBRE_APELLIDOS ||
+    '';
 
   const normalizeYesNoValue = (value) => {
     if (value === null || value === undefined) return '';
@@ -279,8 +284,16 @@ const [editLoading, setEditLoading] = useState(false);
       // Folosește backend proxy (routes.getAvatar) ca înainte, pentru a evita CORS/failed to fetch
       const avatarEndpoint = routes.getAvatar;
 
+      // Adaugă token-ul JWT dacă există
+      const headers = {};
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(avatarEndpoint, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -368,8 +381,16 @@ const [editLoading, setEditLoading] = useState(false);
       });
 
       // Use proxy in dev, direct n8n in production
+      // Adaugă token-ul JWT dacă există
+      const headers = {};
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(routes.getAvatar, {
         method: 'POST',
+        headers,
         body: formData
       });
 
@@ -530,7 +551,7 @@ const [editLoading, setEditLoading] = useState(false);
       setImagePreview((prev) => prev || DEFAULT_AVATAR);
       // No mostramos error al usuario porque no tener avatar no es un error
     }
-  }, [resolvedCodigo, resolvedNombre]);
+  }, [resolvedCodigo, resolvedNombre, user?.avatarVersion, authUser?.avatarVersion]);
 
   // State pentru lista de clienți
   const [clientes, setClientes] = useState([]);
@@ -648,10 +669,20 @@ const [editLoading, setEditLoading] = useState(false);
       // Evită să suprascrii user-ul cu răspunsuri de tip {status: "not-modified"}
       if (users.length === 1 && users[0] && users[0].status === 'not-modified') {
         console.log('ℹ️ [DatosPage] Response is status:not-modified - păstrez user-ul existent.');
-        // dacă nu avem user în state, folosește authUser ca fallback pentru a evita ecranul de eroare
+        // NU suprascrii user-ul existent dacă are date - păstrează ce există deja
+        // Dacă user-ul nu există deloc, încearcă să-l construiești din authUser ca fallback minim
         if (!user && authUser) {
-          setUser(authUser);
+          // Construiește user minim din authUser cu fallback-uri
+          const fallbackUser = {
+            'CODIGO': authUser.CODIGO || authUser.codigo || '',
+            'NOMBRE / APELLIDOS': authUser['NOMBRE / APELLIDOS'] || authUser.NOMBRE_APELLIDOS || authUser.empleadoNombre || authUser.name || '',
+            'CORREO ELECTRONICO': authUser.email || authUser.CORREO_ELECTRONICO || authUser['CORREO ELECTRONICO'] || '',
+            'GRUPO': authUser.GRUPO || authUser.grupo || '',
+            'ESTADO': authUser.ESTADO || authUser.estado || '',
+          };
+          setUser(fallbackUser);
         }
+        // Altfel, păstrează user-ul existent (nu face nimic)
         setError(null);
         setOperationLoading('user', false);
         return;
@@ -730,14 +761,22 @@ const [editLoading, setEditLoading] = useState(false);
     } finally {
       setOperationLoading('user', false);
     }
-  }, [authUser, email, setOperationLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, email, setOperationLoading]); // Removed 'user' from deps to avoid reset loops
 
+  // Fetch clientes o singură dată la mount (nu blochează afișarea datelor utilizatorului)
+  useEffect(() => {
+    fetchClientes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Execută doar o dată la mount
+
+  // Fetch user când se schimbă email-ul
   useEffect(() => {
     if (email) {
       fetchUser();
     }
-    fetchClientes();
-  }, [email, fetchClientes, fetchUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email]); // Doar email, nu fetchUser (evită loop infinit)
 
   // Cargar avatar existente cuando el usuario está disponible
   useEffect(() => {
@@ -751,11 +790,12 @@ const [editLoading, setEditLoading] = useState(false);
   }, []);
 
   // Dacă datele principale nu mai încarcă, marcăm UI ready imediat
+  // Nu așteptăm fetchClientes - este independent și nu blochează afișarea datelor utilizatorului
   useEffect(() => {
-    if (!isOperationLoading('user') && !imageLoading) {
+    if (!isOperationLoading('user') && !imageLoading && user) {
       setUiReady(true);
     }
-  }, [isOperationLoading, imageLoading]);
+  }, [isOperationLoading, imageLoading, user]);
 
   // Logging + watchdog pentru a identifica blocaje de gating
   useEffect(() => {

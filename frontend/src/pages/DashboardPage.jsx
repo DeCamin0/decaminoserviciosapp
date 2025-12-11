@@ -2,8 +2,8 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Notification } from '../components/ui';
-import { routes, getN8nUrl } from '../utils/routes';
-import { fetchAvatarOnce, getCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
+import { routes } from '../utils/routes';
+import { getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 import QuickAccessOrb from '../components/QuickAccessOrb';
 import { useAdminApi } from '../hooks/useAdminApi';
 import SendNotificationModal from '../components/SendNotificationModal';
@@ -16,6 +16,7 @@ import {
   Clock,
   FileText,
   Folder,
+  MessageCircle,
   Settings,
   ShoppingCart,
   UserCircle,
@@ -75,12 +76,42 @@ const InicioPage = () => {
     </div>
   );
 
-  // Extrage informațiile corecte din obiectul user
-  const userName = user?.['NOMBRE / APELLIDOS'] || user?.name || 'Utilizator';
-  const userGrupo = user?.GRUPO || user?.grupo || 'Empleado';
-  const isManager = user?.isManager || user?.GRUPO === 'Manager' || user?.GRUPO === 'Supervisor';
-  const isAdmin = user?.GRUPO === 'Admin' || user?.grupo === 'Admin';
-  const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
+  // Extrage informațiile corecte din obiectul user (memoizat pentru a evita re-render-uri)
+  // Extract user name fields for dependency tracking
+  const userNombre = user?.['NOMBRE / APELLIDOS'];
+  const userNombreApellidos = user?.NOMBRE_APELLIDOS;
+  const userEmpleadoNombre = user?.empleadoNombre;
+  const userNameField = user?.name;
+  const userEmail = user?.email;
+  const userCorreoElectronico = user?.CORREO_ELECTRONICO;
+  
+  const userName = useMemo(() => 
+    userNombre || 
+    userNombreApellidos || 
+    userEmpleadoNombre ||
+    userNameField || 
+    userEmail || 
+    userCorreoElectronico || 
+    'Utilizator',
+    [userNombre, userNombreApellidos, userEmpleadoNombre, userNameField, userEmail, userCorreoElectronico]
+  );
+  
+  // Debug: log pentru a vedea ce câmpuri există (doar o dată când user se schimbă)
+  useEffect(() => {
+    if (user) {
+      console.log('🔍 [Dashboard] User object keys:', Object.keys(user));
+      console.log('🔍 [Dashboard] NOMBRE / APELLIDOS:', user['NOMBRE / APELLIDOS']);
+      console.log('🔍 [Dashboard] NOMBRE_APELLIDOS:', user.NOMBRE_APELLIDOS);
+      console.log('🔍 [Dashboard] empleadoNombre:', user.empleadoNombre);
+      console.log('🔍 [Dashboard] Final userName:', userName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.CODIGO, user?.email]); // Intentionally only track CODIGO and email to avoid excessive re-renders
+  
+  const userGrupo = useMemo(() => user?.GRUPO || user?.grupo || 'Empleado', [user?.GRUPO, user?.grupo]);
+  const isManager = useMemo(() => user?.isManager || user?.GRUPO === 'Manager' || user?.GRUPO === 'Supervisor', [user?.isManager, user?.GRUPO]);
+  const isAdmin = useMemo(() => user?.GRUPO === 'Admin' || user?.grupo === 'Admin', [user?.GRUPO, user?.grupo]);
+  const isDeveloper = useMemo(() => user?.GRUPO === 'Developer' || user?.grupo === 'Developer', [user?.GRUPO, user?.grupo]);
 
   const pedidosAccess = useMemo(() => {
     const empleado = empleadoCompleto || user || {};
@@ -255,7 +286,10 @@ const InicioPage = () => {
     
     // Returnează permisiunea pentru modulul specificat
     const hasAccess = grupoPermissions[module] === true;
-    console.log(`🔐 DashboardPage: Checking permission for grupo "${userGrupo}" (key: "${grupoKey}"), module "${module}":`, hasAccess);
+    // Log doar pentru modulele importante sau când se schimbă permisiunea
+    if (module === 'admin' || module === 'empleados' || hasAccess) {
+      console.log(`🔐 DashboardPage: Checking permission for grupo "${userGrupo}" (key: "${grupoKey}"), module "${module}":`, hasAccess);
+    }
     return hasAccess;
   }, [userPermissions, userGrupo, findGrupoKey]);
 
@@ -291,11 +325,14 @@ const InicioPage = () => {
     // Verifică dacă există permisiuni pentru grupul utilizatorului în backend
     const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
     
-    console.log('🔐 DashboardPage: Building menu items.');
-    console.log('  - useBackendPermissions:', useBackendPermissions);
-    console.log('  - userGrupo:', userGrupo);
-    console.log('  - grupoKeyExists:', grupoKeyExists);
-    console.log('  - userPermissions keys:', userPermissions ? Object.keys(userPermissions) : 'null');
+    // Log doar când se schimbă ceva relevant (nu la fiecare render)
+    if (useBackendPermissions || grupoKeyExists) {
+      console.log('🔐 DashboardPage: Building menu items.');
+      console.log('  - useBackendPermissions:', useBackendPermissions);
+      console.log('  - userGrupo:', userGrupo);
+      console.log('  - grupoKeyExists:', grupoKeyExists);
+      console.log('  - userPermissions keys:', userPermissions ? Object.keys(userPermissions) : 'null');
+    }
     
     const list = [];
     
@@ -310,6 +347,7 @@ const InicioPage = () => {
     const canAccessDocumentos = shouldUseBackend ? (hasPermission('documentos') || hasPermission('dashboard')) : true;
     const canAccessCuadrantesEmpleado = shouldUseBackend ? (hasPermission('cuadrantes-empleado') || hasPermission('cuadrantes') || hasPermission('dashboard')) : true;
     const canAccessMisInspecciones = shouldUseBackend ? (hasPermission('mis-inspecciones') || hasPermission('dashboard')) : true;
+    const canAccessChat = true; // Chat disponibil pentru toți utilizatorii autentificați
 
     if (canAccessDatos) {
       list.push({
@@ -374,6 +412,17 @@ const InicioPage = () => {
         icon: <ClipboardCheck className="h-6 w-6 text-white" />,
         gradient: 'from-cyan-500 via-sky-500 to-blue-500',
         href: '/mis-inspecciones',
+      });
+    }
+
+    if (canAccessChat) {
+      list.push({
+        id: 'chat',
+        label: 'Chat',
+        hint: 'Mensajes y comunicación',
+        icon: <MessageCircle className="h-6 w-6 text-white" />,
+        gradient: 'from-green-500 via-emerald-500 to-teal-500',
+        href: '/chat',
       });
     }
 
@@ -520,23 +569,26 @@ const InicioPage = () => {
   ]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)
+  const userCodigoRef = useRef(null);
+  const userEmailRef = useRef(null);
+  
   useEffect(() => {
+    // Verifică dacă s-a schimbat ceva relevant
+    const codigoChanged = userCodigoRef.current !== user?.CODIGO;
+    const emailChanged = userEmailRef.current !== user?.email;
+    
+    if (!codigoChanged && !emailChanged && empleadoCompleto) {
+      // Nu s-a schimbat nimic relevant și avem deja date, skip
+      return;
+    }
+    
+    // Actualizează ref-urile
+    userCodigoRef.current = user?.CODIGO;
+    userEmailRef.current = user?.email;
+    
     const fetchUser = async () => {
       try {
-        const searchParams = new URLSearchParams();
-        if (user?.email) {
-          searchParams.append('email', user.email);
-        }
-        if (user?.CODIGO) {
-          searchParams.append('codigo', user.CODIGO);
-        }
-        const nombreCompleto = user?.['NOMBRE / APELLIDOS'] || user?.NOMBRE || user?.nombre;
-        if (nombreCompleto) {
-          searchParams.append('nombre', nombreCompleto);
-        }
-        const endpoint = searchParams.toString()
-          ? `${routes.getEmpleados}${routes.getEmpleados.includes('?') ? '&' : '?'}${searchParams.toString()}`
-          : routes.getEmpleados;
+        const endpoint = routes.getEmpleadoMe || routes.getEmpleados;
 
         // Adaugă token-ul JWT dacă există
         const headers = {
@@ -577,6 +629,8 @@ const InicioPage = () => {
         let users = [];
         if (Array.isArray(data)) {
           users = data;
+        } else if (data?.empleado) {
+          users = [data.empleado];
         } else if (data && Array.isArray(data.data)) {
           users = data.data;
         } else if (data && Array.isArray(data.body)) {
@@ -660,7 +714,8 @@ const InicioPage = () => {
     };
     
     fetchUser();
-  }, [user?.CODIGO, user?.email, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.CODIGO, user?.email]); // Intentionally only track CODIGO and email, empleadoCompleto is set inside
 
   // Log pentru a vedea toate datele despre angajat din backend
   useEffect(() => {
@@ -696,8 +751,22 @@ const InicioPage = () => {
       setMonthlyAlerts(null);
     }
 
-    const empleadoId = user?.CODIGO || user?.codigo;
-    const empleadoNombre = user?.['NOMBRE / APELLIDOS'] || user?.name || '';
+    const empleadoId =
+      empleadoCompleto?.CODIGO ||
+      user?.empleadoId ||
+      user?.CODIGO ||
+      user?.codigo;
+
+    const empleadoNombre =
+      empleadoCompleto?.['NOMBRE / APELLIDOS'] ||
+      user?.empleadoNombre ||
+      user?.NOMBRE_APELLIDOS ||
+      user?.['NOMBRE / APELLIDOS'] ||
+      user?.name ||
+      user?.CORREO_ELECTRONICO ||
+      user?.email ||
+      user?.CODIGO ||
+      '';
 
     if (!empleadoId || !empleadoNombre) {
       console.debug('[Dashboard] Missing empleadoId or empleadoNombre. Skipping alert fetch.');
@@ -724,8 +793,7 @@ const InicioPage = () => {
         const { data, summary } = await fetchMonthlyAlertsData({
           empleadoId,
           empleadoNombre,
-          month,
-          getUrl: getN8nUrl
+          month
         });
 
         console.debug('[Dashboard] Raw alerts data:', data);
@@ -768,9 +836,10 @@ const InicioPage = () => {
         console.debug('[Dashboard] Alert fetch completed.');
       }
     })();
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.CODIGO, user?.isDemo, empleadoCompleto?.CODIGO]); // Intentionally limited dependencies to avoid excessive re-fetches
 
-  // Cargar avatar existente - folosind același endpoint ca în DatosPage
+  // Cargar avatar existente - folosind backend nou (GET /api/avatar/me)
   const loadExistingAvatar = useCallback(async () => {
     if (!user?.CODIGO) return;
     
@@ -794,16 +863,40 @@ const InicioPage = () => {
         return;
       }
 
-      // 2) Fetch o singură dată (in-flight guard în helper)
-      const avatarUrl = await fetchAvatarOnce({
-        codigo: user.CODIGO,
-        nombre: userName || '',
-        endpoint: routes.getAvatar,
-        version: user?.avatarVersion,
+      // 2) Fetch din backend nou (GET /api/avatar/me)
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const endpoint = routes.getAvatarMe || routes.getAvatar;
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers
       });
 
-      if (avatarUrl) {
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('ℹ️ [Inicio] No se encontró avatar para este usuario.');
+          setAvatarUrl(DEFAULT_AVATAR);
+          return;
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.AVATAR_B64) {
+        const avatarUrl = `data:image/jpeg;base64,${data.AVATAR_B64.replace(/\n/g, '')}`;
         setAvatarUrl(avatarUrl);
+        setCachedAvatar(user.CODIGO, avatarUrl, user?.avatarVersion || Date.now());
         console.log('✅ [Inicio] Avatar obtinut și salvat în cache.');
       } else {
         console.log('ℹ️ [Inicio] No se encontró avatar para este usuario.');
@@ -816,7 +909,7 @@ const InicioPage = () => {
       setLoadingAvatar(false);
       avatarLoadedRef.current = true;
     }
-  }, [user?.CODIGO, userName]);
+  }, [user?.CODIGO, user?.avatarVersion]);
 
   // Cargar avatar al montar el componente
   useEffect(() => {
@@ -943,7 +1036,7 @@ const InicioPage = () => {
               <p className="mx-auto max-w-3xl text-sm leading-relaxed text-gray-600 sm:text-base md:mx-0">
                 Este es tu panel en{' '}
                 <span className="rounded-md bg-blue-50 px-2 py-1 font-semibold text-blue-700">
-                  DE CAMINO SERVICIOS AUXILIARES
+                  DE CAMINO SERVICIOS AUXILIARES V2
                 </span>
                 . Aquí tienes acceso directo a todo lo que necesitas:{' '}
                 <span className="inline-flex items-center gap-1 font-medium text-green-700">
@@ -986,7 +1079,7 @@ const InicioPage = () => {
                           const token = localStorage.getItem('auth_token');
                           const baseUrl = import.meta.env.DEV 
                             ? 'http://localhost:3000' 
-                            : (import.meta.env.VITE_API_BASE_URL || '');
+                            : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
                           const response = await fetch(`${baseUrl}/api/notifications/test`, {
                             method: 'POST',
                             headers: {

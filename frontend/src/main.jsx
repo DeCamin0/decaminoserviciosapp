@@ -100,6 +100,7 @@ import { isDemoMode } from './utils/demo'
 import './registerSW'
 // Import consoleOverride BEFORE setting up error handlers
 import './utils/consoleOverride' // Dezactivează console.log-urile în production
+import { installRegulatedFetch } from './utils/regulatedFetch'
 
 // Polyfills pentru ExcelJS în browser
 import { Buffer } from 'buffer'
@@ -144,6 +145,9 @@ console.error = (...args) => {
 // Inițializează error handler-ul pentru extensiile de browser
 handleBrowserExtensionErrors();
 
+// Dev-only: regulate fetch toward n8n endpoints (rate limit + backoff)
+installRegulatedFetch();
+
 /**
  * Bootstrap function to handle DEMO mode and MSW
  */
@@ -169,11 +173,13 @@ async function bootstrap() {
 
     console.log('🎨 Rendering React application...');
     // Render the application
+    // Pentru test environment pe /html/app-test, folosește VITE_BASE_PATH
+    const basePath = import.meta.env.VITE_BASE_PATH || '/';
     const root = ReactDOM.createRoot(rootElement);
     root.render(
       <React.StrictMode>
         <ErrorBoundary>
-          <BrowserRouter basename={"/"} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <BrowserRouter basename={basePath} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <App />
           </BrowserRouter>
         </ErrorBoundary>

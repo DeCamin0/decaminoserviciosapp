@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Minimal models used only for incremental migration (no DB changes run)
+model User {
+  CODIGO             String  @id @map("CODIGO")
+  NOMBRE_APELLIDOS   String? @map("NOMBRE / APELLIDOS")
+  CORREO_ELECTRONICO String? @map("CORREO ELECTRONICO")
+  DNI_NIE            String? @map("D.N.I. / NIE")
+  ESTADO             String? @map("ESTADO")
+  GRUPO              String? @map("GRUPO")
+  CONTRASENA         String? @map("Contraseña")
+
+  @@map("DatosEmpleados")
+}
+
+model Permissions {
+  grupo_module String  @id
+  permitted    String? @db.VarChar(50)
+  last_updated String? @db.VarChar(50)
+  updated_by   String? @db.VarChar(50)
+
+  @@map("Permissions")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.VarChar(50)
+  senderId  String?  @map("sender_id") @db.VarChar(50)
+  userId    String   @map("user_id") @db.VarChar(50)
+  type      String?  @db.VarChar(20)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  read      Boolean  @default(false) @map("read")
+  data      String?  @db.Text
+  grupo     String?  @db.VarChar(100)
+  centro    String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  readAt    DateTime? @map("read_at") @db.Timestamp(0)
+
+  @@map("notifications")
+}
+
+// --- Chat tables (new) ---
+
+enum ChatRoomType {
+  centro
+  dm
+}
+
+enum ChatRoomMemberRole {
+  member
+  supervisor
+  admin
+}
+
+model ChatRoom {
+  id         BigInt        @id @default(autoincrement()) @db.BigInt
+  firma_id   BigInt        @db.BigInt
+  tipo       ChatRoomType
+  centro_id  BigInt?       @db.BigInt
+  created_by BigInt        @db.BigInt
+  created_at DateTime      @default(now()) @db.Timestamp(0)
+
+  members    ChatRoomMember[]
+  messages   ChatMessage[]
+
+  @@map("chat_rooms")
+  @@index([firma_id], map: "idx_chat_rooms_firma")
+  @@index([centro_id], map: "idx_chat_rooms_centro")
+  @@index([tipo], map: "idx_chat_rooms_tipo")
+}
+
+model ChatRoomMember {
+  id          BigInt              @id @default(autoincrement()) @db.BigInt
+  room_id     BigInt              @db.BigInt
+  user_id     BigInt              @db.BigInt
+  rol_in_room ChatRoomMemberRole  @default(member)
+  created_at  DateTime            @default(now()) @db.Timestamp(0)
+
+  room        ChatRoom            @relation(fields: [room_id], references: [id], onDelete: Cascade)
+
+  @@map("chat_room_members")
+  @@unique([room_id, user_id], map: "uq_chat_room_member_room_user")
+  @@index([user_id], map: "idx_chat_room_member_user")
+}
+
+model ChatMessage {
+  id         BigInt   @id @default(autoincrement()) @db.BigInt
+  room_id    BigInt   @db.BigInt
+  user_id    BigInt   @db.BigInt
+  message    String   @db.Text
+  created_at DateTime @default(now()) @db.Timestamp(0)
+
+  room       ChatRoom @relation(fields: [room_id], references: [id], onDelete: Cascade)
+  reads      ChatMessageRead[]
+
+  @@map("chat_messages")
+  @@index([room_id, created_at], map: "idx_chat_messages_room_created")
+  @@index([user_id], map: "idx_chat_messages_user")
+}
+
+model ChatMessageRead {
+  id         BigInt    @id @default(autoincrement()) @db.BigInt
+  message_id BigInt    @db.BigInt
+  user_id    BigInt    @db.BigInt
+  read_at    DateTime  @default(now()) @db.Timestamp(0)
+
+  message    ChatMessage @relation(fields: [message_id], references: [id], onDelete: Cascade)
+
+  @@map("chat_message_reads")
+  @@unique([message_id, user_id], map: "uq_chat_message_read_message_user")
+  @@index([message_id], map: "idx_chat_message_read_message")
+  @@index([user_id], map: "idx_chat_message_read_user")
+}
+
+// --- Avatar table (existing table, no migration) ---
+model Avatar {
+  CODIGO       String    @id @map("CODIGO") @db.VarChar(50)
+  NOMBRE       String?   @map("NOMBRE") @db.VarChar(255)
+  AVATAR       Bytes?    @map("AVATAR") @db.LongBlob
+  FECHA_SUBIDA DateTime? @map("FECHA_SUBIDA") @db.Timestamp(0)
+
+  @@map("Avatar")
+}

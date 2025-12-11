@@ -14,10 +14,9 @@ import { Button, Card, LoadingSpinner } from '../components/ui';
 import Notification from '../components/ui/Notification';
 
 import { routes } from '../utils/routes.js';
+import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 
 import activityLogger from '../utils/activityLogger';
-
-const BULK_AVATAR_ENDPOINT = 'https://n8n.decaminoservicios.com/webhook/getavatar/886f6dd7-8b4d-479b-85f4-fb888ba8f731';
 
 // Funcție pentru formatarea datelor în format frumos și consistent
 
@@ -201,11 +200,18 @@ export default function DocumentosEmpleadosPage() {
 
     console.debug('[DocumentosEmpleados] Fetching bulk avatars...');
     try {
-      const response = await fetch(BULK_AVATAR_ENDPOINT, {
+      // Adaugă token-ul JWT dacă există
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getAvatarBulk, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({ motivo: 'get' })
       });
 
@@ -240,7 +246,12 @@ export default function DocumentosEmpleadosPage() {
           avatarUrl = avatarUrlField;
         }
 
-        avatarsMap[codigo] = avatarUrl || null;
+        if (avatarUrl) {
+          avatarsMap[codigo] = avatarUrl;
+          setCachedAvatar(codigo, avatarUrl);
+        } else {
+          avatarsMap[codigo] = DEFAULT_AVATAR;
+        }
       });
 
       console.debug('[DocumentosEmpleados] Bulk avatars mapped:', Object.keys(avatarsMap).length);
@@ -303,46 +314,27 @@ export default function DocumentosEmpleadosPage() {
     }
 
     try {
-      const formData = new FormData();
-      
-      formData.append('motivo', 'get');
-      formData.append('CODIGO', codigo);
-      formData.append('nombre', nombre || '');
-
-      const response = await fetch(routes.getAvatar, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          setEmployeeAvatars(prev => ({ ...prev, [codigo]: null }));
-        }
+      const cachedPayload = getCachedAvatar(codigo);
+      const cachedUrl = cachedPayload?.url || cachedPayload || null;
+      if (cachedUrl) {
+        setEmployeeAvatars(prev => ({ ...prev, [codigo]: cachedUrl }));
         return;
       }
 
-      const result = await response.json();
-      
-      let avatarData = null;
-      if (Array.isArray(result) && result.length > 0) {
-        avatarData = result[0];
-      } else if (result && typeof result === 'object') {
-        avatarData = result;
-      }
-      
-      if (avatarData && avatarData.AVATAR_B64) {
-        const base64Clean = avatarData.AVATAR_B64.replace(/\n/g, '');
-        const avatarUrl = `data:image/jpeg;base64,${base64Clean}`;
-        setEmployeeAvatars(prev => ({ ...prev, [codigo]: avatarUrl }));
-      } else if (avatarData && (avatarData.avatar || avatarData.url || avatarData.AVATAR)) {
-        const avatarUrl = avatarData.avatar || avatarData.url || avatarData.AVATAR;
+      const avatarUrl = await fetchAvatarOnce({
+        codigo,
+        nombre: nombre || '',
+        endpoint: routes.getAvatar,
+      });
+
+      if (avatarUrl) {
         setEmployeeAvatars(prev => ({ ...prev, [codigo]: avatarUrl }));
       } else {
-        setEmployeeAvatars(prev => ({ ...prev, [codigo]: null }));
+        setEmployeeAvatars(prev => ({ ...prev, [codigo]: DEFAULT_AVATAR }));
       }
     } catch (error) {
       console.error(`❌ Error al cargar avatar para ${codigo}:`, error);
-      setEmployeeAvatars(prev => ({ ...prev, [codigo]: null }));
+      setEmployeeAvatars(prev => ({ ...prev, [codigo]: DEFAULT_AVATAR }));
     } finally {
       pendingAvatarRequestsRef.current.delete(codigo);
     }

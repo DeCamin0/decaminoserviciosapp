@@ -606,7 +606,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     console.log('🔍 Ausencias loaded:', ausencias.length, 'items');
     console.log('🔍 Bajas médicas loaded:', bajasMedicas.length, 'items');
     checkCurrentAbsenceStatus();
-  }, [ausencias, bajasMedicas, checkCurrentAbsenceStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ausencias, bajasMedicas]); // Eliminat checkCurrentAbsenceStatus din dependențe pentru a evita re-render-uri infinite
 
   const fetchMonthlyAlerts = useCallback(async (month, notifyOnResult = false) => {
     if (!isAuthenticated || !authUser) return null;
@@ -619,8 +620,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     const { summary } = await fetchMonthlyAlertsData({
       empleadoId,
       empleadoNombre,
-      month,
-      getUrl: getN8nUrl
+      month
     });
 
     if (!summary) {
@@ -1007,11 +1007,24 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   }, [activeTab, authUser, fetchAusencias, isAuthenticated]);
 
   // Notifică componenta părinte când se schimbă logs
+  // Folosim useRef pentru a evita loop-uri infinite când onLogsUpdate se schimbă
+  const onLogsUpdateRef = useRef(onLogsUpdate);
+  const hasLoadedLogsRef = useRef(false);
+  
   useEffect(() => {
-    if (onLogsUpdate) {
-      onLogsUpdate(logs);
+    onLogsUpdateRef.current = onLogsUpdate;
+  }, [onLogsUpdate]);
+
+  useEffect(() => {
+    // Nu notifică părintele dacă încă se încarcă datele sau dacă logs este gol și nu a fost încărcat niciodată
+    if (onLogsUpdateRef.current && (!loadingLogs || hasLoadedLogsRef.current)) {
+      onLogsUpdateRef.current(logs);
+      // Marchează că am încărcat logs cel puțin o dată
+      if (logs.length > 0) {
+        hasLoadedLogsRef.current = true;
+      }
     }
-  }, [logs, onLogsUpdate]);
+  }, [logs, loadingLogs]);
 
   // Verifică dacă angajatul poate registra incidencia (memoizat pentru a evita re-render-urile)
   const hasCompletedCycle = useMemo(() => {
@@ -1636,6 +1649,18 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     return '0.00';
   };
   const currentDaySchedule = getCurrentDaySchedule();
+
+  // Memoizează rezultatele pentru Entrada și Salida pentru a evita recalculări inutile
+  // Recalculează doar când se schimbă horarioAsignado sau cuadranteAsignado
+
+  const isEntradaAllowed = useMemo(() => {
+    return isTimeWithinSchedule('Entrada');
+  }, [isTimeWithinSchedule]);
+
+  const isSalidaAllowed = useMemo(() => {
+    return isTimeWithinSchedule('Salida');
+  }, [isTimeWithinSchedule]);
+
   // Dacă utilizatorul nu este autentificat, afișează un mesaj
   return (
     <div className="space-y-6">
@@ -2142,14 +2167,14 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       // Dacă nu s-a completat tura, verifică restricțiile
                       if (hasEntradaToday) {
                         // Dacă s-a făcut deja Entrada azi, afișează doar Salida
-                        if (!isTimeWithinSchedule('Salida')) {
+                        if (!isSalidaAllowed) {
                           return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
                         }
                       } else {
                         // Dacă nu s-a făcut Entrada azi, afișează ambele
-                        if (!isTimeWithinSchedule('Entrada') && !isTimeWithinSchedule('Salida')) {
+                        if (!isEntradaAllowed && !isSalidaAllowed) {
                           return `${getTimeRestrictionMessage('Entrada') || 'Consulta tu horario asignado'}`;
-                        } else if (!isTimeWithinSchedule('Entrada')) {
+                        } else if (!isEntradaAllowed) {
                           return `Entrada: ${getTimeRestrictionMessage('Entrada') || 'No permitida en este momento'}`;
                         } else {
                           return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
@@ -2166,16 +2191,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           <div className="flex gap-4 justify-center flex-wrap">
             <button
               onClick={() => handleFichar('Entrada')}
-              disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isTimeWithinSchedule('Entrada'))}
+              disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)}
               className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
-                isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isTimeWithinSchedule('Entrada'))
+                isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)
                   ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
                   : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
               }`}
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
-                  : ((horarioAsignado || cuadranteAsignado) && !isTimeWithinSchedule('Entrada'))
+                  : ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)
                     ? getTimeRestrictionMessage('Entrada') || 'Entrada no permitida en este momento'
                     : 'Iniciar jornada'
               }
@@ -2195,16 +2220,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             
             <button
               onClick={() => handleFichar('Salida')}
-              disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isTimeWithinSchedule('Salida'))}
+              disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)}
               className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
-                isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isTimeWithinSchedule('Salida'))
+                isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)
                   ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
                   : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
               }`}
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
-                  : ((horarioAsignado || cuadranteAsignado) && !isTimeWithinSchedule('Salida'))
+                  : ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)
                     ? getTimeRestrictionMessage('Salida') || 'Salida no permitida en este momento'
                     : 'Finalizar jornada'
               }
@@ -3080,6 +3105,13 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
       const result = await callApi(url);
       
       if (result.success) {
+        // Verifică dacă răspunsul este "not-modified" - nu șterge datele existente
+        if (result.data && typeof result.data === 'object' && result.data.status === 'not-modified') {
+          console.log('✅ Registros not-modified - păstrăm datele existente');
+          // Nu facem nimic, păstrăm datele existente
+          return;
+        }
+        
         const data = Array.isArray(result.data) ? result.data : [result.data];
         
         // Debug: afișează structura datelor primite
@@ -3087,13 +3119,23 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
         console.log('🔍 Primer registro sample:', data[0]);
         console.log('🔍 Total registros received:', data.length);
         
-        // Filtrare pentru elemente goale (obiete cu toate proprietățile null/undefined)
+        // Filtrare pentru elemente goale și pentru răspunsuri "not-modified"
         const validData = data.filter(item => {
           if (!item || typeof item !== 'object') return false;
-          // Verifică dacă are cel puțin un câmp valid
-          const hasValidField = Object.keys(item).some(key => item[key] !== null && item[key] !== undefined && item[key] !== '');
+          // Ignoră răspunsurile "not-modified"
+          if (item.status === 'not-modified') return false;
+          // Verifică dacă are cel puțin un câmp valid (excluzând status)
+          const hasValidField = Object.keys(item).some(key => 
+            key !== 'status' && item[key] !== null && item[key] !== undefined && item[key] !== ''
+          );
           return hasValidField;
         });
+        
+        // Dacă nu există date valide după filtrare, păstrăm datele existente
+        if (validData.length === 0) {
+          console.log('✅ No valid registros after filtering - păstrăm datele existente');
+          return;
+        }
         
         console.log('🔍 Valid registros after filtering:', validData.length);
         
@@ -3145,15 +3187,15 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
         
         // Registros fetched successfully
         
-        // IMPORTANT: Reset registros dacă nu sunt date pentru luna selectată
-        if (sortedRegistros.length === 0) {
-          console.log('⚠️ No registros found for month', month, '- clearing old data');
-          setRegistrosBrutos([]);
-          setRegistros([]);
-          setFiltered([]);
-        } else {
+        // IMPORTANT: Actualizează datele doar dacă avem date valide
+        // Nu ștergem datele existente dacă nu găsim date pentru luna selectată
+        // (poate fi o problemă temporară sau o lună fără registros)
+        if (sortedRegistros.length > 0) {
           // Salvează datele mapate și sortate
           setRegistrosBrutos(sortedRegistros);
+        } else {
+          console.log('⚠️ No registros found for month', month, '- păstrăm datele existente (nu ștergem)');
+          // Nu ștergem datele existente - poate fi o problemă temporară sau o lună fără registros
         }
       } else {
         console.error('[DEBUG] fetchRegistros failed:', result.error);
@@ -5188,16 +5230,15 @@ export default function FichajePage() {
   
   // State pentru orarul asignat
   const [horarioAsignado, setHorarioAsignado] = useState(null);
-  const cuadrantesLogCacheRefAdmin = useRef({});
-
-  const logCuadranteOnceAdmin = useCallback((key, ...args) => {
-    const serialized = JSON.stringify(args);
-    if (cuadrantesLogCacheRefAdmin.current[key] === serialized) {
-      return;
-    }
-    cuadrantesLogCacheRefAdmin.current[key] = serialized;
-    console.log(...args);
-  }, []);
+  // const cuadrantesLogCacheRefAdmin = useRef({}); // Not used currently
+  // const logCuadranteOnceAdmin = useCallback((key, ...args) => {
+  //   const serialized = JSON.stringify(args);
+  //   if (cuadrantesLogCacheRefAdmin.current[key] === serialized) {
+  //     return;
+  //   }
+  //   cuadrantesLogCacheRefAdmin.current[key] = serialized;
+  //   console.log(...args);
+  // }, []); // Not used currently
   const [loadingHorario, setLoadingHorario] = useState(false);
   
   // State pentru cuadrantul asignat
@@ -5206,6 +5247,12 @@ export default function FichajePage() {
   
   // State pentru datele complete ale utilizatorului
   const [userData, setUserData] = useState(null);
+  
+  // Ref pentru a preveni re-apelurile inutile ale fetchHorarioAsignado
+  const lastHorarioFetchRef = useRef({ centro: null, grupo: null });
+  
+  // Ref pentru a preveni re-apelurile inutile ale fetchCuadranteAsignado
+  const lastCuadranteFetchRef = useRef({ codigo: null, month: null });
 
   // Funcție pentru încărcarea datelor complete ale utilizatorului
   const fetchUserData = useCallback(async () => {
@@ -5264,15 +5311,30 @@ export default function FichajePage() {
 
   // Funcție pentru a încărca cuadrantul asignat
   const fetchCuadranteAsignado = useCallback(async () => {
+    const codigoEmpleado = authUser?.CODIGO || authUser?.codigo || '';
+    if (!codigoEmpleado) {
+      console.log('🔍 DEBUG - Nu există codigo pentru cuadrante');
+      setCuadranteAsignado(null);
+      return;
+    }
+
+    // Găsește cuadrantul pentru luna curentă
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    
+    // Previne re-apelurile inutile dacă codigo și luna nu s-au schimbat
+    if (lastCuadranteFetchRef.current.codigo === codigoEmpleado && 
+        lastCuadranteFetchRef.current.month === currentMonthFormatted &&
+        !loadingCuadrante) {
+      return;
+    }
+    
+    lastCuadranteFetchRef.current = { codigo: codigoEmpleado, month: currentMonthFormatted };
+    
     setLoadingCuadrante(true);
     try {
-      const codigoEmpleado = authUser?.CODIGO || authUser?.codigo || '';
-      if (!codigoEmpleado) {
-        console.log('🔍 DEBUG - Nu există codigo pentru cuadrante');
-        setCuadranteAsignado(null);
-        return;
-      }
-
       const url = getN8nUrl('/webhook/get-cuadrantes-yyBov0qVQZEhX2TL');
       const res = await fetch(url, {
         method: 'POST',
@@ -5288,12 +5350,6 @@ export default function FichajePage() {
       console.log('🔍 DEBUG - Toate câmpurile primului cuadrante:', lista[0] ? Object.keys(lista[0]) : 'Nu există cuadrante');
       
       if (lista.length > 0) {
-        // Găsește cuadrantul pentru luna curentă
-        const currentDate = new Date();
-        const currentYear = currentDate.getFullYear();
-        const currentMonth = currentDate.getMonth() + 1;
-        const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-        
         console.log('🔍 DEBUG - Căutare cuadrante pentru luna:', currentMonthFormatted);
         console.log('🔍 DEBUG - Toate lunile din cuadrantes:', lista.map(c => ({ 
           luna: c.LUNA || c.luna, 
@@ -5304,20 +5360,11 @@ export default function FichajePage() {
         const cuadranteMatch = lista.find(cuadrante => {
           let luna = cuadrante.LUNA || cuadrante.luna;
           const codigo = cuadrante.CODIGO || cuadrante.codigo;
-          console.log('🔍 DEBUG - Verificare cuadrante:', { 
-            luna, 
-            codigo,
-            currentMonthFormatted,
-            codigoEmpleado,
-            monthMatch: luna === currentMonthFormatted,
-            codigoMatch: codigo === codigoEmpleado
-          });
           
           if (typeof luna === 'number') {
             // Convert Excel date to YYYY-MM
             const date = new Date(Math.round((luna - 25569) * 86400 * 1000));
             luna = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-            console.log('🔍 DEBUG - Luna convertită din Excel:', luna);
           }
           return luna === currentMonthFormatted && codigo === codigoEmpleado;
         });
@@ -5339,10 +5386,24 @@ export default function FichajePage() {
     } finally {
       setLoadingCuadrante(false);
     }
-  }, [authUser]);
+  }, [authUser, loadingCuadrante]);
 
   // Funcție pentru a încărca orarul asignat
   const fetchHorarioAsignado = useCallback(async () => {
+    // Căutăm orarul care se potrivește cu centrul și grupul utilizatorului
+    // Folosim userData în loc de authUser pentru a avea acces la CENTRO TRABAJO
+    const centroUsuario = userData?.['CENTRO TRABAJO'] || authUser?.['CENTRO TRABAJO'] || authUser?.centroTrabajo || authUser?.['CENTRO'] || authUser?.centro || authUser?.role || '';
+    const grupoUsuario = userData?.['GRUPO'] || authUser?.['GRUPO'] || authUser?.grupo || '';
+    
+    // Previne re-apelurile inutile dacă centro și grupo nu s-au schimbat
+    if (lastHorarioFetchRef.current.centro === centroUsuario && 
+        lastHorarioFetchRef.current.grupo === grupoUsuario &&
+        !loadingHorario) {
+      return;
+    }
+    
+    lastHorarioFetchRef.current = { centro: centroUsuario, grupo: grupoUsuario };
+    
     setLoadingHorario(true);
     try {
       // Importăm funcția listSchedules din api/schedules.ts
@@ -5356,11 +5417,6 @@ export default function FichajePage() {
         console.log('🔍 DEBUG - Răspuns complet din backend:', response);
         console.log('🔍 DEBUG - Toate orarele din backend (complet):', response.data);
         console.log('🔍 DEBUG - Primul orar din backend (exemplu):', response.data[0]);
-        
-        // Căutăm orarul care se potrivește cu centrul și grupul utilizatorului
-        // Folosim userData în loc de authUser pentru a avea acces la CENTRO TRABAJO
-        const centroUsuario = userData?.['CENTRO TRABAJO'] || authUser?.['CENTRO TRABAJO'] || authUser?.centroTrabajo || authUser?.['CENTRO'] || authUser?.centro || authUser?.role || '';
-        const grupoUsuario = userData?.['GRUPO'] || authUser?.['GRUPO'] || authUser?.grupo || '';
         
         console.log('🔍 DEBUG - Utilizator:', { centroUsuario, grupoUsuario });
         console.log('🔍 DEBUG - Toate câmpurile utilizatorului:', userData || authUser);
@@ -5399,7 +5455,7 @@ export default function FichajePage() {
     } finally {
       setLoadingHorario(false);
     }
-  }, [authUser, userData]);
+  }, [authUser, userData, loadingHorario]);
   
   // State pentru dialog de confirmare
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({
@@ -5419,19 +5475,21 @@ export default function FichajePage() {
     if (authUser && !authUser?.isDemo) {
       fetchCuadranteAsignado();
     }
-  }, [authUser, fetchCuadranteAsignado]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser]); // Eliminat fetchCuadranteAsignado din dependențe pentru a evita re-render-uri infinite
 
-  // Încarcă orarul când se încarcă utilizatorul
+  // Încarcă orarul când se încarcă utilizatorul sau când se schimbă userData
   useEffect(() => {
-    if (authUser && !authUser?.isDemo) {
+    if (authUser && !authUser?.isDemo && userData) {
       fetchHorarioAsignado();
     }
-  }, [authUser, fetchHorarioAsignado, userData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, userData]); // Eliminat fetchHorarioAsignado din dependențe pentru a evita re-render-uri infinite
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru cuadrante
-  const isTimeWithinCuadrante = (tipo) => {
+  // Memoizată pentru a evita recalculări inutile
+  const isTimeWithinCuadrante = useCallback((tipo) => {
     if (!cuadranteAsignado) {
-      console.log('🔍 isTimeWithinCuadrante - Nu există cuadrante');
       return true;
     }
 
@@ -5447,29 +5505,13 @@ export default function FichajePage() {
     const dayKey = `ZI_${currentDay}`;
     daySchedule = cuadranteAsignado[dayKey];
     
-    logCuadranteOnceAdmin(
-      `schedule:${dayKey}:${tipo}`,
-      '🔍 isTimeWithinCuadrante - Orar pentru ziua curentă:',
-      daySchedule,
-      'dayKey:',
-      dayKey
-    );
-    
     // Dacă ziua nu este definită în cuadrante (nu există cheia), permite fichar
     // Dacă ziua este explicit marcată ca "LIBRE" sau goală, NU permite fichar
     if (daySchedule === undefined || daySchedule === null) {
-      logCuadranteOnceAdmin(
-        `status:undefined:${dayKey}:${tipo}`,
-        '🔍 isTimeWithinCuadrante - Ziua nu este definită în cuadrante, permite fichar'
-      );
       return true; // Ziua nu este în cuadrante, permite fichar (nu este restricționată)
     }
     
     if (daySchedule === 'LIBRE' || daySchedule === '') {
-      logCuadranteOnceAdmin(
-        `status:libre:${dayKey}:${tipo}`,
-        '🔍 isTimeWithinCuadrante - Zi liberă marcătă explicit - NO PERMITE fichar'
-      );
       return false; // Zi liberă explicită, NU permite fichar
     }
 
@@ -5500,8 +5542,6 @@ export default function FichajePage() {
         const yesterdayKey = `ZI_${yesterdayDay}`;
         const yesterdaySchedule = cuadranteAsignado[yesterdayKey];
         
-        console.log('🔍 isTimeWithinCuadrante - Tură nocturnă detectată, verifică ziua de ieri:', yesterdaySchedule);
-        
         if (yesterdaySchedule && yesterdaySchedule !== 'LIBRE' && yesterdaySchedule.trim() !== '') {
           // Extrage intervalele de ieri pentru a obține întregul spectru al turei nocturne
           let yesterdayIntervals = [];
@@ -5520,17 +5560,13 @@ export default function FichajePage() {
             if (yesterEndTime < yesterStartTime) {
               // Tură nocturnă continuă de ieri
               intervals = yesterdayIntervals;
-              console.log('🔍 isTimeWithinCuadrante - Folosește orarul de ieri pentru tură nocturnă:', intervals);
             }
           }
         }
       }
     }
 
-    console.log('🔍 isTimeWithinCuadrante - Intervale găsite:', intervals);
-
     if (intervals.length === 0) {
-      console.log('🔍 isTimeWithinCuadrante - Nu există intervale valide');
       return true;
     }
 
@@ -5541,14 +5577,6 @@ export default function FichajePage() {
       
       // Detectează dacă tură este nocturnă (peste miezul nopții)
       const isOvernightShift = endTime < startTime;
-      
-      console.log('🔍 isTimeWithinCuadrante - Verificare interval:', {
-        interval,
-        startTime,
-        endTime,
-        tipo,
-        isOvernightShift
-      });
       
       if (tipo === 'Entrada') {
         // Pentru Entrada: permite TĂRZIU (după timpul inițial) sau 10 minute înainte
@@ -5564,21 +5592,12 @@ export default function FichajePage() {
           allowedEnd = 24 * 60 - 1;
         }
         
-        console.log('🔍 isTimeWithinCuadrante - Entrada verificare:', {
-          currentTime,
-          allowedStart,
-          allowedEnd,
-          isWithinRange: currentTime >= allowedStart && currentTime <= allowedEnd
-        });
-        
         // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
         if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          console.log('✅ isTimeWithinCuadrante - Entrada PERMISĂ (în timp)');
           return true;
         }
         // Dacă este după timpul permis, permite pentru a putea ficha târziu
         if (currentTime > allowedEnd) {
-          console.log('✅ isTimeWithinCuadrante - Entrada PERMISĂ (târziu)');
           return true;
         }
       } else if (tipo === 'Salida') {
@@ -5600,69 +5619,42 @@ export default function FichajePage() {
           allowedEnd = endTime; // Timpul sfârșitului turei
         }
         
-        console.log('🔍 isTimeWithinCuadrante - Salida verificare:', {
-          currentTime,
-          allowedStart,
-          allowedEnd,
-          isWithinRange: currentTime >= allowedStart && currentTime <= allowedEnd
-        });
-        
         // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
         if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          console.log('✅ isTimeWithinCuadrante - Salida PERMISĂ (în timp)');
           return true;
         }
         // Dacă este după timpul permis, permite pentru a putea ficha târziu
         if (currentTime > allowedEnd) {
-          console.log('✅ isTimeWithinCuadrante - Salida PERMISĂ (târziu)');
           return true;
         }
       }
     }
     
-    logCuadranteOnceAdmin(
-      `status:not-allowed:${dayKey}:${tipo}`,
-      '❌ isTimeWithinCuadrante - Timpul nu este permis'
-    );
     return false;
-  };
+  }, [cuadranteAsignado]);
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru orar
-  const isTimeWithinSchedule = (tipo) => {
+  // Memoizată pentru a evita recalculări inutile
+  const isTimeWithinSchedule = useCallback((tipo) => {
     // PRIORITATE: Cuadrante > Horario
     if (cuadranteAsignado) {
-      // console.log('🔍 isTimeWithinSchedule - Verifică CUADRANTE (prioritate)');
       return isTimeWithinCuadrante(tipo);
     }
     
     if (!horarioAsignado) {
-      console.log('🔍 isTimeWithinSchedule - Nu există orar sau cuadrante, permite orice timp');
       return true; // Dacă nu există orar sau cuadrante, permite orice timp
     }
-    
-    console.log('🔍 isTimeWithinSchedule - Verifică HORARIO (fallback)');
     
     const now = new Date();
     const currentDay = now.getDay(); // 0 = Duminică, 1 = Luni, etc.
     const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][currentDay];
     const currentTime = now.getHours() * 60 + now.getMinutes(); // Timpul curent în minute
     
-    console.log('🔍 isTimeWithinSchedule - Verificare:', {
-      tipo,
-      currentDay,
-      dayKey,
-      currentTime: `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`,
-      currentTimeMinutes: currentTime
-    });
-    
     // Verifică dacă există orar pentru această zi
     const daySchedule = horarioAsignado.days?.[dayKey];
     if (!daySchedule) {
-      console.log('🔍 isTimeWithinSchedule - Nu există orar pentru această zi, permite');
       return true; // Dacă nu există orar pentru această zi, permite
     }
-    
-    console.log('🔍 isTimeWithinSchedule - Orar pentru ziua curentă:', daySchedule);
     
     // Extrage toate intervalele din orar
     const intervals = [];
@@ -5676,10 +5668,7 @@ export default function FichajePage() {
       intervals.push({in: daySchedule.in3, out: daySchedule.out3});
     }
     
-    console.log('🔍 isTimeWithinSchedule - Intervale găsite:', intervals);
-    
     if (intervals.length === 0) {
-      console.log('🔍 isTimeWithinSchedule - Nu există intervale, permite');
       return true; // Dacă nu există intervale, permite
     }
     
@@ -5688,34 +5677,18 @@ export default function FichajePage() {
       const inTime = parseTimeToMinutes(interval.in);
       const outTime = parseTimeToMinutes(interval.out);
       
-      console.log('🔍 isTimeWithinSchedule - Verificare interval:', {
-        interval,
-        inTime,
-        outTime,
-        tipo
-      });
-      
       if (tipo === 'Entrada') {
         // Pentru Entrada: permite TĂRZIU (după timpul inițial) sau 10 minute înainte
         const marginBefore = 10; // 10 minute înainte
         const allowedStart = inTime - marginBefore;
         const allowedEnd = inTime; // Ultima dată permisă este la timpul inițial
         
-        console.log('🔍 isTimeWithinSchedule - Entrada verificare:', {
-          currentTime,
-          allowedStart,
-          allowedEnd,
-          isWithinRange: currentTime >= allowedStart && currentTime <= allowedEnd
-        });
-        
         // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
         if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          console.log('✅ isTimeWithinSchedule - Entrada PERMISĂ (în timp)');
           return true;
         }
         // Dacă este după timpul permis, permite pentru a putea ficha târziu
         if (currentTime > allowedEnd) {
-          console.log('✅ isTimeWithinSchedule - Entrada PERMISĂ (târziu)');
           return true;
         }
       } else if (tipo === 'Salida') {
@@ -5724,29 +5697,19 @@ export default function FichajePage() {
         const allowedStart = outTime - marginBefore;
         const allowedEnd = outTime; // Timpul sfârșitului turei
         
-        console.log('🔍 isTimeWithinSchedule - Salida verificare:', {
-          currentTime,
-          allowedStart,
-          allowedEnd,
-          isWithinRange: currentTime >= allowedStart && currentTime <= allowedEnd
-        });
-        
         // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
         if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          console.log('✅ isTimeWithinSchedule - Salida PERMISĂ (în timp)');
           return true;
         }
         // Dacă este după timpul permis, permite pentru a putea ficha târziu
         if (currentTime > allowedEnd) {
-          console.log('✅ isTimeWithinSchedule - Salida PERMISĂ (târziu)');
           return true;
         }
       }
     }
     
-    console.log('❌ isTimeWithinSchedule - Timpul nu este permis');
     return false;
-  };
+  }, [cuadranteAsignado, horarioAsignado, isTimeWithinCuadrante]);
 
   // Funcție pentru a converti timpul (HH:MM) în minute
   const parseTimeToMinutes = (timeStr) => {

@@ -51,7 +51,8 @@ import {
   LazyPaqueteriaCentroPage,
   LazyIncidenciasCentroPage,
   LazyPedidosPage,
-  LazyEmpleadoPedidosPage
+  LazyEmpleadoPedidosPage,
+  LazyChatPage
 } from './pages/lazy/LazyPages';
 
 import './i18n';
@@ -520,6 +521,18 @@ function AppRoutes() {
           <ProtectedRoute>
             <MainLayout>
               <LazyEmpleadoPedidosPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* Ruta para chat */}
+      <Route
+        path="/chat"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LazyChatPage />
             </MainLayout>
           </ProtectedRoute>
         }
