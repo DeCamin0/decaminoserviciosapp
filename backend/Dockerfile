@@ -11,6 +11,12 @@ COPY nest-cli.json ./
 # Instalează dependențele
 RUN npm ci --only=production=false
 
+# Copiază Prisma schema
+COPY prisma ./prisma
+
+# Generează Prisma client
+RUN npx prisma generate
+
 # Copiază sursele
 COPY src ./src
 

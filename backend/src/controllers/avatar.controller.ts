@@ -7,6 +7,8 @@ import {
   BadRequestException,
   UploadedFiles,
   UseInterceptors,
+  Req,
+  Body,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
