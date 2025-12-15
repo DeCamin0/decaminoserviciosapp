@@ -4,7 +4,8 @@ import { useAuth } from './AuthContextBase';
 import { 
   requestNotificationPermission, 
   isNotificationPermissionGranted,
-  showPushNotification 
+  showPushNotification,
+  subscribeToPushNotifications
 } from '../utils/pushNotifications';
 
 const NotificationsContext = createContext(null);
@@ -90,17 +91,31 @@ export const NotificationsProvider = ({ children }) => {
     loadNotifications();
   }, [user?.CODIGO]);
 
-  // Cere permisiunea pentru notificări push când utilizatorul se conectează
+  // Cere permisiunea pentru notificări push și înregistrează Push subscription când utilizatorul se conectează
   useEffect(() => {
-    if (user && !isNotificationPermissionGranted()) {
-      // Cere permisiunea după 2 secunde (pentru a nu deranja imediat)
-      const timer = setTimeout(() => {
-        requestNotificationPermission();
-      }, 2000);
+    if (!user?.CODIGO) return;
+    
+    const setupPushNotifications = async () => {
+      // Cere permisiunea dacă nu este deja acordată
+      if (!isNotificationPermissionGranted()) {
+        const granted = await requestNotificationPermission();
+        if (!granted) return;
+      }
       
-      return () => clearTimeout(timer);
-    }
-  }, [user]);
+      // Înregistrează Push subscription pentru notificări când aplicația este închisă
+      try {
+        await subscribeToPushNotifications(user.CODIGO);
+        console.log('✅ Push notifications configurate pentru notificări când aplicația este închisă');
+      } catch (error) {
+        console.error('❌ Eroare la configurarea Push notifications:', error);
+      }
+    };
+    
+    // Așteaptă 2 secunde pentru a nu deranja imediat
+    const timer = setTimeout(setupPushNotifications, 2000);
+    
+    return () => clearTimeout(timer);
+  }, [user?.CODIGO]);
 
   // Ascultă notificări de la server
   useEffect(() => {
@@ -151,7 +166,7 @@ export const NotificationsProvider = ({ children }) => {
 
       const baseUrl = import.meta.env.DEV 
         ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || '');
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
       await fetch(`${baseUrl}/api/notifications/${notificationId}/read`, {
         method: 'PUT',
         headers: {
@@ -180,7 +195,7 @@ export const NotificationsProvider = ({ children }) => {
 
       const baseUrl = import.meta.env.DEV 
         ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || '');
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
       await fetch(`${baseUrl}/api/notifications/read-all`, {
         method: 'PUT',
         headers: {
@@ -209,7 +224,7 @@ export const NotificationsProvider = ({ children }) => {
 
       const baseUrl = import.meta.env.DEV 
         ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || '');
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
       await fetch(`${baseUrl}/api/notifications/${notificationId}`, {
         method: 'DELETE',
         headers: {

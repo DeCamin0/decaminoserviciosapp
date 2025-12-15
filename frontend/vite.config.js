@@ -62,14 +62,23 @@ export default defineConfig({
     },
     // Plugin PWA cu configurație optimizată pentru a preveni conflicts
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt', // Schimbă de la 'autoUpdate' la 'prompt' pentru a afișa notificarea
       includeAssets: ['favicon.ico', 'logo.svg'],
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
-        skipWaiting: true,
+        skipWaiting: false, // Schimbă la false pentru a aștepta confirmarea utilizatorului
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // Adaugă versioning explicit pentru a forța actualizările
+        // Workbox generează automat hash-uri pentru fișiere, dar adăugăm și un cache ID cu versiune
+        cacheId: `decamino-v2-${process.env.npm_package_version || '1.0.0'}`,
         // Configurație pentru a preveni conflicts
         navigateFallback: (process.env.VITE_BASE_PATH || '/') + 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/webhook\//],
@@ -96,10 +105,11 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
-        scope: '/',
-        start_url: '/',
+        scope: process.env.VITE_BASE_PATH || '/',
+        start_url: `${process.env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}`, // Adaugă versiunea în start_url pentru a forța actualizarea
         lang: 'es',
         categories: ['business', 'productivity'],
+        version: process.env.npm_package_version || '1.0.0', // Adaugă versiunea în manifest
         icons: [
           {
             src: 'favicon.ico',
@@ -302,6 +312,7 @@ export default defineConfig({
     // Variabile de mediu pentru AutoFirma
     'import.meta.env.VITE_SIGNING_MOCK': JSON.stringify('0'), // 0 = AutoFirma reală, 1 = Mock mode
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_N8N_BASE_URL || ''), // Folosește VITE_N8N_BASE_URL din .env.local
+    'import.meta.env.VITE_BASE_PATH': JSON.stringify(process.env.VITE_BASE_PATH || '/'), // Base path pentru deployment
     // Fix pentru ExcelJS care încearcă să acceseze _process
     '_process': JSON.stringify({}),
     'process.env': JSON.stringify({}),
@@ -477,7 +488,7 @@ export default defineConfig({
       strict: false
     },
     headers: {
-      'Permissions-Policy': 'unload=*, geolocation=*',
+      'Permissions-Policy': 'unload=*, geolocation=(self)',
       'Cross-Origin-Embedder-Policy': 'unsafe-none',
       'Cross-Origin-Opener-Policy': 'same-origin'
     },

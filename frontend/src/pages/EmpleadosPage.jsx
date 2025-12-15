@@ -282,6 +282,7 @@ export default function EmpleadosPage() {
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
+  const [enviarAGestoria, setEnviarAGestoria] = useState(false);
 
   // Estado para dropdowns de centro de trabajo
   const [showCentroDropdown, setShowCentroDropdown] = useState(false);
@@ -321,6 +322,9 @@ export default function EmpleadosPage() {
 
   // Estado para tipurile de contract
   const [contractTypes, setContractTypes] = useState([]);
+
+  // Estado para lista de grupuri (din backend)
+  const [gruposList, setGruposList] = useState([]);
 
   // Estado para email
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -634,13 +638,17 @@ export default function EmpleadosPage() {
     setOperationLoading('clientes', false);
   }, [authUser, setOperationLoading]);
 
-  // Funcție pentru încărcarea tipurilor de contract
+  // Funcție pentru încărcarea tipurilor de contract din backend
   const fetchContractTypes = useCallback(async () => {
     setOperationLoading('contractTypes', true);
     
     try {
-      console.log('Fetching contract types from:', 'https://n8n.decaminoservicios.com/webhook/3d136672-a025-40b0-8bc2-cfe18ad604ad');
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/3d136672-a025-40b0-8bc2-cfe18ad604ad');
+      console.log('Fetching contract types from:', routes.getContractTypes);
+      const response = await fetch(routes.getContractTypes, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -649,12 +657,18 @@ export default function EmpleadosPage() {
       const data = await response.json();
       console.log('Contract types data received:', data);
       
+      // Dacă backend-ul returnează un obiect cu success: false, aruncă eroare
+      if (data.success === false) {
+        throw new Error(data.error || 'Failed to load contract types');
+      }
+      
+      // Backend-ul returnează un array direct
       const contractTypesData = Array.isArray(data) ? data : [];
       setContractTypes(contractTypesData);
       
     } catch (e) {
       console.error('Error fetching contract types:', e);
-      // Fallback cu datele pe care le-ai trimis
+      // Fallback cu datele statice doar dacă nu reușește să facă request-ul
       setContractTypes([
         { id: 5, tipo: "FIJO DISCONTINUO" },
         { id: 4, tipo: "Formación" },
@@ -665,6 +679,53 @@ export default function EmpleadosPage() {
       ]);
     }
     setOperationLoading('contractTypes', false);
+  }, [setOperationLoading]);
+
+  // Funcție pentru preluarea listei de grupuri din backend
+  const fetchGrupos = useCallback(async () => {
+    setOperationLoading('grupos', true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getGrupos, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Backend-ul returnează un array direct de string-uri (numele grupurilor)
+      const gruposData = Array.isArray(data) ? data : [];
+      setGruposList(gruposData);
+      console.log('✅ Grupos loaded from backend:', gruposData.length, 'grupos');
+      
+    } catch (e) {
+      console.error('Error fetching grupos:', e);
+      // Fallback cu lista hardcodată doar dacă nu reușește să facă request-ul
+      setGruposList([
+        'Administrativ',
+        'Auxiliar De Servicios - C',
+        'Auxiliar De Servicios - L',
+        'Comercial',
+        'Developer',
+        'Especialista',
+        'Informatico',
+        'Limpiador',
+        'Socorrista',
+        'Supervisor'
+      ]);
+    }
+    setOperationLoading('grupos', false);
   }, [setOperationLoading]);
 
   const fetchUsers = useCallback(async () => {
@@ -681,15 +742,84 @@ export default function EmpleadosPage() {
     const result = await callApi(API_ENDPOINTS.USERS);
     
     if (result.success) {
-      const usersData = Array.isArray(result.data) ? result.data : [result.data];
-      setUsers(usersData);
-      console.log('Lista empleados:', usersData);
+      // DEBUG: Logăm exact ce primim
+      console.log('🔍 [EmpleadosPage] Raw result.data:', result.data);
+      console.log('🔍 [EmpleadosPage] result.data type:', typeof result.data, 'isArray:', Array.isArray(result.data));
+      if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+        console.log('🔍 [EmpleadosPage] result.data keys:', Object.keys(result.data));
+      }
+      
+      // Verificăm dacă răspunsul este "not-modified" - verificare prioritara
+      if (result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+        // Caz 1: obiect direct cu status: 'not-modified' (fără CODIGO)
+        if (result.data.status === 'not-modified' && !result.data.CODIGO) {
+          console.log('✅ [EmpleadosPage] Response is status:not-modified (object) - păstrez lista existentă.');
+          // Dacă nu avem lista existentă, nu facem nimic (nu setăm lista la array gol)
+          if (users.length === 0) {
+            console.log('⚠️ [EmpleadosPage] Lista este goală și am primit not-modified - aștept răspuns valid.');
+            setOperationLoading('users', false);
+            return;
+          }
+          setOperationLoading('users', false);
+          return;
+        }
+      }
+      
+      // Verificăm dacă este array direct sau obiect care trebuie transformat în array
+      let usersData;
+      if (Array.isArray(result.data)) {
+        // Dacă este array, verificăm dacă are un singur element cu status not-modified
+        if (result.data.length === 1 && result.data[0] && result.data[0].status === 'not-modified' && !result.data[0].CODIGO) {
+          console.log('✅ [EmpleadosPage] Response is status:not-modified (array with not-modified object) - păstrez lista existentă.');
+          setOperationLoading('users', false);
+          return;
+        }
+        usersData = result.data;
+      } else if (result.data && typeof result.data === 'object') {
+        // Dacă este obiect (nu array), transformăm în array doar dacă are CODIGO (nu doar status)
+        if (result.data.CODIGO) {
+          usersData = [result.data];
+        } else {
+          // Nu are CODIGO - probabil este un obiect de eroare sau not-modified
+          console.log('⚠️ [EmpleadosPage] Obiectul nu are CODIGO, păstrez lista existentă.');
+          setOperationLoading('users', false);
+          return;
+        }
+      } else {
+        // Nu avem date valide
+        console.log('⚠️ [EmpleadosPage] Nu avem date valide, păstrez lista existentă.');
+        setOperationLoading('users', false);
+        return;
+      }
+      
+      // Filtrează răspunsuri invalide (ex: obiecte cu status not-modified, fără CODIGO)
+      const validUsers = usersData.filter(user => {
+        if (!user || typeof user !== 'object') return false;
+        if (user.status === 'not-modified') return false;
+        if (!user.CODIGO) return false;
+        return true;
+      });
+      
+      // Dacă după filtru lista este goală și avem deja o listă existentă, păstrăm lista existentă
+      if (validUsers.length === 0 && users.length > 0) {
+        console.log('✅ [EmpleadosPage] Lista filtrată este goală, dar avem lista existentă - o păstrăm.');
+        setOperationLoading('users', false);
+        return;
+      }
+      
+      // Setăm lista doar dacă avem utilizatori valizi
+      if (validUsers.length > 0) {
+        setUsers(validUsers);
+        console.log('✅ [EmpleadosPage] Lista empleados actualizată:', validUsers.length, 'utilizatori');
+      } else {
+        console.log('⚠️ [EmpleadosPage] Nu am găsit utilizatori valizi în răspuns.');
+      }
     } else {
       setErrorUsers('No se pudieron cargar los empleados.');
     }
     
     setOperationLoading('users', false);
-  }, [authUser, callApi, setOperationLoading]);
+  }, [authUser, callApi, setOperationLoading, users.length]);
 
   // Estado para búsqueda
   const [searchTerm, setSearchTerm] = useState('');
@@ -742,9 +872,10 @@ export default function EmpleadosPage() {
     }
     fetchClientes();
     fetchContractTypes();
+    fetchGrupos();
     
     activityLogger.logPageAccess('empleados', authUser);
-  }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, setOperationLoading]);
+  }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, fetchGrupos, setOperationLoading]);
 
   // Cargar avatares para los empleados visibles
   useEffect(() => {
@@ -822,13 +953,40 @@ export default function EmpleadosPage() {
     setAddLoading(true);
     
     try {
-      const result = await callApi(API_ENDPOINTS.UPDATE_USER, {
-        method: 'POST',
+      console.log('🔍 [handleEditUser] editForm:', editForm);
+      console.log('🔍 [handleEditUser] CODIGO:', editForm?.CODIGO);
+      console.log('🔍 [handleEditUser] Body stringified:', JSON.stringify(editForm));
+
+      // Folosim fetch direct pentru a avea control complet asupra header-elor
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+      };
+      
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(API_ENDPOINTS.UPDATE_USER, {
+        method: 'PUT',
+        headers: fetchHeaders,
         body: JSON.stringify(editForm)
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [handleEditUser] Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
       
-      // Accept both { success: true } and [{ success: true }]
-      const normalizedSuccess = !!(result?.success === true || (Array.isArray(result?.data) && result.data.length > 0 && result.data[0]?.success === true));
+      // Accept { success: true } from backend
+      const normalizedSuccess = result?.success === true;
 
       if (normalizedSuccess) {
         // Log actualizarea utilizatorului
@@ -1103,28 +1261,13 @@ export default function EmpleadosPage() {
     setShowEditModal(true);
   };
 
-  // Lista completă de grupuri disponibile pentru selectorul de email
-  // Doar grupurile disponibile în modalul de editare date angajat
-  const EMAIL_GROUP_OPTIONS = [
-    'Administrativ',
-    'Auxiliar De Servicios - C',
-    'Auxiliar De Servicios - L',
-    'Comercial',
-    'Developer',
-    'Especialista',
-    'Informatico',
-    'Limpiador',
-    'Socorrista',
-    'Supervisor'
-  ];
-
   // Funcții pentru email
   const openEmailModal = (user) => {
     console.log('Deschid modal email pentru:', user);
     setSelectedUserForEmail(user);
     setEmailForm({
       destinatar: 'angajat',
-      grup: EMAIL_GROUP_OPTIONS[0],
+      grup: gruposList.length > 0 ? gruposList[0] : 'Empleado',
       subiect: '',
       mensaje: ''
     });
@@ -2147,18 +2290,16 @@ export default function EmpleadosPage() {
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || ''}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      disabled={isOperationLoading('grupos')}
                     >
                       <option value="">Selecciona un grupo...</option>
-                      <option value="Administrativ">🗂️ Administrativ</option>
-                      <option value="Auxiliar De Servicios - C">👷 Auxiliar De Servicios - C</option>
-                      <option value="Auxiliar De Servicios - L">👷 Auxiliar De Servicios - L</option>
-                      <option value="Comercial">📈 Comercial</option>
-                      <option value="Developer">💻 Developer</option>
-                      <option value="Especialista">🎓 Especialista</option>
-                      <option value="Informatico">💾 Informatico</option>
-                      <option value="Limpiador">🧹 Limpiador</option>
-                      <option value="Socorrista">🏊 Socorrista</option>
-                      <option value="Supervisor">🎯 Supervisor</option>
+                      {isOperationLoading('grupos') ? (
+                        <option value="" disabled>Cargando grupos...</option>
+                      ) : (
+                        gruposList.map((grupo) => (
+                          <option key={grupo} value={grupo}>{grupo}</option>
+                        ))
+                      )}
                     </select>
                   ) : (
                     <Input
@@ -2169,6 +2310,21 @@ export default function EmpleadosPage() {
                   )}
                 </div>
               ))}
+            </div>
+            
+            {/* Checkbox pentru "Enviar a Gestoria" */}
+            <div className="mt-6 flex items-center justify-center">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enviarAGestoria}
+                  onChange={(e) => setEnviarAGestoria(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  📧 Enviar a Gestoria
+                </span>
+              </label>
             </div>
             
             <div className="mt-6 text-center">
@@ -2230,9 +2386,11 @@ export default function EmpleadosPage() {
             {/* Content */}
             <div className="p-6 max-h-[60vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {SHEET_FIELDS.map(field => (
+                {SHEET_FIELDS.map(field => {
+                  const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+                  return (
                   <div key={field}>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 mb-2">
                   {field === 'CODIGO' && '🆔'} 
                   {field === 'NOMBRE / APELLIDOS' && '👤'} 
                   {field === 'CORREO ELECTRONICO' && '📧'} 
@@ -2254,6 +2412,7 @@ export default function EmpleadosPage() {
                 </label>
                 {field === 'CODIGO' ? (
                   <Input
+                    id={fieldId}
                     value={editForm[field]}
                     readOnly
                     className="bg-gray-100"
@@ -2261,6 +2420,8 @@ export default function EmpleadosPage() {
                 ) : field === 'D.N.I. / NIE' ? (
                   <div className="space-y-2">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className={`w-full px-3 py-2 border-2 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                         editForm[field] ? (
@@ -2295,6 +2456,8 @@ export default function EmpleadosPage() {
                 ) : field === 'SEG. SOCIAL' ? (
                   <div className="space-y-2">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className={`w-full px-3 py-2 border-2 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                         editForm[field] ? (
@@ -2536,18 +2699,16 @@ export default function EmpleadosPage() {
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || ''}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    disabled={isOperationLoading('grupos')}
                   >
                     <option value="">Selecciona un grupo...</option>
-                    <option value="Administrativ">🗂️ Administrativ</option>
-                    <option value="Auxiliar De Servicios - C">👷 Auxiliar De Servicios - C</option>
-                    <option value="Auxiliar De Servicios - L">👷 Auxiliar De Servicios - L</option>
-                    <option value="Comercial">📈 Comercial</option>
-                    <option value="Developer">💻 Developer</option>
-                    <option value="Especialista">🎓 Especialista</option>
-                    <option value="Informatico">💾 Informatico</option>
-                    <option value="Limpiador">🧹 Limpiador</option>
-                    <option value="Socorrista">🏊 Socorrista</option>
-                    <option value="Supervisor">🎯 Supervisor</option>
+                    {isOperationLoading('grupos') ? (
+                      <option value="" disabled>Cargando grupos...</option>
+                    ) : (
+                      gruposList.map((grupo) => (
+                        <option key={grupo} value={grupo}>{grupo}</option>
+                      ))
+                    )}
                   </select>
                 ) : field === 'NACIONALIDAD' ? (
                   <div className="relative">
@@ -2689,8 +2850,9 @@ export default function EmpleadosPage() {
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
                   />
                 )}
-                  </div>
-                ))}
+                </div>
+                  );
+                })}
               </div>
             </div>
             
@@ -2847,7 +3009,7 @@ export default function EmpleadosPage() {
                   e.preventDefault();
                   e.stopPropagation();
                   console.log('Cambio destinatario a grupo');
-                  setEmailForm(prev => ({ ...prev, destinatar: 'grup', grup: prev.grup || EMAIL_GROUP_OPTIONS[0] }));
+                  setEmailForm(prev => ({ ...prev, destinatar: 'grup', grup: prev.grup || (gruposList.length > 0 ? gruposList[0] : 'Empleado') }));
                 }}
                 className={`p-4 rounded-xl border-2 transition-all duration-200 ${
                   emailForm.destinatar === 'grup'
@@ -2872,14 +3034,14 @@ export default function EmpleadosPage() {
               </label>
               <div className="relative">
                 <select
-                  value={emailForm.grup || EMAIL_GROUP_OPTIONS[0]}
+                  value={emailForm.grup || (gruposList.length > 0 ? gruposList[0] : 'Empleado')}
                   onChange={(e) => {
                     console.log('Grupo seleccionado:', e.target.value);
                     setEmailForm(prev => ({ ...prev, grup: e.target.value }));
                   }}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 bg-white"
                 >
-                  {EMAIL_GROUP_OPTIONS.map((g) => (
+                  {gruposList.map((g) => (
                     <option key={g} value={g}>{g}</option>
                   ))}
                 </select>
@@ -2995,6 +3157,7 @@ export default function EmpleadosPage() {
       <EmployeePDFGenerator
         employeeData={pdfEmployeeData}
         createdBy={authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre}
+        enviarAGestoria={enviarAGestoria}
         onSuccess={handlePDFSuccess}
         onError={handlePDFError}
         showModal={showPDFModal}

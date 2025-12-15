@@ -19,6 +19,28 @@ import { AvatarController } from './controllers/avatar.controller';
 import { AvatarService } from './services/avatar.service';
 import { MonthlyAlertsController } from './controllers/monthly-alerts.controller';
 import { MonthlyAlertsService } from './services/monthly-alerts.service';
+import { PushController } from './controllers/push.controller';
+import { PushService } from './services/push.service';
+import { ClientesController } from './controllers/clientes.controller';
+import { ContractTypesController } from './controllers/contract-types.controller';
+import { EmailService } from './services/email.service';
+import { AusenciasController } from './controllers/ausencias.controller';
+import { AusenciasService } from './services/ausencias.service';
+import { FichajesController } from './controllers/fichajes.controller';
+import { FichajesService } from './services/fichajes.service';
+import { CuadrantesController } from './controllers/cuadrantes.controller';
+import { CuadrantesService } from './services/cuadrantes.service';
+import { TelegramService } from './services/telegram.service';
+import { BajasMedicasController } from './controllers/bajas-medicas.controller';
+import { BajasMedicasService } from './services/bajas-medicas.service';
+import { HorasAsignadasController } from './controllers/horas-asignadas.controller';
+import { HorasAsignadasService } from './services/horas-asignadas.service';
+import { HorasPermitidasController } from './controllers/horas-permitidas.controller';
+import { HorasPermitidasService } from './services/horas-permitidas.service';
+import { GruposController } from './controllers/grupos.controller';
+import { GruposService } from './services/grupos.service';
+import { HorasTrabajadasController } from './controllers/horas-trabajadas.controller';
+import { HorasTrabajadasService } from './services/horas-trabajadas.service';
 
 @Module({
   imports: [
@@ -38,6 +60,17 @@ import { MonthlyAlertsService } from './services/monthly-alerts.service';
     EmpleadosController,
     AvatarController,
     MonthlyAlertsController,
+    PushController,
+    ClientesController,
+    ContractTypesController,
+    AusenciasController,
+    FichajesController,
+    CuadrantesController,
+    BajasMedicasController,
+    HorasAsignadasController,
+    HorasPermitidasController,
+    GruposController,
+    HorasTrabajadasController,
   ],
   providers: [
     AppService,
@@ -46,6 +79,17 @@ import { MonthlyAlertsService } from './services/monthly-alerts.service';
     EmpleadosService,
     AvatarService,
     MonthlyAlertsService,
+    PushService,
+    EmailService,
+    AusenciasService,
+    FichajesService,
+    CuadrantesService,
+    TelegramService,
+    BajasMedicasService,
+    HorasAsignadasService,
+    HorasPermitidasService,
+    GruposService,
+    HorasTrabajadasService,
   ],
 })
 export class AppModule {}

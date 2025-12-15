@@ -588,7 +588,17 @@ const InicioPage = () => {
     
     const fetchUser = async () => {
       try {
-        const endpoint = routes.getEmpleadoMe || routes.getEmpleados;
+        // Prioritizează backend-ul nou (getEmpleadoMe) - folosește n8n (getEmpleados) doar dacă getEmpleadoMe nu există
+        // Folosim DOAR backend-ul nou (getEmpleadoMe) - nu mai folosim n8n (getEmpleados) ca fallback
+        // getEmpleadoMe este implementat în backend și ar trebui să fie întotdeauna disponibil
+        const endpoint = routes.getEmpleadoMe;
+        
+        if (!endpoint) {
+          console.error('❌ [Dashboard] routes.getEmpleadoMe nu este definit! Nu putem continua.');
+          return;
+        }
+        
+        console.log('✅ [Dashboard] Folosind backend-ul nou (getEmpleadoMe):', endpoint);
 
         // Adaugă token-ul JWT dacă există
         const headers = {

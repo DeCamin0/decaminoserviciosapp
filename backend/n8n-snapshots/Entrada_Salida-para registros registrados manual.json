@@ -1,0 +1,96 @@
+{
+  "name": "Entrada/Salida-para registros registrados manual",
+  "nodes": [
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "POST"
+        ],
+        "path": "/v1/7578ffd5-9d74-4337-9c79-a47e52199255",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b82f0673-fab3-48a2-a066-f620e248c255",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        512,
+        224
+      ],
+      "webhookId": "7578ffd5-9d74-4337-9c79-a47e52199255"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO `Fichaje` (\n  `CODIGO`,`NOMBRE / APELLIDOS`,`CORREO ELECTRONICO`,\n  `TIPO`,`HORA`,`DIRECCION`,`MODIFICADO_POR`,\n  `FECHA`,`DURACION`,`Estado`,`Motivo`,`ID`\n)\nVALUES (\n  '{{ $json.body.codigo }}',\n  '{{ $json.body.empleado }}',\n  '{{ $json.body.email }}',\n  '{{ $json.body.tipo }}',\n  '{{ $json.body.hora }}',\n  '{{ $json.body.address }}',\n  '{{ $json.body.modificatDe }}',\n  '{{ $json.body.data }}',\n  NULL,\n  'Aprobado',\n  NULL,\n  '{{ $json.body.id }}'\n)\nON DUPLICATE KEY UPDATE\n  `HORA` = VALUES(`HORA`),\n  `DIRECCION` = VALUES(`DIRECCION`),\n  `MODIFICADO_POR` = VALUES(`MODIFICADO_POR`),\n  `FECHA` = VALUES(`FECHA`),\n  `Estado` = 'Aprobado';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        720,
+        224
+      ],
+      "id": "6e34928b-ba4b-48b3-b838-7d9f1cd92fbc",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        928,
+        224
+      ],
+      "id": "95c21093-51ba-4f2d-b8c8-a8e6e772b794",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5a070c99-08b4-4962-aea1-9f88111ef449",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "kGVnVMSg36Mv5Om9",
+  "tags": []
+}

@@ -34,26 +34,56 @@ export const routes = {
     ? 'http://localhost:3000/api/permissions'
     : 'https://api.decaminoservicios.com/api/permissions',
   getUsuarios: getUsuariosUrl,
-  getEmpleados: getN8nUrl('/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142'),
+  // Lista de toți angajații (backend nou, fără n8n)
+  getEmpleados: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados'
+    : 'https://api.decaminoservicios.com/api/empleados',
   // Profil angajat (backend nou, fără n8n)
   getEmpleadoMe: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/me'
     : 'https://api.decaminoservicios.com/api/empleados/me',
-  updateUser: getN8nUrl('/webhook/853e19f8-877a-4c85-b63c-199f3ec84049'),
-  // Endpoint de producție pentru creare angajat (PDF + payload complet)
-  addUser: getN8nUrl('/webhook/5c15e864-0bfc-43bb-b398-58bd8fabf3c2'),
+  // Update empleado (backend nou, fără n8n)
+  updateUser: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados'
+    : 'https://api.decaminoservicios.com/api/empleados',
+  // Endpoint pentru creare angajat (backend nou, fără n8n)
+  // Acceptă multipart/form-data cu PDF și toate câmpurile empleado
+  addUser: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados'
+    : 'https://api.decaminoservicios.com/api/empleados',
+  // Cerere de aprobare pentru modificări date personale (backend nou, fără n8n)
+  cambioAprobacion: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/cambio-aprobacion'
+    : 'https://api.decaminoservicios.com/api/empleados/cambio-aprobacion',
   
   // Fichajes (Time tracking)
   getFichajes: getN8nUrl('/webhook/95551bd2-fba3-401f-a14e-08e3ca037ce7'),
-  getRegistros: getN8nUrl('/webhook/get-registros-EgZjaHJv'),
-  getRegistrosEmpleados: getN8nUrl('/webhook/47305af1-939e-4002-a140-7f581bdaf392'),
-  getRegistrosPeriodo: getN8nUrl('/webhook/v1/e9424047-c9ae-4442-a9b6-2ac9e378eaa2'),
-  addFichaje: getN8nUrl('/webhook/registrohorario-WUqDggA'),
-  updateFichaje: getN8nUrl('/webhook/f8378016-1d88-4c1e-af56-3175d41d1652'),
+  // Registros/Fichajes (backend nou, fără n8n) - MIGRAT
+  getRegistros: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros'
+    : 'https://api.decaminoservicios.com/api/registros',
+  // Registros Empleados (backend nou, fără n8n) - MIGRAT
+  getRegistrosEmpleados: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/empleados'
+    : 'https://api.decaminoservicios.com/api/registros/empleados',
+  // Registros Periodo (backend nou, fără n8n) - MIGRAT
+  getRegistrosPeriodo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/periodo'
+    : 'https://api.decaminoservicios.com/api/registros/periodo',
+  // Add Fichaje (backend nou, fără n8n) - MIGRAT
+  addFichaje: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros'
+    : 'https://api.decaminoservicios.com/api/registros',
+  // Update Fichaje (backend nou, fără n8n) - MIGRAT
+  updateFichaje: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros'
+    : 'https://api.decaminoservicios.com/api/registros',
   deleteFichaje: getN8nUrl('/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb'),
   
-  // Cuadrantes (Schedules)
-  getCuadrantes: getN8nUrl('/webhook/get-cuadrantes-yyBov0qVQZEhX2TL'),
+  // Cuadrantes (Schedules) (backend nou, fără n8n) - MIGRAT
+  getCuadrantes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/cuadrantes'
+    : 'https://api.decaminoservicios.com/api/cuadrantes',
   saveCuadrante: getN8nUrl('/webhook/guardar-cuadrante-yyBov0qVQZEhX2TL'),
   
   // Solicitudes (Requests)
@@ -64,9 +94,9 @@ export const routes = {
   uploadBajasMedicas: import.meta.env.VITE_UPLOAD_BAJAS_MEDICAS
     ? import.meta.env.VITE_UPLOAD_BAJAS_MEDICAS
     : getN8nUrl('/webhook/56981e4c-316e-412d-8c49-99ecb13f2327'),
-  getBajasMedicas: import.meta.env.VITE_GET_BAJAS_MEDICAS
-    ? import.meta.env.VITE_GET_BAJAS_MEDICAS
-    : getN8nUrl('/webhook/56981e4c-316e-412d-8c49-99ecb13f2327'),
+  getBajasMedicas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/bajas-medicas'
+    : 'https://api.decaminoservicios.com/api/bajas-medicas',
   
   // Documentos
   getNominas: getN8nUrl('/webhook/get-nomina-ZeTqQIbs8kwia'),
@@ -107,7 +137,17 @@ export const routes = {
   sendNotificacion: getN8nUrl('/webhook/notificare-email-aec36db4'),
   
   // Estadisticas
-  getTargetOreGrupo: getN8nUrl('/webhook/get-target-ore-grupo-QZEhX2TL'),
+  getTargetOreGrupo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horas-asignadas'
+    : 'https://api.decaminoservicios.com/api/horas-asignadas',
+  getHorasPermitidas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horas-permitidas'
+    : 'https://api.decaminoservicios.com/api/horas-permitidas',
+  
+  // Horas Trabajadas (backend nou, fără n8n)
+  getHorasTrabajadas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horas-trabajadas'
+    : 'https://api.decaminoservicios.com/api/horas-trabajadas',
   
   // Inspecciones (Inspections)
   getMisInspecciones: getN8nUrl('/webhook/e1590f70-8beb-4c9c-a04c-65fb4d571c90'), // Para "Mis Inspecciones" (usuario actual)
@@ -120,7 +160,26 @@ export const routes = {
   downloadInspectionDocument: getN8nUrl('/webhook/f4d97660-c73f-45d3-ba3e-dfaf8eefece5'), // ✅ Endpoint pentru descărcarea documentelor cu ID
   
   // Clientes (Clients)
-  getClientes: getN8nUrl('/webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47'), // ✅ Endpoint pentru lista de clienți
+  // getClientes (vechi): getN8nUrl('/webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47')
+  // Folosim backend-ul nou NestJS pentru lista de clienți
+  getClientes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/clientes'
+    : 'https://api.decaminoservicios.com/api/clientes',
+  // Contract Types (backend nou, fără n8n)
+  getContractTypes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/contract-types'
+    : 'https://api.decaminoservicios.com/api/contract-types',
+  // Grupos (backend nou, fără n8n) - Lista de grupuri din tabelul grupos_referencia
+  getGrupos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/grupos'
+    : 'https://api.decaminoservicios.com/api/grupos',
+  // Ausencias (backend nou, fără n8n)
+  getAusencias: import.meta.env.DEV
+    ? 'http://localhost:3000/api/ausencias'
+    : 'https://api.decaminoservicios.com/api/ausencias',
+  addAusencia: import.meta.env.DEV
+    ? 'http://localhost:3000/api/ausencias'
+    : 'https://api.decaminoservicios.com/api/ausencias',
   getProveedores: getN8nUrl('/webhook/b3fd1c12-bfc0-438f-8246-2e4d63adb291'), // ✅ Endpoint pentru lista de furnizori
   saveCliente: getN8nUrl('/webhook/save-cliente'), // Endpoint pentru salvarea clienților
   renovarContracto: getN8nUrl('/webhook/renovar-contracto'), // Endpoint pentru reînnoirea contractelor

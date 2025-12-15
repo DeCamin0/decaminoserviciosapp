@@ -24,6 +24,15 @@ DB_LOGGING=true
 # JWT
 JWT_SECRET=decamino-super-secret-key-change-in-production
 JWT_EXPIRES_IN=7d
+
+# SMTP (pentru trimiterea email-urilor către gestoria)
+# Configurație pentru serviciodecorreo.es
+SMTP_HOST=smtp.serviciodecorreo.es
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=info@decaminoservicios.com
+SMTP_PASSWORD=your-password-here
+SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>
 ```
 
 ## Important Notes:

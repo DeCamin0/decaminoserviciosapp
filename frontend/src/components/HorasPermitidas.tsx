@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { routes } from '../utils/routes';
 
 // Interfaces pentru componente UI
 interface TitleProps {
@@ -34,20 +35,26 @@ export type HorasPermitidasItem = {
   horasMensuales: number;
 };
 
-// Fetch real data from n8n production endpoint
+// Fetch real data from new backend endpoint
 async function fetchHorasPermitidas(): Promise<HorasPermitidasItem[]> {
   try {
-    console.log('🔍 Fetching HorasPermitidas from production endpoint...');
+    console.log('✅ [HorasPermitidas] Folosind backend-ul nou (getHorasPermitidas)');
     
-    // Use production endpoint for display only
-    const endpoint = import.meta.env.DEV 
-      ? '/webhook/8bfc8e84-2620-4255-9747-f0766402a111'
-      : 'https://n8n.decaminoservicios.com/webhook/8bfc8e84-2620-4255-9747-f0766402a111';
+    const endpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
+      ? 'http://localhost:3000/api/horas-permitidas'
+      : 'https://api.decaminoservicios.com/api/horas-permitidas');
+    
+    const token = localStorage.getItem('auth_token');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
     const response = await fetch(endpoint, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
+      headers: headers,
     });
 
     console.log('🔍 Response status:', response.status);
@@ -203,18 +210,28 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
   const handleSaveNew = async () => {
     if (newItem.grupo.trim()) {
       try {
-        // Trimite datele la n8n endpoint pentru adăugare (producție)
-        const response = await fetch('https://n8n.decaminoservicios.com/webhook/01f4f2d1-7776-4ac2-9614-fd287b68716e', {
+        // Folosim backend-ul nou
+        const endpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
+          ? 'http://localhost:3000/api/horas-permitidas'
+          : 'https://api.decaminoservicios.com/api/horas-permitidas');
+        
+        console.log('✅ [HorasPermitidas] Folosind backend-ul nou (createHorasPermitidas):', endpoint);
+        
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: headers,
           body: JSON.stringify({
             grupo: newItem.grupo.trim(),
             horasAnuales: newItem.horasAnuales,
             horasMensuales: newItem.horasMensuales,
-            action: 'addgrupo',
-            timestamp: new Date().toISOString()
           })
         });
 
@@ -225,10 +242,10 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
           if (result.status === 'success') {
             // Adaugă grupul cu datele din backend
             setData(prev => [...prev, {
-              id: parseInt(result.data.id),
+              id: result.data.id || parseInt(String(result.data.id)),
               grupo: result.data.grupo,
-              horasAnuales: parseFloat(result.data.horasAnuales),
-              horasMensuales: parseFloat(result.data.horasMensuales)
+              horasAnuales: result.data.horasAnuales || parseFloat(String(result.data.horasAnuales)),
+              horasMensuales: result.data.horasMensuales || parseFloat(String(result.data.horasMensuales))
             }]);
             
             setNotification({
@@ -257,21 +274,31 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
   };
 
   const handleSaveEdit = async () => {
-    if (editingItem) {
+    if (editingItem && editingItem.id) {
       try {
-        // Trimite datele la n8n endpoint pentru editare (producție)
-        const response = await fetch('https://n8n.decaminoservicios.com/webhook/01f4f2d1-7776-4ac2-9614-fd287b68716e', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+        // Folosim backend-ul nou
+        const baseEndpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
+          ? 'http://localhost:3000/api/horas-permitidas'
+          : 'https://api.decaminoservicios.com/api/horas-permitidas');
+        const endpoint = `${baseEndpoint}/${editingItem.id}`;
+        
+        console.log('✅ [HorasPermitidas] Folosind backend-ul nou (updateHorasPermitidas):', endpoint);
+        
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(endpoint, {
+          method: 'PUT',
+          headers: headers,
           body: JSON.stringify({
-            id: editingItem.id,
             grupo: editingItem.grupo,
             horasAnuales: editingItem.horasAnuales,
             horasMensuales: editingItem.horasMensuales,
-            action: 'edit',
-            timestamp: new Date().toISOString()
           })
         });
 
@@ -322,18 +349,30 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
   const confirmDelete = async () => {
     if (itemToDelete) {
       try {
-        // Trimite datele la n8n endpoint pentru eliminare (producție)
-        const response = await fetch('https://n8n.decaminoservicios.com/webhook/01f4f2d1-7776-4ac2-9614-fd287b68716e', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id: data.find(item => item.grupo === itemToDelete)?.id,
-            grupo: itemToDelete,
-            action: 'delete',
-            timestamp: new Date().toISOString()
-          })
+        const itemToDeleteObj = data.find(item => item.grupo === itemToDelete);
+        if (!itemToDeleteObj || !itemToDeleteObj.id) {
+          throw new Error('Item not found or missing ID');
+        }
+        
+        // Folosim backend-ul nou
+        const baseEndpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
+          ? 'http://localhost:3000/api/horas-permitidas'
+          : 'https://api.decaminoservicios.com/api/horas-permitidas');
+        const endpoint = `${baseEndpoint}/${itemToDeleteObj.id}`;
+        
+        console.log('✅ [HorasPermitidas] Folosind backend-ul nou (deleteHorasPermitidas):', endpoint);
+        
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(endpoint, {
+          method: 'DELETE',
+          headers: headers,
         });
 
         if (response.ok) {

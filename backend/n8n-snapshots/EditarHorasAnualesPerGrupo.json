@@ -1,0 +1,304 @@
+{
+  "name": "EditarHorasAnualesPerGrupo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "01f4f2d1-7776-4ac2-9614-fd287b68716e",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0b6feb9d-56e1-4b5e-830e-92d56bd35daf",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        -80
+      ],
+      "webhookId": "01f4f2d1-7776-4ac2-9614-fd287b68716e"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json[\"body\"][\"action\"]}}",
+                    "rightValue": "edit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "8423469f-b9d2-4d32-89af-72b23cadfb24"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Edit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "48ec6b34-a43f-4d5e-98d7-6b9b285233c4",
+                    "leftValue": "={{$json[\"body\"][\"action\"]}}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Delete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "5d7fe8e1-cc61-4da5-a544-5b22a1ba24f6",
+                    "leftValue": "={{$json[\"body\"][\"action\"]}}",
+                    "rightValue": "addgrupo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Add Grupo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -208,
+        -80
+      ],
+      "id": "47c0fe42-b299-496a-a842-8b4f1b8f9374",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"message\": \"Grupo actualizado correctamente\",\n  \"data\": {\n    \"id\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['id'] }}\",\n    \"grupo\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['grupo'] }}\",\n    \"horasAnuales\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['horasAnuales'] }}\",\n    \"horasMensuales\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['horasMensuales'] }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        208,
+        -176
+      ],
+      "id": "9aa9c662-4349-44e1-ac8c-3a08f6c5abae",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"message\": \"Grupo eliminado correctamente\",\n  \"data\": {\n    \"id\": \"{{$item(0).$node['Webhook Trigger'].json['body']['id']}}\",\n    \"grupo\": \"{{$item(0).$node['Webhook Trigger'].json['body']['grupo']}}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        208,
+        16
+      ],
+      "id": "459212a5-7b66-42bb-a589-c41142597d08",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE horaspermitidas\nSET \n  GRUPO = '{{ $json[\"body\"][\"grupo\"] }}',\n  `Horas Anuales` = {{ $json[\"body\"][\"horasAnuales\"] }},\n  `Horas Mensuales` = {{ $json[\"body\"][\"horasMensuales\"] }}\nWHERE id = {{ $json[\"body\"][\"id\"] }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        -176
+      ],
+      "id": "9bcdb859-18bc-4d9f-bfef-378d0b3a43ae",
+      "name": "Editeaza",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM horaspermitidas\nWHERE id = {{ $json[\"body\"][\"id\"] }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        16
+      ],
+      "id": "b63c3e3a-9e6e-45c4-b011-4a0890808c30",
+      "name": "Sterge",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO horaspermitidas (`GRUPO`, `Horas Anuales`, `Horas Mensuales`)\nVALUES (\n  '{{ $json[\"body\"][\"grupo\"] }}',\n  {{ $json[\"body\"][\"horasAnuales\"] }},\n  {{ $json[\"body\"][\"horasMensuales\"] }}\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        208
+      ],
+      "id": "cfe188c5-e2e3-4d39-9cfb-74633b5695ac",
+      "name": "Add Grupo",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"message\": \"Nuevo grupo agregado correctamente\",\n  \"data\": {\n    \"grupo\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['grupo'] }}\",\n    \"horasAnuales\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['horasAnuales'] }}\",\n    \"horasMensuales\": \"{{ $item(0).$node['Webhook Trigger'].json['body']['horasMensuales'] }}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        208,
+        208
+      ],
+      "id": "350319dd-780f-4994-99a4-eeda932efb5c",
+      "name": "Respond to Webhook2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Editeaza",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sterge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Editeaza": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sterge": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Grupo": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "80c2c06d-1dcb-4f5d-bda6-4aa304e04a4d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "x8i9PCli8jo0kuVi",
+  "tags": []
+}

@@ -1,0 +1,104 @@
+{
+  "name": "registro ausencia",
+  "nodes": [
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "POST"
+        ],
+        "path": "/abs/89c547ae-3407-45fb-8041-1d88b30fda1a",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "2981f9dc-8137-48be-9afd-0c3df5d06d18",
+      "name": "primeste registru absenta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        512,
+        224
+      ],
+      "webhookId": "89c547ae-3407-45fb-8041-1d88b30fda1a"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO Ausencias (\n  solicitud_id,\n  CODIGO,\n  NOMBRE,\n  TIPO,\n  FECHA,\n  HORA,\n  LOCACION,\n  MOTIVO,\n  DURACION,\n  UNIDAD_DURACION\n)\nSELECT\n  '{{$json.body.solicitud_id}}',\n  '{{$json.body.codigo}}',\n  '{{$json.body.nombre}}',\n  '{{$json.body.tipo}}',\n  CASE\n    WHEN t.ini IS NOT NULL AND t.fin IS NOT NULL\n      THEN CONCAT(DATE_FORMAT(t.ini,'%Y-%m-%d'), ' - ', DATE_FORMAT(t.fin,'%Y-%m-%d'))\n    WHEN t.single IS NOT NULL\n      THEN DATE_FORMAT(t.single,'%Y-%m-%d')\n    ELSE ''\n  END AS FECHA,\n  '{{$json.body.hora}}',\n  '{{$json.body.locatia}}',\n  CASE\n    WHEN t.tipo_norm = 'salida sin regreso'\n      THEN CONCAT('{{$json.body.motivo}}', ' (sin regreso)')\n    ELSE '{{$json.body.motivo}}'\n  END AS MOTIVO,\n\n  -- DURACION\n  CASE\n    WHEN t.tipo_norm = 'salida centro' THEN\n      NULL\n\n    WHEN t.tipo_norm = 'salida sin regreso' THEN\n      CASE\n        -- A FICHAT AZI -> diferență până la sfârșitul programului\n        WHEN EXISTS (\n          SELECT 1\n          FROM Fichaje f\n          WHERE f.CODIGO = '{{$json.body.codigo}}'\n            AND f.FECHA  = t.single\n        )\n        THEN\n          SEC_TO_TIME(\n            GREATEST(\n              0,\n              TIME_TO_SEC(\n                TIMEDIFF(\n                  -- sfârșit program: cuadrante_asignado sau horario_asignado\n                  STR_TO_DATE(\n                    '{{$json.body.cuadrante_asignado && $json.body.cuadrante_asignado.intervalos[0].fin\n                       || $json.body.horario_asignado && $json.body.horario_asignado.intervalos[0].fin\n                       || \"00:00\"}}',\n                    '%H:%i'\n                  ),\n                  -- început absență: ultima Salida de azi, dacă există, altfel ora cererii\n                  STR_TO_DATE(\n                    COALESCE(\n                      (\n                        SELECT MAX(f2.HORA)\n                        FROM Fichaje f2\n                        WHERE f2.CODIGO = '{{$json.body.codigo}}'\n                          AND f2.FECHA  = t.single\n                          AND f2.TIPO   = 'Salida'\n                      ),\n                      '{{$json.body.hora}}'\n                    ),\n                    '%H:%i:%s'\n                  )\n                )\n              )\n            )\n          )\n\n        -- NU a fichat azi -> toate orele zilnice\n        ELSE\n          SEC_TO_TIME(\n            (\n              {{$json.body.cuadrante_asignado && $json.body.cuadrante_asignado.horas_diarias\n                 || $json.body.horario_asignado && $json.body.horario_asignado.horas_diarias\n                 || 0}}\n            ) * 3600\n          )\n      END\n\n    ELSE\n      -- restul tipurilor -> zile, ca înainte\n      GREATEST(\n        1,\n        CASE\n          WHEN t.ini IS NOT NULL AND t.fin IS NOT NULL\n            THEN 1 + ABS(DATEDIFF(t.fin, t.ini))\n          WHEN t.single IS NOT NULL\n            THEN 1\n          ELSE 1\n        END\n      )\n  END AS DURACION,\n\n  -- UNIDAD_DURACION\n  CASE\n    WHEN t.tipo_norm IN ('salida sin regreso', 'salida centro', 'entrada centro')\n      THEN 'horas'\n    ELSE 'dias'\n  END AS UNIDAD_DURACION\n\nFROM (\n  SELECT\n    CAST(\n      NULLIF(\n        NULLIF(\n          NULLIF(\n            NULLIF('{{$json.body.permiso_fecha_inicio}}',''),\n          'undefined'),\n        '[undefined]'),\n      'null'\n      ) AS DATE\n    ) AS ini,\n    CAST(\n      NULLIF(\n        NULLIF(\n          NULLIF(\n            NULLIF('{{$json.body.permiso_fecha_fin}}',''),\n          'undefined'),\n        '[undefined]'),\n      'null'\n      ) AS DATE\n    ) AS fin,\n    CAST(\n      NULLIF(\n        NULLIF(\n          NULLIF(\n            NULLIF('{{$json.body.data}}',''),\n          'undefined'),\n        '[undefined]'),\n      'null'\n      ) AS DATE\n    ) AS single,\n    LOWER(\n      TRIM(\n        NULLIF(\n          NULLIF(\n            NULLIF(\n              NULLIF('{{$json.body.tipo}}',''),\n            'undefined'),\n          '[undefined]'),\n        'null'\n        )\n      )\n    ) AS tipo_norm\n) AS t;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        720,
+        224
+      ],
+      "id": "eecfdc59-b40b-4e7f-b237-4ade328294aa",
+      "name": "salveaza absenta",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        928,
+        224
+      ],
+      "id": "766a8844-4e67-4d67-85e7-edbc089a50d0",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "primeste registru absenta": {
+      "main": [
+        [
+          {
+            "node": "salveaza absenta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "salveaza absenta": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "1bb018dc-1a65-469d-8636-1e0d18fbdad7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "S3KkPU06Brmn5Cn3",
+  "tags": []
+}

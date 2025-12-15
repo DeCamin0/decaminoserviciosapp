@@ -1,0 +1,183 @@
+{
+  "name": "Formatează modificări",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "datosempleado-jEeH9qRnBPLKKSxG",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "962c991a-d9cd-4bf5-9a10-3d7a2acee0cd",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        16,
+        0
+      ],
+      "webhookId": "815258f4-66ec-421c-acfe-ee22906cee58"
+    },
+    {
+      "parameters": {
+        "table": {
+          "__rl": true,
+          "value": "SolicitudesCambiosPersonales",
+          "mode": "list",
+          "cachedResultName": "SolicitudesCambiosPersonales"
+        },
+        "dataMode": "defineBelow",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{$json[\"ID\"]}}"
+            },
+            {
+              "column": "codigo",
+              "value": "={{$json[\"CODIGO\"]}}"
+            },
+            {
+              "column": "NOMBRE",
+              "value": "={{$json[\"NOMBRE\"]}}"
+            },
+            {
+              "column": "campo",
+              "value": "={{$json[\"CAMPO_FORMATAT\"]}}"
+            },
+            {
+              "column": "valoare_veche",
+              "value": "={{$json[\"VALOR_ANTERIOR\"]}}"
+            },
+            {
+              "column": "valoare_noua",
+              "value": "={{$json[\"VALOR_NUEVO\"]}}"
+            },
+            {
+              "column": "motiv",
+              "value": "={{$json[\"MOTIVO_CAMBIO\"]}}"
+            },
+            {
+              "column": "status",
+              "value": "={{$json[\"ESTADO\"]}}"
+            },
+            {
+              "column": "data_creare",
+              "value": "={{$json[\"FECHA_SOLICITUD\"]}}"
+            },
+            {
+              "column": "data_aprobare",
+              "value": "={{$json[\"FECHA_APROBACION\"]}}"
+            },
+            {
+              "column": "CORREO_ELECTRONICO",
+              "value": "={{$json[\"CORREO_ELECTRONICO\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        432,
+        0
+      ],
+      "id": "0fe4eeae-9340-47fe-ba92-213eae67e042",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "=DE CAMINO Servicios Auxiliares SL <info@decaminoservicios.com>",
+        "toEmail": "={{ $node[\"Webhook\"].json[\"body\"][\"CORREO_ELECTRONICO\"] }}",
+        "subject": "Tu solicitud de actualización ha sido registrada correctamente",
+        "html": "=<p>¡Hola!</p>\n\n<p>\n  Hemos recibido tu solicitud para modificar el campo <strong>“{{ $node[\"Webhook\"].json[\"body\"][\"CAMPO_MODIFICADO\"] }}”</strong>.<br>\n  <strong>Valor actual:</strong> {{ $node[\"Webhook\"].json[\"body\"][\"VALOR_ANTERIOR\"] }}<br>\n  <strong>Nuevo valor solicitado:</strong> {{ $node[\"Webhook\"].json[\"body\"][\"VALOR_NUEVO\"] }}\n</p>\n\n<p>Un supervisor revisará tu solicitud en breve.</p>\n\n<p>Gracias,<br>\nEquipo de Recursos Humanos</p>\nDE CAMINO Servicios Auxiliares SL</p>",
+        "options": {
+          "bccEmail": "info@decaminoservicios.com"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        0
+      ],
+      "id": "6f73b338-edc4-49a7-bdc4-c7fd5e0878c0",
+      "name": "Send email",
+      "webhookId": "334dd776-e09d-4a71-98d6-0bda9d6befd4",
+      "credentials": {
+        "smtp": {
+          "id": "YI5EGZepkumfxgE7",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const campuri = $json[\"body\"][\"CAMPO_MODIFICADO\"].split(',').map(c => c.trim());\nconst vechi = $json[\"body\"][\"VALOR_ANTERIOR\"].split(',').map(v => v.trim());\nconst nou = $json[\"body\"][\"VALOR_NUEVO\"].split(',').map(v => v.trim());\n\nlet rezultat = [];\n\nfor (let i = 0; i < campuri.length; i++) {\n  const camp = campuri[i];\n  const val_veche = vechi[i] || \"(gol)\";\n  const val_noua = nou[i] || \"(gol)\";\n  \n  if (val_veche !== val_noua) {\n    rezultat.push(`${camp}: \"${val_veche}\" → \"${val_noua}\"`);\n  }\n}\n\nreturn [{\n  json: {\n    ...$json[\"body\"],\n    CAMPO_FORMATAT: rezultat.join('\\n'),\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "aa8d08ff-1259-4777-927c-8ad735bf586b",
+      "name": "Code"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2dd8aeb1-7db7-4f6e-a067-3c8222910b0c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "jEeH9qRnBPLKKSxG",
+  "tags": []
+}

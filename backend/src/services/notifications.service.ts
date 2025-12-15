@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from './push.service';
 
 /**
  * Service pentru gestionarea notificărilor
@@ -9,9 +10,12 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly notificationsGateway: NotificationsGateway,
     private readonly prisma: PrismaService,
+    private readonly pushService: PushService,
   ) {}
 
   /**
@@ -111,6 +115,23 @@ export class NotificationsService {
     // Trimite notificarea în timp real prin WebSocket
     if (notificationData) {
       this.notificationsGateway.sendToUser(userId, notificationData);
+    }
+
+    // Trimite și prin Push API (pentru notificări când aplicația este închisă)
+    // Push API funcționează chiar dacă utilizatorul nu este online prin WebSocket
+    try {
+      await this.pushService.sendPushNotification(userId, {
+        title: notification.title,
+        message: notification.message,
+        data: notification.data,
+        url: notification.data?.url,
+      });
+    } catch (error) {
+      // Nu aruncăm eroare dacă Push API eșuează - notificarea a fost deja trimisă prin WebSocket
+      this.logger.warn(
+        `⚠️ Eroare la trimiterea Push notification către user ${userId}:`,
+        error,
+      );
     }
   }
 

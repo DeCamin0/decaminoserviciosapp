@@ -125,9 +125,15 @@ const [editLoading, setEditLoading] = useState(false);
   };
 
   const renderPermissionBadge = (value, { positiveLabel = 'Sí', negativeLabel = 'No', positiveIcon = '✅', negativeIcon = '🚫' } = {}) => {
+    // Log pentru debugging
+    console.log('🔍 [renderPermissionBadge] Input value:', value, 'type:', typeof value);
+    
     const interpreted = normalizeYesNoValue(value);
+    console.log('🔍 [renderPermissionBadge] After normalizeYesNoValue:', interpreted, 'type:', typeof interpreted);
 
-    if (interpreted === null) {
+    // Handle null, undefined, or empty string (including whitespace-only strings)
+    if (interpreted === null || interpreted === undefined || interpreted === '' || (typeof interpreted === 'string' && interpreted.trim() === '')) {
+      console.log('🔍 [renderPermissionBadge] Returning "-" for empty/null value');
       return (
         <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border border-gray-200 bg-gray-50 text-gray-500">
           -
@@ -654,65 +660,75 @@ const [editLoading, setEditLoading] = useState(false);
     }
     
     try {
-      const res = await fetch(routes.getEmpleados, {
-        headers: {
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
-        }
-      });
-      const data = await res.json();
-      const users = Array.isArray(data) ? data : [data];
-      console.log('DatosPage raw data from backend:', users);
+      // Folosim backend-ul nou (getEmpleadoMe) - returnează direct angajatul curent
+      const endpoint = routes.getEmpleadoMe;
       
-      // Evită să suprascrii user-ul cu răspunsuri de tip {status: "not-modified"}
-      if (users.length === 1 && users[0] && users[0].status === 'not-modified') {
+      if (!endpoint) {
+        console.error('❌ [DatosPage] routes.getEmpleadoMe nu este definit!');
+        setError('No se pudo obtener el endpoint para los datos del empleado.');
+        setOperationLoading('user', false);
+        return;
+      }
+      
+      console.log('✅ [DatosPage] Folosind backend-ul nou (getEmpleadoMe):', endpoint);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const res = await fetch(endpoint, {
+        headers
+      });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log('🔍 [DatosPage] Raw data from backend:', data);
+      
+      // Procesăm răspunsul de la backend-ul nou: { success: true, empleado: {...} }
+      let found = null;
+      if (data && data.success && data.empleado) {
+        found = data.empleado;
+      } else if (data && data.empleado) {
+        found = data.empleado;
+      } else if (Array.isArray(data) && data.length > 0) {
+        // Fallback pentru format vechi (array) - compatibilitate
+        found = data[0];
+      } else if (data && !data.status) {
+        // Dacă nu este status, poate fi direct obiectul empleado
+        found = data;
+      }
+      
+      // Verificăm dacă este răspuns "not-modified"
+      if (data && data.status === 'not-modified') {
         console.log('ℹ️ [DatosPage] Response is status:not-modified - păstrez user-ul existent.');
-        // NU suprascrii user-ul existent dacă are date - păstrează ce există deja
-        // Dacă user-ul nu există deloc, încearcă să-l construiești din authUser ca fallback minim
-        if (!user && authUser) {
-          // Construiește user minim din authUser cu fallback-uri
-          const fallbackUser = {
-            'CODIGO': authUser.CODIGO || authUser.codigo || '',
-            'NOMBRE / APELLIDOS': authUser['NOMBRE / APELLIDOS'] || authUser.NOMBRE_APELLIDOS || authUser.empleadoNombre || authUser.name || '',
-            'CORREO ELECTRONICO': authUser.email || authUser.CORREO_ELECTRONICO || authUser['CORREO ELECTRONICO'] || '',
-            'GRUPO': authUser.GRUPO || authUser.grupo || '',
-            'ESTADO': authUser.ESTADO || authUser.estado || '',
-          };
-          setUser(fallbackUser);
-        }
-        // Altfel, păstrează user-ul existent (nu face nimic)
+        // NU suprascrii user-ul existent - păstrează datele existente
         setError(null);
         setOperationLoading('user', false);
         return;
       }
       
-      if (users.length > 0) {
-        const empleado = users[0];
-        console.log('🔍 [DatosPage] Datele complete despre angajat din backend:', empleado);
-        console.log('🔍 [DatosPage] Toate cheile din empleado:', Object.keys(empleado || {}));
-        console.log('🔍 [DatosPage] DerechoPedidos din backend:', empleado.DerechoPedidos);
-        console.log('🔍 [DatosPage] Căutare câmpuri pentru pedidos:');
-        Object.keys(empleado || {}).forEach(key => {
-          if (key.toLowerCase().includes('pedido') || 
-              key.toLowerCase().includes('derecho') || 
-              key.toLowerCase().includes('permiso') ||
-              key.toLowerCase().includes('acceso')) {
-            console.log(`🔍 [DatosPage] Câmp găsit: ${key} = ${empleado[key]}`);
-          }
-        });
-      }
-      
-      // Normalizo el email a lowercase y sin espacios
-      const normEmail = (email || '').trim().toLowerCase();
-      let found = users.find(u => ((u['CORREO ELECTRONICO'] || '').trim().toLowerCase()) === normEmail);
-      if (!found && users.length > 0) {
-        found = users.find(u => (u[8] || '').trim().toLowerCase() === normEmail);
-      }
-      
-      // Mapeo robusto de campos - verificamos múltiples variaciones
       if (found) {
+        console.log('🔍 [DatosPage] Datele complete despre angajat din backend:', found);
+        console.log('🔍 [DatosPage] Toate cheile din empleado:', Object.keys(found || {}));
+        console.log('🔍 [DatosPage] DerechoPedidos din backend (raw):', found.DerechoPedidos, 'type:', typeof found.DerechoPedidos);
+        console.log('🔍 [DatosPage] DerechoPedidos variants:', {
+          'DerechoPedidos': found.DerechoPedidos,
+          'derechoPedidos': found.derechoPedidos,
+          'derecho_pedidos': found.derecho_pedidos,
+        });
+        
+        // Mapeo robusto de campos - verificamos múltiples variaciones
         const mappedUser = {
           'CODIGO': found['CODIGO'] || found.codigo || found.CODIGO || '',
           'NOMBRE / APELLIDOS': found['NOMBRE / APELLIDOS'] || found.nombre || found.NOMBRE || '',
@@ -735,7 +751,12 @@ const [editLoading, setEditLoading] = useState(false);
           'FECHA BAJA': found['FECHA BAJA'] || found.fecha_baja || found.fechaBaja || found['FECHA_BAJA'] || '',
           'Fecha Antigüedad': found['Fecha Antigüedad'] || found.fecha_antiguedad || found.fechaAntiguedad || '',
           'Antigüedad': found['Antigüedad'] || found.antiguedad || '',
-          'DerechoPedidos': normalizeYesNoValue(found['DerechoPedidos'] || found.derechoPedidos || found.DerechoPedidos || found.derecho_pedidos || ''),
+          'DerechoPedidos': (() => {
+            const rawValue = found['DerechoPedidos'] || found.derechoPedidos || found.DerechoPedidos || found.derecho_pedidos || '';
+            const normalized = normalizeYesNoValue(rawValue);
+            console.log('🔍 [DatosPage] DerechoPedidos mapping:', { rawValue, normalized, type: typeof rawValue });
+            return normalized;
+          })(),
           'TrabajaFestivos': normalizeYesNoValue(found['TrabajaFestivos'] || found.trabajaFestivos || found.TrabajaFestivos || found.trabaja_festivos || ''),
         };
         console.log('DatosPage mapped user:', mappedUser);
@@ -748,13 +769,21 @@ const [editLoading, setEditLoading] = useState(false);
         }));
         setError(null);
       } else {
-        // Păstrez avatarul existent când setez user-ul nou
-        setUser(prev => ({
-          ...found,
-          AVATAR: prev?.AVATAR || null,
-          avatar: prev?.avatar || null
-        }));
-        setError(null);
+        // Nu am găsit date despre angajat
+        console.warn('⚠️ [DatosPage] Nu s-au găsit date despre angajat în răspunsul backend-ului');
+        // Nu resetăm user-ul existent dacă nu există date noi - păstrăm datele existente
+        if (!user && authUser) {
+          // Construiește user minim din authUser ca fallback doar dacă nu avem user deloc
+          const fallbackUser = {
+            'CODIGO': authUser.CODIGO || authUser.codigo || '',
+            'NOMBRE / APELLIDOS': authUser['NOMBRE / APELLIDOS'] || authUser.NOMBRE_APELLIDOS || authUser.empleadoNombre || authUser.name || '',
+            'CORREO ELECTRONICO': authUser.email || authUser.CORREO_ELECTRONICO || authUser['CORREO ELECTRONICO'] || '',
+            'GRUPO': authUser.GRUPO || authUser.grupo || '',
+            'ESTADO': authUser.ESTADO || authUser.estado || '',
+          };
+          setUser(fallbackUser);
+        }
+        // Altfel, nu facem nimic - păstrăm user-ul existent
       }
     } catch (e) {
       setError('No se pudieron cargar los datos del usuario.');
@@ -1335,9 +1364,11 @@ const [editLoading, setEditLoading] = useState(false);
             {/* Content modernizado */}
             <div className="p-6 max-h-[60vh] overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {SHEET_FIELDS.map(field => (
+                {SHEET_FIELDS.map(field => {
+                  const fieldId = `edit-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+                  return (
                   <div key={field} className="space-y-2">
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                    <label htmlFor={fieldId} className="block text-sm font-bold text-gray-700 mb-2">
                       {field === 'CODIGO' && '🆔'} 
                       {field === 'NOMBRE / APELLIDOS' && '👤'} 
                       {field === 'CORREO ELECTRONICO' && '📧'} 
@@ -1350,11 +1381,13 @@ const [editLoading, setEditLoading] = useState(false);
                     </label>
                     
                     {field === 'CODIGO' ? (
-                      <div className="bg-gray-100 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium">
+                      <div id={fieldId} className="bg-gray-100 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium" role="textbox" aria-label={field}>
                         {editForm[field] || '-'}
                       </div>
                     ) : field === 'NACIONALIDAD' ? (
                       <select
+                        id={fieldId}
+                        name={field}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                         value={editForm[field] || ''}
                         onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -1369,6 +1402,8 @@ const [editLoading, setEditLoading] = useState(false);
                     ) : field === 'SEG. SOCIAL' ? (
                       <div className="space-y-2">
                         <input
+                          id={fieldId}
+                          name={field}
                           type="text"
                           className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                             editForm[field] ? (
@@ -1403,6 +1438,8 @@ const [editLoading, setEditLoading] = useState(false);
                     ) : field === 'Nº Cuenta' ? (
                       <div className="space-y-2">
                         <input
+                          id={fieldId}
+                          name={field}
                           type="text"
                           className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                             editForm[field] ? (
@@ -1437,6 +1474,8 @@ const [editLoading, setEditLoading] = useState(false);
                     ) : field === 'D.N.I. / NIE' ? (
                       <div className="space-y-2">
                         <input
+                          id={fieldId}
+                          name={field}
                           type="text"
                           className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                             editForm[field] ? (
@@ -1470,6 +1509,8 @@ const [editLoading, setEditLoading] = useState(false);
                       </div>
                     ) : field === 'FECHA NACIMIENTO' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="date"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                         value={editForm[field] ? (() => {
@@ -1491,6 +1532,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'FECHA DE ALTA' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="date"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] ? (() => {
@@ -1510,6 +1553,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'FECHA BAJA' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="date"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] ? (() => {
@@ -1529,6 +1574,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'CENTRO TRABAJO' ? (
                       <select
+                        id={fieldId}
+                        name={field}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || ''}
                         readOnly={true}
@@ -1543,6 +1590,8 @@ const [editLoading, setEditLoading] = useState(false);
                       </select>
                     ) : field === 'EMPRESA' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || 'DE CAMINO SERVICIOS AUXILIARES SL'}
@@ -1551,6 +1600,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'ESTADO' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || ''}
@@ -1559,6 +1610,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'GRUPO' || field === 'Fecha Antigüedad' || field === 'Antigüedad' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || ''}
@@ -1567,6 +1620,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'TIPO DE CONTRATO' || field === 'SUELDO BRUTO MENSUAL' || field === 'HORAS DE CONTRATO' ? (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || ''}
@@ -1575,6 +1630,8 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     ) : field === 'DerechoPedidos' ? (
                       <select
+                        id={fieldId}
+                        name={field}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || ''}
                         onChange={() => {}}
@@ -1586,6 +1643,8 @@ const [editLoading, setEditLoading] = useState(false);
                       </select>
                     ) : field === 'TrabajaFestivos' ? (
                       <select
+                        id={fieldId}
+                        name={field}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                         value={editForm[field] || ''}
                         onChange={() => {}}
@@ -1597,6 +1656,8 @@ const [editLoading, setEditLoading] = useState(false);
                       </select>
                     ) : (
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                         value={editForm[field] || ''}
@@ -1605,15 +1666,18 @@ const [editLoading, setEditLoading] = useState(false);
                       />
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               
               {/* Câmp Motivo - Destacat */}
               <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
-                <label className="block text-sm font-bold text-yellow-800 mb-2">
+                <label htmlFor="edit-motivo" className="block text-sm font-bold text-yellow-800 mb-2">
                   ⚠️ Motivo de la Modificación (Obligatorio)
                 </label>
                 <textarea
+                  id="edit-motivo"
+                  name="motivo"
                   className="w-full px-4 py-3 border-2 border-yellow-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all duration-200 hover:border-yellow-400 resize-none"
                   value={motivo}
                   onChange={(e) => setMotivo(e.target.value)}
@@ -1689,13 +1753,36 @@ const [editLoading, setEditLoading] = useState(false);
                        ESTADO: 'pendiente'
                      };
                     
-                    const res = await fetch('https://n8n.decaminoservicios.com/webhook/datosempleado-jEeH9qRnBPLKKSxG', {
+                    // Folosim backend-ul nou (fără n8n)
+                    const token = localStorage.getItem('auth_token');
+                    const headers = {
+                      'Content-Type': 'application/json',
+                      'X-App-Source': 'DeCamino-Web-App',
+                      'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+                      'X-Client-Type': 'web-browser',
+                      'User-Agent': 'DeCamino-Web-Client/1.0'
+                    };
+                    
+                    if (token) {
+                      headers['Authorization'] = `Bearer ${token}`;
+                    }
+                    
+                    const res = await fetch(routes.cambioAprobacion, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: headers,
                       body: JSON.stringify(cambioData)
                     });
                     
-                    if (!res.ok) throw new Error('Error al enviar para aprobación!');
+                    if (!res.ok) {
+                      const errorText = await res.text();
+                      console.error('❌ Error response:', errorText);
+                      throw new Error('Error al enviar para aprobación!');
+                    }
+                    
+                    const result = await res.json();
+                    if (!result.success) {
+                      throw new Error('Error al enviar para aprobación!');
+                    }
                     
                     setShowEdit(false);
                     setMotivo('');

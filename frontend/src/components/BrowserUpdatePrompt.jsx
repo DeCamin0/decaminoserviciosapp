@@ -1,9 +1,13 @@
 import { useAppVersion } from '../hooks/useAppVersion';
+import { usePWAUpdate } from '../hooks/usePWAUpdate';
 
 const BrowserUpdatePrompt = () => {
   const { needsRefresh, forceRefresh, dismissUpdate } = useAppVersion();
+  const { updateAvailable: pwaUpdateAvailable } = usePWAUpdate();
 
-  if (!needsRefresh) return null;
+  // Nu afișa BrowserUpdatePrompt dacă PWAUpdatePrompt este activ
+  // pentru a evita duplicate-urile
+  if (!needsRefresh || pwaUpdateAvailable) return null;
 
   return (
     <div className="fixed top-4 left-4 z-50 max-w-sm">

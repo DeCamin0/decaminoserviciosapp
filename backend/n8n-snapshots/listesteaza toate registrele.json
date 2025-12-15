@@ -1,0 +1,60 @@
+{
+  "name": "listesteaza toate registrele",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "78bdf320-ffc2-49b2-bb7e-2f12b4375b9c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -32
+      ],
+      "webhookId": "47305af1-939e-4002-a140-7f581bdaf392"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -32,
+        -32
+      ],
+      "id": "d2e7c02e-8950-49c7-b3a2-c224a74a90c7",
+      "name": "Execute a SQL query",
+      "alwaysOutputData": false,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5ac5a386-12c7-4b72-a471-d04b3de7d5c0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "jK9T2gpnB57N77eD",
+  "tags": []
+}

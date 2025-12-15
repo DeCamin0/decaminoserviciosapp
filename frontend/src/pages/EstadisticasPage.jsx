@@ -302,7 +302,9 @@ export default function EstadisticasPage() {
       try {
         const logoImg = new Image();
         logoImg.crossOrigin = 'anonymous';
-        logoImg.src = '/logo.png'; // Folosesc PNG pentru jsPDF
+        // Folosește base path-ul din environment pentru path-uri relative
+        const basePath = import.meta.env.VITE_BASE_PATH || '/';
+        logoImg.src = `${basePath}logo.png`.replace(/\/+/g, '/'); // Folosesc PNG pentru jsPDF
         
         logoData = await new Promise((resolve) => {
           const timeout = setTimeout(() => {

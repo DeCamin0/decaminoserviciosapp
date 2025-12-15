@@ -5,7 +5,7 @@ import { useApi } from '../hooks/useApi';
 import { Card, Button, Modal, LoadingSpinner, Input, Notification } from '../components/ui';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
-import { routes, getN8nUrl } from '../utils/routes';
+import { routes } from '../utils/routes';
 import {
   getCurrentMonthKey,
   getStoredMonthlyAlerts,
@@ -68,17 +68,36 @@ function formatDateRange(fechaCombinada) {
     return '—';
   }
   try {
-    if (fechaCombinada.includes(' - ')) {
-      const [fechaInicio, fechaFin] = fechaCombinada.split(' - ');
+    // Normalizează formatul: "2025-12-08- 2025-12-08" -> "2025-12-08 - 2025-12-08"
+    let fechaNormalized = fechaCombinada.trim();
+    const sameDatePattern = /^(\d{4}-\d{2}-\d{2})-\s*(\1)$/;
+    const match = fechaNormalized.match(sameDatePattern);
+    if (match) {
+      fechaNormalized = `${match[1]} - ${match[1]}`;
+    }
+    
+    // Verifică dacă este interval (cu spații normale)
+    if (fechaNormalized.includes(' - ')) {
+      const [fechaInicio, fechaFin] = fechaNormalized.split(' - ');
       console.log('🔍 Split dates for formatting:', fechaInicio, fechaFin);
+      
+      // Verifică dacă este aceeași dată
+      if (fechaInicio.trim() === fechaFin.trim()) {
+        // Dacă este aceeași dată, returnează doar data formatată o singură dată
+        const formatted = fechaInicio.trim().split('-').reverse().join('/');
+        console.log('🔍 Single date (same start/end):', formatted);
+        return formatted;
+      }
+      
       const startFormatted = fechaInicio.trim().split('-').reverse().join('/');
       const endFormatted = fechaFin.trim().split('-').reverse().join('/');
       const result = `${startFormatted} - ${endFormatted}`;
-      console.log('🔍 Formatted result:', result);
+      console.log('🔍 Formatted interval result:', result);
       return result;
     }
+    
     // Dacă nu e format combinat, formatează data normală
-    const result = fechaCombinada.split('-').reverse().join('/');
+    const result = fechaNormalized.split('-').reverse().join('/');
     console.log('🔍 Single date formatted:', result);
     return result;
   } catch (error) {
@@ -333,16 +352,6 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [currentAddress, setCurrentAddress] = useState('');
   const geocodeThrottleRef = useRef(0);
   const fetchedAlertsRef = useRef({});
-  const cuadranteLogCacheRef = useRef({});
-
-  const logCuadranteOnce = useCallback((key, ...args) => {
-    const serialized = JSON.stringify(args);
-    if (cuadranteLogCacheRef.current[key] === serialized) {
-      return;
-    }
-    cuadranteLogCacheRef.current[key] = serialized;
-    console.log(...args);
-  }, []);
 
   // State pentru tab-uri și ausencias
   const [activeTab, setActiveTab] = useState('registros');
@@ -552,48 +561,36 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
     async function fetchBajasMedicasEmpleado() {
       try {
-        const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}accion=get`;
-        const payload = {
-          accion: 'get',
-          codigo: empleadoCodigo,
-          codigoEmpleado: empleadoCodigo,
-          codigo_empleado: empleadoCodigo,
-          trabajador: empleadoNombre,
-          nombre: empleadoNombre
+        // Folosim backend-ul nou cu GET request
+        const token = localStorage.getItem('auth_token');
+        const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}codigo=${encodeURIComponent(empleadoCodigo)}`;
+        
+        console.log('✅ [Fichaje] Folosind backend-ul nou (getBajasMedicas):', url);
+        
+        const headers = {
+          'Content-Type': 'application/json',
         };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
 
         const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-App-Source': 'DeCamino-Web-App'
-          },
-          body: JSON.stringify(payload)
+          method: 'GET',
+          headers: headers,
         });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
 
-        const result = await response.json();
-        const lista = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [];
+        const lista = await response.json();
+        // Backend-ul filtrează deja după codigo, dar păstrăm filtrarea pentru compatibilitate
+        const listaArray = Array.isArray(lista) ? lista : [];
 
-        const codigoNormalizat = empleadoCodigo.trim();
-        const nombreNormalizat = empleadoNombre.toLowerCase();
-
-        const filtradas = lista.filter((item) => {
-          const itemCodigo = item?.Codigo_Empleado || item?.codigo_empleado || item?.codigoEmpleado || item?.['Código Empleado'] || item?.codigo || '';
-          const itemNombre = String(item?.Trabajador || item?.trabajador || item?.['Nombre empleado'] || item?.['Nombre Empleado'] || '').trim().toLowerCase();
-
-          const coincideCodigo = codigoNormalizat && String(itemCodigo).trim() === codigoNormalizat;
-          const coincideNombre = nombreNormalizat && itemNombre === nombreNormalizat;
-
-          return coincideCodigo || coincideNombre;
-        });
-
-        setBajasMedicas(filtradas.length > 0 ? filtradas : lista);
+        console.log(`✅ [Fichaje] Bajas médicas primite din backend: ${listaArray.length} items`);
+        setBajasMedicas(listaArray);
       } catch (error) {
-        console.error('Error fetching bajas médicas:', error);
+        console.error('❌ Error fetching bajas médicas:', error);
         setBajasMedicas([]);
       }
     }
@@ -830,9 +827,18 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         return;
       }
 
-      const url = `${getN8nUrl('/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb')}?codigo=${encodeURIComponent(userCode)}`;
-      console.log('🔍 Fetching all ausencias, URL:', url);
-      const result = await callApi(url);
+      // Folosim backend-ul nou (fără n8n)
+      const url = `${routes.getAusencias}?codigo=${encodeURIComponent(userCode)}`;
+      console.log('✅ [Fichaje] Folosind backend-ul nou (getAusencias):', url);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {};
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const result = await callApi(url, { headers });
       
       if (result.success) {
         const rawData = Array.isArray(result.data) ? result.data : [result.data];
@@ -1069,7 +1075,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       // Para managers, obtiene los marcajes para todos los códigos posibles
       let allLogs = [];
       
-      if (authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor') {
+      if (authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor' || authUser?.GRUPO === 'Developer') {
         // Para managers, obtiene los marcajes para CODIGO y codigo
         const codigos = [];
         if (authUser?.CODIGO) codigos.push(authUser.CODIGO);
@@ -1078,8 +1084,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         
         // Obtiene los marcajes para cada código con filtro de mes
         for (const cod of codigos) {
-          const url = `${routes.getRegistros}?CODIGO=${encodeURIComponent(cod)}&MES=${encodeURIComponent(month)}&limit=1000&max=1000`;
-          const result = await callApi(url);
+          const url = `${routes.getRegistros}?CODIGO=${encodeURIComponent(cod)}&MES=${encodeURIComponent(month)}`;
+          console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistros):', url);
+          
+          const token = localStorage.getItem('auth_token');
+          const headers = {};
+          
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const result = await callApi(url, { headers });
           if (result.success) {
             const data = Array.isArray(result.data) ? result.data : [result.data];
             allLogs.push(...data);
@@ -1087,8 +1102,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         }
       } else {
         // Pentru empleados, obține marcajele doar pentru codigo-ul principal cu filtro de mes
-        const url = `${routes.getRegistros}?CODIGO=${encodeURIComponent(codigo)}&MES=${encodeURIComponent(month)}&limit=1000&max=1000`;
-        const result = await callApi(url);
+        const url = `${routes.getRegistros}?CODIGO=${encodeURIComponent(codigo)}&MES=${encodeURIComponent(month)}`;
+        console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistros):', url);
+        
+        const token = localStorage.getItem('auth_token');
+        const headers = {};
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const result = await callApi(url, { headers });
         
         if (result.success) {
           const data = Array.isArray(result.data) ? result.data : [result.data];
@@ -1098,7 +1122,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
       if (allLogs.length > 0) {
         // Para managers, calcula la duración para los marcajes existentes
-        if (authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor') {
+        if (authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor' || authUser?.GRUPO === 'Developer') {
           const codigos = [];
           if (authUser?.CODIGO) codigos.push(authUser.CODIGO);
           if (authUser?.codigo) codigos.push(authUser.codigo);
@@ -1202,25 +1226,42 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     try {
       const grupo = authUser?.GRUPO || 'Empleado';
       
-      const url = `/webhook/get-target-ore-grupo-QZEhX2TL?grupo=${encodeURIComponent(grupo)}`;
+      // Folosim backend-ul nou
+      const url = routes.getTargetOreGrupo 
+        ? `${routes.getTargetOreGrupo}?grupo=${encodeURIComponent(grupo)}`
+        : `${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/horas-asignadas?grupo=${encodeURIComponent(grupo)}`;
       
-      const result = await callApi(url);
+      console.log('✅ [Fichaje] Folosind backend-ul nou (getHorasAsignadas):', url);
       
-      if (result.success) {
-        const data = Array.isArray(result.data) ? result.data : [result.data];
-        const gruposData = data[0]; // El primer elemento contiene los datos de los grupos
-        
-        if (gruposData && gruposData[grupo]) {
-          return gruposData[grupo].mensuales;
-        } else {
-          return 162; // Default para grupos desconocidos
-        }
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Backend-ul returnează direct { anuales: ..., mensuales: ... }
+      if (data && data.mensuales) {
+        return data.mensuales;
+      } else {
+        return 162; // Default para grupos desconocidos
       }
     } catch (error) {
-      console.error('Error fetching horas asignadas:', error);
+      console.error('❌ Error fetching horas asignadas:', error);
+      return 162; // Default en caso de error
     }
-    
-    return 162; // Default en caso de error
   };
 
   // Funcție pentru a converti timpul (HH:MM) în minute
@@ -1400,8 +1441,20 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         motivo: customMotivo || (tipo === 'Entrada' ? 'Entrada registrada desde web' : 'Salida registrada desde web')
       };
 
+      console.log('✅ [Fichaje] Folosind backend-ul nou (addFichaje):', API_ENDPOINTS.FICHAJE_ADD);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const result = await callApi(API_ENDPOINTS.FICHAJE_ADD, {
         method: 'POST',
+        headers: headers,
         body: JSON.stringify(fichajeData)
       });
 
@@ -1660,6 +1713,226 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const isSalidaAllowed = useMemo(() => {
     return isTimeWithinSchedule('Salida');
   }, [isTimeWithinSchedule]);
+
+  // Memoizează rezultatul calculului pentru mesajul informativ (evită recalculare la fiecare secundă)
+  const timeRestrictionMessage = useMemo(() => {
+    if (!horarioAsignado && !cuadranteAsignado) return null;
+    
+    // Verifică dacă există mai mult de 1 interval în orar (ture partajate)
+    let intervalCount = 0;
+    const intervals = [];
+    
+    if (cuadranteAsignado) {
+      const todayDay = new Date().getDate();
+      const dayKey = `ZI_${todayDay}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        const scheduleIntervals = daySchedule.split(',');
+        intervalCount = scheduleIntervals.length;
+        scheduleIntervals.forEach(interval => {
+          const match = interval.match(/(\d{1,2}):(\d{2})/g);
+          if (match && match.length === 2) {
+            intervals.push({ start: match[0], end: match[1] });
+          }
+        });
+      }
+    } else if (horarioAsignado && horarioAsignado.days) {
+      const today = new Date().getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+      const daySchedule = horarioAsignado.days[dayKey];
+      if (daySchedule) {
+        if (daySchedule.in1 && daySchedule.out1) {
+          intervals.push({ start: daySchedule.in1, end: daySchedule.out1 });
+          intervalCount++;
+        }
+        if (daySchedule.in2 && daySchedule.out2) {
+          intervals.push({ start: daySchedule.in2, end: daySchedule.out2 });
+          intervalCount++;
+        }
+        if (daySchedule.in3 && daySchedule.out3) {
+          intervals.push({ start: daySchedule.in3, end: daySchedule.out3 });
+          intervalCount++;
+        }
+      }
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const hasEntradaToday = logs.some(log => {
+      const logDate = log.data || log.FECHA || log.fecha;
+      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+    });
+    const hasSalidaToday = logs.some(log => {
+      const logDate = log.data || log.FECHA || log.fecha;
+      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
+    });
+    
+    // Dacă există mai mult de 1 interval, verifică în ce interval ne aflăm
+    if (intervalCount > 1 && intervals.length > 0) {
+      const now = new Date();
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+      
+      for (let i = 0; i < intervals.length; i++) {
+        const interval = intervals[i];
+        const start = parseTimeToMinutes(interval.start);
+        const end = parseTimeToMinutes(interval.end);
+        
+        if (currentTime >= start && currentTime <= end) {
+          continue;
+        }
+        
+        if (i < intervals.length - 1) {
+          const nextInterval = intervals[i + 1];
+          const nextStart = parseTimeToMinutes(nextInterval.start);
+          
+          if (currentTime > end && currentTime < nextStart) {
+            return `⏰ Se espera una nueva Entrada a las ${nextInterval.start}. Trabajo completo hasta las ${nextInterval.end}.`;
+          }
+        }
+      }
+    }
+    
+    // Funcție pentru a verifica dacă s-a depășit timpul programat
+    const checkTimeExceeded = (entradaLog, salidaLog) => {
+      let firstInTime = null;
+      let lastOutTime = null;
+      
+      if (cuadranteAsignado) {
+        const todayDay = new Date().getDate();
+        const dayKey = `ZI_${todayDay}`;
+        const daySchedule = cuadranteAsignado[dayKey];
+        
+        if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+          const scheduleIntervals = daySchedule.split(',');
+          let minStartTime = 1440;
+          let maxEndTime = 0;
+          scheduleIntervals.forEach(interval => {
+            const match = interval.match(/(\d{1,2}):(\d{2})/g);
+            if (match && match.length === 2) {
+              const startMatch = match[0].match(/(\d{1,2}):(\d{2})/);
+              const endMatch = match[1].match(/(\d{1,2}):(\d{2})/);
+              if (startMatch) {
+                const startMinutes = parseInt(startMatch[1]) * 60 + parseInt(startMatch[2]);
+                if (startMinutes < minStartTime) {
+                  minStartTime = startMinutes;
+                  firstInTime = startMinutes;
+                }
+              }
+              if (endMatch) {
+                const endMinutes = parseInt(endMatch[1]) * 60 + parseInt(endMatch[2]);
+                if (endMinutes > maxEndTime) {
+                  maxEndTime = endMinutes;
+                  lastOutTime = endMinutes;
+                }
+              }
+            }
+          });
+        }
+      } else if (horarioAsignado && horarioAsignado.days) {
+        const today = new Date().getDay();
+        const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+        const daySchedule = horarioAsignado.days[dayKey];
+        
+        if (daySchedule) {
+          const inTimes = [];
+          const outTimes = [];
+          if (daySchedule.in1) {
+            const time = daySchedule.in1.split(':');
+            inTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
+          }
+          if (daySchedule.in2) {
+            const time = daySchedule.in2.split(':');
+            inTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
+          }
+          if (daySchedule.in3) {
+            const time = daySchedule.in3.split(':');
+            inTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
+          }
+          if (daySchedule.out1) {
+            const time = daySchedule.out1.split(':');
+            outTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
+          }
+          if (daySchedule.out2) {
+            const time = daySchedule.out2.split(':');
+            outTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
+          }
+          if (daySchedule.out3) {
+            const time = daySchedule.out3.split(':');
+            outTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
+          }
+          
+          if (inTimes.length > 0) {
+            firstInTime = Math.min(...inTimes);
+          }
+          if (outTimes.length > 0) {
+            lastOutTime = Math.max(...outTimes);
+          }
+        }
+      }
+      
+      if (firstInTime !== null && lastOutTime !== null && entradaLog && salidaLog) {
+        const entradaHora = entradaLog.HORA || entradaLog.hora;
+        const entradaTime = entradaHora.split(':');
+        const entradaMinutes = parseInt(entradaTime[0]) * 60 + parseInt(entradaTime[1]) + (entradaTime[2] ? parseInt(entradaTime[2]) / 60 : 0);
+        
+        const salidaHora = salidaLog.HORA || salidaLog.hora;
+        const salidaTime = salidaHora.split(':');
+        const salidaMinutes = parseInt(salidaTime[0]) * 60 + parseInt(salidaTime[1]) + (salidaTime[2] ? parseInt(salidaTime[2]) / 60 : 0);
+        
+        const tiempoEfectivo = salidaMinutes - entradaMinutes;
+        const tiempoProgramado = lastOutTime - firstInTime;
+        const diferencia = tiempoEfectivo - tiempoProgramado;
+        
+        if (diferencia > 5) {
+          const minutos = Math.floor(diferencia);
+          const segundos = Math.round((diferencia - minutos) * 60);
+          const minutosTexto = minutos > 0 ? `${minutos} minuto${minutos !== 1 ? 's' : ''}` : '';
+          const segundosTexto = segundos > 0 ? `${segundos} segundo${segundos !== 1 ? 's' : ''}` : '';
+          const tiempoTexto = minutos > 0 && segundos > 0 ? `${minutosTexto} y ${segundosTexto}` : minutosTexto || segundosTexto;
+          
+          return `Has completado tu jornada laboral de hoy. ⚠️ Te recomendamos fichar exact en los horarios asignados para una mejor gestión del tiempo. (Has excedido ${tiempoTexto}).`;
+        } else if (diferencia < -5) {
+          return 'Has completado tu jornada laboral de hoy.';
+        }
+      }
+      
+      return 'Has completado tu jornada laboral de hoy.';
+    };
+    
+    if (hasEntradaToday && hasSalidaToday && (horarioAsignado || cuadranteAsignado)) {
+      const entradaLog = logs.find(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+      });
+      const salidaLog = logs.find(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
+      });
+      
+      if (entradaLog && salidaLog && (entradaLog.HORA || entradaLog.hora) && (salidaLog.HORA || salidaLog.hora)) {
+        const result = checkTimeExceeded(entradaLog, salidaLog);
+        if (result && result !== 'Has completado tu jornada laboral de hoy.') {
+          return result;
+        }
+      }
+    }
+    
+    // Dacă nu s-a completat tura, verifică restricțiile
+    if (hasEntradaToday) {
+      if (!isSalidaAllowed) {
+        return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
+      }
+    } else {
+      if (!isEntradaAllowed && !isSalidaAllowed) {
+        return `${getTimeRestrictionMessage('Entrada') || 'Consulta tu horario asignado'}`;
+      } else if (!isEntradaAllowed) {
+        return `Entrada: ${getTimeRestrictionMessage('Entrada') || 'No permitida en este momento'}`;
+      } else {
+        return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
+      }
+    }
+    
+    return null;
+  }, [logs, cuadranteAsignado, horarioAsignado, isEntradaAllowed, isSalidaAllowed, getTimeRestrictionMessage]);
 
   // Dacă utilizatorul nu este autentificat, afișează un mesaj
   return (
@@ -1934,254 +2207,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                     })()}
                   </p>
                   <p className="text-blue-600 text-sm">
-                    {(() => {
-                      // Verifică dacă există mai mult de 1 interval în orar (ture partajate)
-                      let intervalCount = 0;
-                      const intervals = [];
-                      
-                      if (cuadranteAsignado) {
-                        const todayDay = new Date().getDate();
-                        const dayKey = `ZI_${todayDay}`;
-                        const daySchedule = cuadranteAsignado[dayKey];
-                        if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-                          const scheduleIntervals = daySchedule.split(',');
-                          intervalCount = scheduleIntervals.length;
-                          scheduleIntervals.forEach(interval => {
-                            const match = interval.match(/(\d{1,2}):(\d{2})/g);
-                            if (match && match.length === 2) {
-                              intervals.push({ start: match[0], end: match[1] });
-                            }
-                          });
-                        }
-                      } else if (horarioAsignado && horarioAsignado.days) {
-                        const today = new Date().getDay();
-                        const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
-                        const daySchedule = horarioAsignado.days[dayKey];
-                        if (daySchedule) {
-                          if (daySchedule.in1 && daySchedule.out1) {
-                            intervals.push({ start: daySchedule.in1, end: daySchedule.out1 });
-                            intervalCount++;
-                          }
-                          if (daySchedule.in2 && daySchedule.out2) {
-                            intervals.push({ start: daySchedule.in2, end: daySchedule.out2 });
-                            intervalCount++;
-                          }
-                          if (daySchedule.in3 && daySchedule.out3) {
-                            intervals.push({ start: daySchedule.in3, end: daySchedule.out3 });
-                            intervalCount++;
-                          }
-                        }
-                      }
-                      
-                      // Dacă există mai mult de 1 interval, verifică în ce interval ne aflăm
-                      if (intervalCount > 1 && intervals.length > 0) {
-                        const now = new Date();
-                        const currentTime = now.getHours() * 60 + now.getMinutes();
-                        
-                        // Găsește intervalul curent sau următorul
-                        for (let i = 0; i < intervals.length; i++) {
-                          const interval = intervals[i];
-                          const start = parseTimeToMinutes(interval.start);
-                          const end = parseTimeToMinutes(interval.end);
-                          
-                          // Verifică dacă suntem între start și end
-                          if (currentTime >= start && currentTime <= end) {
-                            // În intervalul curent
-                            continue;
-                          }
-                          
-                          // Verifică dacă următorul interval este următorul
-                          if (i < intervals.length - 1) {
-                            const nextInterval = intervals[i + 1];
-                            const nextStart = parseTimeToMinutes(nextInterval.start);
-                            
-                            if (currentTime > end && currentTime < nextStart) {
-                              // Între 2 intervale, afișează mesaj pentru următorul interval
-                              return `⏰ Se espera una nueva Entrada a las ${nextInterval.start}. Trabajo completo hasta las ${nextInterval.end}.`;
-                            }
-                          }
-                        }
-                      }
-                      
-                      // Verifică dacă s-a făcut deja Entrada azi
-                      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-                      const hasEntradaToday = logs.some(log => {
-                        const logDate = log.data || log.FECHA || log.fecha;
-                        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
-                      });
-                      const hasSalidaToday = logs.some(log => {
-                        const logDate = log.data || log.FECHA || log.fecha;
-                        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
-                      });
-                      
-                      // Funcție pentru a verifica dacă s-a depășit timpul programat
-                      const checkTimeExceeded = (entradaLog, salidaLog) => {
-                        // Găsește timpii programati (primul in, ultimul out)
-                        let firstInTime = null;
-                        let lastOutTime = null;
-                        
-                        if (cuadranteAsignado) {
-                          const todayDay = new Date().getDate();
-                          const dayKey = `ZI_${todayDay}`;
-                          const daySchedule = cuadranteAsignado[dayKey];
-                          
-                          if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-                            // Extrage primul interval de intrare și ultimul de ieșire
-                            const intervals = daySchedule.split(',');
-                            let minStartTime = 1440; // 24 ore în minute
-                            let maxEndTime = 0;
-                            intervals.forEach(interval => {
-                              const match = interval.match(/(\d{1,2}):(\d{2})/g);
-                              if (match && match.length === 2) {
-                                const startMatch = match[0].match(/(\d{1,2}):(\d{2})/);
-                                const endMatch = match[1].match(/(\d{1,2}):(\d{2})/);
-                                if (startMatch) {
-                                  const startMinutes = parseInt(startMatch[1]) * 60 + parseInt(startMatch[2]);
-                                  if (startMinutes < minStartTime) {
-                                    minStartTime = startMinutes;
-                                    firstInTime = startMinutes;
-                                  }
-                                }
-                                if (endMatch) {
-                                  const endMinutes = parseInt(endMatch[1]) * 60 + parseInt(endMatch[2]);
-                                  if (endMinutes > maxEndTime) {
-                                    maxEndTime = endMinutes;
-                                    lastOutTime = endMinutes;
-                                  }
-                                }
-                              }
-                            });
-                          }
-                        } else if (horarioAsignado && horarioAsignado.days) {
-                          const today = new Date().getDay();
-                          const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
-                          const daySchedule = horarioAsignado.days[dayKey];
-                          
-                          if (daySchedule) {
-                            // Găsește primul interval de intrare și ultimul de ieșire
-                            const inTimes = [];
-                            const outTimes = [];
-                            if (daySchedule.in1) {
-                              const time = daySchedule.in1.split(':');
-                              inTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
-                            }
-                            if (daySchedule.in2) {
-                              const time = daySchedule.in2.split(':');
-                              inTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
-                            }
-                            if (daySchedule.in3) {
-                              const time = daySchedule.in3.split(':');
-                              inTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
-                            }
-                            if (daySchedule.out1) {
-                              const time = daySchedule.out1.split(':');
-                              outTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
-                            }
-                            if (daySchedule.out2) {
-                              const time = daySchedule.out2.split(':');
-                              outTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
-                            }
-                            if (daySchedule.out3) {
-                              const time = daySchedule.out3.split(':');
-                              outTimes.push(parseInt(time[0]) * 60 + parseInt(time[1]));
-                            }
-                            
-                            if (inTimes.length > 0) {
-                              firstInTime = Math.min(...inTimes);
-                            }
-                            if (outTimes.length > 0) {
-                              lastOutTime = Math.max(...outTimes);
-                            }
-                          }
-                        }
-                        
-                        if (firstInTime !== null && lastOutTime !== null && entradaLog && salidaLog) {
-                          const entradaHora = entradaLog.HORA || entradaLog.hora;
-                          const entradaTime = entradaHora.split(':');
-                          // Calculează și cu secunde pentru precizie
-                          const entradaMinutes = parseInt(entradaTime[0]) * 60 + parseInt(entradaTime[1]) + (entradaTime[2] ? parseInt(entradaTime[2]) / 60 : 0);
-                          
-                          const salidaHora = salidaLog.HORA || salidaLog.hora;
-                          const salidaTime = salidaHora.split(':');
-                          // Calculează și cu secunde pentru precizie
-                          const salidaMinutes = parseInt(salidaTime[0]) * 60 + parseInt(salidaTime[1]) + (salidaTime[2] ? parseInt(salidaTime[2]) / 60 : 0);
-                          
-                          // Calculează diferența: timp efectiv minus timp programat
-                          const tiempoEfectivo = salidaMinutes - entradaMinutes;
-                          const tiempoProgramado = lastOutTime - firstInTime;
-                          const diferencia = tiempoEfectivo - tiempoProgramado;
-                          
-                          console.log('🔍 DEBUG: Calcul depășire', { entradaMinutes, salidaMinutes, tiempoEfectivo, firstInTime, lastOutTime, tiempoProgramado, diferencia });
-                          
-                          if (diferencia > 5) {
-                            // Afișează minute și secunde separate
-                            const minutos = Math.floor(diferencia);
-                            const segundos = Math.round((diferencia - minutos) * 60);
-                            const minutosTexto = minutos > 0 ? `${minutos} minuto${minutos !== 1 ? 's' : ''}` : '';
-                            const segundosTexto = segundos > 0 ? `${segundos} segundo${segundos !== 1 ? 's' : ''}` : '';
-                            const tiempoTexto = minutos > 0 && segundos > 0 ? `${minutosTexto} y ${segundosTexto}` : minutosTexto || segundosTexto;
-                            
-                            return `Has completado tu jornada laboral de hoy. ⚠️ Te recomendamos fichar exact en los horarios asignados para una mejor gestión del tiempo. (Has excedido ${tiempoTexto}).`;
-                          } else if (diferencia < -5) {
-                            // Dacă a muncit mai puțin, nu ar trebui să afișăm mesaj de recomandare
-                            return 'Has completado tu jornada laboral de hoy.';
-                          }
-                        }
-                        
-                        return 'Has completado tu jornada laboral de hoy.';
-                      };
-                      
-                      // Calculează și afișează mesajul de recomandare dacă s-a depășit timpul
-                      const overrunStateKey = `overrun:state:${today}:${hasEntradaToday}:${hasSalidaToday}:${!!horarioAsignado}:${!!cuadranteAsignado}`;
-                      logCuadranteOnce(overrunStateKey, '🔍 DEBUG: Verifică mesajul de depășire', {
-                        hasEntradaToday,
-                        hasSalidaToday,
-                        hasHorario: !!horarioAsignado,
-                        hasCuadrante: !!cuadranteAsignado
-                      });
-                      if (hasEntradaToday && hasSalidaToday && (horarioAsignado || cuadranteAsignado)) {
-                        const entradaLog = logs.find(log => {
-                          const logDate = log.data || log.FECHA || log.fecha;
-                          return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
-                        });
-                        const salidaLog = logs.find(log => {
-                          const logDate = log.data || log.FECHA || log.fecha;
-                          return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
-                        });
-                        
-                        const overrunLogsKey = `overrun:logs:${today}:${entradaLog?.id || entradaLog?.ID || 'none'}:${salidaLog?.id || salidaLog?.ID || 'none'}`;
-                        logCuadranteOnce(overrunLogsKey, '🔍 DEBUG: Logs găsite', { entradaLog, salidaLog });
-                        
-                        if (entradaLog && salidaLog && (entradaLog.HORA || entradaLog.hora) && (salidaLog.HORA || salidaLog.hora)) {
-                          const result = checkTimeExceeded(entradaLog, salidaLog);
-                          const overrunResultKey = `overrun:result:${today}:${result}`;
-                          logCuadranteOnce(overrunResultKey, '🔍 DEBUG: Rezultat checkTimeExceeded', result);
-                          if (result && result !== 'Has completado tu jornada laboral de hoy.') {
-                            return result;
-                          } else if (result === 'Has completado tu jornada laboral de hoy.') {
-                            return 'Has completado tu jornada laboral de hoy.';
-                          }
-                        }
-                      }
-                      
-                      // Dacă nu s-a completat tura, verifică restricțiile
-                      if (hasEntradaToday) {
-                        // Dacă s-a făcut deja Entrada azi, afișează doar Salida
-                        if (!isSalidaAllowed) {
-                          return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
-                        }
-                      } else {
-                        // Dacă nu s-a făcut Entrada azi, afișează ambele
-                        if (!isEntradaAllowed && !isSalidaAllowed) {
-                          return `${getTimeRestrictionMessage('Entrada') || 'Consulta tu horario asignado'}`;
-                        } else if (!isEntradaAllowed) {
-                          return `Entrada: ${getTimeRestrictionMessage('Entrada') || 'No permitida en este momento'}`;
-                        } else {
-                          return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
-                        }
-                      }
-                      return null;
-                    })()}
+                    {timeRestrictionMessage}
                   </p>
                 </div>
               </div>
@@ -2478,6 +2504,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   {/* Main container */}
                   <div className="relative">
                     <select
+                      id="registros-month-select"
+                      name="registros-month"
                       value={selectedMonth}
                       onChange={(e) => {
                         console.log('🔍 Month changed from', selectedMonth, 'to', e.target.value);
@@ -2647,7 +2675,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   {/* Ubicación cu text wrapping */}
                   {(item.address || item.loc) && (
                     <div className="bg-gray-50 p-3 rounded-lg">
-                      <label className="block text-xs font-medium text-gray-600 mb-1">📍 Ubicación</label>
+                      <div className="block text-xs font-medium text-gray-600 mb-1">📍 Ubicación</div>
                       {item.address ? (
                         <p className="text-sm text-gray-800 break-words">{item.address}</p>
                       ) : item.loc ? (
@@ -2696,7 +2724,13 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                           {item.tipo}
                         </h3>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="text-gray-600 font-medium text-sm sm:text-base">{item.hora}</span>
+                          {/* Afișează FECHA în loc de hora pentru toate ausencias */}
+                          <span className="text-gray-600 font-medium text-sm sm:text-base">
+                            {item.FECHA ? formatDateRange(item.FECHA) : 
+                             (item.fecha_inicio && item.fecha_fin ? 
+                               formatDateRange(`${item.fecha_inicio} - ${item.fecha_fin}`) :
+                               (item.data ? item.data.split('-').reverse().join('/') : '—'))}
+                          </span>
                           <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border ${
                             durationDisplay.isDayBased
                               ? 'bg-blue-100 text-blue-800 border-blue-200'
@@ -2707,30 +2741,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded flex-shrink-0">
-                        {isDayBasedAbsenceType(item.tipo) && item.FECHA ? 
-                          formatDateRange(item.FECHA) : 
-                          (item.data ? item.data.split('-').reverse().join('/') : '—')}
-                      </span>
-                      {item.created_at && (
-                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
-                          📅 {item.created_at}
-                        </span>
-                      )}
-                    </div>
+                    {/* Eliminat duplicate date display - data este deja afișată mai sus */}
                   </div>
                   
                   {/* Motivo și locație */}
                   <div className="space-y-2">
                     <div className="bg-orange-50 p-3 rounded-lg">
-                      <label className="block text-xs font-medium text-orange-700 mb-1">📝 Motivo</label>
+                      <div className="block text-xs font-medium text-orange-700 mb-1">📝 Motivo</div>
                       <p className="text-sm text-orange-800 break-words">{item.motivo || 'Sin motivo especificado'}</p>
                     </div>
                     
                     {item.locatia && (
                       <div className="bg-blue-50 p-3 rounded-lg">
-                        <label className="block text-xs font-medium text-blue-700 mb-1">📍 Ubicación</label>
+                        <div className="block text-xs font-medium text-blue-700 mb-1">📍 Ubicación</div>
                         <p className="text-sm text-blue-800 break-words mb-2">{item.locatia}</p>
                         <button
                           className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition-colors"
@@ -2912,12 +2935,12 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
             // Extrage email-ul din registros (toate formatele posibile)
             const emailRegistro = item['CORREO ELECTRONIC'] || item.EMAIL || item.email || item['CORREO ELECTRONICO'];
             
-            // Debug: afișează ce email se găsește
-            console.log('🔍 Mapping registro:', {
-              item: item,
-              emailRegistro: emailRegistro,
-              empleadosCount: empleados.length
-            });
+            // Debug: afișează ce email se găsește (comentat pentru a reduce logurile)
+            // console.log('🔍 Mapping registro:', {
+            //   item: item,
+            //   emailRegistro: emailRegistro,
+            //   empleadosCount: empleados.length
+            // });
             
             if (emailRegistro) {
               // Caută în empleados după email (toate formatele posibile)
@@ -2925,21 +2948,21 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
                 const emailEmpleado = emp.email || emp['CORREO ELECTRONIC'] || emp['CORREO ELECTRONICO'] || emp.EMAIL;
                 const match = emailEmpleado && emailEmpleado.toLowerCase() === emailRegistro.toLowerCase();
                 
-                // Debug: afișează comparația
-                if (emailEmpleado) {
-                  console.log('🔍 Comparing emails:', {
-                    emailEmpleado: emailEmpleado.toLowerCase(),
-                    emailRegistro: emailRegistro.toLowerCase(),
-                    match: match
-                  });
-                }
+                // Debug: afișează comparația (comentat pentru a reduce logurile)
+                // if (emailEmpleado) {
+                //   console.log('🔍 Comparing emails:', {
+                //     emailEmpleado: emailEmpleado.toLowerCase(),
+                //     emailRegistro: emailRegistro.toLowerCase(),
+                //     match: match
+                //   });
+                // }
                 
                 return match;
               });
               
               if (empleadoEncontrado) {
                 nombreEmpleado = empleadoEncontrado.nombre || empleadoEncontrado['NOMBRE / APELLIDOS'] || 'Sin nombre';
-                console.log('✅ Empleado encontrado por email:', nombreEmpleado);
+                // console.log('✅ Empleado encontrado por email:', nombreEmpleado);
               } else {
                 // Fallback: caută după CODIGO dacă email-ul nu se găsește
                 const codigoRegistro = item.CODIGO || item.codigo;
@@ -2950,15 +2973,15 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
                   
                   if (empleadoPorCodigo) {
                     nombreEmpleado = empleadoPorCodigo.nombre || empleadoPorCodigo['NOMBRE / APELLIDOS'] || 'Sin nombre';
-                    console.log('✅ Empleado encontrado por código:', nombreEmpleado);
+                    // console.log('✅ Empleado encontrado por código:', nombreEmpleado);
                   } else {
-                    console.log('❌ No se encontró empleado ni por email ni por código:', {
-                      email: emailRegistro,
-                      codigo: codigoRegistro
-                    });
+                    // console.log('❌ No se encontró empleado ni por email ni por código:', {
+                    //   email: emailRegistro,
+                    //   codigo: codigoRegistro
+                    // });
                   }
                 } else {
-                  console.log('❌ No se encontró empleado para email y no hay código:', emailRegistro);
+                  // console.log('❌ No se encontró empleado para email y no hay código:', emailRegistro);
                 }
               }
             } else {
@@ -3100,9 +3123,16 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
       // Folosim REGISTROS_EMPLEADOS pentru a obține toate registrele pentru luna selectată
       // Trimitem doar luna în format YYYY-MM
       const url = `${API_ENDPOINTS.REGISTROS_EMPLEADOS}?mes=${encodeURIComponent(month)}`;
-      console.log('🔍 Full URL (with month filter):', url);
+      console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistrosEmpleados):', url);
       
-      const result = await callApi(url);
+      const token = localStorage.getItem('auth_token');
+      const headers = {};
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const result = await callApi(url, { headers });
       
       if (result.success) {
         // Verifică dacă răspunsul este "not-modified" - nu șterge datele existente
@@ -3141,8 +3171,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
         
         // Mapeo a la estructura UI
         const mapped = validData.map(item => {
-          // Debug: verifica ce câmpuri există în item
-          console.log('🔍 Mapping item:', item);
+          // Debug: verifica ce câmpuri există în item (comentat pentru a reduce logurile)
+          // console.log('🔍 Mapping item:', item);
           
           return {
             id: item.ID || item.id || item._id || null,
@@ -3163,7 +3193,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
         const filteredData = mapped.filter(registro => {
           if (!registro.data) return false;
           const registroMonth = registro.data.substring(0, 7); // YYYY-MM
-          console.log('🔍 Registro date:', registro.data, 'Month:', registroMonth, 'Expected:', month);
+          // console.log('🔍 Registro date:', registro.data, 'Month:', registroMonth, 'Expected:', month);
           return registroMonth === month;
         });
 
@@ -3266,25 +3296,34 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
     setIsPeriodMode(true);
     
     try {
-      // Construiește URL-ul cu parametrii (endpoint de producție)
+      // Construiește URL-ul cu parametrii (backend nou)
       let url = `${API_ENDPOINTS.REGISTROS_PERIODO}?fecha_inicio=${encodeURIComponent(periodStart)}&fecha_fin=${encodeURIComponent(periodEnd)}`;
       
-      // Dacă este selectat un angajat, adaugă codigo și nombre
+      // Dacă este selectat un angajat, adaugă codigo
       if (selectedEmpleado) {
         const empleadoSeleccionado = empleados.find(emp => emp.nombre === selectedEmpleado);
         if (empleadoSeleccionado) {
           const codigo = empleadoSeleccionado.codigo || empleadoSeleccionado.CODIGO || '';
-          const nombre = empleadoSeleccionado.nombre || '';
-          if (codigo) url += `&codigo=${encodeURIComponent(codigo)}`;
-          if (nombre) url += `&nombre=${encodeURIComponent(nombre)}`;
+          if (codigo) {
+            url += `&codigo=${encodeURIComponent(codigo)}`;
+          }
         }
       }
       
+      console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistrosPeriodo):', url);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+          'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        }
+      
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: headers
       });
 
       if (!response.ok) {
@@ -3926,16 +3965,27 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
         }
       });
 
-      // Folosește endpoint-ul specific pentru adăugarea de registre
-      const endpoint = editIdx !== null ? API_ENDPOINTS.FICHAJE_UPDATE : getN8nUrl('/webhook/v1/7578ffd5-9d74-4337-9c79-a47e52199255');
+      // Folosește endpoint-ul specific pentru adăugarea/editarea de registre
+      const endpoint = editIdx !== null ? API_ENDPOINTS.FICHAJE_UPDATE : API_ENDPOINTS.FICHAJE_ADD;
+      const method = editIdx !== null ? 'PUT' : 'POST'; // PUT pentru update, POST pentru add
       
-      // Debug: verifică structura request-ului
-      console.log('📤 Sending request to:', endpoint);
+      console.log(`✅ [Fichaje] Folosind backend-ul nou (${editIdx !== null ? 'updateFichaje' : 'addFichaje'}):`, endpoint);
+      console.log('📤 Sending request to:', endpoint, 'Method:', method);
       console.log('📤 Request body:', JSON.stringify(newReg, null, 2));
       console.log('📤 ID in request:', newReg.id);
       
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const result = await callApi(endpoint, {
-        method: 'POST',
+        method: method,
+        headers: headers,
         body: JSON.stringify(newReg)
       });
 
@@ -4243,6 +4293,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
               {/* Main container */}
               <div className="relative">
                 <select
+                  id="fichaje-month-select"
+                  name="fichaje-month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
                   disabled={changingMonth}
@@ -4620,7 +4672,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
                   {/* Informații în grid compact */}
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div className="bg-gray-50 p-2 rounded">
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Duración</label>
+                      <div className="block text-xs font-medium text-gray-600 mb-1">Duración</div>
                       <p className="text-sm font-semibold text-gray-900">
                         {item.duration && item.tipo === 'Salida' ? (
                           <span className="text-blue-600">⏱️ {item.duration}</span>
@@ -4632,7 +4684,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
                       </p>
                     </div>
                     <div className="bg-gray-50 p-2 rounded">
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Modificado por</label>
+                      <div className="block text-xs font-medium text-gray-600 mb-1">Modificado por</div>
                       <p className="text-sm font-semibold text-gray-900 truncate">{item.modificatDe || '-'}</p>
                     </div>
                   </div>
@@ -4640,7 +4692,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
                   {/* Ubicación cu text wrapping */}
                   {item.address && (
                     <div className="bg-blue-50 p-3 rounded-lg">
-                      <label className="block text-xs font-medium text-blue-700 mb-1">📍 Ubicación</label>
+                      <div className="block text-xs font-medium text-blue-700 mb-1">📍 Ubicación</div>
                       <p className="text-sm text-blue-800 break-words mb-2">{item.address}</p>
                       <button
                         className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition-colors"
@@ -4706,6 +4758,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
             </h4>
             <div className="relative">
               <input
+                id="registro-empleado-input"
+                name="empleado"
                 type="text"
                 value={form.empleado}
                 onChange={(e) => setForm(f => ({ ...f, empleado: e.target.value }))}
@@ -5090,10 +5144,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="period-start-date" className="block text-sm font-medium text-gray-700 mb-2">
                   Fecha de Inicio
                 </label>
                 <Input
+                  id="period-start-date"
                   type="date"
                   value={periodStart}
                   onChange={(e) => setPeriodStart(e.target.value)}
@@ -5103,10 +5158,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="period-end-date" className="block text-sm font-medium text-gray-700 mb-2">
                   Fecha de Fin
                 </label>
                 <Input
+                  id="period-end-date"
                   type="date"
                   value={periodEnd}
                   onChange={(e) => setPeriodEnd(e.target.value)}
@@ -5146,8 +5202,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
         >
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Empleado</label>
+              <label htmlFor="filter-empleado" className="block text-sm font-medium text-gray-700 mb-2">Empleado</label>
               <Input
+                id="filter-empleado"
                 type="text"
                 placeholder="🔍 Buscar empleado..."
                 value={filter.empleado}
@@ -5156,8 +5213,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Luna (MM)</label>
+              <label htmlFor="filter-luna" className="block text-sm font-medium text-gray-700 mb-2">Luna (MM)</label>
               <Input
+                id="filter-luna"
                 type="text"
                 placeholder="MM"
                 value={filter.luna}
@@ -5166,8 +5224,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Año (YYYY)</label>
+              <label htmlFor="filter-an" className="block text-sm font-medium text-gray-700 mb-2">Año (YYYY)</label>
               <Input
+                id="filter-an"
                 type="text"
                 placeholder="YYYY"
                 value={filter.an}
@@ -5176,8 +5235,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">De (YYYY-MM-DD)</label>
+              <label htmlFor="filter-de" className="block text-sm font-medium text-gray-700 mb-2">De (YYYY-MM-DD)</label>
               <Input
+                id="filter-de"
                 type="date"
                 value={filter.de}
                 onChange={(e) => setFilter(f => ({ ...f, de: e.target.value }))}
@@ -5185,8 +5245,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Pana (YYYY-MM-DD)</label>
+              <label htmlFor="filter-pana" className="block text-sm font-medium text-gray-700 mb-2">Pana (YYYY-MM-DD)</label>
               <Input
+                id="filter-pana"
                 type="date"
                 value={filter.pana}
                 onChange={(e) => setFilter(f => ({ ...f, pana: e.target.value }))}
@@ -5207,7 +5268,7 @@ export default function FichajePage() {
   const { t } = useTranslation();
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
-  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor' || authUser?.GRUPO === 'Developer';
   const [activeTab, setActiveTab] = useState('personal');
   const [logs, setLogs] = useState([]);
   
@@ -5335,10 +5396,16 @@ export default function FichajePage() {
     
     setLoadingCuadrante(true);
     try {
-      const url = getN8nUrl('/webhook/get-cuadrantes-yyBov0qVQZEhX2TL');
+      // Folosește noul backend endpoint
+      const url = routes.getCuadrantes;
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({ codigo: codigoEmpleado })
       });
 
@@ -5965,6 +6032,7 @@ export default function FichajePage() {
           title: 'Error de Autenticación',
           message: '¡Datos de usuario faltantes! Por favor, inicia sesión nuevamente.'
         });
+        setIsSubmittingIncidencia(false);
         return;
       }
 
@@ -6029,8 +6097,20 @@ export default function FichajePage() {
 
       // Determina el motivo final
       let razonFinal = incidenciaForm.motivo;
-      if (incidenciaForm.motivo === 'Otro motivo' && incidenciaForm.motivoPersonalizado.trim()) {
+      if (
+        incidenciaForm.motivo === 'Otro motivo' &&
+        incidenciaForm.motivoPersonalizado.trim()
+      ) {
         razonFinal = incidenciaForm.motivoPersonalizado.trim();
+      }
+
+      // Validación: Para "Salida del Centro", el motivo es obligatorio
+      if (incidenciaForm.tipo === 'Salida del Centro') {
+        if (!razonFinal || razonFinal.trim() === '') {
+          setIncidenciaMessage('⚠️ El motivo es obligatorio para "Salida del Centro". Por favor, completa el motivo antes de registrar.');
+          setIsSubmittingIncidencia(false);
+          return;
+        }
       }
 
       const solicitudId = generateSolicitudId();
@@ -6159,8 +6239,8 @@ export default function FichajePage() {
         solicitud_id: solicitudId
       };
 
-      // POST direct la webhook-ul specificat pentru ausencia
-      const webhookUrl = getN8nUrl('/webhook/abs/89c547ae-3407-45fb-8041-1d88b30fda1a');
+      // Folosim backend-ul nou pentru ausencia
+      const ausenciaEndpoint = routes.addAusencia;
       
       // Mapăm tipurile pentru backend
       const tipoParaBackend = incidenciaForm.tipo === 'Salida del Centro' ? 'Salida Centro' : 
@@ -6185,12 +6265,40 @@ export default function FichajePage() {
         ausenciaPayload.permiso_fecha_fin = incidenciaForm.permisoFechaFin;
       }
 
-      const result = await callApi(webhookUrl, {
-        method: 'POST',
-        body: JSON.stringify(ausenciaPayload)
-      });
+      console.log('✅ [Fichaje] Folosind backend-ul nou (addAusencia):', ausenciaEndpoint);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
-      if (result.success) {
+      // Adaugă timeout pentru a preveni blocarea infinită
+      const timeoutMs = 30000; // 30 secunde
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const result = await Promise.race([
+          callApi(ausenciaEndpoint, {
+        method: 'POST',
+            headers: headers,
+            body: JSON.stringify(ausenciaPayload),
+            signal: controller.signal
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout: La solicitud tardó demasiado. Inténtalo de nuevo.')), timeoutMs)
+          )
+        ]);
+
+        clearTimeout(timeoutId);
+
+        if (!result.success) {
+          throw new Error(result.error || 'Error desconocido');
+        }
+
         // Log crear incidencia
         await activityLogger.logFichajeCreated(fichajeData, authUser);
         
@@ -6206,20 +6314,27 @@ export default function FichajePage() {
         // Cierra el modal y resetea el formulario
         setShowIncidenciaModal(false);
         setIncidenciaForm({
-          tipo: 'Entrada',
-          motivo: 'Fichaje fuera de horario',
+          tipo: 'Salida del Centro',
+          motivo: '',
           motivoPersonalizado: '',
           permisoFechaInicio: '',
           permisoFechaFin: ''
         });
-      } else {
-        console.error('Error from API:', result.error);
-        setIncidenciaMessage('Error al registrar la incidencia. Inténtalo de nuevo.');
-      }
-    } catch (error) {
-      console.error('Error submitting incidencia:', error);
-      setIncidenciaMessage('Error de conexión. Verifica tu conexión a internet e inténtalo de nuevo.');
+      } catch (apiError) {
+        clearTimeout(timeoutId);
+        console.error('Error submitting incidencia:', apiError);
+        const errorMessage = apiError instanceof Error && apiError.message.includes('Timeout')
+          ? '⏱️ La solicitud tardó demasiado. Por favor, inténtalo de nuevo.'
+          : apiError instanceof Error && apiError.message
+          ? apiError.message
+          : 'Error al registrar la incidencia. Inténtalo de nuevo.';
+        setIncidenciaMessage(errorMessage);
     } finally {
+        setIsSubmittingIncidencia(false);
+      }
+    } catch (outerError) {
+      // Handle any errors that occur before the API call
+      console.error('Error in handleSubmitIncidencia:', outerError);
       setIsSubmittingIncidencia(false);
     }
   };
@@ -6560,25 +6675,38 @@ export default function FichajePage() {
           <div className="p-6 sm:p-8 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-xl bg-white/10">
             <div className="text-center mb-6">
               <h4 className="text-xl sm:text-2xl font-black text-gray-900">Motivo de la Ausencia</h4>
-              <p className="text-sm text-gray-600 font-medium">Selecciona el motivo que mejor describa tu ausencia</p>
+              <p className="text-sm text-gray-600 font-medium">Describe el motivo de tu ausencia</p>
             </div>
             <div className="mt-2">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Escribe el motivo</label>
+              <label htmlFor="incidencia-motivo-textarea" className="block text-sm font-bold text-gray-700 mb-2">
+                Escribe el motivo {incidenciaForm.tipo === 'Salida del Centro' && <span className="text-red-500">*</span>}
+              </label>
               <textarea
+                id="incidencia-motivo-textarea"
+                name="motivo"
                 value={incidenciaForm.motivo}
                 onChange={(e) => setIncidenciaForm(f => ({ ...f, motivo: e.target.value }))}
-                placeholder="Describe el motivo de la ausencia..."
-                className="w-full px-4 py-2 border-2 border-orange-200/50 rounded-xl focus:outline-none focus:ring-4 focus:ring-orange-300/50 focus:border-orange-400 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg resize-none"
+                placeholder={incidenciaForm.tipo === 'Salida del Centro' ? "El motivo es obligatorio para Salida del Centro..." : "Describe el motivo de la ausencia..."}
+                className={`w-full px-4 py-2 border-2 rounded-xl focus:outline-none focus:ring-4 focus:border-orange-400 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg resize-none ${
+                  incidenciaForm.tipo === 'Salida del Centro' 
+                    ? 'border-orange-400 focus:ring-orange-300/50' 
+                    : 'border-orange-200/50 focus:ring-orange-300/50'
+                }`}
                 rows="2"
+                required={incidenciaForm.tipo === 'Salida del Centro'}
               />
+              {incidenciaForm.tipo === 'Salida del Centro' && (
+                <p className="text-xs text-red-600 mt-1 font-medium">* Campo obligatorio</p>
+              )}
             </div>
             {incidenciaForm.tipo === 'Permiso Retribuido' && (
               <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                  <label htmlFor="permiso-fecha-inicio" className="block text-sm font-bold text-gray-700 mb-2">
                     Fecha inicio del permiso
                   </label>
                   <Input
+                    id="permiso-fecha-inicio"
                     type="date"
                     value={incidenciaForm.permisoFechaInicio}
                     onChange={(e) =>
@@ -6591,10 +6719,11 @@ export default function FichajePage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                  <label htmlFor="permiso-fecha-fin" className="block text-sm font-bold text-gray-700 mb-2">
                     Fecha fin del permiso
                   </label>
                   <Input
+                    id="permiso-fecha-fin"
                     type="date"
                     value={incidenciaForm.permisoFechaFin}
                     min={incidenciaForm.permisoFechaInicio || undefined}

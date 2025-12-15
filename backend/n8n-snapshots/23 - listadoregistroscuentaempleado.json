@@ -1,0 +1,98 @@
+{
+  "name": "23 - listadoregistroscuentaempleado",
+  "nodes": [
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "GET"
+        ],
+        "path": "get-registros-EgZjaHJv",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4cb85b47-802b-43dd-8002-7cf38babc709",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -32
+      ],
+      "webhookId": "a72f0d68-307e-4c44-8030-bb29f0baeedd"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM Fichaje\nWHERE CODIGO = '{{ $json[\"query\"][\"CODIGO\"] }}'\n  AND FECHA >= STR_TO_DATE(CONCAT('{{ $json[\"query\"][\"MES\"] }}', '-01'), '%Y-%m-%d')\n  AND FECHA <  DATE_ADD(STR_TO_DATE(CONCAT('{{ $json[\"query\"][\"MES\"] }}', '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -32,
+        -32
+      ],
+      "id": "8a1e9277-2393-4956-a02f-ef9a216a0f32",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        176,
+        -32
+      ],
+      "id": "a38bd28b-0fc7-4150-b740-0e3d1f2924bb",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "375736cb-875f-427d-8c30-70fdde2a92a0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "lBsMjcPeCm7XYJDC",
+  "tags": []
+}

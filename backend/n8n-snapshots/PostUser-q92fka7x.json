@@ -1,0 +1,139 @@
+{
+  "name": "PostUser-q92fka7x",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "5c15e864-0bfc-43bb-b398-58bd8fabf3c2",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "c2f9339b-4a6a-4fbd-921f-1ab33a513e6a",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        -128
+      ],
+      "webhookId": "5c15e864-0bfc-43bb-b398-58bd8fabf3c2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO DatosEmpleados (\n  `CODIGO`,\n  `NOMBRE / APELLIDOS`,\n  `NACIONALIDAD`,\n  `DIRECCION`,\n  `D.N.I. / NIE`,\n  `SEG. SOCIAL`,\n  `Nº Cuenta`,\n  `TELEFONO`,\n  `CORREO ELECTRONICO`,\n  `FECHA NACIMIENTO`,\n  `FECHA DE ALTA`,\n  `CENTRO TRABAJO`,\n  `TIPO DE CONTRATO`,\n  `SUELDO BRUTO MENSUAL`,\n  `HORAS DE CONTRATO`,\n  `EMPRESA`,\n  `GRUPO`,\n  `ESTADO`,\n  `FECHA BAJA`,\n  `Fecha Antigüedad`,\n  `Antigüedad`\n) VALUES (\n  '{{ $json[\"body\"][\"CODIGO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"NOMBRE / APELLIDOS\"] || \"\" }}',\n  '{{ $json[\"body\"][\"NACIONALIDAD\"] || \"\" }}',\n  '{{ $json[\"body\"][\"DIRECCION\"] || \"\" }}',\n  '{{ $json[\"body\"][\"D.N.I. / NIE\"] || \"\" }}',\n  '{{ $json[\"body\"][\"SEG. SOCIAL\"] || \"\" }}',\n  '{{ $json[\"body\"][\"Nº Cuenta\"] || \"\" }}',\n  '{{ $json[\"body\"][\"TELEFONO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"CORREO ELECTRONICO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"FECHA NACIMIENTO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"FECHA DE ALTA\"] || \"\" }}',\n  '{{ $json[\"body\"][\"CENTRO TRABAJO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"TIPO DE CONTRATO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"SUELDO BRUTO MENSUAL\"] || \"\" }}',\n  '{{ $json[\"body\"][\"HORAS DE CONTRATO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"EMPRESA\"] || \"\" }}',\n  '{{ $json[\"body\"][\"GRUPO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"ESTADO\"] || \"\" }}',\n  '{{ $json[\"body\"][\"FECHA BAJA\"] || \"\" }}',\n  '{{ $json[\"body\"][\"Fecha Antigüedad\"] || \"\" }}',\n  '{{ $json[\"body\"][\"Antigüedad\"] || \"\" }}'\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -272,
+        -256
+      ],
+      "id": "2160e3cd-f157-41ea-b30c-8db33535d640",
+      "name": "Execute a SQL query",
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>",
+        "toEmail": "altemprado@gmail.com",
+        "subject": "={{ 'ALTA OPERARIA/O: ' + $json.body[\"NOMBRE / APELLIDOS\"] }}",
+        "html": "={{ `\n<html>\n  <body style=\"font-family: Arial, sans-serif; color: #333; line-height: 1.6;\">\n    <p>Hola,</p>\n    <p>Te anexo los datos correspondientes a <strong>${$json.body[\"NOMBRE / APELLIDOS\"]}</strong>.</p>\n    <br>\n    <p>Un saludo,<br>\n    <em>Feliz día 🌞</em></p>\n  </body>\n</html>\n` }}",
+        "options": {
+          "attachments": "pdf",
+          "bccEmail": "info@decaminoservicios.com, mirisjm@gmail.com"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        112,
+        -128
+      ],
+      "id": "7179f4c7-d040-40e4-9827-af6dabf5c5d8",
+      "name": "Send email",
+      "webhookId": "cc939e63-c1cb-44a8-9da0-e803c9271756",
+      "alwaysOutputData": true,
+      "credentials": {
+        "smtp": {
+          "id": "YI5EGZepkumfxgE7",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -112,
+        -48
+      ],
+      "id": "ca40597a-9ea5-43a7-909e-c61aa04886c2",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a6fac477-5345-4830-a668-27a8a2b75f8d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "Oj2gLiAsYPEOx6wq",
+  "tags": []
+}

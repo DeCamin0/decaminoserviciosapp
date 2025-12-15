@@ -1,18 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Card, Button, Modal, Notification } from '../components/ui';
 import { Link } from 'react-router-dom';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
+import { useAdminApi } from '../hooks/useAdminApi';
 
 
 export default function AprobacionesPage() {
   const { user: authUser } = useAuth();
+  const { getPermissions } = useAdminApi();
   
   // State pentru cambios de datos
   const [pendingCambios, setPendingCambios] = useState([]);
   const [loadingCambios, setLoadingCambios] = useState(true);
   const [errorCambios, setErrorCambios] = useState('');
+  
+  // State pentru permisiuni
+  const [userPermissions, setUserPermissions] = useState(null);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
   
   // State comun
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -27,8 +33,88 @@ export default function AprobacionesPage() {
   // State pentru notificări
   const [notification, setNotification] = useState(null);
 
-  // Verific dacă utilizatorul este manager
-  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+  const userGrupo = useMemo(() => authUser?.GRUPO || authUser?.grupo || 'Empleado', [authUser?.GRUPO, authUser?.grupo]);
+  const isManager = useMemo(() => authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor', [authUser?.isManager, authUser?.GRUPO]);
+  
+  // Funcție helper pentru a găsi cheia corectă pentru grup în permisiuni
+  const findGrupoKey = useCallback((grupo, permissions) => {
+    if (!grupo || !permissions) return null;
+    
+    // Caută exact match
+    if (permissions[grupo]) return grupo;
+    
+    // Caută case-insensitive
+    const normalizedGrupo = grupo.toLowerCase();
+    for (const key of Object.keys(permissions)) {
+      if (key.toLowerCase() === normalizedGrupo) {
+        return key;
+      }
+    }
+    
+    return null;
+  }, []);
+
+  // Funcție helper pentru a verifica permisiunile din backend
+  const hasPermission = useCallback((module) => {
+    if (!userPermissions || !userGrupo) {
+      return false;
+    }
+    
+    const grupoKey = findGrupoKey(userGrupo, userPermissions);
+    if (!grupoKey) {
+      return false;
+    }
+    
+    const grupoPermissions = userPermissions[grupoKey];
+    if (!grupoPermissions) {
+      return false;
+    }
+    
+    return grupoPermissions[module] === true;
+  }, [userPermissions, userGrupo, findGrupoKey]);
+
+  // Încarcă permisiunile din backend
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!userGrupo || authUser?.isDemo) {
+        setLoadingPermissions(false);
+        return;
+      }
+
+      setLoadingPermissions(true);
+      try {
+        const permissions = await getPermissions(userGrupo);
+        setUserPermissions(permissions);
+      } catch (error) {
+        console.error('❌ AprobacionesPage: Error loading permissions:', error);
+        setUserPermissions(null);
+      } finally {
+        setLoadingPermissions(false);
+      }
+    };
+
+    loadPermissions();
+  }, [userGrupo, authUser?.isDemo, getPermissions]);
+
+  // Verifică dacă utilizatorul are permisiunea de acces
+  const canAccess = useMemo(() => {
+    // Dacă permisiunile sunt încă încărcare, așteaptă
+    if (loadingPermissions) {
+      return null; // null = încă verificăm
+    }
+    
+    // Dacă avem permisiuni din backend, verificăm permisiunea 'aprobaciones'
+    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+    if (hasBackendPermissions) {
+      const grupoKey = findGrupoKey(userGrupo, userPermissions);
+      if (grupoKey) {
+        return hasPermission('aprobaciones');
+      }
+    }
+    
+    // Fallback la verificarea veche (Manager/Supervisor)
+    return isManager;
+  }, [loadingPermissions, userPermissions, userGrupo, findGrupoKey, hasPermission, isManager]);
 
   // Demo data for AprobacionesPage
   const setDemoAprobaciones = () => {
@@ -142,7 +228,12 @@ export default function AprobacionesPage() {
   }, [authUser?.isDemo]);
 
   useEffect(() => {
-    if (!isManager) {
+    // Așteaptă până când permisiunile sunt verificate
+    if (canAccess === null) {
+      return;
+    }
+
+    if (!canAccess) {
       setLoadingCambios(false);
       return;
     }
@@ -154,7 +245,7 @@ export default function AprobacionesPage() {
     }
 
     fetchPendingCambios();
-  }, [isManager, authUser?.isDemo, fetchPendingCambios]);
+  }, [canAccess, authUser?.isDemo, fetchPendingCambios]);
 
   const handleApproveCambio = async (cambio) => {
     // Skip real backend call in DEMO mode
@@ -342,13 +433,26 @@ export default function AprobacionesPage() {
     setShowDetailsModal(true);
   };
 
-  if (!isManager) {
+  // Așteaptă până când permisiunile sunt verificate
+  if (canAccess === null || loadingPermissions) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Verificando permisos...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Dacă nu are permisiuni, afișează mesajul de eroare
+  if (!canAccess) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="text-red-600 font-bold text-xl mb-4">No tienes permisos para esta página.</div>
-                      <Link to="/inicio" className="text-red-600 hover:text-red-700 underline">
-              ← Volver al Inicio
+          <Link to="/inicio" className="text-red-600 hover:text-red-700 underline">
+            ← Volver al Inicio
           </Link>
         </div>
       </div>

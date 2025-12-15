@@ -1006,11 +1006,16 @@ const ChatPage = () => {
                             const colleagueId = colleague.codigo;
                             const colleagueName = colleague.nombre || 'Sin nombre';
                             const colleagueGrupo = colleague.grupo || '';
-                            // Check if DM already exists
-                            const existingDm = rooms.find(room => 
-                              room.tipo === 'dm' && 
-                              room.members?.some(m => m.user_id === colleagueId)
-                            );
+                            // Check if DM already exists - must have BOTH current user and colleague as members
+                            const currentUserId = Number(user?.CODIGO || user?.codigo || user?.id);
+                            const existingDm = rooms.find(room => {
+                              if (room.tipo !== 'dm') return false;
+                              const members = room.members || [];
+                              const hasCurrentUser = members.some(m => m.user_id === currentUserId);
+                              const hasColleague = members.some(m => m.user_id === colleagueId);
+                              // DM exists only if BOTH users are members
+                              return hasCurrentUser && hasColleague && members.length === 2;
+                            });
                             
                             // Get presence status
                             const presence = presences.get(String(colleagueId)) || { online: false, lastSeen: null };
@@ -1190,15 +1195,40 @@ const ChatPage = () => {
                   );
                 })}
 
-              {/* Supervisor group room - show when chatMode is 'supervisor' */}
+              {/* Supervisor group room and DM chats with Developer/Supervisor/Manager - show when chatMode is 'supervisor' */}
               {chatMode === 'supervisor' && rooms
                 .filter(room => {
-                  // Supervisor group room is identified by centro_id < 0 (negative userId as special identifier)
                   const currentUserId = Number(user?.CODIGO || user?.codigo || user?.id);
-                  return room.tipo === 'dm' && room.centro_id !== null && room.centro_id < 0 && room.centro_id === -currentUserId;
+                  
+                  // Supervisor group room is identified by centro_id < 0 (negative userId as special identifier)
+                  if (room.tipo === 'dm' && room.centro_id !== null && room.centro_id < 0 && room.centro_id === -currentUserId) {
+                    return true;
+                  }
+                  
+                  // Also show DM chats with Developer/Supervisor/Manager
+                  if (room.tipo === 'dm') {
+                    const otherMember = room.members?.find(m => m.user_id !== currentUserId);
+                    if (!otherMember) return false;
+                    const otherUser = colleagues.find(c => c.codigo === otherMember.user_id) || supervisors.find(s => s.codigo === otherMember.user_id);
+                    if (!otherUser) return false;
+                    const grupo = otherUser.grupo || '';
+                    // Include supervisors/developers/managers in supervisor tab
+                    return grupo === 'Supervisor' || grupo === 'Manager' || grupo === 'Developer';
+                  }
+                  
+                  return false;
                 })
                 .map((room) => {
+                  const currentUserId = Number(user?.CODIGO || user?.codigo || user?.id);
                   const memberCount = room.members?.length || 0;
+                  
+                  // Check if this is a supervisor group room or a DM with Developer/Supervisor/Manager
+                  const isSupervisorGroup = room.centro_id !== null && room.centro_id < 0 && room.centro_id === -currentUserId;
+                  
+                  // For DM chats, find the other member
+                  const otherMember = !isSupervisorGroup ? room.members?.find(m => m.user_id !== currentUserId) : null;
+                  const otherUser = otherMember ? (colleagues.find(c => c.codigo === otherMember.user_id) || supervisors.find(s => s.codigo === otherMember.user_id)) : null;
+                  
                   return (
                     <div
                       key={room.id}
@@ -1210,10 +1240,16 @@ const ChatPage = () => {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="font-medium text-gray-800 dark:text-gray-100">
-                            Chat con Supervisores y Administrativo
+                            {isSupervisorGroup 
+                              ? 'Chat con Supervisores y Administrativo'
+                              : (otherUser?.nombre || `Usuario ${otherMember?.user_id}`)
+                            }
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {memberCount} {memberCount === 1 ? 'miembro' : 'miembros'}
+                            {isSupervisorGroup 
+                              ? `${memberCount} ${memberCount === 1 ? 'miembro' : 'miembros'}`
+                              : 'Mensaje directo'
+                            }
                           </div>
                         </div>
                         {isDeveloper && (

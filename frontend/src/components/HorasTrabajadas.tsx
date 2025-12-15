@@ -222,10 +222,7 @@ interface ErrorHandler {
   handleError: (error: Error) => void;
 }
 
-// Fetch real data from n8n endpoint
-const inFlightResumenRequests = new Map<string, Promise<ResumenEmpleado[]>>();
-const requestLocks = new Set<string>(); // Lock sincron pentru a preveni race conditions
-
+// Fetch real data from backend endpoint
 async function fetchResumen(
   mes: string,
   tipo: 'mensual' | 'anual' = 'mensual',
@@ -239,51 +236,35 @@ async function fetchResumen(
     console.log('🔍 Fetching HorasTrabajadas from endpoint...', mes, tipo);
     console.log('🔍 fetchResumen params:', { mes, tipo, empleadoId, soloEmpleado });
     
+    // Construiește URL-ul exact ca MonthlyAlerts
+    const token = localStorage.getItem('auth_token');
     let url = '';
     
-    // Dacă este contul de angajat (soloEmpleado)
     if (soloEmpleado && empleadoId) {
-      const testBaseUrl = import.meta.env.DEV 
-        ? '/webhook/527d61bf-74a1-4e67-b979-bbc0acfaab61'
-        : 'https://n8n.decaminoservicios.com/webhook/527d61bf-74a1-4e67-b979-bbc0acfaab61';
-      
+      const baseUrl = routes.getHorasTrabajadas;
       if (tipo === 'mensual') {
         const params = new URLSearchParams({
           tipo: 'mensual',
           empleadoId: String(empleadoId),
-          mes: mes,
           lunaselectata: mes
         });
-        // Adaugă codigo și empleadoNombre dacă sunt disponibile
-        if (codigo) {
-          params.append('codigo', codigo);
-        }
-        if (empleadoNombre) {
-          params.append('empleadoNombre', empleadoNombre); // URLSearchParams face encoding automat
-        }
-        url = `${testBaseUrl}?${params.toString()}`;
+        if (codigo) params.append('codigo', codigo);
+        if (empleadoNombre) params.append('empleadoNombre', empleadoNombre);
+        params.append('t', String(Date.now()));
+        url = `${baseUrl}?${params.toString()}`;
       } else {
-        // Pentru anual, apel direct cu codigo și empleadoNombre (ca la mensual)
         const ano = mes.split('-')[0];
         const params = new URLSearchParams({
           tipo: 'anual',
           ano: ano
         });
-        // Adaugă codigo și empleadoNombre dacă sunt disponibile
-        if (codigo) {
-          params.append('codigo', codigo);
-        }
-        if (empleadoNombre) {
-          params.append('empleadoNombre', empleadoNombre); // URLSearchParams face encoding automat
-        }
+        if (codigo) params.append('codigo', codigo);
+        if (empleadoNombre) params.append('empleadoNombre', empleadoNombre);
         params.append('t', String(Date.now()));
-        url = `${testBaseUrl}?${params.toString()}`;
+        url = `${baseUrl}?${params.toString()}`;
       }
-      console.log('🔍 Using production endpoint for soloEmpleado:', url);
     } else {
-      // Endpoint normal pentru toți angajații (supervizor)
-      const baseUrl = 'https://n8n.decaminoservicios.com/webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b';
-      
+      const baseUrl = routes.getHorasTrabajadas;
       if (tipo === 'mensual') {
         url = `${baseUrl}?tipo=mensual&lunaselectata=${mes}&t=${Date.now()}`;
       } else {
@@ -292,124 +273,39 @@ async function fetchResumen(
       }
     }
     
-    console.log('🔍 Making request to URL:', url);
-
-    const requestKey = `${tipo}|${mes}|${empleadoId ?? 'ALL'}|${soloEmpleado ? 'solo' : 'all'}`;
-
-    // Verifică dacă există deja un request în flight
-    const existingPromise = inFlightResumenRequests.get(requestKey);
-    if (existingPromise) {
-      console.log('🔁 Returning existing in-flight resumen request for key:', requestKey);
-      return await existingPromise;
-    }
-
-    // Verifică dacă există deja un lock (alt request în proces de creare)
-    if (requestLocks.has(requestKey)) {
-      console.log('🔁 Waiting for lock to be released:', requestKey);
-      // Așteaptă puțin și verifică din nou
-      await new Promise(resolve => setTimeout(resolve, 50));
-      const retryPromise = inFlightResumenRequests.get(requestKey);
-      if (retryPromise) {
-        console.log('🔁 Request was created while waiting, using it:', requestKey);
-        return await retryPromise;
-      }
-    }
-
-    // Setează lock IMEDIAT (înainte de a crea promise-ul)
-    requestLocks.add(requestKey);
-    console.log('🔒 Set lock for request:', requestKey);
-
-    // Verifică din nou dacă alt apel a setat promise-ul între timp
-    const doubleCheckPromise = inFlightResumenRequests.get(requestKey);
-    if (doubleCheckPromise) {
-      requestLocks.delete(requestKey);
-      console.log('🔁 Another call set promise while we were setting lock, using it:', requestKey);
-      return await doubleCheckPromise;
-    }
-
-    // Creează un placeholder promise
-    let resolvePlaceholder: (value: ResumenEmpleado[]) => void;
-    let rejectPlaceholder: (error: any) => void;
-    const placeholderPromise = new Promise<ResumenEmpleado[]>((resolve, reject) => {
-      resolvePlaceholder = resolve;
-      rejectPlaceholder = reject;
-    });
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
     
-    // Setează placeholder-ul în Map IMEDIAT
-    inFlightResumenRequests.set(requestKey, placeholderPromise);
-    // Elimină lock-ul acum că promise-ul este în Map
-    requestLocks.delete(requestKey);
-    console.log('🔒 Set placeholder promise in Map for key:', requestKey);
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    console.log('🔍 [HorasTrabajadas] Fetching resumen from new backend:', url);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    });
 
-    const controller = new AbortController();
-    // Pentru anual, mărim timeout-ul pentru a permite execuției să se termine
-    // Pentru soloEmpleado anual, folosim același timeout ca la supervizor
-    const timeoutMs = tipo === 'anual' ? 300000 : 15000;
-    const timeoutId = setTimeout(() => {
-      console.warn('⏳ fetchResumen timeout reached, aborting request', { tipo, timeoutMs, url });
-      controller.abort();
-    }, timeoutMs);
+    if (!response.ok) {
+      console.warn('⚠️ [HorasTrabajadas] Request failed. Status:', response.status, response.statusText);
+      return [];
+    }
 
-    // Creează promise-ul real (acum fetch-ul poate începe, dar placeholder-ul este deja în Map)
-    const resumenPromise = (async () => {
-      let response: Response;
-      try {
-        response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-        },
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+    const text = await response.text();
+    if (!text) {
+      console.warn('⚠️ [HorasTrabajadas] Empty response from backend');
+      return [];
+    }
 
-      console.log('🔍 Response status:', response.status);
-      console.log('🔍 Response ok:', response.ok);
-      console.log('🔍 Response headers:', Object.fromEntries(response.headers.entries()));
-
-      if (!response.ok) {
-        console.error('❌ Response not ok:', response.status, response.statusText);
-        throw new Error(`Error fetching data: ${response.status} ${response.statusText}`);
-      }
-
-      const responseText = await response.text();
-      console.log('🔍 ===== DEBUG HORAS TRABAJADAS =====');
-      console.log('🔍 URL:', url);
-      console.log('🔍 Response status:', response.status);
-      console.log('🔍 Raw response text length:', responseText.length);
-      console.log('🔍 Raw response text (first 500 chars):', responseText.substring(0, 500));
-      console.log('🔍 Raw response text (full):', responseText);
-      
-      if (!responseText.trim()) {
-        console.log('⚠️ Empty response from server');
-        return [];
-      }
-      
-      let data;
-      try {
-        data = JSON.parse(responseText);
-        console.log('🔍 Parsed JSON data:', data);
-        console.log('🔍 Data type:', typeof data);
-        console.log('🔍 Is array?', Array.isArray(data));
-        console.log('🔍 Data length (if array):', Array.isArray(data) ? data.length : 'N/A');
-        if (tipo === 'anual') {
-          console.log('📆 Annual resumen raw payload:', Array.isArray(data) ? data.slice(0, 5) : data);
-        }
-        if (Array.isArray(data) && data.length > 0) {
-          console.log('🔍 First item structure:', data[0]);
-          console.log('🔍 First item keys:', Object.keys(data[0] || {}));
-          console.log('🔍 First item values:', data[0]);
-        }
-      } catch (parseError) {
-        console.error('❌ JSON parse error:', parseError);
-        console.error('❌ Response text that failed to parse:', responseText);
-        return [];
-      }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError);
+      return [];
+    }
       
       // Parse the data structure from your endpoint
       let empleados: ResumenEmpleado[] = [];
@@ -688,36 +584,8 @@ async function fetchResumen(
       }
       console.log('🔍 ===== END DEBUG HORAS TRABAJADAS =====');
       return empleados;
-    })();
-
-    // Rezolvă placeholder-ul când promise-ul real se rezolvă sau eșuează
-    resumenPromise
-      .then(result => {
-        resolvePlaceholder!(result);
-        inFlightResumenRequests.delete(requestKey);
-        requestLocks.delete(requestKey); // Asigură-te că lock-ul este eliminat
-        console.log('✅ Request completed and removed from map:', requestKey);
-      })
-      .catch(error => {
-        rejectPlaceholder!(error);
-        inFlightResumenRequests.delete(requestKey);
-        requestLocks.delete(requestKey); // Asigură-te că lock-ul este eliminat
-        console.log('❌ Request failed and removed from map:', requestKey);
-      });
-
-    // Așteaptă pe placeholder-ul care se va rezolva când promise-ul real se rezolvă
-    try {
-      const result = await placeholderPromise;
-      return result;
-    } catch (error) {
-      throw error;
-    }
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      console.warn('⏳ FetchResumen aborted due to timeout', { tipo, timeoutMs });
-    } else {
-      console.error('❌ Error fetching horas trabajadas:', error);
-    }
+    console.error('❌ Error fetching horas trabajadas:', error);
     
     // Gestionează eroarea cu error handler
     if (errorHandler) {

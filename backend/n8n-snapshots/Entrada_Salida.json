@@ -1,0 +1,96 @@
+{
+  "name": "Entrada/Salida",
+  "nodes": [
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "POST"
+        ],
+        "path": "registrohorario-WUqDggA",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9bdd083f-7b92-4b40-9b09-5a381c4768d0",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        512,
+        224
+      ],
+      "webhookId": "ebd0b829-32ce-4829-8827-5dab8c2f1e89"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO `Fichaje`\n(\n  `CODIGO`,\n  `NOMBRE / APELLIDOS`,\n  `CORREO ELECTRONICO`,\n  `TIPO`,\n  `HORA`,\n  `DIRECCION`,\n  `MODIFICADO_POR`,\n  `FECHA`,\n  `Estado`,\n  `Motivo`,\n  `ID`\n)\nVALUES\n(\n  '{{$json[\"body\"][\"codigo\"]}}',\n  '{{$json[\"body\"][\"nombre\"]}}',\n  '{{$json[\"body\"][\"email\"]}}',\n  '{{$json[\"body\"][\"tipo\"]}}',\n  '{{$json[\"body\"][\"hora\"]}}',\n  '{{$json[\"body\"][\"address\"]}}',\n  '{{$json[\"body\"][\"modificatDe\"]}}',\n  '{{$json[\"body\"][\"data\"]}}',\n  'Aprobado',\n  '{{$json[\"body\"][\"motivo\"]}}',\n  '{{$json[\"body\"][\"id\"]}}'\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        720,
+        224
+      ],
+      "id": "373b7523-1957-4075-be74-e729a7bd111a",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        928,
+        224
+      ],
+      "id": "87fc3029-53b1-4c4d-8d0a-d8ec7882edae",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1993c7c0-5ffd-4375-9730-364e56dcab24",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "qmnHXBvS6oM5v3V4",
+  "tags": []
+}

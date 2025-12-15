@@ -62,10 +62,20 @@ export const usePWAUpdate = () => {
       }
     };
 
-    // rulează imediat și apoi la interval
+    // rulează imediat și apoi la interval mai frecvent pentru a detecta actualizările mai rapid
     checkForUpdates();
-    const interval = setInterval(checkForUpdates, 30000); // 30 secunde
-    return () => clearInterval(interval);
+    const interval = setInterval(checkForUpdates, 60000); // 60 secunde (mai frecvent pentru producție)
+    
+    // Verifică și la focus (când utilizatorul revine la tab)
+    const handleFocus = () => {
+      checkForUpdates();
+    };
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const updateApp = () => {

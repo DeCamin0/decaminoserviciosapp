@@ -6,7 +6,8 @@ import { routes } from '../../utils/routes';
 
 const EmployeePDFGenerator = ({ 
   employeeData, 
-  createdBy, 
+  createdBy,
+  enviarAGestoria = false,
   onSuccess, 
   onError,
   showModal,
@@ -85,7 +86,9 @@ const EmployeePDFGenerator = ({
         'HORAS DE CONTRATO': employeeData['HORAS DE CONTRATO'],
         EMPRESA: employeeData.EMPRESA,
         GRUPO: employeeData.GRUPO,
-        ESTADO: employeeData.ESTADO
+        ESTADO: employeeData.ESTADO,
+        DerechoPedidos: employeeData.DerechoPedidos || 'NO',
+        TrabajaFestivos: employeeData.TrabajaFestivos || 'NO'
       };
 
       Object.entries(fieldsToSend).forEach(([key, value]) => {
@@ -99,18 +102,27 @@ const EmployeePDFGenerator = ({
       }));
       formData.append('fecha', new Date().toISOString().split('T')[0]);
       formData.append('tipo', 'ficha_empleado');
+      formData.append('enviarAGestoria', enviarAGestoria ? 'true' : 'false');
 
-      // Trimite la webhook n8n
+      // Trimite la backend-ul nou
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+        // Nu setăm Content-Type pentru FormData, browser-ul o setează automat cu boundary
+      };
+      
+      // Adăugăm token-ul JWT pentru autentificare
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(routes.addUser, {
         method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
-          // Nu setăm Content-Type pentru FormData, browser-ul o setează automat cu boundary
-        },
+        headers: headers,
         body: formData
       });
 

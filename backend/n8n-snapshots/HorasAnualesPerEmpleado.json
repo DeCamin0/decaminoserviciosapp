@@ -1,0 +1,125 @@
+{
+  "name": "HorasAnualesPerEmpleado",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "get-target-ore-grupo-QZEhX2TL",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "96d27937-6fd6-47e4-a601-f822c8f5a8ec",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        -80
+      ],
+      "webhookId": "get-target-ore-grupo"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.all();\nconst queryGrupo = $node[\"Webhook Trigger\"].json.query.grupo;\n\nconst result = {};\n\ndata.forEach(row => {\n  const grupo = row.json.GRUPO;\n  if (grupo === queryGrupo) {\n    result.anuales = parseInt(row.json[\"Horas Anuales\"]) || 1920;\n    result.mensuales = parseInt(row.json[\"Horas Mensuales\"]) || 160;\n  }\n});\n\nreturn [ { json: result.anuales ? result : { error: \"Grupo no encontrado\" } } ];\n"
+      },
+      "id": "c713bde6-ff69-4581-9286-6d702089282d",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a37a04d6-46a0-484b-b0fa-cd2d2258ea52",
+      "name": "Return Data",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        224,
+        -80
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "horaspermitidas",
+          "mode": "list",
+          "cachedResultName": "horaspermitidas"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -208,
+        -80
+      ],
+      "id": "3f5530cf-ada0-43f3-a649-7f8e59834834",
+      "name": "Select rows from a table",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Select rows from a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [
+          {
+            "node": "Return Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table": {
+      "main": [
+        [
+          {
+            "node": "Transform Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "291d246b-bb24-4243-a71f-1e1da6e29a52",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "MTVTLfhSogosA8vT",
+  "tags": []
+}

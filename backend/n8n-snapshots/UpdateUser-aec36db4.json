@@ -1,0 +1,98 @@
+{
+  "name": "UpdateUser-aec36db4",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "853e19f8-877a-4c85-b63c-199f3ec84049",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f706e5d0-592c-4c8b-b128-c0e409962ca2",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -384,
+        -128
+      ],
+      "webhookId": "853e19f8-877a-4c85-b63c-199f3ec84049"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE DatosEmpleados SET\n  `NOMBRE / APELLIDOS`    = '{{ $json[\"body\"][\"NOMBRE / APELLIDOS\"]    || \"\" }}',\n  `NACIONALIDAD`          = '{{ $json[\"body\"][\"NACIONALIDAD\"]          || \"\" }}',\n  `DIRECCION`             = '{{ $json[\"body\"][\"DIRECCION\"]             || \"\" }}',\n  `D.N.I. / NIE`          = '{{ $json[\"body\"][\"D.N.I. / NIE\"]          || \"\" }}',\n  `SEG. SOCIAL`           = '{{ $json[\"body\"][\"SEG. SOCIAL\"]           || \"\" }}',\n  `Nº Cuenta`             = '{{ $json[\"body\"][\"Nº Cuenta\"]             || \"\" }}',\n  `TELEFONO`              = '{{ $json[\"body\"][\"TELEFONO\"]              || \"\" }}',\n  `CORREO ELECTRONICO`    = '{{ $json[\"body\"][\"CORREO ELECTRONICO\"]    || \"\" }}',\n  `FECHA NACIMIENTO`      = '{{ $json[\"body\"][\"FECHA NACIMIENTO\"]      || \"\" }}',\n  `FECHA DE ALTA`         = '{{ $json[\"body\"][\"FECHA DE ALTA\"]         || \"\" }}',\n  `CENTRO TRABAJO`        = '{{ $json[\"body\"][\"CENTRO TRABAJO\"]        || \"\" }}',\n  `TIPO DE CONTRATO`      = '{{ $json[\"body\"][\"TIPO DE CONTRATO\"]      || \"\" }}',\n  `SUELDO BRUTO MENSUAL`  = '{{ $json[\"body\"][\"SUELDO BRUTO MENSUAL\"]  || \"\" }}',\n  `HORAS DE CONTRATO`     = '{{ $json[\"body\"][\"HORAS DE CONTRATO\"]     || \"\" }}',\n  `EMPRESA`               = '{{ $json[\"body\"][\"EMPRESA\"]               || \"\" }}',\n  `GRUPO`                 = '{{ $json[\"body\"][\"GRUPO\"]                 || \"\" }}',\n  `ESTADO`                = '{{ $json[\"body\"][\"ESTADO\"]                || \"\" }}',\n  `FECHA BAJA`            = '{{ $json[\"body\"][\"FECHA BAJA\"]            || \"\" }}',\n  `Fecha Antigüedad`      = '{{ $json[\"body\"][\"Fecha Antigüedad\"]      || \"\" }}',\n  `Antigüedad`            = '{{ $json[\"body\"][\"Antigüedad\"]            || \"\" }}',\n  `Contraseña`            = '{{ $json[\"body\"][\"Contraseña\"]            || \"\" }}',\n  `DerechoPedidos`        = '{{ $json[\"body\"][\"DerechoPedidos\"]        || \"\" }}',\n  `TrabajaFestivos`       = '{{ $json[\"body\"][\"TrabajaFestivos\"]       || \"\" }}'\nWHERE\n  `CODIGO` = '{{ $json[\"body\"][\"CODIGO\"] }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -192,
+        -128
+      ],
+      "id": "58db03a1-80c4-402a-b083-9bba38067535",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Empleado actualizado correctamente\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        16,
+        -128
+      ],
+      "id": "23cd5c1e-20d6-4c66-bb8c-63b7f6f87774",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "92f0c4f4-800f-4865-913c-f4eece51f309",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "eaaYXQwXtsyxmtOh",
+  "tags": []
+}

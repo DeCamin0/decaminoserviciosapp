@@ -1,0 +1,253 @@
+{
+  "name": "21 - carga bajas medica",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "56981e4c-316e-412d-8c49-99ecb13f2327",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -912,
+        64
+      ],
+      "id": "b234f24e-7c37-421e-a1fc-9d0c3a793e73",
+      "name": "Webhook",
+      "webhookId": "56981e4c-316e-412d-8c49-99ecb13f2327"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.query.accion }}",
+                    "rightValue": "guardar_bajas",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "35097e23-24dd-4bcb-8d78-c4ecc97b3eb4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Updateaza Bajas"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4d132f27-6452-4ab4-91af-16b4d917b962",
+                    "leftValue": "={{ $json.query.accion }}",
+                    "rightValue": "get",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Listeaza Baja"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -736,
+        64
+      ],
+      "id": "f332d374-a3ac-4db8-83cd-2b4375d97c3b",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "file",
+        "options": {
+          "sheetName": "Común"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -96
+      ],
+      "id": "8eb2c37f-2b10-4da0-a098-bfeccd2c9dea",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO `MutuaCasos` (\n  `NIF`,`NASS`,`Trabajador`,`Régimen`,`CIF`,`CCC`,`Razón Social`,`Tipo`,\n  `Recaída`,`Fecha baja`,`Fecha de alta prevista SPS`,`Fecha de alta`,\n  `Días de baja`,`Días previstos Servicio Público de Salud`,\n  `Fecha inicio subrogación`,\n  `Jornadas perdidas desde la subrogación`,`Jornadas perdidas fijos discontinuos`,\n  `Situación`,`Inicio pago delegado`,`Fin pago delegado`,\n  `Pendiente validación INSS`,`Última gestión Mutua`,`Próxima gestión Mutua`,\n  `Demora recepción del parte de baja`,`Último Parte de Confirmación`,\n  `Código Nacional de Ocupación`,`Id.Caso`,`Id.Posición`,\n  `Codigo_Empleado`,        -- 👈 nou\n  `fuente`,`updated_at`\n)\nVALUES (\n  NULLIF('{{$json[\"NIF\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"NASS\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"Trabajador\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"Régimen\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"CIF\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"CCC\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"Razón Social\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"Tipo\"] ?? \"\"}}',''),\n\n  CASE\n    WHEN LOWER(TRIM('{{$json[\"Recaída\"] ?? \"\"}}')) IN ('si','sí','yes','true','1') THEN 1\n    WHEN LOWER(TRIM('{{$json[\"Recaída\"] ?? \"\"}}')) IN ('no','false','0') THEN 0\n    ELSE NULL\n  END,\n\n  CASE WHEN NULLIF('{{$json[\"Fecha baja\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Fecha baja\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n  CASE WHEN NULLIF('{{$json[\"Fecha de alta prevista SPS\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Fecha de alta prevista SPS\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n  CASE WHEN NULLIF('{{$json[\"Fecha de alta\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Fecha de alta\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n\n  NULLIF('{{$json[\"Días de baja\"] ?? \"\"}}','')+0,\n  NULLIF('{{$json[\"Días previstos Servicio Público de Salud\"] ?? \"\"}}','')+0,\n\n  CASE WHEN NULLIF('{{$json[\"Fecha inicio subrogación\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Fecha inicio subrogación\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n\n  NULLIF('{{$json[\"Jornadas perdidas desde la subrogación\"] ?? \"\"}}','')+0,\n  NULLIF('{{$json[\"Jornadas perdidas fijos discontinuos\"] ?? \"\"}}','')+0,\n\n  NULLIF('{{$json[\"Situación\"] ?? \"\"}}',''),\n\n  CASE WHEN NULLIF('{{$json[\"Inicio pago delegado\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Inicio pago delegado\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n  CASE WHEN NULLIF('{{$json[\"Fin pago delegado\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Fin pago delegado\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n\n  CASE\n    WHEN LOWER(TRIM('{{$json[\"Pendiente validación INSS\"] ?? \"\"}}')) IN ('si','sí','yes','true','1') THEN 1\n    WHEN LOWER(TRIM('{{$json[\"Pendiente validación INSS\"] ?? \"\"}}')) IN ('no','false','0') THEN 0\n    ELSE NULL\n  END,\n\n  CASE WHEN NULLIF('{{$json[\"Última gestión Mutua\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Última gestión Mutua\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n  CASE WHEN NULLIF('{{$json[\"Próxima gestión Mutua\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Próxima gestión Mutua\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n\n  NULLIF('{{$json[\"Demora recepción del parte de baja\"] ?? \"\"}}','')+0,\n\n  CASE WHEN NULLIF('{{$json[\"Último Parte de Confirmación\"] ?? \"\"}}','') REGEXP '^[0-9]+$'\n       THEN DATE_ADD('1899-12-30', INTERVAL CAST('{{$json[\"Último Parte de Confirmación\"]}}' AS UNSIGNED) DAY)\n       ELSE NULL END,\n\n  NULLIF('{{$json[\"Código Nacional de Ocupación\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"Id.Caso\"] ?? \"\"}}',''),\n  NULLIF('{{$json[\"Id.Posición\"] ?? \"\"}}',''),\n\n  /* ===== Codigo_Empleado din DatosEmpleados ===== */\n  (\n    SELECT de.`CODIGO`\n    FROM `DatosEmpleados` de\n    WHERE\n      (\n        NULLIF('{{$json[\"NIF\"] ?? \"\"}}','') <> '' AND\n        REPLACE(REPLACE(UPPER(de.`D.N.I. / NIE`),' ',''),'-','') =\n        REPLACE(REPLACE(UPPER('{{$json[\"NIF\"]}}'),' ',''),'-','')\n      )\n      OR\n      (\n        NULLIF('{{$json[\"NASS\"] ?? \"\"}}','') <> '' AND\n        REPLACE(REPLACE(de.`SEG. SOCIAL`,' ',''),'-','') =\n        REPLACE(REPLACE('{{$json[\"NASS\"]}}',' ',''),'-','')\n      )\n      OR\n      (\n        NULLIF('{{$json[\"Trabajador\"] ?? \"\"}}','') <> '' AND\n        UPPER(TRIM(de.`NOMBRE / APELLIDOS`)) = UPPER(TRIM('{{$json[\"Trabajador\"]}}'))\n      )\n      /* (opțional) restrânge pe firmă dacă ai în JSON: */\n      AND (\n        NULLIF('{{$json[\"Razón Social\"] ?? \"\"}}','') = '' OR\n        UPPER(TRIM(de.`EMPRESA`)) = UPPER(TRIM('{{$json[\"Razón Social\"]}}'))\n      )\n    ORDER BY (de.`ESTADO` = 'ACTIVO') DESC, de.`FECHA BAJA` IS NULL DESC\n    LIMIT 1\n  ),\n\n  'MUTUA',\n  NOW()\n)\nON DUPLICATE KEY UPDATE\n  `NIF`=VALUES(`NIF`),`NASS`=VALUES(`NASS`),`Trabajador`=VALUES(`Trabajador`),\n  `Régimen`=VALUES(`Régimen`),`CIF`=VALUES(`CIF`),`CCC`=VALUES(`CCC`),\n  `Razón Social`=VALUES(`Razón Social`),`Tipo`=VALUES(`Tipo`),`Recaída`=VALUES(`Recaída`),\n  `Fecha baja`=VALUES(`Fecha baja`),`Fecha de alta prevista SPS`=VALUES(`Fecha de alta prevista SPS`),\n  `Fecha de alta`=VALUES(`Fecha de alta`),`Días de baja`=VALUES(`Días de baja`),\n  `Días previstos Servicio Público de Salud`=VALUES(`Días previstos Servicio Público de Salud`),\n  `Fecha inicio subrogación`=VALUES(`Fecha inicio subrogación`),\n  `Jornadas perdidas desde la subrogación`=VALUES(`Jornadas perdidas desde la subrogación`),\n  `Jornadas perdidas fijos discontinuos`=VALUES(`Jornadas perdidas fijos discontinuos`),\n  `Situación`=VALUES(`Situación`),`Inicio pago delegado`=VALUES(`Inicio pago delegado`),\n  `Fin pago delegado`=VALUES(`Fin pago delegado`),`Pendiente validación INSS`=VALUES(`Pendiente validación INSS`),\n  `Última gestión Mutua`=VALUES(`Última gestión Mutua`),`Próxima gestión Mutua`=VALUES(`Próxima gestión Mutua`),\n  `Demora recepción del parte de baja`=VALUES(`Demora recepción del parte de baja`),\n  `Último Parte de Confirmación`=VALUES(`Último Parte de Confirmación`),\n  `Código Nacional de Ocupación`=VALUES(`Código Nacional de Ocupación`),\n  `Codigo_Empleado`=VALUES(`Codigo_Empleado`),      -- 👈 update și pentru cod\n  `fuente`=VALUES(`fuente`), `updated_at`=NOW();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -240,
+        -96
+      ],
+      "id": "31bd7754-2b44-41a5-9509-b7a822b0d49e",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -48,
+        -96
+      ],
+      "id": "dcff15c6-ac93-4560-b98e-4ca2bdab8e5e",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- 1) Ia codul din payload (body sau root) și normalizează-l\nSET @codigo := NULLIF(TRIM('{{ $json.body.codigoEmpleado || $json.body.codigo_empleado || $json.body.codigo || $json.codigoEmpleado || $json.codigo_empleado || $json.codigo || \"\" }}'), '');\n\n-- 2) Dacă @codigo e NULL => returnează tot; altfel => filtrează după Codigo_Empleado\nSELECT *\nFROM `MutuaCasos`\nWHERE (@codigo IS NULL)\n   OR (`Codigo_Empleado` = @codigo)\nORDER BY `Fecha baja` DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -528,
+        160
+      ],
+      "id": "91e8952c-55e5-422e-9e79-1f49686acc8a",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -320,
+        160
+      ],
+      "id": "6bb13b2f-a67b-4192-b460-b797f0b3cf32",
+      "name": "Respond to Webhook1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "087cd742-0e17-457d-be7b-2acb35549c92",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "ZowBKeI2Scflcaid",
+  "tags": []
+}

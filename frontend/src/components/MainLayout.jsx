@@ -13,7 +13,9 @@ const getLogoUrl = () => {
   if (window.location.hostname.includes('ngrok')) {
     return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo=';
   }
-  return '/logo.svg';
+  // Folosește base path-ul din environment pentru path-uri relative
+  const basePath = import.meta.env.VITE_BASE_PATH || '/';
+  return `${basePath}logo.svg`.replace(/\/+/g, '/'); // Remove duplicate slashes
 };
 
 const MainLayout = ({ children }) => {

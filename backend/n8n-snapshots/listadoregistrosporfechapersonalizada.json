@@ -1,0 +1,60 @@
+{
+  "name": "listadoregistrosporfechapersonalizada",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a0cb8e9c-9eb2-4b98-8f1e-ba0f54009aed",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        -32
+      ],
+      "webhookId": "e9424047-c9ae-4442-a9b6-2ac9e378eaa2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -32,
+        -32
+      ],
+      "id": "65b285f2-9f3d-47da-8fda-7c41c14b11a9",
+      "name": "Execute a SQL query",
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f8e1b9b3-13ed-461e-8808-ee07af2b576f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "UDlSs21SHtkTFecF",
+  "tags": []
+}

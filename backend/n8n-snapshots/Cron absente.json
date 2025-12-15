@@ -1,0 +1,136 @@
+{
+  "name": "Cron absente",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  t.id,\n  t.solicitud_id,\n  t.CODIGO,\n  t.NOMBRE,\n  t.TIPO,\n  t.FECHA        AS FECHA_RAW,\n  t.HORA,\n  t.LOCACION,\n  t.MOTIVO,\n  t.DURACION,\n  t.UNIDAD_DURACION,\n  t.created_at,\n  t.fecha_inicio,\n  t.fecha_fin\nFROM (\n  SELECT\n    a.id,\n    a.solicitud_id,\n    a.CODIGO,\n    a.NOMBRE,\n    a.TIPO,\n    a.FECHA,\n    a.HORA,\n    a.LOCACION,\n    a.MOTIVO,\n    a.DURACION,\n    a.UNIDAD_DURACION,\n    a.created_at,\n\n    /* ==== FECHA START ==== */\n    /* Normalizăm formatul:\n       Exemple:\n       \"2025-11-2- 2025-11-3\" → \"2025-11-2 - 2025-11-3\"\n       \"2025-12-17 - 2026-01-07\" (ok)\n       \"2025-11-19\"  (o singură zi)\n    */\n\n    CASE \n      WHEN REPLACE(a.FECHA, '- ', ' - ') LIKE '% - %'\n        THEN STR_TO_DATE(TRIM(SUBSTRING_INDEX(REPLACE(a.FECHA, '- ', ' - '), ' - ', 1)), '%Y-%m-%e')\n      ELSE STR_TO_DATE(a.FECHA, '%Y-%m-%e')\n    END AS fecha_inicio,\n\n    CASE \n      WHEN REPLACE(a.FECHA, '- ', ' - ') LIKE '% - %'\n        THEN STR_TO_DATE(TRIM(SUBSTRING_INDEX(REPLACE(a.FECHA, '- ', ' - '), ' - ', -1)), '%Y-%m-%e')\n      ELSE STR_TO_DATE(a.FECHA, '%Y-%m-%e')\n    END AS fecha_fin\n\n    /* ==== FECHA END ==== */\n\n  FROM Ausencias a\n) AS t\nWHERE\n  /* intervalul absenței se intersectează cu [azi, azi + 10 zile] */\n  t.fecha_fin   >= CURDATE()\n  AND t.fecha_inicio <= DATE_ADD(CURDATE(), INTERVAL 10 DAY)\nORDER BY t.fecha_inicio, t.NOMBRE;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -288,
+        -32
+      ],
+      "id": "29449686-8a4c-402f-930f-731c7bf89ccf",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = items.map(i => i.json);\n\nif (!rows.length) {\n  return [\n    {\n      json: {\n        message: '✅ Nu există înregistrări în următoarele 10 zile.'\n      }\n    }\n  ];\n}\n\n// helper: transformăm orice dată în YYYY-MM-DD (fără oră)\nfunction toDateOnly(value) {\n  const d = new Date(value);\n  return new Date(d.getFullYear(), d.getMonth(), d.getDate());\n}\n\nconst today = toDateOnly(new Date());\nconst windowEnd = new Date(today);\nwindowEnd.setDate(windowEnd.getDate() + 10);\n\nconst filtered = [];\n\nfor (const r of rows) {\n  const startRaw = r.fecha_inicio || r.FECHA_INICIO || r.FECHA_RAW || r.FECHA;\n  const endRaw   = r.fecha_fin    || r.FECHA_FIN    || startRaw;\n\n  if (!startRaw) continue;\n\n  const start = toDateOnly(startRaw);\n  const end   = toDateOnly(endRaw);\n\n  // nu se suprapune deloc\n  if (end < today || start > windowEnd) continue;\n\n  const displayStart = start < today ? today : start;\n  const displayEnd   = end > windowEnd ? windowEnd : end;\n\n  filtered.push({\n    ...r,\n    _start: displayStart,\n    _end: displayEnd,\n  });\n}\n\nif (!filtered.length) {\n  return [\n    {\n      json: {\n        message: '✅ Nu există înregistrări în următoarele 10 zile.'\n      }\n    }\n  ];\n}\n\nlet text = '📢 *Evenimente în următoarele 10 zile*\\n\\n';\n\nfor (const r of filtered) {\n  const nume  = r.NOMBRE || r.CODIGO || 'Necunoscut';\n  const tip   = r.TIPO || 'Tip necunoscut';\n  const ora   = r.HORA ? ` la ora ${r.HORA}` : '';\n  const loc   = r.LOCACION ? ` – ${r.LOCACION}` : '';\n  const motiv = r.MOTIVO ? ` – ${r.MOTIVO}` : '';\n\n  let durata = '';\n  if (r.DURACION && r.UNIDAD_DURACION) durata = ` (${r.DURACION} ${r.UNIDAD_DURACION})`;\n  else if (r.DURACION) durata = ` (${r.DURACION})`;\n\n  const startStr = r._start.toISOString().slice(0, 10);\n  const endStr   = r._end.toISOString().slice(0, 10);\n\n  // 🔥 AICI FACEM BOLD\n  const perioada =\n    startStr === endStr\n      ? `📅 *${startStr}*`\n      : `📅 *${startStr} → ${endStr}*`;\n\n  text += `• ${perioada} – ${nume} – ${tip}${durata}${ora}${loc}${motiv}\\n`;\n}\n\nreturn [\n  {\n    json: {\n      message: text\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -32
+      ],
+      "id": "ff2dd92a-c979-4c69-8e87-e5cf9e332671",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "chatId": "-4990173907",
+        "text": "={{$json[\"message\"]}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        128,
+        -32
+      ],
+      "id": "984b99d0-e238-49e9-923e-2dbf30a135f7",
+      "name": "Send a text message",
+      "webhookId": "4ba2e5af-60e2-4332-be53-133fa98f6023",
+      "credentials": {
+        "telegramApi": {
+          "id": "5CcIiEqZgc6GvJsg",
+          "name": "Ausencias_bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 9,
+              "minute": 15
+            },
+            {
+              "hour": 19,
+              "minute": 30
+            }
+          ]
+        }
+      },
+      "id": "0939a343-7a2e-4461-899c-648f357ab8a7",
+      "name": "Cron Absente",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        -32
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron Absente": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "d87ad8f0-b0c8-4df5-8f56-0df9a34ba39d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "MyXAzxEsnkO3YWUH",
+  "tags": []
+}
