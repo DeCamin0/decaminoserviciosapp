@@ -480,8 +480,8 @@ export default function DocumentosEmpleadosPage() {
 
 
   // Verifica si el usuario es manager o supervisor
-
-  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = authUser?.isManager || false;
 
 
 
@@ -809,16 +809,21 @@ export default function DocumentosEmpleadosPage() {
         return;
 
       }
-
       
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
-
-      
-
-      response = await fetch(url);
-
-      
+      response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
 
       if (!response.ok) {
 
@@ -1454,11 +1459,19 @@ export default function DocumentosEmpleadosPage() {
 
       console.log('🚀 URL length:', endpoint?.length);
 
-
+      // Add JWT token to headers for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {};
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+      // Don't set Content-Type - browser will set it automatically for FormData with boundary
 
       const response = await fetch(endpoint, {
 
         method: 'POST',
+
+        headers: fetchHeaders,
 
         body: formDataToSend,
 
@@ -1732,7 +1745,13 @@ export default function DocumentosEmpleadosPage() {
         // Para nóminas, no confiamos en el nombre del archivo (no tiene extensión)
         // Detectamos por Content-Type del endpoint y generamos preview acorde
         try {
-          const resp = await fetch(previewUrl, { cache: 'no-store' });
+          // Add JWT token for backend API calls
+          const token = localStorage.getItem('auth_token');
+          const fetchHeaders = { 'cache': 'no-store' };
+          if (token) {
+            fetchHeaders['Authorization'] = `Bearer ${token}`;
+          }
+          const resp = await fetch(previewUrl, { headers: fetchHeaders });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const contentType = resp.headers.get('content-type') || '';
           console.log('🔍 Nómina Content-Type:', contentType);
@@ -1852,7 +1871,15 @@ export default function DocumentosEmpleadosPage() {
       if (isPdfFile) {
         try {
           console.log('📄 PDF detectado: descargando como blob para preview (mismo flujo que DocumentosPage)...');
-          const resp = await fetch(previewUrl, { cache: 'no-store' });
+          
+          // Add JWT token for backend API calls
+          const token = localStorage.getItem('auth_token');
+          const fetchHeaders = { 'cache': 'no-store' };
+          if (token) {
+            fetchHeaders['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const resp = await fetch(previewUrl, { headers: fetchHeaders });
           if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}`);
           }
@@ -2251,11 +2278,18 @@ export default function DocumentosEmpleadosPage() {
 
       console.log('🔍 Începe fetch-ul la:', downloadUrl);
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {};
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       console.log('🔍 Fetch method:', 'GET');
 
-      console.log('🔍 Fetch headers:', {});
+      console.log('🔍 Fetch headers:', fetchHeaders);
       
-      const response = await fetch(downloadUrl);
+      const response = await fetch(downloadUrl, { headers: fetchHeaders });
 
       console.log('🔍 Response status:', response.status, response.statusText);
 
@@ -2365,11 +2399,18 @@ export default function DocumentosEmpleadosPage() {
             "signed_b64": result
           };
           
-          fetch('https://n8n.decaminoservicios.com/webhook/v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4', {
+          // Add JWT token to headers for backend API calls
+          const token = localStorage.getItem('auth_token');
+          const fetchHeaders = {
+            'Content-Type': 'application/json',
+          };
+          if (token) {
+            fetchHeaders['Authorization'] = `Bearer ${token}`;
+          }
+
+          fetch(routes.autofirmaWebhook, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: fetchHeaders,
             body: JSON.stringify(payload)
           })
           .then(response => {
@@ -2660,16 +2701,18 @@ export default function DocumentosEmpleadosPage() {
 
 
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${routes.getNominas}?${queryParams}`, {
-
         method: 'GET',
-
-        headers: {
-
-          'Content-Type': 'application/json',
-
-        }
-
+        headers,
       });
 
 
@@ -3009,24 +3052,22 @@ export default function DocumentosEmpleadosPage() {
 
       
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${routes.getDocumentosOficiales}`, {
-
         method: 'POST',
-
-        headers: {
-
-          'Content-Type': 'application/json',
-
-        },
-
+        headers,
         body: JSON.stringify({
-
           nombre: empleado['NOMBRE / APELLIDOS'],
-
           codigo: empleado['CODIGO']
-
         })
-
       });
 
 
@@ -3346,11 +3387,18 @@ export default function DocumentosEmpleadosPage() {
         documentId: documento.doc_id
       });
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        Accept: 'application/pdf, application/json, */*'
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(downloadUrl, {
         method: 'GET',
-        headers: {
-          Accept: 'application/pdf, application/json, */*'
-        }
+        headers: fetchHeaders
       });
 
       if (!response.ok) {
@@ -3412,9 +3460,14 @@ export default function DocumentosEmpleadosPage() {
         fileName: documento.fileName
       });
 
-      
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {};
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
 
-      const response = await fetch(downloadUrl);
+      const response = await fetch(downloadUrl, { headers: fetchHeaders });
 
       if (response.ok) {
 
@@ -3502,15 +3555,20 @@ export default function DocumentosEmpleadosPage() {
 
       // Borrar nómina
 
+      // Add JWT token to headers for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(routes.deleteNomina, {
 
         method: 'POST', // ✅ Backend-ul așteaptă POST, nu DELETE
 
-        headers: {
-
-          'Content-Type': 'application/json',
-
-        },
+        headers: fetchHeaders,
 
         body: JSON.stringify(deleteData)
 
@@ -3618,15 +3676,20 @@ export default function DocumentosEmpleadosPage() {
 
       // Borrar documento normal
 
+      // Add JWT token to headers for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(routes.deleteDocumento, {
 
         method: 'POST', // ✅ Backend-ul așteaptă POST, nu DELETE
 
-        headers: {
-
-          'Content-Type': 'application/json',
-
-        },
+        headers: fetchHeaders,
 
         body: JSON.stringify(deleteData)
 
@@ -3754,15 +3817,20 @@ export default function DocumentosEmpleadosPage() {
 
       // Borrar documento oficial
 
+      // Add JWT token to headers for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(routes.deleteDocumentoOficial, {
 
         method: 'POST', // ✅ Backend-ul așteaptă POST, nu DELETE
 
-        headers: {
-
-          'Content-Type': 'application/json',
-
-        },
+        headers: fetchHeaders,
 
         body: JSON.stringify(deleteData)
 
@@ -4846,7 +4914,13 @@ export default function DocumentosEmpleadosPage() {
                           onClick={async () => {
                             try {
                               const downloadUrl = `${routes.downloadNomina}?id=${nomina.id}&nombre=${encodeURIComponent(selectedEmpleado['NOMBRE / APELLIDOS'] || '')}`;
-                              const response = await fetch(downloadUrl);
+                              // Add JWT token for backend API calls
+                              const token = localStorage.getItem('auth_token');
+                              const fetchHeaders = {};
+                              if (token) {
+                                fetchHeaders['Authorization'] = `Bearer ${token}`;
+                              }
+                              const response = await fetch(downloadUrl, { headers: fetchHeaders });
 
                               if (response.ok) {
                                 const blob = await response.blob();

@@ -138,7 +138,16 @@
         let pdfBase64 = null;
 
         // 🟦 2. URL-ul pentru trimiterea documentului semnat
-        window.POST_URL = "https://decaminoservicios.com/webhook/v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4";
+        // Poate fi suprascris din pagina principală cu window.AUTOFIRMA_POST_URL
+        if (window.AUTOFIRMA_POST_URL) {
+            window.POST_URL = window.AUTOFIRMA_POST_URL;
+        } else {
+            // Fallback: determină automat URL-ul bazat pe environment
+            const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            window.POST_URL = isDev
+                ? 'http://localhost:3000/api/documentos-oficiales/save-signed'
+                : 'https://api.decaminoservicios.com/api/documentos-oficiales/save-signed';
+        }
 
         window.addEventListener("message", (event) => {
             if (event.data?.type === "SEMNEAZA_PDF") {
@@ -501,11 +510,18 @@
             });
 
             // Trimite la webhook-ul de salvare
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            // Adaugă JWT token dacă este disponibil
+            const token = localStorage.getItem('auth_token') || (window.parent && window.parent.localStorage && window.parent.localStorage.getItem('auth_token'));
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             fetch(window.POST_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: headers,
                 body: JSON.stringify(payload)
             })
             .then(response => {

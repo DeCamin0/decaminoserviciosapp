@@ -544,4 +544,167 @@ export class EmpleadosService {
       );
     }
   }
+
+  /**
+   * Aprobă o cerere de modificare a datelor personale
+   * - Actualizează statusul în SolicitudesCambiosPersonales
+   * - Actualizează câmpul în DatosEmpleados
+   */
+  async approveCambio(data: {
+    id: string;
+    codigo: string;
+    campo: string;
+    valor: string;
+  }): Promise<{ success: true; message: string }> {
+    try {
+      // Găsește cambio-ul în baza de date
+      const cambio = await this.prisma.solicitudesCambiosPersonales.findUnique({
+        where: { id: data.id },
+      });
+
+      if (!cambio) {
+        throw new NotFoundException(
+          `Cererea de aprobare cu ID ${data.id} nu a fost găsită`,
+        );
+      }
+
+      // Actualizează statusul și data_aprobare
+      await this.prisma.solicitudesCambiosPersonales.update({
+        where: { id: data.id },
+        data: {
+          status: 'aprobat',
+          data_aprobare: new Date().toISOString(),
+        },
+      });
+
+      // Actualizează câmpul în DatosEmpleados
+      // Parsează câmpul pentru a obține numele exact al coloanei
+      const campoName = this.getCampoName(data.campo);
+
+      if (!campoName) {
+        throw new BadRequestException(
+          `Câmpul "${data.campo}" nu este valid pentru actualizare`,
+        );
+      }
+
+      // Construiește query-ul UPDATE
+      const updateQuery = `
+        UPDATE DatosEmpleados
+        SET \`${campoName}\` = ${this.escapeSql(data.valor)}
+        WHERE CODIGO = ${this.escapeSql(data.codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
+      this.logger.log(
+        `✅ Cambio aprobat cu succes: ${data.id} pentru empleado ${data.codigo}, câmp: ${campoName}`,
+      );
+
+      return {
+        success: true,
+        message: 'Cambio aprobado y actualizado correctamente',
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la aprobarea cambio-ului:`, error);
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Eroare la aprobarea cambio-ului: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Convertește numele câmpului din formatul frontend în numele coloanei din DB
+   */
+  private getCampoName(campo: string): string | null {
+    const campoMap: { [key: string]: string } = {
+      'NOMBRE / APELLIDOS': 'NOMBRE / APELLIDOS',
+      NOMBRE_APELLIDOS: 'NOMBRE / APELLIDOS',
+      NACIONALIDAD: 'NACIONALIDAD',
+      DIRECCION: 'DIRECCION',
+      'D.N.I. / NIE': 'D.N.I. / NIE',
+      DNI_NIE: 'D.N.I. / NIE',
+      'SEG. SOCIAL': 'SEG. SOCIAL',
+      SEG_SOCIAL: 'SEG. SOCIAL',
+      'Nº Cuenta': 'Nº Cuenta',
+      NUMERO_CUENTA: 'Nº Cuenta',
+      IBAN: 'Nº Cuenta', // IBAN este stocat în Nº Cuenta
+      TELEFONO: 'TELEFONO',
+      'CORREO ELECTRONICO': 'CORREO ELECTRONICO',
+      CORREO_ELECTRONICO: 'CORREO ELECTRONICO',
+      'FECHA NACIMIENTO': 'FECHA NACIMIENTO',
+      'FECHA DE ALTA': 'FECHA DE ALTA',
+      'CENTRO TRABAJO': 'CENTRO TRABAJO',
+      CENTRO_TRABAJO: 'CENTRO TRABAJO',
+      'TIPO DE CONTRATO': 'TIPO DE CONTRATO',
+      TIPO_DE_CONTRATO: 'TIPO DE CONTRATO',
+      'SUELDO BRUTO MENSUAL': 'SUELDO BRUTO MENSUAL',
+      SUELDO_BRUTO_MENSUAL: 'SUELDO BRUTO MENSUAL',
+      'HORAS DE CONTRATO': 'HORAS DE CONTRATO',
+      HORAS_DE_CONTRATO: 'HORAS DE CONTRATO',
+      EMPRESA: 'EMPRESA',
+      GRUPO: 'GRUPO',
+      ESTADO: 'ESTADO',
+      'FECHA BAJA': 'FECHA BAJA',
+      FECHA_BAJA: 'FECHA BAJA',
+      'Fecha Antigüedad': 'Fecha Antigüedad',
+      FECHA_ANTIGUEDAD: 'Fecha Antigüedad',
+      Antigüedad: 'Antigüedad',
+      ANTIGUEDAD: 'Antigüedad',
+      DerechoPedidos: 'DerechoPedidos',
+      TRABAJA_FESTIVOS: 'TrabajaFestivos',
+      TrabajaFestivos: 'TrabajaFestivos',
+    };
+
+    return campoMap[campo] || null;
+  }
+
+  /**
+   * Respinge o cerere de modificare a datelor personale
+   * - Șterge record-ul din SolicitudesCambiosPersonales
+   * - (Email-ul se trimite din controller)
+   */
+  async rejectCambio(data: {
+    id: string;
+  }): Promise<{ success: true; message: string }> {
+    try {
+      // Verifică dacă cambio-ul există
+      const cambio = await this.prisma.solicitudesCambiosPersonales.findUnique({
+        where: { id: data.id },
+      });
+
+      if (!cambio) {
+        throw new NotFoundException(
+          `Cererea de aprobare cu ID ${data.id} nu a fost găsită`,
+        );
+      }
+
+      // Șterge record-ul din baza de date
+      await this.prisma.solicitudesCambiosPersonales.delete({
+        where: { id: data.id },
+      });
+
+      this.logger.log(
+        `✅ Cambio respins și șters: ${data.id} pentru empleado ${cambio.codigo}`,
+      );
+
+      return {
+        success: true,
+        message: 'Cambio rechazado correctamente',
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la respingerea cambio-ului:`, error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Eroare la respingerea cambio-ului: ${error.message}`,
+      );
+    }
+  }
 }

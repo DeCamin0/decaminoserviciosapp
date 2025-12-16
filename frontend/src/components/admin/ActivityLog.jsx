@@ -830,10 +830,6 @@ export default function ActivityLog() {
                     <span className="text-gray-600">Grupo:</span>
                     <span className="font-medium">{selectedLog.grupo || selectedLog.details?.grupo || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Rol:</span>
-                    <span className="font-medium">{selectedLog.role || selectedLog.details?.role || 'N/A'}</span>
-                  </div>
                 </div>
               </div>
 

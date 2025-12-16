@@ -1,0 +1,143 @@
+{
+  "name": "guardarinspeciones",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "inspeccion-s6Whscq2",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "df960b86-bf04-48df-836a-61e0486f25bf",
+      "name": "Webhook - Inspección PDF",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        32,
+        64
+      ],
+      "webhookId": "cb459a7e-b930-4e02-a4ce-4bde3472667f"
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = items[0].json.body;\n\nreturn [\n  {\n    json: {\n      inspeccionId: data.nr || data.meta?.numeroInspeccion || data.inspeccionId || 'FARA_ID',\n      timestamp: new Date(data.data).toISOString(),\n      nombre_inspector: data.supervisor || data.inspector?.nume || 'necunoscut',\n      nombre_archivo: data.nr || 'default',\n      tipo_inspeccion: data.type || 'necunoscut',\n      empleado_nombre: data.trabajador?.nume || '',\n      codigo_empleado: data[\"codigo_empleado\"] || '',\n      centro_trabajo: data.centro || '',\n      locatie: data.locatie || '',\n      pdf: data.pdfBase64 || data.pdf || '',\n    }\n  }\n];\n"
+      },
+      "id": "353f67e2-8aba-4f86-8d81-8f13016147cf",
+      "name": "Pregătește datele",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        240,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "table": {
+          "__rl": true,
+          "value": "InspeccionesDocumentos",
+          "mode": "list",
+          "cachedResultName": "InspeccionesDocumentos"
+        },
+        "dataMode": "defineBelow",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{$json.inspeccionId}}"
+            },
+            {
+              "column": "tipo_inspeccion",
+              "value": "={{$json.tipo_inspeccion}}"
+            },
+            {
+              "column": "codigo_empleado",
+              "value": "={{$json.codigo_empleado}}"
+            },
+            {
+              "column": "nombre_empleado",
+              "value": "={{$json.empleado_nombre}}"
+            },
+            {
+              "column": "archivo",
+              "value": "={{$json.pdf}}"
+            },
+            {
+              "column": "nombre_archivo",
+              "value": "={{$json.nombre_archivo}}"
+            },
+            {
+              "column": "fecha_subida",
+              "value": "={{$json.timestamp}}"
+            },
+            {
+              "column": "Nombre Supervisor",
+              "value": "={{$json.nombre_inspector}}"
+            },
+            {
+              "column": "Centro",
+              "value": "={{$json.centro_trabajo}}"
+            },
+            {
+              "column": "Locacion",
+              "value": "={{$json.locatie}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        64
+      ],
+      "id": "84ed4688-758e-42b3-ba3b-41f7d289f666",
+      "name": "Insert rows in a table",
+      "alwaysOutputData": false,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Inspección PDF": {
+      "main": [
+        [
+          {
+            "node": "Pregătește datele",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pregătește datele": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3d1bf495-fb95-4e85-b11c-6adb27a1d810",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "F77WngCnfUabxx6E",
+  "tags": []
+}

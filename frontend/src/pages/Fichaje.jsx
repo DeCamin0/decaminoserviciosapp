@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContextBase';
+import { useLocation } from '../contexts/LocationContextBase';
 import { useApi } from '../hooks/useApi';
 import { Card, Button, Modal, LoadingSpinner, Input, Notification } from '../components/ui';
 import Back3DButton from '../components/Back3DButton.jsx';
@@ -348,10 +349,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [fichando, setFichando] = useState(false);
   const [lastFichaje, setLastFichaje] = useState(null);
-  const [currentLocation, setCurrentLocation] = useState(null);
-  const [currentAddress, setCurrentAddress] = useState('');
-  const geocodeThrottleRef = useRef(0);
+  // Folosim locația globală din LocationContext
+  const locationContext = useLocation();
+  const { currentLocation, currentAddress } = locationContext;
   const fetchedAlertsRef = useRef({});
+  const locationContextRef = useRef(locationContext);
+  
+  // Actualizează ref-ul când locationContext se schimbă
+  useEffect(() => {
+    locationContextRef.current = locationContext;
+  }, [locationContext]);
 
   // State pentru tab-uri și ausencias
   const [activeTab, setActiveTab] = useState('registros');
@@ -698,46 +705,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     run();
   }, [authUser, fetchMonthlyAlerts, isAuthenticated, selectedMonth, setNotification]);
 
-  // Obține și urmărește locația curentă pentru afișare sub ceas
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return;
-    
-    const watchId = navigator.geolocation.watchPosition(
-      async (position) => {
-        const coords = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-        setCurrentLocation(coords);
-
-        // Throttle geocodarea inversă pentru a evita prea multe cereri
-        const nowTs = Date.now();
-        if (nowTs - geocodeThrottleRef.current < 15000) return;
-        geocodeThrottleRef.current = nowTs;
-        try {
-          const resp = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`
-          );
-          const data = await resp.json();
-          if (data && data.display_name) {
-            setCurrentAddress(data.display_name);
-          }
-        } catch (e) {
-          // Ignoră erorile de geocodare pentru UI
-        }
-      },
-      async (error) => {
-        // Error al obtener la ubicación
-        console.error('Error getting location:', error);
-          setFichando(false);
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
-    );
-    
-    return () => {
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-    };
-  }, []);
+  // Nu cerem geolocația automat - respectăm browser policies (user gesture required)
+  // Geolocația se va cere doar când utilizatorul apasă butonul de fichar (user gesture)
+  // Asta respectă GDPR și best practices de confidențialitate
 
   // Demo fichajes data
   const setDemoFichajes = () => {
@@ -1075,7 +1045,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       // Para managers, obtiene los marcajes para todos los códigos posibles
       let allLogs = [];
       
-      if (authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor' || authUser?.GRUPO === 'Developer') {
+      // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+      if (authUser?.isManager) {
         // Para managers, obtiene los marcajes para CODIGO y codigo
         const codigos = [];
         if (authUser?.CODIGO) codigos.push(authUser.CODIGO);
@@ -1122,7 +1093,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
       if (allLogs.length > 0) {
         // Para managers, calcula la duración para los marcajes existentes
-        if (authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor' || authUser?.GRUPO === 'Developer') {
+        // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+      if (authUser?.isManager) {
           const codigos = [];
           if (authUser?.CODIGO) codigos.push(authUser.CODIGO);
           if (authUser?.codigo) codigos.push(authUser.codigo);
@@ -1337,11 +1309,31 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     setFichajeTipo('');
     setFichajeCustomMotivo('');
     
-    // Obține locația curentă din state-ul existent (mult mai rapid)
+    // Obține locația curentă DOAR când utilizatorul apasă butonul (user gesture)
+    // Asta respectă GDPR și browser policies (nu cerem automat)
     let loc = currentLocation;
     let address = currentAddress;
     
-    // Salvează marcajul în backend (fără întârzieri de geolocație)
+    // Dacă nu avem locație cached, cere-o acum folosind contextul global (user gesture - legal)
+    if (!loc) {
+      try {
+        loc = await locationContext.getCurrentLocation();
+        // Obține adresa prin reverse geocoding folosind funcția din context
+        if (loc) {
+          try {
+            address = await locationContext.getAddressFromCoords(loc.latitude, loc.longitude) || currentAddress;
+          } catch (e) {
+            // Ignoră erorile de geocodare - continuă fără adresă
+            address = currentAddress;
+          }
+        }
+      } catch (error) {
+        console.warn('Geolocation not available or denied:', error);
+        // Continuă fără locație - marcajul se salvează oricum
+      }
+    }
+    
+    // Salvează marcajul în backend (cu sau fără locație)
     try {
       await saveFichaje(tipo, loc, address, fichajeCustomMotivo);
     } catch (error) {
@@ -1966,13 +1958,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             {madridTimeStr || now.toLocaleTimeString()}
           </div>
           <div className="text-xs text-gray-500 mb-6">Hora (Europe/Madrid)</div>
-          {/* Locația curentă afișată permanent sub ceas */}
+          {/* Locația curentă afișată sub ceas - se obține doar când utilizatorul apasă Fichar (GDPR compliant) */}
           <div className="mb-6 text-sm text-gray-600">
             <div className="flex items-start justify-center gap-2">
               <span className="text-red-600">📍</span>
               <div className="text-center">
                 {!currentLocation && (
-                  <span>Obteniendo ubicación...</span>
+                  <span className="text-gray-500 italic">
+                    La ubicación se obtendrá al fichar (se necesita permiso)
+                  </span>
                 )}
                 {currentLocation && (
                   <>
@@ -2856,6 +2850,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
   const { t } = useTranslation();
   const { user: authUser } = useAuth();
   const { loading: apiLoading, callApi } = useApi();
+  const locationContext = useLocation();
   
   const [empleados, setEmpleados] = useState([]);
   const [loadingEmpleados, setLoadingEmpleados] = useState(true);
@@ -3682,32 +3677,19 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
     setEditIdx(null);
     setModalVisible(true);
     
-    // Obține locația curentă în background (non-blocking)
+    // Obține locația curentă în background (non-blocking) folosind contextul global
     let currentAddress = null;
     
     try {
-      if (navigator.geolocation) {
         console.log('🔍 Intentando obtener ubicación...');
+      const coords = await locationContext.getCurrentLocation();
+      console.log('✅ Ubicación obtenida:', coords);
         
-        const position = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            timeout: 10000, // Mărit timeout-ul la 10 secunde
-            enableHighAccuracy: true, // Activat pentru precizie
-            maximumAge: 30000 // Acceptă locații de până la 30 secunde vechi
-          });
-        });
-        
-        console.log('✅ Ubicación obtenida:', position.coords);
-        
-        // Obține adresa prin reverse geocoding
+      // Obține adresa prin reverse geocoding folosind funcția din context
         try {
           console.log('🔍 Obteniendo dirección...');
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`
-          );
-          const data = await response.json();
-          if (data.display_name) {
-            currentAddress = data.display_name;
+        currentAddress = await locationContext.getAddressFromCoords(coords.latitude, coords.longitude);
+        if (currentAddress) {
             console.log('✅ Dirección obtenida:', currentAddress);
             // Actualizează form-ul cu noua adresă
             setForm(prev => ({ 
@@ -3719,14 +3701,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
           }
         } catch (error) {
           console.log('⚠️ No se pudo obtener la dirección, usando coordenadas');
-          currentAddress = `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
+        currentAddress = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
           setForm(prev => ({ 
             ...prev, 
             address: currentAddress 
           }));
-        }
-      } else {
-        throw new Error('Geolocalización no soportada por el navegador');
       }
     } catch (error) {
       console.error('❌ Error obteniendo ubicación:', error);
@@ -3790,27 +3769,16 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
     
     setModalVisible(true);
 
-    // Obține locația curentă în background (non-blocking)
+    // Obține locația curentă în background (non-blocking) folosind contextul global
     let currentAddress = null;
     
     try {
-      if (navigator.geolocation) {
-        const position = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            timeout: 10000, // Mărit timeout-ul la 10 secunde
-            enableHighAccuracy: true, // Activat pentru precizie
-            maximumAge: 30000 // Acceptă locații de până la 30 secunde vechi
-          });
-        });
+      const coords = await locationContext.getCurrentLocation();
         
-        // Obține adresa prin reverse geocoding
+      // Obține adresa prin reverse geocoding folosind funcția din context
         try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`
-          );
-          const data = await response.json();
-          if (data.display_name) {
-            currentAddress = data.display_name;
+        currentAddress = await locationContext.getAddressFromCoords(coords.latitude, coords.longitude);
+        if (currentAddress) {
             // Actualizează form-ul cu noua adresă
             setForm(prev => ({ 
               ...prev, 
@@ -3819,12 +3787,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
           }
         } catch (error) {
           console.log('No se pudo obtener la dirección, usando coordenadas');
-          currentAddress = `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}`;
+        currentAddress = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
           setForm(prev => ({ 
             ...prev, 
             address: currentAddress 
           }));
-        }
       }
     } catch (error) {
       console.error('❌ Error obteniendo ubicación para edición:', error);
@@ -5011,41 +4978,25 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
                       setForm(prev => ({ ...prev, address: 'Obteniendo ubicación...' }));
                       
                       try {
-                        if (navigator.geolocation) {
-                          const position = await new Promise((resolve, reject) => {
-                            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                              timeout: 10000,
-                              enableHighAccuracy: true,
-                              maximumAge: 30000
-                            });
-                          });
+                        const coords = await locationContext.getCurrentLocation();
                           
                           try {
-                            const response = await fetch(
-                              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=18&addressdetails=1`
-                            );
-                            const data = await response.json();
-                            if (data.display_name) {
+                          const address = await locationContext.getAddressFromCoords(coords.latitude, coords.longitude);
+                          if (address) {
                               setForm(prev => ({ 
                                 ...prev, 
-                                address: data.display_name 
+                              address: address 
                               }));
                             } else {
                               setForm(prev => ({ 
                                 ...prev, 
-                                address: `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}` 
+                              address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
                               }));
                             }
                           } catch (error) {
                             setForm(prev => ({ 
                               ...prev, 
-                              address: `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)}` 
-                            }));
-                          }
-                        } else {
-                          setForm(prev => ({ 
-                            ...prev, 
-                            address: 'Geolocalización no soportada por este navegador.' 
+                            address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
                           }));
                         }
                       } catch (error) {
@@ -5268,7 +5219,8 @@ export default function FichajePage() {
   const { t } = useTranslation();
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
-  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor' || authUser?.GRUPO === 'Developer';
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = authUser?.isManager || false;
   const [activeTab, setActiveTab] = useState('personal');
   const [logs, setLogs] = useState([]);
   
@@ -5889,32 +5841,18 @@ export default function FichajePage() {
           return next;
         });
       }, 1000);
-      // Get location for modal only
+      // Get location for modal only folosind contextul global
       setLoadingModalLocation(true);
       (async () => {
+        // eslint-disable-next-line no-undef
+        const ctx = locationContextRef.current;
         try {
-          if (!navigator.geolocation) {
-            setModalAddress('Geolocalización no soportada');
-            setLoadingModalLocation(false);
-            return;
-          }
-          const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 30000
-            });
-          });
-          const coords = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          };
+          const coords = await ctx.getCurrentLocation();
           setModalCoords(coords);
           try {
-            const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}`);
-            const data = await resp.json();
-            if (data && data.display_name) {
-              setModalAddress(data.display_name);
+            const address = await ctx.getAddressFromCoords(coords.latitude, coords.longitude);
+            if (address) {
+              setModalAddress(address);
             } else {
               setModalAddress(`${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
             }
@@ -6059,40 +5997,25 @@ export default function FichajePage() {
         }
       }
 
-      // Obtiene la ubicación (opcional)
+      // Obtiene la ubicación (opcional) folosind contextul global
       let loc = null;
       let address = null;
       
+      // eslint-disable-next-line no-undef
+      const ctx = locationContextRef.current;
       try {
-        if (navigator.geolocation) {
-          const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 60000
-            });
-          });
-          
-          loc = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          };
+        loc = await ctx.getCurrentLocation();
           
           // Intentamos obtener la dirección a través de geocodificación inversa
           try {
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.latitude}&lon=${loc.longitude}`
-            );
-            const data = await response.json();
-            if (data.display_name) {
-              address = data.display_name;
-            }
+          address = await ctx.getAddressFromCoords(loc.latitude, loc.longitude);
           } catch (e) {
-            // No se pudo obtener la dirección
-          }
+          // No se pudo obtener la dirección, continuamos sin ella
+          console.warn('No se pudo obtener la dirección:', e);
         }
       } catch (error) {
-        // Error al obtener la ubicación
+        // Error al obtener la ubicación, continuamos sin ella
+        console.warn('Error al obtener la ubicación:', error);
       }
 
       // Determina el motivo final
@@ -6206,7 +6129,7 @@ export default function FichajePage() {
       const sinHorarioAsignado = !cuadrantePayload && !horarioPayload;
 
       // Duration is now calculated by database triggers - no need for frontend calculation
-      const duracion = ''; // Will be calculated by database
+      // duracion removed - calculated by database
 
       // Crea el payload idéntico a un fichaje normal, solo con estado adicional
       // Hora y fecha oficiales de Madrid para incidencias también
@@ -6219,25 +6142,6 @@ export default function FichajePage() {
         hour12: false
       });
       const fechaMadrid2 = madridNowDate2.toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' });
-
-      const fichajeData = {
-        id: generateUniqueId(),
-        codigo: userCode,
-        nombre: userName,
-        email: userEmail,
-        tipo: "incidencia",
-        hora: horaMadrid2,
-        address: address || null,
-        modificatDe: authUser?.isManager ? 'Manager' : 'Empleado',
-        data: fechaMadrid2,
-        duracion: duracion, // Para incidencia no calculamos duración
-        estado: "pendiente", // Columna adicional para incidencia
-        razon: razonFinal, // El motivo de la incidencia
-        tipoIncidencia: incidenciaForm.tipo, // El tipo de incidencia (Entrada/Salida)
-        permisoFechaInicio: incidenciaForm.permisoFechaInicio || null,
-        permisoFechaFin: incidenciaForm.permisoFechaFin || null,
-        solicitud_id: solicitudId
-      };
 
       // Folosim backend-ul nou pentru ausencia
       const ausenciaEndpoint = routes.addAusencia;
@@ -6299,8 +6203,8 @@ export default function FichajePage() {
           throw new Error(result.error || 'Error desconocido');
         }
 
-        // Log crear incidencia
-        await activityLogger.logFichajeCreated(fichajeData, authUser);
+        // Log crear ausencia/incidencia
+        await activityLogger.logAusenciaCreated(ausenciaPayload, authUser);
         
         setIncidenciaMessage('Incidencia registrada correctamente. Pendiente de aprobación. IMPORTANTE: Hasta que no presentes la justificación documental para esta incidencia, no se procesará. Tienes un plazo de 7 días para presentar la justificación correspondiente.');
         if (incidenciaMessageTimeoutRef.current) {

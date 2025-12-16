@@ -245,11 +245,18 @@ const InspectionList = ({ onBackToSelection }) => {
         url += `?${params.toString()}`;
       }
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: fetchHeaders,
       });
 
       if (response.status === 403) {
@@ -419,11 +426,16 @@ const InspectionList = ({ onBackToSelection }) => {
     
     try {
       // Folosește același endpoint ca la download
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Accept': 'application/pdf, application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const response = await fetch(`${API_ENDPOINTS.DOWNLOAD_INSPECTION_DOCUMENT}?id=${inspection.id}`, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/pdf, application/json',
-        }
+        headers: fetchHeaders,
       });
 
       if (response.ok) {
@@ -476,12 +488,17 @@ const InspectionList = ({ onBackToSelection }) => {
 
   const handleDownload = async (inspection) => {
     try {
-      // Request către webhook-ul n8n pentru descărcare document
+      // Request către backend pentru descărcare document
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Accept': 'application/pdf, application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const response = await fetch(`${API_ENDPOINTS.DOWNLOAD_INSPECTION_DOCUMENT}?id=${inspection.id}`, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/pdf, application/json',
-        }
+        headers: fetchHeaders,
       });
 
       if (response.ok) {

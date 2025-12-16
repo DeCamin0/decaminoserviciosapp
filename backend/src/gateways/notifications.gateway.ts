@@ -12,7 +12,6 @@ import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { PresenceManager } from '../chat/presence-manager.service';
 
 /**
  * WebSocket Gateway pentru notificări în timp real
@@ -20,7 +19,6 @@ import { PresenceManager } from '../chat/presence-manager.service';
  * - Autentificare cu JWT
  * - Rooms per utilizator, grup, centru
  * - Notificări broadcast și targeted
- * - Prezență (online/offline) - sincronizată cu chat
  */
 @WebSocketGateway({
   cors: {
@@ -41,17 +39,14 @@ export class NotificationsGateway
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly presenceManager: PresenceManager,
   ) {}
 
   /**
    * Called when gateway is initialized
    */
-  afterInit(server: Server) {
-    this.logger.log(
-      'NotificationsGateway initialized, registering server with PresenceManager',
-    );
-    this.presenceManager.registerServer('/notifications', server);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  afterInit(_server: Server) {
+    this.logger.log('NotificationsGateway initialized');
   }
 
   /**
@@ -91,11 +86,6 @@ export class NotificationsGateway
 
       this.logger.log(`User ${userId} connected (socket: ${client.id})`);
 
-      // Gestionează prezența - emite pe namespace-ul /notifications (care e activ când userul e logat)
-      // Folosim this.server (notifications namespace) pentru a emite evenimentele
-      // PresenceManager va emite pe server-ul dat, astfel încât toți cei conectați la /notifications vor primi evenimentele
-      this.presenceManager.userConnected(client.id, userId, this.server);
-
       // Trimite confirmare conexiune
       client.emit('connected', {
         userId,
@@ -114,10 +104,6 @@ export class NotificationsGateway
     const userId = this.connectedUsers.get(client.id);
     if (userId) {
       this.logger.log(`User ${userId} disconnected (socket: ${client.id})`);
-
-      // Gestionează prezența - emite pe namespace-ul /notifications
-      this.presenceManager.userDisconnected(client.id, this.server);
-
       this.connectedUsers.delete(client.id);
     }
   }

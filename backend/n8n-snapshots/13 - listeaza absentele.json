@@ -2,11 +2,7 @@
   "name": "13 - listeaza absentele",
   "nodes": [
     {
-      "parameters": {
-        "path": "be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb",
-        "responseMode": "responseNode",
-        "options": {}
-      },
+      "parameters": {},
       "id": "ff0ae8a4-05f0-4e9e-bb2b-a9ab8192552a",
       "name": "cere absentele",
       "type": "n8n-nodes-base.webhook",
@@ -18,11 +14,7 @@
       "webhookId": "be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb"
     },
     {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT *\nFROM Ausencias\nWHERE\n(\n  \"{{ $json.query.codigo || '' }}\" = ''\n  OR CODIGO = TRIM(\"{{ $json.query.codigo || '' }}\")\n)\nAND\n(\n  \"{{ $json.query.MES || '' }}\" = ''\n  OR DATE_FORMAT(FECHA, '%Y-%m') = TRIM(\"{{ $json.query.MES || '' }}\")\n);",
-        "options": {}
-      },
+      "parameters": {},
       "type": "n8n-nodes-base.mySql",
       "typeVersion": 2.5,
       "position": [
@@ -39,10 +31,7 @@
       }
     },
     {
-      "parameters": {
-        "respondWith": "allIncomingItems",
-        "options": {}
-      },
+      "parameters": {},
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
@@ -53,9 +42,7 @@
       "name": "Respond to Webhook"
     },
     {
-      "parameters": {
-        "jsCode": "return items.map(item => {\n  const tipo = item.json.TIPO || '';\n  const fecha = item.json.FECHA || '';\n  const duracion = item.json.DURACION;\n\n  // Tipuri care se calculează în ZILE\n  const tipuriZile = [\"Vacaciones\", \"Asunto Propio\", \"Permiso\", \"Baja\"];\n  const estePeZile = tipuriZile.some(t => tipo.toLowerCase().includes(t.toLowerCase()));\n\n  // FECHA: interval sau simplă\n  const partes = fecha.split(' - ').map(p => p.trim());\n  const inicio = partes[0] || null;\n  const fin = partes[1] || partes[0] || null;\n\n  item.json.fecha_inicio = inicio;\n  item.json.fecha_fin = fin;\n\n  // 1️⃣ TIPURI PE ZILE\n  if (estePeZile) {\n    if (duracion !== null && duracion !== undefined) {\n      item.json.dias_aprobados = Number(duracion);\n    } else if (inicio && fin) {\n      const dInicio = new Date(inicio);\n      const dFin = new Date(fin);\n      const diffMs = dFin.getTime() - dInicio.getTime();\n      const diffDias = Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1;\n      item.json.dias_aprobados = diffDias;\n    } else {\n      item.json.dias_aprobados = null;\n    }\n  }\n\n  // 2️⃣ TIPURI PE ORE (Entrada/Salida Centro)\n  else {\n    if (duracion !== null && duracion !== undefined && duracion !== '') {\n      // COPIEM EXACT DURACION ul din DB\n      item.json.horas_aprobadas = duracion;\n    } else {\n      item.json.horas_aprobadas = null;\n    }\n\n    // nu calculăm zile\n    item.json.dias_aprobados = null;\n  }\n\n  return item;\n});"
-      },
+      "parameters": {},
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [

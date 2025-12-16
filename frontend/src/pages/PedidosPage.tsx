@@ -204,7 +204,8 @@ const PedidosPage: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Verifică rolul utilizatorului pentru restricționarea tab-urilor
-  const isManager = user?.isManager || user?.GRUPO === 'Manager' || user?.GRUPO === 'Supervisor';
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = user?.isManager || false;
   const isAdmin = user?.GRUPO === 'Admin' || user?.grupo === 'Admin';
   const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
   

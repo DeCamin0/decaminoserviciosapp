@@ -1,0 +1,142 @@
+{
+  "name": "descargarinspecciones",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "f4d97660-c73f-45d3-ba3e-dfaf8eefece5",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d156aee4-d2e6-4bba-83d4-0ece148977ff",
+      "name": "Webhook Descargar Documento",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        -32
+      ],
+      "webhookId": "f4d97660-c73f-45d3-ba3e-dfaf8eefece5"
+    },
+    {
+      "parameters": {
+        "jsCode": "const id = $json[\"query\"][\"id\"];\nconst query = `\nSELECT \n  nombre_archivo,\n  archivo\nFROM InspeccionesDocumentos\nWHERE id = '${id}'\nLIMIT 1\n`;\n\nreturn [{ json: { query } }];"
+      },
+      "id": "27dbf0c6-c977-41f6-8d67-d274cee66d33",
+      "name": "Generar SQL Descargar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -32
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "id": "ee9c7fd7-c3ec-4cb3-8c4a-4a9485f2804d",
+      "name": "MySQL Descargar Documento",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -32
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = items[0].json;\n\n// reconstruim întâi stringul base64 din array-ul de coduri ASCII\nconst base64String = String.fromCharCode(...data.archivo.data);\n\n// apoi reconstruim bufferul din base64\nconst buffer = Buffer.from(base64String, 'base64');\n\n// validare\nif (!buffer.slice(0, 5).toString().startsWith('%PDF-')) {\n  console.log('Preview:', buffer.slice(0, 10).toString());\n  throw new Error('Fișierul decodat din base64 nu începe cu %PDF-');\n}\n\nreturn [\n  {\n    binary: {\n      data: await this.helpers.prepareBinaryData(\n        buffer,\n        `${data.nombre_archivo || 'documento'}.pdf`,\n        'application/pdf'\n      )\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -32
+      ],
+      "id": "be15c534-40d0-4397-ad6e-bccdaeebe9da",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        608,
+        -32
+      ],
+      "id": "d6a4088c-72d2-419b-9bc3-92f0856c50cb",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Descargar Documento": {
+      "main": [
+        [
+          {
+            "node": "Generar SQL Descargar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar SQL Descargar": {
+      "main": [
+        [
+          {
+            "node": "MySQL Descargar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL Descargar Documento": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f8b679da-8d20-4d44-ae3a-1df748fa6b93",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "JMlvhlxttrWbcMA6",
+  "tags": []
+}

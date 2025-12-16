@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useNavigate } from 'react-router-dom';
 import Footer from '../components/Footer';
@@ -8,6 +8,9 @@ import DemoModal from '../components/DemoModal';
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const now = useMemo(() => new Date(), []);
+  // Sezon de sărbători: decembrie (luna 11) sau ianuarie până pe 6 ianuarie (luna 0, zilele <= 6)
+  const isHolidaySeason = now.getMonth() === 11 || (now.getMonth() === 0 && now.getDate() <= 6);
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -149,6 +152,26 @@ export default function LoginPage() {
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
+        
+        /* Decor sezonier - activ doar când isHolidaySeason este true */
+        .snowflake {
+          position: absolute;
+          top: -10%;
+          color: rgba(170, 205, 255, 0.9);
+          font-size: 13px;
+          animation-name: snowfall;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+          pointer-events: none;
+        }
+        .dark .snowflake {
+          color: rgba(255,255,255,0.9);
+        }
+        @keyframes snowfall {
+          0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+          10% { opacity: 1; }
+          100% { transform: translateY(110vh) translateX(26px) rotate(360deg); opacity: 0; }
+        }
       `}</style>
       {/* Fundal animat cu particule și gradient - TEMA ROȘU */}
       <div className="absolute inset-0">
@@ -176,6 +199,34 @@ export default function LoginPage() {
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-red-500/20 to-red-700/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
         <div className="absolute top-3/4 left-1/2 w-48 h-48 bg-gradient-to-r from-red-300/30 to-red-500/25 rounded-full blur-3xl animate-float" style={{animationDelay: '4s'}}></div>
       </div>
+
+      {/* Decor sezonier de Crăciun/Reyes (activ până pe 6 ianuarie) */}
+      {isHolidaySeason && (
+        <>
+          {/* Ninsoare animată */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden z-5">
+            {Array.from({ length: 50 }).map((_, idx) => (
+              <span
+                key={idx}
+                className="snowflake"
+                style={{
+                  left: `${(idx * 100) / 50}%`,
+                  animationDuration: `${6 + (idx % 5)}s`,
+                  animationDelay: `${idx * 0.2}s`,
+                  fontSize: `${10 + (idx % 5) * 2}px`
+                }}
+              >
+                ❄
+              </span>
+            ))}
+          </div>
+
+          {/* Halo de fundal pentru sezon */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-0">
+            <div className="w-[600px] h-[600px] rounded-full bg-gradient-to-br from-amber-200/8 via-red-200/10 to-orange-100/8 blur-3xl animate-pulse" />
+          </div>
+        </>
+      )}
 
       {/* Conținut principal */}
       <div className="relative z-10 min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -207,6 +258,14 @@ export default function LoginPage() {
                   />
                     <div className="hidden text-white font-bold text-2xl group-hover:text-red-400 transition-colors duration-500">DC</div>
                   </div>
+                  {/* Căciulă de Moș Crăciun pe logo (doar sezon) */}
+                  {isHolidaySeason && (
+                    <div className="absolute -top-2 -right-4 w-12 h-8 transform rotate-12">
+                      <div className="absolute inset-0 bg-red-500 rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow-lg border border-red-600"></div>
+                      <div className="absolute -bottom-1 left-0 right-0 h-2 bg-white rounded-full shadow-md"></div>
+                      <div className="absolute -bottom-3 -right-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                    </div>
+                  )}
                   {/* Glow effect cu animație customizată - PALETA ROȘU */}
                   <div className="absolute inset-0 w-28 h-28 bg-gradient-to-r from-red-400/40 to-red-600/40 rounded-full blur-xl animate-glow group-hover:from-red-300/60 group-hover:to-red-500/60 transition-all duration-500"></div>
                 </div>

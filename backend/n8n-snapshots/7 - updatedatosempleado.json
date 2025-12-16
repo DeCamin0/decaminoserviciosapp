@@ -1,0 +1,140 @@
+{
+  "name": "7 - updatedatosempleado",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9faa85e2-d6f1-4e4f-80e3-d093891e0586",
+      "name": "Get Permissions Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        608,
+        48
+      ],
+      "webhookId": "8dabc1e1-8a0c-4f04-96b1-a25adff1b8a1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1056,
+        48
+      ],
+      "id": "078ec670-71a3-4eca-8905-a886de07ad71",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        48
+      ],
+      "id": "ea4c3c35-38e0-4271-9ac7-74c6d70c7307",
+      "name": "Code"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1264,
+        48
+      ],
+      "id": "dec95395-24c2-4140-a75a-73e54b16c6f1",
+      "name": "deleteraw",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1472,
+        48
+      ],
+      "id": "cfba9e15-fc10-4b5c-883c-12b02d030687",
+      "name": "Send email",
+      "webhookId": "30c82d88-2ea1-48c6-a160-5dd0128de605",
+      "credentials": {
+        "smtp": {
+          "id": "YI5EGZepkumfxgE7",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get Permissions Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "deleteraw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "deleteraw": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "32109452-c408-4f4b-bae6-a11ca9dc9293",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "UZ953ofANs9MVEo4",
+  "tags": []
+}

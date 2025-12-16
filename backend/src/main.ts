@@ -5,6 +5,11 @@ import { json, urlencoded } from 'express';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Trust proxy pentru a extrage corect IP-ul din headers
+  // NestJS folosește Express sub hood, deci putem accesa instanța Express
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', true);
+
   // IMPORTANT: Skip body parsing for multipart/form-data
   // Express body parsers consume the stream, making it unavailable for multer
   app.use((req, res, next) => {

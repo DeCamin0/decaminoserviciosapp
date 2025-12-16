@@ -12,7 +12,7 @@ import { MeController } from './controllers/me.controller';
 import { PermissionsController } from './controllers/permissions.controller';
 import { MeService } from './services/me.service';
 import { PrismaModule } from './prisma/prisma.module';
-import { ChatModule } from './chat/chat.module';
+import { ComunicadosModule } from './comunicados/comunicados.module';
 import { EmpleadosController } from './controllers/empleados.controller';
 import { EmpleadosService } from './services/empleados.service';
 import { AvatarController } from './controllers/avatar.controller';
@@ -41,6 +41,20 @@ import { GruposController } from './controllers/grupos.controller';
 import { GruposService } from './services/grupos.service';
 import { HorasTrabajadasController } from './controllers/horas-trabajadas.controller';
 import { HorasTrabajadasService } from './services/horas-trabajadas.service';
+import { SolicitudesController } from './controllers/solicitudes.controller';
+import { SolicitudesService } from './services/solicitudes.service';
+import { ActivityLogsController } from './controllers/activity-logs.controller';
+import { ActivityLogsService } from './services/activity-logs.service';
+import { NominasController } from './controllers/nominas.controller';
+import { NominasService } from './services/nominas.service';
+import { DocumentosController } from './controllers/documentos.controller';
+import { DocumentosService } from './services/documentos.service';
+import { DocumentosOficialesController } from './controllers/documentos-oficiales.controller';
+import { DocumentosOficialesService } from './services/documentos-oficiales.service';
+import { InspeccionesController } from './controllers/inspecciones.controller';
+import { InspeccionesService } from './services/inspecciones.service';
+import { HorariosController } from './controllers/horarios.controller';
+import { HorariosService } from './services/horarios.service';
 
 @Module({
   imports: [
@@ -48,7 +62,7 @@ import { HorasTrabajadasService } from './services/horas-trabajadas.service';
     AuthModule,
     NotificationsModule,
     PrismaModule,
-    ChatModule,
+    ComunicadosModule,
   ],
   controllers: [
     AppController,
@@ -71,6 +85,13 @@ import { HorasTrabajadasService } from './services/horas-trabajadas.service';
     HorasPermitidasController,
     GruposController,
     HorasTrabajadasController,
+    SolicitudesController,
+    ActivityLogsController,
+    NominasController,
+    DocumentosController,
+    DocumentosOficialesController,
+    InspeccionesController,
+    HorariosController,
   ],
   providers: [
     AppService,
@@ -90,6 +111,13 @@ import { HorasTrabajadasService } from './services/horas-trabajadas.service';
     HorasPermitidasService,
     GruposService,
     HorasTrabajadasService,
+    SolicitudesService,
+    ActivityLogsService,
+    NominasService,
+    DocumentosService,
+    DocumentosOficialesService,
+    InspeccionesService,
+    HorariosService,
   ],
 })
 export class AppModule {}

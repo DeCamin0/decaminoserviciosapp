@@ -77,6 +77,12 @@ const QuickAccessOrb = ({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
+  // Check if it's holiday season (December 1 - January 6)
+  const isHolidaySeason = useMemo(() => {
+    const now = new Date();
+    return now.getMonth() === 11 || (now.getMonth() === 0 && now.getDate() <= 6);
+  }, []);
+
   const rotation = useMotionValue(0);
 
   useAnimationFrame((_, delta) => {
@@ -418,15 +424,28 @@ const QuickAccessOrb = ({
               }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <span className="text-lg font-semibold text-cyan-200/80">
-                Acceso rápido
-              </span>
-              <span className="text-3xl font-bold tracking-wide text-white drop-shadow-lg">
-                Portal
-              </span>
-              <p className="max-w-[70%] text-center text-xs text-slate-200/80">
-                Accede a tus herramientas esenciales y mantente al día.
-              </p>
+              {isHolidaySeason ? (
+                <>
+                  <span className="text-6xl mb-2 animate-bounce" style={{ filter: 'drop-shadow(0 0 8px rgba(34,197,94,0.6))' }}>
+                    🎄
+                  </span>
+                  <span className="text-sm font-semibold text-green-200/90">
+                    Felices Fiestas
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-lg font-semibold text-cyan-200/80">
+                    Acceso rápido
+                  </span>
+                  <span className="text-3xl font-bold tracking-wide text-white drop-shadow-lg">
+                    Portal
+                  </span>
+                  <p className="max-w-[70%] text-center text-xs text-slate-200/80">
+                    Accede a tus herramientas esenciales y mantente al día.
+                  </p>
+                </>
+              )}
             </motion.div>
           </motion.div>
         </div>
@@ -511,13 +530,24 @@ const QuickAccessOrb = ({
                   'radial-gradient(circle at 30% 20%, rgba(59,130,246,0.45), rgba(59,130,246,0.05) 55%), radial-gradient(circle at 70% 80%, rgba(236,72,153,0.35), rgba(236,72,153,0.05) 55%)',
               }}
             >
-              <div className="px-4 text-center">
-                <p className="text-sm font-semibold text-cyan-100/80">Acceso rápido</p>
-                <p className="text-xl font-bold text-white">Portal</p>
-                <p className="mt-1 text-[11px] text-cyan-100/70">
-                  Herramientas clave siempre contigo.
-                </p>
-              </div>
+              {isHolidaySeason ? (
+                <div className="px-4 text-center">
+                  <span className="text-5xl mb-1 block animate-bounce" style={{ filter: 'drop-shadow(0 0 8px rgba(34,197,94,0.6))' }}>
+                    🎄
+                  </span>
+                  <p className="text-xs font-semibold text-green-200/90">
+                    Felices Fiestas
+                  </p>
+                </div>
+              ) : (
+                <div className="px-4 text-center">
+                  <p className="text-sm font-semibold text-cyan-100/80">Acceso rápido</p>
+                  <p className="text-xl font-bold text-white">Portal</p>
+                  <p className="mt-1 text-[11px] text-cyan-100/70">
+                    Herramientas clave siempre contigo.
+                  </p>
+                </div>
+              )}
             </motion.div>
           </div>
         </div>

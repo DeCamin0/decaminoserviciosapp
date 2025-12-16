@@ -1,0 +1,82 @@
+[
+  {
+    "id": "log001",
+    "usuario": "admin@demo.com",
+    "accion": "login",
+    "detalles": "Inicio de sesión exitoso",
+    "ip": "192.168.1.100",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "fecha": "2024-10-03T10:00:00Z",
+    "modulo": "auth"
+  },
+  {
+    "id": "log002",
+    "usuario": "admin@demo.com",
+    "accion": "crear_empleado",
+    "detalles": "Empleado creado: Juan Carlos Demo",
+    "ip": "192.168.1.100",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "fecha": "2024-10-03T10:15:00Z",
+    "modulo": "empleados"
+  },
+  {
+    "id": "log003",
+    "usuario": "supervisor@demo.com",
+    "accion": "aprobar_fichaje",
+    "detalles": "Fichaje aprobado para Juan Carlos Demo",
+    "ip": "192.168.1.101",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "fecha": "2024-10-03T10:30:00Z",
+    "modulo": "fichajes"
+  },
+  {
+    "id": "log004",
+    "usuario": "manager@demo.com",
+    "accion": "crear_factura",
+    "detalles": "Factura creada: F2024001",
+    "ip": "192.168.1.102",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+    "fecha": "2024-10-03T11:00:00Z",
+    "modulo": "facturas"
+  },
+  {
+    "id": "log005",
+    "usuario": "empleado@demo.com",
+    "accion": "fichar_entrada",
+    "detalles": "Entrada registrada a las 08:00",
+    "ip": "192.168.1.103",
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+    "fecha": "2024-10-03T08:00:00Z",
+    "modulo": "fichajes"
+  },
+  {
+    "id": "log006",
+    "usuario": "admin@demo.com",
+    "accion": "crear_cliente",
+    "detalles": "Cliente creado: Empresa Demo S.L.",
+    "ip": "192.168.1.100",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "fecha": "2024-10-03T12:00:00Z",
+    "modulo": "clientes"
+  },
+  {
+    "id": "log007",
+    "usuario": "supervisor@demo.com",
+    "accion": "aprobar_solicitud",
+    "detalles": "Solicitud de vacaciones aprobada para María García Demo",
+    "ip": "192.168.1.101",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "fecha": "2024-10-03T14:00:00Z",
+    "modulo": "solicitudes"
+  },
+  {
+    "id": "log008",
+    "usuario": "manager@demo.com",
+    "accion": "procesar_gasto",
+    "detalles": "Gasto procesado: Material de oficina - 181.50€",
+    "ip": "192.168.1.102",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+    "fecha": "2024-10-03T15:00:00Z",
+    "modulo": "gastos"
+  }
+]

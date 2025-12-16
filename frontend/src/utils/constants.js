@@ -38,7 +38,6 @@ export const API_ENDPOINTS = {
   ADD_INSPECCION: routes.addInspeccion,
   UPDATE_INSPECCION: routes.updateInspeccion,
   DELETE_INSPECCION: routes.deleteInspeccion,
-  GENERATE_INSPECTION_PDF: routes.generateInspectionPDF,
   GET_INSPECTION_PDF: routes.getInspectionPDF,
   DOWNLOAD_INSPECTION_DOCUMENT: routes.downloadInspectionDocument,
 };

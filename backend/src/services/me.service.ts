@@ -57,6 +57,25 @@ export class MeService {
       user.DNI_NIE ||
       user.CODIGO;
 
+    // Detect role from GRUPO (consistent with auth.service.ts)
+    const grupo = grupoFromToken || user.GRUPO || '';
+    let role = 'EMPLEADOS'; // default
+    if (grupo === 'Manager' || grupo === 'Supervisor') {
+      role = 'MANAGER';
+    } else if (grupo === 'Developer') {
+      role = 'DEVELOPER';
+    } else if (grupo === 'Admin') {
+      role = 'ADMIN';
+    }
+
+    // Calculate isManager flag (consistent with auth.service.ts login logic)
+    // Includes Manager, Supervisor, Developer for manager-level permissions
+    const isManager =
+      grupo === 'Manager' ||
+      grupo === 'Supervisor' ||
+      grupo === 'Developer' ||
+      grupo === 'Admin';
+
     return {
       success: true,
       user: {
@@ -67,6 +86,10 @@ export class MeService {
         ['NOMBRE / APELLIDOS']: empleadoNombre || user.NOMBRE_APELLIDOS || null,
         ['CENTRO TRABAJO']: centroTrabajo, // Add CENTRO TRABAJO for chat feature
         email: user.CORREO_ELECTRONICO ?? null,
+        // Add computed fields for frontend consistency
+        isManager,
+        role,
+        GRUPO: grupo,
       },
       permissions,
       avatar,

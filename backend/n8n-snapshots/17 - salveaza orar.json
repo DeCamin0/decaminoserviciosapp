@@ -1,0 +1,575 @@
+{
+  "name": "17 - salveaza orar",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/orar/36c95b72-cc22-4783-a749-521bdb666a58",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -752,
+        0
+      ],
+      "id": "357806be-3de8-49a6-9ccc-f3005baf3a30",
+      "name": "Webhook",
+      "webhookId": "36c95b72-cc22-4783-a749-521bdb666a58"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.body.action}}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "d36a16ae-d6b0-42b6-b6a0-7e208a34bfe2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Salveaza Orar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9e08fb7a-7e98-448e-bedc-68a347a969b7",
+                    "leftValue": "={{$json.body.action}}",
+                    "rightValue": "get",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "listeaza orarele"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ba4e2684-2096-4d95-8171-01a2e937fe2b",
+                    "leftValue": "={{$json.body.action}}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Editar Orar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1080eb3d-a7cb-4e68-9753-1569bcf5c64e",
+                    "leftValue": "={{$json.body.action}}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Sterge orar"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -528,
+        -32
+      ],
+      "id": "48eccbd4-8c0d-4a2d-81c2-929b32263ce9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === INPUT EXPECTAT ===\n// acest node presupune că în $json ai structura ca în screenshot:\n// {\n//   \"body\": {\n//     \"action\": \"create\",\n//     \"payload\": {\n//       \"nombre\": \"...\",\n//       \"centroId\": \"...\",\n//       \"grupoId\": \"...\",\n//       \"vigenteDesde\": \"2025-10-27\",\n//       \"vigenteHasta\": null,\n//       \"weeklyBreakMinutes\": 0,\n//       \"entryMarginMinutes\": 10,\n//       \"exitMarginMinutes\": 10,\n//       \"days\": {\n//         \"L\": { \"intervals\": [ { \"in\":\"07:00\",\"out\":\"15:00\" }, ... ] },\n//         \"M\": { ... },\n//         ...\n//       }\n//     }\n//   },\n//   \"centroNombre\": \"...\",        // poate veni și aici, în afara body.payload\n//   \"grupoNombre\":  \"...\",\n//   \"totalWeekMinutes\": 6720,     // poate veni și aici (în afara body.payload)\n//   \"totalWeekHours\":   112\n// }\n\nconst root = $json;                         // tot request-ul curent\nconst p = root.body?.payload || {};         // payload-ul util (zile, meta)\nconst warnings = [];\nconst errors = [];\n\n// mapă zile -> prefix coloane din DB\nconst PREFIX = { L:\"lun\", M:\"mar\", X:\"mie\", J:\"joi\", V:\"vin\", S:\"sam\", D:\"dum\" };\nconst DAY_KEYS = Object.keys(PREFIX);\n\n// validare HH:MM\nconst HHMM = /^([01]\\d|2[0-3]):([0-5]\\d)$/;\n\n// \"07:00\" -> minute totale (420)\nconst toMin = (s) => {\n\tif (!s || !HHMM.test(s)) return null;\n\tconst [h,m] = s.split(\":\").map(Number);\n\treturn h * 60 + m;\n};\n\n// diferență în minute dintre două ore, permițând peste miezul nopții\n// ex: 23:00 -> 07:00 = 8h = 480 min\nfunction diffMinutes(inn, out) {\n\tif (!HHMM.test(inn) || !HHMM.test(out)) return 0;\n\tconst a = toMin(inn);\n\tconst b = toMin(out);\n\tlet d = b - a;\n\tif (d <= 0) {\n\t\t// presupunem că se termină a doua zi\n\t\td = (24 * 60 - a) + b;\n\t}\n\treturn d > 0 ? d : 0;\n}\n\n// normalizează intervalele pe o zi:\n// - ignoră sloturi goale\n// - validează formatul HH:MM\n// - permite ture care trec peste miezul nopții\n// - taie la max 3 sloturi\n// - dacă ceva e invalid => pune eroare\nfunction normIntervals(list, dayKey){\n\tconst arr = Array.isArray(list) ? list : [];\n\n\tconst validated = arr\n\t\t.map(x => x || {})\n\t\t// păstrăm doar sloturi care au măcar ceva\n\t\t.filter(x => (x.in && x.in.trim()) || (x.out && x.out.trim()))\n\t\t.map((x, i) => {\n\t\t\tconst inn = (x.in || \"\").trim();\n\t\t\tconst out = (x.out || \"\").trim();\n\n\t\t\t// lipsă pereche\n\t\t\tif (!inn || !out){\n\t\t\t\twarnings.push(`${dayKey} slot ${i+1}: lipsă pereche (ignorat).`);\n\t\t\t\treturn null;\n\t\t\t}\n\n\t\t\t// format invalid\n\t\t\tif (!HHMM.test(inn) || !HHMM.test(out)){\n\t\t\t\terrors.push(`${dayKey} slot ${i+1}: oră invalidă HH:MM.`);\n\t\t\t\treturn null;\n\t\t\t}\n\n\t\t\t// durată calculată cu suport cross-midnight\n\t\t\tconst durationMin = diffMinutes(inn, out);\n\t\t\tif (durationMin <= 0){\n\t\t\t\terrors.push(`${dayKey} slot ${i+1}: ieșirea trebuie > intrare.`);\n\t\t\t\treturn null;\n\t\t\t}\n\n\t\t\treturn { in: inn, out: out };\n\t\t})\n\t\t.filter(Boolean);\n\n\t// max 3 sloturi / zi\n\tconst top3 = validated.slice(0,3);\n\n\t// dacă ai mai puțin de 3 sloturi, completez cu null ca să nu crape bucla\n\twhile (top3.length < 3) top3.push(null);\n\n\treturn top3; // [ {in,out} | null, ... x3 ]\n}\n\n// calculează minute pe săptămână din toate zilele\n// suportă și ture de noapte\nfunction calcWeekMinutesFromIntervals(payload){\n\tlet total = 0;\n\tfor (const k of DAY_KEYS){\n\t\tconst list = payload?.days?.[k]?.intervals || [];\n\t\tfor (const slot of list){\n\t\t\tif (slot?.in && slot?.out && HHMM.test(slot.in) && HHMM.test(slot.out)){\n\t\t\t\ttotal += diffMinutes(slot.in, slot.out);\n\t\t\t}\n\t\t}\n\t}\n\tconst wb = Number(payload?.weeklyBreakMinutes || 0);\n\treturn Math.max(0, total - wb);\n}\n\n// --------- construim obiectul de ieșire (flatten pt DB) ---------\nconst out = {\n\tnombre:          (p.nombre || \"\").trim(),\n\tcentro_nombre:   (root.body?.centroNombre || p.centroNombre || p.centroId || null),\n\tgrupo_nombre:    (root.body?.grupoNombre  || p.grupoNombre  || p.grupoId  || null),\n\tvigente_desde:   (p.vigenteDesde || null),\n\tvigente_hasta:   (p.vigenteHasta || null),\n\twb:              Number(p.weeklyBreakMinutes   || 0),\n\tem:              Number(p.entryMarginMinutes  || 0),\n\txm:              Number(p.exitMarginMinutes   || 0),\n};\n\n// totalurile pot veni fie în afara body-ului, fie nu\nlet totalHours = Number(root.totalWeekHours    ?? p.totalWeekHours    ?? NaN);\nlet totalMin   = Number(root.totalWeekMinutes  ?? p.totalWeekMinutes  ?? NaN);\n\n// dacă nu le-am primit gata calculate, le calculăm noi\nif (Number.isNaN(totalMin)) {\n\ttotalMin = calcWeekMinutesFromIntervals(p);\n}\nif (Number.isNaN(totalHours)) {\n\ttotalHours = Math.round((totalMin / 60) * 100) / 100; // ore cu 2 zecimale\n}\n\nout.total_horas_semanales   = totalHours;\nout.total_minutos_semanales = totalMin;\n\n// validare nume obligatoriu\nif (!out.nombre) {\n\terrors.push(\"Campo requerido: nombre.\");\n}\n\n// pentru fiecare zi (L,M,X,J,V,S,D) normalizăm până la 3 sloturi\nfor (const k of DAY_KEYS){\n\tconst pref  = PREFIX[k]; // ex \"lun\", \"mar\", ...\n\tconst slots = normIntervals(p?.days?.[k]?.intervals, k);\n\n\tfor (let i=0; i<3; i++){\n\t\tconst idx = i+1;\n\t\tout[`${pref}_in${idx}`]  = slots[i]?.in  ?? null;\n\t\tout[`${pref}_out${idx}`] = slots[i]?.out ?? null;\n\t}\n}\n\n// dacă avem erori critice -> oprim aici cu ok:false\nif (errors.length) {\n\treturn [\n\t\t{\n\t\t\tjson: {\n\t\t\t\tok: false,\n\t\t\t\terrors,\n\t\t\t\twarnings,\n\t\t\t},\n\t\t},\n\t];\n}\n\n// altfel trimitem ok:true + datele flatten pt DB sau MySQL\nreturn [\n\t{\n\t\tjson: {\n\t\t\tok: true,\n\t\t\tdata: out,\n\t\t\twarnings,\n\t\t},\n\t},\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -320
+      ],
+      "id": "5ab16879-d0ff-44e0-a387-c2f4638edff8",
+      "name": "Normalize & Flatten (create)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9f9eaeeb-15d2-4ae0-94fa-fc24f8e44f99",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        -304
+      ],
+      "id": "38bc70c2-50f6-4ea7-9bcf-8d1f41e3d3fd",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        176,
+        -304
+      ],
+      "id": "ae3d8e06-888f-4ed0-93d3-ba345cba4466",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO horarios (\n  nombre, centro_nombre, grupo_nombre,\n  vigente_desde, vigente_hasta,\n  weekly_break_minutes, entry_margin_minutes, exit_margin_minutes,\n  total_horas_semanales, total_minutos_semanales,\n  lun_in1,lun_out1,lun_in2,lun_out2,lun_in3,lun_out3,\n  mar_in1,mar_out1,mar_in2,mar_out2,mar_in3,mar_out3,\n  mie_in1,mie_out1,mie_in2,mie_out2,mie_in3,mie_out3,\n  joi_in1,joi_out1,joi_in2,joi_out2,joi_in3,joi_out3,\n  vin_in1,vin_out1,vin_in2,vin_out2,vin_in3,vin_out3,\n  sam_in1,sam_out1,sam_in2,sam_out2,sam_in3,sam_out3,\n  dum_in1,dum_out1,dum_in2,dum_out2,dum_in3,dum_out3\n) VALUES (\n  {{ $json.data.nombre ? `'${$json.data.nombre.replace(/'/g,\"\\\\'\")}'` : 'NULL' }},\n  {{ $json.data.centro_nombre ? `'${$json.data.centro_nombre.replace(/'/g,\"\\\\'\")}'` : 'NULL' }},\n  {{ $json.data.grupo_nombre ? `'${$json.data.grupo_nombre.replace(/'/g,\"\\\\'\")}'` : 'NULL' }},\n  {{ $json.data.vigente_desde ? `'${$json.data.vigente_desde}'` : 'NULL' }},\n  {{ $json.data.vigente_hasta ? `'${$json.data.vigente_hasta}'` : 'NULL' }},\n  {{$json.data.wb}},\n  {{$json.data.em}},\n  {{$json.data.xm}},\n  {{$json.data.total_horas_semanales}},\n  {{$json.data.total_minutos_semanales}},\n\n  {{ $json.data.lun_in1 ? `'${$json.data.lun_in1}'` : 'NULL' }}, {{ $json.data.lun_out1 ? `'${$json.data.lun_out1}'` : 'NULL' }},\n  {{ $json.data.lun_in2 ? `'${$json.data.lun_in2}'` : 'NULL' }}, {{ $json.data.lun_out2 ? `'${$json.data.lun_out2}'` : 'NULL' }},\n  {{ $json.data.lun_in3 ? `'${$json.data.lun_in3}'` : 'NULL' }}, {{ $json.data.lun_out3 ? `'${$json.data.lun_out3}'` : 'NULL' }},\n\n  {{ $json.data.mar_in1 ? `'${$json.data.mar_in1}'` : 'NULL' }}, {{ $json.data.mar_out1 ? `'${$json.data.mar_out1}'` : 'NULL' }},\n  {{ $json.data.mar_in2 ? `'${$json.data.mar_in2}'` : 'NULL' }}, {{ $json.data.mar_out2 ? `'${$json.data.mar_out2}'` : 'NULL' }},\n  {{ $json.data.mar_in3 ? `'${$json.data.mar_in3}'` : 'NULL' }}, {{ $json.data.mar_out3 ? `'${$json.data.mar_out3}'` : 'NULL' }},\n\n  {{ $json.data.mie_in1 ? `'${$json.data.mie_in1}'` : 'NULL' }}, {{ $json.data.mie_out1 ? `'${$json.data.mie_out1}'` : 'NULL' }},\n  {{ $json.data.mie_in2 ? `'${$json.data.mie_in2}'` : 'NULL' }}, {{ $json.data.mie_out2 ? `'${$json.data.mie_out2}'` : 'NULL' }},\n  {{ $json.data.mie_in3 ? `'${$json.data.mie_in3}'` : 'NULL' }}, {{ $json.data.mie_out3 ? `'${$json.data.mie_out3}'` : 'NULL' }},\n\n  {{ $json.data.joi_in1 ? `'${$json.data.joi_in1}'` : 'NULL' }}, {{ $json.data.joi_out1 ? `'${$json.data.joi_out1}'` : 'NULL' }},\n  {{ $json.data.joi_in2 ? `'${$json.data.joi_in2}'` : 'NULL' }}, {{ $json.data.joi_out2 ? `'${$json.data.joi_out2}'` : 'NULL' }},\n  {{ $json.data.joi_in3 ? `'${$json.data.joi_in3}'` : 'NULL' }}, {{ $json.data.joi_out3 ? `'${$json.data.joi_out3}'` : 'NULL' }},\n\n  {{ $json.data.vin_in1 ? `'${$json.data.vin_in1}'` : 'NULL' }}, {{ $json.data.vin_out1 ? `'${$json.data.vin_out1}'` : 'NULL' }},\n  {{ $json.data.vin_in2 ? `'${$json.data.vin_in2}'` : 'NULL' }}, {{ $json.data.vin_out2 ? `'${$json.data.vin_out2}'` : 'NULL' }},\n  {{ $json.data.vin_in3 ? `'${$json.data.vin_in3}'` : 'NULL' }}, {{ $json.data.vin_out3 ? `'${$json.data.vin_out3}'` : 'NULL' }},\n\n  {{ $json.data.sam_in1 ? `'${$json.data.sam_in1}'` : 'NULL' }}, {{ $json.data.sam_out1 ? `'${$json.data.sam_out1}'` : 'NULL' }},\n  {{ $json.data.sam_in2 ? `'${$json.data.sam_in2}'` : 'NULL' }}, {{ $json.data.sam_out2 ? `'${$json.data.sam_out2}'` : 'NULL' }},\n  {{ $json.data.sam_in3 ? `'${$json.data.sam_in3}'` : 'NULL' }}, {{ $json.data.sam_out3 ? `'${$json.data.sam_out3}'` : 'NULL' }},\n\n  {{ $json.data.dum_in1 ? `'${$json.data.dum_in1}'` : 'NULL' }}, {{ $json.data.dum_out1 ? `'${$json.data.dum_out1}'` : 'NULL' }},\n  {{ $json.data.dum_in2 ? `'${$json.data.dum_in2}'` : 'NULL' }}, {{ $json.data.dum_out2 ? `'${$json.data.dum_out2}'` : 'NULL' }},\n  {{ $json.data.dum_in3 ? `'${$json.data.dum_in3}'` : 'NULL' }}, {{ $json.data.dum_out3 ? `'${$json.data.dum_out3}'` : 'NULL' }}\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        128,
+        -496
+      ],
+      "id": "91a6d2c3-3d5c-484d-8697-3a1b9c3899ab",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n  {\n    ok: true,\n    nombre: $node[\"Normalize & Flatten (create)\"].json.data.nombre,\n    message: \"Horario creado\"\n  }\n}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        304,
+        -480
+      ],
+      "id": "94158f6e-d714-4357-a643-2053d0c6b80e",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * \nFROM horarios\nORDER BY id DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -256,
+        -128
+      ],
+      "id": "8f64af31-7e60-4f69-be77-1bc7f4718823",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -64,
+        -128
+      ],
+      "id": "040f92b8-9d38-45ea-bc2b-15910a5c06ed",
+      "name": "Respond to Webhook2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// TOT ce vine din Webhook\nconst root = $json;\n\n// payload-ul principal (zile, meta)\nconst p = root?.body?.payload ?? root?.body ?? root ?? {};\n\n// detectare mod (create/edit) + id\nconst rawMode = String(root?.body?.mode ?? root?.body?.modo ?? root?.body?.accion ?? root?.body?.action ?? \"\")\n  .toLowerCase();\n\nconst idFromBody = root?.body?.id ?? null;\nconst idFromPayl = p?.id ?? null;\nconst idFromRoot = root?.id ?? null;\nconst scheduleId = idFromBody ?? idFromPayl ?? idFromRoot ?? null;\n\nconst isEdit = rawMode\n  ? [\"edit\",\"editar\",\"update\",\"actualizar\"].includes(rawMode)\n  : (scheduleId != null); // dacă există id, presupunem edit\n\nconst warnings = [];\nconst errors = [];\n\n// mapă zile -> prefix coloane\nconst PREFIX = { L:\"lun\", M:\"mar\", X:\"mie\", J:\"joi\", V:\"vin\", S:\"sam\", D:\"dum\" };\nconst DAY_KEYS = Object.keys(PREFIX);\n\n// Acceptă H:MM sau HH:MM (0–23)\nconst HHMM = /^(?:[01]?\\d|2[0-3]):[0-5]\\d$/;\n\n// helpers\nconst getFirst = (...vals) => {\n  for (const v of vals) if (v !== undefined && v !== null && v !== \"\") return v;\n  return null;\n};\n\nconst toMin = (s) => {\n  if (!s || !HHMM.test(s)) return null;\n  const [hStr,mStr] = s.split(\":\");\n  const h = Number(hStr), m = Number(mStr);\n  return h*60 + m;\n};\n\n// Normalizează max 3 intervale/zi, ignoră sloturile goale/incomplete\n// NU mai respinge intervalele cu out <= in (vor fi tratate ca peste miezul nopții la calcul)\nfunction normIntervals(list, dayKey){\n  const arr = Array.isArray(list) ? list : [];\n  const filtered = arr\n    .map(x => (x && typeof x === 'object') ? x : {})\n    .filter(x => (x.in && String(x.in).trim()) || (x.out && String(x.out).trim()))\n    .map((x, i) => {\n      const inn = String(x.in ?? \"\").trim();\n      const out = String(x.out ?? \"\").trim();\n\n      if (!inn || !out) { \n        warnings.push(`${dayKey} slot ${i+1}: lipsă pereche (ignorat).`);\n        return null; \n      }\n      if (!HHMM.test(inn) || !HHMM.test(out)) { \n        errors.push(`${dayKey} slot ${i+1}: oră invalidă (folosește H:MM sau HH:MM).`);\n        return null; \n      }\n\n      return { in: inn, out: out };\n    })\n    .filter(Boolean);\n\n  const top3 = filtered.slice(0,3);\n  while (top3.length < 3) top3.push(null);\n  return top3;\n}\n\n// calculează minutele săptămânale, incluzând intervalele care trec peste miezul nopții\nfunction calcWeekMinutesFromIntervals(payload){\n  let total = 0;\n  for (const k of DAY_KEYS){\n    const list = payload?.days?.[k]?.intervals || [];\n    let slotIdx = 0;\n    for (const slot of list){\n      slotIdx++;\n      if (slot?.in && slot?.out && HHMM.test(slot.in) && HHMM.test(slot.out)){\n        const a = toMin(slot.in);\n        let b = toMin(slot.out);\n        if (a == null || b == null) continue;\n\n        if (b <= a) { \n          // trece peste miezul nopții\n          b += 24*60;\n          warnings.push(`${k} slot ${slotIdx}: interval peste miezul nopții (${slot.in}→${slot.out}); contabilizat ca zi următoare.`);\n        }\n        total += (b - a);\n      }\n    }\n  }\n  const wb = Number(payload?.weeklyBreakMinutes || 0);\n  return Math.max(0, total - wb);\n}\n\n// Construiește obiectul de ieșire\nconst out = {\n  // meta\n  nombre: (getFirst(p?.nombre, root?.body?.nombre, root?.nombre, \"\") || \"\").trim(),\n\n  // Acceptă nume sau id – le expunem separat; păstrăm și câmpurile existente\n  centro_nombre: getFirst(root?.body?.centroNombre, p?.centroNombre, p?.centroId, root?.body?.centroId),\n  centro_id:     getFirst(p?.centroId, root?.body?.centroId, null),\n\n  grupo_nombre:  getFirst(root?.body?.grupoNombre,  p?.grupoNombre,  p?.grupoId,  root?.body?.grupoId),\n  grupo_id:      getFirst(p?.grupoId, root?.body?.grupoId, null),\n\n  vigente_desde: getFirst(p?.vigenteDesde, root?.body?.vigenteDesde, null),\n  vigente_hasta: getFirst(p?.vigenteHasta, root?.body?.vigenteHasta, null),\n\n  wb: Number(getFirst(p?.weeklyBreakMinutes, root?.body?.weeklyBreakMinutes, 0)),\n  em: Number(getFirst(p?.entryMarginMinutes,  root?.body?.entryMarginMinutes,  0)),\n  xm: Number(getFirst(p?.exitMarginMinutes,   root?.body?.exitMarginMinutes,   0)),\n};\n\n// totalurile pot fi ÎN sau ÎN AFARA body-ului/payload-ului\nlet totalHours = Number(getFirst(root?.totalWeekHours, p?.totalWeekHours));\nlet totalMin   = Number(getFirst(root?.totalWeekMinutes, p?.totalWeekMinutes));\n\nif (Number.isNaN(totalMin))   totalMin   = calcWeekMinutesFromIntervals(p);\nif (Number.isNaN(totalHours)) totalHours = Math.round((totalMin / 60) * 100) / 100;\n\nout.total_horas_semanales   = totalHours;  // ex. 40\nout.total_minutos_semanales = totalMin;    // ex. 2400\n\nif (!out.nombre) errors.push(\"Campo requerido: nombre.\");\n\n// zile + intervale (max 3/zi)\nfor (const k of DAY_KEYS){\n  const pref = PREFIX[k];\n  const slots = normIntervals(p?.days?.[k]?.intervals, k);\n  for (let i=0;i<3;i++){\n    const idx = i+1;\n    out[`${pref}_in${idx}`]  = slots[i]?.in  ?? null;\n    out[`${pref}_out${idx}`] = slots[i]?.out ?? null;\n  }\n}\n\n// VALIDĂRI specifice EDIT\nif (isEdit && (scheduleId === null || scheduleId === \"\")) {\n  errors.push(\"Editare: câmpul 'id' este obligatoriu.\");\n}\n\n// atașează id-ul dacă există (util pentru ramura de edit)\nif (scheduleId != null && scheduleId !== \"\") {\n  out.id = scheduleId;\n}\n\n// Răspuns\nif (errors.length) {\n  return [{ json: { ok:false, mode: (isEdit ? \"edit\":\"create\"), errors, warnings } }];\n}\nreturn [{ json: { ok:true, mode: (isEdit ? \"edit\":\"create\"), data: out, warnings } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        32
+      ],
+      "id": "31cb6488-0ecb-4a15-a3b3-9e8cf2ba7e22",
+      "name": "normalizare 2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "be1b66a4-8c47-4803-8ee9-593a5fe2dc2a",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -16,
+        32
+      ],
+      "id": "44b67321-45c4-4c88-92cb-d660526034c2",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        272,
+        144
+      ],
+      "id": "fc9ff85d-97ed-470f-bf04-644eb6ade977",
+      "name": "Respond to Webhook3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE horarios\nSET\n  nombre                = '{{ $json.data.nombre }}',\n  centro_nombre         = '{{ $json.data.centro_nombre }}',\n  grupo_nombre          = '{{ $json.data.grupo_nombre }}',\n  vigente_desde         = {{ $json.data.vigente_desde ? \"'\" + $json.data.vigente_desde + \"'\" : \"NULL\" }},\n  vigente_hasta         = {{ $json.data.vigente_hasta ? \"'\" + $json.data.vigente_hasta + \"'\" : \"NULL\" }},\n  weekly_break_minutes  = {{ $json.data.wb }},\n  entry_margin_minutes  = {{ $json.data.em }},\n  exit_margin_minutes   = {{ $json.data.xm }},\n  total_horas_semanales   = {{ $json.data.total_horas_semanales }},\n  total_minutos_semanales = {{ $json.data.total_minutos_semanales }},\n\n  lun_in1  = {{ $json.data.lun_in1  ? \"'\" + $json.data.lun_in1  + \"'\" : \"NULL\" }},\n  lun_out1 = {{ $json.data.lun_out1 ? \"'\" + $json.data.lun_out1 + \"'\" : \"NULL\" }},\n  lun_in2  = {{ $json.data.lun_in2  ? \"'\" + $json.data.lun_in2  + \"'\" : \"NULL\" }},\n  lun_out2 = {{ $json.data.lun_out2 ? \"'\" + $json.data.lun_out2 + \"'\" : \"NULL\" }},\n  lun_in3  = {{ $json.data.lun_in3  ? \"'\" + $json.data.lun_in3  + \"'\" : \"NULL\" }},\n  lun_out3 = {{ $json.data.lun_out3 ? \"'\" + $json.data.lun_out3 + \"'\" : \"NULL\" }},\n\n  mar_in1  = {{ $json.data.mar_in1  ? \"'\" + $json.data.mar_in1  + \"'\" : \"NULL\" }},\n  mar_out1 = {{ $json.data.mar_out1 ? \"'\" + $json.data.mar_out1 + \"'\" : \"NULL\" }},\n  mar_in2  = {{ $json.data.mar_in2  ? \"'\" + $json.data.mar_in2  + \"'\" : \"NULL\" }},\n  mar_out2 = {{ $json.data.mar_out2 ? \"'\" + $json.data.mar_out2 + \"'\" : \"NULL\" }},\n  mar_in3  = {{ $json.data.mar_in3  ? \"'\" + $json.data.mar_in3  + \"'\" : \"NULL\" }},\n  mar_out3 = {{ $json.data.mar_out3 ? \"'\" + $json.data.mar_out3 + \"'\" : \"NULL\" }},\n\n  mie_in1  = {{ $json.data.mie_in1  ? \"'\" + $json.data.mie_in1  + \"'\" : \"NULL\" }},\n  mie_out1 = {{ $json.data.mie_out1 ? \"'\" + $json.data.mie_out1 + \"'\" : \"NULL\" }},\n  mie_in2  = {{ $json.data.mie_in2  ? \"'\" + $json.data.mie_in2  + \"'\" : \"NULL\" }},\n  mie_out2 = {{ $json.data.mie_out2 ? \"'\" + $json.data.mie_out2 + \"'\" : \"NULL\" }},\n  mie_in3  = {{ $json.data.mie_in3  ? \"'\" + $json.data.mie_in3  + \"'\" : \"NULL\" }},\n  mie_out3 = {{ $json.data.mie_out3 ? \"'\" + $json.data.mie_out3 + \"'\" : \"NULL\" }},\n\n  joi_in1  = {{ $json.data.joi_in1  ? \"'\" + $json.data.joi_in1  + \"'\" : \"NULL\" }},\n  joi_out1 = {{ $json.data.joi_out1 ? \"'\" + $json.data.joi_out1 + \"'\" : \"NULL\" }},\n  joi_in2  = {{ $json.data.joi_in2  ? \"'\" + $json.data.joi_in2  + \"'\" : \"NULL\" }},\n  joi_out2 = {{ $json.data.joi_out2 ? \"'\" + $json.data.joi_out2 + \"'\" : \"NULL\" }},\n  joi_in3  = {{ $json.data.joi_in3  ? \"'\" + $json.data.joi_in3  + \"'\" : \"NULL\" }},\n  joi_out3 = {{ $json.data.joi_out3 ? \"'\" + $json.data.joi_out3 + \"'\" : \"NULL\" }},\n\n  vin_in1  = {{ $json.data.vin_in1  ? \"'\" + $json.data.vin_in1  + \"'\" : \"NULL\" }},\n  vin_out1 = {{ $json.data.vin_out1 ? \"'\" + $json.data.vin_out1 + \"'\" : \"NULL\" }},\n  vin_in2  = {{ $json.data.vin_in2  ? \"'\" + $json.data.vin_in2  + \"'\" : \"NULL\" }},\n  vin_out2 = {{ $json.data.vin_out2 ? \"'\" + $json.data.vin_out2 + \"'\" : \"NULL\" }},\n  vin_in3  = {{ $json.data.vin_in3  ? \"'\" + $json.data.vin_in3  + \"'\" : \"NULL\" }},\n  vin_out3 = {{ $json.data.vin_out3 ? \"'\" + $json.data.vin_out3 + \"'\" : \"NULL\" }},\n\n  sam_in1  = {{ $json.data.sam_in1  ? \"'\" + $json.data.sam_in1  + \"'\" : \"NULL\" }},\n  sam_out1 = {{ $json.data.sam_out1 ? \"'\" + $json.data.sam_out1 + \"'\" : \"NULL\" }},\n  sam_in2  = {{ $json.data.sam_in2  ? \"'\" + $json.data.sam_in2  + \"'\" : \"NULL\" }},\n  sam_out2 = {{ $json.data.sam_out2 ? \"'\" + $json.data.sam_out2 + \"'\" : \"NULL\" }},\n  sam_in3  = {{ $json.data.sam_in3  ? \"'\" + $json.data.sam_in3  + \"'\" : \"NULL\" }},\n  sam_out3 = {{ $json.data.sam_out3 ? \"'\" + $json.data.sam_out3 + \"'\" : \"NULL\" }},\n\n  dum_in1  = {{ $json.data.dum_in1  ? \"'\" + $json.data.dum_in1  + \"'\" : \"NULL\" }},\n  dum_out1 = {{ $json.data.dum_out1 ? \"'\" + $json.data.dum_out1 + \"'\" : \"NULL\" }},\n  dum_in2  = {{ $json.data.dum_in2  ? \"'\" + $json.data.dum_in2  + \"'\" : \"NULL\" }},\n  dum_out2 = {{ $json.data.dum_out2 ? \"'\" + $json.data.dum_out2 + \"'\" : \"NULL\" }},\n  dum_in3  = {{ $json.data.dum_in3  ? \"'\" + $json.data.dum_in3  + \"'\" : \"NULL\" }},\n  dum_out3 = {{ $json.data.dum_out3 ? \"'\" + $json.data.dum_out3 + \"'\" : \"NULL\" }},\n\n  created_at = NOW()\nWHERE id = {{ $json.data.id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        256,
+        -32
+      ],
+      "id": "d690a2ea-1db0-4190-94c3-8eb5414e038d",
+      "name": "actualizeaza orar",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n  {\n    ok: true,\n    nombre: $node[\"normalizare 2\"].json.data.nombre,\n    message: \"Horario creado\"\n  }\n}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        576,
+        -32
+      ],
+      "id": "43a0acda-90e2-42a4-aa81-a3c0c4b86c52",
+      "name": "Respond to Webhook4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM horarios\nWHERE id = {{ $json.body.payload.id }}\n  AND centro_nombre = '{{ $json.body.payload.centroNombre }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -288,
+        224
+      ],
+      "id": "66a93911-ce91-438e-89cd-7274f692648d",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -112,
+        224
+      ],
+      "id": "a248be2a-2f19-4005-b945-645837f81ecf",
+      "name": "Respond to Webhook5"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Flatten (create)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "normalizare 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Flatten (create)": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "normalizare 2": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "actualizeaza orar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "actualizeaza orar": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "630a11d4-d86a-4fe2-996c-91198ec17ba6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "fyCS3d8EbGHvadKG",
+  "tags": []
+}

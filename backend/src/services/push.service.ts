@@ -216,4 +216,103 @@ export class PushService {
       return false;
     }
   }
+
+  /**
+   * Trimite notificare push către toți utilizatorii activi care au token de push
+   */
+  async sendPushToAllUsers(notification: {
+    title: string;
+    message: string;
+    data?: any;
+    url?: string;
+  }): Promise<{ total: number; sent: number; failed: number }> {
+    try {
+      // Obține toți utilizatorii activi
+      const activeUsers = await this.prisma.$queryRaw<any[]>`
+        SELECT DISTINCT CODIGO as codigo
+        FROM DatosEmpleados
+        WHERE (ESTADO = 'ACTIVO' OR ESTADO IS NULL OR ESTADO = '')
+      `;
+
+      if (activeUsers.length === 0) {
+        this.logger.warn('⚠️ Nu există utilizatori activi');
+        return { total: 0, sent: 0, failed: 0 };
+      }
+
+      // Obține toate subscription-urile pentru toți userii activi
+      const userIds = activeUsers.map((u: any) => String(u.codigo));
+      const allSubscriptions = await this.prisma.pushSubscription.findMany({
+        where: {
+          userId: { in: userIds },
+        },
+      });
+
+      if (allSubscriptions.length === 0) {
+        this.logger.warn(
+          '⚠️ Nu există Push subscriptions pentru utilizatorii activi',
+        );
+        return { total: userIds.length, sent: 0, failed: 0 };
+      }
+
+      const payload = JSON.stringify({
+        title: notification.title,
+        message: notification.message,
+        data: notification.data || {},
+        url: notification.url,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Trimite notificarea către toate subscription-urile
+      const results = await Promise.allSettled(
+        allSubscriptions.map(async (subscription) => {
+          try {
+            await webpush.sendNotification(
+              {
+                endpoint: subscription.endpoint,
+                keys: {
+                  p256dh: subscription.p256dh,
+                  auth: subscription.auth,
+                },
+              },
+              payload,
+            );
+            return { success: true, userId: subscription.userId };
+          } catch (error: any) {
+            // Dacă subscription-ul este invalid (410 Gone), șterge-l
+            if (error.statusCode === 410) {
+              this.logger.warn(
+                `⚠️ Push subscription invalid pentru user ${subscription.userId}, șterg subscription-ul`,
+              );
+              await this.deleteSubscription(
+                subscription.userId,
+                subscription.endpoint,
+              );
+            }
+            return { success: false, userId: subscription.userId, error };
+          }
+        }),
+      );
+
+      const sent = results.filter(
+        (r) => r.status === 'fulfilled' && r.value.success,
+      ).length;
+      const failed = results.length - sent;
+
+      this.logger.log(
+        `✅ Push notification trimisă către toți utilizatorii: ${sent}/${allSubscriptions.length} subscription-uri (${failed} eșuate)`,
+      );
+
+      return {
+        total: userIds.length,
+        sent,
+        failed,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Eroare la trimiterea Push notification către toți utilizatorii:`,
+        error,
+      );
+      return { total: 0, sent: 0, failed: 0 };
+    }
+  }
 }

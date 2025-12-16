@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 import { useAuth } from '../contexts/AuthContextBase';
+import { useLocation } from '../contexts/LocationContextBase';
 
 import { Button, Modal, Input } from '../components/ui';
 
@@ -235,6 +236,7 @@ function getCurrentDayFormatted() {
 export default function CuadrantesEmpleadoPage() {
 
   const { user: authUser } = useAuth();
+  const { getCurrentLocation, getAddressFromCoords } = useLocation();
 
   // const { t } = useTranslation(); // Unused variable
 
@@ -700,12 +702,17 @@ export default function CuadrantesEmpleadoPage() {
       setError('');
 
       try {
+        const token = localStorage.getItem('auth_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
 
         const res = await fetch(routes.getCuadrantes, {
 
           method: 'POST',
 
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
 
           body: JSON.stringify({ codigo: codigoEmpleado })
 
@@ -949,11 +956,21 @@ export default function CuadrantesEmpleadoPage() {
 
         
 
-        // Trimitem și luna la backend pentru filtrare directă
-        const fichajesEndpoint = routes.getFichajes;
+        // Folosim backend-ul nou pentru registros/fichajes (nu n8n)
+        const fichajesEndpoint = routes.getRegistros;
+        // Backend-ul folosește CODIGO și MES (cu majuscule)
         const separator = fichajesEndpoint.includes('?') ? '&' : '?';
-        const fichajesUrl = `${fichajesEndpoint}${separator}codigo=${encodeURIComponent(codigoEmpleado)}&luna=${encodeURIComponent(selectedLunaNorm)}`;
-        const res = await fetch(fichajesUrl);
+        const fichajesUrl = `${fichajesEndpoint}${separator}CODIGO=${encodeURIComponent(codigoEmpleado)}&MES=${encodeURIComponent(selectedLunaNorm)}`;
+        
+        const token = localStorage.getItem('auth_token');
+        const fetchHeaders = {};
+        if (token) {
+          fetchHeaders['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const res = await fetch(fichajesUrl, {
+          headers: fetchHeaders
+        });
 
         const data = await res.json();
 
@@ -961,19 +978,22 @@ export default function CuadrantesEmpleadoPage() {
 
         console.log('Raw data from fichajes API (filtered by month):', data);
 
-        console.log('First fichaje complete:', JSON.stringify(data[0], null, 2));
+        // Asigură că data este întotdeauna un array
+        const fichajesUser = Array.isArray(data) ? data : (data ? [data] : []);
+        
+        if (fichajesUser.length > 0) {
+          console.log('First fichaje complete:', JSON.stringify(fichajesUser[0], null, 2));
+        }
 
         
 
         // Nu mai trebuie să filtrăm în frontend, backend-ul returnează deja doar luna selectată
 
-        const fichajesUser = data;
-
-        
-
         console.log('Fichajes filtered for month:', fichajesUser);
 
-        console.log('Sample fichaje:', fichajesUser[0]);
+        if (fichajesUser.length > 0) {
+          console.log('Sample fichaje:', fichajesUser[0]);
+        }
 
         
 
@@ -1030,15 +1050,22 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-        const baseAusenciasUrl = routes.getAusenciasEmpleado;
+        // Folosim backend-ul nou pentru ausencias (nu n8n)
+        const baseAusenciasUrl = routes.getAusencias;
         const ausenciasSeparator = baseAusenciasUrl.includes('?') ? '&' : '?';
         const url = `${baseAusenciasUrl}${ausenciasSeparator}codigo=${encodeURIComponent(userCode)}`;
 
         console.log('🔍 Fetching ausencias, URL:', url);
 
-        
+        const token = localStorage.getItem('auth_token');
+        const fetchHeaders = {};
+        if (token) {
+          fetchHeaders['Authorization'] = `Bearer ${token}`;
+        }
 
-        const response = await fetch(url);
+        const response = await fetch(url, {
+          headers: fetchHeaders
+        });
 
         if (!response.ok) {
 
@@ -1144,39 +1171,23 @@ export default function CuadrantesEmpleadoPage() {
 
       try {
 
-        const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}accion=get`;
+        // Backend-ul folosește GET cu query param codigo (nu POST cu accion=get)
+        const separator = endpoint.includes('?') ? '&' : '?';
+        const url = `${endpoint}${separator}codigo=${encodeURIComponent(empleadoCodigo)}`;
 
-        const payload = {
-
-          accion: 'get',
-
-          codigo: empleadoCodigo,
-
-          codigoEmpleado: empleadoCodigo,
-
-          codigo_empleado: empleadoCodigo,
-
-          trabajador: empleadoNombre,
-
-          nombre: empleadoNombre
-
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'X-App-Source': 'DeCamino-Web-App'
         };
-
-
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
 
         const response = await fetch(url, {
 
-          method: 'POST',
+          method: 'GET',
 
-          headers: {
-
-            'Content-Type': 'application/json',
-
-            'X-App-Source': 'DeCamino-Web-App'
-
-          },
-
-          body: JSON.stringify(payload),
+          headers: headers,
 
           signal: controller.signal
 
@@ -1194,9 +1205,11 @@ export default function CuadrantesEmpleadoPage() {
 
         const result = await response.json();
 
-        const lista = Array.isArray(result?.data)
-
-          ? result.data
+        // Backend-ul returnează direct array (nu {data: [...]})
+        const lista = Array.isArray(result)
+          ? result
+          : (result?.data && Array.isArray(result.data))
+            ? result.data
 
           : Array.isArray(result)
 
@@ -1696,7 +1709,7 @@ const getFirstValue = (record, keys) => {
 
       const dataZi = formatDateYMD(year, month, day);
 
-      const fichajesZi = fichajes.filter(f => (f["FECHA"] || '').startsWith(dataZi));
+      const fichajesZi = Array.isArray(fichajes) ? fichajes.filter(f => (f["FECHA"] || '').startsWith(dataZi)) : [];
 
       const fechaZi = new Date(year, month - 1, day);
 
@@ -2330,7 +2343,7 @@ const getFirstValue = (record, keys) => {
 
       setTimeout(() => {
 
-        getCurrentLocation();
+        handleGetCurrentLocation();
 
       }, 500);
 
@@ -2396,11 +2409,18 @@ const getFirstValue = (record, keys) => {
 
       // Salvez în baza de date (în așteptare)
 
-      const response = await fetch(routes.saveFichajePendiente, {
+      // Folosim backend-ul nou pentru fichajes (addFichaje poate gestiona și fichajes pendiente)
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.addFichaje, {
 
         method: 'POST',
 
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
 
         body: JSON.stringify(newFichaje)
 
@@ -2454,56 +2474,25 @@ const getFirstValue = (record, keys) => {
 
 
 
-  // Funcție pentru obținerea locației automate
+  // Funcție pentru obținerea locației automate folosind contextul global
 
-  const getCurrentLocation = async () => {
-
-    if (!navigator.geolocation) {
-
-      alert('La geolocalización no está disponible en este navegador.');
-
-      return;
-
-    }
-
-
+  const handleGetCurrentLocation = async () => {
 
     try {
+      // Folosim contextul global pentru locație
+      const coords = await getCurrentLocation();
+      const { latitude, longitude } = coords;
 
-      const position = await new Promise((resolve, reject) => {
+      // Obține adresa folosind funcția din context
+      const address = await getAddressFromCoords(latitude, longitude);
 
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-
-          enableHighAccuracy: true,
-
-          timeout: 10000,
-
-          maximumAge: 60000
-
-        });
-
-      });
-
-      const { latitude, longitude } = position.coords;
-
-      const response = await fetch(
-
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
-
-      );
-
-      const data = await response.json();
-
-      if (data.display_name) {
-
-        setFichajeAddress(data.display_name);
-
+      if (address) {
+        setFichajeAddress(address);
         alert('¡La ubicación se ha obtenido automáticamente!');
-
       } else {
-
+        // Fallback la coordonatele GPS
+        setFichajeAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
         alert('No se pudo obtener la dirección para la ubicación actual.');
-
       }
 
     } catch (error) {

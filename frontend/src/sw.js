@@ -78,8 +78,10 @@ self.addEventListener('notificationclick', (event) => {
       }
       
       // Dacă nu există, deschide o fereastră nouă
-      const urlToOpen = event.notification.data?.url 
-        ? `${self.location.origin}${basePath}${event.notification.data.url.replace(/^\//, '')}`
+      // Verifică URL din data sau din notification direct
+      const urlFromData = event.notification.data?.url;
+      const urlToOpen = urlFromData
+        ? `${self.location.origin}${basePath}${urlFromData.replace(/^\//, '')}`
         : `${self.location.origin}${basePath}`;
       
       return clients.openWindow(urlToOpen);

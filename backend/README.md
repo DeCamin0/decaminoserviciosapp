@@ -84,6 +84,17 @@ backend/
 - Migration is **endpoint-by-endpoint** with explicit approval
 - All changes must maintain backward compatibility
 
+## 🌍 Idioma de Comunicación
+
+**IMPORTANTE: Todas las comunicaciones deben estar en español:**
+- ✅ Todos los emails enviados desde el sistema
+- ✅ Todas las notificaciones (push, websocket, etc.)
+- ✅ Todos los avisos y alertas
+- ✅ Todos los mensajes de Telegram
+- ✅ Todos los textos de interfaz visibles al usuario
+
+**Cualquier mensaje, notificación o comunicación con el usuario final debe estar exclusivamente en español.**
+
 ## 🔗 Related
 
 - Frontend: `/frontend` (React app)

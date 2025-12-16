@@ -1,0 +1,93 @@
+{
+  "name": "uplouddocumentosoficialeempleado",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fc6c99f6-4900-4b42-a2ab-1d67849808f3",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        16
+      ],
+      "id": "a214832f-e2bc-4278-b361-f56f215a58ec",
+      "name": "Webhook",
+      "webhookId": "fc6c99f6-4900-4b42-a2ab-1d67849808f3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Webhook multipart -> INSERT în DocumentosOficiales ===\n\nconst item = items[0] ?? { json: {}, binary: {} };\nconst body = item.json?.body ?? item.json ?? {};\nconst binAll = item.binary ?? {};\n\n// Escapare SQL simplă pentru stringuri\nfunction sqlString(v) {\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\n// \"28/08/2025, 14:33:49\" -> \"2025-08-28 14:33:49\"\nfunction toMysqlDatetime(v) {\n  if (!v) return null;\n  if (typeof v === 'string') {\n    const m = v.match(/^(\\d{2})[\\/\\-](\\d{2})[\\/\\-](\\d{4})(?:[ ,T]+(\\d{2}):(\\d{2})(?::(\\d{2}))?)?$/);\n    if (m) {\n      const [_, dd, mm, yyyy, hh='00', mi='00', ss='00'] = m;\n      return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;\n    }\n    const d = new Date(v);\n    if (!isNaN(d)) return d.toISOString().slice(0,19).replace('T',' ');\n  } else if (v instanceof Date) {\n    return v.toISOString().slice(0,19).replace('T',' ');\n  }\n  return null;\n}\n\n// === ADĂUGAT: funcție de eliminat diacritice (accent folding) ===\nfunction removeDiacritics(str) {\n  if (str == null) return str;\n  // Map explicit pentru cazurile românești, apoi fallback generic\n  const map = {\n    'Ș':'S','Ş':'S','ș':'s','ş':'s',\n    'Ț':'T','Ţ':'T','ț':'t','ţ':'t',\n    'Ă':'A','ă':'a','Â':'A','â':'a','Î':'I','î':'i'\n  };\n  str = String(str).replace(/[ȘŞșşȚŢțţĂăÂâÎî]/g, ch => map[ch] || ch);\n  // Scoate restul de diacritice (ex. é, ü, ñ etc.)\n  return str.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n}\n\n// (opțional, dar util): curățare minimă a numelui de fișier, fără a schimba extensia\nfunction cleanFilenameKeepExt(name) {\n  if (!name) return name;\n  const lastDot = name.lastIndexOf('.');\n  const base = lastDot > 0 ? name.slice(0, lastDot) : name;\n  const ext  = lastDot > 0 ? name.slice(lastDot) : '';\n  let cleaned = removeDiacritics(base);\n  // înlocuiește caractere problematice pentru fișiere/SQL (fără a exagera)\n  cleaned = cleaned.replace(/[\\\\/:*?\"<>|]+/g, '_').replace(/\\s+/g, ' ').trim();\n  return cleaned + ext;\n}\n\nfunction extractIndexFromKey(key){ const m = key.match(/_(\\d+)$/); return m ? Number(m[1]) : null; }\nfunction listAllBinaryFiles(bobj){\n  return Object.keys(bobj || {}).filter(k => bobj[k]?.data)\n    .map(k => ({ key:k, bin:bobj[k], idx:extractIndexFromKey(k) }));\n}\nfunction readBodyFieldForIndex(body, base, idx, def=null){\n  if (idx !== null && idx !== undefined) {\n    const k = `${base}_${idx}`;\n    if (body[k] !== undefined && body[k] !== null) return body[k];\n  }\n  if (body[base] !== undefined && body[base] !== null) return body[base];\n  return def;\n}\n\nlet binaries = listAllBinaryFiles(binAll);\nif (binaries.length === 0 && binAll.archivo?.data) binaries = [{ key:'archivo', bin:binAll.archivo, idx:null }];\nif (binaries.length === 0) throw new Error(\"Nu găsesc fișiere în 'binary'. Trimite-le ca multipart/form-data.\");\n\nconst idBody           = body.id ?? body.empleado_id ?? null;\nconst correoElectronico= body.correo_electronico ?? body.email ?? null;\nconst nombreEmpleado   = body.nombre_empleado ?? body.nombre ?? null;\nconst fechaMysql       = toMysqlDatetime(body.fecha_creacion);\n\nconst outputs = [];\nfor (const { key, bin, idx } of binaries) {\n  const b64 = bin.data;\n  if (!b64) throw new Error(`Fișierul '${key}' nu are 'data' (base64).`);\n\n  const nombreArchivoRaw = readBodyFieldForIndex(body, 'nombre_archivo', idx, bin.fileName ?? `archivo_${idx ?? 0}`);\n\n  // === ADĂUGAT: pregătire nume fișier fără diacritice (doar numele fișierului) ===\n  const nombreArchivo = cleanFilenameKeepExt(nombreArchivoRaw);\n\n  const tipoDocumento  = readBodyFieldForIndex(body, 'tipo_documento',  idx, null);\n\n  const query = `\nINSERT INTO DocumentosOficiales (\n  id, correo_electronico, tipo_documento, nombre_archivo, nombre_empleado, fecha_creacion, archivo\n) VALUES (\n  ${sqlString(idBody)},\n  ${sqlString(correoElectronico)},\n  ${sqlString(tipoDocumento)},\n  ${sqlString(nombreArchivo)},\n  ${sqlString(nombreEmpleado)},\n  ${fechaMysql ? sqlString(fechaMysql) : 'NOW()'},\n  FROM_BASE64(${sqlString(b64)})\n);`.trim();\n\n  outputs.push({\n    json: {\n      query,\n      _meta: {\n        tabla: 'DocumentosOficiales',\n        binary_key: key,\n        idx,\n        nombre_archivo: nombreArchivo,\n        tipo_documento: tipoDocumento,\n        correo_electronico: correoElectronico,\n        nombre_empleado: nombreEmpleado,\n        fecha_creacion: fechaMysql ?? 'NOW()',\n        // util pentru debug:\n        original_nombre_archivo: nombreArchivoRaw\n      }\n    }\n  });\n}\n\nreturn outputs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        16
+      ],
+      "id": "6241ce27-0eb0-442c-b6fb-316e9638405d",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -128,
+        16
+      ],
+      "id": "6e2f1c1e-bc6e-40bb-97da-310e7fad35b2",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2276e31d-abbe-42d1-b41b-998aef9aeaa4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "nbWVVsyQcpJYUY8k",
+  "tags": []
+}

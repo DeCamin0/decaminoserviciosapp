@@ -1,8 +1,11 @@
 // Serviciu API pentru gestionarea orarelor prin callApi (consistent cu restul aplicației)
 import { ScheduleData } from '../types/schedule';
 
-// URL-ul pentru webhook-ul n8n pentru orare (PRODUCCIÓN)
-const N8N_HORARIOS_WEBHOOK = 'https://n8n.decaminoservicios.com/webhook/orar/36c95b72-cc22-4783-a749-521bdb666a58';
+// URL-ul pentru backend-ul NestJS pentru horarios (MIGRAT de la n8n)
+const HORARIOS_BACKEND_URL = import.meta.env.DEV
+  ? 'http://localhost:3000/api/horarios'
+  : 'https://api.decaminoservicios.com/api/horarios';
+// Old n8n endpoint: 'https://n8n.decaminoservicios.com/webhook/orar/36c95b72-cc22-4783-a749-521bdb666a58';
 
 // Interface pentru callApi function
 interface CallApiFunction {
@@ -54,20 +57,25 @@ export async function createSchedule(callApi: CallApiFunction, scheduleData: Sch
       vigenteHasta: scheduleData.vigenteHasta || null,
     };
 
-    console.log('📤 Enviando orar a n8n webhook:', normalizedData);
-    console.log('🔗 Webhook URL:', N8N_HORARIOS_WEBHOOK);
+    console.log('📤 Enviando orar a backend:', normalizedData);
+    console.log('🔗 Backend URL:', HORARIOS_BACKEND_URL);
 
-    // Trimite direct la webhook-ul n8n cu metadate (action, executionMode, webhookUrl)
-    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+    // Obține JWT token pentru autentificare
+    const token = localStorage.getItem('auth_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Trimite la backend-ul NestJS
+    const response = await fetch(HORARIOS_BACKEND_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         action: 'create',
         payload: normalizedData,
-        executionMode: 'test',
-        webhookUrl: N8N_HORARIOS_WEBHOOK
       }),
     });
 
@@ -91,7 +99,7 @@ export async function createSchedule(callApi: CallApiFunction, scheduleData: Sch
       };
     }
 
-    console.log('✅ Orar creat cu succes via n8n:', result);
+    console.log('✅ Orar creat cu succes via backend:', result);
     
     return {
       success: true,
@@ -147,17 +155,19 @@ export async function getSchedule(callApi: CallApiFunction, scheduleId: string |
  */
 export async function listSchedules(_callApi: CallApiFunction): Promise<ApiResponse<ScheduleData[]>> {
   try {
-    console.log('📋 Listando orarele via n8n webhook');
+    console.log('📋 Listando orarele via backend');
 
-    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'get',
-        payload: {},
-        executionMode: 'test',
-        webhookUrl: N8N_HORARIOS_WEBHOOK
-      })
+    // Obține JWT token pentru autentificare
+    const token = localStorage.getItem('auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Poți folosi fie GET, fie POST cu action='get'
+    const response = await fetch(HORARIOS_BACKEND_URL, {
+      method: 'GET',
+      headers,
     });
 
     let result: ApiJsonResponse | null = null;
@@ -178,10 +188,20 @@ export async function listSchedules(_callApi: CallApiFunction): Promise<ApiRespo
     console.log('🧾 RAW horarios array:', raw);
 
     // Normalizează răspunsul backend-ului în format unitar pentru UI
-    const toHHMM = (v: string | number | null | undefined): string | null => {
+    const toHHMM = (v: string | number | Date | null | undefined): string | null => {
       if (!v) return null;
-      if (typeof v === 'string' && v.length >= 5) return v.slice(0, 5); // 'HH:MM'
-      return v;
+      if (typeof v === 'string') {
+        // Dacă e string, extrage doar HH:MM
+        if (v.length >= 5) return v.slice(0, 5); // 'HH:MM'
+        return v;
+      }
+      if (v instanceof Date) {
+        // Dacă e Date, extrage doar ora
+        const hours = String(v.getHours()).padStart(2, '0');
+        const minutes = String(v.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+      }
+      return null;
     };
 
     const normalized = raw.map((it: ScheduleApiItem, idx: number) => {
@@ -253,20 +273,25 @@ export async function updateSchedule(callApi: CallApiFunction, scheduleId: strin
 
     console.log('📝 Actualizando orar:', scheduleId, normalizedData);
 
-    // Folosește direct n8n webhook-ul ca createSchedule
-    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+    // Obține JWT token pentru autentificare
+    const token = localStorage.getItem('auth_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Folosește backend-ul NestJS
+    const response = await fetch(HORARIOS_BACKEND_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         action: 'update',
         payload: {
           id: scheduleId,
           ...normalizedData
         },
-        executionMode: 'test',
-        webhookUrl: N8N_HORARIOS_WEBHOOK
       })
     });
 
@@ -300,20 +325,25 @@ export async function deleteSchedule(callApi: CallApiFunction, scheduleId: strin
   try {
     console.log('🗑️ Eliminando orar:', scheduleId, 'desde centro:', centroNombre);
 
-    // Folosește direct n8n webhook-ul
-    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+    // Obține JWT token pentru autentificare
+    const token = localStorage.getItem('auth_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Folosește backend-ul NestJS
+    const response = await fetch(HORARIOS_BACKEND_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         action: 'delete',
         payload: {
           id: scheduleId,
           centroNombre: centroNombre
         },
-        executionMode: 'test',
-        webhookUrl: N8N_HORARIOS_WEBHOOK
       })
     });
 

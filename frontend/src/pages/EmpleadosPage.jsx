@@ -268,6 +268,7 @@ export default function EmpleadosPage() {
   // Loading states centralizate
   const { setOperationLoading, isOperationLoading } = useLoadingState();
   const [editForm, setEditForm] = useState({});
+  const [originalEmployeeData, setOriginalEmployeeData] = useState(null); // Datele originale pentru comparație
   const [showEditModal, setShowEditModal] = useState(false);
 
   // Formulario para añadir empleado
@@ -283,6 +284,7 @@ export default function EmpleadosPage() {
   const [addError, setAddError] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
   const [enviarAGestoria, setEnviarAGestoria] = useState(false);
+  const [enviarAGestoriaEdit, setEnviarAGestoriaEdit] = useState(false); // Pentru modalul de editare
 
   // Estado para dropdowns de centro de trabajo
   const [showCentroDropdown, setShowCentroDropdown] = useState(false);
@@ -971,10 +973,59 @@ export default function EmpleadosPage() {
         fetchHeaders['Authorization'] = `Bearer ${token}`;
       }
 
+      // Construiește body-ul pentru request, incluzând parametrii pentru email
+      const updateBody = { ...editForm };
+      
+      // Dacă trebuie să trimitem email la gestorie, adaugă parametrii necesari
+      if (enviarAGestoriaEdit && originalEmployeeData) {
+        updateBody.enviarAGestoria = 'true';
+        
+        // Compară datele originale cu cele noi pentru a identifica doar câmpurile modificate
+        const camposModificados = [];
+        Object.keys(editForm).forEach(key => {
+          const valorAnterior = originalEmployeeData[key] || '';
+          const valorNuevo = editForm[key] || '';
+          const valAntNormalizado = String(valorAnterior).trim();
+          const valNuevoNormalizado = String(valorNuevo).trim();
+          
+          if (key !== 'CODIGO' && valAntNormalizado !== valNuevoNormalizado) {
+            camposModificados.push({
+              campo: key,
+              valorAnterior: valorAnterior || '(vacío)',
+              valorNuevo: valorNuevo || '(vacío)'
+            });
+          }
+        });
+
+        // Construiește mesajul email
+        let mensajeEmail = `Se ha actualizado la información del empleado:\n\n` +
+                           `Empleado: ${editForm['NOMBRE / APELLIDOS'] || 'N/A'}\n` +
+                           `Código: ${editForm.CODIGO || 'N/A'}\n` +
+                           `Email: ${editForm['CORREO ELECTRONICO'] || 'N/A'}\n\n`;
+        
+        if (camposModificados.length > 0) {
+          mensajeEmail += `Campos actualizados:\n\n`;
+          camposModificados.forEach(campo => {
+            mensajeEmail += `• ${campo.campo}:\n` +
+                           `  - Valor anterior: ${campo.valorAnterior}\n` +
+                           `  - Valor nuevo: ${campo.valorNuevo}\n\n`;
+          });
+        } else {
+          mensajeEmail += `No se detectaron cambios en los campos.\n\n`;
+        }
+        
+        mensajeEmail += `Actualizado por: ${authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema'}\n` +
+                       `Fecha: ${new Date().toLocaleString('es-ES')}`;
+
+        updateBody.emailBody = mensajeEmail;
+        updateBody.emailSubject = `Actualización de datos - ${editForm['NOMBRE / APELLIDOS'] || editForm.CODIGO || 'Empleado'}`;
+        updateBody.updatedBy = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema';
+      }
+
       const response = await fetch(API_ENDPOINTS.UPDATE_USER, {
         method: 'PUT',
         headers: fetchHeaders,
-        body: JSON.stringify(editForm)
+        body: JSON.stringify(updateBody)
       });
 
       if (!response.ok) {
@@ -998,7 +1049,14 @@ export default function EmpleadosPage() {
           updated_by_email: authUser?.email
         });
         
+        // Email-ul la gestorie se trimite automat prin backend dacă enviarAGestoriaEdit este true
+        // Backend-ul verifică parametrul enviarAGestoria în body și trimite email-ul la:
+        // - TO: altemprado@gmail.com (gestoria)
+        // - BCC: info@decaminoservicios.com, mirisjm@gmail.com
+        
         setShowEditModal(false);
+        setEnviarAGestoriaEdit(false); // Reset checkbox după salvare
+        setOriginalEmployeeData(null); // Reset datele originale după salvare
         // Reîncarcă lista după editare
         setTimeout(() => fetchUsers(), 500);
       } else {
@@ -1257,7 +1315,10 @@ export default function EmpleadosPage() {
   };
 
   const openEditModal = (user) => {
-    setEditForm(mapEmployeeRecord(user));
+    const mappedUser = mapEmployeeRecord(user);
+    setEditForm(mappedUser);
+    setOriginalEmployeeData({ ...mappedUser }); // Salvează datele originale pentru comparație
+    setEnviarAGestoriaEdit(false); // Reset checkbox la deschiderea modalului
     setShowEditModal(true);
   };
 
@@ -2856,11 +2917,30 @@ export default function EmpleadosPage() {
               </div>
             </div>
             
+            {/* Checkbox pentru "Enviar a Gestoria" */}
+            <div className="px-6 pb-4 flex items-center justify-center border-t border-gray-200">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enviarAGestoriaEdit}
+                  onChange={(e) => setEnviarAGestoriaEdit(e.target.checked)}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  📧 Enviar a Gestoria
+                </span>
+              </label>
+            </div>
+            
             {/* Footer cu butoane ULTRA MODERN */}
             <div className="flex gap-4 justify-end p-6 border-t border-gray-200 bg-gray-50">
               {/* Buton Cancelar */}
               <button
-                onClick={() => setShowEditModal(false)}
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEnviarAGestoriaEdit(false); // Reset checkbox la închidere
+                  setOriginalEmployeeData(null); // Reset datele originale
+                }}
                 className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-white border-2 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900"
               >
                 <div className="relative flex items-center gap-2">

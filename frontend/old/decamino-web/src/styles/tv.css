@@ -1,0 +1,7 @@
+html[data-mode="tv"] {
+  --tv-safe: 5vmin; 
+}
+
+html[data-mode="tv"] body { 
+  font-size: 18px; 
+}

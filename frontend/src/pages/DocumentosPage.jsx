@@ -214,11 +214,18 @@ export default function DocumentosPage() {
         codigo: authUser?.CODIGO || authUser?.id || 'N/A'
       });
 
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${routes.getNominas}?${queryParams}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers,
       });
 
       if (!response.ok) {
@@ -373,12 +380,19 @@ export default function DocumentosPage() {
       
       console.log('🔍 Final fetch URL:', finalUrl);
       console.log('🔍 Will use proxy?', !finalUrl.includes('https://'));
+
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       
       const response = await fetch(finalUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(requestBody)
       });
 
@@ -527,8 +541,20 @@ export default function DocumentosPage() {
         empleadoEmail: empleadoEmail || 'No disponible',
         url: url
       });
+
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -646,6 +672,48 @@ export default function DocumentosPage() {
         console.log('🔍 ID nómina:', documento.id);
         console.log('🔍 Nombre:', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name);
         console.log('🔍 Parámetros enviados:', { id: documento.id, nombre: authUser?.['NOMBRE / APELLIDOS'] || authUser?.name });
+        
+        // Para nóminas, siempre hacer fetch con headers para obtener blob y crear blob URL local
+        // (iframe no puede enviar headers custom, así que necesitamos blob URL)
+        try {
+          const token = localStorage.getItem('auth_token');
+          const fetchHeaders = {
+            'Accept': 'application/pdf, application/json',
+          };
+          if (token) {
+            fetchHeaders['Authorization'] = `Bearer ${token}`;
+          }
+          
+          console.log('📥 Fetching nómina con headers para crear blob URL...');
+          const response = await fetch(previewUrl, { headers: fetchHeaders });
+          console.log('📥 Respuesta del endpoint PDF:', response);
+          console.log('Status:', response.status);
+          console.log('OK:', response.ok);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ El endpoint no retorna OK:', response.status, errorText);
+            throw new Error(`Error ${response.status}: ${errorText}`);
+          }
+          
+          const blob = await response.blob();
+          console.log('✅ Blob obtenido, tamaño:', blob.size, 'tipo:', blob.type);
+          
+          if (blob.size > 0) {
+            const blobUrl = URL.createObjectURL(blob);
+            console.log('✅ Blob URL creado para nómina:', blobUrl);
+            setPreviewDocument({ ...documento, previewUrl: blobUrl, isPdf: true });
+            setPreviewLoading(false);
+            return; // Salir temprano, ya tenemos el blob URL
+          } else {
+            console.warn('⚠️ Blob vacío, usando URL directa');
+          }
+        } catch (error) {
+          console.error('❌ Error obteniendo blob de nómina:', error);
+          setPreviewError(`Error al cargar la nómina: ${error.message}`);
+          setPreviewLoading(false);
+          return;
+        }
       } else if (
         // Sólo tratar como oficial si viene marcado o si estamos en el tab de oficiales
         documento.esOficial === true || (
@@ -682,6 +750,18 @@ export default function DocumentosPage() {
       console.log('🔍 Documento completo:', documento);
       console.log('🔍 Tipo de documento:', documento.tipo);
       
+      // Helper function pentru a obține headers cu JWT token
+      const getAuthHeaders = () => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Accept': 'application/pdf, application/json, image/*, */*',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+      };
+      
       // Guardar el previewUrl en el documento (se ajusta más abajo para móvil)
       setPreviewDocument({ ...documento, previewUrl });
       
@@ -691,7 +771,13 @@ export default function DocumentosPage() {
         (documento.fileName?.toLowerCase().endsWith('.pdf') || documento?.tipo === 'Nómina' || documento?.isPdf === true)
       ) {
         try {
-          const response = await fetch(previewUrl);
+          // Add JWT token for backend API calls
+          const token = localStorage.getItem('auth_token');
+          const fetchHeaders = {};
+          if (token) {
+            fetchHeaders['Authorization'] = `Bearer ${token}`;
+          }
+          const response = await fetch(previewUrl, { headers: fetchHeaders });
           if (response.ok) {
             const blob = await response.blob();
             const base64 = await blobToBase64(blob);
@@ -708,7 +794,7 @@ export default function DocumentosPage() {
 
       // Para archivos de texto, intentar obtener el contenido
       if (documento.fileName?.toLowerCase().endsWith('.txt')) {
-        const response = await fetch(previewUrl);
+        const response = await fetch(previewUrl, { headers: getAuthHeaders() });
         if (response.ok) {
           const textContent = await response.text();
           setPreviewDocument({ ...documento, content: textContent, previewUrl });
@@ -721,7 +807,7 @@ export default function DocumentosPage() {
       if (documento.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
         console.log('🖼️ Archivo de imagen detectado, creando blob URL local...');
         try {
-          const response = await fetch(previewUrl);
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
           console.log('🔍 Respuesta para imagen:', response.status, response.ok);
           
           if (response.ok) {
@@ -754,7 +840,9 @@ export default function DocumentosPage() {
                     // Si no hay datos útiles en el JSON, intenta obtener el blob directamente forzando Accept: image/*
                     console.log('ℹ️ JSON sin URL. Intentando segundo fetch como imagen...');
                     try {
-                      const imgResponse = await fetch(previewUrl, { headers: { 'Accept': 'image/*' } });
+                      const imgHeaders = getAuthHeaders();
+                      imgHeaders['Accept'] = 'image/*';
+                      const imgResponse = await fetch(previewUrl, { headers: imgHeaders });
                       if (imgResponse.ok) {
                         const imgBlob = await imgResponse.blob();
                         console.log('🔍 Imagen (segundo fetch) blob size:', imgBlob.size, 'type:', imgBlob.type);
@@ -779,7 +867,9 @@ export default function DocumentosPage() {
                   // Respuesta JSON vacía: intentar segundo fetch directamente como imagen
                   console.log('⚠️ Respuesta JSON vacía, intentando segundo fetch como imagen');
                   try {
-                    const imgResponse = await fetch(previewUrl, { headers: { 'Accept': 'image/*' } });
+                    const imgHeaders = getAuthHeaders();
+                    imgHeaders['Accept'] = 'image/*';
+                    const imgResponse = await fetch(previewUrl, { headers: imgHeaders });
                     if (imgResponse.ok) {
                       const imgBlob = await imgResponse.blob();
                       console.log('🔍 Imagen (segundo fetch) blob size:', imgBlob.size, 'type:', imgBlob.type);
@@ -804,7 +894,9 @@ export default function DocumentosPage() {
                 console.error('❌ Error al parsear JSON:', parseError);
                 // Ante error de parseo, intenta segundo fetch como imagen
                 try {
-                  const imgResponse = await fetch(previewUrl, { headers: { 'Accept': 'image/*' } });
+                  const imgHeaders = getAuthHeaders();
+                  imgHeaders['Accept'] = 'image/*';
+                  const imgResponse = await fetch(previewUrl, { headers: imgHeaders });
                   if (imgResponse.ok) {
                     const imgBlob = await imgResponse.blob();
                     console.log('🔍 Imagen (segundo fetch) blob size:', imgBlob.size, 'type:', imgBlob.type);
@@ -864,7 +956,7 @@ export default function DocumentosPage() {
         console.log('🖼️ Archivo de imagen detectado, procesando para iOS...');
         
         try {
-          const response = await fetch(previewUrl);
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
           if (response.ok) {
             const contentType = response.headers.get('content-type');
             console.log('🔍 Content-Type imagen:', contentType);
@@ -893,7 +985,7 @@ export default function DocumentosPage() {
         console.log('📄 Archivo PDF detectado, creando blob URL local...');
         
         try {
-          const response = await fetch(previewUrl);
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
           console.log('🔍 Respuesta del endpoint PDF:', response);
           console.log('🔍 Status:', response.status);
           console.log('🔍 OK:', response.ok);
@@ -994,8 +1086,17 @@ export default function DocumentosPage() {
         nombre: authUser?.['NOMBRE / APELLIDOS'] || authUser?.name 
       });
       
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Accept': 'application/pdf, application/json, */*',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+      
       // Descargar documento
-      const response = await fetch(downloadUrl);
+      const response = await fetch(downloadUrl, { headers: fetchHeaders });
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -1045,6 +1146,18 @@ export default function DocumentosPage() {
       
       console.log('🔍 URL de preview:', previewUrl);
       
+      // Helper function pentru a obține headers cu JWT token
+      const getAuthHeaders = () => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Accept': 'application/pdf, application/json, image/*, */*',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+      };
+      
       setShowPreviewModal(true);
       setPreviewLoading(true);
       setPreviewError(null);
@@ -1053,7 +1166,7 @@ export default function DocumentosPage() {
       if (documento.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
         console.log('🖼️ Archivo de imagen detectado en documento oficial, creando blob URL local...');
         try {
-          const response = await fetch(previewUrl);
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
           console.log('🔍 Respuesta para imagen oficial:', response.status, response.ok);
           
           if (response.ok) {
@@ -1082,9 +1195,61 @@ export default function DocumentosPage() {
           // Fallback: usar URL directa
           setPreviewDocument({ ...documento, previewUrl, esOficial: true });
         }
+      } else if (documento.fileName?.toLowerCase().endsWith('.pdf')) {
+        // Para PDFs oficiales, hacer fetch con headers y crear blob URL local
+        console.log('📄 Archivo PDF oficial detectado, creando blob URL local...');
+        try {
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
+          console.log('🔍 Respuesta para PDF oficial:', response.status, response.ok);
+          
+          if (response.ok) {
+            const contentType = response.headers.get('content-type');
+            console.log('🔍 Content-Type PDF oficial:', contentType);
+            
+            if (contentType && contentType.includes('application/pdf')) {
+              const blob = await response.blob();
+              console.log('🔍 Blob PDF oficial size:', blob.size);
+              
+              if (blob.size > 0) {
+                const blobUrl = URL.createObjectURL(blob);
+                console.log('✅ Blob URL creado para PDF oficial:', blobUrl);
+                setPreviewDocument({ ...documento, previewUrl: blobUrl, esOficial: true, isPdf: true });
+              } else {
+                throw new Error('Blob vacío para PDF oficial');
+              }
+            } else {
+              throw new Error('Content-Type no es PDF para documento oficial');
+            }
+          } else {
+            const errorText = await response.text();
+            console.error('❌ El endpoint no retorna OK para PDF oficial:', response.status, errorText);
+            throw new Error(`Error ${response.status}: ${errorText}`);
+          }
+        } catch (pdfError) {
+          console.error('❌ Error procesando PDF oficial:', pdfError);
+          // Fallback: usar URL directa
+          setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+        }
       } else {
-        // Para PDFs y otros archivos, usar URL directa
-        setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+        // Para otros archivos, hacer fetch con headers y crear blob URL local
+        console.log('📄 Otro tipo de archivo oficial, creando blob URL local...');
+        try {
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
+          if (response.ok) {
+            const blob = await response.blob();
+            if (blob.size > 0) {
+              const blobUrl = URL.createObjectURL(blob);
+              setPreviewDocument({ ...documento, previewUrl: blobUrl, esOficial: true });
+            } else {
+              setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+            }
+          } else {
+            setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+          }
+        } catch (otherError) {
+          console.error('❌ Error procesando otro archivo oficial:', otherError);
+          setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+        }
       }
       
       setPreviewLoading(false);
@@ -1755,8 +1920,15 @@ export default function DocumentosPage() {
                                 nombre: authUser?.['NOMBRE / APELLIDOS'] || authUser?.name 
                               });
                               
+                              // Add JWT token for backend API calls
+                              const token = localStorage.getItem('auth_token');
+                              const fetchHeaders = {};
+                              if (token) {
+                                fetchHeaders['Authorization'] = `Bearer ${token}`;
+                              }
+                              
                               // Descarga directamente
-                              const response = await fetch(downloadUrl);
+                              const response = await fetch(downloadUrl, { headers: fetchHeaders });
                               if (response.ok) {
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
@@ -1940,13 +2112,20 @@ export default function DocumentosPage() {
                                      console.log('  email:', email);
                                      console.log('  downloadUrl:', downloadUrl);
                                      
-                                                                            // Descargar directamente en lugar de abrir en nueva pestaña
+                                                                            // Add JWT token for backend API calls
+                                     const token = localStorage.getItem('auth_token');
+                                     const fetchHeaders = {
+                                       'Accept': 'application/pdf, application/json',
+                                     };
+                                     if (token) {
+                                       fetchHeaders['Authorization'] = `Bearer ${token}`;
+                                     }
+                                     
+                                     // Descargar directamente en lugar de abrir en nueva pestaña
                                      try {
                                        const response = await fetch(downloadUrl, {
                                          method: 'GET',
-                                         headers: {
-                                           'Accept': 'application/pdf, application/json',
-                                         }
+                                         headers: fetchHeaders
                                        });
 
                                        if (response.ok) {
@@ -1987,11 +2166,19 @@ export default function DocumentosPage() {
                                        console.log('  documento.fileName:', documento.fileName);
                                        console.log('  email:', email);
                                        console.log('  downloadUrl:', downloadUrl);
+                                       
+                                       // Add JWT token for backend API calls
+                                       const token = localStorage.getItem('auth_token');
+                                       const fetchHeaders = {
+                                         'Accept': 'application/pdf, application/json',
+                                       };
+                                       if (token) {
+                                         fetchHeaders['Authorization'] = `Bearer ${token}`;
+                                       }
+                                       
                                        const response = await fetch(downloadUrl, {
                                          method: 'GET',
-                                         headers: {
-                                           'Accept': 'application/pdf, application/json',
-                                         }
+                                         headers: fetchHeaders
                                        });
 
                                        if (response.ok) {

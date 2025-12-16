@@ -174,11 +174,19 @@ export const NotificationsProvider = ({ children }) => {
           'Content-Type': 'application/json',
         },
       });
+      
+      // Log acțiunea
+      if (user) {
+        const activityLogger = (await import('../utils/activityLogger')).default;
+        activityLogger.logNotificationRead(notificationId, user).catch(err => 
+          console.error('Error logging notification read:', err)
+        );
+      }
     } catch (error) {
       console.error('❌ [Notifications] Error marking as read:', error);
       // Revert optimistic update dacă e nevoie
     }
-  }, []);
+  }, [user]);
 
   // Marchează toate notificările ca citite
   const markAllAsRead = useCallback(async () => {
@@ -203,10 +211,18 @@ export const NotificationsProvider = ({ children }) => {
           'Content-Type': 'application/json',
         },
       });
+      
+      // Log acțiunea
+      if (user) {
+        const activityLogger = (await import('../utils/activityLogger')).default;
+        activityLogger.logNotificationReadAll(user).catch(err => 
+          console.error('Error logging notification read all:', err)
+        );
+      }
     } catch (error) {
       console.error('❌ [Notifications] Error marking all as read:', error);
     }
-  }, []);
+  }, [user]);
 
   // Șterge o notificare
   const removeNotification = useCallback(async (notificationId) => {
@@ -232,11 +248,19 @@ export const NotificationsProvider = ({ children }) => {
           'Content-Type': 'application/json',
         },
       });
+      
+      // Log acțiunea
+      if (user) {
+        const activityLogger = (await import('../utils/activityLogger')).default;
+        activityLogger.logNotificationDeleted(notificationId, user).catch(err => 
+          console.error('Error logging notification deleted:', err)
+        );
+      }
     } catch (error) {
       console.error('❌ [Notifications] Error deleting notification:', error);
       // Revert optimistic update dacă e nevoie
     }
-  }, [notifications]);
+  }, [notifications, user]);
 
   // Șterge toate notificările
   const clearAll = useCallback(() => {

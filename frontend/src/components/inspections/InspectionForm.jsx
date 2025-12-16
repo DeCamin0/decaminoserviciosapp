@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
+import { useLocation } from '../../contexts/LocationContextBase';
 import { Button, Card, Modal } from '../ui';
 import SignaturePadComponent from '../../shared/components/SignaturePad';
 import PDFViewerAndroid from '../PDFViewerAndroid';
 import { routes } from '../../utils/routes';
 import { isDemoMode } from '../../utils/demo';
+import activityLogger from '../../utils/activityLogger';
 import { 
   Document, 
   Page, 
@@ -326,6 +328,7 @@ const getDemoEmpleados = () => [
 const InspectionForm = ({ type }) => {
   const { user } = useAuth();
   const { t } = useTranslation();
+  const { getCurrentLocation, getAddressFromCoords } = useLocation();
   const [formData, setFormData] = useState({
     nr: '',
     data: new Date().toISOString().split('T')[0],
@@ -439,84 +442,78 @@ const InspectionForm = ({ type }) => {
     return `${typePrefix}-${timestamp}`;
   }, [type]);
 
-  // Funcție pentru obținerea geolocației în timp real
-  const getCurrentLocation = () => {
+  // Funcție pentru obținerea geolocației în timp real folosind contextul global
+  const handleGetCurrentLocation = async () => {
     setLocationLoading(true);
     setLocationError('');
 
-    if (!navigator.geolocation) {
-      setLocationError('Geolocalización no soportada en este navegador');
-      setLocationLoading(false);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const { latitude, longitude } = position.coords;
+    try {
+      const coords = await getCurrentLocation();
+      const { latitude, longitude } = coords;
           
-          // Încearcă să obțină adresa din coordonatele GPS
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
-          );
-          
-          if (response.ok) {
-            const data = await response.json();
-            const address = data.display_name || `${latitude}, ${longitude}`;
+      // Încearcă să obțină adresa din coordonatele GPS folosind funcția din context
+      try {
+        const address = await getAddressFromCoords(latitude, longitude);
+        const fullAddress = address || `${latitude}, ${longitude}`;
             
             setFormData(prev => ({
               ...prev,
-              locatie: `${address} (GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)})`
+          locatie: `${fullAddress} (GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)})`
             }));
-          } else {
-            // Fallback la coordonatele GPS
-            setFormData(prev => ({
-              ...prev,
-              locatie: `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            }));
-          }
+        setLocationError(''); // Clear any previous error
         } catch (error) {
           console.error('Error getting address:', error);
           // Fallback la coordonatele GPS
-          const { latitude, longitude } = position.coords;
           setFormData(prev => ({
             ...prev,
             locatie: `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
           }));
+        setLocationError(''); // Clear error since we have coordinates
         }
         
         setLocationLoading(false);
-      },
-      (error) => {
+      setLocationError(''); // Clear any previous error
+    } catch (error) {
         console.error('Error getting location:', error);
         let errorMessage = 'Error al obtener la ubicación';
         
+      if (error.code !== undefined) {
+        // Check for GeolocationPositionError codes (1, 2, 3)
         switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage = 'Permiso de ubicación denegado';
+          case 1: // PERMISSION_DENIED
+            errorMessage = 'Permiso de ubicación denegado. Por favor permite el acceso en la configuración del navegador.';
             break;
-          case error.POSITION_UNAVAILABLE:
+          case 2: // POSITION_UNAVAILABLE
             errorMessage = 'Información de ubicación no disponible';
             break;
-          case error.TIMEOUT:
-            errorMessage = 'Tiempo de espera agotado';
+          case 3: // TIMEOUT
+            errorMessage = 'Tiempo de espera agotado. Por favor intenta de nuevo.';
             break;
           default:
             errorMessage = 'Error desconocido al obtener ubicación';
         }
+      } else if (error.message) {
+        errorMessage = error.message;
+        }
         
         setLocationError(errorMessage);
         setLocationLoading(false);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000
-      }
-    );
+      
+      // Set error message in form location field
+      setFormData(prev => ({
+        ...prev,
+        locatie: errorMessage
+      }));
+    }
   };
 
-
+  // Obține locația automat când se deschide formularul (la mount)
+  // Deschiderea formularului este considerată un "user gesture" valid
+  useEffect(() => {
+    // Obține locația automat când componenta se montează
+    handleGetCurrentLocation();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty dependency array - only run once on mount
 
   // Funcție pentru retry cu backoff
   const fetchWithRetry = async (url, options, maxRetries = 3) => {
@@ -1213,17 +1210,24 @@ const InspectionForm = ({ type }) => {
         value === undefined ? undefined : value
       ));
 
-      // Trimite totul ca JSON simplu cu header-uri speciale
-      const response = await fetchWithRetry(routes.addInspeccion, {
-        method: 'POST',
-        headers: {
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-App-Source': 'DeCamino-Web-App',
           'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
           'X-Client-Type': 'web-browser',
           'User-Agent': 'DeCamino-Web-Client/1.0'
-        },
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Trimite totul ca JSON simplu cu header-uri speciale
+      const response = await fetchWithRetry(routes.addInspeccion, {
+        method: 'POST',
+        headers: fetchHeaders,
         body: JSON.stringify(cleanPayload)
       });
 
@@ -1231,6 +1235,20 @@ const InspectionForm = ({ type }) => {
           // const responseText = await response.text();
         
         setSuccess(true);
+        
+        // Log inspeccion created
+        if (user) {
+          activityLogger.logInspeccionCreated(
+            {
+              tipo: formData.tipo || type,
+              fecha: formData.data,
+              inspector: formData.inspector?.nume || user['NOMBRE / APELLIDOS'] || '',
+              ubicacion: formData.ubicacion || '',
+            },
+            user
+          );
+        }
+        
         resetForm();
         setShowPdfPreview(false);
         setPdfPreviewData(null);
@@ -1543,7 +1561,7 @@ const InspectionForm = ({ type }) => {
                 }`}
               />
               <button
-                onClick={getCurrentLocation}
+                onClick={handleGetCurrentLocation}
                 disabled={locationLoading}
                 className="group relative px-4 sm:px-6 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden w-full sm:w-auto"
                 style={{

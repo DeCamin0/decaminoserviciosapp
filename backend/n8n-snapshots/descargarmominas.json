@@ -1,0 +1,142 @@
+{
+  "name": "descargarmominas",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "93c7df81-4765-4e68-b005-c6a268821e39",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ca52fee4-f274-40b8-9983-204ff0eb4c59",
+      "name": "Webhook Descargar Documento",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        -32
+      ],
+      "webhookId": "93c7df81-4765-4e68-b005-c6a268821e39"
+    },
+    {
+      "parameters": {
+        "jsCode": "const q = $json.query || {};\nconst id = Number(q.id);\nconst nombre = (q.nombre ?? '').toString().trim();\nif (!Number.isFinite(id)) throw new Error(`Param \"id\" invalid: ${q.id}`);\nif (!nombre) throw new Error('Param \"nombre\" lipsă.');\n\nfunction sql(v) {\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\nconst query = `\nSELECT\n  id,\n  nombre,\n  archivo,\n  tipo_mime,\n  fecha_subida,\n  Mes,\n  Ano\nFROM Nominas\nWHERE id = ${id}\n  AND LOWER(nombre) = LOWER(${sql(nombre)})\nLIMIT 1;\n`.trim();\n\nreturn [{ json: { query } }];"
+      },
+      "id": "025c0183-ee74-420f-93dc-abcd21dd2955",
+      "name": "Generar SQL Descargar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -32
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "id": "8d55f708-32bf-4b38-b7f1-835f658e89a7",
+      "name": "MySQL Descargar Documento",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -32
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = items[0]?.json;\nif (!row) throw new Error('Nu am primit niciun rând din MySQL.');\nif (row.archivo == null) throw new Error('Coloana \"archivo\" lipsește.');\n\nfunction toBase64(v) {\n  if (typeof v === 'string') return v;                       // dacă vine deja base64\n  if (Buffer.isBuffer(v)) return v.toString('base64');       // Buffer -> b64\n  if (v?.type === 'Buffer' && Array.isArray(v.data)) return Buffer.from(v.data).toString('base64');\n  throw new Error('Format necunoscut pentru \"archivo\".');\n}\n\nconst b64 = toBase64(row.archivo);\nconst fileName = row.file_name || (row.nombre ? `${row.nombre}.pdf` : 'documento.pdf');\nconst mime = row.tipo_mime || 'application/pdf';\n\nreturn [{\n  binary: {\n    data: {\n      data: b64,\n      mimeType: mime,\n      fileName: fileName,\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -32
+      ],
+      "id": "90457a3a-fbe9-4cb9-8ec9-753bdd8407b6",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        608,
+        -32
+      ],
+      "id": "8e5987e1-d94c-4618-82da-d935ba8c4feb",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Descargar Documento": {
+      "main": [
+        [
+          {
+            "node": "Generar SQL Descargar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar SQL Descargar": {
+      "main": [
+        [
+          {
+            "node": "MySQL Descargar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL Descargar Documento": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "69cab3be-12cd-427c-aadb-1472b3f10294",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "85SnMVnIVLaY8vmJ",
+  "tags": []
+}

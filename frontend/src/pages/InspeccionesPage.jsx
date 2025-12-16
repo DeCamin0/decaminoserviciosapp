@@ -19,7 +19,8 @@ export default function InspeccionesPage() {
   });
 
   // Verific dacă utilizatorul este supervisor
-  const isSupervisor = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isSupervisor = authUser?.isManager || false;
 
   // Demo data for InspeccionesPage
   const setDemoCentrosStats = () => {
@@ -506,6 +507,18 @@ function RecentInspections() {
       if (response.ok) {
         const apiInspections = await response.json();
         console.log('✅ API Inspections received:', apiInspections);
+        
+        // Verificăm dacă este array sau un obiect cu status
+        if (!Array.isArray(apiInspections)) {
+          if (apiInspections.status === 'not-modified') {
+            console.log('📋 No changes in inspections (not-modified)');
+            // Nu actualizăm lista dacă nu sunt modificări
+            return;
+          }
+          console.warn('⚠️ Unexpected API response format:', apiInspections);
+          setInspections([]);
+          return;
+        }
         
         // Mapare date pentru noul endpoint
         const mappedInspections = apiInspections.map(inspection => ({

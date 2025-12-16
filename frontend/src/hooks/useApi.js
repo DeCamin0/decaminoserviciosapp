@@ -10,15 +10,33 @@ export const useApi = () => {
 
     try {
       console.log('useApi calling:', url);
+      
+      // Construiește headers-urile de bază
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+        ...options.headers,
+      };
+
+      // Adaugă JWT token pentru endpoint-uri backend (/api/*)
+      // Sau URL-uri care conțin 'localhost:3000/api' sau 'api.decaminoservicios.com/api'
+      const isBackendEndpoint = 
+        url.includes('/api/') || 
+        url.includes('localhost:3000/api') || 
+        url.includes('api.decaminoservicios.com/api');
+      
+      if (isBackendEndpoint) {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      }
+
       const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0',
-          ...options.headers,
-        },
+        headers,
         ...options,
       });
 

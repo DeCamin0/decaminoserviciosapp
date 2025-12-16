@@ -1,0 +1,94 @@
+{
+  "name": "15 - extraerinspecionesempleado",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "e1590f70-8beb-4c9c-a04c-65fb4d571c90",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "e6c45b54-070d-4f1d-b091-63c863fef670",
+      "name": "Webhook Get Documentos",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "e1590f70-8beb-4c9c-a04c-65fb4d571c90"
+    },
+    {
+      "parameters": {
+        "jsCode": "const codigo = $json[\"query\"][\"codigo_empleado\"];\n\nconst query = `\nSELECT \n  id,\n  tipo_inspeccion,\n  codigo_empleado,\n  nombre_empleado,\n  archivo,\n  nombre_archivo,\n  fecha_subida,\n  \\`Nombre Supervisor\\`,\n  Centro,\n  Locacion\nFROM InspeccionesDocumentos\nWHERE codigo_empleado = '${codigo}'\nORDER BY fecha_subida DESC\n`;\n\nreturn [{ json: { query } }];\n"
+      },
+      "id": "79a68bf2-b95d-4641-9cea-52e44133b087",
+      "name": "Generar SQL Get",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "id": "f12f6617-0d31-428c-9f1a-867ae87eabab",
+      "name": "MySQL Get Documentos",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Get Documentos": {
+      "main": [
+        [
+          {
+            "node": "Generar SQL Get",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar SQL Get": {
+      "main": [
+        [
+          {
+            "node": "MySQL Get Documentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "8f729dd1-f200-4344-b2bf-11f6ce4ffe25",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "Ab1zHcgrNdRVJubd",
+  "tags": []
+}

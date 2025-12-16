@@ -339,7 +339,8 @@ export default function CuadrantesPage() {
   const [progress, setProgress] = useState({ current: 0, total: 0, message: '' });
 
   const emailLogat = authUser?.['CORREO ELECTRONICO'] || '';
-  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = authUser?.isManager || false;
 
   const festivosToDisplay = useMemo(() => {
     const monthFilter =

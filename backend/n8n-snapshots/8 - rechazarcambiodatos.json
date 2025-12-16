@@ -1,0 +1,107 @@
+{
+  "name": "8 - rechazarcambiodatos",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "rechazada-a2c3f9cb0ffd",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "d0f541a4-27b9-478f-90f4-bb55ac331273",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        -144
+      ],
+      "webhookId": "3b5947ec-f13d-4f0c-ae60-d3e7c3279540"
+    },
+    {
+      "parameters": {
+        "fromEmail": "DE CAMINO Servicios Auxiliares SL <info@decaminoservicios.com>",
+        "toEmail": "={{ $node[\"Webhook\"].json[\"query\"][\"email\"] }}",
+        "subject": "Tu solicitud de cambio ha sido rechazada",
+        "html": "=<p>¡Hola!</p>\n\n<p>\n  Tu solicitud para modificar el campo <strong>“{{ $node[\"Webhook\"].json[\"query\"][\"campo\"] }}”</strong>.<br>, ha sido rechazada.\n  </p>\n\n<p>Gracias,<br>\nEquipo de Recursos Humanos</p>\nDE CAMINO Servicios Auxiliares SL</p>\n",
+        "options": {
+          "bccEmail": "info@decaminoservicios.com"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        304,
+        -144
+      ],
+      "id": "658f4ecb-e0fa-4778-b388-06f41d73770b",
+      "name": "Send email",
+      "webhookId": "4cdae820-2296-4ea4-94e8-ce4e36fccdc1",
+      "credentials": {
+        "smtp": {
+          "id": "YI5EGZepkumfxgE7",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM `SolicitudesCambiosPersonales`\nWHERE `id` = '{{$json.query.id}}'\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        96,
+        -144
+      ],
+      "id": "41a096cc-b28c-4243-8163-c6dd34c1f824",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "bb43db5d-167d-453b-aca6-8cddf5793c7b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "FdI5hupWPLW9vXbW",
+  "tags": []
+}

@@ -1,0 +1,340 @@
+// Serviciu API pentru gestionarea orarelor prin callApi (consistent cu restul aplicației)
+import { ScheduleData } from '../types/schedule';
+
+// URL-ul pentru webhook-ul n8n pentru orare (PRODUCCIÓN)
+const N8N_HORARIOS_WEBHOOK = 'https://n8n.decaminoservicios.com/webhook/orar/36c95b72-cc22-4783-a749-521bdb666a58';
+
+// Interface pentru callApi function
+interface CallApiFunction {
+  (endpoint: string, data?: any): Promise<any>;
+}
+
+// Interface pentru răspuns API
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
+// Interface pentru răspuns JSON din API
+interface ApiJsonResponse {
+  success?: boolean;
+  data?: any;
+  error?: string;
+  message?: string;
+  [key: string]: any; // Pentru alte proprietăți dinamic
+}
+
+// Interface pentru orar din API
+interface ScheduleApiItem {
+  id: number;
+  centro: string;
+  vigenteDesde?: string;
+  vigenteHasta?: string;
+  lunes?: string;
+  martes?: string;
+  miercoles?: string;
+  jueves?: string;
+  viernes?: string;
+  sabado?: string;
+  domingo?: string;
+  [key: string]: any; // Pentru alte proprietăți dinamic
+}
+
+/**
+ * Creează un orar nou prin webhook n8n
+ */
+export async function createSchedule(callApi: CallApiFunction, scheduleData: ScheduleData): Promise<ApiResponse<ScheduleData>> {
+  try {
+    // Normalizează stringurile goale la null
+    const normalizedData: ScheduleData = {
+      ...scheduleData,
+      vigenteDesde: scheduleData.vigenteDesde || null,
+      vigenteHasta: scheduleData.vigenteHasta || null,
+    };
+
+    console.log('📤 Enviando orar a n8n webhook:', normalizedData);
+    console.log('🔗 Webhook URL:', N8N_HORARIOS_WEBHOOK);
+
+    // Trimite direct la webhook-ul n8n cu metadate (action, executionMode, webhookUrl)
+    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'create',
+        payload: normalizedData,
+        executionMode: 'test',
+        webhookUrl: N8N_HORARIOS_WEBHOOK
+      }),
+    });
+
+    // Încearcă să parsezi JSON-ul chiar și pe erori 4xx/5xx pentru a extrage mesajul backend-ului
+    let result: ApiJsonResponse | null = null;
+    try {
+      result = await response.json();
+    } catch (_) {
+      // Ignoră dacă nu e JSON
+    }
+
+    const messageFromBackend = result?.message || result?.msg || result?.error;
+
+    if (!response.ok) {
+      const errorMessage = messageFromBackend || `HTTP ${response.status}: ${response.statusText}`;
+      return {
+        success: false,
+        data: result || undefined,
+        error: errorMessage,
+        message: errorMessage
+      };
+    }
+
+    console.log('✅ Orar creat cu succes via n8n:', result);
+    
+    return {
+      success: true,
+      data: result,
+      message: messageFromBackend || 'Horario creado'
+    };
+
+  } catch (error) {
+    console.error('❌ Eroare la crearea orarului:', error);
+    
+    const humanMessage = 'No se pudo conectar con el servidor (Failed to fetch)';
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : humanMessage,
+      message: humanMessage
+    };
+  }
+}
+
+/**
+ * Obține un orar existent prin callApi
+ */
+export async function getSchedule(callApi: CallApiFunction, scheduleId: string | number): Promise<ApiResponse<ScheduleData>> {
+  try {
+    console.log('📥 Obținând orarul:', scheduleId);
+
+    const result = await callApi({
+      action: 'get',
+      table: 'horarios',
+      id: scheduleId
+    });
+    
+    console.log('✅ Orar obținut cu succes:', result);
+    
+    return {
+      success: true,
+      data: result,
+      message: 'Orar obținut cu succes'
+    };
+
+  } catch (error) {
+    console.error('❌ Eroare la obținerea orarului:', error);
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Eroare necunoscută la obținerea orarului'
+    };
+  }
+}
+
+/**
+ * Lista toate orarele prin callApi
+ */
+export async function listSchedules(_callApi: CallApiFunction): Promise<ApiResponse<ScheduleData[]>> {
+  try {
+    console.log('📋 Listando orarele via n8n webhook');
+
+    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'get',
+        payload: {},
+        executionMode: 'test',
+        webhookUrl: N8N_HORARIOS_WEBHOOK
+      })
+    });
+
+    let result: ApiJsonResponse | null = null;
+    try { result = await response.json(); } catch (_) {}
+    console.log('📦 RAW horarios response:', result);
+
+    const messageFromBackend = result?.message || result?.msg || result?.error;
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: messageFromBackend || `HTTP ${response.status}: ${response.statusText}`,
+        message: messageFromBackend
+      };
+    }
+
+    const raw = Array.isArray(result?.data) ? result.data : (Array.isArray(result) ? result : []);
+    console.log('🧾 RAW horarios array:', raw);
+
+    // Normalizează răspunsul backend-ului în format unitar pentru UI
+    const toHHMM = (v: string | number | null | undefined): string | null => {
+      if (!v) return null;
+      if (typeof v === 'string' && v.length >= 5) return v.slice(0, 5); // 'HH:MM'
+      return v;
+    };
+
+    const normalized = raw.map((it: ScheduleApiItem, idx: number) => {
+      // Hărți pentru zile (ro -> sp/keys L..D dacă vom extinde pe viitor)
+      const mapDay = (prefix: string) => ({
+        in1: toHHMM(it[`${prefix}_in1`]), out1: toHHMM(it[`${prefix}_out1`]),
+        in2: toHHMM(it[`${prefix}_in2`]), out2: toHHMM(it[`${prefix}_out2`]),
+        in3: toHHMM(it[`${prefix}_in3`]), out3: toHHMM(it[`${prefix}_out3`])
+      });
+
+      const days = {
+        L: mapDay('lun'), // posibil să nu existe în toate payload-urile; e ok dacă e undefined
+        M: mapDay('mar'),
+        X: mapDay('mie'),
+        J: mapDay('joi'),
+        V: mapDay('vin'),
+        S: mapDay('sam'),
+        D: mapDay('dum')
+      };
+
+      const totalMinutes = it.total_minutos_semanales ?? it.totalMinutes ?? null;
+      const totalHours = it.total_horas_semanales ?? (typeof totalMinutes === 'number' ? Number((totalMinutes / 60).toFixed(2)) : null);
+
+      return {
+        id: it.id || it._id || idx,
+        nombre: it.nombre || it.name || '-',
+        centroNombre: it.centro_nombre || it.centroNombre || it.centro || it.centroId || '-',
+        grupoNombre: it.grupo_nombre || it.grupoNombre || it.grupo || it.grupoId || '-',
+        vigenteDesde: it.vigente_desde || it.vigenteDesde || it.desde || null,
+        vigenteHasta: it.vigente_hasta || it.vigenteHasta || it.hasta || null,
+        createdAt: it.created_at || it.createdAt || null,
+        totalWeekMinutes: totalMinutes,
+        totalWeekHours: totalHours,
+        entryMarginMinutes: it.entry_margin_minutes ?? it.entryMarginMinutes ?? null,
+        exitMarginMinutes: it.exit_margin_minutes ?? it.exitMarginMinutes ?? null,
+        weeklyBreakMinutes: it.weekly_break_minutes ?? it.weeklyBreakMinutes ?? null,
+        days
+      } as any;
+    });
+
+    return {
+      success: true,
+      data: normalized as any,
+      message: messageFromBackend || 'Orarele obținute cu succes'
+    };
+
+  } catch (error) {
+    console.error('❌ Eroare la obținerea orarelor:', error);
+    const humanMessage = 'No se pudo conectar con el servidor (Failed to fetch)';
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : humanMessage,
+      message: humanMessage
+    };
+  }
+}
+
+/**
+ * Actualizează un orar prin callApi
+ */
+export async function updateSchedule(callApi: CallApiFunction, scheduleId: string | number, scheduleData: ScheduleData): Promise<ApiResponse<ScheduleData>> {
+  try {
+    // Normalizează stringurile goale la null
+    const normalizedData: ScheduleData = {
+      ...scheduleData,
+      vigenteDesde: scheduleData.vigenteDesde || null,
+      vigenteHasta: scheduleData.vigenteHasta || null,
+    };
+
+    console.log('📝 Actualizando orar:', scheduleId, normalizedData);
+
+    // Folosește direct n8n webhook-ul ca createSchedule
+    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'update',
+        payload: {
+          id: scheduleId,
+          ...normalizedData
+        },
+        executionMode: 'test',
+        webhookUrl: N8N_HORARIOS_WEBHOOK
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Orar actualizat cu succes:', result);
+    
+    return {
+      success: true,
+      data: result,
+      message: 'Orar actualizat cu succes'
+    };
+
+  } catch (error) {
+    console.error('❌ Eroare la actualizarea orarului:', error);
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Eroare necunoscută la actualizarea orarului'
+    };
+  }
+}
+
+/**
+ * Șterge un orar prin n8n webhook direct (cu verificare ID + Centro)
+ */
+export async function deleteSchedule(callApi: CallApiFunction, scheduleId: string | number, centroNombre: string): Promise<ApiResponse<null>> {
+  try {
+    console.log('🗑️ Eliminando orar:', scheduleId, 'desde centro:', centroNombre);
+
+    // Folosește direct n8n webhook-ul
+    const response = await fetch(N8N_HORARIOS_WEBHOOK, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'delete',
+        payload: {
+          id: scheduleId,
+          centroNombre: centroNombre
+        },
+        executionMode: 'test',
+        webhookUrl: N8N_HORARIOS_WEBHOOK
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Orar eliminat cu succes:', result);
+
+    return {
+      success: true,
+      data: null,
+      message: (result && (result.message || result.msg)) || 'Horario eliminado'
+    };
+  } catch (error) {
+    console.error('❌ Eroare la eliminarea orarului:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Eroare necunoscută la eliminare'
+    };
+  }
+}
+

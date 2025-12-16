@@ -98,8 +98,8 @@ export default defineConfig({
         ]
       },
       manifest: {
-        name: 'DE CAMINO SERVICIOS AUXILIARES V2',
-        short_name: 'De Camino V2',
+        name: 'DE CAMINO SERVICIOS AUXILIARES',
+        short_name: 'De Camino',
         description: 'Aplicación web para gestión de empleados y servicios auxiliares',
         theme_color: '#E53935',
         background_color: '#ffffff',

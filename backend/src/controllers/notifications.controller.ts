@@ -151,8 +151,8 @@ export class NotificationsController {
 
     await this.notificationsService.notifyUser(user.userId, user.userId, {
       type: 'info',
-      title: 'Notificare de test',
-      message: `Salut ${user.email}! Aceasta este o notificare de test.`,
+      title: 'Notificación de prueba',
+      message: `¡Hola ${user.email}! Esta es una notificación de prueba.`,
       data: testData,
     });
 

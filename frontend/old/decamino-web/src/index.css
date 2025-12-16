@@ -1,0 +1,878 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* PWA Update Animation */
+/* Global text-size-adjust compatibility fix (ensures scanners see the standard prop) */
+html, :host {
+  text-size-adjust: 100% !important;
+  -webkit-text-size-adjust: 100% !important;
+  -ms-text-size-adjust: 100% !important;
+}
+
+/* Fix: avoid unsupported `-webkit-line-clamp: none`; fully reset clamping */
+.line-clamp-none,
+.sm\:line-clamp-none {
+  -webkit-line-clamp: initial !important;
+  line-clamp: initial !important;
+  display: block !important;
+  overflow: visible !important;
+  -webkit-box-orient: initial !important;
+}
+
+/* Cross-browser custom scrollbar (Safari fallback for `scrollbar-color`) */
+.custom-scrollbar {
+  /* Firefox */
+  scrollbar-color: #e53e3e #f7fafc;
+  scrollbar-width: thin;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f7fafc;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #e53e3e;
+  border-radius: 9999px;
+  border: 2px solid #f7fafc;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #c53030;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* ULTRA WOW Animations for Documentos Empleados */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+@keyframes scale-in {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* Hide scrollbar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fix pentru Tailwind CSS preflight - suprascrie -webkit-text-size-adjust */
+@layer base {
+  html, :host {
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
+
+@layer base {
+  /* Tipografie fluidă de bază */
+  html { 
+    font-size: 100%; 
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    /* Fix pentru Edge - asigură că fontul se încarcă corect */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Fix pentru text-size-adjust - suport pentru toate browserele */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  
+  h1 { font-size: clamp(1.5rem, 2vw + 1rem, 2.25rem); }
+  h2 { font-size: clamp(1.25rem, 1.5vw + 0.9rem, 1.75rem); }
+  h3 { font-size: clamp(1.125rem, 1vw + 0.85rem, 1.5rem); }
+  p, li, input, button { font-size: clamp(1rem, 0.4vw + 0.9rem, 1.125rem); }
+  
+  body {
+    @apply text-gray-900;
+    background: linear-gradient(135deg, rgb(254 242 242) 0%, rgb(255 255 255) 50%, rgb(254 226 226) 100%);
+    min-height: 100vh;
+    position: relative;
+    /* Fix pentru Edge - asigură că layout-ul se afișează corect */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  
+  /* Fundal elegant cu pattern și elemente decorative */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='https://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23E53935' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: 0.5;
+    z-index: -2;
+    pointer-events: none;
+  }
+  
+  /* Elemente decorative pentru fundal */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: 
+      radial-gradient(circle at 20% 20%, rgba(239, 68, 68, 0.2) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(239, 68, 68, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 50% 10%, rgba(239, 68, 68, 0.1) 0%, transparent 50%);
+    z-index: -1;
+    pointer-events: none;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+  
+  .card {
+    @apply bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-6 border border-white/20;
+    /* Fix pentru Safari - adaugă prefix webkit pentru backdrop-filter */
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+  
+  /* Glassmorphism pentru componente */
+  .glass-card {
+    @apply bg-white/90 backdrop-blur-md rounded-xl shadow-xl border border-white/30;
+    /* Fix pentru Edge și Safari - fallback pentru backdrop-blur */
+    background-color: rgba(255, 255, 255, 0.9);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  
+  /* Fix pentru browsere care nu suportă backdrop-filter */
+  @supports not (backdrop-filter: blur(12px)) {
+    .glass-card {
+      background-color: rgba(255, 255, 255, 0.95);
+    }
+  }
+  
+  /* Fix pentru Safari - suport pentru toate backdrop-filter-urile */
+  @supports (-webkit-backdrop-filter: blur(12px)) {
+    .card {
+      -webkit-backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
+      backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
+    }
+    .glass-card {
+      -webkit-backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
+      backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
+    }
+  }
+
+  /* Utilities pentru text truncation */
+  .line-clamp-1 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+  
+  .line-clamp-2 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  
+  .line-clamp-3 {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  /* Stiluri pentru inspecții */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 focus:ring-gray-500;
+  }
+
+  .btn-outline {
+    @apply border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-primary-500;
+  }
+
+  .input {
+    @apply block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200;
+  }
+
+  .card-header {
+    @apply px-6 py-4 border-b border-gray-200;
+  }
+
+  .card-body {
+    @apply px-6 py-4;
+  }
+
+  /* Custom scrollbar styles */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #e53e3e #f7fafc;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #f7fafc;
+    border-radius: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e53e3e;
+    border-radius: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #c53030;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-corner {
+    background: #f7fafc;
+  }
+
+  /* Print styles pentru A4 layout */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  @media print {
+    .page {
+      padding: 20mm 15mm;
+      print-color-adjust: exact;
+    }
+
+    .print-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #000;
+      padding-bottom: 10px;
+    }
+
+    .print-footer {
+      margin-top: 20px;
+      padding-top: 10px;
+      border-top: 1px solid #ccc;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .page-number::after {
+      content: counter(page);
+    }
+
+    .page-number::before {
+      content: counter(pages);
+    }
+  }
+
+  /* Google Maps Marker Labels - doar pentru markeri */
+  .marker-label {
+    background-color: #dc2626 !important;
+    color: white !important;
+    border: 5px solid white !important;
+    border-radius: 12px !important;
+    padding: 10px 20px !important;
+    font-size: 17px !important;
+    font-weight: 900 !important;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6) !important;
+    text-shadow: 0 4px 8px rgba(0,0,0,0.8) !important;
+    max-width: 320px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    letter-spacing: 1.2px !important;
+    line-height: 1.4 !important;
+  }
+}
+
+/* Animații personalizate */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Moduri de interacțiune (setate din index.html sau hook) */
+@layer utilities {
+  html[data-mode="touch"] .hover-only { display: none !important; }
+  html[data-mode="tv"] .hide-on-tv { display: none !important; }
+  .tv-safe { padding: var(--tv-safe, 0); }
+  .hit-44 { min-width: 44px; min-height: 44px; }
+  .hit-64 { min-width: 64px; min-height: 64px; }
+  
+  /* Fix-uri specifice pentru Edge */
+  .edge-flex-fix {
+    display: -ms-flexbox;
+    display: flex;
+  }
+  
+  .edge-grid-fix {
+    display: -ms-grid;
+    display: grid;
+  }
+  
+  /* Fix pentru Edge - asigură că elementele se afișează corect */
+  .edge-text-fix {
+    -ms-word-wrap: break-word;
+    word-wrap: break-word;
+    -ms-hyphens: auto;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+  
+  /* Fix-uri globale pentru compatibilitate browsere */
+  
+  /* Forțează display properties pentru toate browserele */
+  .grid {
+    display: -webkit-grid !important;
+    display: -ms-grid !important;
+    display: grid !important;
+  }
+  
+  .flex {
+    display: -webkit-box !important;
+    display: -webkit-flex !important;
+    display: -ms-flexbox !important;
+    display: flex !important;
+  }
+  
+  /* Fix pentru grid gaps în Opera și Edge */
+  .gap-3 {
+    gap: 0.75rem;
+    grid-gap: 0.75rem;
+  }
+  
+  .gap-4 {
+    gap: 1rem;
+    grid-gap: 1rem;
+  }
+  
+  .gap-6 {
+    gap: 1.5rem;
+    grid-gap: 1.5rem;
+  }
+  
+  /* Fix pentru grid columns în Opera și Edge */
+  .grid-cols-1 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    -ms-grid-columns: 1fr;
+  }
+  
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    -ms-grid-columns: 1fr 1fr;
+  }
+  
+  .grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    -ms-grid-columns: 1fr 1fr 1fr;
+  }
+  
+  .grid-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    -ms-grid-columns: 1fr 1fr 1fr 1fr;
+  }
+  
+  .grid-cols-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    -ms-grid-columns: 1fr 1fr 1fr 1fr 1fr;
+  }
+  
+  /* Responsive grid fixes pentru Opera și Edge */
+  @media (min-width: 640px) {
+    .sm\\:grid-cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr !important;
+    }
+    
+    .sm\\:grid-cols-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr 1fr !important;
+    }
+  }
+  
+  @media (min-width: 768px) {
+    .md\\:grid-cols-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr 1fr !important;
+    }
+    
+    .md\\:grid-cols-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr 1fr 1fr !important;
+    }
+  }
+  
+  @media (min-width: 1024px) {
+    .lg\\:grid-cols-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr 1fr 1fr !important;
+    }
+    
+    .lg\\:grid-cols-5 {
+      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr 1fr 1fr 1fr !important;
+    }
+  }
+  
+  @media (min-width: 1280px) {
+    .xl\\:grid-cols-5 {
+      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+      -ms-grid-columns: 1fr 1fr 1fr 1fr 1fr !important;
+    }
+  }
+  
+  /* Fix pentru flex properties */
+  .items-center {
+    -webkit-box-align: center !important;
+    -ms-flex-align: center !important;
+    align-items: center !important;
+  }
+  
+  .justify-center {
+    -webkit-box-pack: center !important;
+    -ms-flex-pack: center !important;
+    justify-content: center !important;
+  }
+  
+  .justify-between {
+    -webkit-box-pack: justify !important;
+    -ms-flex-pack: justify !important;
+    justify-content: space-between !important;
+  }
+  
+  .flex-1 {
+    -webkit-box-flex: 1 !important;
+    -ms-flex: 1 1 0% !important;
+    flex: 1 1 0% !important;
+  }
+  
+  .flex-shrink-0 {
+    -ms-flex-negative: 0 !important;
+    flex-shrink: 0 !important;
+  }
+  
+  /* Fix pentru space-y în Opera și Edge */
+  .space-y-4 > * + * {
+    margin-top: 1rem !important;
+  }
+  
+  .space-y-6 > * + * {
+    margin-top: 1.5rem !important;
+  }
+  
+  /* Fix pentru backdrop-blur în Opera și Edge */
+  .backdrop-blur-sm {
+    -webkit-backdrop-filter: blur(4px) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+  
+  /* Fallback pentru browsere fără backdrop-filter */
+  @supports not (backdrop-filter: blur(4px)) {
+    .backdrop-blur-sm {
+      background-color: rgba(255, 255, 255, 0.95) !important;
+    }
+  }
+}
+
+/* ===== MOBILE RESPONSIVE IMPROVEMENTS ===== */
+/* Doar pentru telefoane (sub 480px) */
+@media (max-width: 480px) {
+  /* Typography mobile-friendly */
+  html {
+    font-size: 16px; /* Previne zoom-ul automat pe iOS */
+  }
+  
+  h1 { font-size: 1.5rem !important; line-height: 1.3; }
+  h2 { font-size: 1.25rem !important; line-height: 1.3; }
+  h3 { font-size: 1.125rem !important; line-height: 1.3; }
+  p, li, input, button { font-size: 1rem !important; line-height: 1.5; }
+  
+  /* Cards mai compacte pe mobile */
+  .card {
+    @apply p-4 mx-2 mb-3;
+  }
+  
+  .glass-card {
+    @apply p-4 mx-2 mb-3;
+  }
+  
+  /* Butoane touch-friendly (min 44px) */
+  .btn, .btn-primary, .btn-secondary, .btn-outline {
+    @apply min-h-[44px] min-w-[44px] px-4 py-3 text-base;
+  }
+  
+  /* Butoane de editare mai mici și elegante pe mobile */
+  button[class*="bg-red-600"], 
+  button[class*="bg-blue-600"], 
+  button[class*="bg-green-600"],
+  button[class*="bg-purple-600"] {
+    @apply px-3 py-2 text-sm rounded-md;
+  }
+  
+  /* Iconițe mai mici în butoane pe mobile */
+  button span[class*="mr-"] {
+    @apply text-xs;
+  }
+  
+  /* Input fields mai mari pe mobile */
+  .input, .input-field {
+    @apply min-h-[44px] px-4 py-3 text-base;
+  }
+  
+  /* Spacing optimizat pentru mobile */
+  .space-y-4 > * + * {
+    margin-top: 0.75rem !important;
+  }
+  
+  .space-y-6 > * + * {
+    margin-top: 1rem !important;
+  }
+  
+  /* Grid responsive pe mobile - forțează 1 coloană */
+  .grid {
+    grid-template-columns: 1fr !important;
+    -ms-grid-columns: 1fr !important;
+  }
+  
+  /* Padding optimizat pentru mobile */
+  .px-6 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .py-4 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+  .py-6 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+  
+  /* Margin optimizat pentru mobile */
+  .mx-6 { margin-left: 1rem !important; margin-right: 1rem !important; }
+  .my-4 { margin-top: 0.75rem !important; margin-bottom: 0.75rem !important; }
+  .my-6 { margin-top: 1rem !important; margin-bottom: 1rem !important; }
+  
+  /* Header fix pentru mobile */
+  .fixed.top-0 {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 50 !important;
+  }
+  
+  /* Padding top pentru conținut sub header fix */
+  .pt-16 { padding-top: 4rem !important; }
+  .pt-20 { padding-top: 5rem !important; }
+  
+  /* Floating Action Button mai mare pe mobile */
+  .fixed.bottom-4.right-4 {
+    @apply bottom-6 right-6;
+  }
+  
+  .fixed.bottom-4.right-4 button {
+    @apply w-14 h-14 text-xl;
+  }
+  
+  /* Text mai lizibil pe mobile */
+  .text-xs { font-size: 0.875rem !important; }
+  .text-sm { font-size: 1rem !important; }
+  .text-base { font-size: 1.125rem !important; }
+  
+  /* Line height optimizat pentru mobile */
+  .leading-tight { line-height: 1.3 !important; }
+  .leading-normal { line-height: 1.5 !important; }
+  .leading-relaxed { line-height: 1.6 !important; }
+  
+  /* Shadow mai subtil pe mobile */
+  .shadow-lg { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important; }
+  .shadow-xl { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important; }
+  
+  /* Border radius mai mic pe mobile */
+  .rounded-lg { border-radius: 0.5rem !important; }
+  .rounded-xl { border-radius: 0.75rem !important; }
+  .rounded-2xl { border-radius: 1rem !important; }
+  
+  /* Gap mai mic între elemente pe mobile */
+  .gap-4 { gap: 0.75rem !important; grid-gap: 0.75rem !important; }
+  .gap-6 { gap: 1rem !important; grid-gap: 1rem !important; }
+  .gap-8 { gap: 1.25rem !important; grid-gap: 1.25rem !important; }
+  
+  /* Flex direction column pe mobile pentru layout vertical */
+  .flex-row { flex-direction: column !important; }
+  .sm\\:flex-row { flex-direction: column !important; }
+  
+  /* Width full pe mobile pentru elemente importante */
+  .w-auto { width: 100% !important; }
+  .max-w-sm { max-width: 100% !important; }
+  .max-w-md { max-width: 100% !important; }
+  .max-w-lg { max-width: 100% !important; }
+  
+  /* Hide pe mobile pentru elemente non-essentials */
+  .hidden-mobile { display: none !important; }
+  
+  /* Show pe mobile pentru elemente mobile-specific */
+  .show-mobile { display: block !important; }
+  
+  /* Touch targets mai mari */
+  .hit-44 { min-width: 44px !important; min-height: 44px !important; }
+  .hit-48 { min-width: 48px !important; min-height: 48px !important; }
+  
+  /* Scroll smooth pe mobile */
+  .overflow-y-auto { 
+    -webkit-overflow-scrolling: touch !important;
+    scroll-behavior: smooth !important;
+  }
+  
+  /* Fix pentru viewport pe mobile */
+  body {
+    -webkit-text-size-adjust: 100% !important;
+    -ms-text-size-adjust: 100% !important;
+    text-size-adjust: 100% !important;
+    touch-action: manipulation !important;
+  }
+}
+
+/* Animații ULTRA MODERNE pentru Modal de Ausencia */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes spin-slow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes bounce-gentle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Clase pentru animații */
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-bounce-gentle {
+  animation: bounce-gentle 2s ease-in-out infinite;
+}
+
+/* Efecte glassmorphism avansate */
+.glassmorphism {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.glassmorphism-dark {
+  background: rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Efecte 3D avansate */
+.transform-3d {
+  transform-style: preserve-3d;
+  perspective: 1000px;
+}
+
+.card-3d {
+  transform: rotateX(0deg) rotateY(0deg);
+  transition: transform 0.3s ease;
+}
+
+.card-3d:hover {
+  transform: rotateX(5deg) rotateY(5deg) translateZ(20px);
+}
+
+/* Efecte de umbră avansate */
+.shadow-3xl {
+  box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.25);
+}
+
+.shadow-glow {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+}
+
+.shadow-glow-orange {
+  box-shadow: 0 0 20px rgba(249, 115, 22, 0.5);
+}
+
+.shadow-glow-purple {
+  box-shadow: 0 0 20px rgba(147, 51, 234, 0.5);
+}
+
+/* Efecte de gradient animat */
+.gradient-animated {
+  background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+  background-size: 400% 400%;
+  animation: gradient-shift 15s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}

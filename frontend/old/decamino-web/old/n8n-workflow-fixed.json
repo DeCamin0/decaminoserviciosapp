@@ -1,0 +1,175 @@
+{
+  "name": "generate-inspection-pdf",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-inspection-pdf",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "generate-inspection-pdf"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\n\n// Validare simplă\nconst errors = [];\n\nif (!payload.inspeccionId) errors.push('inspeccionId is required');\nif (!payload.empleado) errors.push('empleado is required');\nif (!payload.vehicul) errors.push('vehicul is required');\nif (!payload.locatie) errors.push('locatie is required');\nif (!payload.items || !Array.isArray(payload.items)) errors.push('items array is required');\nif (!payload.meta) errors.push('meta is required');\n\n// Returnează întotdeauna același format\nif (errors.length > 0) {\n  return [{\n    json: {\n      success: false,\n      data: null,\n      error: 'Validation failed',\n      details: errors\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    data: payload,\n    error: null,\n    details: []\n  }\n}];"
+      },
+      "id": "code-1",
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Verifică dacă validarea a eșuat\nif (!data.success || !data.data) {\n  // Propagă eroarea cu același format\n  return [{\n    json: {\n      success: false,\n      processedData: null,\n      error: data.error || 'Validation failed',\n      details: data.details || []\n    }\n  }];\n}\n\nconst payload = data.data;\n\n// Procesează semnăturile\nconst processedPayload = {\n  ...payload,\n  empleado: {\n    ...payload.empleado,\n    semnaturaPng: payload.empleado.semnaturaPng || null\n  },\n  meta: {\n    ...payload.meta,\n    semnaturaInspector: payload.meta.semnaturaInspector || null\n  }\n};\n\nreturn [{\n  json: {\n    success: true,\n    processedData: processedPayload,\n    error: null,\n    details: []\n  }\n}];"
+      },
+      "id": "code-2",
+      "name": "Process Signatures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// Verifică dacă procesarea a eșuat\nif (!data.success || !data.processedData) {\n  return [{\n    json: {\n      success: false,\n      pdfContent: null,\n      originalData: null,\n      error: data.error || 'Processing failed',\n      details: data.details || []\n    }\n  }];\n}\n\nconst payload = data.processedData;\n\n// Generează conținutul pentru PDF\nconst pdfContent = {\n  title: `Inspección ${payload.meta.numeroInspeccion}`,\n  date: new Date(payload.timestamp).toLocaleDateString('es-ES'),\n  employee: {\n    name: payload.empleado.nume,\n    email: payload.empleado.email,\n    signature: payload.empleado.semnaturaPng\n  },\n  vehicle: {\n    plate: payload.vehicul.placa,\n    km: payload.vehicul.km\n  },\n  location: {\n    lat: payload.locatie.lat,\n    lng: payload.locatie.lng\n  },\n  items: payload.items,\n  inspector: payload.meta.inspector,\n  inspectorSignature: payload.meta.semnaturaInspector,\n  observations: payload.observatii || ''\n};\n\nreturn [{\n  json: {\n    success: true,\n    pdfContent: pdfContent,\n    originalData: payload,\n    error: null,\n    details: []\n  }\n}];"
+      },
+      "id": "code-3",
+      "name": "Generate PDF Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://your-pdf-generator-server.com/generate-pdf",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "data",
+              "value": "={{ $json }}"
+            }
+          ]
+        }
+      },
+      "id": "http-1",
+      "name": "Call PDF Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first();\nconst pdfContent = $('Generate PDF Content').first().json;\n\n// Verifică dacă generarea de conținut a eșuat\nif (!pdfContent.success) {\n  return [{\n    json: {\n      success: false,\n      pdfUrl: null,\n      inspectionId: null,\n      numeroInspeccion: null,\n      error: pdfContent.error || 'Content generation failed',\n      details: pdfContent.details || []\n    }\n  }];\n}\n\nif (response.statusCode >= 200 && response.statusCode < 300) {\n  return [{\n    json: {\n      success: true,\n      pdfUrl: 'https://your-server.com/pdfs/inspection.pdf',\n      inspectionId: pdfContent.originalData.inspeccionId,\n      numeroInspeccion: pdfContent.pdfContent.title,\n      error: null,\n      details: []\n    }\n  }];\n} else {\n  return [{\n    json: {\n      success: false,\n      pdfUrl: null,\n      inspectionId: null,\n      numeroInspeccion: null,\n      error: 'PDF generation failed',\n      details: [`HTTP ${response.statusCode}`]\n    }\n  }];\n}"
+      },
+      "id": "code-4",
+      "name": "Process Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "responseCode": "={{ $json.success ? 200 : 400 }}"
+      },
+      "id": "respond-1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Data": {
+      "main": [
+        [
+          {
+            "node": "Process Signatures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Signatures": {
+      "main": [
+        [
+          {
+            "node": "Generate PDF Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate PDF Content": {
+      "main": [
+        [
+          {
+            "node": "Call PDF Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call PDF Service": {
+      "main": [
+        [
+          {
+            "node": "Process Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-08-05T12:00:00.000Z",
+  "versionId": "1"
+} 

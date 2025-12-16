@@ -140,6 +140,34 @@ model ChatMessageRead {
   @@map("chat_message_reads")
 }
 
+model Comunicado {
+  id         BigInt            @id @default(autoincrement())
+  titulo     String            @db.VarChar(255)
+  contenido  String            @db.Text
+  autor_id   String            @map("autor_id") @db.VarChar(50)
+  publicado  Boolean           @default(false)
+  created_at DateTime          @default(now()) @db.Timestamp(0)
+  updated_at DateTime          @updatedAt @db.Timestamp(0)
+  leidos     ComunicadoLeido[]
+
+  @@index([publicado, created_at], map: "idx_comunicado_publicado_created")
+  @@index([autor_id], map: "idx_comunicado_autor")
+  @@map("comunicados")
+}
+
+model ComunicadoLeido {
+  id            BigInt     @id @default(autoincrement())
+  comunicado_id BigInt
+  user_id       String     @map("user_id") @db.VarChar(50)
+  read_at       DateTime   @default(now()) @db.Timestamp(0)
+  comunicado    Comunicado @relation(fields: [comunicado_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_comunicado_leido_comunicado")
+
+  @@unique([comunicado_id, user_id], map: "uq_comunicado_leido_comunicado_user")
+  @@index([comunicado_id], map: "idx_comunicado_leido_comunicado")
+  @@index([user_id], map: "idx_comunicado_leido_user")
+  @@map("comunicados_leidos")
+}
+
 model Avatar {
   CODIGO       String   @id @map("CODIGO") @db.VarChar(50)
   NOMBRE       String   @map("NOMBRE") @db.VarChar(255)
@@ -400,6 +428,8 @@ model Logs {
   url       String? @db.Text
   sessionId String? @db.VarChar(255)
   ip        String? @db.VarChar(100)
+
+  @@map("Logs")
 }
 
 model MutuaCasos {

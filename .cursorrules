@@ -1,0 +1,80 @@
+# Cursor Project Rules - decaminoserviciosapp
+# Pentru detalii complete, vezi: MASTER_LEAD_INSTRUCTION.md
+
+## 🔴 REGULI CRITICE - OBLIGATORII
+
+### 0. Fără implementare implicită
+- Dacă utilizatorul **NU** spune explicit „Aprobat”, „Aplică”, „Implementează”:
+  - → **NU** scriu cod
+  - → **NU** generez diff
+  - → **NU** sugerez snippet-uri gata de copiat
+- Orice propunere rămâne doar ca descriere/explicație până la aprobare explicită
+
+### 1. Proces "Explain-first, then modify"
+- **NICIODATĂ** nu scriu cod/diff/patch până când utilizatorul spune explicit "Aprobat" sau "Aprobat pentru modificări DB"
+- Întotdeauna: Analizez → Raportez în română → Aștept aprobare → Aplic modificările
+- Raportul trebuie să includă: problemă găsită, severitate (Critical/Medium/Minor), fișiere afectate, soluție propusă, impact tehnic
+
+### 2. Prisma & DB Safety (BLOC CRITIC)
+- **STRICT INTERZIS** fără aprobare explicită "Aprobat pentru modificări DB":
+  - `prisma migrate dev/deploy`
+  - `prisma db push`
+  - Orice modificare în `backend/prisma/schema.prisma` (câmpuri, tabele, relații)
+  - `ALTER TABLE` manuale
+- **CLARIFICARE**: "Aprobat pentru modificări DB" înseamnă EXCLUSIV:
+  - Modificări deliberate, descrise anterior și aprobate punctual
+  - **NU include** optimizări „implicite” sau refactorizări de schemă
+  - **NU include** modificări „sugerate” sau „recomandate” care nu au fost explicit aprobate
+- **PERMIS fără aprobare**: queries Prisma pe schema existentă, optimizări query, servicii NestJS care citesc/scriu pe tabele existente
+- Backend folosește **100% Prisma** (nu TypeORM - deprecat)
+
+### 3. Git Workflow
+- **NICIODATĂ** pe `main`/`master` direct
+- Propun branch `feature/...` sau `fix/...` pentru fiecare task
+- Listez exact fișierele vizate înainte de commit
+- **Nu rulez comenzi git** - doar propun, utilizatorul le rulează
+
+### 4. Compatibilitate UI
+- Mențin compatibilitatea UI în timpul migrării n8n → backend
+- Frontend folosește deja backend-ul pentru majoritatea endpoint-urilor (vezi MASTER pentru lista completă)
+- Endpoint-uri nemigrate rămân prin n8n proxy (`/api/n8n/*`)
+
+## 📋 Arhitectură Actuală
+
+### Frontend
+- React 18 + Vite + Capacitor Android + PWA
+- API Client: `frontend/src/utils/routes.js` - centralizează toate endpoint-urile
+- Development: `http://localhost:3000`, Production: `https://api.decaminoservicios.com`
+- Socket.io pentru WebSocket (`/notifications`, `/chat`)
+
+### Backend
+- NestJS cu **Prisma 100%** (nu TypeORM)
+- Schema: `backend/prisma/schema.prisma`
+- Auth: JWT (`/api/auth/login`, `/api/auth/me`), `JwtAuthGuard`, `@CurrentUser()` decorator
+- n8n Proxy: `N8nProxyService` pentru endpoint-uri nemigrate (`/api/n8n/*`)
+- WebSocket: `/notifications` și `/chat` namespaces cu JWT handshake
+
+### Endpoint-uri Migrate (Frontend folosește backend-ul)
+✅ Auth, Permissions, Employees CRUD, Avatar, Clientes, ContractTypes, Fichajes/Registros, Cuadrantes (GET), BajasMedicas, HorasAsignadas/Permitidas/Trabajadas, MonthlyAlerts, Grupos, Ausencias, Chat, Notifications (REST + WS), Push
+
+⏳ Încă prin n8n: Cuadrantes POST, Solicitudes, Inspecciones, AutoFirma, alte endpoint-uri mici
+
+## 🎯 QA & Defect Detection (Permanent)
+
+### Caut permanent:
+- **Frontend**: Spinnere infinite, API duplicate calls, cache conflicts, race conditions, PWA/SW stale updates, offline queue funcționalitate, WS reconnect errors
+- **Backend**: Rute necorecte, lipsă DTO/validare, lipsă error handling, blocaje, performanță slabă (N+1 queries), endpoints redundante
+- **Prisma/DB**: N+1 queries, queries neoptime, citiri/scrieri inutile, câmpuri cu spații necesită backticks (`` `NOMBRE / APELLIDOS` ``)
+
+La fiecare problemă: mini-audit în română + soluție propusă → aștept "Aprobat"
+
+## 🌍 Comunicare
+
+- **100% în română**, concis și structurat
+- Fără teorie generală - doar fapte și soluții
+- Structură: Problemă → Soluție → Impact → Aștept aprobare
+
+## 📚 Referință
+
+Pentru detalii complete, instrucțiuni detaliate și liste complete de endpoint-uri, vezi: **MASTER_LEAD_INSTRUCTION.md**
+

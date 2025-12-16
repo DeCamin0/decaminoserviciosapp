@@ -52,7 +52,9 @@ import {
   LazyIncidenciasCentroPage,
   LazyPedidosPage,
   LazyEmpleadoPedidosPage,
-  LazyChatPage
+  LazyComunicadosPage,
+  LazyComunicadoDetailPage,
+  LazyComunicadoCreatePage
 } from './pages/lazy/LazyPages';
 
 import './i18n';
@@ -526,13 +528,43 @@ function AppRoutes() {
         }
       />
       
-      {/* Ruta para chat */}
+      {/* Rutas para Comunicados */}
       <Route
-        path="/chat"
+        path="/comunicados"
         element={
           <ProtectedRoute>
             <MainLayout>
-              <LazyChatPage />
+              <LazyComunicadosPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/comunicados/:id"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LazyComunicadoDetailPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/comunicados/nuevo"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LazyComunicadoCreatePage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/comunicados/:id/editar"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LazyComunicadoCreatePage />
             </MainLayout>
           </ProtectedRoute>
         }

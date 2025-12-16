@@ -85,6 +85,7 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Trimite o notificare despre o absență nouă
+   * IMPORTANT: Toate mesajele Telegram trebuie să fie în spaniolă
    */
   async sendAusenciaNotification(ausenciaData: {
     codigo: string;
@@ -94,13 +95,55 @@ export class TelegramService implements OnModuleInit {
     motivo?: string;
   }): Promise<void> {
     // Folosim Markdown format ca în n8n workflow (Cron absente.json)
+    // IMPORTANT: Totul în spaniolă
     const message = `
-🟡 *Nouă absență înregistrată*
+🟡 *Nueva ausencia registrada*
 
-👤 *Angajat:* ${ausenciaData.nombre} (${ausenciaData.codigo})
-📅 *Tip:* ${ausenciaData.tipo}
-📆 *Data:* ${ausenciaData.fecha}
-${ausenciaData.motivo ? `📝 *Motiv:* ${ausenciaData.motivo}` : ''}
+👤 *Empleado:* ${ausenciaData.nombre} (${ausenciaData.codigo})
+📅 *Tipo:* ${ausenciaData.tipo}
+📆 *Fecha:* ${ausenciaData.fecha}
+${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
+    `.trim();
+
+    await this.sendMessage(message);
+  }
+
+  /**
+   * Trimite o notificare despre o solicitare nouă/actualizată
+   * IMPORTANT: Toate mesajele Telegram trebuie să fie în spaniolă
+   */
+  async sendSolicitudNotification(solicitudData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    estado: string;
+    motivo?: string;
+    accion: 'create' | 'update' | 'delete';
+  }): Promise<void> {
+    // Folosim Markdown format
+    // IMPORTANT: Totul în spaniolă
+    const actionEmoji =
+      solicitudData.accion === 'create'
+        ? '🟢'
+        : solicitudData.accion === 'update'
+          ? '🔵'
+          : '🔴';
+    const actionText =
+      solicitudData.accion === 'create'
+        ? 'Nueva solicitud creada'
+        : solicitudData.accion === 'update'
+          ? 'Solicitud actualizada'
+          : 'Solicitud eliminada';
+
+    const message = `
+${actionEmoji} *${actionText}*
+
+👤 *Empleado:* ${solicitudData.nombre} (${solicitudData.codigo})
+📋 *Tipo:* ${solicitudData.tipo}
+📆 *Fecha:* ${solicitudData.fecha}
+✅ *Estado:* ${solicitudData.estado}
+${solicitudData.motivo ? `📝 *Motivo:* ${solicitudData.motivo}` : ''}
     `.trim();
 
     await this.sendMessage(message);

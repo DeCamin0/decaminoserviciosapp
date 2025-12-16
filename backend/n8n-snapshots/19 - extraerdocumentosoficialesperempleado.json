@@ -1,0 +1,83 @@
+{
+  "name": "19 - extraerdocumentosoficialesperempleado",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a4cb7e63-234b-4e39-8c2d-f2335613d360",
+      "name": "Webhook Get Documentos",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "171d8236-6ef1-4b97-8605-096476bc1d8b"
+    },
+    {
+      "parameters": {},
+      "id": "df3939df-d6a1-450c-9959-d4f140c066e2",
+      "name": "Generar SQL Get",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c5a84283-aa5e-4196-8864-57f39bfc6589",
+      "name": "MySQL Get Documentos",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Get Documentos": {
+      "main": [
+        [
+          {
+            "node": "Generar SQL Get",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar SQL Get": {
+      "main": [
+        [
+          {
+            "node": "MySQL Get Documentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "3b16e087-b6c0-4eec-87bb-54964085fc45",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "OmoTJcQ865qUNepZ",
+  "tags": []
+}

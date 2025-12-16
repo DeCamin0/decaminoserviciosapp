@@ -52,6 +52,17 @@ Migrarea este **incrementală și non-breaking**:
 - Migrarea este **endpoint cu endpoint** cu aprobare explicită
 - Toate modificările trebuie să mențină compatibilitatea înapoi
 
+## 🌍 Idioma de Comunicación
+
+**IMPORTANTE: Desde ahora, todas las comunicaciones deben estar en español:**
+- ✅ Todos los emails enviados desde el sistema
+- ✅ Todas las notificaciones (push, websocket, etc.)
+- ✅ Todos los avisos y alertas
+- ✅ Todos los mensajes de Telegram
+- ✅ Todos los textos de interfaz visibles al usuario
+
+**Cualquier mensaje, notificación o comunicación con el usuario final debe estar exclusivamente en español.**
+
 ## 📚 Documentație
 
 - [Plan de Migrare](./MIGRATION_PLAN.md)

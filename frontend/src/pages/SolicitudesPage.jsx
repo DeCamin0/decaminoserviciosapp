@@ -8,7 +8,7 @@ import { useApi } from '../hooks/useApi';
 import { routes } from '../utils/routes.js';
 import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
-import { ChevronLeft, ChevronRight, Edit, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
 
 const MONTHS = [
@@ -81,9 +81,12 @@ const formatNumber = (value) => {
 
 
 const formatBajaRecord = (item) => {
-  const idCaso = item?.['Id.Caso'] ?? item?.id ?? '';
+  const idCaso = item?.['Id.Caso'] ?? item?.Id_Caso ?? item?.id ?? '';
+  const idPosicion = item?.['Id.Posición'] ?? item?.['Id.Posicion'] ?? item?.Id_Posici_n ?? '';
+  // ID unic bazat pe Id.Caso + Id.Posición (cheia unică din baza de date)
+  const uniqueId = idCaso && idPosicion ? `${idCaso}_${idPosicion}` : (item?.id ?? `baja_${Math.random().toString(36).slice(2, 9)}`);
   return {
-    id: item?.id ?? idCaso ?? `baja_${Math.random().toString(36).slice(2, 9)}`,
+    id: uniqueId,
     casoId: idCaso ?? '',
     trabajador:
       item?.Trabajador ??
@@ -133,6 +136,7 @@ const formatBajaRecord = (item) => {
       item?.fechaBaja ??
       '',
     fechaAlta:
+      item?.['Fecha de alta'] ??
       item?.['Fecha alta'] ??
       item?.['Fecha Alta'] ??
       item?.fecha_alta ??
@@ -186,12 +190,16 @@ export default function SolicitudesPage() {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const bajaFileInputRef = useRef(null);
   const [allBajasMedicas, setAllBajasMedicas] = useState([]);
+  // State pentru editare bajas médicas
+  const [editingBaja, setEditingBaja] = useState(null); // { idCaso, idPosicion, field: 'fechaBaja' | 'fechaAlta' }
+  const [editingBajaValue, setEditingBajaValue] = useState('');
   
   // Ausencias states
   const [allAusencias, setAllAusencias] = useState([]);
 
   const email = authUser?.email || authUser?.['CORREO ELECTRONICO'] || '';
-  const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = authUser?.isManager || false;
 
   // Calendar functions
   const monthNames = [
@@ -383,38 +391,36 @@ export default function SolicitudesPage() {
       });
     }
 
-    // Get users in the same group and center as current user
-    const sameGroupCenterUsers = users.filter(user => {
-      const userGroup = user['GRUPO'] || user.grupo || '';
-      const userCenter = user['CENTRO TRABAJO'] || 
-                        user['CENTRO DE TRABAJO'] || 
-                        user['centro de trabajo'] || 
-                        user['CENTRO_DE_TRABAJO'] ||
-                        user['centroDeTrabajo'] ||
-                        user['centro'] ||
-                        user['CENTER'] ||
-                        user['center'] ||
-                        user['DEPARTAMENTO'] ||
-                        user['departamento'] ||
-                        '';
-      
-      const matches = userGroup === currentUserGroup && userCenter === currentUserCenter;
-      
-      // Log first few users for debugging
-      if (Object.keys(availability).length === 0 && userGroup && userCenter) {
-        console.log(`🔍 User ${user['NOMBRE / APELLIDOS'] || user.nombre}:`, {
-          userGroup,
-          userCenter,
-          currentUserGroup,
-          currentUserCenter,
-          matches
-        });
-      }
-      
-      return matches;
-    });
+    // Pentru Vacaciones: obținem toți utilizatorii din același GRUP (toate centrele)
+    // Pentru Asuntos Propios: obținem utilizatorii din același grup+centru
+    let relevantUsers;
+    if (tipo === 'Vacaciones') {
+      // Vacaciones: limita este per grup (toate centrele din grup)
+      relevantUsers = users.filter(user => {
+        const userGroup = user['GRUPO'] || user.grupo || '';
+        return userGroup === currentUserGroup;
+      });
+    } else {
+      // Asuntos Propios: limita este per grup+centru
+      relevantUsers = users.filter(user => {
+        const userGroup = user['GRUPO'] || user.grupo || '';
+        const userCenter = user['CENTRO TRABAJO'] || 
+                          user['CENTRO DE TRABAJO'] || 
+                          user['centro de trabajo'] || 
+                          user['CENTRO_DE_TRABAJO'] ||
+                          user['centroDeTrabajo'] ||
+                          user['centro'] ||
+                          user['CENTER'] ||
+                          user['center'] ||
+                          user['DEPARTAMENTO'] ||
+                          user['departamento'] ||
+                          '';
+        
+        return userGroup === currentUserGroup && userCenter === currentUserCenter;
+      });
+    }
 
-    const groupSize = sameGroupCenterUsers.length;
+    const groupSize = relevantUsers.length;
     let maxAllowed;
     
     if (tipo === 'Asunto Propio') {
@@ -434,7 +440,7 @@ export default function SolicitudesPage() {
       tipo,
       month: month + 1,
       year,
-      sameGroupCenterUsers: sameGroupCenterUsers.map(u => ({
+      relevantUsers: relevantUsers.map(u => ({
         name: u['NOMBRE / APELLIDOS'] || u.nombre,
         group: u['GRUPO'] || u.grupo,
         center: u['CENTRO TRABAJO'] || u['CENTRO DE TRABAJO'] || u['centro de trabajo']
@@ -493,22 +499,44 @@ export default function SolicitudesPage() {
             const currentDate = new Date(dateStr);
             
             if (currentDate >= start && currentDate <= end) {
-              occupiedCount++; // Count all people globally
-              
-              // Count people from same center
-              if (solicitudGroup === currentUserGroup && solicitudCenter === currentUserCenter) {
-                sameCenterCount++;
+              if (tipo === 'Vacaciones') {
+                // ✅ Vacaciones: limită per GRUP (toate centrele din grup) + limită per grup+centru (max 1)
+                // Numărăm solicitările din ACELAȘI GRUP, indiferent de centru
+                if (solicitudGroup === currentUserGroup) {
+                  occupiedCount++; // Numără doar din același grup (toate centrele)
+                  
+                  // Count people from same group+center (pentru limita per grup+centru)
+                  if (solicitudCenter === currentUserCenter) {
+                    sameCenterCount++;
+                  }
+                }
+              } else if (tipo === 'Asunto Propio') {
+                // ✅ Asuntos Propios: limită globală (4) + limită per centru (1)
+                occupiedCount++; // Numără toate solicitările global (din toate grupuri/centre)
+                
+                // Count people from same center (pentru limita per centru)
+                if (solicitudGroup === currentUserGroup && solicitudCenter === currentUserCenter) {
+                  sameCenterCount++;
+                }
+              } else {
+                // Fallback: numără toate
+                occupiedCount++;
               }
             }
           }
         }
       });
 
-      // For Asuntos Propios: check both global limit (4) and same center limit (1)
+      // Verifică dacă ziua este complet ocupată
       let isFull = false;
       if (tipo === 'Asunto Propio') {
-        isFull = occupiedCount >= 4 || sameCenterCount >= 1; // Global limit or same center limit
+        // Asuntos Propios: limită globală de 4 + limită per centru de 1
+        isFull = occupiedCount >= 4 || sameCenterCount >= 1;
+      } else if (tipo === 'Vacaciones') {
+        // Vacaciones: limită per grup (maxAllowed) + limită per grup+centru (max 1)
+        isFull = occupiedCount >= maxAllowed || sameCenterCount >= 1;
       } else {
+        // Fallback
         isFull = occupiedCount >= maxAllowed;
       }
 
@@ -1177,6 +1205,8 @@ export default function SolicitudesPage() {
   }, [authUser, callApi]);
 
   const fetchAllAusencias = useCallback(async () => {
+    if (!isManager) return; // Doar managers pot vedea toate ausencias-urile
+    
     setOperationLoading('ausencias', true);
     
     // Skip real data fetch in DEMO mode
@@ -1187,7 +1217,11 @@ export default function SolicitudesPage() {
     }
     
     try {
-      const url = 'https://n8n.decaminoservicios.com/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb';
+      // Folosim backend-ul nou (GET /api/ausencias)
+      // Pentru managers: toate ausencias-urile (fără filtru codigo)
+      const url = routes.getAusencias;
+      console.log('✅ [SolicitudesPage] Folosind backend-ul nou (getAusencias):', url);
+      
       const result = await callApi(url);
       if (result.success) {
         const data = Array.isArray(result.data) ? result.data : [result.data];
@@ -1198,7 +1232,7 @@ export default function SolicitudesPage() {
       setAllAusencias([]);
     }
     setOperationLoading('ausencias', false);
-  }, [authUser, callApi, setOperationLoading]);
+  }, [authUser, isManager, callApi, setOperationLoading]);
 
 
 
@@ -1212,12 +1246,26 @@ export default function SolicitudesPage() {
 
     setOperationLoading('bajas', true);
     try {
-      const listUrl = `${BAJA_LIST_ENDPOINT}${
-        BAJA_LIST_ENDPOINT.includes('?') ? '&' : '?'
-      }accion=get`;
+      // Backend endpoint is GET /api/bajas-medicas (requires JWT authentication)
+      const listUrl = BAJA_LIST_ENDPOINT;
+
+      // Add JWT token for authentication
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
       const response = await fetch(listUrl, {
-        method: 'POST',
+        method: 'GET',
+        headers,
       });
 
       if (!response.ok) {
@@ -1225,6 +1273,7 @@ export default function SolicitudesPage() {
       }
 
       const result = await response.json();
+      // Backend returns array directly, not wrapped in data property
       const data = Array.isArray(result?.data)
         ? result.data
         : Array.isArray(result)
@@ -1238,6 +1287,64 @@ export default function SolicitudesPage() {
       setOperationLoading('bajas', false);
     }
   }, [isManager, setOperationLoading]);
+
+  // Funcție pentru a salva modificările la bajas médicas
+  const handleSaveBajaDate = useCallback(async (idCaso, idPosicion, field, newValue) => {
+    if (!isManager) return;
+
+    setOperationLoading('updateBaja', true);
+    try {
+      const updateData = {
+        idCaso,
+        idPosicion,
+        [field === 'fechaBaja' ? 'fechaBaja' : 'fechaAlta']: newValue || null,
+      };
+
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.updateBajasMedicas, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updateData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setSuccessMsg(`Fecha ${field === 'fechaBaja' ? 'baja' : 'alta'} actualizada correctamente.`);
+        
+        // Refreshează lista
+        await fetchBajasMedicas();
+        
+        // Închide editarea
+        setEditingBaja(null);
+        setEditingBajaValue('');
+      } else {
+        throw new Error(result.message || 'Error al actualizar');
+      }
+    } catch (error) {
+      console.error('Error updating baja médica:', error);
+      setErrorMsg(
+        error instanceof Error
+          ? `No se pudo actualizar: ${error.message}`
+          : 'No se pudo actualizar la fecha.'
+      );
+    } finally {
+      setOperationLoading('updateBaja', false);
+    }
+  }, [isManager, setOperationLoading, setSuccessMsg, setErrorMsg, fetchBajasMedicas]);
 
   useEffect(() => {
     if (authUser?.isDemo) {
@@ -1293,8 +1400,16 @@ export default function SolicitudesPage() {
           BAJA_UPLOAD_ENDPOINT.includes('?') ? '&' : '?'
         }accion=guardar_bajas`;
 
+        // Add JWT token for backend API calls
+        const token = localStorage.getItem('auth_token');
+        const headers = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
         const response = await fetch(uploadUrl, {
           method: 'POST',
+          headers: headers,
           body: formData,
         });
 
@@ -1312,6 +1427,12 @@ export default function SolicitudesPage() {
 
         setSuccessMsg(
           result?.message || 'Archivo de bajas médicas cargado correctamente.'
+        );
+
+        // Log upload bajas médicas
+        await activityLogger.logBajaMedicaUploaded(
+          { fileName: file.name, fileSize: file.size },
+          authUser
         );
 
         if (isManager) {
@@ -1334,6 +1455,7 @@ export default function SolicitudesPage() {
       }
     },
     [
+      authUser,
       fetchAllAusencias,
       fetchAllSolicitudes,
       isManager,
@@ -1539,7 +1661,12 @@ export default function SolicitudesPage() {
     console.log('DEBUG accion:', data.accion);
 
     try {
-      const result = await callApi('https://n8n.decaminoservicios.com/webhook/solicitud-empleados', {
+      // Folosește backend-ul nou pentru create/update
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const result = await callApi(endpoint, {
         method: 'POST',
         body: JSON.stringify(data)
       });
@@ -2094,7 +2221,12 @@ export default function SolicitudesPage() {
       
       console.log('TRIMIT DELETE:', data);
       
-      const result = await callApi('https://n8n.decaminoservicios.com/webhook/solicitud-empleados', {
+      // Folosește backend-ul nou pentru delete
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const result = await callApi(endpoint, {
         method: 'POST',
         body: JSON.stringify(data)
       });
@@ -2368,7 +2500,17 @@ export default function SolicitudesPage() {
     if (selectedTab === 'ausencias') {
       filtered = allAusencias;
     } else if (selectedTab === 'baja') {
-      filtered = allBajasMedicas.map(formatBajaRecord);
+      // Formatează și deduplică bazându-ne pe cheia unică (Id.Caso + Id.Posición)
+      const formatted = allBajasMedicas.map(formatBajaRecord);
+      // Elimină duplicate-urile bazându-ne pe ID-ul unic
+      const seen = new Set();
+      filtered = formatted.filter(item => {
+        if (seen.has(item.id)) {
+          return false;
+        }
+        seen.add(item.id);
+        return true;
+      });
     } else {
       filtered = allSolicitudes;
     }
@@ -2434,6 +2576,33 @@ export default function SolicitudesPage() {
     });
     return sorted;
   }, [selectedTab, selectedUser, selectedMonth, allAusencias, allSolicitudes, allBajasMedicas, allUsers]);
+
+  // Statistici pentru bajas médicas
+  const bajasStats = useMemo(() => {
+    if (selectedTab !== 'baja') {
+      return { total: 0, cerradas: 0, abiertas: 0 };
+    }
+    
+    const formatted = allBajasMedicas.map(formatBajaRecord);
+    // Elimină duplicate-urile
+    const seen = new Set();
+    const uniqueBajas = formatted.filter(item => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    });
+    
+    const total = uniqueBajas.length;
+    const cerradas = uniqueBajas.filter(item => {
+      const situacion = String(item.situacion || item.estado || '').toLowerCase();
+      return situacion.includes('alta') && !situacion.includes('prevista');
+    }).length;
+    const abiertas = total - cerradas;
+    
+    return { total, cerradas, abiertas };
+  }, [selectedTab, allBajasMedicas]);
 
   const userList = useMemo(
     () => allUsers.map(u => u['CORREO ELECTRONICO']).filter(Boolean),
@@ -3056,6 +3225,50 @@ export default function SolicitudesPage() {
                 </div>
               )}
 
+            {/* Panel de statistici pentru bajas médicas */}
+            {selectedTab === 'baja' && isManager && (
+              <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-6 shadow-lg mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-rose-900 flex items-center gap-2">
+                    <span>📊</span>
+                    Estadísticas de Bajas Médicas
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setOperationLoading('refreshBajas', true);
+                      fetchBajasMedicas().finally(() => {
+                        setOperationLoading('refreshBajas', false);
+                      });
+                    }}
+                    disabled={isOperationLoading('refreshBajas') || isOperationLoading('bajas')}
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Actualizar lista"
+                  >
+                    <RefreshCw 
+                      className={`w-4 h-4 ${isOperationLoading('refreshBajas') || isOperationLoading('bajas') ? 'animate-spin' : ''}`} 
+                    />
+                    <span>Actualizar</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-lg p-4 border-2 border-blue-200 shadow-md">
+                    <div className="text-sm font-medium text-gray-600 mb-1">Total Casos</div>
+                    <div className="text-3xl font-bold text-blue-700">{bajasStats.total}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 border-2 border-green-200 shadow-md">
+                    <div className="text-sm font-medium text-gray-600 mb-1">Casos Cerrados</div>
+                    <div className="text-3xl font-bold text-green-700">{bajasStats.cerradas}</div>
+                    <div className="text-xs text-gray-500 mt-1">Con alta médica</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 border-2 border-orange-200 shadow-md">
+                    <div className="text-sm font-medium text-gray-600 mb-1">Casos Abiertos</div>
+                    <div className="text-3xl font-bold text-orange-700">{bajasStats.abiertas}</div>
+                    <div className="text-xs text-gray-500 mt-1">En seguimiento</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Lista filtrada */}
             {(isOperationLoading('allSolicitudes') || (selectedTab === 'ausencias' && isOperationLoading('ausencias'))) ? (
               <div className="flex justify-center py-8">
@@ -3258,15 +3471,125 @@ export default function SolicitudesPage() {
                             </div>
                             <div className="bg-white p-4 rounded-lg border border-gray-200 group-hover:bg-gray-50 transition-colors duration-300">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha baja</span>
-                              <p className="text-sm font-bold text-gray-900">
-                                {formatDate(item.fechaBaja)}
-                              </p>
+                              {editingBaja?.idCaso === item.idCaso && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaBaja' ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="date"
+                                    value={editingBajaValue || ''}
+                                    onChange={(e) => setEditingBajaValue(e.target.value)}
+                                    className="text-sm font-bold text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    autoFocus
+                                    onBlur={() => {
+                                      if (editingBajaValue !== item.fechaBaja) {
+                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaBaja', editingBajaValue);
+                                      } else {
+                                        setEditingBaja(null);
+                                        setEditingBajaValue('');
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaBaja', editingBajaValue);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingBaja(null);
+                                        setEditingBajaValue('');
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <p 
+                                  className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                                  onClick={() => {
+                                    if (isManager) {
+                                      setEditingBaja({ idCaso: item.idCaso, idPosicion: item.posicionId, field: 'fechaBaja' });
+                                      // Convertește data pentru input type="date" (YYYY-MM-DD)
+                                      const dateStr = item.fechaBaja;
+                                      if (dateStr && dateStr !== '-') {
+                                        try {
+                                          const date = new Date(dateStr);
+                                          if (!isNaN(date.getTime())) {
+                                            const year = date.getFullYear();
+                                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                                            const day = String(date.getDate()).padStart(2, '0');
+                                            setEditingBajaValue(`${year}-${month}-${day}`);
+                                          } else {
+                                            setEditingBajaValue('');
+                                          }
+                                        } catch {
+                                          setEditingBajaValue('');
+                                        }
+                                      } else {
+                                        setEditingBajaValue('');
+                                      }
+                                    }
+                                  }}
+                                  title={isManager ? "Clic para editar" : ""}
+                                >
+                                  {formatDate(item.fechaBaja)}
+                                </p>
+                              )}
                             </div>
                             <div className="bg-white p-4 rounded-lg border border-gray-200 group-hover:bg-gray-50 transition-colors duration-300">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha alta</span>
-                              <p className="text-sm font-bold text-gray-900">
-                                {formatDate(item.fechaAlta)}
-                              </p>
+                              {editingBaja?.idCaso === item.idCaso && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaAlta' ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="date"
+                                    value={editingBajaValue || ''}
+                                    onChange={(e) => setEditingBajaValue(e.target.value)}
+                                    className="text-sm font-bold text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    autoFocus
+                                    onBlur={() => {
+                                      if (editingBajaValue !== item.fechaAlta) {
+                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaAlta', editingBajaValue);
+                                      } else {
+                                        setEditingBaja(null);
+                                        setEditingBajaValue('');
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaAlta', editingBajaValue);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingBaja(null);
+                                        setEditingBajaValue('');
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <p 
+                                  className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                                  onClick={() => {
+                                    if (isManager) {
+                                      setEditingBaja({ idCaso: item.idCaso, idPosicion: item.posicionId, field: 'fechaAlta' });
+                                      // Convertește data pentru input type="date" (YYYY-MM-DD)
+                                      const dateStr = item.fechaAlta;
+                                      if (dateStr && dateStr !== '-') {
+                                        try {
+                                          const date = new Date(dateStr);
+                                          if (!isNaN(date.getTime())) {
+                                            const year = date.getFullYear();
+                                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                                            const day = String(date.getDate()).padStart(2, '0');
+                                            setEditingBajaValue(`${year}-${month}-${day}`);
+                                          } else {
+                                            setEditingBajaValue('');
+                                          }
+                                        } catch {
+                                          setEditingBajaValue('');
+                                        }
+                                      } else {
+                                        setEditingBajaValue('');
+                                      }
+                                    }
+                                  }}
+                                  title={isManager ? "Clic para editar" : ""}
+                                >
+                                  {formatDate(item.fechaAlta)}
+                                </p>
+                              )}
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duration-300">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Pago delegado</span>

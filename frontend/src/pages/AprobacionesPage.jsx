@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
 import { useAdminApi } from '../hooks/useAdminApi';
+import activityLogger from '../utils/activityLogger';
 
 
 export default function AprobacionesPage() {
@@ -30,11 +31,19 @@ export default function AprobacionesPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [cambioToReject, setCambioToReject] = useState(null);
   
+  // State pentru modal de confirmare aprobare
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [cambioToApprove, setCambioToApprove] = useState(null);
+  
   // State pentru notificări
   const [notification, setNotification] = useState(null);
+  
+  // State pentru checkbox-uri "enviar a gestoria" pentru fiecare cambio
+  const [enviarAGestoriaMap, setEnviarAGestoriaMap] = useState({});
 
   const userGrupo = useMemo(() => authUser?.GRUPO || authUser?.grupo || 'Empleado', [authUser?.GRUPO, authUser?.grupo]);
-  const isManager = useMemo(() => authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor', [authUser?.isManager, authUser?.GRUPO]);
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = useMemo(() => authUser?.isManager || false, [authUser?.isManager]);
   
   // Funcție helper pentru a găsi cheia corectă pentru grup în permisiuni
   const findGrupoKey = useCallback((grupo, permissions) => {
@@ -201,6 +210,13 @@ export default function AprobacionesPage() {
         data = null;
       }
       console.log('[Aprobaciones] Parsed data type:', typeof data, 'isArray:', Array.isArray(data));
+      
+      // Verifică dacă este răspuns "not-modified" - păstrează lista existentă
+      if (data && typeof data === 'object' && data.status === 'not-modified') {
+        console.log('[Aprobaciones] Response is "not-modified", keeping existing list');
+        return; // Nu schimba lista, păstrează cea existentă
+      }
+      
       if (Array.isArray(data)) console.log('[Aprobaciones] First item sample:', data[0]);
       
       if (data && typeof data === 'object') {
@@ -247,7 +263,34 @@ export default function AprobacionesPage() {
     fetchPendingCambios();
   }, [canAccess, authUser?.isDemo, fetchPendingCambios]);
 
-  const handleApproveCambio = async (cambio) => {
+  const handleApproveCambio = (cambio) => {
+    // Deschide modalul de confirmare
+    setCambioToApprove(cambio);
+    setShowApproveModal(true);
+  };
+
+  // Helper pentru a extrage numele câmpului din string-ul formatat
+  const extractCampoName = (campoString) => {
+    if (!campoString) return campoString;
+    
+    // Dacă string-ul conține ":" sau "→", extrage doar partea dinainte
+    // Ex: "D.N.I. / NIE: \"Demo2024\" → \"DemoDNI\"" => "D.N.I. / NIE"
+    if (campoString.includes(':')) {
+      return campoString.split(':')[0].trim();
+    }
+    
+    // Dacă string-ul conține "→", extrage doar partea dinainte
+    if (campoString.includes('→')) {
+      return campoString.split('→')[0].trim();
+    }
+    
+    // Altfel, returnează string-ul original
+    return campoString.trim();
+  };
+
+  const confirmApproveCambio = async () => {
+    if (!cambioToApprove) return;
+
     // Skip real backend call in DEMO mode
     if (authUser?.isDemo) {
       console.log('🎭 DEMO mode: Simulating cambio approval');
@@ -257,32 +300,74 @@ export default function AprobacionesPage() {
         message: 'Modificación aprobada con éxito! (Simulación DEMO)'
       });
       // Remove from demo list (simulate approval)
-      setPendingCambios(prev => prev.filter(c => c.id !== cambio.id));
+      setPendingCambios(prev => prev.filter(c => c.id !== cambioToApprove.id));
+      // Reset checkbox pentru acest cambio
+      setEnviarAGestoriaMap(prev => {
+        const newMap = { ...prev };
+        delete newMap[cambioToApprove.id || cambioToApprove.ID];
+        return newMap;
+      });
+      // Închide modalul
+      setShowApproveModal(false);
+      setCambioToApprove(null);
       return;
     }
 
     setProcessingAction(true);
     try {
+      // Extrage numele câmpului curat (fără formatare)
+      const campoRaw = cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || '';
+      const campoName = extractCampoName(campoRaw);
+      
       // Pregătesc datele în formatul cerut pentru backend
       const approvalData = {
-        id: cambio.id || cambio.ID,
-        codigo: cambio.codigo || cambio.CODIGO,
-        email: cambio.CORREO_ELECTRONICO,
-        nombre: cambio.NOMBRE,
-        campo: cambio.CAMPO_MODIFICADO || cambio.campo,
-        valor: cambio.VALOR_NUEVO || cambio.valoare_noua
+        id: cambioToApprove.id || cambioToApprove.ID,
+        codigo: cambioToApprove.codigo || cambioToApprove.CODIGO,
+        email: cambioToApprove.CORREO_ELECTRONICO,
+        nombre: cambioToApprove.NOMBRE,
+        campo: campoName, // Numele câmpului curat, fără formatare
+        valor: cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua
       };
+
+      // Dacă checkbox-ul este bifat, adaugă parametrii pentru email la gestoria
+      const cambioId = cambioToApprove.id || cambioToApprove.ID;
+      if (enviarAGestoriaMap[cambioId]) {
+        approvalData.enviarAGestoria = 'true';
+        
+        // Construiește mesajul email similar cu EmpleadosPage
+        const mensajeEmail = `Se ha aprobado y actualizado la información del empleado:\n\n` +
+                           `Empleado: ${cambioToApprove.NOMBRE || 'N/A'}\n` +
+                           `Código: ${cambioToApprove.CODIGO || cambioToApprove.codigo || 'N/A'}\n` +
+                           `Email: ${cambioToApprove.CORREO_ELECTRONICO || 'N/A'}\n\n` +
+                           `Campo modificado: ${cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || 'N/A'}\n` +
+                           `  - Valor anterior: ${cambioToApprove.VALOR_ANTERIOR || cambioToApprove.valor_anterior || '(vacío)'}\n` +
+                           `  - Valor nuevo: ${cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || '(vacío)'}\n\n` +
+                           `Motivo del cambio: ${cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON || 'N/A'}\n\n` +
+                           `Aprobado por: ${authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema'}\n` +
+                           `Fecha: ${new Date().toLocaleString('es-ES')}`;
+
+        approvalData.emailBody = mensajeEmail;
+        approvalData.emailSubject = `Aprobación de cambio de datos - ${cambioToApprove.NOMBRE || cambioToApprove.CODIGO || 'Empleado'}`;
+        approvalData.updatedBy = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema';
+      }
 
       console.log('Sending approval data:', approvalData);
 
       console.log('Making request to:', API_ENDPOINTS.APPROVE_CAMBIO);
       
+      // Adaugă JWT token pentru backend
+      const token = localStorage.getItem('auth_token');
+      const headers = { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.APPROVE_CAMBIO, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
+        headers,
         body: JSON.stringify(approvalData)
       });
 
@@ -297,6 +382,21 @@ export default function AprobacionesPage() {
           title: '¡Éxito!',
           message: 'Modificare aprobată cu succes!'
         });
+        
+        // Log aprobarea cambio
+        await activityLogger.logAprobacionCambioApproved(approvalData, authUser);
+        
+        // Reset checkbox pentru acest cambio după aprobare
+        setEnviarAGestoriaMap(prev => {
+          const newMap = { ...prev };
+          delete newMap[cambioId];
+          return newMap;
+        });
+        
+        // Închide modalul
+        setShowApproveModal(false);
+        setCambioToApprove(null);
+        
         fetchPendingCambios();
       } else {
         const errorText = await response.text();
@@ -374,19 +474,20 @@ export default function AprobacionesPage() {
       console.log('Sending rejection data:', rejectionData);
       console.log('Making request to:', API_ENDPOINTS.REJECT_CAMBIO);
 
-      // Construiesc URL-ul cu query parameters pentru GET request
-      const params = new URLSearchParams(rejectionData);
-      const url = `${API_ENDPOINTS.REJECT_CAMBIO}?${params.toString()}`;
-      
-      console.log('Full URL with params:', url);
+      // Adaugă JWT token pentru backend
+      const token = localStorage.getItem('auth_token');
+      const headers = { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        mode: 'cors'
+      const response = await fetch(API_ENDPOINTS.REJECT_CAMBIO, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(rejectionData)
       });
 
       console.log('Response status:', response.status);
@@ -400,6 +501,13 @@ export default function AprobacionesPage() {
           title: '¡Éxito!',
           message: 'Modificare respinsă cu succes!'
         });
+        
+        // Log respingerea cambio
+        await activityLogger.logAprobacionCambioRejected(
+          rejectionData,
+          rejectReason,
+          authUser
+        );
         
         // Închid modal-ul
         setShowRejectModal(false);
@@ -609,6 +717,27 @@ export default function AprobacionesPage() {
               </div>
             </div>
 
+            {/* Checkbox "Enviar a Gestoria" în modal */}
+            <div className="pt-4 border-t border-gray-200">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enviarAGestoriaMap[selectedItem.id || selectedItem.ID] || false}
+                  onChange={(e) => {
+                    const cambioId = selectedItem.id || selectedItem.ID;
+                    setEnviarAGestoriaMap(prev => ({
+                      ...prev,
+                      [cambioId]: e.target.checked
+                    }));
+                  }}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  📧 Enviar a Gestoria
+                </span>
+              </label>
+            </div>
+            
             <div className="flex gap-3 pt-4">
               <Button
                 onClick={() => handleApproveCambio(selectedItem)}
@@ -631,6 +760,101 @@ export default function AprobacionesPage() {
                 className="flex-1"
               >
                 Cerrar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal de confirmare aprobare */}
+      <Modal
+        isOpen={showApproveModal}
+        onClose={() => {
+          setShowApproveModal(false);
+          setCambioToApprove(null);
+        }}
+        title="Confirmar aprobación"
+      >
+        {cambioToApprove && (
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <p className="text-sm text-yellow-800 font-medium mb-2">
+                ⚠️ ¿Estás seguro que deseas aprobar esta modificación?
+              </p>
+              <p className="text-sm text-yellow-700">
+                Esta acción actualizará los datos del empleado y no se puede deshacer.
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Empleado</label>
+                <p className="text-gray-900 font-semibold">{cambioToApprove.NOMBRE || cambioToApprove.nombre || 'N/A'}</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Campo modificado</label>
+                <p className="text-gray-900 font-semibold">{cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || 'N/A'}</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Valor anterior</label>
+                  <p className="text-gray-500 line-through">{cambioToApprove.VALOR_ANTERIOR || cambioToApprove.valor_anterior || '—'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Valor nuevo</label>
+                  <p className="text-green-600 font-bold">{cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || '—'}</p>
+                </div>
+              </div>
+              
+              {cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Motivo del cambio</label>
+                  <p className="text-gray-700">{cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON}</p>
+                </div>
+              ) : null}
+            </div>
+            
+            {/* Checkbox "Enviar a Gestoria" în modalul de confirmare */}
+            <div className="pt-4 border-t border-gray-200">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enviarAGestoriaMap[cambioToApprove.id || cambioToApprove.ID] || false}
+                  onChange={(e) => {
+                    const cambioId = cambioToApprove.id || cambioToApprove.ID;
+                    setEnviarAGestoriaMap(prev => ({
+                      ...prev,
+                      [cambioId]: e.target.checked
+                    }));
+                  }}
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  📧 Enviar a Gestoria
+                </span>
+              </label>
+            </div>
+            
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={confirmApproveCambio}
+                disabled={processingAction}
+                className="flex-1 bg-green-600 hover:bg-green-700"
+              >
+                {processingAction ? 'Procesando...' : '✅ Sí, aprobar'}
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowApproveModal(false);
+                  setCambioToApprove(null);
+                }}
+                variant="outline"
+                className="flex-1"
+                disabled={processingAction}
+              >
+                Cancelar
               </Button>
             </div>
           </div>

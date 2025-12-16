@@ -1,0 +1,94 @@
+{
+  "name": "deletenominasempleado",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "e4d49321-6591-4c41-9a50-9347d4411733",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "bb573bb1-2db0-4323-90af-a1c5fd4c86ff",
+      "name": "Webhook",
+      "webhookId": "e4d49321-6591-4c41-9a50-9347d4411733"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM Nominas\nWHERE id = CAST('{{ $json.body.id ?? 0 }}' AS UNSIGNED)\n  AND TRIM(nombre) = TRIM('{{ String($json.body.nombre ?? $json.body.filename ?? $json.body.fileName ?? \"\").replace(/\\\\/g,\"\\\\\\\\\").replace(/'/g,\"\\\\'\") }}')\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6650caea-9b9a-4864-a1b5-1e3c0ff09781",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"ok\": true,\n  \"mensaje\": \"Archivo eliminado correctamente.\",\n  \"id\": \"={{ $node['Webhook'].json.body.facturald || $node['Webhook'].json.body.facturaId || $node['Webhook'].json.body.id }}\",\n  \"numero_operacion\": \"={{ $node['Webhook'].json.body.numeroOperatiune || $node['Webhook'].json.body.numar_operatiune || $node['Webhook'].json.body.numeroOperacion }}\",\n  \"archivo\": \"={{ $node['Webhook'].json.body.filename }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "d6cf0505-cd87-4ac4-8e65-965f022dcef6",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3ab9557d-342f-4620-8c34-92318125d568",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "nUrZVmPrAclu6SiS",
+  "tags": []
+}

@@ -16,7 +16,6 @@ import {
   Clock,
   FileText,
   Folder,
-  MessageCircle,
   Settings,
   ShoppingCart,
   UserCircle,
@@ -109,7 +108,8 @@ const InicioPage = () => {
   }, [user?.CODIGO, user?.email]); // Intentionally only track CODIGO and email to avoid excessive re-renders
   
   const userGrupo = useMemo(() => user?.GRUPO || user?.grupo || 'Empleado', [user?.GRUPO, user?.grupo]);
-  const isManager = useMemo(() => user?.isManager || user?.GRUPO === 'Manager' || user?.GRUPO === 'Supervisor', [user?.isManager, user?.GRUPO]);
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = useMemo(() => user?.isManager || false, [user?.isManager]);
   const isAdmin = useMemo(() => user?.GRUPO === 'Admin' || user?.grupo === 'Admin', [user?.GRUPO, user?.grupo]);
   const isDeveloper = useMemo(() => user?.GRUPO === 'Developer' || user?.grupo === 'Developer', [user?.GRUPO, user?.grupo]);
 
@@ -347,7 +347,7 @@ const InicioPage = () => {
     const canAccessDocumentos = shouldUseBackend ? (hasPermission('documentos') || hasPermission('dashboard')) : true;
     const canAccessCuadrantesEmpleado = shouldUseBackend ? (hasPermission('cuadrantes-empleado') || hasPermission('cuadrantes') || hasPermission('dashboard')) : true;
     const canAccessMisInspecciones = shouldUseBackend ? (hasPermission('mis-inspecciones') || hasPermission('dashboard')) : true;
-    const canAccessChat = true; // Chat disponibil pentru toți utilizatorii autentificați
+    const canAccessComunicados = true; // Comunicados disponibil pentru toți utilizatorii autentificați
 
     if (canAccessDatos) {
       list.push({
@@ -415,14 +415,14 @@ const InicioPage = () => {
       });
     }
 
-    if (canAccessChat) {
+    if (canAccessComunicados) {
       list.push({
-        id: 'chat',
-        label: 'Chat',
-        hint: 'Mensajes y comunicación',
-        icon: <MessageCircle className="h-6 w-6 text-white" />,
+        id: 'comunicados',
+        label: 'Comunicados',
+        hint: 'Anuncios y comunicaciones oficiales',
+        icon: <FileText className="h-6 w-6 text-white" />,
         gradient: 'from-green-500 via-emerald-500 to-teal-500',
-        href: '/chat',
+        href: '/comunicados',
       });
     }
 
@@ -1046,7 +1046,7 @@ const InicioPage = () => {
               <p className="mx-auto max-w-3xl text-sm leading-relaxed text-gray-600 sm:text-base md:mx-0">
                 Este es tu panel en{' '}
                 <span className="rounded-md bg-blue-50 px-2 py-1 font-semibold text-blue-700">
-                  DE CAMINO SERVICIOS AUXILIARES V2
+                  DE CAMINO SERVICIOS AUXILIARES
                 </span>
                 . Aquí tienes acceso directo a todo lo que necesitas:{' '}
                 <span className="inline-flex items-center gap-1 font-medium text-green-700">
@@ -1099,19 +1099,19 @@ const InicioPage = () => {
                           });
                           const data = await response.json();
                           if (data.success) {
-                            alert('✅ Notificare trimisă! Verifică iconița de notificări.');
+                            alert('✅ ¡Notificación enviada! Verifica el icono de notificaciones.');
                           } else {
-                            alert('❌ Eroare: ' + data.message);
+                            alert('❌ Error: ' + data.message);
                           }
                         } catch (error) {
                           console.error('Error sending test notification:', error);
-                          alert('❌ Eroare la trimiterea notificării: ' + error.message);
+                          alert('❌ Error al enviar la notificación: ' + error.message);
                         }
                       }}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
                     >
                       <span>🔔</span>
-                      Testează Notificare Push
+                      Probar Notificación Push
                     </button>
                   )}
                 </div>

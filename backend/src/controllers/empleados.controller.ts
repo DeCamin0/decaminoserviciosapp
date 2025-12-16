@@ -250,6 +250,64 @@ export class EmpleadosController {
         empleadoData,
       );
 
+      // Trimite email la gestorie dacă este solicitat
+      const enviarAGestoria =
+        body.enviarAGestoria === 'true' ||
+        body.enviarAGestoria === true ||
+        body.enviarAGestoria === '1';
+
+      if (enviarAGestoria && this.emailService.isConfigured()) {
+        try {
+          // Construiește mesajul email cu informații despre actualizare
+          const emailBody =
+            body.emailBody ||
+            body.mesaj ||
+            'Se ha actualizado la información del empleado.';
+          const emailSubject =
+            body.emailSubject ||
+            body.subiect ||
+            `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`;
+
+          // Formatează mesajul ca HTML pentru email
+          const htmlEmail = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.CODIGO || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Email:</strong> ${empleadoData['CORREO ELECTRONICO'] || 'N/A'}</p>
+              </div>
+              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
+                <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${emailBody.replace(/\n/g, '<br>')}</pre>
+              </div>
+              <p style="color: #666; font-size: 12px; margin-top: 20px;">
+                Actualizado por: ${body.updatedBy || 'Sistema'}<br>
+                Fecha: ${new Date().toLocaleString('es-ES')}
+              </p>
+            </div>
+          `;
+
+          // Trimite la gestoria (altemprado@gmail.com) cu BCC
+          await this.emailService.sendEmail(
+            'altemprado@gmail.com',
+            emailSubject,
+            htmlEmail,
+            {
+              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com'],
+            },
+          );
+
+          this.logger.log(
+            `✅ Email trimis către gestoria (altemprado@gmail.com) pentru actualizare empleado ${body.CODIGO}`,
+          );
+        } catch (emailError: any) {
+          this.logger.error(
+            `❌ Eroare la trimiterea email-ului către gestoria: ${emailError.message}`,
+          );
+          // Nu aruncăm eroare aici, pentru că actualizarea a reușit
+        }
+      }
+
       return {
         success: true,
         message: 'Empleado actualizado correctamente',
@@ -350,6 +408,214 @@ export class EmpleadosController {
       }
       throw new BadRequestException(
         `Error al crear solicitud de aprobación: ${error.message}`,
+      );
+    }
+  }
+
+  @Post('approve-cambio')
+  @UseGuards(JwtAuthGuard)
+  async approveCambio(@Body() body: any) {
+    try {
+      this.logger.log(
+        `✅ Aprobare cambio pentru empleado: ${body?.codigo || body?.CODIGO || 'unknown'}, cambio ID: ${body?.id || body?.ID || 'unknown'}`,
+      );
+
+      // Validăm datele
+      if (!body.id && !body.ID) {
+        throw new BadRequestException('ID-ul cambio-ului este obligatoriu');
+      }
+      if (!body.codigo && !body.CODIGO) {
+        throw new BadRequestException('CODIGO-ul empleado este obligatoriu');
+      }
+      if (!body.campo && !body.CAMPO_MODIFICADO) {
+        throw new BadRequestException('Câmpul de modificat este obligatoriu');
+      }
+      if (body.valor === undefined && body.VALOR_NUEVO === undefined) {
+        throw new BadRequestException('Valoarea nouă este obligatorie');
+      }
+
+      // Aprobă cambio-ul
+      const result = await this.empleadosService.approveCambio({
+        id: body.id || body.ID,
+        codigo: body.codigo || body.CODIGO,
+        campo: body.campo || body.CAMPO_MODIFICADO,
+        valor: body.valor || body.VALOR_NUEVO || '',
+      });
+
+      // Trimite email la gestoria dacă este solicitat
+      const enviarAGestoria =
+        body.enviarAGestoria === 'true' ||
+        body.enviarAGestoria === true ||
+        body.enviarAGestoria === '1';
+
+      if (enviarAGestoria && this.emailService.isConfigured()) {
+        try {
+          // Construiește mesajul email cu informații despre aprobare
+          const emailBody =
+            body.emailBody ||
+            body.mesaj ||
+            `Se ha aprobado y actualizado la información del empleado:\n\n` +
+              `Empleado: ${body.nombre || body.NOMBRE || 'N/A'}\n` +
+              `Código: ${body.codigo || body.CODIGO || 'N/A'}\n` +
+              `Email: ${body.email || body.CORREO_ELECTRONICO || 'N/A'}\n\n` +
+              `Campo modificado: ${body.campo || body.CAMPO_MODIFICADO || 'N/A'}\n` +
+              `Valor nuevo: ${body.valor || body.VALOR_NUEVO || 'N/A'}\n\n` +
+              `Aprobado por: ${body.updatedBy || 'Sistema'}\n` +
+              `Fecha: ${new Date().toLocaleString('es-ES')}`;
+
+          const emailSubject =
+            body.emailSubject ||
+            body.subiect ||
+            `Aprobación de cambio de datos - ${body.nombre || body.NOMBRE || body.codigo || body.CODIGO || 'Empleado'}`;
+
+          // Formatează mesajul ca HTML pentru email
+          const htmlEmail = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0066CC;">Aprobación de Cambio de Datos del Empleado</h2>
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || body.codigo || body.CODIGO || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Email:</strong> ${body.email || body.CORREO_ELECTRONICO || 'N/A'}</p>
+              </div>
+              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
+                <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${emailBody.replace(/\n/g, '<br>')}</pre>
+              </div>
+              <p style="color: #666; font-size: 12px; margin-top: 20px;">
+                Aprobado por: ${body.updatedBy || 'Sistema'}<br>
+                Fecha: ${new Date().toLocaleString('es-ES')}
+              </p>
+            </div>
+          `;
+
+          // Trimite la gestoria (altemprado@gmail.com) cu BCC
+          await this.emailService.sendEmail(
+            'altemprado@gmail.com',
+            emailSubject,
+            htmlEmail,
+            {
+              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com'],
+            },
+          );
+
+          this.logger.log(
+            `✅ Email trimis către gestoria (altemprado@gmail.com) pentru aprobare cambio ${body.id || body.ID}`,
+          );
+        } catch (emailError: any) {
+          this.logger.error(
+            `❌ Eroare la trimiterea email-ului către gestoria: ${emailError.message}`,
+          );
+          // Nu aruncăm eroare aici, pentru că aprobarea a reușit
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Cambio aprobado y actualizado correctamente',
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error approving cambio:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al aprobar cambio: ${error.message}`,
+      );
+    }
+  }
+
+  @Post('reject-cambio')
+  @UseGuards(JwtAuthGuard)
+  async rejectCambio(@Body() body: any) {
+    try {
+      this.logger.log(
+        `❌ Respingere cambio ID: ${body?.id || body?.ID || 'unknown'}`,
+      );
+
+      // Validăm datele
+      if (!body.id && !body.ID) {
+        throw new BadRequestException('ID-ul cambio-ului este obligatoriu');
+      }
+
+      // Respinge cambio-ul
+      const result = await this.empleadosService.rejectCambio({
+        id: body.id || body.ID,
+      });
+
+      // Trimite email către angajat dacă email este furnizat
+      if (
+        (body.email || body.CORREO_ELECTRONICO) &&
+        this.emailService.isConfigured()
+      ) {
+        try {
+          const emailDestinatario = body.email || body.CORREO_ELECTRONICO;
+          const campoModificado =
+            body.campo || body.CAMPO_MODIFICADO || 'el campo solicitado';
+          const motivoRechazo =
+            body.motiv ||
+            body.rejectReason ||
+            'No se ha especificado un motivo';
+
+          const subject = 'Tu solicitud de cambio ha sido rechazada';
+          const htmlEmail = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #CC0000;">Solicitud de Cambio Rechazada</h2>
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
+              </div>
+              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #CC0000; margin: 20px 0;">
+                <p>¡Hola!</p>
+                <p>
+                  Tu solicitud para modificar el campo <strong>"${campoModificado}"</strong> ha sido rechazada.
+                </p>
+                ${motivoRechazo ? `<p><strong>Motivo del rechazo:</strong><br>${motivoRechazo.replace(/\n/g, '<br>')}</p>` : ''}
+              </div>
+              <p style="color: #666; font-size: 12px; margin-top: 20px;">
+                Gracias,<br>
+                Equipo de Recursos Humanos<br>
+                DE CAMINO Servicios Auxiliares SL
+              </p>
+            </div>
+          `;
+
+          // Trimite către angajat cu BCC la info@decaminoservicios.com
+          await this.emailService.sendEmail(
+            emailDestinatario,
+            subject,
+            htmlEmail,
+            {
+              bcc: ['info@decaminoservicios.com'],
+            },
+          );
+
+          this.logger.log(
+            `✅ Email de respingere trimis către ${emailDestinatario} pentru cambio ${body.id || body.ID}`,
+          );
+        } catch (emailError: any) {
+          this.logger.error(
+            `❌ Eroare la trimiterea email-ului de respingere: ${emailError.message}`,
+          );
+          // Nu aruncăm eroare aici, pentru că respingerea a reușit
+        }
+      } else {
+        this.logger.warn(
+          '⚠️ Email nu este furnizat sau SMTP nu este configurat. Email-ul de respingere nu va fi trimis.',
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Cambio rechazado correctamente',
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error rejecting cambio:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al rechazar cambio: ${error.message}`,
       );
     }
   }

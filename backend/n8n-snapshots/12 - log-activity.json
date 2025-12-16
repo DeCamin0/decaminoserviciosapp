@@ -1,0 +1,119 @@
+{
+  "name": "12 - log-activity",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "72e2e2d6-b0e1-4a49-b5a4-321cbe7d3ef4",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "log-activity-webhook"
+    },
+    {
+      "parameters": {},
+      "id": "a0e90139-ef01-44b7-a0a8-bd37db62de29",
+      "name": "Validate and Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": false
+    },
+    {
+      "parameters": {},
+      "id": "61a5aef5-dede-4db8-944c-fee3ec709560",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        688,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        432,
+        0
+      ],
+      "id": "0e70da74-972f-45c9-a917-ed1364434cf1",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Format": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Response": {
+      "main": [
+        []
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "40ee9b06-5a2a-42a7-bbf0-0585232a529a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "jxkQlyyDHUYYgatL",
+  "tags": [
+    {
+      "createdAt": "2025-07-28T11:43:27.930Z",
+      "updatedAt": "2025-07-28T11:43:27.930Z",
+      "id": "PiGNrhEVX3jR3Chh",
+      "name": "logging"
+    }
+  ]
+}

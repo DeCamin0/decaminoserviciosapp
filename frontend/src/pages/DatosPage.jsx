@@ -311,6 +311,20 @@ const [editLoading, setEditLoading] = useState(false);
       const result = await response.json();
       console.log('✅ Avatar guardado:', result);
       
+      // Log avatar uploaded
+      const activityLogger = (await import('../utils/activityLogger')).default;
+      if (authUser || user) {
+        activityLogger.logAvatarUploaded(
+          {
+            codigo: user?.CODIGO || authUser?.CODIGO,
+            fileName: profileImage.name,
+            fileSize: profileImage.size,
+            motivo: motivo
+          },
+          user || authUser
+        );
+      }
+      
       setNotification({
         type: 'success',
         message: `Foto de perfil ${motivo === 'Guardar' ? 'guardada' : 'actualizada'} correctamente`
@@ -480,6 +494,17 @@ const [editLoading, setEditLoading] = useState(false);
 
       const result = await response.json();
       console.log('✅ Avatar eliminado:', result);
+      
+      // Log avatar deleted
+      const activityLogger = (await import('../utils/activityLogger')).default;
+      if (authUser || user) {
+        activityLogger.logAvatarDeleted(
+          {
+            codigo: user?.CODIGO || authUser?.CODIGO
+          },
+          user || authUser
+        );
+      }
       
       setNotification({
         type: 'success',

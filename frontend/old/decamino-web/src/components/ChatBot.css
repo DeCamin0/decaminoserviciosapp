@@ -1,0 +1,342 @@
+/* CSS pentru ChatBot cu react-chatbot-kit */
+
+/* Container principal pentru chatbot */
+.chatbot-container {
+  position: fixed;
+  z-index: 1000;
+}
+
+/* Buton pentru deschiderea chat-ului */
+.chatbot-toggle-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #E53935 0%, #D32F2F 100%);
+  color: #FFFFFF;
+  border-radius: 50%;
+  border: 4px solid #FFFFFF;
+  cursor: pointer;
+  z-index: 9999;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(229, 57, 53, 0.6);
+  font-weight: bold;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chatbot-toggle-button:hover {
+  transform: scale(1.1);
+  background: linear-gradient(135deg, #D32F2F 0%, #C62828 100%);
+  box-shadow: 0 15px 40px rgba(229, 57, 53, 0.8);
+}
+
+/* Fereastra chat */
+.chatbot-window {
+  position: fixed;
+  bottom: 120px;
+  right: 20px;
+  width: 400px;
+  height: 600px;
+  background: #FFFFFF;
+  border: 4px solid #E53935;
+  border-radius: 20px;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header chat */
+.chatbot-header {
+  background: linear-gradient(135deg, #E53935 0%, #D32F2F 100%);
+  color: #FFFFFF;
+  padding: 20px;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 10px rgba(229, 57, 53, 0.3);
+}
+
+.chatbot-title {
+  font-weight: bold;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.chatbot-subtitle {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.chatbot-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+/* Container pentru conținutul chatbot-ului */
+.chatbot-content {
+  flex: 1;
+  overflow: hidden;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F8F9FA 100%);
+}
+
+/* Override pentru stilurile react-chatbot-kit */
+.chatbot-content .react-chatbot-kit-chat-container {
+  height: 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.chatbot-content .react-chatbot-kit-chat-message-container {
+  background: transparent !important;
+  padding: 20px !important;
+  height: calc(100% - 120px) !important;
+  overflow-y: auto !important;
+}
+
+.chatbot-content .react-chatbot-kit-chat-input-container {
+  background: #FFFFFF !important;
+  border-top: 2px solid #F0F0F0 !important;
+  padding: 20px !important;
+  border-radius: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.chatbot-content .react-chatbot-kit-chat-input {
+  flex: 1 !important;
+  border: 2px solid #E0E0E0 !important;
+  border-radius: 25px !important;
+  padding: 12px 16px !important;
+  font-size: 14px !important;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F8F9FA 100%) !important;
+  transition: all 0.3s ease !important;
+  outline: none !important;
+}
+
+.chatbot-content .react-chatbot-kit-chat-input:focus {
+  border-color: #E53935 !important;
+  box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1) !important;
+}
+
+.chatbot-content .react-chatbot-kit-chat-btn-send {
+  background: linear-gradient(135deg, #E53935 0%, #D32F2F 100%) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  border-radius: 50% !important;
+  width: 45px !important;
+  height: 45px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 18px !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3) !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+
+.chatbot-content .react-chatbot-kit-chat-btn-send:hover {
+  transform: scale(1.1) !important;
+  background: linear-gradient(135deg, #D32F2F 0%, #C62828 100%) !important;
+  box-shadow: 0 6px 20px rgba(229, 57, 53, 0.4) !important;
+}
+
+/* Mesaje bot personalizate */
+.custom-bot-message {
+  background: linear-gradient(135deg, #E53935 0%, #D32F2F 100%) !important;
+  color: #FFFFFF !important;
+  border-radius: 20px 20px 20px 5px !important;
+  padding: 12px 18px !important;
+  margin: 8px 0 !important;
+  max-width: 85% !important;
+  box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3) !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  word-wrap: break-word !important;
+  animation: slideInLeft 0.3s ease-out !important;
+}
+
+/* Override pentru mesajele bot din react-chatbot-kit */
+.chatbot-content .react-chatbot-kit-chat-bot-message {
+  background: linear-gradient(135deg, #E53935 0%, #D32F2F 100%) !important;
+  color: #FFFFFF !important;
+  border-radius: 20px 20px 20px 5px !important;
+  padding: 12px 18px !important;
+  margin: 8px 0 !important;
+  max-width: 85% !important;
+  box-shadow: 0 4px 12px rgba(229, 57, 53, 0.3) !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  word-wrap: break-word !important;
+  animation: slideInLeft 0.3s ease-out !important;
+  border: none !important;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Mesaje utilizator */
+.chatbot-content .react-chatbot-kit-user-chat-message {
+  background: linear-gradient(135deg, #F5F5F5 0%, #EEEEEE 100%) !important;
+  color: #333333 !important;
+  border-radius: 20px 20px 5px 20px !important;
+  padding: 12px 18px !important;
+  margin: 8px 0 !important;
+  max-width: 85% !important;
+  margin-left: auto !important;
+  border: 1px solid #E0E0E0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  font-weight: 400 !important;
+  line-height: 1.4 !important;
+  word-wrap: break-word !important;
+  animation: slideInRight 0.3s ease-out !important;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Stiluri pentru scrollbar */
+.chatbot-content .react-chatbot-kit-chat-message-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chatbot-content .react-chatbot-kit-chat-message-container::-webkit-scrollbar-track {
+  background: #F1F1F1;
+  border-radius: 4px;
+}
+
+.chatbot-content .react-chatbot-kit-chat-message-container::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #E53935 0%, #D32F2F 100%);
+  border-radius: 4px;
+}
+
+.chatbot-content .react-chatbot-kit-chat-message-container::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #D32F2F 0%, #C62828 100%);
+}
+
+/* Responsive design pentru mobil */
+@media (max-width: 768px) {
+  .chatbot-toggle-button {
+    width: 70px !important;
+    height: 70px !important;
+    font-size: 28px !important;
+    bottom: 15px !important;
+    right: 15px !important;
+  }
+  
+  .chatbot-window {
+    width: 95vw !important;
+    height: 80vh !important;
+    bottom: 100px !important;
+    right: 2.5vw !important;
+    left: 2.5vw !important;
+  }
+  
+  .chatbot-header {
+    padding: 15px !important;
+  }
+  
+  .chatbot-title {
+    font-size: 16px !important;
+  }
+  
+  .chatbot-subtitle {
+    font-size: 12px !important;
+  }
+  
+  .chatbot-content .react-chatbot-kit-chat-message-container {
+    padding: 15px !important;
+  }
+  
+  .chatbot-content .react-chatbot-kit-chat-input-container {
+    padding: 15px !important;
+  }
+  
+  .chatbot-content .react-chatbot-kit-chat-input {
+    font-size: 16px !important;
+    padding: 12px 16px !important;
+  }
+  
+  .chatbot-content .react-chatbot-kit-chat-btn-send {
+    width: 45px !important;
+    height: 45px !important;
+    font-size: 18px !important;
+  }
+}
+
+/* CSS pentru ecrane foarte mici */
+@media (max-width: 480px) {
+  .chatbot-toggle-button {
+    width: 60px !important;
+    height: 60px !important;
+    font-size: 24px !important;
+  }
+  
+  .chatbot-window {
+    width: 98vw !important;
+    height: 85vh !important;
+    right: 1vw !important;
+    left: 1vw !important;
+  }
+}
+
+/* Stiluri pentru loading state */
+.chatbot-content .react-chatbot-kit-chat-message-container .react-chatbot-kit-chat-bot-message {
+  position: relative;
+}
+
+.chatbot-content .react-chatbot-kit-chat-message-container .react-chatbot-kit-chat-bot-message::after {
+  content: '⏳';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+} 

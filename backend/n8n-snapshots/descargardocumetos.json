@@ -1,0 +1,127 @@
+{
+  "name": "descargardocumetos",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a93f9b3d-2c60-4925-86de-1a1e4d91edbc",
+      "name": "Webhook Descargar Documento",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        -32
+      ],
+      "webhookId": "8b1d2327-95e0-413b-8707-8d6e3f7b70bd"
+    },
+    {
+      "parameters": {},
+      "id": "e89e11d7-1986-4660-bc51-f2d4afaeff86",
+      "name": "Generar SQL Descargar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -32
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {},
+      "id": "533912b0-b1a9-4c27-919c-06fac2ebf920",
+      "name": "MySQL Descargar Documento",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -32
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -32
+      ],
+      "id": "21716e16-1d2a-4499-b40c-0134fb292318",
+      "name": "Code"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        608,
+        -32
+      ],
+      "id": "93aaafd4-2a11-4773-9d7b-f7915bdf8226",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Descargar Documento": {
+      "main": [
+        [
+          {
+            "node": "Generar SQL Descargar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar SQL Descargar": {
+      "main": [
+        [
+          {
+            "node": "MySQL Descargar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL Descargar Documento": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e7a6a8c6-3e90-4a9e-9db8-06a269a4492f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "MZX6iZP1T4E0IjiR",
+  "tags": []
+}

@@ -254,6 +254,20 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
               description: result.message || `El grupo "${result.data.grupo}" ha sido agregado correctamente.`
             });
             
+            // Log horas permitidas created
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            if (user && (user['NOMBRE / APELLIDOS'] || user.nombre)) {
+              const activityLogger = (await import('../utils/activityLogger')).default;
+              activityLogger.logHorasPermitidasCreated(
+                {
+                  grupo: result.data.grupo,
+                  horasAnuales: result.data.horasAnuales,
+                  horasMensuales: result.data.horasMensuales
+                },
+                user
+              );
+            }
+            
             setShowAddModal(false);
             setNewItem({ grupo: '', horasAnuales: 0, horasMensuales: 0 });
           } else {

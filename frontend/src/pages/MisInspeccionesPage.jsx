@@ -190,11 +190,18 @@ export default function MisInspeccionesPage() {
       console.log('📡 Calling production endpoint via proxy:', productionEndpoint);
       console.log('👤 Codigo empleado:', codigoEmpleado);
       
+      // Add JWT token for backend API calls
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${productionEndpoint}?codigo_empleado=${codigoEmpleado}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: fetchHeaders,
       });
       
       console.log('📡 Response status:', response.status);
@@ -301,11 +308,16 @@ export default function MisInspeccionesPage() {
     
     try {
       // Folosește același endpoint ca la download
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+          'Accept': 'application/pdf, application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+        }
       const response = await fetch(`${API_ENDPOINTS.DOWNLOAD_INSPECTION_DOCUMENT}?id=${inspection.id}`, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/pdf, application/json',
-        }
+        headers: fetchHeaders,
       });
 
       if (response.ok) {
@@ -358,11 +370,16 @@ export default function MisInspeccionesPage() {
   const handleDownload = async (inspection) => {
     try {
       // Request către webhook-ul n8n pentru descărcare document
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+          'Accept': 'application/pdf, application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+        }
       const response = await fetch(`${API_ENDPOINTS.DOWNLOAD_INSPECTION_DOCUMENT}?id=${inspection.id}`, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/pdf, application/json',
-        }
+        headers: fetchHeaders,
       });
 
       if (response.ok) {

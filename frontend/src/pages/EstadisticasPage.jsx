@@ -38,13 +38,12 @@ export default function EstadisticasPage() {
   const [showSinSalidaModal, setShowSinSalidaModal] = useState(false);
 
   const hasStatisticsPermission = useCallback(() => {
-    const grupo = authUser?.GRUPO;
-    const isAdmin = authUser?.isAdmin || grupo === 'Admin';
-    const isDeveloper = authUser?.isDeveloper || grupo === 'Developer';
-    const isSupervisor = grupo === 'Supervisor';
-    const isManager = grupo === 'Manager';
+    // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+    const isManager = authUser?.isManager || false;
+    const isAdmin = authUser?.isAdmin || authUser?.GRUPO === 'Admin';
+    const isDeveloper = authUser?.isDeveloper || authUser?.GRUPO === 'Developer';
 
-    return isAdmin || isDeveloper || isSupervisor || isManager;
+    return isManager || isAdmin || isDeveloper;
   }, [authUser]);
 
   const parseJsonSafe = useCallback(async (response, label) => {
@@ -142,7 +141,8 @@ export default function EstadisticasPage() {
       }
 
       // Fetch solicitudes
-      const isManager = authUser?.isManager || authUser?.GRUPO === 'Manager' || authUser?.GRUPO === 'Supervisor';
+      // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+      const isManager = authUser?.isManager || false;
       const emailLogat = authUser?.['CORREO ELECTRONICO'];
       
       let solicitudesUrl = routes.getSolicitudesByEmail;

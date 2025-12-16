@@ -1,0 +1,111 @@
+{
+  "name": "20 - carganominasempleados",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "get-nomina-ZeTqQIbs8kwia",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "d50e36dc-d172-4f14-a77f-f0989fd498d3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -48
+      ],
+      "webhookId": "e2fbbdbf-02dd-48ce-9795-f9772de8c268"
+    },
+    {
+      "parameters": {
+        "functionCode": "// ===== Helperi\nconst norm = (s) => (s ?? '')\n  .toString()\n  .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')  // fără diacritice\n  .replace(/[._-]+/g, ' ')                           // _ . - -> spații\n  .replace(/\\s+/g, ' ')                              // spații multiple\n  .trim()\n  .toLowerCase();\n\nconst stripExt = (s) => (s ?? '').toString().replace(/\\.[^.]+$/, '');\nconst isYear = (s) => /^\\d{4}$/.test((s ?? '').toString());\nconst months = new Set(['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','setiembre','octubre','noviembre','diciembre']);\n\n// ===== Numele căutat din Webhook (?nombre=...)\nconst numeCautatRaw = $node[\"Webhook\"].json.query?.nombre ?? '';\nconst needle = norm(numeCautatRaw);\n\n// Dintr-un item, generează candidați de nume care ar putea corespunde persoanei\nfunction candidateNames(j) {\n  const c = [];\n  if (j.nombre_empleado) c.push(j.nombre_empleado);\n  if (j.empleado)        c.push(j.empleado);\n  if (j.employee_name)   c.push(j.employee_name);\n\n  const nombre = j.nombre ?? '';\n  c.push(nombre);\n\n  const base = stripExt(nombre);\n  const tokens = base.split('_');\n  c.push(tokens.join(' '));\n\n  if (tokens.length >= 2) {\n    const maybeAno  = tokens[tokens.length - 1];\n    const maybeMes  = tokens[tokens.length - 2];\n    if (isYear(maybeAno) && months.has(norm(maybeMes))) {\n      c.push(tokens.slice(0, -2).join(' '));\n    }\n  }\n\n  return c.filter(Boolean).map(norm);\n}\n\n// ===== Filtrare + rezultat (acum include și id)\nconst results = items\n  .filter(it => {\n    const j = it.json ?? {};\n    const cands = candidateNames(j);\n    return cands.some(c => c.includes(needle));\n  })\n  .map(it => {\n    const j = it.json ?? {};\n    let mes = j.Mes ?? j.mes ?? null;\n    let ano = j.Ano ?? j.ano ?? null;\n\n    const base = stripExt(j.nombre ?? '');\n    const parts = base.split('_');\n    if ((!mes || !ano) && parts.length >= 2) {\n      const maybeAno = parts[parts.length - 1];\n      const maybeMes = parts[parts.length - 2];\n      if (!mes) mes = maybeMes || null;\n      if (!ano && isYear(maybeAno)) ano = maybeAno;\n    }\n\n    const nombreEmpleado =\n      j.nombre_empleado ??\n      j.empleado ??\n      (parts.length >= 2 && isYear(parts[parts.length-1]) && months.has(norm(parts[parts.length-2]))\n        ? parts.slice(0, -2).join(' ')\n        : base.replace(/_/g, ' '));\n\n    return {\n      json: {\n        id: j.id ?? j.ID ?? j.Id ?? j.row_number ?? null, // <-- aici\n        nombre_empleado: nombreEmpleado,\n        archivo: j.nombre ?? null,\n        mes,\n        ano,\n        fecha_subida: j.fecha_subida ?? null,\n      }\n    };\n  });\n\nreturn results;"
+      },
+      "id": "1ec2ec30-82f8-4863-93b0-78dd9f8a61eb",
+      "name": "Find Nomina",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        544,
+        -48
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "Nominas",
+          "mode": "list",
+          "cachedResultName": "Nominas"
+        },
+        "returnAll": true,
+        "options": {
+          "outputColumns": [
+            "id",
+            "nombre",
+            "tipo_mime",
+            "fecha_subida",
+            "Mes",
+            "Ano"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        352,
+        -48
+      ],
+      "id": "54f76df4-c8a7-434d-bef6-91d9bd2c0a27",
+      "name": "Select rows from a table",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Select rows from a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table": {
+      "main": [
+        [
+          {
+            "node": "Find Nomina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "2f9d83b0-9364-4b1b-88ac-33e78c6ccc07",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "kPGvYsSFcuuDkETo",
+  "tags": []
+}

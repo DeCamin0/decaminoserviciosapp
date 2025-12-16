@@ -1,0 +1,92 @@
+{
+  "name": "extraerinspeciones",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "1ef2caab-fa60-4cf2-922d-e9ba2c5ea398",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "9d2ce162-9f10-434a-a431-17e7026dc4bd",
+      "name": "Webhook Get Documentos",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "1ef2caab-fa60-4cf2-922d-e9ba2c5ea398"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      query: `\n        SELECT\n          id,\n          tipo_inspeccion,\n          codigo_empleado,\n          nombre_empleado,\n          nombre_archivo,\n          fecha_subida,\n          \\`Nombre Supervisor\\`,\n          Centro,\n          Locacion\n        FROM InspeccionesDocumentos\n        ORDER BY fecha_subida DESC\n      `\n    }\n  }\n];"
+      },
+      "id": "7cb781d3-a3af-4913-b659-9705a8c02d55",
+      "name": "Generar SQL Get",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "id": "9fc9525c-62a0-48be-8819-adcb7412c728",
+      "name": "MySQL Get Documentos",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Get Documentos": {
+      "main": [
+        [
+          {
+            "node": "Generar SQL Get",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar SQL Get": {
+      "main": [
+        [
+          {
+            "node": "MySQL Get Documentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "25277673-c52b-4898-b765-651dba515450",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "OTQkYIUX7yNgIkJt",
+  "tags": []
+}

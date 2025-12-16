@@ -137,12 +137,39 @@ class ActivityLogger {
 
   // === LOGIN/LOGOUT ===
   async logLogin(user) {
-    await this.logAction('login', {
-      user: user['NOMBRE / APELLIDOS'] || user.nombre,
-      email: user.email,
-      grupo: user.GRUPO,
-      role: user.role
-    });
+    // Construiește logEntry manual pentru a asigura că user este întotdeauna numele, nu email-ul
+    try {
+      const browserInfo = this.getBrowserInfo();
+      
+      const userName = user['NOMBRE / APELLIDOS'] || user.NOMBRE_APELLIDOS || user.nombre || '';
+      const userEmail = user.email || user.CORREO_ELECTRONICO || '';
+      
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        action: 'login',
+        user: userName, // Asigură-te că este numele, nu email-ul
+        email: userEmail,
+        grupo: user.GRUPO || '',
+        role: user.role || '',
+        details: {
+          user: userName,
+          email: userEmail,
+          grupo: user.GRUPO || '',
+          role: user.role || ''
+        },
+        browser: browserInfo,
+        url: window.location.href,
+        sessionId: this.getSessionId()
+      };
+
+      // Salvează local pentru backup
+      this.saveLocalLog(logEntry);
+
+      // Trimite la backend
+      await this.sendToBackend(logEntry);
+    } catch (error) {
+      console.error('Error logging login:', error);
+    }
   }
 
   async logLogout(user) {
@@ -150,14 +177,21 @@ class ActivityLogger {
     try {
       const browserInfo = this.getBrowserInfo();
       
+      const userName = user['NOMBRE / APELLIDOS'] || user.NOMBRE_APELLIDOS || user.nombre || '';
+      const userEmail = user.email || user.CORREO_ELECTRONICO || '';
+      
       const logEntry = {
         timestamp: new Date().toISOString(),
         action: 'logout',
+        user: userName, // Asigură-te că este numele, nu email-ul
+        email: userEmail,
+        grupo: user.GRUPO || '',
+        role: user.role || '',
         details: {
-          user: user['NOMBRE / APELLIDOS'] || user.nombre,
-          email: user.email,
-          grupo: user.GRUPO,
-          role: user.role
+          user: userName,
+          email: userEmail,
+          grupo: user.GRUPO || '',
+          role: user.role || ''
         },
         browser: browserInfo,
         url: window.location.href,
@@ -312,6 +346,176 @@ class ActivityLogger {
         role: user.role
       }).catch(error => {
         console.error('Error logging empleado deleted:', error);
+      });
+    }, 50);
+  }
+
+  // === AUSENCIAS ===
+  async logAusenciaCreated(ausenciaData, user) {
+    setTimeout(() => {
+      this.logAction('ausencia_created', {
+        ausencia: ausenciaData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging ausencia created:', error);
+      });
+    }, 50);
+  }
+
+  async logAusenciaUpdated(ausenciaData, user) {
+    setTimeout(() => {
+      this.logAction('ausencia_updated', {
+        ausencia: ausenciaData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging ausencia updated:', error);
+      });
+    }, 50);
+  }
+
+  async logAusenciaDeleted(ausenciaData, user) {
+    setTimeout(() => {
+      this.logAction('ausencia_deleted', {
+        ausencia: ausenciaData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging ausencia deleted:', error);
+      });
+    }, 50);
+  }
+
+  // === BAJAS MÉDICAS ===
+  async logBajaMedicaViewed(user) {
+    setTimeout(() => {
+      this.logAction('baja_medica_viewed', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging baja medica viewed:', error);
+      });
+    }, 50);
+  }
+
+  async logBajaMedicaUploaded(fileInfo, user) {
+    setTimeout(() => {
+      this.logAction('baja_medica_uploaded', {
+        file: fileInfo,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging baja medica uploaded:', error);
+      });
+    }, 50);
+  }
+
+  async logBajaMedicaUpdated(bajaData, user) {
+    setTimeout(() => {
+      this.logAction('baja_medica_updated', {
+        baja: bajaData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging baja medica updated:', error);
+      });
+    }, 50);
+  }
+
+  // === APROBACIONES ===
+  async logAprobacionFichajeViewed(user) {
+    setTimeout(() => {
+      this.logAction('aprobacion_fichaje_viewed', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging aprobacion fichaje viewed:', error);
+      });
+    }, 50);
+  }
+
+  async logAprobacionFichajeApproved(fichajeData, user) {
+    setTimeout(() => {
+      this.logAction('aprobacion_fichaje_approved', {
+        fichaje: fichajeData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging aprobacion fichaje approved:', error);
+      });
+    }, 50);
+  }
+
+  async logAprobacionFichajeRejected(fichajeData, reason, user) {
+    setTimeout(() => {
+      this.logAction('aprobacion_fichaje_rejected', {
+        fichaje: fichajeData,
+        reason,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging aprobacion fichaje rejected:', error);
+      });
+    }, 50);
+  }
+
+  async logAprobacionCambioViewed(user) {
+    setTimeout(() => {
+      this.logAction('aprobacion_cambio_viewed', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging aprobacion cambio viewed:', error);
+      });
+    }, 50);
+  }
+
+  async logAprobacionCambioApproved(cambioData, user) {
+    setTimeout(() => {
+      this.logAction('aprobacion_cambio_approved', {
+        cambio: cambioData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging aprobacion cambio approved:', error);
+      });
+    }, 50);
+  }
+
+  async logAprobacionCambioRejected(cambioData, reason, user) {
+    setTimeout(() => {
+      this.logAction('aprobacion_cambio_rejected', {
+        cambio: cambioData,
+        reason,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging aprobacion cambio rejected:', error);
       });
     }, 50);
   }
@@ -546,6 +750,234 @@ class ActivityLogger {
     }, 50);
   }
 
+  // === NOTIFICĂRI ===
+  async logNotificationRead(notificationId, user) {
+    setTimeout(() => {
+      this.logAction('notification_read', {
+        notification_id: notificationId,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging notification read:', error);
+      });
+    }, 50);
+  }
+
+  async logNotificationReadAll(user) {
+    setTimeout(() => {
+      this.logAction('notification_read_all', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging notification read all:', error);
+      });
+    }, 50);
+  }
+
+  async logNotificationDeleted(notificationId, user) {
+    setTimeout(() => {
+      this.logAction('notification_deleted', {
+        notification_id: notificationId,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging notification deleted:', error);
+      });
+    }, 50);
+  }
+
+  async logNotificationSent(notificationData, user) {
+    setTimeout(() => {
+      this.logAction('notification_sent', {
+        notification: notificationData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging notification sent:', error);
+      });
+    }, 50);
+  }
+
+  // === INSPECCIONES ===
+  async logInspeccionCreated(inspeccionData, user) {
+    setTimeout(() => {
+      this.logAction('inspeccion_created', {
+        inspeccion: inspeccionData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging inspeccion created:', error);
+      });
+    }, 50);
+  }
+
+  async logInspeccionPDFGenerated(inspeccionData, user) {
+    setTimeout(() => {
+      this.logAction('inspeccion_pdf_generated', {
+        inspeccion: inspeccionData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging inspeccion PDF generated:', error);
+      });
+    }, 50);
+  }
+
+  async logInspeccionViewed(inspeccionData, user) {
+    setTimeout(() => {
+      this.logAction('inspeccion_viewed', {
+        inspeccion: inspeccionData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging inspeccion viewed:', error);
+      });
+    }, 50);
+  }
+
+  async logInspeccionUpdated(inspeccionData, user) {
+    setTimeout(() => {
+      this.logAction('inspeccion_updated', {
+        inspeccion: inspeccionData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging inspeccion updated:', error);
+      });
+    }, 50);
+  }
+
+  async logInspeccionDeleted(inspeccionData, user) {
+    setTimeout(() => {
+      this.logAction('inspeccion_deleted', {
+        inspeccion: inspeccionData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging inspeccion deleted:', error);
+      });
+    }, 50);
+  }
+
+  // === AVATAR ===
+  async logAvatarUploaded(avatarData, user) {
+    setTimeout(() => {
+      this.logAction('avatar_uploaded', {
+        avatar: avatarData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging avatar uploaded:', error);
+      });
+    }, 50);
+  }
+
+  async logAvatarDeleted(avatarData, user) {
+    setTimeout(() => {
+      this.logAction('avatar_deleted', {
+        avatar: avatarData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging avatar deleted:', error);
+      });
+    }, 50);
+  }
+
+  // === CHAT ===
+  async logChatMessageSent(messageData, user) {
+    setTimeout(() => {
+      this.logAction('chat_message_sent', {
+        message: messageData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging chat message sent:', error);
+      });
+    }, 50);
+  }
+
+  async logChatRoomCreated(roomData, user) {
+    setTimeout(() => {
+      this.logAction('chat_room_created', {
+        room: roomData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging chat room created:', error);
+      });
+    }, 50);
+  }
+
+  // === HORAS ===
+  async logHorasPermitidasCreated(horasData, user) {
+    setTimeout(() => {
+      this.logAction('horas_permitidas_created', {
+        horas: horasData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging horas permitidas created:', error);
+      });
+    }, 50);
+  }
+
+  async logHorasPermitidasUpdated(horasData, user) {
+    setTimeout(() => {
+      this.logAction('horas_permitidas_updated', {
+        horas: horasData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging horas permitidas updated:', error);
+      });
+    }, 50);
+  }
+
+  async logHorasPermitidasDeleted(horasData, user) {
+    setTimeout(() => {
+      this.logAction('horas_permitidas_deleted', {
+        horas: horasData,
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role
+      }).catch(error => {
+        console.error('Error logging horas permitidas deleted:', error);
+      });
+    }, 50);
+  }
+
   // === ERROR LOGGING ===
   async logError(error, context, user) {
     setTimeout(() => {
@@ -582,11 +1014,19 @@ class ActivityLogger {
 
   async sendToBackend(logEntry) {
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // Adaugă token JWT dacă e disponibil (pentru tracking, chiar dacă endpoint-ul nu necesită auth)
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(this.baseUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(logEntry)
       });
 

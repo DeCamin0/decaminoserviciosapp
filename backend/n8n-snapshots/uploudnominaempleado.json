@@ -1,0 +1,93 @@
+{
+  "name": "uploudnominaempleado",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "de8acf5c-79fa-4e6e-b694-2ce33d9f8f2f",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        16
+      ],
+      "id": "72836c95-a9bf-49b9-a1bd-1869f471e84b",
+      "name": "Webhook",
+      "webhookId": "de8acf5c-79fa-4e6e-b694-2ce33d9f8f2f"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Function (n8n) ===\n// Suportă 1+ fișiere încărcate în același request (multipart)\n// și câmpuri tip archivo_0_tipo în body.\n\n// 1) Preluare item & body\nconst item = items[0] ?? { json: {}, binary: {} };\nconst body = item.json?.body ?? item.json ?? {};\n\n// 2) Utilitare\nfunction sqlString(v) {\n  if (v === null || v === undefined) return 'NULL';\n  return \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"''\") + \"'\";\n}\n\n// Extrage \"indexul\" dintr-o cheie binary (ex: archivo_0 -> 0; data_3 -> 3; archivo -> null)\nfunction extractIndexFromKey(key) {\n  const m = key.match(/_(\\d+)$/);\n  return m ? Number(m[1]) : null;\n}\n\n// Ia o listă de perechi { key, bin, idx } pentru toate binarele valide\nfunction listAllBinaryFiles(binaryObj) {\n  if (!binaryObj || typeof binaryObj !== 'object') return [];\n  return Object.keys(binaryObj)\n    .filter(k => binaryObj[k] && typeof binaryObj[k] === 'object' && binaryObj[k].data)\n    .map(k => ({ key: k, bin: binaryObj[k], idx: extractIndexFromKey(k) }));\n}\n\n// Citește un câmp din body: întâi varianta indexată (campo_{i}), apoi neindexată (campo)\nfunction readBodyFieldForIndex(body, baseName, idx, defaultValue = null) {\n  if (idx !== null && idx !== undefined) {\n    const kIndexed = `${baseName}_${idx}`;\n    if (body[kIndexed] !== undefined && body[kIndexed] !== null) {\n      return body[kIndexed];\n    }\n  }\n  if (body[baseName] !== undefined && body[baseName] !== null) {\n    return body[baseName];\n  }\n  return defaultValue;\n}\n\n// 3) Date comune din body (cu fallback-uri utile)\nconst idBody = body.id ?? body.empleado_id ?? null;\nconst nombre = body.nombre ?? body.nombre_empleado ?? body.empleado_nombre ?? null;\nconst mes    = body.Mes ?? body.mes ?? body.month ?? null;\n\n// Suport 'año' / 'Año' și 'an' / 'An'\nconst ano =\n  body.Ano ?? body.ano ?? body.anio ?? body.year ??\n  body['Año'] ?? body['año'] ?? body.An ?? body.an ?? null;\n\n// 4) Enumeră toate binarele (1+ fișiere)\nlet binaries = listAllBinaryFiles(item.binary);\n\n// Fallback: un singur câmp \"archivo\"\nif (binaries.length === 0 && item.binary?.archivo?.data) {\n  binaries = [{ key: 'archivo', bin: item.binary.archivo, idx: null }];\n}\n\nif (binaries.length === 0) {\n  throw new Error(\"Nu găsesc niciun fișier în 'binary'. Trimite-le ca binary în Webhook (multipart/form-data).\");\n}\n\n// 5) Construiește câte un INSERT pentru fiecare fișier (fără fecha_subida)\nconst outputs = [];\n\nfor (const { key, bin, idx } of binaries) {\n  const b64 = bin.data;\n  if (!b64) throw new Error(`Fișierul '${key}' nu are 'data' (base64) în binary.`);\n\n  // tip MIME per fișier: mai întâi din body (indexed), apoi din binary\n  const mimeArch = readBodyFieldForIndex(body, 'archivo_tipo', idx, bin.mimeType ?? 'application/octet-stream');\n\n  // INSERT în tabelul Nominas — fără 'fecha_subida' (DB pune CURRENT_TIMESTAMP)\n  const query = `\nINSERT INTO Nominas (\n  id,\n  nombre,\n  archivo,\n  tipo_mime,\n  Mes,\n  Ano\n) VALUES (\n  ${sqlString(idBody)},\n  ${sqlString(nombre)},\n  FROM_BASE64(${sqlString(b64)}),\n  ${sqlString(mimeArch)},\n  ${sqlString(mes)},\n  ${sqlString(ano)}\n);\n  `.trim();\n\n  outputs.push({\n    json: {\n      query,\n      _meta: {\n        tabla: 'Nominas',\n        binary_key: key,\n        index: idx,\n        tipo_mime: mimeArch,\n        Mes: mes,\n        Ano: ano,\n        nombre,\n        fecha_subida: 'DEFAULT CURRENT_TIMESTAMP (DB)'\n      }\n    }\n  });\n}\n\nreturn outputs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        16
+      ],
+      "id": "a772b84c-ebd4-4eec-9eaa-5f88d189f5b0",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -128,
+        16
+      ],
+      "id": "64143df7-4b1b-41b2-b397-a3e2d94a0593",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "49f3de28-7104-4bc0-877a-182963925c88",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "1cyNIoHPpuiOVjBi",
+  "tags": []
+}

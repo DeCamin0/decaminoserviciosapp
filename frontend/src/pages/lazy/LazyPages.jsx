@@ -31,7 +31,9 @@ const PaqueteriaCentroPage = lazy(() => import('../centro/PaqueteriaCentroPage')
 const IncidenciasCentroPage = lazy(() => import('../centro/IncidenciasCentroPage'));
 const PedidosPage = lazy(() => import('../PedidosPage'));
 const EmpleadoPedidosPage = lazy(() => import('../EmpleadoPedidosPage'));
-const ChatPage = lazy(() => import('../ChatPage'));
+const ComunicadosPage = lazy(() => import('../ComunicadosPage'));
+const ComunicadoDetailPage = lazy(() => import('../ComunicadoDetailPage'));
+const ComunicadoCreatePage = lazy(() => import('../ComunicadoCreatePage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -286,10 +288,26 @@ export const LazyEmpleadoPedidosPage = (props) => {
   );
 };
 
-export const LazyChatPage = (props) => {
+export const LazyComunicadosPage = (props) => {
   return (
-    <Suspense fallback={<PageLoading title="Cargando chat..." />}>
-      <ChatPage {...props} />
+    <Suspense fallback={<PageLoading title="Cargando comunicados..." />}>
+      <ComunicadosPage {...props} />
+    </Suspense>
+  );
+};
+
+export const LazyComunicadoDetailPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando comunicado..." />}>
+      <ComunicadoDetailPage {...props} />
+    </Suspense>
+  );
+};
+
+export const LazyComunicadoCreatePage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando..." />}>
+      <ComunicadoCreatePage {...props} />
     </Suspense>
   );
 };
@@ -323,5 +341,7 @@ export default {
   LazyIncidenciasCentroPage,
   LazyPedidosPage,
   LazyEmpleadoPedidosPage,
-  LazyChatPage
+  LazyComunicadosPage,
+  LazyComunicadoDetailPage,
+  LazyComunicadoCreatePage
 };

@@ -1,0 +1,91 @@
+{
+  "name": "Guardar documento firmado con autofirma v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -288,
+        0
+      ],
+      "id": "29980fa6-2206-4bbf-9cda-57a39014c683",
+      "name": "Webhook",
+      "webhookId": "b066b1f7-cc6e-4b9e-a86f-7202a86acab4"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * n8n Code node (Run Once for All Items)\n * Folosește body cu:\n *  - doc_id (IGNORAT → pus NULL în DB)\n *  - id (din payload → salvat în DB)\n *  - restul câmpurilor\n */\n\nfunction sqlString(v){ if(v==null) return 'NULL'; const s=String(v); return `'${s.replace(/\\\\/g,'\\\\\\\\').replace(/'/g,\"\\\\'\")}'`; }\nfunction pad2(n){ return String(n).padStart(2,'0'); }\nfunction toMysqlDateTime(x){\n  if(!x) return null;\n  const d = new Date(x);\n  if(isNaN(d)) return null;\n  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;\n}\nfunction deriveEmployeeNameFromFilename(name){\n  if(!name) return null;\n  const base = String(name).replace(/\\.[^.]+$/,'');\n  let s = base.replace(/[_-]+/g,' ').replace(/\\d+/g,' ')\n    .replace(/\\b(ALTA|BAJA|CONTRATO|FIRMADO|FIRMADA|FIRMA|DIGITAL|ANEXO|DOC|DOCUMENTO|PDF|RENOVACION|RENOVACIÓN|NOMINA|NÓMINA)\\b/gi,' ')\n    .replace(/\\s+/g,' ').trim();\n  return s || null;\n}\n\nconst root = items[0]?.json ?? {};\nconst body = (root && typeof root.body === 'object') ? root.body : root;\n\nconst idPayload         = body.id ?? null;  // ← ASTA se bagă în coloana id\nconst correoElectronico = body.correo_electronico ?? null;\nconst tipoDocumento     = body.tipo_documento ?? null;\nconst fileNameRaw       = body.nombre_archivo ?? null;\nconst mime              = body.mime ?? null;\nlet   nombreEmpleado    = body.nombre_empleado ?? null;\nlet   b64               = body.signed_b64 ?? null;\nconst fechaMysql        = toMysqlDateTime(body.fecha_creacion ?? null);\n\n// normalize base64\nif (typeof b64 === 'string') b64 = b64.trim().replace(/^data:[^;]+;base64,/i,'').replace(/\\s+/g,'');\nif (!b64) throw new Error('Lipsește \"signed_b64\" în payload.');\nif (!nombreEmpleado || String(nombreEmpleado).trim()==='') {\n  nombreEmpleado = deriveEmployeeNameFromFilename(fileNameRaw);\n}\n\n// doc_id îl lăsăm NULL ca să fie autoincrement\nconst query = `\nINSERT INTO DocumentosOficiales (\n  doc_id, id, correo_electronico, tipo_documento, nombre_archivo, nombre_empleado, fecha_creacion, archivo\n) VALUES (\n  NULL,\n  ${sqlString(idPayload)},\n  ${sqlString(correoElectronico)},\n  ${sqlString(tipoDocumento)},\n  ${sqlString(fileNameRaw)},\n  ${sqlString(nombreEmpleado)},\n  ${fechaMysql ? sqlString(fechaMysql) : 'NOW()'},\n  FROM_BASE64(${sqlString(b64)})\n);`.trim();\n\nreturn [{\n  json: {\n    query,\n    _meta: {\n      tabla: 'DocumentosOficiales',\n      doc_id: 'AUTO (NULL)',\n      id: idPayload,\n      correo_electronico: correoElectronico,\n      tipo_documento: tipoDocumento,\n      nombre_archivo: fileNameRaw,\n      nombre_empleado: nombreEmpleado,\n      fecha_creacion: fechaMysql ?? 'NOW()',\n      mimeType: mime\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        0
+      ],
+      "id": "6a2cbaf8-83e0-4ffa-b6ab-7f3aaf0ef1ed",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        80,
+        0
+      ],
+      "id": "86c935c1-5fec-42b5-a69d-1d911bc49832",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "115129a2-fbfb-4bd6-9bdf-2c87ab6e5798",
+  "meta": {
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "FnsUDnSroKtEwGEf",
+  "tags": []
+}

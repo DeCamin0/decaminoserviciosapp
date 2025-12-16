@@ -37,6 +37,7 @@
   "ignorePatterns": [
     "dist/**/*",
     "node_modules/**/*",
+    "old/**/*",
     "*.config.js",
     "*.config.ts",
     "**/*.ts",

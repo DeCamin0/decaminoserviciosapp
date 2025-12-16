@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Clienți Endpoint</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background: #e53e3e;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .test-button:hover {
+            background: #c53030;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #e53e3e;
+        }
+        .client-item {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+        .client-name {
+            font-weight: bold;
+            color: #2d3748;
+        }
+        .client-details {
+            color: #718096;
+            font-size: 14px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #718096;
+        }
+        .error {
+            color: #e53e3e;
+            background: #fed7d7;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #38a169;
+            background: #c6f6d5;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Endpoint Clienți</h1>
+        <p>Testează endpoint-ul pentru lista de clienți cu proxy Vite</p>
+        
+        <button class="test-button" onclick="testEndpoint()">
+            🚀 Testează Endpoint-ul
+        </button>
+        
+        <div id="results" class="results" style="display: none;">
+            <h3>📊 Rezultate Test</h3>
+            <div id="content"></div>
+        </div>
+    </div>
+
+    <script>
+        async function testEndpoint() {
+            const resultsDiv = document.getElementById('results');
+            const contentDiv = document.getElementById('content');
+            
+            resultsDiv.style.display = 'block';
+            contentDiv.innerHTML = '<div class="loading">⏳ Se testează endpoint-ul...</div>';
+            
+            try {
+                console.log('Testing clientes endpoint...');
+                
+                const response = await fetch('/webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('✅ Endpoint funcționează!');
+                console.log('📊 Total clienți:', data.length);
+                console.log('📋 Primul client:', data[0]);
+                
+                // Afișează rezultatele
+                contentDiv.innerHTML = `
+                    <div class="success">
+                        ✅ Endpoint funcționează perfect!
+                    </div>
+                    <div class="client-details">
+                        <strong>📊 Total clienți:</strong> ${data.length}
+                    </div>
+                    <div class="client-details">
+                        <strong>🔗 URL testat:</strong> /webhook/ed97e937-bb85-4b58-967b-d41bbd84ac47
+                    </div>
+                    <div class="client-details">
+                        <strong>📅 Timestamp:</strong> ${new Date().toLocaleString('ro-RO')}
+                    </div>
+                `;
+                
+                // Afișează primii 5 clienți ca exemplu
+                const sampleClients = data.slice(0, 5);
+                let clientsHtml = '<h4>📋 Exemple de clienți:</h4>';
+                
+                sampleClients.forEach((cliente, index) => {
+                    clientsHtml += `
+                        <div class="client-item">
+                            <div class="client-name">${index + 1}. ${cliente['NOMBRE O RAZON SOCIAL']}</div>
+                            <div class="client-details">
+                                <strong>NIF:</strong> ${cliente.NIF} | 
+                                <strong>Email:</strong> ${cliente.EMAIL || 'N/A'} | 
+                                <strong>Oraș:</strong> ${cliente.POBLACION || 'N/A'}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                contentDiv.innerHTML += clientsHtml;
+                
+            } catch (error) {
+                console.error('❌ Eroare la testarea endpoint-ului:', error);
+                contentDiv.innerHTML = `
+                    <div class="error">
+                        ❌ Eroare la testarea endpoint-ului: ${error.message}
+                    </div>
+                    <div class="client-details">
+                        <strong>🔍 Debug info:</strong>
+                        <ul>
+                            <li>Verifică dacă serverul de dezvoltare rulează (npm run dev)</li>
+                            <li>Verifică dacă proxy-ul Vite este configurat corect</li>
+                            <li>Verifică dacă endpoint-ul este accesibil</li>
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html> 

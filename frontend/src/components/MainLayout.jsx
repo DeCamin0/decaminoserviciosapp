@@ -1,6 +1,6 @@
 import { useAuth } from '../contexts/AuthContextBase';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import ChatBot from './ChatBot';
 import Footer from './Footer';
 import LocationDisplay from './LocationDisplay';
@@ -22,6 +22,9 @@ const MainLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const now = useMemo(() => new Date(), []);
+  // Sezon de sărbători: decembrie (luna 11) sau ianuarie până pe 6 ianuarie (luna 0, zilele <= 6)
+  const isHolidaySeason = now.getMonth() === 11 || (now.getMonth() === 0 && now.getDate() <= 6);
 
   // Gestionare navigare pentru browser back button
   useEffect(() => {
@@ -68,6 +71,89 @@ const MainLayout = ({ children }) => {
         <div className="absolute top-10 right-10 w-20 h-20 bg-red-200 rounded-full opacity-25 blur-lg"></div>
       </div>
 
+      {/* Stiluri sezoniere (ninsoare și sparkles) */}
+      {isHolidaySeason && (
+        <style>{`
+          .snowflake-main {
+            position: absolute;
+            top: -10%;
+            color: rgba(170, 205, 255, 0.9); /* albastru deschis pe modul normal */
+            font-size: 13px;
+            animation-name: snowfall-main;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
+            pointer-events: none;
+          }
+          .dark .snowflake-main {
+            color: rgba(255,255,255,0.9); /* alb în modul întunecat */
+          }
+          @keyframes snowfall-main {
+            0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            100% { transform: translateY(110vh) translateX(26px) rotate(360deg); opacity: 0; }
+          }
+          @keyframes sparkle-main {
+            0%, 100% { opacity: 0; transform: scale(0.6) translateY(0); }
+            10% { opacity: 1; transform: scale(1) translateY(-2px); }
+            50% { opacity: 0.8; transform: scale(1.05) translateY(0); }
+            90% { opacity: 0.4; transform: scale(0.8) translateY(2px); }
+          }
+        `}</style>
+      )}
+
+      {/* Decor global de sezon */}
+      {isHolidaySeason && (
+        <>
+          {/* Ninsoare globală */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden z-20">
+            {Array.from({ length: 60 }).map((_, idx) => (
+              <span
+                key={idx}
+                className="snowflake-main"
+                style={{
+                  left: `${(idx * 100) / 60}%`,
+                  animationDuration: `${6 + (idx % 5)}s`,
+                  animationDelay: `${idx * 0.18}s`,
+                  fontSize: `${10 + (idx % 5) * 2}px`
+                }}
+              >
+                ❄
+              </span>
+            ))}
+          </div>
+
+          {/* Halo discret pe fundal */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-0">
+            <div className="w-[780px] h-[780px] rounded-full bg-gradient-to-br from-amber-200/6 via-red-200/8 to-orange-100/6 blur-3xl animate-pulse" />
+          </div>
+
+          {/* Sparkles rare în header */}
+          <div className="pointer-events-none absolute inset-0 z-30">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <span
+                key={idx}
+                className="absolute text-white/80"
+                style={{
+                  top: `${6 + idx * 7}%`,
+                  left: `${12 + (idx * 9) % 70}%`,
+                  filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.7))',
+                  animation: `sparkle-main ${6 + idx}s ease-in-out ${idx * 1.5}s infinite`
+                }}
+              >
+                ✨
+              </span>
+            ))}
+          </div>
+
+          {/* Badge Felices Fiestas în header */}
+          <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-40">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/18 backdrop-blur-md border border-white/25 shadow-md text-sm text-red-900/80">
+              🎄 Felices Fiestas
+            </div>
+          </div>
+        </>
+      )}
+
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative">
         {/* Desktop layout - rămâne neschimbat */}
         <div className="hidden md:flex items-center min-h-[clamp(56px,6vh,72px)]" style={{
@@ -103,13 +189,26 @@ const MainLayout = ({ children }) => {
                     {/* Fallback text dacă logo-ul nu se încarcă */}
                       <div className="hidden text-red-600 font-bold text-lg">DC</div>
                     </div>
+                    {/* Căciulă de Moș pentru sezon */}
+                    {isHolidaySeason && (
+                      <div className="absolute -top-2 -right-3 w-7 h-5 transform rotate-12">
+                        <div className="absolute inset-0 bg-red-500 rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow border border-red-600"></div>
+                        <div className="absolute -bottom-1 left-0 right-0 h-2 bg-white rounded-full shadow-sm"></div>
+                        <div className="absolute -bottom-3 -right-1 w-3 h-3 bg-white rounded-full shadow-sm"></div>
+                      </div>
+                    )}
                     {/* Efect de glow */}
                     <div className="absolute inset-0 w-12 h-12 bg-red-400 rounded-full opacity-20 blur-md animate-pulse"></div>
                 </div>
                 
                   <h1 className="text-lg lg:text-xl font-bold text-gray-900 dark:text-white">
-                    DE CAMINO SERVICIOS AUXILIARES V2
+                    DE CAMINO SERVICIOS AUXILIARES
                   </h1>
+                  {isHolidaySeason && (
+                    <span className="ml-2 px-3 py-1 rounded-full bg-white/60 text-red-700 text-xs font-semibold shadow-sm backdrop-blur">
+                      🎄 Felices Fiestas
+                    </span>
+                  )}
               </div>
             </div>
           </div>
@@ -170,12 +269,24 @@ const MainLayout = ({ children }) => {
                   />
                   <div className="hidden text-red-600 font-bold text-xs">DC</div>
                 </div>
+                {isHolidaySeason && (
+                  <div className="absolute -top-1 -right-2 w-5 h-4 transform rotate-12">
+                    <div className="absolute inset-0 bg-red-500 rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow border border-red-600"></div>
+                    <div className="absolute -bottom-1 left-0 right-0 h-1.5 bg-white rounded-full shadow-sm"></div>
+                    <div className="absolute -bottom-2 -right-1 w-2.5 h-2.5 bg-white rounded-full shadow-sm"></div>
+                  </div>
+                )}
               </div>
               
               {/* Nume firmă - trunchiat dacă e prea lung */}
               <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
-                DE CAMINO SERVICIOS AUXILIARES V2
+                DE CAMINO SERVICIOS AUXILIARES
               </h1>
+              {isHolidaySeason && (
+                <span className="ml-2 px-2 py-0.5 rounded-full bg-white/60 text-red-700 text-[11px] font-semibold shadow-sm backdrop-blur whitespace-nowrap">
+                  🎄 Felices Fiestas
+                </span>
+              )}
             </div>
 
             {/* Notifications, Theme Toggle și Buton Salir */}
