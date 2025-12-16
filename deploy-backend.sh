@@ -27,7 +27,7 @@ cd "$BACKEND_DIR" || exit 1
 
 # 1. Oprește backend-ul dacă rulează
 echo -e "${YELLOW}📋 Step 1: Stopping backend...${NC}"
-BACKEND_PID=$(ps aux | grep "node dist/main" | grep -v grep | awk '{print $2}' | head -1)
+BACKEND_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
 if [ -n "$BACKEND_PID" ]; then
     echo "Found backend process: $BACKEND_PID"
     kill -9 "$BACKEND_PID" 2>/dev/null || true
@@ -129,11 +129,17 @@ echo -e "${GREEN}✅ Backend built${NC}"
 
 # 9. Repornește backend-ul
 echo -e "${YELLOW}📋 Step 8: Starting backend...${NC}"
-nohup node dist/main.js > "$LOG_FILE" 2>&1 &
+# NestJS compilează în dist/src/main.js (nu dist/main.js)
+MAIN_JS="dist/src/main.js"
+if [ ! -f "$MAIN_JS" ]; then
+    # Fallback la dist/main.js dacă există
+    MAIN_JS="dist/main.js"
+fi
+nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
 sleep 3
 
 # 10. Verifică că rulează
-NEW_PID=$(ps aux | grep "node dist/main" | grep -v grep | awk '{print $2}' | head -1)
+NEW_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
 if [ -n "$NEW_PID" ]; then
     echo -e "${GREEN}✅ Backend started successfully (PID: $NEW_PID)${NC}"
     echo -e "${GREEN}📝 Logs: $LOG_FILE${NC}"
