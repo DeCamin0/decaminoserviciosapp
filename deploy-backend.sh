@@ -104,13 +104,23 @@ echo -e "${YELLOW}📋 Step 5: Generating Prisma client...${NC}"
 npx prisma generate
 echo -e "${GREEN}✅ Prisma client generated${NC}"
 
-# 7. Aplică migrări
+# 7. Aplică migrări sau sincronizează schema
 echo -e "${YELLOW}📋 Step 6: Applying database migrations...${NC}"
-npx prisma migrate deploy || {
-    echo -e "${RED}❌ Migration failed! Check your DATABASE_URL in .env${NC}"
-    exit 1
-}
-echo -e "${GREEN}✅ Migrations applied${NC}"
+if npx prisma migrate deploy 2>&1 | grep -q "P3005"; then
+    echo -e "${YELLOW}⚠️  Database is not empty (P3005). Using db push instead...${NC}"
+    npx prisma db push --accept-data-loss || {
+        echo -e "${RED}❌ Database sync failed! Check your DATABASE_URL in .env${NC}"
+        exit 1
+    }
+    echo -e "${GREEN}✅ Database schema synchronized${NC}"
+else
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✅ Migrations applied${NC}"
+    else
+        echo -e "${RED}❌ Migration failed! Check your DATABASE_URL in .env${NC}"
+        exit 1
+    fi
+fi
 
 # 8. Recompilează
 echo -e "${YELLOW}📋 Step 7: Building backend...${NC}"
