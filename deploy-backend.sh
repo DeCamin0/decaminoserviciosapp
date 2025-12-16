@@ -56,11 +56,33 @@ if [ -f ".env.production" ]; then
         echo -e "${GREEN}✅ .env file exists and is up to date${NC}"
     fi
     
-    # Verifică dacă DATABASE_URL există
+    # Construiește DATABASE_URL din variabile separate dacă nu există
     if ! grep -q "^DATABASE_URL=" .env; then
-        echo -e "${RED}❌ DATABASE_URL not found in .env!${NC}"
-        echo "Please add DATABASE_URL to .env.production or .env"
-        exit 1
+        echo -e "${YELLOW}⚠️  DATABASE_URL not found, building from DB_* variables...${NC}"
+        
+        # Citește variabilele din .env
+        source .env 2>/dev/null || true
+        
+        # Construiește DATABASE_URL
+        DB_HOST=${DB_HOST:-localhost}
+        DB_PORT=${DB_PORT:-3306}
+        DB_USERNAME=${DB_USERNAME:-root}
+        DB_PASSWORD=${DB_PASSWORD:-}
+        DB_NAME=${DB_NAME:-decaminoservicios}
+        
+        # Encodează parola pentru URL
+        ENCODED_PASSWORD=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DB_PASSWORD'))" 2>/dev/null || echo "$DB_PASSWORD")
+        
+        DATABASE_URL="mysql://${DB_USERNAME}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+        
+        # Adaugă DATABASE_URL în .env
+        echo "" >> .env
+        echo "# Auto-generated DATABASE_URL from DB_* variables" >> .env
+        echo "DATABASE_URL=\"${DATABASE_URL}\"" >> .env
+        
+        echo -e "${GREEN}✅ DATABASE_URL generated: mysql://${DB_USERNAME}:****@${DB_HOST}:${DB_PORT}/${DB_NAME}${NC}"
+    else
+        echo -e "${GREEN}✅ DATABASE_URL found in .env${NC}"
     fi
 else
     if [ ! -f ".env" ]; then
