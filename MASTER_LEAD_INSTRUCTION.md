@@ -130,9 +130,23 @@
 - **Config**: `ConfigModule` pentru env vars, DB, JWT
 - **WebSocket**: 
   - `/notifications` namespace - NotificationsGateway (JWT handshake)
-  - `/chat` namespace - ChatGateway (JWT handshake)
 - **Notificări**: REST (`/api/notifications/*`) + WebSocket, permisiuni bazate pe `GRUPO`
 - **Migrations**: Scripturi SQL manuale în `backend/migrations/` + Prisma migrations în `backend/prisma/migrations/`
+
+### Deploy pe VPS (Production)
+- **IMPORTANT**: Pe VPS se actualizează **DOAR backend-ul**, nu tot repository-ul
+- **Locație**: `/opt/decaminoserviciosapp/backend/`
+- **Proces de actualizare**:
+  1. Oprește backend-ul: `kill <PID>` sau `kill -9 <PID>` (verifică cu `ps aux | grep "node dist/main"`)
+  2. Navighează la backend: `cd /opt/decaminoserviciosapp/backend`
+  3. Actualizează codul: `git pull origin main` (din root-ul proiectului, apoi `cd backend`)
+  4. Instalează dependențe: `npm install`
+  5. Regeneră Prisma client: `npx prisma generate`
+  6. Aplică migrări: `npx prisma migrate deploy`
+  7. Recompilează: `npm run build`
+  8. Repornește: `nohup node dist/main.js > ../backend.log 2>&1 &`
+- **Frontend**: Nu este pe VPS - este servit static separat (CDN/alt server)
+- **Notă**: Frontend-ul și alte fișiere (documentație, etc.) nu trebuie să fie pe VPS, doar backend-ul
 
 ### Endpoint-uri Migrate în Backend (Folosite de Frontend)
 
