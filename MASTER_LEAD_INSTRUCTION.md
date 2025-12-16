@@ -140,6 +140,17 @@
   - Docker config (`docker-compose.yml`, `Dockerfile`) există pentru viitor, dar **NU e folosit** în producție
   - Procesul rulează cu: `node dist/src/main.js`
   - Logs: `/opt/decaminoserviciosapp/backend.log`
+  - Ascultă pe: `0.0.0.0:3000` (toate interfețele, pentru acces prin Traefik)
+- **Arhitectură Traefik → Backend**:
+  - **Traefik** routează `api.decaminoservicios.com` → container-ul `decamino-backend-proxy` (nginx)
+  - **Container nginx** (`decamino-backend-proxy`) face reverse proxy către backend Node.js pe host
+  - **Backend Node.js** rulează direct pe host pe portul 3000
+  - **Gateway IP**: `172.18.0.1` (din `traefik-network`) - folosit de nginx pentru a accesa host-ul
+  - **Configurație nginx**: `/opt/traefik-backend-config/nginx.conf` - proxy către `http://172.18.0.1:3000`
+  - **IMPORTANT**: Container-ul `decamino-backend-proxy` trebuie să ruleze permanent (`--restart unless-stopped`)
+    - Dacă container-ul se oprește, backend-ul nu va fi accesibil prin subdomeniu
+    - Verifică: `docker ps | grep decamino-backend-proxy`
+    - Repornește dacă e oprit: `docker start decamino-backend-proxy`
 - **Script automat de deploy**: `deploy-backend.sh` (în root-ul proiectului)
 - **Proces automat (RECOMANDAT)**:
   1. Navighează la root: `cd /opt/decaminoserviciosapp`
@@ -169,6 +180,33 @@
 - **Scripturi disponibile**:
   - `deploy-backend.sh` - Script complet de deploy automat
   - `backend/setup-env.sh` - Script pentru configurare rapidă .env
+- **Container nginx proxy (decamino-backend-proxy)**:
+  - **Scop**: Face reverse proxy între Traefik și backend-ul Node.js care rulează pe host
+  - **Network**: `traefik-network` (același cu n8n/Traefik)
+  - **Configurație**: `/opt/traefik-backend-config/nginx.conf`
+  - **Verificare status**: `docker ps | grep decamino-backend-proxy`
+  - **Logs**: `docker logs decamino-backend-proxy`
+  - **Repornire dacă e oprit**: `docker start decamino-backend-proxy`
+  - **Recreare container** (dacă e nevoie):
+    ```bash
+    docker stop decamino-backend-proxy
+    docker rm decamino-backend-proxy
+    docker run -d \
+      --name decamino-backend-proxy \
+      --network traefik-network \
+      --restart unless-stopped \
+      -v /opt/traefik-backend-config/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+      -l "traefik.enable=true" \
+      -l "traefik.docker.network=traefik-network" \
+      -l "traefik.http.routers.backend-api.rule=Host(\`api.decaminoservicios.com\`)" \
+      -l "traefik.http.routers.backend-api.entrypoints=websecure" \
+      -l "traefik.http.routers.backend-api.tls.certresolver=myresolver" \
+      -l "traefik.http.routers.backend-api.middlewares=backend-headers" \
+      -l "traefik.http.services.backend-api.loadbalancer.server.port=80" \
+      -l "traefik.http.middlewares.backend-headers.headers.customrequestheaders.X-Forwarded-Proto=https" \
+      -l "traefik.http.middlewares.backend-headers.headers.customrequestheaders.X-Forwarded-Port=443" \
+      nginx:alpine
+    ```
 
 ### Endpoint-uri Migrate în Backend (Folosite de Frontend)
 
