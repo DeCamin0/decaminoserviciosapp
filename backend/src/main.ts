@@ -42,8 +42,15 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
-  console.log(`🚀 NestJS Backend is running on: http://localhost:${port}`);
-  console.log(`📡 n8n Proxy available at: http://localhost:${port}/api/n8n/*`);
+  // În producție, ascultă pe 0.0.0.0 pentru a fi accesibil prin Traefik/reverse proxy
+  // În development, poate rămâne pe localhost
+  const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
+  await app.listen(port, host);
+  
+  const serverUrl = host === '0.0.0.0' 
+    ? `http://${host}:${port} (accessible externally)`
+    : `http://${host}:${port}`;
+  console.log(`🚀 NestJS Backend is running on: ${serverUrl}`);
+  console.log(`📡 n8n Proxy available at: ${serverUrl}/api/n8n/*`);
 }
 bootstrap();
