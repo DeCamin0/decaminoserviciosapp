@@ -95,6 +95,26 @@ backend/
 
 **Cualquier mensaje, notificación o comunicación con el usuario final debe estar exclusivamente en español.**
 
+## 🚀 Deployment pe VPS
+
+### Runtime Actual
+- **Backend-ul rulează direct cu Node.js** (nu în Docker)
+- Proces: `node dist/src/main.js`
+- Logs: `/opt/decaminoserviciosapp/backend.log`
+- Script deploy: `../deploy-backend.sh` (din root-ul proiectului)
+
+### Docker (Opțional pentru viitor)
+- `Dockerfile` și `docker-compose.yml` există în repo
+- **NU sunt folosite în producție** momentan
+- Păstrate pentru viitor dacă va fi nevoie de containerizare
+- Pentru deploy cu Docker, vezi `DEPLOY.md`
+
+### Deploy Rapid
+```bash
+cd /opt/decaminoserviciosapp
+./deploy-backend.sh
+```
+
 ## 🔗 Related
 
 - Frontend: `/frontend` (React app)

@@ -136,17 +136,39 @@
 ### Deploy pe VPS (Production)
 - **IMPORTANT**: Pe VPS se actualizează **DOAR backend-ul**, nu tot repository-ul
 - **Locație**: `/opt/decaminoserviciosapp/backend/`
-- **Proces de actualizare**:
-  1. Oprește backend-ul: `kill <PID>` sau `kill -9 <PID>` (verifică cu `ps aux | grep "node dist/main"`)
+- **Runtime**: Backend-ul rulează **direct cu Node.js** (nu în Docker)
+  - Docker config (`docker-compose.yml`, `Dockerfile`) există pentru viitor, dar **NU e folosit** în producție
+  - Procesul rulează cu: `node dist/src/main.js`
+  - Logs: `/opt/decaminoserviciosapp/backend.log`
+- **Script automat de deploy**: `deploy-backend.sh` (în root-ul proiectului)
+- **Proces automat (RECOMANDAT)**:
+  1. Navighează la root: `cd /opt/decaminoserviciosapp`
+  2. Rulează scriptul: `./deploy-backend.sh`
+  3. Scriptul face automat:
+     - Oprește procesul backend dacă rulează (găsește PID și oprește)
+     - Actualizează codul din git
+     - Configurează `.env` din `.env.production` (sau construiește `DATABASE_URL` din variabile `DB_*`)
+     - Instalează dependențe (`npm install`)
+     - Regeneră Prisma client (`npx prisma generate`)
+     - Sincronizează schema DB (`prisma migrate deploy` sau `prisma db push` dacă DB nu e goală)
+     - Recompilează backend-ul (`npm run build`)
+     - Repornește backend-ul în background cu `nohup`
+     - Verifică că rulează corect
+- **Proces manual (dacă e nevoie)**:
+  1. Oprește backend-ul: `kill <PID>` sau `kill -9 <PID>` (verifică cu `ps aux | grep "node dist"`)
   2. Navighează la backend: `cd /opt/decaminoserviciosapp/backend`
   3. Actualizează codul: `git pull origin main` (din root-ul proiectului, apoi `cd backend`)
-  4. Instalează dependențe: `npm install`
-  5. Regeneră Prisma client: `npx prisma generate`
-  6. Aplică migrări: `npx prisma migrate deploy`
-  7. Recompilează: `npm run build`
-  8. Repornește: `nohup node dist/main.js > ../backend.log 2>&1 &`
+  4. Configurează .env: `cp .env.production .env` (sau rulează `./setup-env.sh`)
+  5. Instalează dependențe: `npm install`
+  6. Regeneră Prisma client: `npx prisma generate`
+  7. Sincronizează schema: `npx prisma db push` (sau `npx prisma migrate deploy` dacă DB e goală)
+  8. Recompilează: `npm run build`
+  9. Repornește: `nohup node dist/src/main.js > ../backend.log 2>&1 &`
 - **Frontend**: Nu este pe VPS - este servit static separat (CDN/alt server)
 - **Notă**: Frontend-ul și alte fișiere (documentație, etc.) nu trebuie să fie pe VPS, doar backend-ul
+- **Scripturi disponibile**:
+  - `deploy-backend.sh` - Script complet de deploy automat
+  - `backend/setup-env.sh` - Script pentru configurare rapidă .env
 
 ### Endpoint-uri Migrate în Backend (Folosite de Frontend)
 

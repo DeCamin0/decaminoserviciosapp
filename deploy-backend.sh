@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Script de deploy automat pentru backend pe VPS
+# Script de deploy automat pentru backend pe VPS (Node.js direct)
 # Folosire: ./deploy-backend.sh
+# NOTĂ: Backend-ul rulează direct cu Node.js, nu în Docker
+#       (Docker config există pentru viitor, dar nu e folosit)
 
 set -e  # Oprește scriptul la prima eroare
 
@@ -25,16 +27,16 @@ fi
 
 cd "$BACKEND_DIR" || exit 1
 
-# 1. Oprește backend-ul dacă rulează
-echo -e "${YELLOW}📋 Step 1: Stopping backend...${NC}"
-BACKEND_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
-if [ -n "$BACKEND_PID" ]; then
-    echo "Found backend process: $BACKEND_PID"
-    kill -9 "$BACKEND_PID" 2>/dev/null || true
+# 1. Oprește procesul backend dacă rulează
+echo -e "${YELLOW}📋 Step 1: Stopping existing backend process...${NC}"
+OLD_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
+if [ -n "$OLD_PID" ]; then
+    echo "Found running backend (PID: $OLD_PID), stopping..."
+    kill "$OLD_PID" 2>/dev/null || kill -9 "$OLD_PID" 2>/dev/null || true
     sleep 2
-    echo -e "${GREEN}✅ Backend stopped${NC}"
+    echo -e "${GREEN}✅ Backend process stopped${NC}"
 else
-    echo -e "${YELLOW}⚠️  No backend process found (might already be stopped)${NC}"
+    echo -e "${YELLOW}⚠️  No running backend process found${NC}"
 fi
 
 # 2. Navighează la root și actualizează codul
@@ -127,7 +129,7 @@ echo -e "${YELLOW}📋 Step 7: Building backend...${NC}"
 npm run build
 echo -e "${GREEN}✅ Backend built${NC}"
 
-# 9. Repornește backend-ul
+# 8. Repornește backend-ul
 echo -e "${YELLOW}📋 Step 8: Starting backend...${NC}"
 # NestJS compilează în dist/src/main.js (nu dist/main.js)
 MAIN_JS="dist/src/main.js"
@@ -135,10 +137,12 @@ if [ ! -f "$MAIN_JS" ]; then
     # Fallback la dist/main.js dacă există
     MAIN_JS="dist/main.js"
 fi
+
+# Pornește backend-ul în background
 nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
 sleep 3
 
-# 10. Verifică că rulează
+# 9. Verifică că rulează
 NEW_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
 if [ -n "$NEW_PID" ]; then
     echo -e "${GREEN}✅ Backend started successfully (PID: $NEW_PID)${NC}"
@@ -147,7 +151,8 @@ if [ -n "$NEW_PID" ]; then
     echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
     echo ""
     echo "To view logs: tail -f $LOG_FILE"
-    echo "To check status: ps aux | grep 'node dist/main'"
+    echo "To check status: ps aux | grep 'node dist'"
+    echo "To stop backend: kill $NEW_PID"
 else
     echo -e "${RED}❌ Backend failed to start!${NC}"
     echo "Check logs: $LOG_FILE"
