@@ -1,0 +1,119 @@
+#!/bin/bash
+
+# Script de deploy automat pentru backend pe VPS
+# Folosire: ./deploy-backend.sh
+
+set -e  # Oprește scriptul la prima eroare
+
+echo "🚀 Starting backend deployment..."
+
+# Culori pentru output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Variabile
+BACKEND_DIR="/opt/decaminoserviciosapp/backend"
+LOG_FILE="/opt/decaminoserviciosapp/backend.log"
+
+# Verifică dacă există directorul backend
+if [ ! -d "$BACKEND_DIR" ]; then
+    echo -e "${RED}❌ Backend directory not found: $BACKEND_DIR${NC}"
+    exit 1
+fi
+
+cd "$BACKEND_DIR" || exit 1
+
+# 1. Oprește backend-ul dacă rulează
+echo -e "${YELLOW}📋 Step 1: Stopping backend...${NC}"
+BACKEND_PID=$(ps aux | grep "node dist/main" | grep -v grep | awk '{print $2}' | head -1)
+if [ -n "$BACKEND_PID" ]; then
+    echo "Found backend process: $BACKEND_PID"
+    kill -9 "$BACKEND_PID" 2>/dev/null || true
+    sleep 2
+    echo -e "${GREEN}✅ Backend stopped${NC}"
+else
+    echo -e "${YELLOW}⚠️  No backend process found (might already be stopped)${NC}"
+fi
+
+# 2. Navighează la root și actualizează codul
+echo -e "${YELLOW}📋 Step 2: Updating code from git...${NC}"
+cd /opt/decaminoserviciosapp || exit 1
+git pull origin main
+echo -e "${GREEN}✅ Code updated${NC}"
+
+# 3. Intră în backend
+cd "$BACKEND_DIR" || exit 1
+
+# 4. Configurează .env dacă nu există sau dacă .env.production e mai nou
+echo -e "${YELLOW}📋 Step 3: Configuring .env file...${NC}"
+if [ -f ".env.production" ]; then
+    if [ ! -f ".env" ] || [ ".env.production" -nt ".env" ]; then
+        cp .env.production .env
+        echo -e "${GREEN}✅ .env created/updated from .env.production${NC}"
+    else
+        echo -e "${GREEN}✅ .env file exists and is up to date${NC}"
+    fi
+    
+    # Verifică dacă DATABASE_URL există
+    if ! grep -q "^DATABASE_URL=" .env; then
+        echo -e "${RED}❌ DATABASE_URL not found in .env!${NC}"
+        echo "Please add DATABASE_URL to .env.production or .env"
+        exit 1
+    fi
+else
+    if [ ! -f ".env" ]; then
+        echo -e "${RED}❌ No .env or .env.production found!${NC}"
+        echo "Please create .env file manually with DATABASE_URL and other required variables."
+        exit 1
+    else
+        echo -e "${GREEN}✅ .env file exists${NC}"
+    fi
+fi
+
+# 5. Instalează dependențe
+echo -e "${YELLOW}📋 Step 4: Installing dependencies...${NC}"
+npm install
+echo -e "${GREEN}✅ Dependencies installed${NC}"
+
+# 6. Regeneră Prisma client
+echo -e "${YELLOW}📋 Step 5: Generating Prisma client...${NC}"
+npx prisma generate
+echo -e "${GREEN}✅ Prisma client generated${NC}"
+
+# 7. Aplică migrări
+echo -e "${YELLOW}📋 Step 6: Applying database migrations...${NC}"
+npx prisma migrate deploy || {
+    echo -e "${RED}❌ Migration failed! Check your DATABASE_URL in .env${NC}"
+    exit 1
+}
+echo -e "${GREEN}✅ Migrations applied${NC}"
+
+# 8. Recompilează
+echo -e "${YELLOW}📋 Step 7: Building backend...${NC}"
+npm run build
+echo -e "${GREEN}✅ Backend built${NC}"
+
+# 9. Repornește backend-ul
+echo -e "${YELLOW}📋 Step 8: Starting backend...${NC}"
+nohup node dist/main.js > "$LOG_FILE" 2>&1 &
+sleep 3
+
+# 10. Verifică că rulează
+NEW_PID=$(ps aux | grep "node dist/main" | grep -v grep | awk '{print $2}' | head -1)
+if [ -n "$NEW_PID" ]; then
+    echo -e "${GREEN}✅ Backend started successfully (PID: $NEW_PID)${NC}"
+    echo -e "${GREEN}📝 Logs: $LOG_FILE${NC}"
+    echo ""
+    echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
+    echo ""
+    echo "To view logs: tail -f $LOG_FILE"
+    echo "To check status: ps aux | grep 'node dist/main'"
+else
+    echo -e "${RED}❌ Backend failed to start!${NC}"
+    echo "Check logs: $LOG_FILE"
+    tail -20 "$LOG_FILE"
+    exit 1
+fi
+
