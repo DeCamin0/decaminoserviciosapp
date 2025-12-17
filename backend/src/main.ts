@@ -118,6 +118,23 @@ async function bootstrap() {
     optionsSuccessStatus: 204,
   });
 
+  // Middleware pentru a adăuga header-urile CORS la toate răspunsurile
+  // (asigură că header-urile sunt setate chiar dacă enableCors nu funcționează corect)
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && uniqueCorsOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+    } else if (!origin || process.env.NODE_ENV !== 'production') {
+      // În development sau pentru requests fără origin, permite
+      res.header('Access-Control-Allow-Origin', origin || '*');
+      res.header('Access-Control-Allow-Credentials', 'true');
+    }
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
+    next();
+  });
+
   const port = process.env.PORT || 3000;
   // În producție, ascultă pe 0.0.0.0 pentru a fi accesibil prin Traefik/reverse proxy
   // În development, poate rămâne pe localhost
