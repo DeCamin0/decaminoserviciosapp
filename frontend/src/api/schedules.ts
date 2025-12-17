@@ -190,27 +190,97 @@ export async function listSchedules(_callApi: CallApiFunction): Promise<ApiRespo
     // Normalizează răspunsul backend-ului în format unitar pentru UI
     const toHHMM = (v: string | number | Date | null | undefined): string | null => {
       if (!v) return null;
-      if (typeof v === 'string') {
-        // Dacă e string, extrage doar HH:MM
-        if (v.length >= 5) return v.slice(0, 5); // 'HH:MM'
-        return v;
-      }
+      
+      // Dacă e Date, extrage doar ora (verifică înainte de string pentru că Date.toString() poate da string)
       if (v instanceof Date) {
-        // Dacă e Date, extrage doar ora
+        // Verifică dacă e un Date valid (nu epoch 0)
+        if (v.getTime() === 0 || isNaN(v.getTime())) {
+          return null;
+        }
         const hours = String(v.getHours()).padStart(2, '0');
         const minutes = String(v.getMinutes()).padStart(2, '0');
         return `${hours}:${minutes}`;
       }
+      
+      // Dacă e string, extrage doar HH:MM
+      if (typeof v === 'string') {
+        // Elimină spații și verifică formatul
+        const trimmed = v.trim();
+        if (trimmed.length === 0) return null;
+        
+        // Verifică dacă e un string ISO date (ex: "1970-01-01T08:00:00.000Z")
+        // În acest caz, extragem doar partea de timp
+        if (trimmed.includes('T') && trimmed.includes('Z')) {
+          const isoMatch = trimmed.match(/T(\d{2}):(\d{2}):(\d{2})/);
+          if (isoMatch) {
+            const hours = parseInt(isoMatch[1], 10);
+            const minutes = parseInt(isoMatch[2], 10);
+            
+            // Validare: orele trebuie să fie între 0-23, minutele între 0-59
+            if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+              return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+            }
+          }
+          return null;
+        }
+        
+        // Suportă format HH:MM:SS sau HH:MM
+        const timeMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?/);
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1], 10);
+          const minutes = parseInt(timeMatch[2], 10);
+          
+          // Validare: orele trebuie să fie între 0-23, minutele între 0-59
+          if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+          }
+        }
+        
+        return null;
+      }
+      
+      // Dacă e number (timestamp), încearcă să-l convertească
+      if (typeof v === 'number') {
+        // Verifică dacă nu e epoch 0 sau invalid
+        if (v === 0 || isNaN(v)) {
+          return null;
+        }
+        const date = new Date(v);
+        if (!isNaN(date.getTime()) && date.getTime() !== 0) {
+          const hours = String(date.getHours()).padStart(2, '0');
+          const minutes = String(date.getMinutes()).padStart(2, '0');
+          return `${hours}:${minutes}`;
+        }
+      }
+      
       return null;
     };
 
     const normalized = raw.map((it: ScheduleApiItem, idx: number) => {
+      // Debug: log primul orar pentru a vedea formatul exact
+      if (idx === 0) {
+        console.log('🔍 DEBUG schedules.ts - Primul orar RAW din backend:', it);
+        console.log('🔍 DEBUG schedules.ts - lun_in1 RAW:', it.lun_in1, 'type:', typeof it.lun_in1);
+        console.log('🔍 DEBUG schedules.ts - lun_out1 RAW:', it.lun_out1, 'type:', typeof it.lun_out1);
+        console.log('🔍 DEBUG schedules.ts - lun_in1 normalized:', toHHMM(it.lun_in1));
+        console.log('🔍 DEBUG schedules.ts - lun_out1 normalized:', toHHMM(it.lun_out1));
+      }
+      
       // Hărți pentru zile (ro -> sp/keys L..D dacă vom extinde pe viitor)
-      const mapDay = (prefix: string) => ({
-        in1: toHHMM(it[`${prefix}_in1`]), out1: toHHMM(it[`${prefix}_out1`]),
-        in2: toHHMM(it[`${prefix}_in2`]), out2: toHHMM(it[`${prefix}_out2`]),
-        in3: toHHMM(it[`${prefix}_in3`]), out3: toHHMM(it[`${prefix}_out3`])
-      });
+      const mapDay = (prefix: string) => {
+        const result = {
+          in1: toHHMM(it[`${prefix}_in1`]), out1: toHHMM(it[`${prefix}_out1`]),
+          in2: toHHMM(it[`${prefix}_in2`]), out2: toHHMM(it[`${prefix}_out2`]),
+          in3: toHHMM(it[`${prefix}_in3`]), out3: toHHMM(it[`${prefix}_out3`])
+        };
+        
+        // Debug pentru prima zi (Luni)
+        if (idx === 0 && prefix === 'lun') {
+          console.log('🔍 DEBUG schedules.ts - mapDay(lun) result:', result);
+        }
+        
+        return result;
+      };
 
       const days = {
         L: mapDay('lun'), // posibil să nu existe în toate payload-urile; e ok dacă e undefined
@@ -221,6 +291,12 @@ export async function listSchedules(_callApi: CallApiFunction): Promise<ApiRespo
         S: mapDay('sam'),
         D: mapDay('dum')
       };
+      
+      // Debug pentru primul orar
+      if (idx === 0) {
+        console.log('🔍 DEBUG schedules.ts - days object:', days);
+        console.log('🔍 DEBUG schedules.ts - days.L:', days.L);
+      }
 
       const totalMinutes = it.total_minutos_semanales ?? it.totalMinutes ?? null;
       const totalHours = it.total_horas_semanales ?? (typeof totalMinutes === 'number' ? Number((totalMinutes / 60).toFixed(2)) : null);

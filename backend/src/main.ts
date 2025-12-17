@@ -44,17 +44,20 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   // În producție, ascultă pe 0.0.0.0 pentru a fi accesibil prin Traefik/reverse proxy
   // În development, poate rămâne pe localhost
-  const host = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
+  const host =
+    process.env.HOST ||
+    (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
   await app.listen(port, host);
-  
+
   // URL-ul public pentru mesaje de log
   // În producție, folosește subdomeniul real (api.decaminoservicios.com)
   // În development, folosește localhost
-  const publicUrl = process.env.API_URL || 
-    (process.env.NODE_ENV === 'production' 
+  const publicUrl =
+    process.env.API_URL ||
+    (process.env.NODE_ENV === 'production'
       ? 'https://api.decaminoservicios.com'
       : `http://${host}:${port}`);
-  
+
   console.log(`🚀 NestJS Backend is running on: ${publicUrl}`);
   console.log(`📡 n8n Proxy available at: ${publicUrl}/api/n8n/*`);
   if (host === '0.0.0.0') {

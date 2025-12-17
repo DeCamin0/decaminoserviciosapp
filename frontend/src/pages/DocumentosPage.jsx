@@ -700,9 +700,13 @@ export default function DocumentosPage() {
           console.log('✅ Blob obtenido, tamaño:', blob.size, 'tipo:', blob.type);
           
           if (blob.size > 0) {
-            const blobUrl = URL.createObjectURL(blob);
-            console.log('✅ Blob URL creado para nómina:', blobUrl);
-            setPreviewDocument({ ...documento, previewUrl: blobUrl, isPdf: true });
+            // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+            // Pentru Android, folosim blob URL
+            const url = isIOS 
+              ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+              : URL.createObjectURL(blob);
+            console.log('✅ URL creado para nómina:', isIOS ? 'base64' : 'blob');
+            setPreviewDocument({ ...documento, previewUrl: url, isPdf: true });
             setPreviewLoading(false);
             return; // Salir temprano, ya tenemos el blob URL
           } else {
@@ -762,13 +766,19 @@ export default function DocumentosPage() {
         return headers;
       };
       
-      // Guardar el previewUrl en el documento (se ajusta más abajo para móvil)
-      setPreviewDocument({ ...documento, previewUrl });
+      // Pentru PDF-uri pe mobil, procesăm imediat ca blob/base64 (nu setăm URL direct)
+      // Pentru imagini și alte tipuri, setăm URL direct și procesăm mai jos
+      const isPdfFile = documento.fileName?.toLowerCase().endsWith('.pdf');
       
-      // Si es PDF y estamos en móvil (iOS/Android), cargar como data URL base64 para máxima compatibilidad
+      if (!isPdfFile) {
+        // Pentru non-PDF, setăm URL direct (va fi procesat mai jos pentru imagini)
+        setPreviewDocument({ ...documento, previewUrl });
+      }
+      
+      // Si es PDF y estamos en móvil (iOS/Android), cargar como data URL base64 pentru iOS sau blob URL pentru Android
       if (
         (isIOS || isAndroid) &&
-        (documento.fileName?.toLowerCase().endsWith('.pdf') || documento?.tipo === 'Nómina' || documento?.isPdf === true)
+        isPdfFile
       ) {
         try {
           // Add JWT token for backend API calls
@@ -780,15 +790,24 @@ export default function DocumentosPage() {
           const response = await fetch(previewUrl, { headers: fetchHeaders });
           if (response.ok) {
             const blob = await response.blob();
-            const base64 = await blobToBase64(blob);
-            const dataUrl = `data:application/pdf;base64,${base64}`;
-            setPreviewDocument(prev => ({ ...prev, previewUrl: dataUrl, isPdf: true }));
-            console.log('📱 Mobile PDF: usando data URL base64 en viewer');
+            if (blob.size > 0) {
+              // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+              // Pentru Android, folosim blob URL
+              const url = isIOS 
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              setPreviewDocument({ ...documento, previewUrl: url, isPdf: true });
+              setPreviewLoading(false);
+              console.log('📱 Mobile PDF procesat:', isIOS ? 'base64' : 'blob');
+              return; // Ieșim aici pentru PDF-uri pe mobil
+            } else {
+              console.warn('⚠️ Blob vacío, se usará URL directa');
+            }
           } else {
             console.warn('⚠️ No se pudo obtener blob del PDF, se usará URL directa');
           }
         } catch (e) {
-          console.warn('⚠️ Error convirtiendo PDF a base64 para móvil:', e);
+          console.warn('⚠️ Error procesando PDF para móvil:', e);
         }
       }
 
@@ -980,8 +999,8 @@ export default function DocumentosPage() {
         }
       }
       
-      // Para PDFs, crear blob URL local (EXACTO como en MisInspeccionesPage)
-      if (documento.fileName?.toLowerCase().endsWith('.pdf')) {
+      // Para PDFs (doar pentru desktop, pentru mobil s-a procesat deja mai sus)
+      if (documento.fileName?.toLowerCase().endsWith('.pdf') && !(isIOS || isAndroid)) {
         console.log('📄 Archivo PDF detectado, creando blob URL local...');
         
         try {
@@ -1063,8 +1082,24 @@ export default function DocumentosPage() {
     }
   };
 
+  // Cleanup pentru blob URL-uri când se schimbă previewDocument sau se închide modalul
+  useEffect(() => {
+    return () => {
+      // Revocă blob URL-urile când componenta se unmount sau când previewDocument se schimbă
+      if (previewDocument?.previewUrl && typeof previewDocument.previewUrl === 'string' && previewDocument.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewDocument.previewUrl);
+        console.log('🧹 Blob URL revocat pentru cleanup');
+      }
+    };
+  }, [previewDocument]);
+
   // Función para cerrar el modal de preview
   const handleClosePreview = () => {
+    // Revocă blob URL dacă există
+    if (previewDocument?.previewUrl && typeof previewDocument.previewUrl === 'string' && previewDocument.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewDocument.previewUrl);
+      console.log('🧹 Blob URL revocat la închiderea modalului');
+    }
     setShowPreviewModal(false);
     setPreviewDocument(null);
     setPreviewLoading(false);
@@ -1211,9 +1246,13 @@ export default function DocumentosPage() {
               console.log('🔍 Blob PDF oficial size:', blob.size);
               
               if (blob.size > 0) {
-                const blobUrl = URL.createObjectURL(blob);
-                console.log('✅ Blob URL creado para PDF oficial:', blobUrl);
-                setPreviewDocument({ ...documento, previewUrl: blobUrl, esOficial: true, isPdf: true });
+                // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+                // Pentru Android, folosim blob URL
+                const url = isIOS 
+                  ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                  : URL.createObjectURL(blob);
+                console.log('✅ URL creado para PDF oficial:', isIOS ? 'base64' : 'blob');
+                setPreviewDocument({ ...documento, previewUrl: url, esOficial: true, isPdf: true });
               } else {
                 throw new Error('Blob vacío para PDF oficial');
               }
@@ -2481,11 +2520,11 @@ export default function DocumentosPage() {
                          <span>Formatos Aceptados</span>
                        </label>
                        <div className="flex flex-wrap gap-2">
-                         {['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'].map(format => (
+                         {['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp'].map(format => (
                            <span key={format} className="px-3 py-2 bg-white text-blue-700 text-sm font-bold rounded-lg border-2 border-blue-300 shadow-sm">
                                  {format}
-                               </span>
-                             ))}
+                           </span>
+                         ))}
                            </div>
                          </div>
                          
@@ -2559,7 +2598,7 @@ export default function DocumentosPage() {
                            type="file"
                            className="hidden"
                        onChange={e => handleWebFileChange(e, documentType)}
-                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                           accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp"
                          />
                        </div>
                  </div>
@@ -2649,7 +2688,7 @@ export default function DocumentosPage() {
                   onClick={() => {
                     const input = document.createElement('input');
                     input.type = 'file';
-                    input.accept = '.pdf,.doc,.docx,.jpg,.jpeg,.png';
+                    input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp';
                     input.onchange = (e) => {
                       if (e.target.files && e.target.files[0]) {
                         const tipoFinal = documentType === 'otro' ? customDocumentType : documentType;
@@ -2680,7 +2719,7 @@ export default function DocumentosPage() {
       <input
         ref={customFileInputRef}
         type="file"
-        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,image/jpeg,image/jpg,image/png,image/webp"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
         onChange={e => {
           if (e.target.files && e.target.files[0]) {
             const tipoFinal = documentType === 'otro' ? customDocumentType : documentType;

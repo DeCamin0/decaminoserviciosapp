@@ -34,6 +34,17 @@ export default function MisInspeccionesPage() {
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Cleanup pentru blob URL-uri când se schimbă previewData sau se închide modalul
+  useEffect(() => {
+    return () => {
+      // Revocă blob URL-urile când componenta se unmount sau când previewData se schimbă
+      if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+        window.URL.revokeObjectURL(previewData.pdfUrl);
+        console.log('🧹 Blob URL revocat pentru cleanup');
+      }
+    };
+  }, [previewData]);
+
   // Detectare mobile pentru PDF preview
   const isBrowser = typeof window !== 'undefined';
   const ua = isBrowser ? window.navigator.userAgent : '';
@@ -270,7 +281,11 @@ export default function MisInspeccionesPage() {
             location: inspection.location || inspection.ubicacion || inspection.lugar || inspection.sitio || inspection.direccion || inspection.Locacion || null,
             centro: inspection.centro || inspection.Centro || null,
           status: inspection.status || inspection.estado || inspection.estado_inspeccion || 'completada',
-            pdfUrl: inspection.pdfUrl || inspection.archivo?.url || inspection.archivo || inspection.url_pdf || null
+            pdfUrl: (() => {
+              const url = inspection.pdfUrl || inspection.archivo?.url || inspection.archivo || inspection.url_pdf;
+              // Asigură-te că pdfUrl este întotdeauna string sau null
+              return typeof url === 'string' ? url : (url ? String(url) : null);
+            })()
         }));
         
         setInspections(processedInspections);
@@ -327,10 +342,22 @@ export default function MisInspeccionesPage() {
         if (contentType && contentType.includes('application/pdf')) {
           // Pentru PDF direct, creează un blob URL pentru preview
           const blob = await response.blob();
-          // Pentru mobile (iOS/Android), folosim base64 direct
-          const url = (isIOS || isAndroid) 
+          
+          if (blob.size === 0) {
+            setPreviewData({ ...inspection, error: 'PDF-ul este gol (0 bytes)' });
+            setPreviewLoading(false);
+            return;
+          }
+          
+          // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+          // Pentru Android, folosim blob URL
+          // Pentru desktop, folosim blob URL
+          const url = isIOS 
             ? `data:application/pdf;base64,${await blobToBase64(blob)}`
-            : window.URL.createObjectURL(blob);
+            : (isAndroid 
+              ? window.URL.createObjectURL(blob)
+              : window.URL.createObjectURL(blob));
+          console.log('✅ URL creado para inspección PDF:', isIOS ? 'base64' : 'blob');
           setPreviewData({ ...inspection, pdfUrl: url });
         } else {
           // Încearcă să proceseze JSON pentru a obține URL-ul PDF
@@ -338,7 +365,9 @@ export default function MisInspeccionesPage() {
             const data = await response.json();
             
             if (data.success && data.pdfUrl) {
-              setPreviewData({ ...inspection, pdfUrl: data.pdfUrl });
+              // Asigură-te că pdfUrl este string
+              const pdfUrl = typeof data.pdfUrl === 'string' ? data.pdfUrl : String(data.pdfUrl);
+              setPreviewData({ ...inspection, pdfUrl });
             } else {
               setPreviewData({ ...inspection, error: 'PDF-ul nu este disponibil pentru preview' });
             }
@@ -346,13 +375,15 @@ export default function MisInspeccionesPage() {
             // Fallback: încearcă să creeze un blob URL
             const blob = await response.blob();
             if (blob.size > 0) {
-              // Pentru mobile (iOS/Android), folosim base64 direct
-              const url = (isIOS || isAndroid) 
+              // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+              // Pentru Android, folosim blob URL
+              const url = isIOS 
                 ? `data:application/pdf;base64,${await blobToBase64(blob)}`
                 : window.URL.createObjectURL(blob);
+              console.log('✅ Fallback URL creado para inspección PDF:', isIOS ? 'base64' : 'blob');
               setPreviewData({ ...inspection, pdfUrl: url });
             } else {
-              setPreviewData({ ...inspection, error: 'Nu s-a putut încărca PDF-ul pentru preview' });
+              setPreviewData({ ...inspection, error: 'Nu s-a putut încărca PDF-ul pentru preview (blob gol)' });
             }
           }
         }
@@ -793,8 +824,9 @@ export default function MisInspeccionesPage() {
                   setShowPreviewModal(false);
                   setPreviewData(null);
                   // Cleanup blob URL dacă există
-                  if (previewData?.pdfUrl && previewData.pdfUrl.startsWith('blob:')) {
+                  if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
                     window.URL.revokeObjectURL(previewData.pdfUrl);
+                    console.log('🧹 Blob URL revocat la închiderea modalului');
                   }
                 }}
                 className="w-10 h-10 bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110"
@@ -862,8 +894,9 @@ export default function MisInspeccionesPage() {
                     setShowPreviewModal(false);
                     setPreviewData(null);
                     // Cleanup blob URL dacă există
-                    if (previewData?.pdfUrl && previewData.pdfUrl.startsWith('blob:')) {
+                    if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
                       window.URL.revokeObjectURL(previewData.pdfUrl);
+                      console.log('🧹 Blob URL revocat la închiderea modalului (download)');
                     }
                   }}
                   variant="outline"

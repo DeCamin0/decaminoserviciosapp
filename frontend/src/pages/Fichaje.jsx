@@ -1564,21 +1564,50 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
       const daySchedule = horarioAsignado.days[dayKey];
       
+      // Debug logging
+      console.log('🔍 DEBUG getCurrentDaySchedule - today:', today, 'dayKey:', dayKey);
+      console.log('🔍 DEBUG getCurrentDaySchedule - daySchedule:', daySchedule);
+      console.log('🔍 DEBUG getCurrentDaySchedule - horarioAsignado.days:', horarioAsignado.days);
+      
       if (daySchedule) {
         const intervals = [];
-        if (daySchedule.in1 && daySchedule.out1) {
-          intervals.push(`${daySchedule.in1} - ${daySchedule.out1}`);
+        // Verifică că valorile sunt string-uri valide în format HH:MM
+        const isValidTime = (time) => {
+          const isValid = typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
+          if (!isValid && time) {
+            console.log('⚠️ DEBUG - Invalid time format:', time, 'type:', typeof time);
+          }
+          return isValid;
+        };
+        
+        console.log('🔍 DEBUG - in1:', daySchedule.in1, 'out1:', daySchedule.out1);
+        console.log('🔍 DEBUG - in2:', daySchedule.in2, 'out2:', daySchedule.out2);
+        console.log('🔍 DEBUG - in3:', daySchedule.in3, 'out3:', daySchedule.out3);
+        
+        if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
+          // Extrage doar HH:MM dacă e în format HH:MM:SS
+          const in1 = daySchedule.in1.substring(0, 5);
+          const out1 = daySchedule.out1.substring(0, 5);
+          intervals.push(`${in1} - ${out1}`);
         }
-        if (daySchedule.in2 && daySchedule.out2) {
-          intervals.push(`${daySchedule.in2} - ${daySchedule.out2}`);
+        if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
+          const in2 = daySchedule.in2.substring(0, 5);
+          const out2 = daySchedule.out2.substring(0, 5);
+          intervals.push(`${in2} - ${out2}`);
         }
-        if (daySchedule.in3 && daySchedule.out3) {
-          intervals.push(`${daySchedule.in3} - ${daySchedule.out3}`);
+        if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
+          const in3 = daySchedule.in3.substring(0, 5);
+          const out3 = daySchedule.out3.substring(0, 5);
+          intervals.push(`${in3} - ${out3}`);
         }
+        
+        console.log('🔍 DEBUG - intervals:', intervals);
         
         if (intervals.length > 0) {
           return intervals.join(' / ');
         }
+      } else {
+        console.log('⚠️ DEBUG - daySchedule is null/undefined for dayKey:', dayKey);
       }
     }
     return null;
@@ -1651,44 +1680,57 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       if (daySchedule) {
         let totalHours = 0;
         
+        // Helper pentru a calcula orele dintr-un interval
+        const calculateIntervalHours = (inTime, outTime) => {
+          // Verifică că valorile sunt string-uri valide în format HH:MM sau HH:MM:SS
+          if (typeof inTime !== 'string' || typeof outTime !== 'string') {
+            return 0;
+          }
+          
+          // Extrage doar HH:MM dacă e în format HH:MM:SS
+          const inStr = inTime.substring(0, 5);
+          const outStr = outTime.substring(0, 5);
+          
+          const startParts = inStr.split(':');
+          const endParts = outStr.split(':');
+          
+          if (startParts.length !== 2 || endParts.length !== 2) {
+            return 0;
+          }
+          
+          const startHour = parseInt(startParts[0], 10);
+          const startMin = parseInt(startParts[1], 10);
+          const endHour = parseInt(endParts[0], 10);
+          const endMin = parseInt(endParts[1], 10);
+          
+          if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin)) {
+            return 0;
+          }
+          
+          let startTime = startHour + startMin / 60;
+          let endTime = endHour + endMin / 60;
+          
+          if (endTime < startTime) {
+            endTime += 24; // overnight shift
+          }
+          
+          return endTime - startTime;
+        };
+        
         // Calculează orele pentru fiecare interval
         if (daySchedule.in1 && daySchedule.out1) {
-          const start1 = daySchedule.in1.split(':');
-          const end1 = daySchedule.out1.split(':');
-          let startTime1 = parseInt(start1[0]) + parseInt(start1[1]) / 60;
-          let endTime1 = parseInt(end1[0]) + parseInt(end1[1]) / 60;
-          
-          if (endTime1 < startTime1) {
-            endTime1 += 24; // overnight shift
-          }
-          totalHours += (endTime1 - startTime1);
+          totalHours += calculateIntervalHours(daySchedule.in1, daySchedule.out1);
         }
         
         if (daySchedule.in2 && daySchedule.out2) {
-          const start2 = daySchedule.in2.split(':');
-          const end2 = daySchedule.out2.split(':');
-          let startTime2 = parseInt(start2[0]) + parseInt(start2[1]) / 60;
-          let endTime2 = parseInt(end2[0]) + parseInt(end2[1]) / 60;
-          
-          if (endTime2 < startTime2) {
-            endTime2 += 24; // overnight shift
-          }
-          totalHours += (endTime2 - startTime2);
+          totalHours += calculateIntervalHours(daySchedule.in2, daySchedule.out2);
         }
         
         if (daySchedule.in3 && daySchedule.out3) {
-          const start3 = daySchedule.in3.split(':');
-          const end3 = daySchedule.out3.split(':');
-          let startTime3 = parseInt(start3[0]) + parseInt(start3[1]) / 60;
-          let endTime3 = parseInt(end3[0]) + parseInt(end3[1]) / 60;
-          
-          if (endTime3 < startTime3) {
-            endTime3 += 24; // overnight shift
-          }
-          totalHours += (endTime3 - startTime3);
+          totalHours += calculateIntervalHours(daySchedule.in3, daySchedule.out3);
         }
         
-        return totalHours.toFixed(2);
+        return totalHours > 0 ? totalHours.toFixed(2) : '0.00';
       }
     }
     return '0.00';

@@ -1,6 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { GlobalWorkerOptions } from 'pdfjs-dist';
 import '../config/pdfjs.ts'; // Importă configurația centralizată a worker-ului
+
+// Asigură-te că worker-ul este configurat înainte de a folosi PDF.js
+// Verifică dacă worker-ul este deja configurat, altfel configurează-l
+if (!GlobalWorkerOptions.workerSrc) {
+  const isProduction = import.meta.env.PROD;
+  if (isProduction) {
+    // În producție, folosește worker-ul din public
+    GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+  } else {
+    // În development, folosește worker-ul din node_modules
+    GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).toString();
+  }
+  console.log('📱 PDFViewerAndroid: Worker configurat:', GlobalWorkerOptions.workerSrc);
+}
 
 const PDFViewerAndroid = ({ pdfUrl, className = '', style = {} }) => {
   const [pdfDocument, setPdfDocument] = useState(null);

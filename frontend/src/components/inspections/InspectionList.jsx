@@ -52,6 +52,17 @@ const InspectionList = ({ onBackToSelection }) => {
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   
+  // Cleanup pentru blob URL-uri când se schimbă previewData sau se închide modalul
+  useEffect(() => {
+    return () => {
+      // Revocă blob URL-urile când componenta se unmount sau când previewData se schimbă
+      if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+        window.URL.revokeObjectURL(previewData.pdfUrl);
+        console.log('🧹 Blob URL revocat pentru cleanup');
+      }
+    };
+  }, [previewData]);
+  
   // State pentru bara desplegable
   const [showFilters, setShowFilters] = useState(true);
 
@@ -190,7 +201,10 @@ const InspectionList = ({ onBackToSelection }) => {
   // Închide dropdown-urile când se face click în afara lor
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (!event.target.closest('.group/field')) {
+      // Verificăm dacă click-ul este în interiorul unui element cu clasa group/field
+      // Folosim un selector de atribut pentru a evita eroarea cu slash-ul
+      const clickedInsideField = event.target.closest('[class*="group/field"]') !== null;
+      if (!clickedInsideField) {
         setShowEmployeeDropdown(false);
         setShowCentroDropdown(false);
       }
@@ -445,10 +459,22 @@ const InspectionList = ({ onBackToSelection }) => {
         if (contentType && contentType.includes('application/pdf')) {
           // Pentru PDF direct, creează un blob URL pentru preview
           const blob = await response.blob();
-          // Pentru mobile (iOS/Android), folosim base64 direct
-          const url = (isIOS || isAndroid) 
+          
+          if (blob.size === 0) {
+            setPreviewData({ ...inspection, error: 'El PDF está vacío (0 bytes)' });
+            setPreviewLoading(false);
+            return;
+          }
+          
+          // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+          // Pentru Android, folosim blob URL
+          // Pentru desktop, folosim blob URL
+          const url = isIOS 
             ? `data:application/pdf;base64,${await blobToBase64(blob)}`
-            : window.URL.createObjectURL(blob);
+            : (isAndroid 
+              ? window.URL.createObjectURL(blob)
+              : window.URL.createObjectURL(blob));
+          console.log('✅ URL creado para inspección PDF:', isIOS ? 'base64' : 'blob');
           setPreviewData({ ...inspection, pdfUrl: url });
         } else {
           // Încearcă să proceseze JSON pentru a obține URL-ul PDF
@@ -465,13 +491,15 @@ const InspectionList = ({ onBackToSelection }) => {
             // Fallback: încearcă să creeze un blob URL
             const blob = await response.blob();
             if (blob.size > 0) {
-              // Pentru mobile (iOS/Android), folosim base64 direct
-              const url = (isIOS || isAndroid) 
+              // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+              // Pentru Android, folosim blob URL
+              const url = isIOS 
                 ? `data:application/pdf;base64,${await blobToBase64(blob)}`
                 : window.URL.createObjectURL(blob);
+              console.log('✅ Fallback URL creado para inspección PDF:', isIOS ? 'base64' : 'blob');
               setPreviewData({ ...inspection, pdfUrl: url });
             } else {
-              setPreviewData({ ...inspection, error: 'No se pudo cargar el PDF para preview' });
+              setPreviewData({ ...inspection, error: 'No se pudo cargar el PDF para preview (blob vacío)' });
             }
           }
         }
@@ -1219,10 +1247,15 @@ const InspectionList = ({ onBackToSelection }) => {
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    setShowPreviewModal(false);
-                    setPreviewData(null);
-                  }}
+                    onClick={() => {
+                      // Cleanup blob URL dacă există
+                      if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+                        window.URL.revokeObjectURL(previewData.pdfUrl);
+                        console.log('🧹 Blob URL revocat la închiderea modalului');
+                      }
+                      setShowPreviewModal(false);
+                      setPreviewData(null);
+                    }}
                   className="group w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg"
                 >
                   <span className="text-gray-400 group-hover:text-red-500 text-xl font-bold">✕</span>
