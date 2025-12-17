@@ -129,8 +129,54 @@ echo -e "${YELLOW}📋 Step 7: Building backend...${NC}"
 npm run build
 echo -e "${GREEN}✅ Backend built${NC}"
 
-# 8. Repornește backend-ul
-echo -e "${YELLOW}📋 Step 8: Starting backend...${NC}"
+# 8. Verifică și actualizează configurația nginx pentru upload-uri mari
+echo -e "${YELLOW}📋 Step 8: Checking nginx configuration for file uploads...${NC}"
+NGINX_CONF="/opt/traefik-backend-config/nginx.conf"
+if [ -f "$NGINX_CONF" ]; then
+    if ! grep -q "client_max_body_size" "$NGINX_CONF"; then
+        echo -e "${YELLOW}⚠️  Adding client_max_body_size to nginx config...${NC}"
+        # Adaugă client_max_body_size în server block sau http block
+        if grep -q "server {" "$NGINX_CONF"; then
+            # Adaugă în server block
+            sed -i '/server {/a\    client_max_body_size 50m;' "$NGINX_CONF"
+        elif grep -q "http {" "$NGINX_CONF"; then
+            # Adaugă în http block
+            sed -i '/http {/a\    client_max_body_size 50m;' "$NGINX_CONF"
+        else
+            # Adaugă la începutul fișierului
+            sed -i '1i\client_max_body_size 50m;' "$NGINX_CONF"
+        fi
+        echo -e "${GREEN}✅ client_max_body_size 50m added to nginx config${NC}"
+        
+        # Repornește containerul nginx dacă rulează
+        if docker ps | grep -q "decamino-backend-proxy"; then
+            echo -e "${YELLOW}🔄 Restarting nginx container...${NC}"
+            docker restart decamino-backend-proxy
+            sleep 2
+            echo -e "${GREEN}✅ Nginx container restarted${NC}"
+        fi
+    else
+        # Verifică dacă valoarea este suficientă (>= 50m)
+        CURRENT_SIZE=$(grep "client_max_body_size" "$NGINX_CONF" | head -1 | awk '{print $2}' | sed 's/[^0-9]//g')
+        if [ -n "$CURRENT_SIZE" ] && [ "$CURRENT_SIZE" -lt 50 ]; then
+            echo -e "${YELLOW}⚠️  Updating client_max_body_size to 50m...${NC}"
+            sed -i 's/client_max_body_size.*/client_max_body_size 50m;/' "$NGINX_CONF"
+            if docker ps | grep -q "decamino-backend-proxy"; then
+                docker restart decamino-backend-proxy
+                sleep 2
+            fi
+            echo -e "${GREEN}✅ client_max_body_size updated to 50m${NC}"
+        else
+            echo -e "${GREEN}✅ Nginx config already has client_max_body_size >= 50m${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}⚠️  Nginx config not found at $NGINX_CONF - skipping nginx update${NC}"
+    echo -e "${YELLOW}   You may need to manually add 'client_max_body_size 50m;' to your nginx config${NC}"
+fi
+
+# 9. Repornește backend-ul
+echo -e "${YELLOW}📋 Step 9: Starting backend...${NC}"
 # NestJS compilează în dist/src/main.js (nu dist/main.js)
 MAIN_JS="dist/src/main.js"
 if [ ! -f "$MAIN_JS" ]; then
@@ -142,7 +188,7 @@ fi
 nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
 sleep 3
 
-# 9. Verifică că rulează
+# 10. Verifică că rulează
 NEW_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
 if [ -n "$NEW_PID" ]; then
     echo -e "${GREEN}✅ Backend started successfully (PID: $NEW_PID)${NC}"

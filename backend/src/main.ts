@@ -36,6 +36,8 @@ async function bootstrap() {
       
       const uniqueCorsOrigins = [...new Set(corsOrigins)];
       const isAllowed = !origin || uniqueCorsOrigins.includes(origin) || process.env.NODE_ENV !== 'production';
+      
+      console.log(`[Main] OPTIONS check - origin: ${origin}, allowed origins: ${uniqueCorsOrigins.join(', ')}, isAllowed: ${isAllowed}`);
 
       if (isAllowed) {
         res.header('Access-Control-Allow-Origin', origin || '*');
