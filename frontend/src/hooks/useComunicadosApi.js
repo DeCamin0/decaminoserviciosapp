@@ -85,6 +85,8 @@ export const useComunicadosApi = () => {
         method: 'POST',
         headers,
         body,
+        credentials: 'include', // Include cookies and credentials for CORS
+        mode: 'cors', // Explicitly enable CORS
       });
 
       if (!response.ok) {
@@ -125,6 +127,8 @@ export const useComunicadosApi = () => {
         method: 'PUT',
         headers,
         body,
+        credentials: 'include', // Include cookies and credentials for CORS
+        mode: 'cors', // Explicitly enable CORS
       });
 
       if (!response.ok) {
