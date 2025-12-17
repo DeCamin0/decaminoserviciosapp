@@ -8,7 +8,14 @@ import {
   Param,
   UseGuards,
   ForbiddenException,
+  UnauthorizedException,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ComunicadosService } from './comunicados.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -20,11 +27,17 @@ export class ComunicadosController {
 
   /**
    * GET /api/comunicados
-   * Obține toate comunicados publicate
+   * Obține toate comunicados publicate (sau toate dacă user-ul are permisiuni de management)
    */
   @Get()
-  async findAll() {
-    const comunicados = await this.comunicadosService.findAll();
+  async findAll(@CurrentUser() user: any) {
+    // Dacă user-ul are permisiuni de management, arată toate comunicados (publicate și nepublicate)
+    const includeUnpublished = this.comunicadosService.canUserManageComunicados(
+      user.grupo,
+    );
+    const comunicados =
+      await this.comunicadosService.findAll(includeUnpublished);
+
     return {
       success: true,
       comunicados: comunicados.map((c) => ({
@@ -32,7 +45,10 @@ export class ComunicadosController {
         titulo: c.titulo,
         contenido: c.contenido,
         autor_id: c.autor_id,
+        autor_nombre: c.autor_nombre || c.autor_id,
         publicado: c.publicado,
+        nombre_archivo: c.nombre_archivo,
+        has_archivo: !!c.nombre_archivo,
         created_at: c.created_at,
         updated_at: c.updated_at,
         leidos_count: c.leidos.length,
@@ -54,11 +70,15 @@ export class ComunicadosController {
         titulo: comunicado.titulo,
         contenido: comunicado.contenido,
         autor_id: comunicado.autor_id,
+        autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
+        nombre_archivo: comunicado.nombre_archivo,
+        has_archivo: !!comunicado.nombre_archivo,
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
-        leidos: comunicado.leidos.map((l) => ({
+        leidos: comunicado.leidos.map((l: any) => ({
           user_id: l.user_id,
+          user_nombre: l.user_nombre || l.user_id,
           read_at: l.read_at,
         })),
       },
@@ -68,16 +88,19 @@ export class ComunicadosController {
   /**
    * POST /api/comunicados
    * Creează un comunicado nou (doar Admin/Supervisor/RRHH)
+   * Acceptă FormData cu câmpuri: titulo, contenido, publicado, archivo (opțional)
    */
   @Post()
+  @UseInterceptors(FileInterceptor('archivo'))
   async create(
     @CurrentUser() user: any,
     @Body()
     body: {
       titulo: string;
       contenido: string;
-      publicado?: boolean;
+      publicado?: string | boolean;
     },
+    @UploadedFile() file?: Express.Multer.File,
   ) {
     // Verifică permisiunile
     if (!this.comunicadosService.canUserManageComunicados(user.grupo)) {
@@ -87,17 +110,34 @@ export class ComunicadosController {
     }
 
     if (!body.titulo || !body.titulo.trim()) {
-      throw new ForbiddenException('El título es obligatorio');
+      throw new BadRequestException('El título es obligatorio');
     }
 
     if (!body.contenido || !body.contenido.trim()) {
-      throw new ForbiddenException('El contenido es obligatorio');
+      throw new BadRequestException('El contenido es obligatorio');
     }
+
+    // Procesează fișierul dacă există
+    let archivoBuffer: Buffer | null = null;
+    let nombreArchivo: string | null = null;
+
+    if (file) {
+      archivoBuffer = Buffer.from(file.buffer);
+      nombreArchivo = file.originalname || `archivo_${Date.now()}`;
+    }
+
+    // Procesează publicado (poate veni ca string "true"/"false" din FormData)
+    const publicado =
+      body.publicado === true ||
+      body.publicado === 'true' ||
+      body.publicado === '1';
 
     const comunicado = await this.comunicadosService.create(user.userId, {
       titulo: body.titulo.trim(),
       contenido: body.contenido.trim(),
-      publicado: body.publicado ?? false,
+      publicado,
+      archivo: archivoBuffer,
+      nombre_archivo: nombreArchivo,
     });
 
     return {
@@ -107,7 +147,10 @@ export class ComunicadosController {
         titulo: comunicado.titulo,
         contenido: comunicado.contenido,
         autor_id: comunicado.autor_id,
+        autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
+        nombre_archivo: comunicado.nombre_archivo,
+        has_archivo: !!comunicado.nombre_archivo,
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
       },
@@ -117,8 +160,10 @@ export class ComunicadosController {
   /**
    * PUT /api/comunicados/:id
    * Actualizează un comunicado (doar Admin/Supervisor/RRHH)
+   * Acceptă FormData cu câmpuri: titulo, contenido, publicado, archivo (opțional)
    */
   @Put(':id')
+  @UseInterceptors(FileInterceptor('archivo'))
   async update(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -126,8 +171,10 @@ export class ComunicadosController {
     body: {
       titulo?: string;
       contenido?: string;
-      publicado?: boolean;
+      publicado?: string | boolean;
+      remove_archivo?: string | boolean;
     },
+    @UploadedFile() file?: Express.Multer.File,
   ) {
     // Verifică permisiunile
     if (!this.comunicadosService.canUserManageComunicados(user.grupo)) {
@@ -136,10 +183,37 @@ export class ComunicadosController {
       );
     }
 
+    // Procesează fișierul dacă există
+    let archivoBuffer: Buffer | null | undefined = undefined;
+    let nombreArchivo: string | null | undefined = undefined;
+
+    if (file) {
+      archivoBuffer = Buffer.from(file.buffer);
+      nombreArchivo = file.originalname || `archivo_${Date.now()}`;
+    } else if (
+      body.remove_archivo === true ||
+      body.remove_archivo === 'true' ||
+      body.remove_archivo === '1'
+    ) {
+      // Dacă se cere ștergerea fișierului
+      archivoBuffer = null;
+      nombreArchivo = null;
+    }
+
+    // Procesează publicado (poate veni ca string "true"/"false" din FormData)
+    const publicado =
+      body.publicado !== undefined
+        ? body.publicado === true ||
+          body.publicado === 'true' ||
+          body.publicado === '1'
+        : undefined;
+
     const comunicado = await this.comunicadosService.update(BigInt(id), {
       titulo: body.titulo?.trim(),
       contenido: body.contenido?.trim(),
-      publicado: body.publicado,
+      publicado,
+      archivo: archivoBuffer,
+      nombre_archivo: nombreArchivo,
     });
 
     return {
@@ -149,7 +223,10 @@ export class ComunicadosController {
         titulo: comunicado.titulo,
         contenido: comunicado.contenido,
         autor_id: comunicado.autor_id,
+        autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
+        nombre_archivo: comunicado.nombre_archivo,
+        has_archivo: !!comunicado.nombre_archivo,
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
       },
@@ -178,11 +255,93 @@ export class ComunicadosController {
   }
 
   /**
+   * GET /api/comunicados/:id/download
+   * Descarcă fișierul atașat la un comunicado
+   */
+  @Get(':id/download')
+  async downloadArchivo(@Param('id') id: string, @Res() res: Response) {
+    const result = await this.comunicadosService.downloadArchivo(BigInt(id));
+
+    // Setează headers pentru download
+    res.setHeader('Content-Type', result.tipo_mime);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(result.nombre_archivo)}"`,
+    );
+    res.setHeader('Content-Length', result.archivo.length);
+
+    // Trimite fișierul
+    res.send(result.archivo);
+  }
+
+  /**
+   * POST /api/comunicados/:id/publicar
+   * Publică un comunicado și trimite push notification (doar Admin/Supervisor/RRHH)
+   */
+  @Post(':id/publicar')
+  async publicar(@CurrentUser() user: any, @Param('id') id: string) {
+    // Verifică permisiunile
+    if (!this.comunicadosService.canUserManageComunicados(user.grupo)) {
+      throw new ForbiddenException(
+        'No tienes permiso para publicar comunicados. Solo Admin, Supervisor y RRHH pueden publicar comunicados.',
+      );
+    }
+
+    const comunicado = await this.comunicadosService.update(BigInt(id), {
+      publicado: true,
+    });
+
+    return {
+      success: true,
+      message:
+        'Comunicado publicado con éxito. Se ha enviado una notificación push a todos los empleados.',
+      comunicado: {
+        id: Number(comunicado.id),
+        titulo: comunicado.titulo,
+        contenido: comunicado.contenido,
+        autor_id: comunicado.autor_id,
+        autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
+        publicado: comunicado.publicado,
+        nombre_archivo: comunicado.nombre_archivo,
+        has_archivo: !!comunicado.nombre_archivo,
+        created_at: comunicado.created_at,
+        updated_at: comunicado.updated_at,
+      },
+    };
+  }
+
+  /**
+   * GET /api/comunicados/unread-count
+   * Obține numărul de comunicados necitite pentru user-ul curent
+   */
+  @Get('unread-count')
+  async getUnreadCount(@CurrentUser() user: any) {
+    if (!user || !user.userId) {
+      throw new UnauthorizedException(
+        'Usuario no autenticado o userId no disponible',
+      );
+    }
+
+    const count = await this.comunicadosService.countUnread(user.userId);
+
+    return {
+      success: true,
+      count,
+    };
+  }
+
+  /**
    * POST /api/comunicados/:id/marcar-leido
    * Marchează un comunicado ca citit
    */
   @Post(':id/marcar-leido')
   async markAsRead(@CurrentUser() user: any, @Param('id') id: string) {
+    if (!user || !user.userId) {
+      throw new UnauthorizedException(
+        'Usuario no autenticado o userId no disponible',
+      );
+    }
+
     await this.comunicadosService.markAsRead(BigInt(id), user.userId);
 
     return {

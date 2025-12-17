@@ -66,10 +66,25 @@ export const useComunicadosApi = () => {
     setLoading(true);
     setError(null);
     try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+      };
+
+      // Dacă este FormData, nu adăugăm Content-Type (browser-ul o setează automat cu boundary)
+      // Dacă este obiect normal, folosim JSON
+      let body;
+      if (comunicadoData instanceof FormData) {
+        body = comunicadoData;
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(comunicadoData);
+      }
+
       const response = await fetch(`${BASE_URL}/api/comunicados`, {
         method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(comunicadoData),
+        headers,
+        body,
       });
 
       if (!response.ok) {
@@ -91,10 +106,25 @@ export const useComunicadosApi = () => {
     setLoading(true);
     setError(null);
     try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+      };
+
+      // Dacă este FormData, nu adăugăm Content-Type (browser-ul o setează automat cu boundary)
+      // Dacă este obiect normal, folosim JSON
+      let body;
+      if (comunicadoData instanceof FormData) {
+        body = comunicadoData;
+      } else {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(comunicadoData);
+      }
+
       const response = await fetch(`${BASE_URL}/api/comunicados/${id}`, {
         method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(comunicadoData),
+        headers,
+        body,
       });
 
       if (!response.ok) {
@@ -158,6 +188,54 @@ export const useComunicadosApi = () => {
     }
   }, []);
 
+  const publicarComunicado = useCallback(async (id) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${BASE_URL}/api/comunicados/${id}/publicar`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Error ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.comunicado;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getUnreadCount = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${BASE_URL}/api/comunicados/unread-count`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Error ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.count || 0;
+    } catch (err) {
+      setError(err.message);
+      return 0; // Returnează 0 în caz de eroare
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     fetchComunicados,
     fetchComunicado,
@@ -165,6 +243,8 @@ export const useComunicadosApi = () => {
     updateComunicado,
     deleteComunicado,
     markAsRead,
+    publicarComunicado,
+    getUnreadCount,
     loading,
     error,
   };

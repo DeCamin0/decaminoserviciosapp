@@ -16,6 +16,8 @@ const ComunicadoCreatePage = () => {
   const [titulo, setTitulo] = useState('');
   const [contenido, setContenido] = useState('');
   const [publicado, setPublicado] = useState(false);
+  const [archivo, setArchivo] = useState(null);
+  const [archivoPreview, setArchivoPreview] = useState(null);
   const [notification, setNotification] = useState(null);
   const isEdit = !!id;
 
@@ -26,6 +28,9 @@ const ComunicadoCreatePage = () => {
       setTitulo(data.titulo);
       setContenido(data.contenido);
       setPublicado(data.publicado);
+      if (data.nombre_archivo) {
+        setArchivoPreview(data.nombre_archivo);
+      }
     } catch (err) {
       setNotification({
         type: 'error',
@@ -60,22 +65,24 @@ const ComunicadoCreatePage = () => {
     }
 
     try {
+      // Creează FormData pentru a trimite și fișierul
+      const formData = new FormData();
+      formData.append('titulo', titulo.trim());
+      formData.append('contenido', contenido.trim());
+      formData.append('publicado', publicado.toString());
+
+      if (archivo) {
+        formData.append('archivo', archivo);
+      }
+
       if (isEdit) {
-        await updateComunicado(id, {
-          titulo: titulo.trim(),
-          contenido: contenido.trim(),
-          publicado,
-        });
+        await updateComunicado(id, formData);
         setNotification({
           type: 'success',
           message: 'Comunicado actualizado con éxito',
         });
       } else {
-        await createComunicado({
-          titulo: titulo.trim(),
-          contenido: contenido.trim(),
-          publicado,
-        });
+        await createComunicado(formData);
         setNotification({
           type: 'success',
           message: 'Comunicado creado con éxito',
@@ -164,6 +171,53 @@ const ComunicadoCreatePage = () => {
               placeholder="Contenido del comunicado..."
               required
             />
+          </div>
+
+          {/* Archivo adjunto */}
+          <div className="mb-6">
+            <label
+              htmlFor="archivo"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Archivo adjunto (opcional)
+            </label>
+            <div className="space-y-3">
+              <input
+                type="file"
+                id="archivo"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setArchivo(file);
+                    setArchivoPreview(file.name);
+                  }
+                }}
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,.txt,.xls,.xlsx"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900 dark:file:text-primary-300"
+              />
+              {archivoPreview && (
+                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    📎 {archivoPreview}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setArchivo(null);
+                      setArchivoPreview(null);
+                      const input = document.getElementById('archivo');
+                      if (input) input.value = '';
+                    }}
+                    className="text-red-600 hover:text-red-700 text-sm font-medium"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Formatos permitidos: PDF, imágenes (PNG, JPG, GIF, WEBP), documentos (DOC, DOCX), Excel (XLS, XLSX), texto (TXT)
+            </p>
           </div>
 
           {/* Publicado */}

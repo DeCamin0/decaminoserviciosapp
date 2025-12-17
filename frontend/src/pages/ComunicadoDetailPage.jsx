@@ -9,18 +9,36 @@ import {
   Edit,
   Trash2,
   CheckCircle,
+  Paperclip,
+  Download,
+  Send,
+  Users,
+  Eye,
 } from 'lucide-react';
 import Notification from '../components/ui/Notification';
+import ConfirmModal from '../components/ui/ConfirmModal';
+import Modal from '../components/ui/Modal';
+import PDFViewerAndroid from '../components/PDFViewerAndroid';
+
+// Helper function pentru a converti Blob la Base64
+const blobToBase64 = (blob) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result.split(',')[1];
+      resolve(base64String);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
 const ComunicadoDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { fetchComunicado, markAsRead, deleteComunicado, loading, error } =
+  const { fetchComunicado, markAsRead, deleteComunicado, publicarComunicado, loading, error } =
     useComunicadosApi();
-  const [comunicado, setComunicado] = useState(null);
-  const [notification, setNotification] = useState(null);
-  const [isMarkedAsRead, setIsMarkedAsRead] = useState(false);
 
   const canManageComunicados = () => {
     const grupo = user?.GRUPO || user?.grupo || '';
@@ -33,6 +51,22 @@ const ComunicadoDetailPage = () => {
       grupoUpper === 'RRHH'
     );
   };
+  const [comunicado, setComunicado] = useState(null);
+  const [notification, setNotification] = useState(null);
+  const [isMarkedAsRead, setIsMarkedAsRead] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showReadersModal, setShowReadersModal] = useState(false);
+  const [showFilePreview, setShowFilePreview] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Detectare iOS/Android pentru preview
+  const isBrowser = typeof window !== 'undefined';
+  const ua = isBrowser ? window.navigator.userAgent : '';
+  const platform = isBrowser ? window.navigator.platform : '';
+  const isIOS = isBrowser && (/iPad|iPhone|iPod/.test(ua) || (platform === 'MacIntel' && window.navigator.maxTouchPoints > 1));
+  const isAndroid = isBrowser && /Android/i.test(ua);
 
   const loadComunicado = useCallback(async () => {
     if (!id) return;
@@ -69,15 +103,32 @@ const ComunicadoDetailPage = () => {
     loadComunicado();
   }, [loadComunicado]);
 
-  const handleDelete = async () => {
-    if (
-      !window.confirm(
-        '¿Estás seguro de que deseas eliminar este comunicado? Esta acción no se puede deshacer.',
-      )
-    ) {
-      return;
-    }
+  const handlePublish = async () => {
+    setShowPublishModal(true);
+  };
 
+  const confirmPublish = async () => {
+    try {
+      await publicarComunicado(id);
+      setNotification({
+        type: 'success',
+        message: 'Comunicado publicado con éxito. Se ha enviado una notificación push a todos los empleados.',
+      });
+      // Recargar comunicado para actualizar estado
+      await loadComunicado();
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Error al publicar comunicado: ${err.message}`,
+      });
+    }
+  };
+
+  const handleDelete = () => {
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
     try {
       await deleteComunicado(id);
       setNotification({
@@ -105,6 +156,116 @@ const ComunicadoDetailPage = () => {
       minute: '2-digit',
     });
   };
+
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const handlePreviewFile = async () => {
+    if (!comunicado.has_archivo || !comunicado.nombre_archivo) return;
+
+    setPreviewLoading(true);
+    setShowFilePreview(true);
+
+    try {
+      const BASE_URL = import.meta.env.DEV
+        ? 'http://localhost:3000'
+        : 'https://api.decaminoservicios.com';
+      
+      const downloadUrl = `${BASE_URL}/api/comunicados/${id}/download`;
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Accept': 'application/pdf, application/json, image/*, */*',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(downloadUrl, { headers });
+      
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      const fileName = comunicado.nombre_archivo.toLowerCase();
+      const isPdf = fileName.endsWith('.pdf') || contentType.includes('application/pdf');
+      const isImage = fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i) || contentType.startsWith('image/');
+
+      if (isImage) {
+        // Pentru imagini, convertim la base64 pentru a evita problemele CORB
+        const blob = await response.blob();
+        const base64 = await blobToBase64(blob);
+        const mimeType = blob.type || 'image/png';
+        setPreviewData({
+          fileName: comunicado.nombre_archivo,
+          previewUrl: `data:${mimeType};base64,${base64}`,
+          isPdf: false,
+          isImage: true,
+        });
+      } else if (isPdf) {
+        // Pentru PDF-uri
+        const blob = await response.blob();
+        
+        if (blob.size === 0) {
+          throw new Error('El archivo PDF está vacío');
+        }
+
+        // Pentru iOS folosim base64, pentru Android/Desktop folosim blob URL
+        const url = isIOS
+          ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+          : URL.createObjectURL(blob);
+
+        setPreviewData({
+          fileName: comunicado.nombre_archivo,
+          previewUrl: url,
+          isPdf: true,
+          isImage: false,
+        });
+      } else {
+        // Pentru alte tipuri de fișiere, arătăm mesaj
+        setPreviewData({
+          fileName: comunicado.nombre_archivo,
+          previewUrl: null,
+          isPdf: false,
+          isImage: false,
+        });
+      }
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Error al cargar preview: ${err.message}`,
+      });
+      setShowFilePreview(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleClosePreview = () => {
+    // Cleanup blob URL dacă există
+    if (previewData?.previewUrl && typeof previewData.previewUrl === 'string' && previewData.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previewData.previewUrl);
+    }
+    setShowFilePreview(false);
+    setPreviewData(null);
+  };
+
+  // Cleanup blob URLs când componenta se unmount sau previewData se schimbă
+  useEffect(() => {
+    return () => {
+      if (previewData?.previewUrl && typeof previewData.previewUrl === 'string' && previewData.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewData.previewUrl);
+      }
+    };
+  }, [previewData]);
 
   if (loading) {
     return (
@@ -176,7 +337,7 @@ const ComunicadoDetailPage = () => {
                 </div>
                 <div className="flex items-center gap-1">
                   <User className="w-4 h-4" />
-                  <span>Autor: {comunicado.autor_id}</span>
+                  <span>Autor: {canManageComunicados() ? (comunicado.autor_nombre || comunicado.autor_id) : 'Empresa'}</span>
                 </div>
                 {isMarkedAsRead && (
                   <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
@@ -184,12 +345,32 @@ const ComunicadoDetailPage = () => {
                     <span>Leído</span>
                   </div>
                 )}
+                {comunicado.leidos && comunicado.leidos.length > 0 && (
+                  <button
+                    onClick={() => setShowReadersModal(true)}
+                    className="flex items-center gap-1 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors cursor-pointer"
+                    title="Ver quién ha leído"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>{comunicado.leidos.length} leídos</span>
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Actions (Admin only) */}
             {canManageComunicados() && (
               <div className="flex items-center gap-2 ml-4">
+                {!comunicado.publicado && (
+                  <button
+                    onClick={handlePublish}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                    title="Publicar comunicado"
+                  >
+                    <Send className="w-4 h-4" />
+                    Publicar
+                  </button>
+                )}
                 <button
                   onClick={() => navigate(`/comunicados/${id}/editar`)}
                   className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -208,6 +389,75 @@ const ComunicadoDetailPage = () => {
             )}
           </div>
 
+          {/* Archivo adjunto */}
+          {comunicado.has_archivo && comunicado.nombre_archivo && (
+            <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Paperclip className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Archivo adjunto
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {comunicado.nombre_archivo}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handlePreviewFile}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                    title="Ver preview"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Ver preview
+                  </button>
+                  <a
+                    href={`${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/comunicados/${id}/download`}
+                    download={comunicado.nombre_archivo}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+                    onClick={(e) => {
+                      // Adaugă token JWT în header pentru download
+                      const token = localStorage.getItem('auth_token');
+                      if (token) {
+                        e.preventDefault();
+                        fetch(
+                          `${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/comunicados/${id}/download`,
+                          {
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                            },
+                          },
+                        )
+                          .then((res) => res.blob())
+                          .then((blob) => {
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = comunicado.nombre_archivo;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                          })
+                          .catch((err) => {
+                            setNotification({
+                              type: 'error',
+                              message: `Error al descargar archivo: ${err.message}`,
+                            });
+                          });
+                      }
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    Descargar
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Content */}
           <div className="prose dark:prose-invert max-w-none">
             <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
@@ -216,6 +466,174 @@ const ComunicadoDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmare pentru ștergere */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDelete}
+        title="Eliminar Comunicado"
+        message="¿Estás seguro de que deseas eliminar este comunicado? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        type="danger"
+        icon={Trash2}
+      />
+
+      {/* Modal de confirmare pentru publicare */}
+      <ConfirmModal
+        isOpen={showPublishModal}
+        onClose={() => setShowPublishModal(false)}
+        onConfirm={confirmPublish}
+        title="Publicar Comunicado"
+        message="¿Estás seguro de que deseas publicar este comunicado? Se enviará una notificación push a todos los empleados."
+        confirmText="Publicar"
+        cancelText="Cancelar"
+        type="info"
+        icon={Send}
+      />
+
+      {/* Modal pentru lista de cititori */}
+      <Modal
+        isOpen={showReadersModal}
+        onClose={() => setShowReadersModal(false)}
+        title="Usuarios que han leído"
+        size="md"
+      >
+        {comunicado && comunicado.leidos ? (
+          <div className="space-y-3">
+            {comunicado.leidos.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+                Nadie ha leído este comunicado aún.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {comunicado.leidos.map((leido, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                        <Users className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {leido.user_nombre || leido.user_id}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatDateTime(leido.read_at)}
+                        </p>
+                      </div>
+                    </div>
+                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+            <p className="mt-2 text-gray-500 dark:text-gray-400">Cargando...</p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal de Preview pentru Archivo */}
+      {showFilePreview && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700 animate-in fade-in duration-300 relative">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-gray-700 dark:to-gray-800 px-6 py-4 border-b border-blue-200 dark:border-gray-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <Eye className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white break-all leading-tight">
+                      Vista Previa: {previewData?.fileName || comunicado?.nombre_archivo}
+                    </h3>
+                    <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Visualización de archivo</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleClosePreview}
+                  className="w-10 h-10 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 border border-gray-200 dark:border-gray-600 hover:border-red-300 dark:hover:border-red-500 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
+                >
+                  <span className="text-gray-400 dark:text-gray-300 group-hover:text-red-500 text-xl">✕</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 p-4">
+              {previewLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+                  <span className="ml-3 text-gray-600 dark:text-gray-400">Cargando preview...</span>
+                </div>
+              ) : previewData?.isPdf ? (
+                <div className="p-4 bg-gray-50 dark:bg-gray-800 h-[75vh] pdf-preview-container">
+                  {isAndroid || isIOS ? (
+                    <PDFViewerAndroid 
+                      pdfUrl={previewData?.previewUrl || ''} 
+                      className="w-full h-full"
+                    />
+                  ) : (
+                    <iframe
+                      src={previewData?.previewUrl || ''}
+                      className="w-full h-full border-0 rounded-lg"
+                      title={previewData?.fileName}
+                    />
+                  )}
+                </div>
+              ) : previewData?.isImage ? (
+                <div className="p-4 bg-gray-50 dark:bg-gray-800 flex items-center justify-center min-h-[60vh]">
+                  <div className="max-w-full max-h-[70vh] overflow-auto">
+                    <img
+                      src={previewData?.previewUrl || ''}
+                      alt={previewData?.fileName}
+                      className={`max-w-full h-auto rounded-lg shadow-2xl ${
+                        isIOS ? 'brightness-100 contrast-100' : ''
+                      }`}
+                      style={{
+                        ...(isIOS && {
+                          filter: 'none',
+                          WebkitFilter: 'none',
+                          imageRendering: 'auto',
+                          WebkitImageRendering: 'auto',
+                          backgroundColor: 'transparent'
+                        })
+                      }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        const container = e.target.parentElement;
+                        if (container) {
+                          container.innerHTML = `
+                            <div class="text-center py-12">
+                              <div class="text-6xl mb-4">🖼️</div>
+                              <p class="text-gray-600 dark:text-gray-400 mb-4">Error al cargar la imagen</p>
+                              <p class="text-sm text-gray-500 dark:text-gray-500">Usa el botón de descarga para ver el archivo</p>
+                            </div>
+                          `;
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4">📄</div>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">Preview no disponible para este tipo de archivo</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500">Usa el botón de descarga para ver el archivo</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

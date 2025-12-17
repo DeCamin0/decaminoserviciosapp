@@ -2,15 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
-import { FileText, Plus, Eye, Calendar, User, CheckCircle, ArrowLeft } from 'lucide-react';
+import { FileText, Plus, Eye, Calendar, User, CheckCircle, ArrowLeft, Paperclip, Send, Clock, Users } from 'lucide-react';
 import Notification from '../components/ui/Notification';
+import Modal from '../components/ui/Modal';
 
 const ComunicadosPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { fetchComunicados, loading, error } = useComunicadosApi();
+  const { fetchComunicados, fetchComunicado, loading, error } = useComunicadosApi();
   const [comunicados, setComunicados] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [showReadersModal, setShowReadersModal] = useState(false);
+  const [selectedComunicado, setSelectedComunicado] = useState(null);
 
   const canManageComunicados = () => {
     const grupo = user?.GRUPO || user?.grupo || '';
@@ -54,6 +57,30 @@ const ComunicadosPage = () => {
     return contenido.length > 150
       ? `${contenido.substring(0, 150)}...`
       : contenido;
+  };
+
+  const handleShowReaders = async (comunicadoId) => {
+    try {
+      const data = await fetchComunicado(comunicadoId);
+      setSelectedComunicado(data);
+      setShowReadersModal(true);
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Error al cargar lectores: ${err.message}`,
+      });
+    }
+  };
+
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   return (
@@ -138,6 +165,27 @@ const ComunicadosPage = () => {
                         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                           {comunicado.titulo}
                         </h2>
+                        {canManageComunicados() && (
+                          <span
+                            className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                              comunicado.publicado
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                                : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
+                            }`}
+                          >
+                            {comunicado.publicado ? (
+                              <>
+                                <Send className="w-3 h-3" />
+                                Publicado
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3 h-3" />
+                                Borrador
+                              </>
+                            )}
+                          </span>
+                        )}
                       </div>
                       <p className="text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
                         {getPreview(comunicado.contenido)}
@@ -149,12 +197,25 @@ const ComunicadosPage = () => {
                         </div>
                         <div className="flex items-center gap-1">
                           <User className="w-4 h-4" />
-                          <span>Autor: {comunicado.autor_id}</span>
+                          <span>Autor: {canManageComunicados() ? (comunicado.autor_nombre || comunicado.autor_id) : 'Empresa'}</span>
                         </div>
                         {comunicado.leidos_count > 0 && (
-                          <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShowReaders(comunicado.id);
+                            }}
+                            className="flex items-center gap-1 hover:text-primary-600 dark:hover:text-primary-400 transition-colors cursor-pointer"
+                            title="Ver quién ha leído"
+                          >
                             <CheckCircle className="w-4 h-4" />
                             <span>{comunicado.leidos_count} leídos</span>
+                          </button>
+                        )}
+                        {comunicado.has_archivo && comunicado.nombre_archivo && (
+                          <div className="flex items-center gap-1 text-primary-600 dark:text-primary-400">
+                            <Paperclip className="w-4 h-4" />
+                            <span>{comunicado.nombre_archivo}</span>
                           </div>
                         )}
                       </div>
@@ -166,6 +227,56 @@ const ComunicadosPage = () => {
             )}
           </div>
         )}
+
+        {/* Modal pentru lista de cititori */}
+        <Modal
+          isOpen={showReadersModal}
+          onClose={() => {
+            setShowReadersModal(false);
+            setSelectedComunicado(null);
+          }}
+          title="Usuarios que han leído"
+          size="md"
+        >
+          {selectedComunicado && selectedComunicado.leidos ? (
+            <div className="space-y-3">
+              {selectedComunicado.leidos.length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+                  Nadie ha leído este comunicado aún.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {selectedComunicado.leidos.map((leido, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+                          <Users className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-white">
+                            {leido.user_nombre || leido.user_id}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatDateTime(leido.read_at)}
+                          </p>
+                        </div>
+                      </div>
+                      <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+              <p className="mt-2 text-gray-500 dark:text-gray-400">Cargando...</p>
+            </div>
+          )}
+        </Modal>
       </div>
     </div>
   );

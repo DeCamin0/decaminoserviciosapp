@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../services/push.service';
 
@@ -12,13 +17,25 @@ export class ComunicadosService {
   ) {}
 
   /**
-   * Obține toate comunicados publicate, ordonate descrescător (cele mai noi primele)
+   * Obține toate comunicados
+   * @param includeUnpublished - Dacă este true, returnează și comunicados nepublicate (pentru Admin/Supervisor/RRHH/Developer)
    */
-  async findAll() {
-    return this.prisma.comunicado.findMany({
-      where: { publicado: true },
+  async findAll(includeUnpublished: boolean = false) {
+    const where = includeUnpublished ? {} : { publicado: true };
+
+    const comunicados = await this.prisma.comunicado.findMany({
+      where,
       orderBy: { created_at: 'desc' },
-      include: {
+      select: {
+        id: true,
+        titulo: true,
+        contenido: true,
+        autor_id: true,
+        publicado: true,
+        nombre_archivo: true,
+        archivo: false, // Nu returnăm conținutul fișierului în listă
+        created_at: true,
+        updated_at: true,
         leidos: {
           select: {
             user_id: true,
@@ -27,6 +44,39 @@ export class ComunicadosService {
         },
       },
     });
+
+    // Obține numele autorilor din DatosEmpleados
+    const autorIds = [...new Set(comunicados.map((c) => c.autor_id))];
+
+    if (autorIds.length === 0) {
+      return comunicados.map((comunicado) => ({
+        ...comunicado,
+        autor_nombre: comunicado.autor_id,
+      }));
+    }
+
+    // Construiește query SQL sigur pentru a obține numele autorilor
+    const placeholders = autorIds.map(() => '?').join(',');
+    const query = `
+      SELECT CODIGO, \`NOMBRE / APELLIDOS\` as nombre
+      FROM DatosEmpleados
+      WHERE CODIGO IN (${placeholders})
+    `;
+
+    const autores = await this.prisma.$queryRawUnsafe<any[]>(
+      query,
+      ...autorIds,
+    );
+
+    const autoresMap = new Map(
+      autores.map((a: any) => [a.CODIGO, a.nombre || a.CODIGO]),
+    );
+
+    // Adaugă numele autorului la fiecare comunicado
+    return comunicados.map((comunicado) => ({
+      ...comunicado,
+      autor_nombre: autoresMap.get(comunicado.autor_id) || comunicado.autor_id,
+    }));
   }
 
   /**
@@ -49,7 +99,85 @@ export class ComunicadosService {
       throw new NotFoundException(`Comunicado cu id ${id} nu a fost găsit`);
     }
 
-    return comunicado;
+    // Obține numele autorului
+    const autor = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT \`NOMBRE / APELLIDOS\` as nombre FROM DatosEmpleados WHERE CODIGO = ? LIMIT 1`,
+      comunicado.autor_id,
+    );
+
+    const autorNombre =
+      autor.length > 0 && autor[0].nombre
+        ? autor[0].nombre
+        : comunicado.autor_id;
+
+    // Obține numele utilizatorilor care au citit comunicado-ul
+    const userIds = comunicado.leidos.map((l) => l.user_id);
+    let leidosConNombres = comunicado.leidos;
+
+    if (userIds.length > 0) {
+      // Log pentru debugging
+      this.logger.log(
+        `🔍 Obțin numele pentru ${userIds.length} utilizatori: ${userIds.join(', ')}`,
+      );
+
+      // Construiește query-ul cu parametri siguri
+      // Folosim CAST pentru a ne asigura că comparăm string-uri
+      const placeholders = userIds.map(() => '?').join(',');
+      const query = `
+        SELECT CODIGO, \`NOMBRE / APELLIDOS\` as nombre
+        FROM DatosEmpleados
+        WHERE CAST(CODIGO AS CHAR) IN (${placeholders})
+      `;
+
+      this.logger.log(
+        `🔍 Execut query: ${query.substring(0, 100)}... cu parametri: ${userIds.join(', ')}`,
+      );
+
+      const usuarios = await this.prisma.$queryRawUnsafe<any[]>(
+        query,
+        ...userIds.map((id) => String(id)),
+      );
+
+      this.logger.log(
+        `✅ Găsit ${usuarios.length} utilizatori în DB din ${userIds.length} căutați`,
+      );
+      if (usuarios.length > 0) {
+        this.logger.log(
+          `📋 Utilizatori găsiți:`,
+          usuarios.map(
+            (u: any) =>
+              `CODIGO: ${u.CODIGO} (${typeof u.CODIGO}), nombre: ${u.nombre}`,
+          ),
+        );
+      }
+
+      // Creează map-ul folosind string pentru ambele chei pentru a evita probleme de tip
+      const usuariosMap = new Map<string, string>();
+      usuarios.forEach((u: any) => {
+        const codigo = String(u.CODIGO).trim();
+        const nombre = u.nombre ? String(u.nombre).trim() : codigo;
+        usuariosMap.set(codigo, nombre);
+        this.logger.log(`🗺️ Adăugat în map: "${codigo}" -> "${nombre}"`);
+      });
+
+      leidosConNombres = comunicado.leidos.map((leido) => {
+        const userIdStr = String(leido.user_id).trim();
+        const userNombre = usuariosMap.get(userIdStr) || userIdStr;
+        this.logger.log(
+          `📝 Mapare leido: user_id="${leido.user_id}" (${typeof leido.user_id}) -> user_nombre="${userNombre}"`,
+        );
+        return {
+          ...leido,
+          user_nombre: userNombre,
+        };
+      });
+    }
+
+    return {
+      ...comunicado,
+      autor_nombre: autorNombre,
+      leidos: leidosConNombres,
+    };
   }
 
   /**
@@ -61,6 +189,8 @@ export class ComunicadosService {
       titulo: string;
       contenido: string;
       publicado?: boolean;
+      archivo?: Buffer | null;
+      nombre_archivo?: string | null;
     },
   ) {
     const publicado = data.publicado ?? false;
@@ -71,6 +201,8 @@ export class ComunicadosService {
         contenido: data.contenido,
         autor_id: autorId,
         publicado,
+        archivo: data.archivo,
+        nombre_archivo: data.nombre_archivo,
       },
     });
 
@@ -79,7 +211,21 @@ export class ComunicadosService {
       await this.sendPushNotification(comunicado);
     }
 
-    return comunicado;
+    // Obține numele autorului
+    const autor = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT \`NOMBRE / APELLIDOS\` as nombre FROM DatosEmpleados WHERE CODIGO = ? LIMIT 1`,
+      comunicado.autor_id,
+    );
+
+    const autorNombre =
+      autor.length > 0 && autor[0].nombre
+        ? autor[0].nombre
+        : comunicado.autor_id;
+
+    return {
+      ...comunicado,
+      autor_nombre: autorNombre,
+    };
   }
 
   /**
@@ -91,6 +237,8 @@ export class ComunicadosService {
       titulo?: string;
       contenido?: string;
       publicado?: boolean;
+      archivo?: Buffer | null | undefined;
+      nombre_archivo?: string | null | undefined;
     },
   ) {
     const existing = await this.prisma.comunicado.findUnique({
@@ -104,13 +252,18 @@ export class ComunicadosService {
     const wasPublished = existing.publicado;
     const willBePublished = data.publicado ?? existing.publicado;
 
+    // Construiește obiectul de update
+    const updateData: any = {};
+    if (data.titulo !== undefined) updateData.titulo = data.titulo;
+    if (data.contenido !== undefined) updateData.contenido = data.contenido;
+    if (data.publicado !== undefined) updateData.publicado = data.publicado;
+    if (data.archivo !== undefined) updateData.archivo = data.archivo;
+    if (data.nombre_archivo !== undefined)
+      updateData.nombre_archivo = data.nombre_archivo;
+
     const comunicado = await this.prisma.comunicado.update({
       where: { id },
-      data: {
-        titulo: data.titulo,
-        contenido: data.contenido,
-        publicado: data.publicado,
-      },
+      data: updateData,
     });
 
     // Dacă se publică pentru prima dată (nu era publicat înainte), trimite push
@@ -118,7 +271,41 @@ export class ComunicadosService {
       await this.sendPushNotification(comunicado);
     }
 
-    return comunicado;
+    // Obține numele autorului
+    const autor = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT \`NOMBRE / APELLIDOS\` as nombre FROM DatosEmpleados WHERE CODIGO = ? LIMIT 1`,
+      comunicado.autor_id,
+    );
+
+    const autorNombre =
+      autor.length > 0 && autor[0].nombre
+        ? autor[0].nombre
+        : comunicado.autor_id;
+
+    return {
+      ...comunicado,
+      autor_nombre: autorNombre,
+    };
+  }
+
+  /**
+   * Numără comunicados necitite pentru un utilizator
+   */
+  async countUnread(userId: string): Promise<number> {
+    // Obține toate comunicados publicate
+    const comunicados = await this.prisma.comunicado.findMany({
+      where: { publicado: true },
+      select: {
+        id: true,
+        leidos: {
+          where: { user_id: userId },
+          select: { id: true },
+        },
+      },
+    });
+
+    // Numără comunicados care nu au fost citite de user
+    return comunicados.filter((c) => c.leidos.length === 0).length;
   }
 
   /**
@@ -189,6 +376,76 @@ export class ComunicadosService {
       grupoUpper === 'MANAGER' ||
       grupoUpper === 'RRHH'
     );
+  }
+
+  /**
+   * Descarcă fișierul atașat la un comunicado
+   */
+  async downloadArchivo(id: bigint): Promise<{
+    archivo: Buffer;
+    tipo_mime: string;
+    nombre_archivo: string;
+  }> {
+    const comunicado = await this.prisma.comunicado.findUnique({
+      where: { id },
+      select: {
+        archivo: true,
+        nombre_archivo: true,
+      },
+    });
+
+    if (!comunicado) {
+      throw new NotFoundException(`Comunicado cu id ${id} nu a fost găsit`);
+    }
+
+    if (!comunicado.archivo) {
+      throw new BadRequestException('Este comunicado no tiene archivo adjunto');
+    }
+
+    // Detectăm tipul MIME din extensie sau din magic bytes
+    const nombreArchivo = comunicado.nombre_archivo || `comunicado_${id}`;
+    const extension = nombreArchivo.split('.').pop()?.toLowerCase() || '';
+
+    // Detectăm tipul MIME din magic bytes
+    let mimeType = 'application/octet-stream';
+    const archivoBuffer = Buffer.from(comunicado.archivo);
+    const firstBytes = archivoBuffer.slice(0, 10);
+    const firstBytesHex = firstBytes.toString('hex');
+    const firstBytesAscii = firstBytes.toString('ascii');
+
+    if (firstBytesAscii.startsWith('%PDF-')) {
+      mimeType = 'application/pdf';
+    } else if (firstBytesHex.startsWith('89504e47')) {
+      mimeType = 'image/png';
+    } else if (firstBytesHex.startsWith('ffd8ff')) {
+      mimeType = 'image/jpeg';
+    } else if (firstBytesHex.startsWith('47494638')) {
+      mimeType = 'image/gif';
+    } else if (firstBytesHex.startsWith('52494646')) {
+      mimeType = 'image/webp';
+    } else {
+      // Fallback la extensie
+      const mimeTypes: { [key: string]: string } = {
+        pdf: 'application/pdf',
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        txt: 'text/plain',
+        doc: 'application/msword',
+        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        xls: 'application/vnd.ms-excel',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+      mimeType = mimeTypes[extension] || 'application/octet-stream';
+    }
+
+    return {
+      archivo: archivoBuffer,
+      tipo_mime: mimeType,
+      nombre_archivo: nombreArchivo,
+    };
   }
 
   /**
