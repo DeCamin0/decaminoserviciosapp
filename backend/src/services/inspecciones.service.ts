@@ -454,14 +454,6 @@ export class InspeccionesService {
         );
       }
 
-      // 🔍 LOGGING: Verificare finală
-      const firstBytesHex = archivoBuffer.slice(0, 10).toString('hex');
-      const firstBytesAscii = archivoBuffer.slice(0, 10).toString('ascii');
-      const firstBytesBinary = archivoBuffer.slice(0, 10).toString('binary');
-      this.logger.log(
-        `🔍 [DEBUG] archivoBuffer final - length: ${archivoBuffer.length}, first 10 bytes (hex): ${firstBytesHex}, first 10 bytes (ascii): ${firstBytesAscii}, first 10 bytes (binary): ${firstBytesBinary}`,
-      );
-
       // Nu mai validăm strict pentru %PDF- - acceptăm orice tip de fișier
       // (PDF, imagini, documente, etc.)
 
@@ -474,6 +466,12 @@ export class InspeccionesService {
       const firstBytes = archivoBuffer.slice(0, 10);
       const firstBytesHex = firstBytes.toString('hex');
       const firstBytesAscii = firstBytes.toString('ascii');
+      const firstBytesBinary = firstBytes.toString('binary');
+      
+      // 🔍 LOGGING: Verificare finală
+      this.logger.log(
+        `🔍 [DEBUG] archivoBuffer final - length: ${archivoBuffer.length}, first 10 bytes (hex): ${firstBytesHex}, first 10 bytes (ascii): ${firstBytesAscii}, first 10 bytes (binary): ${firstBytesBinary}`,
+      );
 
       // Verificăm magic bytes pentru diferite tipuri de fișiere
       if (firstBytesAscii.startsWith('%PDF-')) {
