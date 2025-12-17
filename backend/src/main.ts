@@ -122,16 +122,25 @@ async function bootstrap() {
   // (asigură că header-urile sunt setate chiar dacă enableCors nu funcționează corect)
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && uniqueCorsOrigins.includes(origin)) {
-      res.header('Access-Control-Allow-Origin', origin);
-      res.header('Access-Control-Allow-Credentials', 'true');
-    } else if (!origin || process.env.NODE_ENV !== 'production') {
-      // În development sau pentru requests fără origin, permite
-      res.header('Access-Control-Allow-Origin', origin || '*');
-      res.header('Access-Control-Allow-Credentials', 'true');
+    // Setează header-urile CORS pentru toate request-urile (nu doar OPTIONS)
+    if (origin) {
+      // Verifică dacă origin-ul este permis
+      if (uniqueCorsOrigins.includes(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+      } else if (process.env.NODE_ENV !== 'production') {
+        // În development, permite orice origin
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+      }
+      // Setează întotdeauna metodele și header-urile permise
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
+    } else {
+      // Pentru requests fără origin (mobile apps, etc.)
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
     }
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
     next();
   });
 
