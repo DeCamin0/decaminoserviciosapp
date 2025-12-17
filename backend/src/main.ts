@@ -12,8 +12,10 @@ async function bootstrap() {
 
   // IMPORTANT: Skip body parsing for multipart/form-data
   // Express body parsers consume the stream, making it unavailable for multer
+  // Trebuie să fie ÎNAINTE de json() și urlencoded() middleware-uri
   app.use((req, res, next) => {
-    if (req.headers['content-type']?.includes('multipart/form-data')) {
+    const contentType = req.headers['content-type'] || '';
+    if (contentType.includes('multipart/form-data')) {
       // Skip body parsing - multer will handle it in controller
       console.log('[Main] Skipping body parsing for FormData request');
       return next();
@@ -28,8 +30,33 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // Enable CORS for frontend communication
+  // Suport pentru multiple origins (development și producție)
+  const corsOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+    : [
+        'http://localhost:5173',
+        'https://app.decaminoservicios.com',
+        'https://decaminoservicios.com',
+      ];
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173', // Vite default port
+    origin: (origin, callback) => {
+      // Permite requests fără origin (mobile apps, Postman, etc.)
+      if (!origin) {
+        return callback(null, true);
+      }
+      // Verifică dacă origin-ul este în lista de origins permise
+      if (corsOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        // În development, permite orice origin pentru debugging
+        if (process.env.NODE_ENV !== 'production') {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: [

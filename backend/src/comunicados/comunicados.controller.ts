@@ -91,7 +91,11 @@ export class ComunicadosController {
    * Acceptă FormData cu câmpuri: titulo, contenido, publicado, archivo (opțional)
    */
   @Post()
-  @UseInterceptors(FileInterceptor('archivo'))
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max per file
+    }),
+  )
   async create(
     @CurrentUser() user: any,
     @Body()
@@ -163,7 +167,11 @@ export class ComunicadosController {
    * Acceptă FormData cu câmpuri: titulo, contenido, publicado, archivo (opțional)
    */
   @Put(':id')
-  @UseInterceptors(FileInterceptor('archivo'))
+  @UseInterceptors(
+    FileInterceptor('archivo', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max per file
+    }),
+  )
   async update(
     @CurrentUser() user: any,
     @Param('id') id: string,

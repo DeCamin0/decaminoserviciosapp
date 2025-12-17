@@ -430,23 +430,58 @@ export class ComunicadosService {
       );
     }
 
-    // Upsert pentru a evita duplicate-urile
-    await this.prisma.comunicadoLeido.upsert({
+    // Verifică dacă există deja o înregistrare
+    const existing = await this.prisma.comunicadoLeido.findFirst({
       where: {
-        comunicado_id_user_id: {
-          comunicado_id: comunicadoId,
-          user_id: userId,
-        },
-      },
-      update: {
-        read_at: new Date(),
-      },
-      create: {
         comunicado_id: comunicadoId,
         user_id: userId,
-        read_at: new Date(),
       },
     });
+
+    if (existing) {
+      // Actualizează data de citire
+      await this.prisma.comunicadoLeido.update({
+        where: { id: existing.id },
+        data: { read_at: new Date() },
+      });
+    } else {
+      // Încearcă să creeze o nouă înregistrare
+      // Dacă există deja (race condition), facem update
+      try {
+        await this.prisma.comunicadoLeido.create({
+          data: {
+            comunicado_id: comunicadoId,
+            user_id: userId,
+            read_at: new Date(),
+          },
+        });
+      } catch (error: any) {
+        // Dacă este eroare de duplicate key (race condition), facem update
+        if (
+          error.code === 'P2002' ||
+          error.message?.includes('Unique constraint') ||
+          error.message?.includes('uq_comunicado_leido_comunicado_user')
+        ) {
+          // Găsește înregistrarea existentă și face update
+          const existingRecord = await this.prisma.comunicadoLeido.findFirst({
+            where: {
+              comunicado_id: comunicadoId,
+              user_id: userId,
+            },
+          });
+
+          if (existingRecord) {
+            await this.prisma.comunicadoLeido.update({
+              where: { id: existingRecord.id },
+              data: { read_at: new Date() },
+            });
+          }
+        } else {
+          // Re-aruncă eroarea dacă nu este de duplicate key
+          throw error;
+        }
+      }
+    }
 
     return { message: 'Comunicado marcat ca citit' };
   }
