@@ -1,8 +1,52 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 const BASE_URL = import.meta.env.DEV
   ? 'http://localhost:3000'
   : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+
+// Interceptor pentru a loga toate request-urile (inclusiv OPTIONS preflight)
+if (typeof window !== 'undefined') {
+  const originalFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const [url, options = {}] = args;
+    
+    // Log doar pentru comunicados endpoint-uri
+    if (typeof url === 'string' && url.includes('/api/comunicados')) {
+      console.log(`[Fetch Interceptor] ${options.method || 'GET'} ${url}`, {
+        method: options.method || 'GET',
+        headers: options.headers,
+        hasBody: !!options.body,
+        credentials: options.credentials,
+        mode: options.mode,
+        origin: window.location.origin,
+      });
+    }
+    
+    try {
+      const response = await originalFetch.apply(this, args);
+      
+      if (typeof url === 'string' && url.includes('/api/comunicados')) {
+        console.log(`[Fetch Interceptor] Response for ${options.method || 'GET'} ${url}:`, {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          headers: {
+            'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+            'access-control-allow-credentials': response.headers.get('access-control-allow-credentials'),
+            'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
+          },
+        });
+      }
+      
+      return response;
+    } catch (error) {
+      if (typeof url === 'string' && url.includes('/api/comunicados')) {
+        console.error(`[Fetch Interceptor] Error for ${options.method || 'GET'} ${url}:`, error);
+      }
+      throw error;
+    }
+  };
+}
 
 export const useComunicadosApi = () => {
   const [loading, setLoading] = useState(false);
@@ -74,29 +118,88 @@ export const useComunicadosApi = () => {
       // Dacă este FormData, nu adăugăm Content-Type (browser-ul o setează automat cu boundary)
       // Dacă este obiect normal, folosim JSON
       let body;
+      let fileInfo = null;
       if (comunicadoData instanceof FormData) {
         body = comunicadoData;
+        // Log info despre fișier dacă există
+        const archivo = comunicadoData.get('archivo');
+        if (archivo instanceof File) {
+          fileInfo = {
+            name: archivo.name,
+            size: archivo.size,
+            sizeMB: (archivo.size / (1024 * 1024)).toFixed(2),
+            type: archivo.type,
+          };
+          console.log('[Comunicados] 📤 Upload file info:', fileInfo);
+        }
       } else {
         headers['Content-Type'] = 'application/json';
         body = JSON.stringify(comunicadoData);
       }
 
-      const response = await fetch(`${BASE_URL}/api/comunicados`, {
+      const url = `${BASE_URL}/api/comunicados`;
+      console.log('[Comunicados] 📤 Starting upload request:', {
+        url,
         method: 'POST',
-        headers,
-        body,
-        credentials: 'include', // Include cookies and credentials for CORS
-        mode: 'cors', // Explicitly enable CORS
+        hasFile: !!fileInfo,
+        fileInfo,
+        origin: window.location.origin,
+        headers: Object.keys(headers),
+      });
+
+      // Log preflight OPTIONS request (dacă este trimis automat de browser)
+      console.log('[Comunicados] 🔍 Browser will send preflight OPTIONS request before POST');
+
+      let response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body,
+          credentials: 'include', // Include cookies and credentials for CORS
+          mode: 'cors', // Explicitly enable CORS
+        });
+      } catch (fetchError) {
+        console.error('[Comunicados] ❌ Fetch error caught:', {
+          name: fetchError.name,
+          message: fetchError.message,
+          stack: fetchError.stack,
+          // Verifică dacă este o eroare de rețea sau CORS
+          isNetworkError: fetchError.message === 'Failed to fetch',
+        });
+        throw fetchError;
+      }
+
+      console.log('[Comunicados] 📥 Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: {
+          'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+          'access-control-allow-credentials': response.headers.get('access-control-allow-credentials'),
+        },
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = { message: `Error ${response.status}: ${response.statusText}` };
+        }
+        console.error('[Comunicados] ❌ Upload error:', errorData);
         throw new Error(errorData.message || `Error ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('[Comunicados] ✅ Upload success:', data);
       return data.comunicado;
     } catch (err) {
+      console.error('[Comunicados] ❌ Upload exception:', {
+        message: err.message,
+        name: err.name,
+        stack: err.stack,
+      });
       setError(err.message);
       throw err;
     } finally {
@@ -116,14 +219,36 @@ export const useComunicadosApi = () => {
       // Dacă este FormData, nu adăugăm Content-Type (browser-ul o setează automat cu boundary)
       // Dacă este obiect normal, folosim JSON
       let body;
+      let fileInfo = null;
       if (comunicadoData instanceof FormData) {
         body = comunicadoData;
+        // Log info despre fișier dacă există
+        const archivo = comunicadoData.get('archivo');
+        if (archivo instanceof File) {
+          fileInfo = {
+            name: archivo.name,
+            size: archivo.size,
+            sizeMB: (archivo.size / (1024 * 1024)).toFixed(2),
+            type: archivo.type,
+          };
+          console.log('[Comunicados] 📤 Update file info:', fileInfo);
+        }
       } else {
         headers['Content-Type'] = 'application/json';
         body = JSON.stringify(comunicadoData);
       }
 
-      const response = await fetch(`${BASE_URL}/api/comunicados/${id}`, {
+      const url = `${BASE_URL}/api/comunicados/${id}`;
+      console.log('[Comunicados] 📤 Starting update request:', {
+        url,
+        method: 'PUT',
+        id,
+        hasFile: !!fileInfo,
+        fileInfo,
+        origin: window.location.origin,
+      });
+
+      const response = await fetch(url, {
         method: 'PUT',
         headers,
         body,
@@ -131,14 +256,36 @@ export const useComunicadosApi = () => {
         mode: 'cors', // Explicitly enable CORS
       });
 
+      console.log('[Comunicados] 📥 Update response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: {
+          'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+          'access-control-allow-credentials': response.headers.get('access-control-allow-credentials'),
+        },
+      });
+
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = { message: `Error ${response.status}: ${response.statusText}` };
+        }
+        console.error('[Comunicados] ❌ Update error:', errorData);
         throw new Error(errorData.message || `Error ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('[Comunicados] ✅ Update success:', data);
       return data.comunicado;
     } catch (err) {
+      console.error('[Comunicados] ❌ Update exception:', {
+        message: err.message,
+        name: err.name,
+        stack: err.stack,
+      });
       setError(err.message);
       throw err;
     } finally {
