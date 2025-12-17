@@ -309,6 +309,94 @@ export class ComunicadosService {
   }
 
   /**
+   * Verifică structura tabelului comunicados (debug)
+   */
+  async getTableStructure() {
+    try {
+      const columns = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT 
+          COLUMN_NAME,
+          DATA_TYPE,
+          IS_NULLABLE,
+          COLUMN_DEFAULT,
+          CHARACTER_MAXIMUM_LENGTH
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'comunicados'
+        ORDER BY ORDINAL_POSITION
+      `);
+
+      return {
+        success: true,
+        table: 'comunicados',
+        columns: columns.map((col) => ({
+          name: String(col.COLUMN_NAME),
+          type: String(col.DATA_TYPE),
+          nullable: col.IS_NULLABLE === 'YES',
+          default: col.COLUMN_DEFAULT ? String(col.COLUMN_DEFAULT) : null,
+          maxLength: col.CHARACTER_MAXIMUM_LENGTH
+            ? Number(col.CHARACTER_MAXIMUM_LENGTH)
+            : null,
+        })),
+        nombre_archivo_exists: columns.some(
+          (col) => col.COLUMN_NAME === 'nombre_archivo',
+        ),
+      };
+    } catch (error: any) {
+      this.logger.error('Error getting table structure:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Adaugă coloanele archivo și nombre_archivo în tabel (debug/fix)
+   */
+  async addMissingColumns() {
+    try {
+      // Verifică dacă coloanele există
+      const columns = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'comunicados'
+        AND COLUMN_NAME IN ('archivo', 'nombre_archivo')
+      `);
+
+      const existingColumns = columns.map((col) => col.COLUMN_NAME);
+      const toAdd: string[] = [];
+
+      if (!existingColumns.includes('archivo')) {
+        toAdd.push('ADD COLUMN archivo LONGBLOB NULL');
+      }
+
+      if (!existingColumns.includes('nombre_archivo')) {
+        toAdd.push('ADD COLUMN nombre_archivo VARCHAR(255) NULL');
+      }
+
+      if (toAdd.length === 0) {
+        return {
+          success: true,
+          message: 'Toate coloanele există deja',
+          columns_added: [],
+        };
+      }
+
+      // Adaugă coloanele
+      const alterQuery = `ALTER TABLE comunicados ${toAdd.join(', ')}`;
+      await this.prisma.$executeRawUnsafe(alterQuery);
+
+      return {
+        success: true,
+        message: 'Coloane adăugate cu succes',
+        columns_added: toAdd,
+      };
+    } catch (error: any) {
+      this.logger.error('Error adding columns:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Șterge un comunicado
    */
   async remove(id: bigint) {
@@ -403,7 +491,7 @@ export class ComunicadosService {
     }
 
     // Detectăm tipul MIME din extensie sau din magic bytes
-    const nombreArchivo = comunicado.nombre_archivo || `comunicado_${id}`;
+    const nombreArchivo = comunicado.nombre_archivo || `comunicado_${id}.bin`;
     const extension = nombreArchivo.split('.').pop()?.toLowerCase() || '';
 
     // Detectăm tipul MIME din magic bytes
