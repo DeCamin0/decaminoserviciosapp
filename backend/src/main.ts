@@ -14,33 +14,39 @@ async function bootstrap() {
   // Asigură că OPTIONS requests sunt procesate corect înainte de orice alt middleware
   app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
-      console.log(`[Main] OPTIONS preflight request from origin: ${req.headers.origin}`);
       const origin = req.headers.origin;
-      // Verifică dacă origin-ul este permis (folosim aceeași logică ca în CORS config)
-      const defaultOrigins = [
-        'http://localhost:5173',
+      console.log(`[Main] OPTIONS preflight request from origin: ${origin}`);
+      
+      // Lista de origins permise - ÎNTOTDEAUNA include producția
+      const productionOrigins = [
         'https://app.decaminoservicios.com',
         'https://decaminoservicios.com',
       ];
+      const defaultOrigins = [
+        'http://localhost:5173',
+        ...productionOrigins,
+      ];
+      
       const corsOrigins = process.env.CORS_ORIGIN
         ? [
             ...process.env.CORS_ORIGIN.split(',').map((o) => o.trim()),
-            'https://app.decaminoservicios.com',
-            'https://decaminoservicios.com',
+            ...productionOrigins, // Adaugă întotdeauna origins-urile de producție
           ]
         : defaultOrigins;
+      
       const uniqueCorsOrigins = [...new Set(corsOrigins)];
+      const isAllowed = !origin || uniqueCorsOrigins.includes(origin) || process.env.NODE_ENV !== 'production';
 
-      if (!origin || uniqueCorsOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      if (isAllowed) {
         res.header('Access-Control-Allow-Origin', origin || '*');
         res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
         res.header('Access-Control-Allow-Credentials', 'true');
         res.header('Access-Control-Max-Age', '3600');
-        console.log(`[Main] OPTIONS preflight allowed for origin: ${origin}`);
+        console.log(`[Main] ✅ OPTIONS preflight allowed for origin: ${origin}`);
         return res.status(204).send();
       } else {
-        console.log(`[Main] OPTIONS preflight blocked for origin: ${origin}`);
+        console.log(`[Main] ❌ OPTIONS preflight blocked for origin: ${origin} (not in: ${uniqueCorsOrigins.join(', ')})`);
         return res.status(403).send('CORS not allowed');
       }
     }
@@ -144,18 +150,30 @@ async function bootstrap() {
   // (asigură că header-urile sunt setate chiar dacă enableCors nu funcționează corect)
   app.use((req, res, next) => {
     const origin = req.headers.origin;
+    const isAllowedOrigin = origin && uniqueCorsOrigins.includes(origin);
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    // Log pentru debugging CORS (doar pentru POST/PUT pentru a nu încărca log-urile)
+    if ((req.method === 'POST' || req.method === 'PUT') && req.path.includes('/comunicados')) {
+      console.log(`[Main] CORS middleware - Method: ${req.method}, Path: ${req.path}, Origin: ${origin || 'none'}, Allowed: ${isAllowedOrigin || isDevelopment}`);
+    }
+    
     // Setează header-urile CORS pentru toate request-urile (nu doar OPTIONS)
     if (origin) {
-      // Verifică dacă origin-ul este permis
-      if (uniqueCorsOrigins.includes(origin)) {
+      // Verifică dacă origin-ul este permis SAU suntem în development
+      if (isAllowedOrigin || isDevelopment) {
+        // Setează ÎNTOTDEAUNA header-urile CORS pentru origin-urile permise
         res.header('Access-Control-Allow-Origin', origin);
         res.header('Access-Control-Allow-Credentials', 'true');
-      } else if (process.env.NODE_ENV !== 'production') {
-        // În development, permite orice origin
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
+        if ((req.method === 'POST' || req.method === 'PUT') && req.path.includes('/comunicados')) {
+          console.log(`[Main] ✅ CORS header set for origin: ${origin}`);
+        }
+      } else {
+        if ((req.method === 'POST' || req.method === 'PUT') && req.path.includes('/comunicados')) {
+          console.log(`[Main] ❌ CORS blocked for origin: ${origin} (not in: ${uniqueCorsOrigins.join(', ')})`);
+        }
       }
-      // Setează întotdeauna metodele și header-urile permise
+      // Setează ÎNTOTDEAUNA metodele și header-urile permise (chiar dacă origin-ul nu este permis)
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
     } else {
