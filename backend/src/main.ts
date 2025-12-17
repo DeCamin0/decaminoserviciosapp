@@ -52,14 +52,36 @@ async function bootstrap() {
   // Trebuie să fie ÎNAINTE de json() și urlencoded() middleware-uri
   app.use((req, res, next) => {
     const contentType = req.headers['content-type'] || '';
+    const contentLength = req.headers['content-length'];
     // Verifică dacă este multipart/form-data (poate include boundary)
     if (contentType.toLowerCase().includes('multipart/form-data')) {
       // Skip body parsing - multer will handle it in controller
-      console.log(`[Main] Skipping body parsing for FormData request (Content-Type: ${contentType.substring(0, 50)})`);
+      console.log(`[Main] Skipping body parsing for FormData request (Content-Type: ${contentType.substring(0, 50)}, Content-Length: ${contentLength || 'unknown'})`);
       return next();
     }
     // For other content types, use normal body parsing
     next();
+  });
+
+  // Error handler pentru multer errors (file size exceeded, etc.)
+  app.use((error: any, req: any, res: any, next: any) => {
+    if (error && error.code === 'LIMIT_FILE_SIZE') {
+      console.error(`[Main] Multer error - File size exceeded: ${error.message}`);
+      return res.status(413).json({
+        success: false,
+        message: 'El archivo es demasiado grande. Tamaño máximo: 50MB',
+        error: 'FILE_TOO_LARGE',
+      });
+    }
+    if (error && error.message && error.message.includes('File too large')) {
+      console.error(`[Main] File too large error: ${error.message}`);
+      return res.status(413).json({
+        success: false,
+        message: 'El archivo es demasiado grande. Tamaño máximo: 50MB',
+        error: 'FILE_TOO_LARGE',
+      });
+    }
+    next(error);
   });
 
   // Increase body size limit for file uploads
