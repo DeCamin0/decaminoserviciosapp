@@ -57,11 +57,29 @@ export class ComunicadosController {
   }
 
   /**
+   * GET /api/comunicados/unread-count
+   * Obține numărul de comunicados necitite pentru user-ul curent
+   */
+  @Get('unread-count')
+  async getUnreadCount(@CurrentUser() user: any) {
+    const count = await this.comunicadosService.getUnreadCount(user.userId);
+    return {
+      success: true,
+      count,
+    };
+  }
+
+  /**
    * GET /api/comunicados/:id
    * Obține un comunicado specific
+   * IMPORTANT: Această rută trebuie să fie DUPĂ rutele specifice (ex: unread-count)
    */
   @Get(':id')
   async findOne(@Param('id') id: string) {
+    // Verifică dacă id-ul este un număr valid înainte de a-l converti la BigInt
+    if (!/^\d+$/.test(id)) {
+      throw new BadRequestException(`Invalid comunicado ID: ${id}`);
+    }
     const comunicado = await this.comunicadosService.findOne(BigInt(id));
     return {
       success: true,
@@ -357,25 +375,6 @@ export class ComunicadosController {
     };
   }
 
-  /**
-   * GET /api/comunicados/unread-count
-   * Obține numărul de comunicados necitite pentru user-ul curent
-   */
-  @Get('unread-count')
-  async getUnreadCount(@CurrentUser() user: any) {
-    if (!user || !user.userId) {
-      throw new UnauthorizedException(
-        'Usuario no autenticado o userId no disponible',
-      );
-    }
-
-    const count = await this.comunicadosService.countUnread(user.userId);
-
-    return {
-      success: true,
-      count,
-    };
-  }
 
   /**
    * POST /api/comunicados/:id/marcar-leido
