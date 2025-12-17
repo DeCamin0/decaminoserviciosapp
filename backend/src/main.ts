@@ -31,13 +31,23 @@ async function bootstrap() {
 
   // Enable CORS for frontend communication
   // Suport pentru multiple origins (development și producție)
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'https://app.decaminoservicios.com',
+    'https://decaminoservicios.com',
+  ];
+  
   const corsOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
-    : [
-        'http://localhost:5173',
+    ? [
+        ...process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
+        // Adaugă întotdeauna origins-urile default pentru siguranță
         'https://app.decaminoservicios.com',
         'https://decaminoservicios.com',
-      ];
+      ]
+    : defaultOrigins;
+  
+  // Elimină duplicate-urile
+  const uniqueCorsOrigins = [...new Set(corsOrigins)];
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -46,7 +56,7 @@ async function bootstrap() {
         return callback(null, true);
       }
       // Verifică dacă origin-ul este în lista de origins permise
-      if (corsOrigins.includes(origin)) {
+      if (uniqueCorsOrigins.includes(origin)) {
         callback(null, true);
       } else {
         // În development, permite orice origin pentru debugging
