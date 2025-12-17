@@ -126,8 +126,11 @@ export class ComunicadosController {
     let nombreArchivo: string | null = null;
 
     if (file) {
+      console.log(`[Comunicados] File received: ${file.originalname}, size: ${file.size}, mimetype: ${file.mimetype}`);
       archivoBuffer = Buffer.from(file.buffer);
       nombreArchivo = file.originalname || `archivo_${Date.now()}`;
+    } else {
+      console.log('[Comunicados] No file received in request');
     }
 
     // Procesează publicado (poate veni ca string "true"/"false" din FormData)

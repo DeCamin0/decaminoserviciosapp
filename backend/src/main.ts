@@ -10,14 +10,52 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', true);
 
+  // Handler explicit pentru OPTIONS requests (preflight) - TREBUIE să fie PRIMUL
+  // Asigură că OPTIONS requests sunt procesate corect înainte de orice alt middleware
+  app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      console.log(`[Main] OPTIONS preflight request from origin: ${req.headers.origin}`);
+      const origin = req.headers.origin;
+      // Verifică dacă origin-ul este permis (folosim aceeași logică ca în CORS config)
+      const defaultOrigins = [
+        'http://localhost:5173',
+        'https://app.decaminoservicios.com',
+        'https://decaminoservicios.com',
+      ];
+      const corsOrigins = process.env.CORS_ORIGIN
+        ? [
+            ...process.env.CORS_ORIGIN.split(',').map((o) => o.trim()),
+            'https://app.decaminoservicios.com',
+            'https://decaminoservicios.com',
+          ]
+        : defaultOrigins;
+      const uniqueCorsOrigins = [...new Set(corsOrigins)];
+
+      if (!origin || uniqueCorsOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+        res.header('Access-Control-Allow-Origin', origin || '*');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type');
+        res.header('Access-Control-Allow-Credentials', 'true');
+        res.header('Access-Control-Max-Age', '3600');
+        console.log(`[Main] OPTIONS preflight allowed for origin: ${origin}`);
+        return res.status(204).send();
+      } else {
+        console.log(`[Main] OPTIONS preflight blocked for origin: ${origin}`);
+        return res.status(403).send('CORS not allowed');
+      }
+    }
+    next();
+  });
+
   // IMPORTANT: Skip body parsing for multipart/form-data
   // Express body parsers consume the stream, making it unavailable for multer
   // Trebuie să fie ÎNAINTE de json() și urlencoded() middleware-uri
   app.use((req, res, next) => {
     const contentType = req.headers['content-type'] || '';
-    if (contentType.includes('multipart/form-data')) {
+    // Verifică dacă este multipart/form-data (poate include boundary)
+    if (contentType.toLowerCase().includes('multipart/form-data')) {
       // Skip body parsing - multer will handle it in controller
-      console.log('[Main] Skipping body parsing for FormData request');
+      console.log(`[Main] Skipping body parsing for FormData request (Content-Type: ${contentType.substring(0, 50)})`);
       return next();
     }
     // For other content types, use normal body parsing
@@ -76,6 +114,8 @@ async function bootstrap() {
       'X-App-Version',
       'X-Client-Type',
     ],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   const port = process.env.PORT || 3000;
