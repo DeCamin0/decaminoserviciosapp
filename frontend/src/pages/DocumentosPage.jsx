@@ -697,18 +697,59 @@ export default function DocumentosPage() {
           }
           
           const blob = await response.blob();
-          console.log('✅ Blob obtenido, tamaño:', blob.size, 'tipo:', blob.type);
+          const contentType = response.headers.get('content-type') || blob.type;
+          console.log('✅ Blob obtenido, tamaño:', blob.size, 'tipo:', blob.type, 'Content-Type:', contentType);
           
           if (blob.size > 0) {
-            // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
-            // Pentru Android, folosim blob URL
-            const url = isIOS 
-              ? `data:application/pdf;base64,${await blobToBase64(blob)}`
-              : URL.createObjectURL(blob);
-            console.log('✅ URL creado para nómina:', isIOS ? 'base64' : 'blob');
-            setPreviewDocument({ ...documento, previewUrl: url, isPdf: true });
-            setPreviewLoading(false);
-            return; // Salir temprano, ya tenemos el blob URL
+            // Detectăm tipul real al fișierului
+            const isImage = contentType && contentType.startsWith('image/');
+            const isPdf = contentType && contentType.includes('application/pdf');
+            
+            if (isImage) {
+              // Dacă este imagine, folosim base64 pentru a evita probleme CORB
+              console.log('🖼️ Nómina detectada como imagen, convirtiendo a base64...');
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const base64String = reader.result;
+                if (base64String && typeof base64String === 'string') {
+                  console.log('✅ Data URL creado para nómina (imagen base64)');
+                  setPreviewDocument({ ...documento, previewUrl: base64String, isPdf: false });
+                } else {
+                  // Fallback a blob URL
+                  const url = URL.createObjectURL(blob);
+                  console.log('✅ Blob URL creado para nómina (imagen fallback):', url);
+                  setPreviewDocument({ ...documento, previewUrl: url, isPdf: false });
+                }
+                setPreviewLoading(false);
+              };
+              reader.onerror = () => {
+                console.warn('⚠️ Error al convertir imagen a base64, usando blob URL');
+                const url = URL.createObjectURL(blob);
+                setPreviewDocument({ ...documento, previewUrl: url, isPdf: false });
+                setPreviewLoading(false);
+              };
+              reader.readAsDataURL(blob);
+              return; // Salir aquí, el callback se encargará de setPreviewLoading
+            } else if (isPdf) {
+              // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+              // Pentru Android, folosim blob URL
+              const url = isIOS 
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              console.log('✅ URL creado para nómina PDF:', isIOS ? 'base64' : 'blob');
+              setPreviewDocument({ ...documento, previewUrl: url, isPdf: true });
+              setPreviewLoading(false);
+              return; // Salir temprano, ya tenemos el blob URL
+            } else {
+              // Tip necunoscut, încercăm ca PDF (fallback)
+              console.warn('⚠️ Tipo desconocido para nómina, tratando como PDF:', contentType);
+              const url = isIOS 
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              setPreviewDocument({ ...documento, previewUrl: url, isPdf: true });
+              setPreviewLoading(false);
+              return;
+            }
           } else {
             console.warn('⚠️ Blob vacío, usando URL directa');
           }
@@ -942,10 +983,30 @@ export default function DocumentosPage() {
               console.log('🔍 Imagen blob size:', blob.size, 'type:', blob.type);
               
               if (blob.size > 0) {
-                // Crear URL local del blob para evitar problemas CORS
-                const blobUrl = URL.createObjectURL(blob);
-                console.log('✅ Blob URL creado para imagen:', blobUrl);
-                setPreviewDocument({ ...documento, previewUrl: blobUrl });
+                // Convertir blob a base64 pentru evitar problemas CORB/CORS
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const base64String = reader.result;
+                  if (base64String && typeof base64String === 'string') {
+                    const dataUrl = base64String;
+                    console.log('✅ Data URL creado para imagen (base64)');
+                    setPreviewDocument({ ...documento, previewUrl: dataUrl });
+                  } else {
+                    // Fallback a blob URL si base64 falla
+                    const blobUrl = URL.createObjectURL(blob);
+                    console.log('✅ Blob URL creado para imagen (fallback):', blobUrl);
+                    setPreviewDocument({ ...documento, previewUrl: blobUrl });
+                  }
+                  setPreviewLoading(false);
+                };
+                reader.onerror = () => {
+                  console.warn('⚠️ Error al convertir blob a base64, usando blob URL');
+                  const blobUrl = URL.createObjectURL(blob);
+                  setPreviewDocument({ ...documento, previewUrl: blobUrl });
+                  setPreviewLoading(false);
+                };
+                reader.readAsDataURL(blob);
+                return; // Salir aquí, el callback se encargará de setPreviewLoading
               } else {
                 console.warn('⚠️ El blob de imagen está vacío! Usando URL directa');
                 setPreviewDocument({ ...documento, previewUrl });
@@ -1213,9 +1274,29 @@ export default function DocumentosPage() {
               console.log('🔍 Blob imagen oficial size:', blob.size);
               
               if (blob.size > 0) {
-                const url = URL.createObjectURL(blob);
-                console.log('✅ Blob URL creado para imagen oficial:', url);
-                setPreviewDocument({ ...documento, previewUrl: url, esOficial: true });
+                // Convertir blob a base64 para evitar problemas CORB/CORS
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const base64String = reader.result;
+                  if (base64String && typeof base64String === 'string') {
+                    console.log('✅ Data URL creado para imagen oficial (base64)');
+                    setPreviewDocument({ ...documento, previewUrl: base64String, esOficial: true });
+                  } else {
+                    // Fallback a blob URL si base64 falla
+                    const url = URL.createObjectURL(blob);
+                    console.log('✅ Blob URL creado para imagen oficial (fallback):', url);
+                    setPreviewDocument({ ...documento, previewUrl: url, esOficial: true });
+                  }
+                  setPreviewLoading(false);
+                };
+                reader.onerror = () => {
+                  console.warn('⚠️ Error al convertir blob a base64, usando blob URL');
+                  const url = URL.createObjectURL(blob);
+                  setPreviewDocument({ ...documento, previewUrl: url, esOficial: true });
+                  setPreviewLoading(false);
+                };
+                reader.readAsDataURL(blob);
+                return; // Salir aquí, el callback se encargará de setPreviewLoading
               } else {
                 throw new Error('Blob vacío para imagen oficial');
               }
@@ -2957,7 +3038,7 @@ export default function DocumentosPage() {
                       }}
                     />
                   </div>
-                ) : previewDocument?.fileName?.toLowerCase().endsWith('.pdf') ? (
+                ) : (previewDocument?.fileName?.toLowerCase().endsWith('.pdf') && previewDocument?.isPdf !== false) ? (
                   <div className="p-4 bg-gray-50 h-[75vh] pdf-preview-container">
                     {/* Android: PDF.js rendering | iOS: <object> | Desktop: <iframe> */}
                     {isAndroid || isIOS ? (
@@ -2973,7 +3054,7 @@ export default function DocumentosPage() {
                       />
                     )}
                   </div>
-                ) : previewDocument?.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                ) : (previewDocument?.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i) || previewDocument?.isPdf === false) ? (
                   <div className="p-4 bg-gray-50 flex items-center justify-center min-h-[60vh]">
                     <div className="max-w-full max-h-[70vh] overflow-auto">
                       <img

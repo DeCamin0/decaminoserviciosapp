@@ -6,6 +6,7 @@ import { routes } from '../utils/routes';
 import { getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 import QuickAccessOrb from '../components/QuickAccessOrb';
 import { useAdminApi } from '../hooks/useAdminApi';
+import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import SendNotificationModal from '../components/SendNotificationModal';
 import {
   BarChart3,
@@ -33,6 +34,7 @@ import {
 const InicioPage = () => {
   const { user } = useAuth();
   const { getPermissions } = useAdminApi();
+  const { getUnreadCount } = useComunicadosApi();
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loadingAvatar, setLoadingAvatar] = useState(false);
   const [uiReady, setUiReady] = useState(false); // decuplează UX de fetch-uri lente
@@ -46,6 +48,7 @@ const InicioPage = () => {
   const [userPermissions, setUserPermissions] = useState(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -423,6 +426,7 @@ const InicioPage = () => {
         icon: <FileText className="h-6 w-6 text-white" />,
         gradient: 'from-green-500 via-emerald-500 to-teal-500',
         href: '/comunicados',
+        notificationCount: comunicadosUnreadCount > 0 ? comunicadosUnreadCount : undefined,
       });
     }
 
@@ -566,6 +570,7 @@ const InicioPage = () => {
     loadingPermissions,
     hasPermission,
     findGrupoKey,
+    comunicadosUnreadCount,
   ]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)
@@ -940,6 +945,26 @@ const InicioPage = () => {
       setUiReady(true);
     }
   }, [loadingAvatar, loadingAlerts]);
+
+  // Obține numărul de comunicados necitite
+  useEffect(() => {
+    if (!user?.userId && !user?.CODIGO) return;
+
+    const loadUnreadCount = async () => {
+      try {
+        const count = await getUnreadCount();
+        setComunicadosUnreadCount(count);
+      } catch (err) {
+        console.error('[Dashboard] Error loading unread comunicados count:', err);
+        setComunicadosUnreadCount(0);
+      }
+    };
+
+    loadUnreadCount();
+    // Reîncarcă la fiecare 30 de secunde pentru a actualiza badge-ul
+    const interval = setInterval(loadUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [user?.userId, user?.CODIGO, getUnreadCount]);
 
   // Watchdog + logging pentru state-urile de gating
   useEffect(() => {

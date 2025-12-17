@@ -227,11 +227,11 @@ export class PushService {
     url?: string;
   }): Promise<{ total: number; sent: number; failed: number }> {
     try {
-      // Obține toți utilizatorii activi
+      // Obține toți utilizatorii activi (doar cei cu ESTADO = 'ACTIVO')
       const activeUsers = await this.prisma.$queryRaw<any[]>`
         SELECT DISTINCT CODIGO as codigo
         FROM DatosEmpleados
-        WHERE (ESTADO = 'ACTIVO' OR ESTADO IS NULL OR ESTADO = '')
+        WHERE ESTADO = 'ACTIVO'
       `;
 
       if (activeUsers.length === 0) {

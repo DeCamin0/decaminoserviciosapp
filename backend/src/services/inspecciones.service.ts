@@ -467,7 +467,7 @@ export class InspeccionesService {
       const firstBytesHex = firstBytes.toString('hex');
       const firstBytesAscii = firstBytes.toString('ascii');
       const firstBytesBinary = firstBytes.toString('binary');
-      
+
       // 🔍 LOGGING: Verificare finală
       this.logger.log(
         `🔍 [DEBUG] archivoBuffer final - length: ${archivoBuffer.length}, first 10 bytes (hex): ${firstBytesHex}, first 10 bytes (ascii): ${firstBytesAscii}, first 10 bytes (binary): ${firstBytesBinary}`,
