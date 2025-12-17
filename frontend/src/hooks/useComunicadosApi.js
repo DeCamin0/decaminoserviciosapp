@@ -9,39 +9,78 @@ if (typeof window !== 'undefined') {
   const originalFetch = window.fetch;
   window.fetch = async function(...args) {
     const [url, options = {}] = args;
+    const method = options.method || 'GET';
     
     // Log doar pentru comunicados endpoint-uri
     if (typeof url === 'string' && url.includes('/api/comunicados')) {
-      console.log(`[Fetch Interceptor] ${options.method || 'GET'} ${url}`, {
-        method: options.method || 'GET',
-        headers: options.headers,
+      const logData = {
+        method,
+        headers: options.headers ? (options.headers instanceof Headers ? Object.fromEntries(options.headers.entries()) : options.headers) : {},
         hasBody: !!options.body,
+        bodyType: options.body ? (options.body instanceof FormData ? 'FormData' : typeof options.body) : null,
         credentials: options.credentials,
         mode: options.mode,
         origin: window.location.origin,
-      });
+      };
+      
+      // Pentru FormData, încercăm să obținem info despre fișier
+      if (options.body instanceof FormData) {
+        try {
+          const file = options.body.get('archivo');
+          if (file instanceof File) {
+            logData.fileInfo = { 
+              name: file.name, 
+              size: file.size, 
+              sizeMB: (file.size / (1024 * 1024)).toFixed(2), 
+              type: file.type 
+            };
+          }
+        } catch (e) {
+          // FormData poate fi consumat doar o dată
+        }
+      }
+      
+      console.log(`[Fetch Interceptor] ${method} ${url}`, logData);
+      
+      // Pentru OPTIONS, logăm explicit
+      if (method === 'OPTIONS') {
+        console.log(`[Fetch Interceptor] 🔍 OPTIONS preflight detected for ${url}`);
+      }
     }
     
     try {
       const response = await originalFetch.apply(this, args);
       
       if (typeof url === 'string' && url.includes('/api/comunicados')) {
-        console.log(`[Fetch Interceptor] Response for ${options.method || 'GET'} ${url}:`, {
+        const corsHeaders = {};
+        try {
+          corsHeaders['access-control-allow-origin'] = response.headers.get('access-control-allow-origin');
+          corsHeaders['access-control-allow-credentials'] = response.headers.get('access-control-allow-credentials');
+          corsHeaders['access-control-allow-methods'] = response.headers.get('access-control-allow-methods');
+          corsHeaders['access-control-allow-headers'] = response.headers.get('access-control-allow-headers');
+        } catch (e) {
+          // Headers pot fi read-only în unele cazuri
+        }
+        
+        console.log(`[Fetch Interceptor] Response for ${method} ${url}:`, {
           status: response.status,
           statusText: response.statusText,
           ok: response.ok,
-          headers: {
-            'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
-            'access-control-allow-credentials': response.headers.get('access-control-allow-credentials'),
-            'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
-          },
+          headers: corsHeaders,
         });
       }
       
       return response;
     } catch (error) {
       if (typeof url === 'string' && url.includes('/api/comunicados')) {
-        console.error(`[Fetch Interceptor] Error for ${options.method || 'GET'} ${url}:`, error);
+        console.error(`[Fetch Interceptor] Error for ${method} ${url}:`, {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          // Verifică dacă este o eroare de rețea sau CORS
+          isNetworkError: error.message === 'Failed to fetch',
+          isCORSError: error.message.includes('CORS') || error.message.includes('cors'),
+        });
       }
       throw error;
     }

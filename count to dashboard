@@ -1,0 +1,11 @@
+warning: in the working copy of 'backend/src/services/inspecciones.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/push.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/DashboardPage.jsx', LF will be replaced by CRLF the next time Git touches it
+backend/src/services/inspecciones.service.ts
+backend/src/services/push.service.ts
+frontend/index.html
+frontend/package.json
+frontend/src/pages/DashboardPage.jsx
+frontend/src/pages/DocumentosPage.jsx
