@@ -62,7 +62,7 @@ export class ComunicadosController {
    */
   @Get('unread-count')
   async getUnreadCount(@CurrentUser() user: any) {
-    const count = await this.comunicadosService.getUnreadCount(user.userId);
+    const count = await this.comunicadosService.countUnread(user.userId);
     return {
       success: true,
       count,
