@@ -23,7 +23,7 @@ services:
       - "traefik.http.routers.backend-api.rule=Host(`api.decaminoservicios.com`)"
       - "traefik.http.routers.backend-api.entrypoints=websecure"
       - "traefik.http.routers.backend-api.tls.certresolver=myresolver"
-      - "traefik.http.routers.backend-api.middlewares=backend-headers"
+      - "traefik.http.routers.backend-api.middlewares=backend-headers,backend-cors"
       
       # Service - portul container-ului backend
       - "traefik.http.services.backend-api.loadbalancer.server.port=3000"
@@ -31,6 +31,14 @@ services:
       # Middleware pentru headers (doar pentru acest backend)
       - "traefik.http.middlewares.backend-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
       - "traefik.http.middlewares.backend-headers.headers.customrequestheaders.X-Forwarded-Port=443"
+      
+      # Middleware pentru CORS (permite request-uri de la frontend)
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,PATCH,OPTIONS"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowheaders=Content-Type,Authorization,X-App-Source,X-App-Version,X-Client-Type"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolalloworiginlist=https://app.decaminoservicios.com,https://decaminoservicios.com"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolallowcredentials=true"
+      - "traefik.http.middlewares.backend-cors.headers.accesscontrolmaxage=3600"
+      - "traefik.http.middlewares.backend-cors.headers.addvaryheader=true"
     
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
