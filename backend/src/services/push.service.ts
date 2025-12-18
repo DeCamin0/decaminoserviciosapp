@@ -347,10 +347,22 @@ export class PushService {
                 `⚠️ Push subscription invalid (410 Gone) pentru user ${userId}, endpoint: ${subscription.endpoint.substring(0, 50)}..., șterg subscription-ul`,
               );
               await this.deleteSubscription(userId, subscription.endpoint);
+            } 
+            // Dacă apare VAPID keys mismatch (400 cu VapidPkHashMismatch sau 401/403), șterge subscription-ul
+            else if (
+              error.statusCode === 400 && 
+              error.body && 
+              (typeof error.body === 'string' ? error.body.includes('VapidPkHashMismatch') : JSON.stringify(error.body).includes('VapidPkHashMismatch'))
+            ) {
+              this.logger.error(
+                `🔑 EROARE CRITICĂ: VAPID keys mismatch (400)! Subscription-ul a fost creat cu alte VAPID keys decât cele folosite acum. Șterg subscription-ul invalid.`,
+              );
+              await this.deleteSubscription(userId, subscription.endpoint);
             } else if (error.statusCode === 401 || error.statusCode === 403) {
               this.logger.error(
-                `🔑 EROARE CRITICĂ: VAPID keys mismatch! StatusCode: ${error.statusCode}. Subscription-ul a fost creat cu alte VAPID keys decât cele folosite acum.`,
+                `🔑 EROARE CRITICĂ: VAPID keys mismatch! StatusCode: ${error.statusCode}. Subscription-ul a fost creat cu alte VAPID keys decât cele folosite acum. Șterg subscription-ul invalid.`,
               );
+              await this.deleteSubscription(userId, subscription.endpoint);
             }
             throw error;
           }
