@@ -5,6 +5,7 @@ import Back3DButton from '../components/Back3DButton.jsx';
 import AccessMatrix from '../components/admin/AccessMatrix';
 import UserStats from '../components/admin/UserStats';
 import ActivityLog from '../components/admin/ActivityLog';
+import PushSubscribersList from '../components/admin/PushSubscribersList';
 // ServerMonitor eliminat
 
 export default function AdminDashboard() {
@@ -94,7 +95,7 @@ export default function AdminDashboard() {
 
         {/* Tabs de navigare */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 mb-8">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
             <button
               onClick={() => setActiveTab('stats')}
               className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 ${
@@ -125,6 +126,16 @@ export default function AdminDashboard() {
             >
               📝 Registro de Actividad
             </button>
+            <button
+              onClick={() => setActiveTab('push-subscribers')}
+              className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 ${
+                activeTab === 'push-subscribers'
+                  ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg'
+                  : 'text-gray-700 bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              🔔 Suscriptores Push
+            </button>
             {/* Servere eliminat */}
           </div>
         </div>
@@ -141,10 +152,10 @@ export default function AdminDashboard() {
             </>
           )}
           
-          {activeTab === 'activity' && (
-            <ActivityLog />
-          )}
-          
+          {activeTab === 'activity' && <ActivityLog />}
+
+          {activeTab === 'push-subscribers' && <PushSubscribersList />}
+
           {/* Conținut pentru tabul Servere a fost eliminat */}
         </div>
       </div>

@@ -359,6 +359,11 @@ export const routes = {
       : 'https://api.decaminoservicios.com';
     return `${base}/chat/rooms/${roomId}`;
   },
+
+  // Online users (presence) - pentru badge Online/Offline în Admin / Empleados
+  getOnlineUsers: import.meta.env.DEV
+    ? 'http://localhost:3000/api/online-users'
+    : 'https://api.decaminoservicios.com/api/online-users',
   
   // Paquete/Control Correo
   getPaquetes: getN8nUrl('/webhook/6d752a3a-bed9-4c48-a6a9-8a2583875ef9'), // ✅ Endpoint real pentru lista paquetes
