@@ -198,19 +198,22 @@ export class HorariosService {
     const errors: string[] = [];
 
     const root = body;
-    const p = root?.body?.payload ?? root?.body ?? root ?? {};
+    // Suport pentru multiple structuri: { action, payload: {...} } sau { body: { payload: {...} } }
+    const p = root?.body?.payload ?? root?.payload ?? root?.body ?? root ?? {};
 
     const rawMode = String(
       root?.body?.mode ??
         root?.body?.modo ??
         root?.body?.accion ??
         root?.body?.action ??
+        root?.action ??
         '',
     ).toLowerCase();
     const idFromBody = root?.body?.id ?? null;
     const idFromPayl = p?.id ?? null;
+    const idFromPayload = root?.payload?.id ?? null;
     const idFromRoot = root?.id ?? null;
-    const scheduleId = idFromBody ?? idFromPayl ?? idFromRoot ?? null;
+    const scheduleId = idFromBody ?? idFromPayl ?? idFromPayload ?? idFromRoot ?? null;
 
     const isEdit = rawMode
       ? ['edit', 'editar', 'update', 'actualizar'].includes(rawMode)
@@ -224,39 +227,45 @@ export class HorariosService {
 
     const out: any = {
       nombre: (
-        getFirst(p?.nombre, root?.body?.nombre, root?.nombre, '') || ''
+        getFirst(p?.nombre, root?.payload?.nombre, root?.body?.nombre, root?.nombre, '') || ''
       ).trim(),
       centro_nombre: getFirst(
         root?.body?.centroNombre,
+        root?.payload?.centroNombre,
         p?.centroNombre,
         p?.centroId,
         root?.body?.centroId,
+        root?.payload?.centroId,
       ),
       grupo_nombre: getFirst(
         root?.body?.grupoNombre,
+        root?.payload?.grupoNombre,
         p?.grupoNombre,
         p?.grupoId,
         root?.body?.grupoId,
+        root?.payload?.grupoId,
       ),
-      vigente_desde: getFirst(p?.vigenteDesde, root?.body?.vigenteDesde, null),
-      vigente_hasta: getFirst(p?.vigenteHasta, root?.body?.vigenteHasta, null),
+      vigente_desde: getFirst(p?.vigenteDesde, root?.payload?.vigenteDesde, root?.body?.vigenteDesde, null),
+      vigente_hasta: getFirst(p?.vigenteHasta, root?.payload?.vigenteHasta, root?.body?.vigenteHasta, null),
       wb: Number(
-        getFirst(p?.weeklyBreakMinutes, root?.body?.weeklyBreakMinutes, 0),
+        getFirst(p?.weeklyBreakMinutes, root?.payload?.weeklyBreakMinutes, root?.body?.weeklyBreakMinutes, 0),
       ),
       em: Number(
-        getFirst(p?.entryMarginMinutes, root?.body?.entryMarginMinutes, 0),
+        getFirst(p?.entryMarginMinutes, root?.payload?.entryMarginMinutes, root?.body?.entryMarginMinutes, 0),
       ),
       xm: Number(
-        getFirst(p?.exitMarginMinutes, root?.body?.exitMarginMinutes, 0),
+        getFirst(p?.exitMarginMinutes, root?.payload?.exitMarginMinutes, root?.body?.exitMarginMinutes, 0),
       ),
     };
 
-    let totalHours = Number(getFirst(root?.totalWeekHours, p?.totalWeekHours));
+    let totalHours = Number(getFirst(root?.totalWeekHours, root?.payload?.totalWeekHours, p?.totalWeekHours));
     let totalMin = Number(
-      getFirst(root?.totalWeekMinutes, p?.totalWeekMinutes),
+      getFirst(root?.totalWeekMinutes, root?.payload?.totalWeekMinutes, p?.totalWeekMinutes),
     );
 
-    if (Number.isNaN(totalMin)) totalMin = this.calcWeekMinutesFromIntervals(p);
+    // Pentru calcul automat, folosim payload-ul complet (root?.payload sau p)
+    const calcPayload = root?.payload ?? p ?? {};
+    if (Number.isNaN(totalMin)) totalMin = this.calcWeekMinutesFromIntervals(calcPayload);
     if (Number.isNaN(totalHours))
       totalHours = Math.round((totalMin / 60) * 100) / 100;
 
@@ -266,10 +275,12 @@ export class HorariosService {
     if (!out.nombre) errors.push('Campo requerido: nombre.');
 
     // Zile + intervale (max 3/zi)
+    // Suport pentru days din payload sau din root direct
+    const daysData = p?.days ?? root?.payload?.days ?? root?.body?.days ?? {};
     for (const k of this.DAY_KEYS) {
       const pref = this.PREFIX[k];
       const slots = this.normIntervals(
-        p?.days?.[k]?.intervals,
+        daysData?.[k]?.intervals,
         k,
         warnings,
         errors,
@@ -312,9 +323,15 @@ export class HorariosService {
     return this.escapeSql(timeWithSeconds);
   }
 
-  // Convertește Date string în format SQL
+  // Convertește Date string în format SQL (YYYY-MM-DD pentru DATE columns)
   private dateToSql(date: string | null | undefined): string {
     if (!date) return 'NULL';
+    // Dacă e format ISO (2025-12-18T00:00:00.000Z), extrage doar partea de dată
+    if (date.includes('T')) {
+      const dateOnly = date.split('T')[0];
+      return this.escapeSql(dateOnly);
+    }
+    // Dacă e deja în format YYYY-MM-DD, folosește-l direct
     return this.escapeSql(date);
   }
 
@@ -430,10 +447,14 @@ export class HorariosService {
     warnings?: string[];
   }> {
     this.logger.log('📝 Update horario request');
+    this.logger.log(`📝 Update body keys: ${Object.keys(body || {}).join(', ')}`);
+    this.logger.log(`📝 Update body.payload keys: ${body?.payload ? Object.keys(body.payload).join(', ') : 'no payload'}`);
+    this.logger.log(`📝 Update body.payload.id: ${body?.payload?.id || 'missing'}`);
 
     const normalized = this.normalizeForUpdate(body);
 
     if (!normalized.ok) {
+      this.logger.error(`❌ NormalizeForUpdate failed. Mode: ${normalized.mode}, Errors: ${JSON.stringify(normalized.errors)}, Warnings: ${JSON.stringify(normalized.warnings)}`);
       throw new BadRequestException({
         ok: false,
         mode: normalized.mode,

@@ -299,15 +299,31 @@ export async function listSchedules(_callApi: CallApiFunction): Promise<ApiRespo
       }
 
       const totalMinutes = it.total_minutos_semanales ?? it.totalMinutes ?? null;
-      const totalHours = it.total_horas_semanales ?? (typeof totalMinutes === 'number' ? Number((totalMinutes / 60).toFixed(2)) : null);
+      // Calculăm orele corecte din minute (1050 min = 17.5 ore)
+      const calculatedHours = typeof totalMinutes === 'number' ? Number((totalMinutes / 60).toFixed(2)) : null;
+      // Folosim calculul din minute dacă există, altfel folosim valoarea din backend
+      // Dacă backend-ul returnează un număr rotunjit greșit (ex: 18 în loc de 17.5), preferăm calculul corect
+      const totalHours = calculatedHours ?? it.total_horas_semanales ?? null;
+
+      // Helper pentru a normaliza datele ISO la format YYYY-MM-DD pentru input-uri de tip date
+      const normalizeDateForInput = (date: string | null | undefined): string | null => {
+        if (!date) return null;
+        // Dacă e deja în format YYYY-MM-DD, returnează-l direct
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+        // Dacă e în format ISO (2025-12-18T00:00:00.000Z), extrage doar partea de dată
+        if (date.includes('T')) {
+          return date.split('T')[0];
+        }
+        return date;
+      };
 
       return {
         id: it.id || it._id || idx,
         nombre: it.nombre || it.name || '-',
         centroNombre: it.centro_nombre || it.centroNombre || it.centro || it.centroId || '-',
         grupoNombre: it.grupo_nombre || it.grupoNombre || it.grupo || it.grupoId || '-',
-        vigenteDesde: it.vigente_desde || it.vigenteDesde || it.desde || null,
-        vigenteHasta: it.vigente_hasta || it.vigenteHasta || it.hasta || null,
+        vigenteDesde: normalizeDateForInput(it.vigente_desde || it.vigenteDesde || it.desde),
+        vigenteHasta: normalizeDateForInput(it.vigente_hasta || it.vigenteHasta || it.hasta),
         createdAt: it.created_at || it.createdAt || null,
         totalWeekMinutes: totalMinutes,
         totalWeekHours: totalHours,

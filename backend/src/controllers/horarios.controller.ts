@@ -41,6 +41,7 @@ export class HorariosController {
         }
 
         case 'update': {
+          this.logger.log(`📝 Update horario body structure: ${JSON.stringify({ action: body?.action, hasPayload: !!body?.payload, hasId: !!body?.payload?.id, idValue: body?.payload?.id })}`);
           const result = await this.horariosService.updateHorario(body);
           return result;
         }

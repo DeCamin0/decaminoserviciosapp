@@ -516,6 +516,13 @@ const QuickAccessOrb = ({
                     <span className="mt-1 text-[10px] font-semibold text-white">
                       {item.label}
                     </span>
+                    {item.notificationCount ? (
+                      <span className="absolute -top-1 -right-1 flex min-h-[1.25rem] min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-lg">
+                        {item.notificationCount > 99
+                          ? '99+'
+                          : item.notificationCount}
+                      </span>
+                    ) : null}
                   </motion.button>
                 );
               })}

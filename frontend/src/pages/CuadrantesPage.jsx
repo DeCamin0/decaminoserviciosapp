@@ -3103,7 +3103,7 @@ export default function CuadrantesPage() {
                           }
                         })()}
                       </td>
-                      <td className="p-3 text-right">{typeof h.totalWeekHours === 'number' ? `${h.totalWeekHours}h` : '-'}</td>
+                      <td className="p-3 text-right">{typeof h.totalWeekHours === 'number' ? `${h.totalWeekHours.toFixed(2)}h` : '-'}</td>
                       <td className="p-3 text-right space-x-2">
                         <button
                           onClick={() => {
@@ -3132,13 +3132,25 @@ export default function CuadrantesPage() {
                               return result;
                             };
 
+                            // Helper pentru a normaliza datele ISO la format YYYY-MM-DD pentru input-uri de tip date
+                            const normalizeDateForInput = (date) => {
+                              if (!date) return null;
+                              // Dacă e deja în format YYYY-MM-DD, returnează-l direct
+                              if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+                              // Dacă e în format ISO (2025-12-18T00:00:00.000Z), extrage doar partea de dată
+                              if (date.includes('T')) {
+                                return date.split('T')[0];
+                              }
+                              return date;
+                            };
+
                             const scheduleData = {
                               id: h.id || h._id || h.nombre, // Adaugă ID-ul pentru update
                               nombre: h.nombre || '',
                               centroId: horariosCentros.find(c => c.nombre === h.centroNombre)?.id || null,
                               grupoId: horariosGrupos.find(g => g.nombre === h.grupoNombre)?.id || null,
-                              vigenteDesde: h.vigenteDesde || null,
-                              vigenteHasta: h.vigenteHasta || null,
+                              vigenteDesde: normalizeDateForInput(h.vigenteDesde),
+                              vigenteHasta: normalizeDateForInput(h.vigenteHasta),
                               weeklyBreakMinutes: h.weeklyBreakMinutes || 0,
                               entryMarginMinutes: h.entryMarginMinutes || 0,
                               exitMarginMinutes: h.exitMarginMinutes || 0,

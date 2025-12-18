@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   ScheduleData, 
   DayKey, 
-  DaySchedule, 
-  WeeklySchedule, 
   TimeInterval,
   calcWeekMinutes,
   formatMinutes,
@@ -69,10 +67,26 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
   const [isLoading, setIsLoading] = useState(false);
   const [showToast, setShowToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Helper pentru a normaliza datele ISO la format YYYY-MM-DD pentru input-uri de tip date
+  const normalizeDateForInput = (date: string | null | undefined): string => {
+    if (!date) return '';
+    // Dacă e deja în format YYYY-MM-DD, returnează-l direct
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    // Dacă e în format ISO (2025-12-18T00:00:00.000Z), extrage doar partea de dată
+    if (date.includes('T')) {
+      return date.split('T')[0];
+    }
+    return date;
+  };
+
   // Actualizează formularul când se schimbă initialData
   useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      setFormData({
+        ...initialData,
+        vigenteDesde: normalizeDateForInput(initialData.vigenteDesde) || null,
+        vigenteHasta: normalizeDateForInput(initialData.vigenteHasta) || null,
+      });
     }
   }, [initialData]);
 
@@ -425,7 +439,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
             id="schedule-vigente-desde"
             name="vigenteDesde"
             type="date"
-            value={formData.vigenteDesde || ''}
+            value={normalizeDateForInput(formData.vigenteDesde)}
             onChange={(e) => handleFieldChange('vigenteDesde', e.target.value || null)}
             className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
           />
@@ -443,7 +457,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
             id="schedule-vigente-hasta"
             name="vigenteHasta"
             type="date"
-            value={formData.vigenteHasta || ''}
+            value={normalizeDateForInput(formData.vigenteHasta)}
             onChange={(e) => handleFieldChange('vigenteHasta', e.target.value || null)}
             className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
           />
