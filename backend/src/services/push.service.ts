@@ -103,6 +103,72 @@ export class PushService {
   }
 
   /**
+   * Obține toți utilizatorii care au cel puțin un Push subscription
+   * Folosit în Admin Panel pentru a vedea cine este abonat la notificări push
+   */
+  async getAllSubscribers(): Promise<
+    {
+      userId: string;
+      nombre: string | null;
+      centroTrabajo: string | null;
+      subscriptionsCount: number;
+      lastUpdatedAt: Date | null;
+    }[]
+  > {
+    // 1. Obținem toți userId-urile distincte din PushSubscription
+    const grouped = await this.prisma.pushSubscription.groupBy({
+      by: ['userId'],
+      _count: {
+        id: true,
+      },
+      _max: {
+        updatedAt: true,
+      },
+      orderBy: {
+        userId: 'asc',
+      },
+    });
+
+    if (grouped.length === 0) {
+      return [];
+    }
+
+    const userIds = grouped.map((g) => g.userId);
+
+    // 2. Obținem informații de bază din tabela DatosEmpleados (modelul User)
+    const employees = await this.prisma.user.findMany({
+      where: {
+        CODIGO: {
+          in: userIds,
+        },
+      },
+      select: {
+        CODIGO: true,
+        NOMBRE_APELLIDOS: true,
+        CENTRO_TRABAJO: true,
+        ESTADO: true,
+      },
+    });
+
+    const employeesById = new Map(
+      employees.map((e) => [e.CODIGO, e]),
+    );
+
+    // 3. Combinăm informațiile și întoarcem un payload curat pentru frontend
+    return grouped.map((g) => {
+      const employee = employeesById.get(g.userId);
+
+      return {
+        userId: g.userId,
+        nombre: employee?.NOMBRE_APELLIDOS || null,
+        centroTrabajo: employee?.CENTRO_TRABAJO || null,
+        subscriptionsCount: g._count.id,
+        lastUpdatedAt: g._max.updatedAt || null,
+      };
+    });
+  }
+
+  /**
    * Salvează Push subscription pentru un utilizator
    */
   async saveSubscription(

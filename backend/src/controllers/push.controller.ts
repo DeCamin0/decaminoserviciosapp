@@ -155,6 +155,41 @@ export class PushController {
   }
 
   /**
+   * GET /api/push/subscribers
+   * Returnează lista tuturor utilizatorilor care au Push subscriptions
+   * Doar pentru Admin/Developer (prin JwtAuthGuard + verificare simplă de grup)
+   */
+  @Get('subscribers')
+  @UseGuards(JwtAuthGuard)
+  async getAllSubscribers(@Req() req: any) {
+    const user = req.user;
+    const grupo = user?.GRUPO || user?.grupo;
+
+    const isAdmin = grupo === 'Admin';
+    const isDeveloper = grupo === 'Developer';
+
+    if (!isAdmin && !isDeveloper) {
+      throw new BadRequestException(
+        'Acceso restringido. Solo administradores y desarrolladores pueden ver los suscriptores de Push.',
+      );
+    }
+
+    try {
+      const subscribers = await this.pushService.getAllSubscribers();
+
+      return {
+        success: true,
+        count: subscribers.length,
+        items: subscribers,
+      };
+    } catch (error: any) {
+      throw new InternalServerErrorException(
+        `Error fetching push subscribers: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * POST /api/push/reset-subscriptions
    * Șterge toate subscription-urile invalide și forțează re-crearea
    */

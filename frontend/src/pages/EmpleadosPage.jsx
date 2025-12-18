@@ -82,7 +82,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 };
 
 export default function EmpleadosPage() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, authToken } = useAuth();
   const { callApi } = useApi();
 
   // Funcții pentru validarea documentelor spaniole
@@ -825,7 +825,8 @@ export default function EmpleadosPage() {
 
   // Estado para búsqueda
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchBy, setSearchBy] = useState('nombre'); // 'nombre', 'codigo', 'email'
+  // 'nombre', 'codigo', 'email', 'grupo', 'estado', 'centro', 'todos'
+  const [searchBy, setSearchBy] = useState('nombre');
   // Filtru rapid după status ("ALL" | "ACTIVO" | "PENDIENTE")
   const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -833,32 +834,128 @@ export default function EmpleadosPage() {
   // Verifica si el usuario tiene acceso para gestión - FORȚEZ TRUE pentru testare
   const canManageEmployees = true;
 
+  // Lista de CODIGO care au cel puțin o conexiune WebSocket activă (online)
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+
+  // Fetch periodic al utilizatorilor online (doar pentru Admin/Developer/Manager/Supervisor)
+  useEffect(() => {
+    const grupo = authUser?.GRUPO || authUser?.grupo || '';
+    const canSeeOnline =
+      grupo === 'Admin' ||
+      grupo === 'Developer' ||
+      grupo === 'Manager' ||
+      grupo === 'Supervisor';
+
+    if (!canSeeOnline || !authToken) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchOnlineUsers = async () => {
+      try {
+        const res = await fetch(routes.getOnlineUsers, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        if (!res.ok) {
+          console.error(
+            '[EmpleadosPage] Error fetching online users:',
+            res.status,
+          );
+          return;
+        }
+
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        if (!isCancelled) {
+          setOnlineUserIds(
+            new Set(items.map((item) => String(item.userId || '').trim())),
+          );
+        }
+      } catch (err) {
+        console.error('[EmpleadosPage] Error fetching online users:', err);
+      }
+    };
+
+    // Fetch imediat
+    fetchOnlineUsers();
+    // Reîncarcă la fiecare 30 de secunde
+    const intervalId = setInterval(fetchOnlineUsers, 30000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [authUser?.GRUPO, authUser?.grupo, authToken]);
+
   // Funcție pentru filtrarea angajaților (memoizată pentru performanță)
   const getFilteredUsers = useMemo(() => {
     // În primul rând aplicăm filtrul de căutare
-    const base = !searchTerm.trim() ? users : users.filter(user => {
-      const term = searchTerm.toLowerCase().trim();
-      switch (searchBy) {
-        case 'nombre':
-          return user['NOMBRE / APELLIDOS']?.toLowerCase().includes(term);
-        case 'codigo':
-          return user.CODIGO?.toLowerCase().includes(term);
-        case 'email':
-          return user['CORREO ELECTRONICO']?.toLowerCase().includes(term);
-        default:
-          return (
-            user['NOMBRE / APELLIDOS']?.toLowerCase().includes(term) ||
-            user.CODIGO?.toLowerCase().includes(term) ||
-            user['CORREO ELECTRONICO']?.toLowerCase().includes(term)
-          );
-      }
-    });
+    const base = !searchTerm.trim()
+      ? users
+      : users.filter((user) => {
+          const term = searchTerm.toLowerCase().trim();
+          const nombre = user['NOMBRE / APELLIDOS']?.toLowerCase() || '';
+          const codigo = user.CODIGO?.toLowerCase() || '';
+          const email = user['CORREO ELECTRONICO']?.toLowerCase() || '';
+          const grupo = (user['GRUPO'] || '').toString().toLowerCase();
+          const estado = (user['ESTADO'] || '').toString().toLowerCase();
+          const centro =
+            (user['CENTRO TRABAJO'] || user.CENTRO_TRABAJO || '')
+              .toString()
+              .toLowerCase();
+
+          switch (searchBy) {
+            case 'nombre':
+              return nombre.includes(term);
+            case 'codigo':
+              return codigo.includes(term);
+            case 'email':
+              return email.includes(term);
+            case 'grupo':
+              return grupo.includes(term);
+            case 'estado':
+              return estado.includes(term);
+            case 'centro':
+              return centro.includes(term);
+            case 'todos':
+            default:
+              return (
+                nombre.includes(term) ||
+                codigo.includes(term) ||
+                email.includes(term) ||
+                grupo.includes(term) ||
+                estado.includes(term) ||
+                centro.includes(term)
+              );
+          }
+        });
 
     // Apoi aplicăm filtrul de status, dacă este setat
     if (statusFilter === 'ALL') return base;
+
+    // Status special: ONLINE - filtrează după lista de userId online
+    if (statusFilter === 'ONLINE') {
+      return base.filter((u) => {
+        const codigo = (u['CODIGO'] || '').toString().trim();
+        return codigo && onlineUserIds.has(codigo);
+      });
+    }
+
     const target = statusFilter.toUpperCase();
-    return base.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === target);
-  }, [users, searchTerm, searchBy, statusFilter]);
+    return base.filter(
+      (u) =>
+        (u['ESTADO'] || u.ESTADO || '')
+          .toString()
+          .trim()
+          .toUpperCase() === target,
+    );
+  }, [users, searchTerm, searchBy, statusFilter, onlineUserIds]);
 
   useEffect(() => {
     if (authUser?.isDemo) {
@@ -1609,6 +1706,50 @@ export default function EmpleadosPage() {
                     {/* Shimmer effect */}
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
                   </div>
+
+                  {/* Card 4 - Online - TEAL */}
+                  <div
+                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
+                    style={{
+                      background:
+                        'linear-gradient(135deg, rgba(45, 212, 191, 0.08) 0%, rgba(20, 184, 166, 0.08) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '1rem',
+                      border: '1px solid rgba(45, 212, 191, 0.2)',
+                      boxShadow: '0 4px 15px rgba(45, 212, 191, 0.12)',
+                      padding: '1rem',
+                    }}
+                  onClick={() => setStatusFilter('ONLINE')}
+                  role="button"
+                  >
+                    {/* Glow sutil en hover */}
+                    <div className="absolute inset-0 rounded-2xl bg-teal-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
+
+                    {/* Contenido */}
+                    <div className="relative flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
+                        style={{
+                          background:
+                            'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                          boxShadow: '0 4px 12px rgba(45, 212, 191, 0.3)',
+                        }}
+                      >
+                        <span className="text-xl">🟢</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-2xl font-black text-teal-900">
+                          {onlineUserIds.size}
+                        </div>
+                        <div className="text-xs font-semibold text-teal-700 truncate">
+                          Online
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
+                  </div>
                 </div>
 
                 {/* Barra de búsqueda moderna */}
@@ -1638,6 +1779,9 @@ export default function EmpleadosPage() {
                         <option value="nombre">👤 Nombre</option>
                         <option value="codigo">🔢 Código</option>
                         <option value="email">📧 Email</option>
+                        <option value="grupo">👥 Grupo</option>
+                        <option value="estado">✅ Estado</option>
+                        <option value="centro">📍 Centro</option>
                         <option value="todos">🔍 Todos</option>
                       </select>
                     </div>
@@ -1796,7 +1940,11 @@ export default function EmpleadosPage() {
                 <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                   <div className="max-h-96 overflow-y-auto">
                     <div className="divide-y divide-gray-200">
-                      {getFilteredUsers.map((user, idx) => (
+                      {getFilteredUsers.map((user, idx) => {
+                        const codigo = (user['CODIGO'] || '').toString().trim();
+                        const isOnline = codigo && onlineUserIds.has(codigo);
+
+                        return (
                         <div key={user['CODIGO'] || idx} className="p-4 hover:bg-gray-50 transition-colors">
                           {/* Header - Avatar + Nume */}
                           <div className="flex items-center gap-3 mb-3">
@@ -1829,9 +1977,25 @@ export default function EmpleadosPage() {
                             </div>
                             
                             <div className="flex-1">
-                              <h3 className="font-bold text-gray-900">
-                                {user['NOMBRE / APELLIDOS'] || 'Sin nombre'}
-                              </h3>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-gray-900">
+                                  {user['NOMBRE / APELLIDOS'] || 'Sin nombre'}
+                                </h3>
+                                {codigo && (
+                                  <span className="flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                                    <span
+                                      className={`inline-block h-2 w-2 rounded-full ${
+                                        isOnline
+                                          ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.3)]'
+                                          : 'bg-gray-300'
+                                      }`}
+                                    />
+                                    <span className="uppercase tracking-wide">
+                                      {isOnline ? 'Online' : 'Offline'}
+                                    </span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -1891,7 +2055,7 @@ export default function EmpleadosPage() {
                             </div>
                           </div>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   </div>
                 </div>

@@ -35,6 +35,7 @@ export class NotificationsGateway
 
   private readonly logger = new Logger(NotificationsGateway.name);
   private connectedUsers = new Map<string, string>(); // socketId -> userId
+  private userConnectionCount = new Map<string, number>(); // userId -> active sockets count
 
   constructor(
     private readonly jwtService: JwtService,
@@ -77,6 +78,10 @@ export class NotificationsGateway
       const userId = String(payload.userId);
       this.connectedUsers.set(client.id, userId);
 
+      // Actualizează numărul de conexiuni active per user
+      const currentCount = this.userConnectionCount.get(userId) || 0;
+      this.userConnectionCount.set(userId, currentCount + 1);
+
       // Join la room-urile utilizatorului
       await client.join(`user:${userId}`);
 
@@ -105,6 +110,13 @@ export class NotificationsGateway
     if (userId) {
       this.logger.log(`User ${userId} disconnected (socket: ${client.id})`);
       this.connectedUsers.delete(client.id);
+
+      const currentCount = this.userConnectionCount.get(userId) || 0;
+      if (currentCount <= 1) {
+        this.userConnectionCount.delete(userId);
+      } else {
+        this.userConnectionCount.set(userId, currentCount - 1);
+      }
     }
   }
 
@@ -189,13 +201,21 @@ export class NotificationsGateway
    * Obține numărul de utilizatori conectați
    */
   getConnectedUsersCount(): number {
-    return this.connectedUsers.size;
+    return this.userConnectionCount.size;
   }
 
   /**
    * Verifică dacă un utilizator este conectat
    */
   isUserConnected(userId: string): boolean {
-    return Array.from(this.connectedUsers.values()).includes(userId);
+    return this.userConnectionCount.has(userId);
+  }
+
+  /**
+   * Obține lista de userId-uri care au cel puțin o conexiune WebSocket activă
+   * Folosită pentru a afișa statusul online/offline în Admin/Empleados
+   */
+  getOnlineUserIds(): string[] {
+    return Array.from(this.userConnectionCount.keys());
   }
 }
