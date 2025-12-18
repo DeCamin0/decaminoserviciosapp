@@ -574,11 +574,11 @@ export class ComunicadosService {
   /**
    * Trimite push notification către toți userii când se publică un comunicado
    */
-  private async sendPushNotification(comunicado: {
+  async sendPushNotification(comunicado: {
     id: bigint;
     titulo: string;
     contenido: string;
-  }) {
+  }): Promise<{ total: number; sent: number; failed: number } | null> {
     try {
       // Primele ~120 caractere din conținut pentru body
       const preview =
@@ -600,12 +600,57 @@ export class ComunicadosService {
       this.logger.log(
         `✅ Push notification trimisă pentru comunicado ${comunicado.id}: ${result.sent}/${result.total} useri`,
       );
+
+      return result;
     } catch (error) {
       this.logger.error(
         `❌ Eroare la trimiterea push notification pentru comunicado ${comunicado.id}:`,
         error,
       );
       // Nu aruncăm eroare - comunicado-ul a fost deja salvat
+      return null;
     }
+  }
+
+  /**
+   * Retrimite push notification pentru un comunicado existent (reanunțare)
+   */
+  async resendPushNotification(id: bigint) {
+    const comunicado = await this.prisma.comunicado.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        titulo: true,
+        contenido: true,
+        publicado: true,
+      },
+    });
+
+    if (!comunicado) {
+      throw new NotFoundException(
+        `Comunicado cu id ${id} nu a fost găsit pentru re-notificare`,
+      );
+    }
+
+    if (!comunicado.publicado) {
+      throw new BadRequestException(
+        'Nu se poate trimite notificare pentru un comunicado care nu este publicat.',
+      );
+    }
+
+    this.logger.log(
+      `🔁 Retrimit push notification pentru comunicado ${comunicado.id}`,
+    );
+
+    const pushResult = await this.sendPushNotification(comunicado);
+
+    return {
+      comunicado: {
+        id: Number(comunicado.id),
+        titulo: comunicado.titulo,
+        contenido: comunicado.contenido,
+      },
+      pushResult,
+    };
   }
 }

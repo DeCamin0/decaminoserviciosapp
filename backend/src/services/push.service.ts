@@ -35,10 +35,14 @@ export class PushService {
         privateKey,
       );
       this.logger.log('✅ VAPID keys configurate din environment variables');
+      this.logger.log(`🔑 VAPID Public Key (folosit): ${publicKey.substring(0, 30)}...`);
     } else {
       // Generează VAPID keys noi (doar pentru development)
       this.logger.warn(
         '⚠️ VAPID keys nu sunt configurate. Generez keys noi (doar pentru development).',
+      );
+      this.logger.warn(
+        '⚠️ ATENȚIE: Dacă backend-ul se repornește, se vor genera CHEI NOI și toate subscription-urile existente vor deveni INVALIDE!',
       );
       this.logger.warn(
         '⚠️ Pentru producție, setează VAPID_PUBLIC_KEY și VAPID_PRIVATE_KEY în .env',
@@ -51,7 +55,7 @@ export class PushService {
       );
       this.logger.log('🔑 VAPID keys generate:');
       this.logger.log(`Public Key: ${this.vapidKeys.publicKey}`);
-      this.logger.log(`Private Key: ${this.vapidKeys.privateKey}`);
+      this.logger.warn(`⚠️ Private Key: ${this.vapidKeys.privateKey.substring(0, 30)}... (ascuns pentru securitate)`);
     }
   }
 
@@ -63,6 +67,39 @@ export class PushService {
       this.initializeVapidKeys();
     }
     return this.vapidKeys!.publicKey;
+  }
+
+  /**
+   * Obține informații despre VAPID keys (pentru diagnostic)
+   */
+  getVapidInfo(): {
+    hasKeys: boolean;
+    publicKey: string | null;
+    source: 'env' | 'generated';
+  } {
+    const publicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
+    const privateKey = this.configService.get<string>('VAPID_PRIVATE_KEY');
+    
+    return {
+      hasKeys: !!(publicKey && privateKey),
+      publicKey: this.vapidKeys?.publicKey || null,
+      source: publicKey && privateKey ? 'env' : 'generated',
+    };
+  }
+
+  /**
+   * Obține toate subscription-urile pentru un utilizator (pentru diagnostic)
+   */
+  async getUserSubscriptions(userId: string) {
+    return this.prisma.pushSubscription.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        endpoint: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   /**
@@ -116,16 +153,49 @@ export class PushService {
             endpoint,
           },
         });
+        this.logger.log(`✅ Push subscription șters pentru user ${userId}, endpoint: ${endpoint.substring(0, 50)}...`);
       } else {
         // Șterge toate subscription-urile pentru utilizator
+        const count = await this.prisma.pushSubscription.count({
+          where: { userId },
+        });
         await this.prisma.pushSubscription.deleteMany({
           where: { userId },
         });
+        this.logger.log(`✅ ${count} Push subscription-uri șterse pentru user ${userId}`);
       }
-      this.logger.log(`✅ Push subscription șters pentru user ${userId}`);
     } catch (error) {
       this.logger.error(
         `❌ Eroare la ștergerea Push subscription pentru user ${userId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Șterge toate subscription-urile invalide pentru un utilizator (după erori VAPID mismatch)
+   */
+  async deleteInvalidSubscriptions(userId: string): Promise<number> {
+    try {
+      const count = await this.prisma.pushSubscription.count({
+        where: { userId },
+      });
+      
+      if (count === 0) {
+        this.logger.log(`ℹ️ Nu există subscription-uri pentru user ${userId}`);
+        return 0;
+      }
+
+      await this.prisma.pushSubscription.deleteMany({
+        where: { userId },
+      });
+
+      this.logger.log(`✅ Șterse ${count} subscription-uri invalide pentru user ${userId} (VAPID keys mismatch)`);
+      return count;
+    } catch (error) {
+      this.logger.error(
+        `❌ Eroare la ștergerea subscription-urilor invalide pentru user ${userId}:`,
         error,
       );
       throw error;
@@ -165,10 +235,17 @@ export class PushService {
         timestamp: new Date().toISOString(),
       });
 
+      this.logger.log(
+        `📤 Încerc să trimit Push notification către user ${userId} (${subscriptions.length} subscription-uri)`,
+      );
+
       // Trimite notificarea către toate subscription-urile
       const results = await Promise.allSettled(
-        subscriptions.map(async (subscription) => {
+        subscriptions.map(async (subscription, index) => {
           try {
+            this.logger.debug(
+              `📤 [${index + 1}/${subscriptions.length}] Trimit către endpoint: ${subscription.endpoint.substring(0, 50)}...`,
+            );
             await webpush.sendNotification(
               {
                 endpoint: subscription.endpoint,
@@ -179,14 +256,35 @@ export class PushService {
               },
               payload,
             );
+            this.logger.debug(
+              `✅ [${index + 1}/${subscriptions.length}] Push notification trimisă cu succes`,
+            );
             return true;
           } catch (error: any) {
+            // Log detaliat pentru fiecare eroare
+            const errorDetails = {
+              statusCode: error.statusCode,
+              statusCodeText: error.statusCodeText || 'N/A',
+              message: error.message,
+              body: error.body ? (typeof error.body === 'string' ? error.body.substring(0, 200) : JSON.stringify(error.body).substring(0, 200)) : 'N/A',
+              endpoint: subscription.endpoint.substring(0, 50) + '...',
+            };
+
+            this.logger.error(
+              `❌ [${index + 1}/${subscriptions.length}] Eroare la trimiterea Push notification:`,
+              JSON.stringify(errorDetails, null, 2),
+            );
+
             // Dacă subscription-ul este invalid (410 Gone), șterge-l
             if (error.statusCode === 410) {
               this.logger.warn(
-                `⚠️ Push subscription invalid pentru user ${userId}, șterg subscription-ul`,
+                `⚠️ Push subscription invalid (410 Gone) pentru user ${userId}, endpoint: ${subscription.endpoint.substring(0, 50)}..., șterg subscription-ul`,
               );
               await this.deleteSubscription(userId, subscription.endpoint);
+            } else if (error.statusCode === 401 || error.statusCode === 403) {
+              this.logger.error(
+                `🔑 EROARE CRITICĂ: VAPID keys mismatch! StatusCode: ${error.statusCode}. Subscription-ul a fost creat cu alte VAPID keys decât cele folosite acum.`,
+              );
             }
             throw error;
           }
@@ -196,15 +294,26 @@ export class PushService {
       const successCount = results.filter(
         (r) => r.status === 'fulfilled',
       ).length;
+      const failedCount = results.length - successCount;
+
+      // Log detaliat pentru fiecare eșec
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          const error = result.reason;
+          this.logger.error(
+            `❌ Subscription ${index + 1} eșuat: ${error?.message || 'Unknown error'}`,
+          );
+        }
+      });
 
       if (successCount > 0) {
         this.logger.log(
-          `✅ Push notification trimisă către user ${userId} (${successCount}/${subscriptions.length} subscription-uri)`,
+          `✅ Push notification trimisă către user ${userId} (${successCount}/${subscriptions.length} subscription-uri reușite, ${failedCount} eșuate)`,
         );
         return true;
       } else {
         this.logger.warn(
-          `⚠️ Nu s-a putut trimite Push notification către user ${userId}`,
+          `⚠️ Nu s-a putut trimite Push notification către user ${userId} (toate ${subscriptions.length} subscription-urile au eșuat)`,
         );
         return false;
       }

@@ -127,35 +127,129 @@ export const subscribeToPushNotifications = async (userId) => {
 
   try {
     const registration = await navigator.serviceWorker.ready;
+    const baseUrl = import.meta.env.DEV 
+      ? 'http://localhost:3000' 
+      : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+    
+    const migrationKey = `push_migration_done_v1_${userId}`;
+    const token = localStorage.getItem('auth_token');
+
+    // 🔁 MIGRARE ONE-TIME: șterge toate subscription-urile vechi pentru utilizatorii existenți
+    // Scop: să curățăm tot ce a fost creat cu VAPID keys vechi, fără pași manuali pentru angajați.
+    if (!localStorage.getItem(migrationKey)) {
+      console.log('🔁 [PushMigration] Rulez migrarea v1 pentru utilizatorul', userId);
+
+      try {
+        const existingSubscription = await registration.pushManager.getSubscription();
+        if (existingSubscription) {
+          try {
+            await existingSubscription.unsubscribe();
+            console.log('✅ [PushMigration] Subscription vechi dezabonat din browser');
+          } catch (unsubError) {
+            console.warn('⚠️ [PushMigration] Eroare la dezabonarea subscription-ului vechi:', unsubError);
+          }
+        }
+
+        if (token) {
+          try {
+            await fetch(`${baseUrl}/api/push/reset-subscriptions`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            console.log('✅ [PushMigration] Subscription-uri vechi șterse din backend');
+          } catch (resetError) {
+            console.warn('⚠️ [PushMigration] Eroare la resetarea subscription-urilor în backend:', resetError);
+          }
+        }
+
+        localStorage.setItem(migrationKey, '1');
+        // Șterge și vechiul VAPID key local, dacă există
+        localStorage.removeItem(`vapid_public_key_${userId}`);
+      } catch (migrationError) {
+        console.warn('⚠️ [PushMigration] Eroare în timpul migrației push v1:', migrationError);
+      }
+    }
+    
+    // Obține VAPID public key de la backend (întotdeauna, pentru verificare)
+    const vapidResponse = await fetch(`${baseUrl}/api/push/vapid-public-key`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!vapidResponse.ok) {
+      console.warn('⚠️ Nu s-a putut obține VAPID public key. Push notifications nu vor funcționa când aplicația este închisă.');
+      return null;
+    }
+    
+    const { publicKey: backendPublicKey } = await vapidResponse.json();
     
     // Verifică dacă există deja un subscription
     let subscription = await registration.pushManager.getSubscription();
     
+    if (subscription) {
+      // Verifică dacă VAPID key se potrivește cu cel din backend
+      // Comparăm VAPID public key-ul stocat în localStorage cu cel din backend.
+      // Dacă nu avem key stocat (utilizatori vechi) sau nu se potrivește, forțăm recrearea.
+      const storedVapidKey = localStorage.getItem(`vapid_public_key_${userId}`);
+      
+      console.log('✅ Push subscription deja există, verific compatibilitatea VAPID keys...');
+      
+      if (!storedVapidKey || storedVapidKey !== backendPublicKey) {
+        console.warn('⚠️ VAPID public key NU se potrivește sau nu este salvat local (utilizator vechi). Recreez subscription-ul...');
+        
+        // Șterge subscription-ul vechi din browser
+        try {
+          await subscription.unsubscribe();
+        } catch (unsubError) {
+          console.warn('⚠️ Eroare la unsubscribing subscription vechi:', unsubError);
+        }
+        
+        // Șterge și din backend toate subscription-urile pentru acest user
+        try {
+          await fetch(`${baseUrl}/api/push/reset-subscriptions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          console.log('✅ Subscription-uri invalide șterse din backend');
+        } catch (resetError) {
+          console.warn('⚠️ Eroare la resetarea subscription-urilor din backend:', resetError);
+        }
+        
+        subscription = null;
+      } else {
+        // VAPID keys se potrivesc - verifică dacă subscription-ul este valid
+        try {
+          await savePushSubscription(userId, subscription);
+          console.log('✅ Push subscription valid și sincronizat cu backend');
+        } catch (error) {
+          console.warn('⚠️ Push subscription existent pare invalid:', error);
+          console.log('🔄 Șterg subscription-ul vechi și creez unul nou...');
+          
+          try {
+            await subscription.unsubscribe();
+          } catch (unsubError) {
+            console.warn('⚠️ Eroare la unsubscribing subscription vechi:', unsubError);
+          }
+          
+          subscription = null;
+        }
+      }
+    }
+    
     if (!subscription) {
       // Creează un subscription nou
-      // VAPID public key - trebuie să fie generat în backend
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
-      
-      // Obține VAPID public key de la backend
-      const token = localStorage.getItem('auth_token');
-      const vapidResponse = await fetch(`${baseUrl}/api/push/vapid-public-key`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!vapidResponse.ok) {
-        console.warn('⚠️ Nu s-a putut obține VAPID public key. Push notifications nu vor funcționa când aplicația este închisă.');
-        return null;
-      }
-      
-      const { publicKey } = await vapidResponse.json();
+      console.log('📝 Creez Push subscription nou...');
       
       // Converteste VAPID key din base64 URL-safe în Uint8Array
-      const applicationServerKey = urlBase64ToUint8Array(publicKey);
+      const applicationServerKey = urlBase64ToUint8Array(backendPublicKey);
       
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -163,13 +257,14 @@ export const subscribeToPushNotifications = async (userId) => {
       });
       
       console.log('✅ Push subscription creat:', subscription);
-    } else {
-      console.log('✅ Push subscription deja există');
-    }
-
-    // Salvează subscription-ul în backend
-    if (userId && subscription) {
-      await savePushSubscription(userId, subscription);
+      
+      // Salvează VAPID public key în localStorage pentru verificări viitoare
+      localStorage.setItem(`vapid_public_key_${userId}`, backendPublicKey);
+      
+      // Salvează subscription-ul în backend
+      if (userId && subscription) {
+        await savePushSubscription(userId, subscription);
+      }
     }
 
     return subscription;
