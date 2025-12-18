@@ -402,6 +402,33 @@ export const useComunicadosApi = () => {
     }
   }, []);
 
+  const notifyComunicado = useCallback(async (id) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${BASE_URL}/api/comunicados/${id}/notificar`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Error ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const getUnreadCount = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -434,6 +461,7 @@ export const useComunicadosApi = () => {
     deleteComunicado,
     markAsRead,
     publicarComunicado,
+    notifyComunicado,
     getUnreadCount,
     loading,
     error,

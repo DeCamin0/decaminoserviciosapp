@@ -37,8 +37,15 @@ const ComunicadoDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { fetchComunicado, markAsRead, deleteComunicado, publicarComunicado, loading, error } =
-    useComunicadosApi();
+  const {
+    fetchComunicado,
+    markAsRead,
+    deleteComunicado,
+    publicarComunicado,
+    notifyComunicado,
+    loading,
+    error,
+  } = useComunicadosApi();
 
   const canManageComunicados = () => {
     const grupo = user?.GRUPO || user?.grupo || '';
@@ -56,10 +63,12 @@ const ComunicadoDetailPage = () => {
   const [isMarkedAsRead, setIsMarkedAsRead] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
   const [showReadersModal, setShowReadersModal] = useState(false);
   const [showFilePreview, setShowFilePreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [isNotifying, setIsNotifying] = useState(false);
 
   // Detectare iOS/Android pentru preview
   const isBrowser = typeof window !== 'undefined';
@@ -121,6 +130,47 @@ const ComunicadoDetailPage = () => {
         type: 'error',
         message: `Error al publicar comunicado: ${err.message}`,
       });
+    }
+  };
+
+  const handleNotify = async () => {
+    if (!comunicado?.publicado) {
+      setNotification({
+        type: 'error',
+        message:
+          'Este comunicado aún no está publicado. Solo se pueden notificar comunicados publicados.',
+      });
+      return;
+    }
+    setShowNotifyModal(true);
+  };
+
+  const confirmNotify = async () => {
+    try {
+      setIsNotifying(true);
+      const result = await notifyComunicado(id);
+      const sent = result?.pushResult?.sent;
+      const total = result?.pushResult?.total;
+
+      let message = result?.message;
+      if (typeof sent === 'number' && typeof total === 'number') {
+        message = `Notificación reenviada: ${sent} de ${total} empleados con notificaciones activas.`;
+      }
+
+      setNotification({
+        type: 'success',
+        message:
+          message ||
+          'Notificación reenviada con éxito a los empleados con notificaciones activas.',
+      });
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Error al reenviar la notificación: ${err.message}`,
+      });
+    } finally {
+      setIsNotifying(false);
+      setShowNotifyModal(false);
     }
   };
 
@@ -371,6 +421,17 @@ const ComunicadoDetailPage = () => {
                     Publicar
                   </button>
                 )}
+                {comunicado.publicado && (
+                  <button
+                    onClick={handleNotify}
+                    disabled={isNotifying}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Enviar de nuevo notificación push a todos los empleados"
+                  >
+                    <Send className="w-4 h-4" />
+                    {isNotifying ? 'Notificando...' : 'Notificar de nuevo'}
+                  </button>
+                )}
                 <button
                   onClick={() => navigate(`/comunicados/${id}/editar`)}
                   className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -491,6 +552,20 @@ const ComunicadoDetailPage = () => {
         cancelText="Cancelar"
         type="info"
         icon={Send}
+      />
+
+      {/* Modal de confirmare pentru re-notificare */}
+      <ConfirmModal
+        isOpen={showNotifyModal}
+        onClose={() => setShowNotifyModal(false)}
+        onConfirm={confirmNotify}
+        title="Reenviar notificación"
+        message="¿Quieres enviar de nuevo una notificación push de este comunicado a todos los empleados con notificaciones activas?"
+        confirmText={isNotifying ? 'Notificando...' : 'Reenviar'}
+        cancelText="Cancelar"
+        type="info"
+        icon={Send}
+        disabled={isNotifying}
       />
 
       {/* Modal pentru lista de cititori */}

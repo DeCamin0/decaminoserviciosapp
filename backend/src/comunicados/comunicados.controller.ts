@@ -375,6 +375,34 @@ export class ComunicadosController {
     };
   }
 
+  /**
+   * POST /api/comunicados/:id/notificar
+   * Retrimite notificarea push pentru un comunicado deja publicat
+   * Doar Admin/Supervisor/RRHH/Developer
+   */
+  @Post(':id/notificar')
+  async renotificar(@CurrentUser() user: any, @Param('id') id: string) {
+    // Verifică permisiunile
+    if (!this.comunicadosService.canUserManageComunicados(user.grupo)) {
+      throw new ForbiddenException(
+        'No tienes permiso para reenviar notificaciones. Solo Admin, Supervisor, RRHH y Developer pueden reenviar notificaciones.',
+      );
+    }
+
+    const { comunicado, pushResult } =
+      await this.comunicadosService.resendPushNotification(BigInt(id));
+
+    return {
+      success: true,
+      message:
+        pushResult && typeof pushResult.sent === 'number'
+          ? `Se ha reenviado la notificación: ${pushResult.sent} de ${pushResult.total} empleados con notificaciones activas.`
+          : 'Se ha reenviado la notificación push de este comunicado a todos los empleados con notificaciones activas.',
+      comunicado,
+      pushResult,
+    };
+  }
+
 
   /**
    * POST /api/comunicados/:id/marcar-leido

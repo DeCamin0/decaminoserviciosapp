@@ -116,4 +116,61 @@ export class PushController {
       message: 'Push subscription șters cu succes',
     };
   }
+
+  /**
+   * GET /api/push/debug
+   * Endpoint de diagnostic pentru Push notifications
+   */
+  @Get('debug')
+  @UseGuards(JwtAuthGuard)
+  async debug(@Req() req: any) {
+    const user = req.user;
+    const userId = user.userId || user.CODIGO;
+
+    const vapidInfo = this.pushService.getVapidInfo();
+    const subscriptions = await this.pushService.getUserSubscriptions(userId);
+
+    return {
+      success: true,
+      userId,
+      vapid: vapidInfo,
+      subscriptions: {
+        count: subscriptions.length,
+        items: subscriptions.map((sub) => ({
+          id: sub.id,
+          endpoint: sub.endpoint.substring(0, 50) + '...',
+          createdAt: sub.createdAt,
+          updatedAt: sub.updatedAt,
+        })),
+      },
+      recommendations: {
+        hasVapidKeys: vapidInfo.hasKeys,
+        hasSubscriptions: subscriptions.length > 0,
+        shouldRecreateSubscription:
+          !vapidInfo.hasKeys && subscriptions.length > 0
+            ? 'VAPID keys sunt generate automat la fiecare restart. Recomand să setezi VAPID_PUBLIC_KEY și VAPID_PRIVATE_KEY în .env pentru stabilitate.'
+            : null,
+      },
+    };
+  }
+
+  /**
+   * POST /api/push/reset-subscriptions
+   * Șterge toate subscription-urile invalide și forțează re-crearea
+   */
+  @Post('reset-subscriptions')
+  @UseGuards(JwtAuthGuard)
+  async resetSubscriptions(@Req() req: any) {
+    const user = req.user;
+    const userId = user.userId || user.CODIGO;
+
+    const deletedCount = await this.pushService.deleteInvalidSubscriptions(userId);
+
+    return {
+      success: true,
+      message: `Șterse ${deletedCount} subscription-uri invalide pentru user ${userId}`,
+      deletedCount,
+      nextStep: 'Reîncarcă aplicația pentru a recrea subscription-urile cu VAPID keys corecte',
+    };
+  }
 }

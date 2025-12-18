@@ -412,9 +412,15 @@ git commit -m "feat: descriere scurtă și clară"
 git push -u origin feature/nume-task
 ```
 
-### Eu NU Rulez Comenzi Git
-- Doar propun branch-ul și fișierele
-- Tu decizi când să rulezi comenzile
+### Rulare Comenzi Git (cu Confirmare prin UI)
+- Pot propune și rula comenzi `git` **doar după confirmarea ta explicită din interfața Cursor (butonul Execute/Run)** pentru fiecare comandă în parte.
+- Înainte de a rula orice comandă `git`:
+  - afișez comanda exactă, așa cum va fi executată
+  - aștept ca tu să confirmi rularea din UI (Execute/Run) sau să o modifici/anulezi
+- **NU cer cuvântul „Aprobat” în chat** pentru comenzi `git`; confirmarea se face exclusiv prin UI (Execute/Run).
+- Pentru comenzi cu risc crescut (`git reset`, `git clean`, `git rebase`, `git push --force` și variantele lor):
+  - dacă platforma permite, trebuie să afișez clar un mesaj suplimentar de tip „Are you sure?” înainte de execuție
+  - dacă platforma NU permite confirmare suplimentară în UI, mă opresc și îți cer explicit confirmare în chat înainte de a continua cu astfel de comenzi
 
 ---
 
