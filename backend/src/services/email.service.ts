@@ -21,12 +21,23 @@ export class EmailService {
     const smtpPassword = this.configService.get<string>('SMTP_PASSWORD');
     const smtpSecure = this.configService.get<string>('SMTP_SECURE') === 'true';
 
+    // Logging detaliat pentru debugging
+    this.logger.log('🔍 Checking SMTP configuration...');
+    this.logger.log(`   SMTP_HOST: ${smtpHost ? '✅ Set' : '❌ MISSING'}`);
+    this.logger.log(`   SMTP_PORT: ${smtpPort || '❌ MISSING (using default 587)'}`);
+    this.logger.log(`   SMTP_USER: ${smtpUser ? '✅ Set' : '❌ MISSING'}`);
+    this.logger.log(`   SMTP_PASSWORD: ${smtpPassword ? '✅ Set (hidden)' : '❌ MISSING'}`);
+    this.logger.log(`   SMTP_SECURE: ${smtpSecure}`);
+
     if (!smtpHost || !smtpUser || !smtpPassword) {
       this.logger.warn(
         '⚠️ SMTP configuration not found. Email sending will be disabled.',
       );
       this.logger.warn(
         '⚠️ Please set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD in .env',
+      );
+      this.logger.warn(
+        `⚠️ Missing variables: ${!smtpHost ? 'SMTP_HOST ' : ''}${!smtpUser ? 'SMTP_USER ' : ''}${!smtpPassword ? 'SMTP_PASSWORD' : ''}`,
       );
       return;
     }

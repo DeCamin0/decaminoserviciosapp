@@ -86,6 +86,24 @@ if [ -f ".env.production" ]; then
     else
         echo -e "${GREEN}✅ DATABASE_URL found in .env${NC}"
     fi
+    
+    # Verifică și adaugă variabilele SMTP dacă lipsesc
+    echo -e "${YELLOW}📋 Checking SMTP configuration...${NC}"
+    if ! grep -q "^SMTP_HOST=" .env; then
+        echo -e "${YELLOW}⚠️  SMTP variables not found, adding default SMTP configuration...${NC}"
+        echo "" >> .env
+        echo "# SMTP (pentru trimiterea email-urilor către gestoria)" >> .env
+        echo "# IMPORTANT: Actualizează SMTP_PASSWORD cu parola reală!" >> .env
+        echo "SMTP_HOST=smtp.serviciodecorreo.es" >> .env
+        echo "SMTP_PORT=465" >> .env
+        echo "SMTP_SECURE=true" >> .env
+        echo "SMTP_USER=info@decaminoservicios.com" >> .env
+        echo "SMTP_PASSWORD=your-password-here" >> .env
+        echo "SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>" >> .env
+        echo -e "${YELLOW}⚠️  SMTP variables added. Please update SMTP_PASSWORD in .env with the real password!${NC}"
+    else
+        echo -e "${GREEN}✅ SMTP configuration found in .env${NC}"
+    fi
 else
     if [ ! -f ".env" ]; then
         echo -e "${RED}❌ No .env or .env.production found!${NC}"
@@ -93,6 +111,22 @@ else
         exit 1
     else
         echo -e "${GREEN}✅ .env file exists${NC}"
+        # Verifică și adaugă variabilele SMTP dacă lipsesc
+        if ! grep -q "^SMTP_HOST=" .env; then
+            echo -e "${YELLOW}⚠️  SMTP variables not found, adding default SMTP configuration...${NC}"
+            echo "" >> .env
+            echo "# SMTP (pentru trimiterea email-urilor către gestoria)" >> .env
+            echo "# IMPORTANT: Actualizează SMTP_PASSWORD cu parola reală!" >> .env
+            echo "SMTP_HOST=smtp.serviciodecorreo.es" >> .env
+            echo "SMTP_PORT=465" >> .env
+            echo "SMTP_SECURE=true" >> .env
+            echo "SMTP_USER=info@decaminoservicios.com" >> .env
+            echo "SMTP_PASSWORD=your-password-here" >> .env
+            echo "SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>" >> .env
+            echo -e "${YELLOW}⚠️  SMTP variables added. Please update SMTP_PASSWORD in .env with the real password!${NC}"
+        else
+            echo -e "${GREEN}✅ SMTP configuration found in .env${NC}"
+        fi
     fi
 fi
 

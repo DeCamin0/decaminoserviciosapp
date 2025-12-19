@@ -26,6 +26,7 @@ JWT_SECRET=decamino-super-secret-key-change-in-production
 JWT_EXPIRES_IN=7d
 
 # SMTP (pentru trimiterea email-urilor către gestoria)
+# IMPORTANT: Configurează aceste variabile pentru a trimite email-uri!
 # Configurație pentru serviciodecorreo.es
 SMTP_HOST=smtp.serviciodecorreo.es
 SMTP_PORT=465
