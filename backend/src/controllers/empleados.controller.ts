@@ -709,11 +709,22 @@ export class EmpleadosController {
       `;
 
       // Trimite email-uri către toți destinatarii
-      const sendPromises = emailAddresses.map((email) =>
-        this.emailService.sendEmail(email, subiect, html),
-      );
-
-      await Promise.all(sendPromises);
+      // Folosim secvențial cu delay pentru a nu suprasolicita SMTP (similar cu n8n)
+      for (let i = 0; i < emailAddresses.length; i++) {
+        const email = emailAddresses[i];
+        try {
+          await this.emailService.sendEmail(email, subiect, html);
+          this.logger.log(`✅ Email ${i + 1}/${emailAddresses.length} trimis către ${email}`);
+          
+          // Delay între email-uri (500ms) pentru a nu suprasolicita SMTP
+          if (i < emailAddresses.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        } catch (error: any) {
+          this.logger.error(`❌ Eroare la trimiterea email-ului către ${email}:`, error);
+          // Continuă cu următorul email chiar dacă unul a eșuat
+        }
+      }
 
       this.logger.log(
         `✅ Email trimis către ${emailAddresses.length} destinatari`,
