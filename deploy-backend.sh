@@ -51,11 +51,23 @@ cd "$BACKEND_DIR" || exit 1
 # 4. Configurează .env dacă nu există sau dacă .env.production e mai nou
 echo -e "${YELLOW}📋 Step 3: Configuring .env file...${NC}"
 if [ -f ".env.production" ]; then
+    # Verifică dacă .env.production are deja SMTP configurat
+    HAS_SMTP_IN_PRODUCTION=$(grep -c "^SMTP_" .env.production 2>/dev/null || echo "0")
+    
     if [ ! -f ".env" ] || [ ".env.production" -nt ".env" ]; then
         cp .env.production .env
         echo -e "${GREEN}✅ .env created/updated from .env.production${NC}"
+        if [ "$HAS_SMTP_IN_PRODUCTION" -gt 0 ]; then
+            echo -e "${GREEN}✅ SMTP configuration found in .env.production and copied to .env${NC}"
+        fi
     else
         echo -e "${GREEN}✅ .env file exists and is up to date${NC}"
+        # Dacă .env.production are SMTP dar .env nu are, copiază doar SMTP din .env.production
+        if [ "$HAS_SMTP_IN_PRODUCTION" -gt 0 ] && ! grep -q "^SMTP_HOST=" .env; then
+            echo -e "${YELLOW}⚠️  SMTP found in .env.production but missing in .env, copying...${NC}"
+            grep "^SMTP_" .env.production >> .env
+            echo -e "${GREEN}✅ SMTP configuration copied from .env.production to .env${NC}"
+        fi
     fi
     
     # Construiește DATABASE_URL din variabile separate dacă nu există
@@ -90,17 +102,24 @@ if [ -f ".env.production" ]; then
     # Verifică și adaugă variabilele SMTP dacă lipsesc
     echo -e "${YELLOW}📋 Checking SMTP configuration...${NC}"
     if ! grep -q "^SMTP_HOST=" .env; then
-        echo -e "${YELLOW}⚠️  SMTP variables not found, adding default SMTP configuration...${NC}"
-        echo "" >> .env
-        echo "# SMTP (pentru trimiterea email-urilor către gestoria)" >> .env
-        echo "# IMPORTANT: Actualizează SMTP_PASSWORD cu parola reală!" >> .env
-        echo "SMTP_HOST=smtp.serviciodecorreo.es" >> .env
-        echo "SMTP_PORT=465" >> .env
-        echo "SMTP_SECURE=true" >> .env
-        echo "SMTP_USER=info@decaminoservicios.com" >> .env
-        echo "SMTP_PASSWORD=your-password-here" >> .env
-        echo "SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>" >> .env
-        echo -e "${YELLOW}⚠️  SMTP variables added. Please update SMTP_PASSWORD in .env with the real password!${NC}"
+        # Verifică dacă există în .env.production
+        if [ -f ".env.production" ] && grep -q "^SMTP_HOST=" .env.production; then
+            echo -e "${YELLOW}⚠️  SMTP not in .env, copying from .env.production...${NC}"
+            grep "^SMTP_" .env.production >> .env
+            echo -e "${GREEN}✅ SMTP configuration copied from .env.production${NC}"
+        else
+            echo -e "${YELLOW}⚠️  SMTP variables not found, adding default SMTP configuration...${NC}"
+            echo "" >> .env
+            echo "# SMTP (pentru trimiterea email-urilor către gestoria)" >> .env
+            echo "# IMPORTANT: Actualizează SMTP_PASSWORD cu parola reală!" >> .env
+            echo "SMTP_HOST=smtp.serviciodecorreo.es" >> .env
+            echo "SMTP_PORT=465" >> .env
+            echo "SMTP_SECURE=true" >> .env
+            echo "SMTP_USER=info@decaminoservicios.com" >> .env
+            echo "SMTP_PASSWORD=your-password-here" >> .env
+            echo "SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>" >> .env
+            echo -e "${YELLOW}⚠️  SMTP variables added. Please update SMTP_PASSWORD in .env with the real password!${NC}"
+        fi
     else
         echo -e "${GREEN}✅ SMTP configuration found in .env${NC}"
     fi
@@ -113,17 +132,24 @@ else
         echo -e "${GREEN}✅ .env file exists${NC}"
         # Verifică și adaugă variabilele SMTP dacă lipsesc
         if ! grep -q "^SMTP_HOST=" .env; then
-            echo -e "${YELLOW}⚠️  SMTP variables not found, adding default SMTP configuration...${NC}"
-            echo "" >> .env
-            echo "# SMTP (pentru trimiterea email-urilor către gestoria)" >> .env
-            echo "# IMPORTANT: Actualizează SMTP_PASSWORD cu parola reală!" >> .env
-            echo "SMTP_HOST=smtp.serviciodecorreo.es" >> .env
-            echo "SMTP_PORT=465" >> .env
-            echo "SMTP_SECURE=true" >> .env
-            echo "SMTP_USER=info@decaminoservicios.com" >> .env
-            echo "SMTP_PASSWORD=your-password-here" >> .env
-            echo "SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>" >> .env
-            echo -e "${YELLOW}⚠️  SMTP variables added. Please update SMTP_PASSWORD in .env with the real password!${NC}"
+            # Verifică dacă există în .env.production
+            if [ -f ".env.production" ] && grep -q "^SMTP_HOST=" .env.production; then
+                echo -e "${YELLOW}⚠️  SMTP not in .env, copying from .env.production...${NC}"
+                grep "^SMTP_" .env.production >> .env
+                echo -e "${GREEN}✅ SMTP configuration copied from .env.production${NC}"
+            else
+                echo -e "${YELLOW}⚠️  SMTP variables not found, adding default SMTP configuration...${NC}"
+                echo "" >> .env
+                echo "# SMTP (pentru trimiterea email-urilor către gestoria)" >> .env
+                echo "# IMPORTANT: Actualizează SMTP_PASSWORD cu parola reală!" >> .env
+                echo "SMTP_HOST=smtp.serviciodecorreo.es" >> .env
+                echo "SMTP_PORT=465" >> .env
+                echo "SMTP_SECURE=true" >> .env
+                echo "SMTP_USER=info@decaminoservicios.com" >> .env
+                echo "SMTP_PASSWORD=your-password-here" >> .env
+                echo "SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>" >> .env
+                echo -e "${YELLOW}⚠️  SMTP variables added. Please update SMTP_PASSWORD in .env with the real password!${NC}"
+            fi
         else
             echo -e "${GREEN}✅ SMTP configuration found in .env${NC}"
         fi
