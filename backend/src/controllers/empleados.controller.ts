@@ -721,7 +721,9 @@ export class EmpleadosController {
         `;
         
         try {
-          await this.emailService.sendEmail(recipient.email, subiect, html);
+          await this.emailService.sendEmail(recipient.email, subiect, html, {
+            bcc: ['decamino.rrhh@gmail.com'],
+          });
           this.logger.log(`✅ Email ${i + 1}/${emailRecipients.length} trimis către ${recipient.email} (${recipient.nombre})`);
           
           // Delay între email-uri (500ms) pentru a nu suprasolicita SMTP
