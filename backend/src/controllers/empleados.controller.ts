@@ -634,4 +634,104 @@ export class EmpleadosController {
       throw error;
     }
   }
+
+  @Post('send-email')
+  @UseGuards(JwtAuthGuard)
+  async sendEmailToEmpleado(@Body() body: any) {
+    try {
+      this.logger.log('📧 Send email request:', {
+        destinatar: body.destinatar,
+        grup: body.grup,
+        codigo: body.codigo,
+      });
+
+      const { mesaj, subiect, destinatar, grup, codigo } = body;
+
+      if (!mesaj || !subiect) {
+        throw new BadRequestException(
+          'mesaj și subiect sunt obligatorii',
+        );
+      }
+
+      // Verifică dacă SMTP este configurat
+      if (!this.emailService.isConfigured()) {
+        throw new BadRequestException(
+          'SMTP nu este configurat. Email-ul nu poate fi trimis.',
+        );
+      }
+
+      let emailAddresses: string[] = [];
+
+      if (destinatar === 'angajat' && codigo) {
+        // Trimite la un angajat specific
+        const empleado = await this.empleadosService.getEmpleadoByCodigo(codigo);
+        const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
+        
+        if (!email) {
+          throw new BadRequestException(
+            `Angajatul ${codigo} nu are email configurat`,
+          );
+        }
+        
+        emailAddresses = [email];
+      } else if (grup) {
+        // Trimite la toți angajații dintr-un grup
+        const empleados = await this.empleadosService.getAllEmpleados();
+        const empleadosGrupo = empleados.filter(
+          (e) => (e.GRUPO || e.grupo) === grup && (e.ESTADO || e.estado) === 'ACTIVO',
+        );
+        
+        emailAddresses = empleadosGrupo
+          .map((e) => e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO)
+          .filter((email) => email && email.trim() !== '');
+        
+        if (emailAddresses.length === 0) {
+          throw new BadRequestException(
+            `Nu s-au găsit angajați activi cu grupul ${grup} care au email configurat`,
+          );
+        }
+      } else {
+        throw new BadRequestException(
+          'destinatar și codigo sau grup sunt obligatorii',
+        );
+      }
+
+      // Trimite email-uri
+      const html = `
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+            <p>${mesaj.replace(/\n/g, '<br>')}</p>
+            <br>
+            <p>Un saludo,<br>
+            <em>DE CAMINO Servicios Auxiliares SL</em></p>
+          </body>
+        </html>
+      `;
+
+      // Trimite email-uri către toți destinatarii
+      const sendPromises = emailAddresses.map((email) =>
+        this.emailService.sendEmail(email, subiect, html),
+      );
+
+      await Promise.all(sendPromises);
+
+      this.logger.log(
+        `✅ Email trimis către ${emailAddresses.length} destinatari`,
+      );
+
+      return {
+        success: true,
+        message: `Email trimis către ${emailAddresses.length} destinatari`,
+        destinatari: emailAddresses.length,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error sending email:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al enviar email: ${error.message}`,
+      );
+    }
+  }
 }

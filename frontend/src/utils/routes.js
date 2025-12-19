@@ -198,7 +198,9 @@ export const routes = {
   
   // Notificaciones
   getNotificaciones: getN8nUrl('/webhook/notificaciones'),
-  sendNotificacion: getN8nUrl('/webhook/notificare-email-aec36db4'),
+  sendNotificacion: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/send-email'
+    : 'https://api.decaminoservicios.com/api/empleados/send-email',
   
   // Estadisticas
   getTargetOreGrupo: import.meta.env.DEV

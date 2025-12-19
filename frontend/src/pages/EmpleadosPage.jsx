@@ -1463,7 +1463,10 @@ export default function EmpleadosPage() {
       // Production/dev aware endpoint via routes (absolute in PROD, proxied in DEV)
       const response = await fetch(routes.sendNotificacion, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: authToken ? `Bearer ${authToken}` : ''
+        },
         body: JSON.stringify(emailData)
       });
 
