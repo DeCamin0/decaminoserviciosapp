@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ComunicadosModule } from './comunicados/comunicados.module';
 import { EmpleadosController } from './controllers/empleados.controller';
 import { EmpleadosService } from './services/empleados.service';
+import { EmpleadosStatsService } from './services/empleados-stats.service';
 import { AvatarController } from './controllers/avatar.controller';
 import { AvatarService } from './services/avatar.service';
 import { MonthlyAlertsController } from './controllers/monthly-alerts.controller';
@@ -98,6 +99,7 @@ import { HorariosService } from './services/horarios.service';
     N8nProxyService,
     MeService,
     EmpleadosService,
+    EmpleadosStatsService,
     AvatarService,
     MonthlyAlertsService,
     PushService,

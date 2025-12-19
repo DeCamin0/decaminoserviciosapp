@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
 import { EmailService } from '../services/email.service';
+import { EmpleadosStatsService } from '../services/empleados-stats.service';
 
 @Controller('api/empleados')
 export class EmpleadosController {
@@ -23,6 +24,7 @@ export class EmpleadosController {
   constructor(
     private readonly empleadosService: EmpleadosService,
     private readonly emailService: EmailService,
+    private readonly empleadosStatsService: EmpleadosStatsService,
   ) {}
 
   @Get('me')
@@ -617,6 +619,19 @@ export class EmpleadosController {
       throw new BadRequestException(
         `Error al rechazar cambio: ${error.message}`,
       );
+    }
+  }
+
+  @Get('stats')
+  @UseGuards(JwtAuthGuard)
+  async getEmpleadosStats() {
+    try {
+      this.logger.log('📊 Get empleados stats request');
+      const stats = await this.empleadosStatsService.getEmpleadosStats();
+      return stats;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting empleados stats:', error);
+      throw error;
     }
   }
 }

@@ -6,6 +6,7 @@ import AccessMatrix from '../components/admin/AccessMatrix';
 import UserStats from '../components/admin/UserStats';
 import ActivityLog from '../components/admin/ActivityLog';
 import PushSubscribersList from '../components/admin/PushSubscribersList';
+import EmpleadosStatusList from '../components/admin/EmpleadosStatusList';
 // ServerMonitor eliminat
 
 export default function AdminDashboard() {
@@ -95,7 +96,7 @@ export default function AdminDashboard() {
 
         {/* Tabs de navigare */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 mb-8">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
             <button
               onClick={() => setActiveTab('stats')}
               className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 ${
@@ -136,6 +137,16 @@ export default function AdminDashboard() {
             >
               🔔 Suscriptores Push
             </button>
+            <button
+              onClick={() => setActiveTab('empleados-status')}
+              className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 ${
+                activeTab === 'empleados-status'
+                  ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg'
+                  : 'text-gray-700 bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              👥 Estado Empleados
+            </button>
             {/* Servere eliminat */}
           </div>
         </div>
@@ -155,6 +166,8 @@ export default function AdminDashboard() {
           {activeTab === 'activity' && <ActivityLog />}
 
           {activeTab === 'push-subscribers' && <PushSubscribersList />}
+
+          {activeTab === 'empleados-status' && <EmpleadosStatusList />}
 
           {/* Conținut pentru tabul Servere a fost eliminat */}
         </div>
