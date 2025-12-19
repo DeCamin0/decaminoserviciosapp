@@ -42,7 +42,18 @@ fi
 # 2. Navighează la root și actualizează codul
 echo -e "${YELLOW}📋 Step 2: Updating code from git...${NC}"
 cd /opt/decaminoserviciosapp || exit 1
-git pull origin main
+
+# Gestionează conflictele locale - stochează modificările locale
+if [ -n "$(git status --porcelain deploy-backend.sh 2>/dev/null)" ]; then
+    echo -e "${YELLOW}⚠️  Local changes detected in deploy-backend.sh, stashing...${NC}"
+    git stash push -m "Local deploy-backend.sh changes before pull" deploy-backend.sh 2>/dev/null || true
+fi
+
+# Actualizează codul
+git pull origin main || {
+    echo -e "${RED}❌ Git pull failed!${NC}"
+    exit 1
+}
 echo -e "${GREEN}✅ Code updated${NC}"
 
 # 3. Intră în backend
