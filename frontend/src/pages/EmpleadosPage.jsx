@@ -1760,10 +1760,15 @@ export default function EmpleadosPage() {
                   <div className="flex flex-col md:flex-row gap-4 items-center">
                     {/* Input búsqueda */}
                     <div className="flex-1 relative">
+                      <label htmlFor="search-empleados" className="sr-only">
+                        Buscar empleados
+                      </label>
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                         <span className="text-gray-400 text-lg">🔍</span>
                       </div>
                       <input
+                        id="search-empleados"
+                        name="searchTerm"
                         type="text"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -1774,7 +1779,12 @@ export default function EmpleadosPage() {
                     
                     {/* Selector tipo búsqueda */}
                     <div className="relative">
+                      <label htmlFor="search-by-empleados" className="sr-only">
+                        Tipo de búsqueda
+                      </label>
                       <select
+                        id="search-by-empleados"
+                        name="searchBy"
                         value={searchBy}
                         onChange={(e) => setSearchBy(e.target.value)}
                         className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 bg-white"
@@ -2073,9 +2083,11 @@ export default function EmpleadosPage() {
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {SHEET_FIELDS.map(field => (
+              {SHEET_FIELDS.map(field => {
+                const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+                return (
                 <div key={field}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 mb-2">
                     {field === 'CODIGO' && '🆔'} 
                     {field === 'NOMBRE / APELLIDOS' && '👤'} 
                     {field === 'CORREO ELECTRONICO' && '📧'} 
@@ -2105,6 +2117,8 @@ export default function EmpleadosPage() {
                   </label>
                   {field === 'CODIGO' ? (
                     <Input
+                      id={fieldId}
+                      name={field}
                       value={addForm[field]}
                       readOnly
                       className="bg-gray-100"
@@ -2112,6 +2126,8 @@ export default function EmpleadosPage() {
                   ) : field === 'D.N.I. / NIE' ? (
                     <div className="space-y-2">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className={`w-full px-3 py-2 border-2 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                           addForm[field] ? (
@@ -2146,6 +2162,8 @@ export default function EmpleadosPage() {
                   ) : field === 'SEG. SOCIAL' ? (
                     <div className="space-y-2">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className={`w-full px-3 py-2 border-2 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                           addForm[field] ? (
@@ -2180,6 +2198,8 @@ export default function EmpleadosPage() {
                   ) : field === 'Nº Cuenta' ? (
                     <div className="space-y-2">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className={`w-full px-3 py-2 border-2 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                           addForm[field] ? (
@@ -2213,6 +2233,8 @@ export default function EmpleadosPage() {
                     </div>
                   ) : field === 'FECHA NACIMIENTO' ? (
                     <Input
+                      id={fieldId}
+                      name={field}
                       type="date"
                       value={addForm[field] ? (() => {
                         const date = addForm[field];
@@ -2235,6 +2257,8 @@ export default function EmpleadosPage() {
                     />
                   ) : field === 'FECHA DE ALTA' ? (
                     <Input
+                      id={fieldId}
+                      name={field}
                       type="date"
                       value={addForm[field] ? (() => {
                         const date = addForm[field];
@@ -2257,6 +2281,8 @@ export default function EmpleadosPage() {
                     />
                   ) : field === 'FECHA BAJA' ? (
                     <Input
+                      id={fieldId}
+                      name={field}
                       type="date"
                       value={addForm[field] ? (() => {
                         const date = addForm[field];
@@ -2279,6 +2305,8 @@ export default function EmpleadosPage() {
                     />
                   ) : field === 'Fecha Antigüedad' ? (
                     <Input
+                      id={fieldId}
+                      name={field}
                       type="date"
                       value={addForm[field] ? (() => {
                         const date = addForm[field];
@@ -2302,6 +2330,8 @@ export default function EmpleadosPage() {
                   ) : field === 'Antigüedad' ? (
                     <div className="relative">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-green-200 rounded-xl text-gray-800 bg-green-50 focus:outline-none cursor-not-allowed font-semibold"
                         value={calcularAntiguedad(addForm['Fecha Antigüedad'], addForm['FECHA BAJA'])}
@@ -2315,6 +2345,8 @@ export default function EmpleadosPage() {
                   ) : field === 'CENTRO TRABAJO' ? (
                     <div className="relative">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                         placeholder="Buscar centro de trabajo..."
@@ -2373,6 +2405,8 @@ export default function EmpleadosPage() {
                   ) : field === 'NACIONALIDAD' ? (
                     <div className="relative">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="text"
                         className="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                         placeholder="Buscar nacionalidad..."
@@ -2424,6 +2458,8 @@ export default function EmpleadosPage() {
                     </div>
                   ) : field === 'EMPRESA' ? (
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
                       value={addForm[field] || ''}
@@ -2432,6 +2468,8 @@ export default function EmpleadosPage() {
                     />
                   ) : field === 'ESTADO' ? (
                     <select
+                      id={fieldId}
+                      name={field}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || 'PENDIENTE'}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2442,6 +2480,8 @@ export default function EmpleadosPage() {
                     </select>
                   ) : field === 'DerechoPedidos' ? (
                     <select
+                      id={fieldId}
+                      name={field}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || 'NO'}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2451,6 +2491,8 @@ export default function EmpleadosPage() {
                     </select>
                   ) : field === 'TrabajaFestivos' ? (
                     <select
+                      id={fieldId}
+                      name={field}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || 'NO'}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2460,6 +2502,8 @@ export default function EmpleadosPage() {
                     </select>
                   ) : field === 'Contraseña' ? (
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || ''}
@@ -2469,6 +2513,8 @@ export default function EmpleadosPage() {
                   ) : field === 'CuantoPuedeGastar' ? (
                     <div className="space-y-2">
                       <input
+                        id={fieldId}
+                        name={field}
                         type="number"
                         step="0.01"
                         min="0"
@@ -2484,6 +2530,8 @@ export default function EmpleadosPage() {
                     </div>
                   ) : field === 'TIPO DE CONTRATO' ? (
                     <select
+                      id={fieldId}
+                      name={field}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || ''}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2502,6 +2550,8 @@ export default function EmpleadosPage() {
                     </select>
                   ) : field === 'HORAS DE CONTRATO' ? (
                     <select
+                      id={fieldId}
+                      name={field}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || ''}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2515,6 +2565,8 @@ export default function EmpleadosPage() {
                     </select>
                   ) : field === 'GRUPO' ? (
                     <select
+                      id={fieldId}
+                      name={field}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || ''}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2531,13 +2583,16 @@ export default function EmpleadosPage() {
                     </select>
                   ) : (
                     <Input
+                      id={fieldId}
+                      name={field}
                       placeholder={field}
                       value={addForm[field]}
                       onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
                     />
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
             
             {/* Checkbox pentru "Enviar a Gestoria" */}
@@ -2641,6 +2696,7 @@ export default function EmpleadosPage() {
                 {field === 'CODIGO' ? (
                   <Input
                     id={fieldId}
+                    name={field}
                     value={editForm[field]}
                     readOnly
                     className="bg-gray-100"
@@ -2720,6 +2776,8 @@ export default function EmpleadosPage() {
                 ) : field === 'Nº Cuenta' ? (
                   <div className="space-y-2">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className={`w-full px-3 py-2 border-2 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
                         editForm[field] ? (
@@ -2753,6 +2811,8 @@ export default function EmpleadosPage() {
                   </div>
                 ) : field === 'FECHA NACIMIENTO' ? (
                   <input
+                    id={fieldId}
+                    name={field}
                     type="date"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] ? (() => {
@@ -2776,6 +2836,8 @@ export default function EmpleadosPage() {
                   />
                 ) : field === 'FECHA DE ALTA' ? (
                   <input
+                    id={fieldId}
+                    name={field}
                     type="date"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] ? (() => {
@@ -2799,6 +2861,8 @@ export default function EmpleadosPage() {
                   />
                 ) : field === 'FECHA BAJA' ? (
                   <input
+                    id={fieldId}
+                    name={field}
                     type="date"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] ? (() => {
@@ -2822,6 +2886,8 @@ export default function EmpleadosPage() {
                   />
                 ) : field === 'Fecha Antigüedad' ? (
                   <input
+                    id={fieldId}
+                    name={field}
                     type="date"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] ? (() => {
@@ -2846,6 +2912,8 @@ export default function EmpleadosPage() {
                 ) : field === 'CENTRO TRABAJO' ? (
                   <div className="relative">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                       placeholder="Buscar centro de trabajo..."
@@ -2904,6 +2972,8 @@ export default function EmpleadosPage() {
                 ) : field === 'Antigüedad' ? (
                   <div className="relative">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className="w-full px-4 py-3 border-2 border-green-200 rounded-xl text-gray-800 bg-green-50 focus:outline-none cursor-not-allowed font-semibold"
                       value={calcularAntiguedad(editForm['Fecha Antigüedad'], editForm['FECHA BAJA'])}
@@ -2916,6 +2986,8 @@ export default function EmpleadosPage() {
                   </div>
                 ) : field === 'EMPRESA' ? (
                   <input
+                    id={fieldId}
+                    name={field}
                     type="text"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 cursor-not-allowed"
                     value={editForm[field] || 'DE CAMINO SERVICIOS AUXILIARES SL'}
@@ -2924,6 +2996,8 @@ export default function EmpleadosPage() {
                   />
                 ) : field === 'GRUPO' ? (
                   <select
+                    id={fieldId}
+                    name={field}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || ''}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -2941,6 +3015,8 @@ export default function EmpleadosPage() {
                 ) : field === 'NACIONALIDAD' ? (
                   <div className="relative">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="text"
                       className="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                       placeholder="Buscar nacionalidad..."
@@ -2992,6 +3068,8 @@ export default function EmpleadosPage() {
                   </div>
                 ) : field === 'ESTADO' ? (
                   <select
+                    id={fieldId}
+                    name={field}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || 'ACTIVO'}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -3001,6 +3079,8 @@ export default function EmpleadosPage() {
                   </select>
                 ) : field === 'DerechoPedidos' ? (
                   <select
+                    id={fieldId}
+                    name={field}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || 'NO'}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -3010,6 +3090,8 @@ export default function EmpleadosPage() {
                   </select>
                 ) : field === 'TrabajaFestivos' ? (
                   <select
+                    id={fieldId}
+                    name={field}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || 'NO'}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -3019,6 +3101,8 @@ export default function EmpleadosPage() {
                   </select>
                 ) : field === 'Contraseña' ? (
                   <input
+                    id={fieldId}
+                    name={field}
                     type="text"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || ''}
@@ -3028,6 +3112,8 @@ export default function EmpleadosPage() {
                 ) : field === 'CuantoPuedeGastar' ? (
                   <div className="space-y-2">
                     <input
+                      id={fieldId}
+                      name={field}
                       type="number"
                       step="0.01"
                       min="0"
@@ -3043,6 +3129,8 @@ export default function EmpleadosPage() {
                   </div>
                 ) : field === 'TIPO DE CONTRATO' ? (
                   <select
+                    id={fieldId}
+                    name={field}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || ''}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -3061,6 +3149,8 @@ export default function EmpleadosPage() {
                   </select>
                 ) : field === 'HORAS DE CONTRATO' ? (
                   <select
+                    id={fieldId}
+                    name={field}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || ''}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
@@ -3074,6 +3164,8 @@ export default function EmpleadosPage() {
                   </select>
                 ) : (
                   <Input
+                    id={fieldId}
+                    name={field}
                     value={editForm[field] || ''}
                     onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
                   />

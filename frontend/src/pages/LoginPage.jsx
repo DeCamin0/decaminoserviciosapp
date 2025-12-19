@@ -362,6 +362,7 @@ export default function LoginPage() {
                       <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-red-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
                       <input
                   id="login-email"
+                  name="email"
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
@@ -387,6 +388,7 @@ export default function LoginPage() {
                       <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-red-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
                       <input
                   id="login-password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
