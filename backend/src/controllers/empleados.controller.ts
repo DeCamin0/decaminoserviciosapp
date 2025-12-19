@@ -660,12 +660,13 @@ export class EmpleadosController {
         );
       }
 
-      let emailAddresses: string[] = [];
+      let emailRecipients: Array<{ email: string; nombre: string }> = [];
 
       if (destinatar === 'angajat' && codigo) {
         // Trimite la un angajat specific
         const empleado = await this.empleadosService.getEmpleadoByCodigo(codigo);
         const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
+        const nombre = empleado['NOMBRE / APELLIDOS'] || empleado.NOMBRE_APELLIDOS || empleado.CODIGO;
         
         if (!email) {
           throw new BadRequestException(
@@ -673,7 +674,7 @@ export class EmpleadosController {
           );
         }
         
-        emailAddresses = [email];
+        emailRecipients = [{ email, nombre }];
       } else if (grup) {
         // Trimite la toți angajații dintr-un grup
         const empleados = await this.empleadosService.getAllEmpleados();
@@ -681,11 +682,14 @@ export class EmpleadosController {
           (e) => (e.GRUPO || e.grupo) === grup && (e.ESTADO || e.estado) === 'ACTIVO',
         );
         
-        emailAddresses = empleadosGrupo
-          .map((e) => e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO)
-          .filter((email) => email && email.trim() !== '');
+        emailRecipients = empleadosGrupo
+          .map((e) => ({
+            email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
+            nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+          }))
+          .filter((r) => r.email && r.email.trim() !== '');
         
-        if (emailAddresses.length === 0) {
+        if (emailRecipients.length === 0) {
           throw new BadRequestException(
             `Nu s-au găsit angajați activi cu grupul ${grup} care au email configurat`,
           );
@@ -696,44 +700,48 @@ export class EmpleadosController {
         );
       }
 
-      // Trimite email-uri
-      const html = `
-        <html>
-          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-            <p>${mesaj.replace(/\n/g, '<br>')}</p>
-            <br>
-            <p>Un saludo,<br>
-            <em>DE CAMINO Servicios Auxiliares SL</em></p>
-          </body>
-        </html>
-      `;
-
       // Trimite email-uri către toți destinatarii
       // Folosim secvențial cu delay pentru a nu suprasolicita SMTP (similar cu n8n)
-      for (let i = 0; i < emailAddresses.length; i++) {
-        const email = emailAddresses[i];
+      for (let i = 0; i < emailRecipients.length; i++) {
+        const recipient = emailRecipients[i];
+        
+        // Template email identic cu n8n
+        const html = `
+          <html>
+            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+              <p>Hola ${recipient.nombre},</p>
+              <div style="white-space: pre-wrap;">
+                ${mesaj.replace(/\n/g, '<br>')}
+              </div>
+              <p>Atentamente:<br>
+              <strong>RRHH</strong><br>
+              DE CAMINO SERVICIOS AUXILIARES SL</p>
+            </body>
+          </html>
+        `;
+        
         try {
-          await this.emailService.sendEmail(email, subiect, html);
-          this.logger.log(`✅ Email ${i + 1}/${emailAddresses.length} trimis către ${email}`);
+          await this.emailService.sendEmail(recipient.email, subiect, html);
+          this.logger.log(`✅ Email ${i + 1}/${emailRecipients.length} trimis către ${recipient.email} (${recipient.nombre})`);
           
           // Delay între email-uri (500ms) pentru a nu suprasolicita SMTP
-          if (i < emailAddresses.length - 1) {
+          if (i < emailRecipients.length - 1) {
             await new Promise((resolve) => setTimeout(resolve, 500));
           }
         } catch (error: any) {
-          this.logger.error(`❌ Eroare la trimiterea email-ului către ${email}:`, error);
+          this.logger.error(`❌ Eroare la trimiterea email-ului către ${recipient.email}:`, error);
           // Continuă cu următorul email chiar dacă unul a eșuat
         }
       }
 
       this.logger.log(
-        `✅ Email trimis către ${emailAddresses.length} destinatari`,
+        `✅ Email trimis către ${emailRecipients.length} destinatari`,
       );
 
       return {
         success: true,
-        message: `Email trimis către ${emailAddresses.length} destinatari`,
-        destinatari: emailAddresses.length,
+        message: `Email trimis către ${emailRecipients.length} destinatari`,
+        destinatari: emailRecipients.length,
       };
     } catch (error: any) {
       this.logger.error('❌ Error sending email:', error);
