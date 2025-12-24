@@ -1,15 +1,108 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
+import { EmailService } from './email.service';
 
 @Injectable()
 export class AusenciasService {
   private readonly logger = new Logger(AusenciasService.name);
+  private readonly EMAIL_RECIPIENT = 'solicitudes@decaminoservicios.com';
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly emailService: EmailService,
   ) {}
+
+  /**
+   * Formatează mesajul pentru email (HTML) din datele absenței
+   */
+  private formatAusenciaEmailHtml(ausenciaData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    motivo?: string;
+  }): { subject: string; html: string } {
+    const subject = `🟡 Nueva ausencia registrada - ${ausenciaData.nombre} (${ausenciaData.codigo})`;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .header { background-color: #fff3cd; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+    .info-row { margin: 10px 0; }
+    .label { font-weight: bold; color: #555; }
+    .value { color: #333; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>🟡 Nueva ausencia registrada</h2>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">👤 Empleado:</span>
+    <span class="value">${ausenciaData.nombre} (${ausenciaData.codigo})</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📅 Tipo:</span>
+    <span class="value">${ausenciaData.tipo}</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📆 Fecha:</span>
+    <span class="value">${ausenciaData.fecha}</span>
+  </div>
+  
+  ${ausenciaData.motivo ? `
+  <div class="info-row">
+    <span class="label">📝 Motivo:</span>
+    <span class="value">${ausenciaData.motivo}</span>
+  </div>
+  ` : ''}
+  
+  <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
+  <p style="color: #888; font-size: 12px; margin-top: 20px;">
+    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+  </p>
+</body>
+</html>
+    `.trim();
+
+    return { subject, html };
+  }
+
+  /**
+   * Trimite email pentru notificare absență
+   */
+  private async sendAusenciaEmail(ausenciaData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    motivo?: string;
+  }): Promise<void> {
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn('⚠️ Email service not configured. Email notification not sent.');
+      return;
+    }
+
+    try {
+      const { subject, html } = this.formatAusenciaEmailHtml(ausenciaData);
+      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html);
+      this.logger.log(`✅ Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia ${ausenciaData.codigo}`);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error sending email notification (non-blocking): ${error.message}`,
+      );
+      // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+    }
+  }
 
   /**
    * Escapă un string pentru SQL
@@ -350,26 +443,38 @@ export class AusenciasService {
         `✅ Ausencia added: ID=${insertedId || 'unknown'}, CODIGO=${ausenciaData.codigo}, TIPO=${ausenciaData.tipo}, solicitud_id=${ausenciaData.solicitud_id}`,
       );
 
-      // Trimite notificare pe Telegram (complet async, nu așteptăm răspunsul)
+      // Trimite notificare pe Telegram și Email (complet async, nu așteptăm răspunsul)
       // Folosim setImmediate pentru a nu bloca răspunsul API-ului
+      const ausenciaNotificationData = {
+        codigo: ausenciaData.codigo,
+        nombre: ausenciaData.nombre,
+        tipo: ausenciaData.tipo,
+        fecha:
+          permisoFechaInicio && permisoFechaFin
+            ? `${permisoFechaInicio} - ${permisoFechaFin}`
+            : dataSingle || 'N/A',
+        motivo: ausenciaData.motivo,
+      };
+
       setImmediate(() => {
+        // Telegram notification
         this.telegramService
-          .sendAusenciaNotification({
-            codigo: ausenciaData.codigo,
-            nombre: ausenciaData.nombre,
-            tipo: ausenciaData.tipo,
-            fecha:
-              permisoFechaInicio && permisoFechaFin
-                ? `${permisoFechaInicio} - ${permisoFechaFin}`
-                : dataSingle || 'N/A',
-            motivo: ausenciaData.motivo,
-          })
+          .sendAusenciaNotification(ausenciaNotificationData)
           .catch((telegramError: any) => {
             // Nu aruncăm eroarea, doar logăm
             this.logger.warn(
               `⚠️ Error sending Telegram notification (non-blocking): ${telegramError.message}`,
             );
           });
+
+        // Email notification
+        this.sendAusenciaEmail(ausenciaNotificationData).catch(
+          (emailError: any) => {
+            this.logger.warn(
+              `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
+            );
+          },
+        );
       });
 
       return { success: true, id: insertedId || 0 };

@@ -253,8 +253,17 @@ export default function SolicitudesPage() {
     const availability = dateAvailability[dateStr];
     const isFull = availability && availability.isFull;
     
+    // Când se editează o solicitare de tip Vacaciones sau Asunto Propio, ignorăm TOATE regulile de disponibilitate
+    const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
+      (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
+    
     // For Vacaciones and Asuntos Propios, don't use occupiedDates - use availability logic instead
     if (tipo === 'Vacaciones' || tipo === 'Asunto Propio') {
+      // Dacă se editează, ignorăm TOATE verificările (disponibilitatea, perioada de blocare, zilele din trecut, etc.)
+      // Permitem selectarea oricărei date (trecut, prezent, viitor)
+      if (isEditingVacacionesOrAsuntoPropio) {
+        return false; // Nu blocăm nicio dată când se editează
+      }
       return currentDate < today || isInHolidayBlockPeriod(dateStr) || isFull;
     } else {
       // For other types, use the old logic
@@ -466,6 +475,11 @@ export default function SolicitudesPage() {
       let sameCenterCount = 0; // Count people from same center
       
       solicitudes.forEach(solicitud => {
+        // Exclude solicitarea care se editează din calculul disponibilității
+        if (editingSolicitud !== null && solicitud.id === editingSolicitud) {
+          return; // Skip solicitarea care se editează
+        }
+        
         if (solicitud.tipo === tipo && 
             (solicitud.estado === 'Aprobada' || solicitud.estado === 'Pendiente')) {
           
@@ -528,8 +542,15 @@ export default function SolicitudesPage() {
       });
 
       // Verifică dacă ziua este complet ocupată
+      // Când se editează o solicitare de tip Vacaciones sau Asunto Propio, ignorăm regulile (isFull = false)
+      const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
+        (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
+      
       let isFull = false;
-      if (tipo === 'Asunto Propio') {
+      if (isEditingVacacionesOrAsuntoPropio) {
+        // La editare, toate zilele sunt disponibile (ignorăm regulile)
+        isFull = false;
+      } else if (tipo === 'Asunto Propio') {
         // Asuntos Propios: limită globală de 4 + limită per centru de 1
         isFull = occupiedCount >= 4 || sameCenterCount >= 1;
       } else if (tipo === 'Vacaciones') {
@@ -616,7 +637,7 @@ export default function SolicitudesPage() {
     }
 
     return availability;
-  }, [authUser, tipo]);
+  }, [authUser, tipo, editingSolicitud]);
 
   const toggleDate = (date) => {
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
@@ -1017,6 +1038,17 @@ export default function SolicitudesPage() {
       setDateAvailability(prev => (Object.keys(prev || {}).length === 0 ? prev : {}));
     }
   }, [calendarYear, calendarMonth, tipo, authUser, loadOccupiedDates]);
+
+  // Recalculează disponibilitatea când se schimbă editingSolicitud (pentru a exclude solicitarea din calcul)
+  useEffect(() => {
+    if (editingSolicitud !== null && (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios')) {
+      // Recalculează disponibilitatea când se editează o solicitare
+      // Asta va exclude solicitarea din calcul și va marca toate zilele ca disponibile
+      if (allUsers.length > 0) {
+        loadOccupiedDates(calendarYear, calendarMonth);
+      }
+    }
+  }, [editingSolicitud, tipo, calendarYear, calendarMonth, allUsers, loadOccupiedDates]);
 
   // Demo solicitudes data
   const setDemoSolicitudes = useCallback(() => {
@@ -1483,8 +1515,8 @@ export default function SolicitudesPage() {
       return false;
     }
 
-    // Check if dates are in the blocked holiday period
-    if (tipo === 'Vacaciones' && (isInHolidayBlockPeriod(fechaInicio) || isInHolidayBlockPeriod(fechaFin))) {
+    // Check if dates are in the blocked holiday period (doar pentru solicitări noi, nu pentru editare)
+    if (tipo === 'Vacaciones' && editingSolicitud === null && (isInHolidayBlockPeriod(fechaInicio) || isInHolidayBlockPeriod(fechaFin))) {
       setErrorMsg('No se pueden solicitar vacaciones durante el período de empleada (6 Dic - 6 Ene)');
       return false;
     }
@@ -1532,74 +1564,97 @@ export default function SolicitudesPage() {
 
     // Validare Asunto Propio
     if (tipo === 'Asuntos Propios') {
-      // Calculează totalul ajustat (exclude zilele din solicitarea originală dacă se editează și tipul se potrivește)
-      const shouldExcludeOriginal = editingSolicitud !== null && 
-        originalSolicitudData && 
-        (originalSolicitudData.tipo === 'Asunto Propio' || originalSolicitudData.tipo === 'Asuntos Propios');
-      const adjustedTotal = shouldExcludeOriginal 
-        ? totalAsuntoPropioDays - originalDays 
-        : totalAsuntoPropioDays;
+      // Când se editează o solicitare, ignorăm validările de limite (șeful poate alege orice dată)
+      const isEditing = editingSolicitud !== null;
       
-      // Verifică dacă s-a ajuns la limita de 6 zile pe an
-      if (adjustedTotal >= 6) {
-        setErrorMsg('Has alcanzado el límite de 6 días de Asunto Propio para este año. No puedes solicitar más días de este tipo.');
-        return false;
-      }
-      
-      const diffStart = (start - today) / (1000 * 60 * 60 * 24);
-      const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
+      if (!isEditing) {
+        // Calculează totalul ajustat (exclude zilele din solicitarea originală dacă se editează și tipul se potrivește)
+        const shouldExcludeOriginal = editingSolicitud !== null && 
+          originalSolicitudData && 
+          (originalSolicitudData.tipo === 'Asunto Propio' || originalSolicitudData.tipo === 'Asuntos Propios');
+        const adjustedTotal = shouldExcludeOriginal 
+          ? totalAsuntoPropioDays - originalDays 
+          : totalAsuntoPropioDays;
+        
+        // Verifică dacă s-a ajuns la limita de 6 zile pe an
+        if (adjustedTotal >= 6) {
+          setErrorMsg('Has alcanzado el límite de 6 días de Asunto Propio para este año. No puedes solicitar más días de este tipo.');
+          return false;
+        }
+        
+        const diffStart = (start - today) / (1000 * 60 * 60 * 24);
+        const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
 
-      if (diffStart < 5) {
-        setErrorMsg('No es posible solicitar un día de asunto propio con menos de 5 días de antelación.');
-        return false;
-      }
-      if (diffZile > 6) {
-        setErrorMsg('No puedes solicitar más de 6 días de asuntos propios de una vez.');
-        return false;
-      }
-      if (diffZile < 1) {
-        setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
-        return false;
-      }
-      
-      // Verifică dacă noua solicitare nu depășește limita de 6 zile pe an (folosind totalul ajustat)
-      if (adjustedTotal + diffZile > 6) {
-        setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Asunto Propio. El límite es de 6 días por año.`);
-        return false;
+        if (diffStart < 5) {
+          setErrorMsg('No es posible solicitar un día de asunto propio con menos de 5 días de antelación.');
+          return false;
+        }
+        if (diffZile > 6) {
+          setErrorMsg('No puedes solicitar más de 6 días de asuntos propios de una vez.');
+          return false;
+        }
+        if (diffZile < 1) {
+          setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
+          return false;
+        }
+        
+        // Verifică dacă noua solicitare nu depășește limita de 6 zile pe an (folosind totalul ajustat)
+        if (adjustedTotal + diffZile > 6) {
+          setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Asunto Propio. El límite es de 6 días por año.`);
+          return false;
+        }
+      } else {
+        // La editare, doar verificăm că datele sunt valide (fecha fin >= fecha inicio)
+        const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
+        if (diffZile < 1) {
+          setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
+          return false;
+        }
       }
     }
 
     // Validare Vacaciones
     if (tipo === 'Vacaciones') {
-      // Calculează totalul ajustat (exclude zilele din solicitarea originală dacă se editează și tipul se potrivește)
-      const shouldExcludeOriginal = editingSolicitud !== null && 
-        originalSolicitudData && 
-        originalSolicitudData.tipo === 'Vacaciones';
-      const adjustedTotal = shouldExcludeOriginal 
-        ? totalVacacionesDays - originalDays 
-        : totalVacacionesDays;
+      // Când se editează o solicitare, ignorăm validările de limite (șeful poate alege orice dată)
+      const isEditing = editingSolicitud !== null;
       
-      // Verifică dacă s-a ajuns la limita de 31 zile
-      if (adjustedTotal >= 31) {
-        setErrorMsg('Has alcanzado el límite de 31 días de Vacaciones para este mes. No puedes solicitar más días de este tipo.');
-        return false;
-      }
-      
-      const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
-      
-      if ((end - start) < 0) {
-        setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
-        return false;
-      }
-      if (![15, 30, 31].includes(diffZile)) {
-        setErrorMsg('Solo puedes solicitar vacaciones por quincena (15 días) o mes entero.');
-        return false;
-      }
-      
-      // Verifică dacă noua solicitare nu depășește limita de 31 zile (folosind totalul ajustat)
-      if (adjustedTotal + diffZile > 31) {
-        setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Vacaciones.`);
-        return false;
+      if (!isEditing) {
+        // Calculează totalul ajustat (exclude zilele din solicitarea originală dacă se editează și tipul se potrivește)
+        const shouldExcludeOriginal = editingSolicitud !== null && 
+          originalSolicitudData && 
+          originalSolicitudData.tipo === 'Vacaciones';
+        const adjustedTotal = shouldExcludeOriginal 
+          ? totalVacacionesDays - originalDays 
+          : totalVacacionesDays;
+        
+        // Verifică dacă s-a ajuns la limita de 31 zile
+        if (adjustedTotal >= 31) {
+          setErrorMsg('Has alcanzado el límite de 31 días de Vacaciones para este mes. No puedes solicitar más días de este tipo.');
+          return false;
+        }
+        
+        const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
+        
+        if ((end - start) < 0) {
+          setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
+          return false;
+        }
+        if (![15, 30, 31].includes(diffZile)) {
+          setErrorMsg('Solo puedes solicitar vacaciones por quincena (15 días) o mes entero.');
+          return false;
+        }
+        
+        // Verifică dacă noua solicitare nu depășește limita de 31 zile (folosind totalul ajustat)
+        if (adjustedTotal + diffZile > 31) {
+          setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Vacaciones.`);
+          return false;
+        }
+      } else {
+        // La editare, doar verificăm că datele sunt valide (fecha fin >= fecha inicio)
+        if ((end - start) < 0) {
+          setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
+          return false;
+        }
       }
     }
 

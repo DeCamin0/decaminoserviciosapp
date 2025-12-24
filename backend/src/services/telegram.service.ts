@@ -40,7 +40,7 @@ export class TelegramService implements OnModuleInit {
    * Trimite un mesaj pe Telegram
    */
   async sendMessage(message: string): Promise<void> {
-    if (!this.isConfigured) {
+    if (!this.isConfigured()) {
       this.logger.warn('⚠️ Telegram not configured. Message not sent.');
       return;
     }

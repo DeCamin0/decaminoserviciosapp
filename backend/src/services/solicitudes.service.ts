@@ -1,15 +1,130 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
+import { EmailService } from './email.service';
 
 @Injectable()
 export class SolicitudesService {
   private readonly logger = new Logger(SolicitudesService.name);
+  private readonly EMAIL_RECIPIENT = 'solicitudes@decaminoservicios.com';
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly emailService: EmailService,
   ) {}
+
+  /**
+   * Formatează mesajul pentru email (HTML) din datele solicitării
+   */
+  private formatSolicitudEmailHtml(solicitudData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    estado: string;
+    motivo?: string;
+    accion: 'create' | 'update' | 'delete';
+  }): { subject: string; html: string } {
+    const actionEmoji =
+      solicitudData.accion === 'create'
+        ? '🟢'
+        : solicitudData.accion === 'update'
+          ? '🔵'
+          : '🔴';
+    const actionText =
+      solicitudData.accion === 'create'
+        ? 'Nueva solicitud creada'
+        : solicitudData.accion === 'update'
+          ? 'Solicitud actualizada'
+          : 'Solicitud eliminada';
+
+    const subject = `${actionEmoji} ${actionText} - ${solicitudData.nombre} (${solicitudData.codigo})`;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .header { background-color: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+    .info-row { margin: 10px 0; }
+    .label { font-weight: bold; color: #555; }
+    .value { color: #333; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>${actionEmoji} ${actionText}</h2>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">👤 Empleado:</span>
+    <span class="value">${solicitudData.nombre} (${solicitudData.codigo})</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📋 Tipo:</span>
+    <span class="value">${solicitudData.tipo}</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📆 Fecha:</span>
+    <span class="value">${solicitudData.fecha}</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">✅ Estado:</span>
+    <span class="value">${solicitudData.estado}</span>
+  </div>
+  
+  ${solicitudData.motivo ? `
+  <div class="info-row">
+    <span class="label">📝 Motivo:</span>
+    <span class="value">${solicitudData.motivo}</span>
+  </div>
+  ` : ''}
+  
+  <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
+  <p style="color: #888; font-size: 12px; margin-top: 20px;">
+    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+  </p>
+</body>
+</html>
+    `.trim();
+
+    return { subject, html };
+  }
+
+  /**
+   * Trimite email pentru notificare solicitare
+   */
+  private async sendSolicitudEmail(solicitudData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    estado: string;
+    motivo?: string;
+    accion: 'create' | 'update' | 'delete';
+  }): Promise<void> {
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn('⚠️ Email service not configured. Email notification not sent.');
+      return;
+    }
+
+    try {
+      const { subject, html } = this.formatSolicitudEmailHtml(solicitudData);
+      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html);
+      this.logger.log(`✅ Email notification sent to ${this.EMAIL_RECIPIENT} for solicitud ${solicitudData.codigo}`);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error sending email notification (non-blocking): ${error.message}`,
+      );
+      // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+    }
+  }
 
   private escapeSql(value: any): string {
     if (value === null || value === undefined) {
@@ -239,26 +354,38 @@ export class SolicitudesService {
         limit: 1,
       });
 
-      // Trimite notificare pe Telegram (complet async, nu așteptăm răspunsul)
+      // Trimite notificare pe Telegram și Email (complet async, nu așteptăm răspunsul)
+      const solicitudNotificationData = {
+        codigo: data.codigo,
+        nombre: data.nombre,
+        tipo: data.tipo,
+        fecha:
+          data.fecha_inicio && data.fecha_fin
+            ? `${data.fecha_inicio} - ${data.fecha_fin}`
+            : data.fecha_inicio || data.fecha_fin || 'N/A',
+        estado: estado,
+        motivo: data.motivo,
+        accion: 'create' as const,
+      };
+
       setImmediate(() => {
+        // Telegram notification
         this.telegramService
-          .sendSolicitudNotification({
-            codigo: data.codigo,
-            nombre: data.nombre,
-            tipo: data.tipo,
-            fecha:
-              data.fecha_inicio && data.fecha_fin
-                ? `${data.fecha_inicio} - ${data.fecha_fin}`
-                : data.fecha_inicio || data.fecha_fin || 'N/A',
-            estado: estado,
-            motivo: data.motivo,
-            accion: 'create',
-          })
+          .sendSolicitudNotification(solicitudNotificationData)
           .catch((telegramError: any) => {
             this.logger.warn(
               `⚠️ Error sending Telegram notification (non-blocking): ${telegramError.message}`,
             );
           });
+
+        // Email notification
+        this.sendSolicitudEmail(solicitudNotificationData).catch(
+          (emailError: any) => {
+            this.logger.warn(
+              `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
+            );
+          },
+        );
       });
 
       return {
@@ -450,27 +577,39 @@ export class SolicitudesService {
       const updated = await this.getSolicitudes({ limit: 1000 });
       const solicitud = updated.find((s) => s.id === id);
 
-      // Trimite notificare pe Telegram pentru update (complet async, nu așteptăm răspunsul)
+      // Trimite notificare pe Telegram și Email pentru update (complet async, nu așteptăm răspunsul)
       if (solicitud) {
+        const solicitudNotificationData = {
+          codigo: solicitud.codigo || codigo || '',
+          nombre: solicitud.nombre || nombre || '',
+          tipo: solicitud.tipo || tipo || '',
+          fecha:
+            solicitud.fecha_inicio && solicitud.fecha_fin
+              ? `${solicitud.fecha_inicio} - ${solicitud.fecha_fin}`
+              : solicitud.fecha_inicio || solicitud.fecha_fin || 'N/A',
+          estado: solicitud.estado || estado || '',
+          motivo: solicitud.motivo || motivo || '',
+          accion: 'update' as const,
+        };
+
         setImmediate(() => {
+          // Telegram notification
           this.telegramService
-            .sendSolicitudNotification({
-              codigo: solicitud.codigo || codigo || '',
-              nombre: solicitud.nombre || nombre || '',
-              tipo: solicitud.tipo || tipo || '',
-              fecha:
-                solicitud.fecha_inicio && solicitud.fecha_fin
-                  ? `${solicitud.fecha_inicio} - ${solicitud.fecha_fin}`
-                  : solicitud.fecha_inicio || solicitud.fecha_fin || 'N/A',
-              estado: solicitud.estado || estado || '',
-              motivo: solicitud.motivo || motivo || '',
-              accion: 'update',
-            })
+            .sendSolicitudNotification(solicitudNotificationData)
             .catch((telegramError: any) => {
               this.logger.warn(
                 `⚠️ Error sending Telegram notification (non-blocking): ${telegramError.message}`,
               );
             });
+
+          // Email notification
+          this.sendSolicitudEmail(solicitudNotificationData).catch(
+            (emailError: any) => {
+              this.logger.warn(
+                `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
+              );
+            },
+          );
         });
       }
 
@@ -545,29 +684,41 @@ export class SolicitudesService {
         await tx.$executeRawUnsafe(deleteSolicitudQuery);
       });
 
-      // Trimite notificare pe Telegram pentru delete (complet async, nu așteptăm răspunsul)
+      // Trimite notificare pe Telegram și Email pentru delete (complet async, nu așteptăm răspunsul)
       if (solicitudInfo) {
+        const solicitudNotificationData = {
+          codigo: solicitudInfo.codigo || codigo || '',
+          nombre: solicitudInfo.nombre || '',
+          tipo: solicitudInfo.tipo || '',
+          fecha:
+            solicitudInfo.fecha_inicio && solicitudInfo.fecha_fin
+              ? `${solicitudInfo.fecha_inicio} - ${solicitudInfo.fecha_fin}`
+              : solicitudInfo.fecha_inicio ||
+                solicitudInfo.fecha_fin ||
+                'N/A',
+          estado: solicitudInfo.estado || '',
+          motivo: solicitudInfo.motivo,
+          accion: 'delete' as const,
+        };
+
         setImmediate(() => {
+          // Telegram notification
           this.telegramService
-            .sendSolicitudNotification({
-              codigo: solicitudInfo.codigo || codigo || '',
-              nombre: solicitudInfo.nombre || '',
-              tipo: solicitudInfo.tipo || '',
-              fecha:
-                solicitudInfo.fecha_inicio && solicitudInfo.fecha_fin
-                  ? `${solicitudInfo.fecha_inicio} - ${solicitudInfo.fecha_fin}`
-                  : solicitudInfo.fecha_inicio ||
-                    solicitudInfo.fecha_fin ||
-                    'N/A',
-              estado: solicitudInfo.estado || '',
-              motivo: solicitudInfo.motivo,
-              accion: 'delete',
-            })
+            .sendSolicitudNotification(solicitudNotificationData)
             .catch((telegramError: any) => {
               this.logger.warn(
                 `⚠️ Error sending Telegram notification (non-blocking): ${telegramError.message}`,
               );
             });
+
+          // Email notification
+          this.sendSolicitudEmail(solicitudNotificationData).catch(
+            (emailError: any) => {
+              this.logger.warn(
+                `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
+              );
+            },
+          );
         });
       }
 
