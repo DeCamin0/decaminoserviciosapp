@@ -109,18 +109,29 @@ export class SolicitudesService {
     motivo?: string;
     accion: 'create' | 'update' | 'delete';
   }): Promise<void> {
+    this.logger.log(
+      `📧 [sendSolicitudEmail] Called for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
+    );
+    
     if (!this.emailService.isConfigured()) {
-      this.logger.warn('⚠️ Email service not configured. Email notification not sent.');
+      this.logger.warn(
+        `⚠️ [sendSolicitudEmail] Email service not configured. Email notification not sent for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
+      );
       return;
     }
 
     try {
       const { subject, html } = this.formatSolicitudEmailHtml(solicitudData);
+      this.logger.log(
+        `📧 [sendSolicitudEmail] Sending email for ${solicitudData.accion} - subject: ${subject}`,
+      );
       await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html);
-      this.logger.log(`✅ Email notification sent to ${this.EMAIL_RECIPIENT} for solicitud ${solicitudData.codigo}`);
+      this.logger.log(
+        `✅ [sendSolicitudEmail] Email notification sent to ${this.EMAIL_RECIPIENT} for ${solicitudData.accion} - solicitud ${solicitudData.codigo}`,
+      );
     } catch (error: any) {
       this.logger.error(
-        `❌ Error sending email notification (non-blocking): ${error.message}`,
+        `❌ [sendSolicitudEmail] Error sending email notification for ${solicitudData.accion} (non-blocking): ${error.message}`,
       );
       // Nu aruncăm eroarea pentru a nu opri flow-ul principal
     }
@@ -603,14 +614,25 @@ export class SolicitudesService {
             });
 
           // Email notification
-          this.sendSolicitudEmail(solicitudNotificationData).catch(
-            (emailError: any) => {
-              this.logger.warn(
-                `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
-              );
-            },
+          this.logger.log(
+            `📧 [UPDATE] Attempting to send email notification - solicitud: ${solicitudNotificationData.codigo}, tipo: ${solicitudNotificationData.tipo}, accion: ${solicitudNotificationData.accion}`,
           );
+          this.sendSolicitudEmail(solicitudNotificationData)
+            .then(() => {
+              this.logger.log(
+                `✅ [UPDATE] Email notification sent successfully - solicitud: ${solicitudNotificationData.codigo}`,
+              );
+            })
+            .catch((emailError: any) => {
+              this.logger.error(
+                `❌ [UPDATE] Error sending email notification (non-blocking): ${emailError.message}`,
+              );
+            });
         });
+      } else {
+        this.logger.warn(
+          `⚠️ [UPDATE] Solicitud not found after update (id: ${id}), skipping notifications`,
+        );
       }
 
       return {
