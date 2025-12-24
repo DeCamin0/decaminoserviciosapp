@@ -34,6 +34,15 @@ SMTP_SECURE=true
 SMTP_USER=info@decaminoservicios.com
 SMTP_PASSWORD=your-password-here
 SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>
+
+# Telegram (pentru notificări pe Telegram)
+# IMPORTANT: Configurează aceste variabile pentru a trimite notificări Telegram!
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
+TELEGRAM_CHAT_ID=-4990173907
+
+# Push Notifications (VAPID keys - opțional)
+# VAPID_PUBLIC_KEY=your-vapid-public-key
+# VAPID_PRIVATE_KEY=your-vapid-private-key
 ```
 
 ## Important Notes:

@@ -1516,6 +1516,7 @@ export default function SolicitudesPage() {
     }
 
     // Check if dates are in the blocked holiday period (doar pentru solicitări noi, nu pentru editare)
+    // La editare, perioada de blocare este ignorată complet
     if (tipo === 'Vacaciones' && editingSolicitud === null && (isInHolidayBlockPeriod(fechaInicio) || isInHolidayBlockPeriod(fechaFin))) {
       setErrorMsg('No se pueden solicitar vacaciones durante el período de empleada (6 Dic - 6 Ene)');
       return false;
@@ -3992,7 +3993,10 @@ export default function SolicitudesPage() {
                               const currentDate = new Date(dateStr);
                               const isToday = currentDate.toDateString() === today.toDateString();
                               const isPast = currentDate < today;
-                              const isBlocked = isInHolidayBlockPeriod(dateStr);
+                              // Ignorăm perioada de blocare când se editează o solicitare
+                              const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
+                                (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
+                              const isBlocked = isEditingVacacionesOrAsuntoPropio ? false : isInHolidayBlockPeriod(dateStr);
                               const availability = dateAvailability[dateStr];
                               const isFull = availability && availability.isFull;
                               const isLowAvailability = availability && availability.available <= 1 && availability.available > 0;
@@ -4329,7 +4333,10 @@ export default function SolicitudesPage() {
                               const currentDate = new Date(dateStr);
                               const isToday = currentDate.toDateString() === today.toDateString();
                               const isPast = currentDate < today;
-                              const isBlocked = isInHolidayBlockPeriod(dateStr);
+                              // Ignorăm perioada de blocare când se editează o solicitare
+                              const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
+                                (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
+                              const isBlocked = isEditingVacacionesOrAsuntoPropio ? false : isInHolidayBlockPeriod(dateStr);
                               const availability = dateAvailability[dateStr];
                               const isFull = availability && availability.isFull;
                               const isLowAvailability = availability && availability.available <= 1 && availability.available > 0;
