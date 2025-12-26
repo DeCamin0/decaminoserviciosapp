@@ -481,27 +481,38 @@ export class ClientesService {
         fechaRenovacionFormatted = fechaRenovacion.split('T')[0];
       }
 
-      // Folosește upsert pentru a actualiza dacă există deja un contract cu același NIF și tip
-      await this.prisma.contratosClientes.upsert({
+      // Verifică dacă există deja un contract cu același NIF și tip
+      const existingContract = await this.prisma.contratosClientes.findFirst({
         where: {
-          uniq_cliente_tipo: {
-            cliente_nif: nif.trim(),
-            tipo_contrato: tipoContrato.trim(),
-          },
-        },
-        update: {
-          fecha_subida: fechaSubidaFormatted,
-          fecha_renovacion: fechaRenovacionFormatted || null,
-          archivo_base64: archivoBase64 || null,
-        },
-        create: {
           cliente_nif: nif.trim(),
           tipo_contrato: tipoContrato.trim(),
-          fecha_subida: fechaSubidaFormatted,
-          fecha_renovacion: fechaRenovacionFormatted || null,
-          archivo_base64: archivoBase64 || null,
         },
       });
+
+      if (existingContract) {
+        // Actualizează contractul existent
+        await this.prisma.contratosClientes.update({
+          where: {
+            id: existingContract.id,
+          },
+          data: {
+            fecha_subida: fechaSubidaFormatted,
+            fecha_renovacion: fechaRenovacionFormatted || null,
+            archivo_base64: archivoBase64 || null,
+          },
+        });
+      } else {
+        // Creează contract nou
+        await this.prisma.contratosClientes.create({
+          data: {
+            cliente_nif: nif.trim(),
+            tipo_contrato: tipoContrato.trim(),
+            fecha_subida: fechaSubidaFormatted,
+            fecha_renovacion: fechaRenovacionFormatted || null,
+            archivo_base64: archivoBase64 || null,
+          },
+        });
+      }
 
       this.logger.log(`✅ Contract uploaded successfully for cliente NIF: ${nif}`);
       return {
