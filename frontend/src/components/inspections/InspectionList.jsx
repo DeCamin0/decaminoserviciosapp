@@ -751,7 +751,7 @@ const InspectionList = ({ onBackToSelection }) => {
             <div className="space-y-6">
               {/* Fila 1: Búsqueda FULL WIDTH */}
               <div className="group/field">
-                <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                <label htmlFor="search-inspections" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
                   <span className="text-xl">🔍</span>
                   <span className="text-lg">Búsqueda</span>
                 </label>
@@ -780,7 +780,7 @@ const InspectionList = ({ onBackToSelection }) => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Tipo de Inspección ULTRA */}
                 <div className="group/field">
-                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                  <label htmlFor="filter-type" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
                     <span className="text-base">📋</span>
                     <span>Tipo de Inspección</span>
                   </label>
@@ -799,12 +799,14 @@ const InspectionList = ({ onBackToSelection }) => {
 
                 {/* Empleado ULTRA - Searchbar */}
                 <div className="group/field relative">
-                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                  <label htmlFor="employee-search" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
                     <span className="text-base">👷</span>
                     <span>Empleado</span>
                   </label>
                   <div className="relative">
                     <input
+                      id="employee-search"
+                      name="employee-search"
                       type="text"
                       placeholder={loadingEmployees ? '⏳ Cargando empleados...' : '👥 Buscar empleado...'}
                       value={employeeSearchTerm}
@@ -873,12 +875,14 @@ const InspectionList = ({ onBackToSelection }) => {
 
                 {/* Centro de Trabajo ULTRA - Searchbar */}
                 <div className="group/field relative">
-                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                  <label htmlFor="centro-search" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
                     <span className="text-base">🏢</span>
                     <span>Centro de Trabajo</span>
                   </label>
                   <div className="relative">
                     <input
+                      id="centro-search"
+                      name="centro-search"
                       type="text"
                       placeholder={loadingEmployees ? '⏳ Cargando centros...' : '🏢 Buscar centro...'}
                       value={centroSearchTerm}
@@ -945,7 +949,7 @@ const InspectionList = ({ onBackToSelection }) => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Ordenar por ULTRA */}
                 <div className="group/field">
-                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                  <label htmlFor="sort-by" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
                     <span className="text-base">⬇️</span>
                     <span>Ordenar por</span>
                   </label>
@@ -966,7 +970,7 @@ const InspectionList = ({ onBackToSelection }) => {
 
                 {/* Orden ULTRA */}
                 <div className="group/field">
-                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                  <label htmlFor="sort-order" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
                     <span className="text-base">🔢</span>
                     <span>Orden</span>
                   </label>
@@ -984,9 +988,9 @@ const InspectionList = ({ onBackToSelection }) => {
           
                 {/* Botón Reset MEGA WOW */}
                 <div className="group/field">
-                  <label className="block text-sm font-black text-gray-800 mb-2 opacity-0 pointer-events-none">
+                  <div className="block text-sm font-black text-gray-800 mb-2 opacity-0 pointer-events-none">
                     Spacer
-                  </label>
+                  </div>
                   <button
                     onClick={() => {
                       setSearchTerm('');

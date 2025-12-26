@@ -1,0 +1,130 @@
+{
+  "name": "14 - extrage cuadrant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "get-cuadrantes-yyBov0qVQZEhX2TL",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        -32
+      ],
+      "id": "dbebfaa9-1687-4f5f-8f8f-7586b8f4d766",
+      "webhookId": "b7d77bca-b0e0-4768-ab7e-200ced3606f2"
+    },
+    {
+      "parameters": {
+        "functionCode": "const email = ($items(\"Webhook\")?.[0]?.json?.body?.email || '').trim().toLowerCase();\n\nreturn $input.all().filter(item => {\n  const emailItem = (item.json.EMAIL || '').trim().toLowerCase();\n  // Dacă nu există email în body, returnează toate itemele\n  return !email || emailItem === email;\n});\n"
+      },
+      "name": "Function",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -32
+      ],
+      "id": "2c9f6aa9-2d04-4efd-8aba-09d12e306c38",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        416,
+        -32
+      ],
+      "id": "6500d35f-beca-4532-a891-572724bf8a51",
+      "alwaysOutputData": true,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "cuadrante",
+          "mode": "list",
+          "cachedResultName": "cuadrante"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -80,
+        -32
+      ],
+      "id": "3b2d87fb-4edf-41b9-ada1-2b086ed31ee9",
+      "name": "Select rows from a table",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Select rows from a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table": {
+      "main": [
+        [
+          {
+            "node": "Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "c252dfb9-08bb-4654-9141-861bd9015ddd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "MVJ9VxoWhpXN9arW",
+  "tags": []
+}

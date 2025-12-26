@@ -23,6 +23,7 @@ import { MonthlyAlertsService } from './services/monthly-alerts.service';
 import { PushController } from './controllers/push.controller';
 import { PushService } from './services/push.service';
 import { ClientesController } from './controllers/clientes.controller';
+import { ClientesService } from './services/clientes.service';
 import { ContractTypesController } from './controllers/contract-types.controller';
 import { EmailService } from './services/email.service';
 import { AusenciasController } from './controllers/ausencias.controller';
@@ -56,6 +57,10 @@ import { InspeccionesController } from './controllers/inspecciones.controller';
 import { InspeccionesService } from './services/inspecciones.service';
 import { HorariosController } from './controllers/horarios.controller';
 import { HorariosService } from './services/horarios.service';
+import { FestivosController } from './controllers/festivos.controller';
+import { FestivosService } from './services/festivos.service';
+import { GeocodingController } from './controllers/geocoding.controller';
+import { GeocodingService } from './services/geocoding.service';
 
 @Module({
   imports: [
@@ -93,6 +98,8 @@ import { HorariosService } from './services/horarios.service';
     DocumentosOficialesController,
     InspeccionesController,
     HorariosController,
+    FestivosController,
+    GeocodingController,
   ],
   providers: [
     AppService,
@@ -120,6 +127,9 @@ import { HorariosService } from './services/horarios.service';
     DocumentosOficialesService,
     InspeccionesService,
     HorariosService,
+    FestivosService,
+    GeocodingService,
+    ClientesService,
   ],
 })
 export class AppModule {}

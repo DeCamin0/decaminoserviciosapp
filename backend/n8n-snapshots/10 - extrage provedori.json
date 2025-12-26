@@ -1,0 +1,81 @@
+{
+  "name": "10 - extrage provedori",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "3794da89-c836-441e-bcbe-1adb137efa73",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        -144
+      ],
+      "webhookId": "b3fd1c12-bfc0-438f-8246-2e4d63adb291"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        96,
+        -144
+      ],
+      "id": "631b6e16-3b31-4b04-af58-d0667f70762a",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "IZlW9nTSFBfkvp1s",
+          "name": "decamino_facturacion"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        304,
+        -144
+      ],
+      "id": "533ce0e7-052b-4959-b5d3-dfbfdea405b1",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f5c0cf72-8e43-4480-b084-55a06a1409e0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "daAfYWs9DB9nmmxf",
+  "tags": []
+}

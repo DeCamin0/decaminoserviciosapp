@@ -1,7 +1,7 @@
 import { useLocation } from '../contexts/LocationContextBase';
 
 const LocationDisplay = () => {
-  const { currentAddress, isLoading, error } = useLocation();
+  const { currentAddress, currentLocation, isLoading, error } = useLocation();
 
   if (isLoading) {
     return (
@@ -27,7 +27,27 @@ const LocationDisplay = () => {
     );
   }
 
-  if (!currentAddress) {
+  // Dacă avem locație dar nu avem încă adresă, afișăm loading pentru adresă
+  if (!currentAddress && currentLocation) {
+    return (
+      <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-yellow-200 dark:border-yellow-800 max-w-xs">
+        <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-yellow-600 border-t-transparent"></div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">
+            Obteniendo dirección...
+          </span>
+          <div className="text-sm font-medium text-gray-600 dark:text-gray-400 truncate">
+            {currentLocation.latitude.toFixed(5)}, {currentLocation.longitude.toFixed(5)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Dacă nu avem nici locație, nici adresă
+  if (!currentAddress && !currentLocation) {
     return (
       <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-xs">
         <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">

@@ -8,10 +8,13 @@ const Select = ({
   loading,
   disabled,
   id,
+  name,
   ...props 
 }) => {
   // Generează un ID unic dacă nu este furnizat
   const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
+  // Generează un name din id dacă nu este furnizat
+  const selectName = name || (id ? id.replace(/[^a-zA-Z0-9]/g, '-') : selectId);
   
   return (
     <div className={className}>
@@ -22,6 +25,7 @@ const Select = ({
       )}
       <select
         id={selectId}
+        name={selectName}
         className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors ${
           disabled || loading ? 'bg-gray-100 cursor-not-allowed' : ''
         }`}

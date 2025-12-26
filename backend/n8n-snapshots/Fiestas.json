@@ -1,0 +1,380 @@
+{
+  "name": "Fiestas",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "2e91652c-bb34-43e8-9e38-5ba0e16b4ca0",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -304,
+        -16
+      ],
+      "id": "5ff14a6f-7e5a-4184-9c84-cbc5359deda8",
+      "name": "Webhook",
+      "webhookId": "2e91652c-bb34-43e8-9e38-5ba0e16b4ca0"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.query.accion }}",
+                    "rightValue": "get",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a3dcf957-afbb-45b1-bf77-2cf6f5835a35"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Extrage Fiestas"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "24238c02-5ee6-4fff-a0c9-bac4d5d68e4d",
+                    "leftValue": "={{ $json.query.accion }}",
+                    "rightValue": "edit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Editeaza Fiesta"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "40798c6b-3ed5-4657-a3f9-5d04fb9c1eca",
+                    "leftValue": "={{ $json.query.accion }}",
+                    "rightValue": "nueva fiesta",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Fiesta Noua"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2dccadb8-184f-4168-8a14-3d75e21c1c2e",
+                    "leftValue": "={{ $json.query.accion }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Sterge Festivo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -64,
+        -32
+      ],
+      "id": "01f35a36-4ae3-401e-a8de-c2e76161ec48",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  date,\n  name,\n  scope,\n  ccaa_code,\n  observed_date,\n  active,\n  notes\nFROM fiestas\nWHERE YEAR(date) = {{$json[\"query\"][\"year\"]}}\n  AND active = 1\nORDER BY date ASC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        208,
+        -208
+      ],
+      "id": "22855d02-42bd-49df-b481-7ad1d285acd1",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        432,
+        -208
+      ],
+      "id": "2d26abd6-252d-4aba-a2d1-5011e55341b1",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE fiestas\nSET\n  `date`  = '{{ $json.query.fecha }}',\n  `name`  = '{{ $json.query.nombre.replace(/'/g, \"\\\\'\") }}',\n  `scope` = '{{ $json.query.scope.replace(/'/g, \"\\\\'\") }}',\n  `notes` = '{{ $json.query.notes?.replace(/'/g, \"\\\\'\") }}',\n  `active`= {{ Number($json.query.active) }}\nWHERE `id` = {{ Number($json.query.id) }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        -16
+      ],
+      "id": "446c02f0-9fef-4cf5-89d7-2833f5975b3a",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        432,
+        -16
+      ],
+      "id": "faf628d1-5efd-4f9c-8cac-6c77a9fbfde8",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM fiestas\nWHERE id = {{ $json.query.id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        352
+      ],
+      "id": "393a2044-1894-43af-a698-39d7ea4d7e29",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO fiestas\n  (`date`, `name`, `scope`, `ccaa_code`, `observed_date`, `active`, `notes`)\nVALUES\n  (\n    '{{ $json.query.fecha }}',\n    '{{ $json.query.nombre.replace(/'/g, \"\\\\'\") }}',\n    '{{ $json.query.scope.replace(/'/g, \"\\\\'\") }}',\n    '{{ $json.query.ccaa }}',\n    '{{ $json.query.observed_date ? $json.query.observed_date : $json.query.fecha }}',\n    {{ Number($json.query.active) }},\n    '{{ $json.query.notes ? $json.query.notes.replace(/'/g, \"\\\\'\") : \"\" }}'\n  );",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        144
+      ],
+      "id": "c7860bfa-49ae-45d8-951c-d65869803df4",
+      "name": "Execute a SQL query3",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        432,
+        144
+      ],
+      "id": "99d4d73d-348a-4462-8cdd-6038edca5a04",
+      "name": "Respond to Webhook2"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        432,
+        352
+      ],
+      "id": "47e43052-d890-401e-82bb-83cda59ef5ac",
+      "name": "Respond to Webhook3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query3": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "23331b7d-bd9c-4f05-93a7-b85351d333d2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "63RXFL6QGnpaZIZ0",
+  "tags": []
+}

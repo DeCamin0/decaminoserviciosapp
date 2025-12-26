@@ -1,3 +1,9 @@
+// ⚠️ CRITICAL: Save original fetch BEFORE any imports or interceptors
+// This must be the FIRST thing we do to ensure we have a clean fetch reference
+if (typeof window !== 'undefined') {
+  window.__originalFetchForLocation = window.fetch;
+}
+
 // ⚠️ CRITICAL: Error handlers MUST be set up BEFORE any imports
 // Suppress Google Maps vendor bundle errors and other undefined 'get' errors
 (function() {
@@ -101,6 +107,9 @@ import './registerSW'
 // Import consoleOverride BEFORE setting up error handlers
 import './utils/consoleOverride' // Dezactivează console.log-urile în production
 import { installRegulatedFetch } from './utils/regulatedFetch'
+
+// Note: window.__originalFetchForLocation is already saved at the very top of the file
+// before any imports to ensure it's not intercepted
 
 // Polyfills pentru ExcelJS în browser
 import { Buffer } from 'buffer'

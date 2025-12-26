@@ -354,11 +354,49 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const { currentLocation, currentAddress } = locationContext;
   const fetchedAlertsRef = useRef({});
   const locationContextRef = useRef(locationContext);
+  const locationRequestedOnMountRef = useRef(false); // Previne apelurile multiple de locație la mount
   
   // Actualizează ref-ul când locationContext se schimbă
   useEffect(() => {
     locationContextRef.current = locationContext;
   }, [locationContext]);
+
+  // Cere locația automat când se accesează pagina Fichaje
+  // Folosim maximumAge mare (10 minute) pentru a folosi cache-ul browser-ului
+  // Dacă există locație cached recentă, browser-ul o returnează fără warning
+  useEffect(() => {
+    // Previne apelurile multiple - cere doar o dată când componenta se montează
+    if (locationRequestedOnMountRef.current) {
+      return;
+    }
+
+    // Dacă deja avem locație cached, nu mai cerem
+    if (currentLocation) {
+      console.log('📍 Fichaje: Using existing cached location');
+      locationRequestedOnMountRef.current = true;
+      return;
+    }
+
+    const requestLocationOnPageAccess = async () => {
+      try {
+        locationRequestedOnMountRef.current = true; // Marchează că am cerut deja
+        console.log('📍 Fichaje page accessed - requesting location (using cache if available)...');
+        // Cere locația folosind contextul global
+        // maximumAge: 600000 (10 min) înseamnă că dacă avem locație cache-uită mai recentă de 10 min, o folosește
+        // Browser-ul returnează locația cached fără să activeze GPS-ul, reducând warning-urile
+        await locationContext.getCurrentLocation();
+        console.log('✅ Location obtained on Fichaje page access');
+      } catch (error) {
+        console.warn('⚠️ Could not get location on page access:', error);
+        locationRequestedOnMountRef.current = false; // Permite retry dacă eșuează
+        // Nu aruncăm eroare - continuăm fără locație, utilizatorul poate încerca din nou la check-in
+      }
+    };
+
+    // Cere locația când se montează componenta (la accesarea paginii)
+    requestLocationOnPageAccess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Fără dependențe - doar la mount (o singură dată)
 
   // State pentru tab-uri și ausencias
   const [activeTab, setActiveTab] = useState('registros');
@@ -438,6 +476,13 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       currentBaja = bajasMedicas.find((baja) => {
         if (!baja || typeof baja !== 'object') return false;
         
+        // Verifică dacă Situación este "Alta" - dacă da, nu este activă
+        const situacion = baja.Situacion || baja.situacion || baja['Situación'] || baja.estado || baja.ESTADO || '';
+        if (situacion && situacion.toLowerCase().includes('alta')) {
+          console.log('✅ Baja médica cu Situación "Alta" - nu este activă:', baja);
+          return false;
+        }
+        
         const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || '';
         const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
         
@@ -449,11 +494,25 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         if (!inicio) return false;
         
         const inicioDate = new Date(inicio);
-        const finDate = fin ? new Date(fin) : new Date(); // Dacă nu există fin, folosește ziua curentă
         inicioDate.setHours(0, 0, 0, 0);
+        
+        // Dacă există fechaFin (fecha_alta), verifică dacă este în trecut
+        if (fin) {
+          const finDate = new Date(fin);
         finDate.setHours(0, 0, 0, 0);
         
+          // Dacă fechaFin este în trecut, baja médica nu este activă
+          if (today > finDate) {
+            console.log('✅ Baja médica cu fecha_alta în trecut - nu este activă:', { fechaFin: fin, today: todayStr });
+            return false;
+          }
+          
+          // Verifică dacă ziua curentă este în intervalul [inicio, fin]
         return today >= inicioDate && today <= finDate;
+        } else {
+          // Dacă nu există fechaFin, consideră activă până în prezent
+          return today >= inicioDate;
+        }
       });
     }
     
@@ -1309,14 +1368,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     setFichajeTipo('');
     setFichajeCustomMotivo('');
     
-    // Obține locația curentă DOAR când utilizatorul apasă butonul (user gesture)
-    // Asta respectă GDPR și browser policies (nu cerem automat)
+    // Folosește locația din context (deja cerută la accesarea paginii)
+    // Dacă nu avem locație (ex: eroare la accesarea paginii), încercăm din nou
     let loc = currentLocation;
     let address = currentAddress;
     
-    // Dacă nu avem locație cached, cere-o acum folosind contextul global (user gesture - legal)
+    // Dacă nu avem locație cached, cere-o acum (fallback pentru cazuri rare)
     if (!loc) {
       try {
+        console.log('📍 No location cached, requesting now...');
         loc = await locationContext.getCurrentLocation();
         // Obține adresa prin reverse geocoding folosind funcția din context
         if (loc) {
@@ -1331,6 +1391,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         console.warn('Geolocation not available or denied:', error);
         // Continuă fără locație - marcajul se salvează oricum
       }
+    } else {
+      // Avem locație cached - folosim-o direct
+      console.log('✅ Using cached location from page access');
     }
     
     // Salvează marcajul în backend (cu sau fără locație)
@@ -2888,7 +2951,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   );
 }
 // Componenta pentru registrele angajaților (pentru manageri)
-function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
+function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onDeleteRegistroRef }) {
   const { t } = useTranslation();
   const { user: authUser } = useAuth();
   const { loading: apiLoading, callApi } = useApi();
@@ -2921,6 +2984,62 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
   const [filterModal, setFilterModal] = useState(null);
   const [filter, setFilter] = useState({ empleado: '', luna: '', an: '', de: '', pana: '' });
   const [filtered, setFiltered] = useState([]);
+
+  // Funcție pentru ștergerea unui registro
+  const handleDeleteRegistro = useCallback(async (idx) => {
+    if (idx < 0 || idx >= registros.length) {
+      throw new Error('Invalid registro index');
+    }
+
+    const registro = registros[idx];
+    if (!registro || !registro.id) {
+      throw new Error('Registro not found or missing ID');
+    }
+
+    const token = localStorage.getItem('auth_token');
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(routes.deleteFichaje, {
+      method: 'DELETE',
+      headers: headers,
+      body: JSON.stringify({ id: registro.id }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    
+    if (result.success) {
+      // Elimină registro-ul din listă
+      const updatedRegistros = registros.filter((_, i) => i !== idx);
+      setRegistros(updatedRegistros);
+      setFiltered(updatedRegistros);
+      
+      setNotification({
+        type: 'success',
+        title: 'Registro Eliminado',
+        message: result.message || 'El registro se ha eliminado correctamente'
+      });
+    } else {
+      throw new Error(result.message || 'Error al eliminar registro');
+    }
+  }, [registros, setRegistros, setFiltered, setNotification]);
+
+  // Actualizează ref-ul când funcția se schimbă
+  useEffect(() => {
+    if (onDeleteRegistroRef) {
+      onDeleteRegistroRef.current = handleDeleteRegistro;
+    }
+  }, [handleDeleteRegistro, onDeleteRegistroRef]);
 
   const [showEmpleados, setShowEmpleados] = useState(false);
   const [searchEmpleado, setSearchEmpleado] = useState('');
@@ -4046,6 +4165,12 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification }) {
   };
 
   const handleDelete = async (idx) => {
+    // Verificăm dacă registro-ul există
+    if (idx < 0 || idx >= registros.length) {
+      console.error('Invalid registro index:', idx);
+      return;
+    }
+    
     setDeleteConfirmDialog({
       isOpen: true,
       registroIndex: idx
@@ -5524,6 +5649,9 @@ export default function FichajePage() {
     registroIndex: null
   });
 
+  // Ref pentru funcția de ștergere din RegistrosEmpleadosScreen
+  const onDeleteRegistroRef = useRef(null);
+
   // Încarcă datele complete ale utilizatorului
   useEffect(() => {
     if (authUser?.email) {
@@ -5940,23 +6068,22 @@ export default function FichajePage() {
     if (idx === null) return;
 
     try {
-      // Aici vom implementa logica de ștergere
-      // Pentru moment, vom închide dialog-ul
-      setDeleteConfirmDialog({ isOpen: false, registroIndex: null });
+      // Apelăm callback-ul pentru ștergere (implementat în RegistrosEmpleadosScreen)
+      if (onDeleteRegistroRef.current) {
+        await onDeleteRegistroRef.current(idx);
+      } else {
+        throw new Error('Delete handler not available');
+      }
       
-      // Notificare temporară
-      setNotification({
-        type: 'success',
-        title: 'Registro Eliminado',
-        message: 'El registro se ha eliminado correctamente'
-      });
+      setDeleteConfirmDialog({ isOpen: false, registroIndex: null });
     } catch (error) {
       console.error('Error deleting registro:', error);
       setNotification({
         type: 'error',
         title: 'Error de Eliminación',
-        message: t('error.deleteError')
+        message: error.message || t('error.deleteError')
       });
+      setDeleteConfirmDialog({ isOpen: false, registroIndex: null });
     }
   };
   // Funciones para incidencia
@@ -6491,6 +6618,7 @@ export default function FichajePage() {
             <RegistrosEmpleadosScreen 
               setDeleteConfirmDialog={setDeleteConfirmDialog}
               setNotification={setNotification}
+              onDeleteRegistroRef={onDeleteRegistroRef}
             />
           ) : activeTab === 'horas' ? (
             <HorasTrabajadas />

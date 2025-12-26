@@ -669,6 +669,65 @@ export class EmpleadosService {
    * - Șterge record-ul din SolicitudesCambiosPersonales
    * - (Email-ul se trimite din controller)
    */
+  /**
+   * Obține lista de cambios pendientes (în așteptare de aprobare)
+   * Returnează doar cambios cu status "in asteptare" sau "pendiente"
+   */
+  async getCambiosPendientes(): Promise<any[]> {
+    try {
+      const cambios = await this.prisma.solicitudesCambiosPersonales.findMany({
+        where: {
+          OR: [
+            { status: 'in asteptare' },
+            { status: 'pendiente' },
+            { status: null }, // Include și cambios fără status (default)
+          ],
+        },
+        orderBy: {
+          data_creare: 'desc',
+        },
+      });
+
+      // Mapăm datele pentru compatibilitate cu frontend
+      const mappedCambios = cambios.map((cambio) => ({
+        id: cambio.id,
+        ID: cambio.id,
+        codigo: cambio.codigo,
+        CODIGO: cambio.codigo,
+        nombre: cambio.NOMBRE,
+        NOMBRE: cambio.NOMBRE,
+        email: cambio.CORREO_ELECTRONICO,
+        CORREO_ELECTRONICO: cambio.CORREO_ELECTRONICO,
+        campo: cambio.campo,
+        CAMPO_MODIFICADO: cambio.campo,
+        valor_anterior: cambio.valoare_veche,
+        VALOR_ANTERIOR: cambio.valoare_veche,
+        valor_nuevo: cambio.valoare_noua,
+        VALOR_NUEVO: cambio.valoare_noua,
+        valoare_noua: cambio.valoare_noua,
+        razon: cambio.motiv,
+        RAZON: cambio.motiv,
+        MOTIVO_CAMBIO: cambio.motiv,
+        estado: cambio.status,
+        ESTADO: cambio.status,
+        fecha_solicitud: cambio.data_creare,
+        FECHA_SOLICITUD: cambio.data_creare,
+        data_creare: cambio.data_creare,
+      }));
+
+      this.logger.log(
+        `✅ Obținut ${mappedCambios.length} cambios pendientes`,
+      );
+
+      return mappedCambios;
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la obținerea cambios pendientes:`, error);
+      throw new BadRequestException(
+        `Eroare la obținerea cambios pendientes: ${error.message}`,
+      );
+    }
+  }
+
   async rejectCambio(data: {
     id: string;
   }): Promise<{ success: true; message: string }> {

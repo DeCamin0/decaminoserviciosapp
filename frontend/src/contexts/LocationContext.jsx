@@ -11,31 +11,69 @@ export const LocationProvider = ({ children }) => {
   const retryCountRef = useRef(0); // Contor pentru retry-uri
   const MAX_RETRIES = 2; // Maxim 2 retry-uri
 
-  // Funcție pentru reverse geocoding folosind OpenStreetMap
-  // Notă: Nominatim API nu include header-ul X-Content-Type-Options în răspunsuri
-  // Aceasta este o limitare a serverului extern, nu a aplicației
+  // Funcție pentru reverse geocoding folosind backend-ul nostru
+  // Backend-ul face request-ul către Nominatim, evitând problemele de CORS și interceptori
   const getAddressFromCoords = useCallback(async (latitude, longitude) => {
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
-        {
-          headers: {
-            'User-Agent': 'DeCamino-WebApp/1.0'
-          }
-        }
-      );
-      const data = await response.json();
+      // Construim URL-ul către backend-ul nostru
+      const BASE_URL = import.meta.env.DEV
+        ? 'http://localhost:3000'
+        : 'https://api.decaminoservicios.com';
       
-      if (data && data.display_name) {
-        // Extrag doar partea relevantă din adresa completă
-        const addressParts = data.display_name.split(', ');
-        // Preiau primele 3-4 părți pentru o adresă mai curată
-        const cleanAddress = addressParts.slice(0, 4).join(', ');
-        return cleanAddress;
+      const url = `${BASE_URL}/api/geocoding/reverse?lat=${latitude}&lon=${longitude}`;
+      
+      if (import.meta.env.DEV) {
+        console.log(`🌍 Requesting address from backend geocoding service: ${url}`);
+      }
+      
+      // Obținem token-ul JWT
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      // Facem request către backend-ul nostru
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+        // Nu folosim credentials pentru că backend-ul nostru nu necesită
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.address && result.address.trim() !== '') {
+        if (import.meta.env.DEV) {
+          console.log('✅ Address obtained from backend:', result.address);
+        }
+        return result.address;
+      }
+      
+      // Dacă nu avem adresă, dar avem coordonate, construim un string cu coordonatele
+      if (result.coordinates) {
+        const coordsStr = `${result.coordinates.latitude.toFixed(5)}, ${result.coordinates.longitude.toFixed(5)}`;
+        if (import.meta.env.DEV) {
+          console.warn('⚠️ No address found, using coordinates:', coordsStr);
+        }
+        return coordsStr; // Returnăm coordonatele ca fallback
+      }
+      
+      // Dacă nu avem nici adresă, nici coordonate, returnăm string gol
+      if (import.meta.env.DEV) {
+        console.warn('⚠️ No address or coordinates found in backend response');
       }
       return '';
     } catch (error) {
-      console.error('Error getting address:', error);
+      console.error('❌ Error getting address from backend:', error);
+      // Nu aruncăm eroare - returnăm string gol pentru a permite continuarea
       return '';
     }
   }, []);
@@ -51,7 +89,7 @@ export const LocationProvider = ({ children }) => {
     
     // Throttle geocodarea inversă pentru a evita prea multe cereri
     const nowTs = Date.now();
-    if (nowTs - geocodeThrottleRef.current < 10000) return; // 10 secunde între cereri
+    if (nowTs - geocodeThrottleRef.current < 5000) return; // 5 secunde între cereri (mai rapid)
     
     geocodeThrottleRef.current = nowTs;
     
@@ -97,7 +135,17 @@ export const LocationProvider = ({ children }) => {
     const token = localStorage.getItem('auth_token');
     const savedUser = localStorage.getItem('user');
 
-    if (token && savedUser && !locationRequestedRef.current && !currentLocation) {
+    // Cerem locația dacă utilizatorul este autentificat și nu avem deja locație
+    // Permitem retry-uri dacă cererea anterioară a eșuat (locationRequestedRef poate fi resetat)
+    if (token && savedUser && !currentLocation) {
+      // Dacă deja am cerut și încă așteptăm, nu mai cerem (evită cereri duplicate)
+      if (locationRequestedRef.current && isLoading) {
+        console.log('📍 Location request already in progress, skipping...');
+        return;
+      }
+      
+      // Dacă nu avem locație și nu am cerut deja (sau cererea anterioară a eșuat și s-a resetat)
+      if (!locationRequestedRef.current || (!isLoading && !currentLocation)) {
       locationRequestedRef.current = true;
       setIsLoading(true);
       setError(null);
@@ -105,16 +153,15 @@ export const LocationProvider = ({ children }) => {
       console.log('📍 Requesting location automatically (user authenticated)');
       
       // Reset retry counter la fiecare nouă cerere
-      if (retryCountRef.current === 0) {
-        retryCountRef.current = 0; // Asigură-te că e 0 la prima încercare
-      }
+        retryCountRef.current = 0;
 
-      // Opțiuni de geolocație - folosim setări mai permissive pentru toate browserele
-      // Timeout mai mare și maximumAge mai mare pentru a evita timeout-urile
+        // Opțiuni de geolocație - optimizate pentru viteză (desktop și mobile)
+        // maximumAge mare = folosește cache-ul browser-ului cât mai mult timp posibil
+        // enableHighAccuracy: false = mai rapid pe mobile (nu așteaptă GPS precis)
       const geolocationOptions = {
-        enableHighAccuracy: false, // False pentru toate - mai rapid și mai sigur
-        maximumAge: 300000, // 5 minute cache - permite folosirea locației cache-uite
-        timeout: 30000, // 30 secunde timeout - mai mult timp pentru toate browserele
+          enableHighAccuracy: false, // False pentru toate - mai rapid pe mobile și desktop
+          maximumAge: 600000, // 10 minute cache - reduce warning-urile și apelurile GPS
+          timeout: 15000, // 15 secunde timeout - mai generos pentru mobile (GPS poate fi mai lent)
       };
 
       console.log(`📍 Requesting location (retry: ${retryCountRef.current}/${MAX_RETRIES}), options:`, geolocationOptions);
@@ -153,7 +200,7 @@ export const LocationProvider = ({ children }) => {
             locationRequestedRef.current = false; // Permite retry
             setTimeout(() => {
               requestLocationIfAuthenticated();
-            }, 3000); // Așteaptă 3 secunde înainte de retry
+            }, 1500); // Așteaptă 1.5 secunde înainte de retry (mai rapid)
             return; // Nu afișa eroarea încă, mai încercăm
           }
           
@@ -162,8 +209,15 @@ export const LocationProvider = ({ children }) => {
             console.log('⚠️ Location permission denied - user needs to grant permission');
             locationRequestedRef.current = false; // Permite retry când utilizatorul dă permisiunea
             retryCountRef.current = 0; // Reset retry counter
+          } else if (error.code === 3) { // TIMEOUT
+            // Pentru timeout, permitem retry după un timp (dacă nu am depășit MAX_RETRIES)
+            console.log('⚠️ Location request timeout - will retry later');
+            locationRequestedRef.current = false; // Permite retry
+            retryCountRef.current = 0; // Reset retry counter
           } else {
-            // Pentru alte erori, resetăm contorul după un timp
+            // Pentru alte erori, resetăm contorul și permitem retry după un timp
+            console.log('⚠️ Location request failed - will retry later');
+            locationRequestedRef.current = false; // Permite retry
             retryCountRef.current = 0;
           }
           
@@ -171,6 +225,7 @@ export const LocationProvider = ({ children }) => {
         },
         geolocationOptions
       );
+      } // End if (!locationRequestedRef.current || (!isLoading && !currentLocation))
     } else if (!token || !savedUser) {
       // Utilizatorul nu este autentificat, resetăm
       setCurrentLocation(null);
@@ -182,22 +237,52 @@ export const LocationProvider = ({ children }) => {
   }, [currentLocation, getAddressFromCoords, handleLocationError]);
 
   // Cerem geolocația automat când utilizatorul este autentificat
+  // Folosim maximumAge mare (10 minute) pentru a folosi cache-ul browser-ului cât mai mult
+  // Asta reduce warning-urile pentru că browser-ul poate returna locația cached fără să activeze GPS-ul
   useEffect(() => {
-    // Verificare inițială
-    requestLocationIfAuthenticated();
-
-    // Polling pentru a detecta autentificarea în același tab (storage event nu funcționează în același tab)
-    const checkInterval = setInterval(() => {
-      requestLocationIfAuthenticated();
-    }, 2000); // Verifică la fiecare 2 secunde
-
     // Listener pentru schimbări de autentificare între tab-uri
     const handleStorageChange = (e) => {
       if (e.key === 'auth_token' || e.key === 'user') {
+        // La login în alt tab, cerem locația
         locationRequestedRef.current = false;
         requestLocationIfAuthenticated();
       }
     };
+
+    // Verificare inițială - cerem imediat dacă utilizatorul este autentificat și nu avem locație
+    // Aceasta se întâmplă la login (în același tab) sau la refresh-ul paginii
+    const token = localStorage.getItem('auth_token');
+    const savedUser = localStorage.getItem('user');
+    if (token && savedUser && !currentLocation) {
+      // Cerem locația doar o dată la mount dacă utilizatorul este autentificat
+      // Folosim maximumAge mare pentru a evita warning-urile (browser-ul folosește cache-ul)
+      requestLocationIfAuthenticated();
+    }
+
+    // Polling discret pentru a detecta login-ul în același tab (doar dacă nu avem locație)
+    // Verificăm la fiecare 2 secunde, dar doar dacă utilizatorul este autentificat și nu avem locație
+    // Oprim polling-ul după 30 de secunde pentru a evita warning-urile pe paginile unde nu este necesar
+    let pollingAttempts = 0;
+    const maxPollingAttempts = 15; // 15 * 2 secunde = 30 secunde maxim
+    const checkInterval = setInterval(() => {
+      pollingAttempts++;
+      
+      // Oprim polling-ul după un număr maxim de încercări
+      if (pollingAttempts > maxPollingAttempts) {
+        clearInterval(checkInterval);
+        return;
+      }
+      
+      const currentToken = localStorage.getItem('auth_token');
+      const currentUser = localStorage.getItem('user');
+      // Dacă utilizatorul este autentificat și nu avem locație, verificăm dacă trebuie să cerem
+      if (currentToken && currentUser && !currentLocation && !locationRequestedRef.current) {
+        requestLocationIfAuthenticated();
+      } else if (currentLocation) {
+        // Dacă am obținut locația, oprim polling-ul
+        clearInterval(checkInterval);
+      }
+    }, 2000); // Verifică la fiecare 2 secunde (mai discret decât 5 secunde)
 
     window.addEventListener('storage', handleStorageChange);
 
@@ -205,7 +290,7 @@ export const LocationProvider = ({ children }) => {
       clearInterval(checkInterval);
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [requestLocationIfAuthenticated]);
+  }, [requestLocationIfAuthenticated, currentLocation]);
 
   // Funcție pentru a obține locația curentă (returnează Promise)
   const getCurrentLocation = useCallback(() => {
@@ -218,17 +303,12 @@ export const LocationProvider = ({ children }) => {
       setIsLoading(true);
       setError(null);
 
-      // Opțiuni optimizate pentru Edge
-      const geolocationOptions = isEdge()
-        ? {
-            enableHighAccuracy: false,
-            maximumAge: 300000,
-            timeout: 20000,
-          }
-        : {
-            enableHighAccuracy: true,
-            maximumAge: 60000,
-            timeout: 15000,
+      // Opțiuni optimizate pentru toate browserele (inclusiv mobile)
+      // enableHighAccuracy: false = mai rapid pe mobile (nu așteaptă GPS precis)
+      const geolocationOptions = {
+        enableHighAccuracy: false, // False pentru toate - mai rapid pe mobile
+        maximumAge: 600000, // 10 minute cache - reduce apelurile GPS
+        timeout: 15000, // 15 secunde timeout - generos pentru mobile
           };
 
       navigator.geolocation.getCurrentPosition(
@@ -260,7 +340,7 @@ export const LocationProvider = ({ children }) => {
         geolocationOptions
       );
     });
-  }, [getAddressFromCoords, handleLocationError, isEdge]);
+  }, [getAddressFromCoords, handleLocationError]);
 
   // Funcție pentru refresh manual (actualizează state-ul global)
   const refreshLocation = useCallback(() => {
@@ -268,17 +348,12 @@ export const LocationProvider = ({ children }) => {
       setIsLoading(true);
       setError(null);
       
-      // Opțiuni optimizate pentru Edge
-      const geolocationOptions = isEdge()
-        ? {
-            enableHighAccuracy: false,
-            maximumAge: 300000,
-            timeout: 20000,
-          }
-        : {
-            enableHighAccuracy: true,
-            maximumAge: 60000,
-            timeout: 15000,
+      // Opțiuni optimizate pentru toate browserele (inclusiv mobile)
+      // enableHighAccuracy: false = mai rapid pe mobile (nu așteaptă GPS precis)
+      const geolocationOptions = {
+        enableHighAccuracy: false, // False pentru toate - mai rapid pe mobile
+        maximumAge: 600000, // 10 minute cache - reduce apelurile GPS
+        timeout: 15000, // 15 secunde timeout - generos pentru mobile
           };
       
       navigator.geolocation.getCurrentPosition(
@@ -287,7 +362,7 @@ export const LocationProvider = ({ children }) => {
         geolocationOptions
       );
     }
-  }, [updateLocation, handleLocationError, isEdge]);
+  }, [updateLocation, handleLocationError]);
 
   const value = {
     currentLocation,

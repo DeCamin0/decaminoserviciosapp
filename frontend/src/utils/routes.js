@@ -78,13 +78,18 @@ export const routes = {
   updateFichaje: import.meta.env.DEV
     ? 'http://localhost:3000/api/registros'
     : 'https://api.decaminoservicios.com/api/registros',
-  deleteFichaje: getN8nUrl('/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb'),
+  deleteFichaje: `${BASE_URL}/api/registros`,
   
   // Cuadrantes (Schedules) (backend nou, fără n8n) - MIGRAT
   getCuadrantes: import.meta.env.DEV
     ? 'http://localhost:3000/api/cuadrantes'
     : 'https://api.decaminoservicios.com/api/cuadrantes',
-  saveCuadrante: getN8nUrl('/webhook/guardar-cuadrante-yyBov0qVQZEhX2TL'),
+  saveCuadrante: import.meta.env.DEV
+    ? 'http://localhost:3000/api/cuadrantes/save'
+    : 'https://api.decaminoservicios.com/api/cuadrantes/save',
+  updateCuadrantes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/cuadrantes/update'
+    : 'https://api.decaminoservicios.com/api/cuadrantes/update',
   
   // Solicitudes (Requests)
   // ⚠️ DEPRECATED - migrat la backend NestJS
@@ -247,6 +252,26 @@ export const routes = {
   getClientes: import.meta.env.DEV
     ? 'http://localhost:3000/api/clientes'
     : 'https://api.decaminoservicios.com/api/clientes',
+  // CRUD Clientes (backend nou, fără n8n) - POST cu action: 'add'|'edit'|'delete'
+  crudCliente: import.meta.env.DEV
+    ? 'http://localhost:3000/api/clientes'
+    : 'https://api.decaminoservicios.com/api/clientes',
+  // Proveedores (backend nou, fără n8n)
+  getProveedores: import.meta.env.DEV
+    ? 'http://localhost:3000/api/clientes/proveedores'
+    : 'https://api.decaminoservicios.com/api/clientes/proveedores',
+  // CRUD Proveedores (backend nou, fără n8n) - POST cu action: 'add'|'edit'|'delete'
+  crudProveedor: import.meta.env.DEV
+    ? 'http://localhost:3000/api/clientes/proveedores'
+    : 'https://api.decaminoservicios.com/api/clientes/proveedores',
+  // Get Contratos Cliente (backend nou, fără n8n) - GET /api/clientes/:nif/contracts
+  getContratosCliente: (nif) => import.meta.env.DEV
+    ? `http://localhost:3000/api/clientes/${encodeURIComponent(nif)}/contracts`
+    : `https://api.decaminoservicios.com/api/clientes/${encodeURIComponent(nif)}/contracts`,
+  // CRUD Contratos (backend nou, fără n8n) - POST /api/clientes/contracts cu action: 'upload'|'delete'
+  crudContract: import.meta.env.DEV
+    ? 'http://localhost:3000/api/clientes/contracts'
+    : 'https://api.decaminoservicios.com/api/clientes/contracts',
   // Contract Types (backend nou, fără n8n)
   getContractTypes: import.meta.env.DEV
     ? 'http://localhost:3000/api/contract-types'
@@ -262,8 +287,8 @@ export const routes = {
   addAusencia: import.meta.env.DEV
     ? 'http://localhost:3000/api/ausencias'
     : 'https://api.decaminoservicios.com/api/ausencias',
-  getProveedores: getN8nUrl('/webhook/b3fd1c12-bfc0-438f-8246-2e4d63adb291'), // ✅ Endpoint pentru lista de furnizori
-  saveCliente: getN8nUrl('/webhook/save-cliente'), // Endpoint pentru salvarea clienților
+  // Old n8n endpoints (deprecated):
+  // saveCliente: getN8nUrl('/webhook/save-cliente'), // Migrat la crudCliente
   renovarContracto: getN8nUrl('/webhook/renovar-contracto'), // Endpoint pentru reînnoirea contractelor
   
   // Admin (folosesc backend-ul principal)
@@ -279,16 +304,28 @@ export const routes = {
   getPermissions: getN8nUrl('/webhook/get-permissions-Rws95'), // Endpoint universal pentru navigare
   getPermissionsAdmin: '/webhook/be960529-6a0b-4a6d-b0b9-2c0eed38576e', // Pentru Control Acces (toate permisiunile) - local path
   savePermissions: '/webhook/save-permissions-2c0ee', // local path
-  getFestivos: getN8nUrl('/webhook/2e91652c-bb34-43e8-9e38-5ba0e16b4ca0'),
-  editFestivo: getN8nUrl('/webhook/2e91652c-bb34-43e8-9e38-5ba0e16b4ca0'),
-  createFestivo: getN8nUrl('/webhook/2e91652c-bb34-43e8-9e38-5ba0e16b4ca0'),
-  deleteFestivo: getN8nUrl('/webhook/2e91652c-bb34-43e8-9e38-5ba0e16b4ca0'),
+  // Festivos (Zile Festive) - migrat la backend NestJS
+  getFestivos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/festivos'
+    : 'https://api.decaminoservicios.com/api/festivos',
+  editFestivo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/festivos'
+    : 'https://api.decaminoservicios.com/api/festivos',
+  createFestivo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/festivos'
+    : 'https://api.decaminoservicios.com/api/festivos',
+  deleteFestivo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/festivos'
+    : 'https://api.decaminoservicios.com/api/festivos',
   
   // Aprobaciones (Approvals)
   getFichajesPendientes: getN8nUrl('/webhook/770f63b1-7cc9-46a5-9d8e-e1303201b093'),
   updateEstadoFichaje: getN8nUrl('/webhook/update-estado-hVhUKz2'),
   getFichajeDetails: getN8nUrl('/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb'),
-  getCambiosPendientes: getN8nUrl('/webhook/lista-solicitudes-e6d15c117779'),
+  // getCambiosPendientes: getN8nUrl('/webhook/lista-solicitudes-e6d15c117779'), // MIGRAT la backend
+  getCambiosPendientes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/cambios-pendientes'
+    : 'https://api.decaminoservicios.com/api/empleados/cambios-pendientes',
   // approveCambio: getN8nUrl('/webhook/update-8a0c-4f04-96b1-a25adff1b8a1'), // MIGRAT la backend
   approveCambio: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/approve-cambio'

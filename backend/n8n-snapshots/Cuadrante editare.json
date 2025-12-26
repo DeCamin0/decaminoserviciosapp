@@ -1,0 +1,118 @@
+{
+  "name": "Cuadrante editare",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/update/bce8a5c5-1ca7-4005-9646-22d6016945ab",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "28262265-7854-405e-b69d-e1c87c60a26b",
+      "webhookId": "bce8a5c5-1ca7-4005-9646-22d6016945ab"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        720,
+        0
+      ],
+      "id": "6ac04a88-74de-4b5d-b273-99dd385e80c7",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE cuadrante\nSET\n  ZI_1  = COALESCE(NULLIF('{{$json[\"ZI_1\"]  || \"\"}}',''), ZI_1),\n  ZI_2  = COALESCE(NULLIF('{{$json[\"ZI_2\"]  || \"\"}}',''), ZI_2),\n  ZI_3  = COALESCE(NULLIF('{{$json[\"ZI_3\"]  || \"\"}}',''), ZI_3),\n  ZI_4  = COALESCE(NULLIF('{{$json[\"ZI_4\"]  || \"\"}}',''), ZI_4),\n  ZI_5  = COALESCE(NULLIF('{{$json[\"ZI_5\"]  || \"\"}}',''), ZI_5),\n  ZI_6  = COALESCE(NULLIF('{{$json[\"ZI_6\"]  || \"\"}}',''), ZI_6),\n  ZI_7  = COALESCE(NULLIF('{{$json[\"ZI_7\"]  || \"\"}}',''), ZI_7),\n  ZI_8  = COALESCE(NULLIF('{{$json[\"ZI_8\"]  || \"\"}}',''), ZI_8),\n  ZI_9  = COALESCE(NULLIF('{{$json[\"ZI_9\"]  || \"\"}}',''), ZI_9),\n  ZI_10 = COALESCE(NULLIF('{{$json[\"ZI_10\"] || \"\"}}',''), ZI_10),\n  ZI_11 = COALESCE(NULLIF('{{$json[\"ZI_11\"] || \"\"}}',''), ZI_11),\n  ZI_12 = COALESCE(NULLIF('{{$json[\"ZI_12\"] || \"\"}}',''), ZI_12),\n  ZI_13 = COALESCE(NULLIF('{{$json[\"ZI_13\"] || \"\"}}',''), ZI_13),\n  ZI_14 = COALESCE(NULLIF('{{$json[\"ZI_14\"] || \"\"}}',''), ZI_14),\n  ZI_15 = COALESCE(NULLIF('{{$json[\"ZI_15\"] || \"\"}}',''), ZI_15),\n  ZI_16 = COALESCE(NULLIF('{{$json[\"ZI_16\"] || \"\"}}',''), ZI_16),\n  ZI_17 = COALESCE(NULLIF('{{$json[\"ZI_17\"] || \"\"}}',''), ZI_17),\n  ZI_18 = COALESCE(NULLIF('{{$json[\"ZI_18\"] || \"\"}}',''), ZI_18),\n  ZI_19 = COALESCE(NULLIF('{{$json[\"ZI_19\"] || \"\"}}',''), ZI_19),\n  ZI_20 = COALESCE(NULLIF('{{$json[\"ZI_20\"] || \"\"}}',''), ZI_20),\n  ZI_21 = COALESCE(NULLIF('{{$json[\"ZI_21\"] || \"\"}}',''), ZI_21),\n  ZI_22 = COALESCE(NULLIF('{{$json[\"ZI_22\"] || \"\"}}',''), ZI_22),\n  ZI_23 = COALESCE(NULLIF('{{$json[\"ZI_23\"] || \"\"}}',''), ZI_23),\n  ZI_24 = COALESCE(NULLIF('{{$json[\"ZI_24\"] || \"\"}}',''), ZI_24),\n  ZI_25 = COALESCE(NULLIF('{{$json[\"ZI_25\"] || \"\"}}',''), ZI_25),\n  ZI_26 = COALESCE(NULLIF('{{$json[\"ZI_26\"] || \"\"}}',''), ZI_26),\n  ZI_27 = COALESCE(NULLIF('{{$json[\"ZI_27\"] || \"\"}}',''), ZI_27),\n  ZI_28 = COALESCE(NULLIF('{{$json[\"ZI_28\"] || \"\"}}',''), ZI_28),\n  ZI_29 = COALESCE(NULLIF('{{$json[\"ZI_29\"] || \"\"}}',''), ZI_29),\n  ZI_30 = COALESCE(NULLIF('{{$json[\"ZI_30\"] || \"\"}}',''), ZI_30),\n  ZI_31 = COALESCE(NULLIF('{{$json[\"ZI_31\"] || \"\"}}',''), ZI_31),\n  TotalHoras = {{ $json[\"TotalHoras\"] == null ? \"NULL\" : \"'\" + $json[\"TotalHoras\"] + \"'\" }}\nWHERE\n  CODIGO = '{{$json[\"CODIGO\"]}}'\n  AND LUNA   = '{{$json[\"LUNA\"]}}'\n  AND CENTRO = '{{$json[\"CENTRO\"]}}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        432,
+        16
+      ],
+      "id": "05e21189-835c-4748-ba49-70fbbb0ffc9e",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Function\nreturn $json.body.cuadrantes.map(c => ({ json: c }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "47b3723b-f697-4982-a646-4d35176a745a",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c7aa330a-1409-42ea-8b27-9ca06c3e37fa",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "sCrfkV2UXdkejsnp",
+  "tags": []
+}

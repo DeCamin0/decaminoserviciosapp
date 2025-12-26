@@ -41,12 +41,14 @@ export default function ClientesPage() {
   const [formMode, setFormMode] = useState('add'); // 'add' | 'edit'
   const [editItem, setEditItem] = useState(null);
 
-  // Endpoint selector: clientes -> producción, proveedores -> producción P1
+  // Endpoint selector: clientes -> backend, proveedores -> backend
   const getCrudEndpoint = (tipo) => {
     if ((tipo || '').toLowerCase() === 'proveedor' || (tipo || '').toLowerCase() === 'proveedores') {
-      return 'https://n8n.decaminoservicios.com/webhook/P1/c7987861-3fe6-4314-9037-348bc80f7296';
+      // Furnizori: folosim backend-ul nou
+      return routes.crudProveedor;
     }
-    return 'https://n8n.decaminoservicios.com/webhook/21bc4b40-eed7-461c-8765-ba2a89cded01';
+    // Clienți: folosim backend-ul nou
+    return routes.crudCliente;
   };
   const [tableView, setTableView] = useState('detailed'); // 'detailed' | 'compact'
   const [notif, setNotif] = useState({ open: false, type: 'success', title: '', message: '' });
@@ -181,8 +183,20 @@ export default function ClientesPage() {
     setOperationLoading('clientes', true);
     setErrorClientes('');
     try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       console.log('Fetching clientes from:', routes.getClientes);
-      const response = await fetch(routes.getClientes);
+      const response = await fetch(routes.getClientes, {
+        method: 'GET',
+        headers,
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -233,7 +247,25 @@ export default function ClientesPage() {
     setOperationLoading('proveedores', true);
     setErrorProveedores('');
     try {
-      const response = await fetch(routes.getProveedores);
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      console.log('Fetching proveedores from:', routes.getProveedores);
+      const response = await fetch(routes.getProveedores, {
+        method: 'GET',
+        headers,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
       const proveedoresData = Array.isArray(data) ? data : [];
       setProveedores(proveedoresData);
@@ -322,9 +354,21 @@ export default function ClientesPage() {
         'ESTADO': d.activo ?? ''
       };
 
-      const response = await fetch(getCrudEndpoint(d.tipo), {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const endpoint = getCrudEndpoint(d.tipo);
+      console.log('📝 Adding item to:', endpoint);
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(backendPayload)
       });
       
@@ -362,39 +406,6 @@ export default function ClientesPage() {
     }
   };
 
-  const handleRenovarContract = async (itemId) => {
-    try {
-      const response = await fetch(routes.renovarContracto, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          cliente_id: itemId,
-          fecha_renovacion: new Date().toISOString().split('T')[0]
-        })
-      });
-      
-      if (response.ok) {
-        // Log renovación de contrato
-        await activityLogger.logClienteUpdated({ 
-          cliente_id: itemId,
-          fecha_renovacion: new Date().toISOString().split('T')[0]
-        }, authUser);
-        
-        if (activeTab === 'clientes') {
-          fetchClientes();
-        } else {
-          fetchProveedores();
-        }
-        alert('Contrato renovado con éxito!');
-      } else {
-        alert('Error al renovar el contrato!');
-      }
-    } catch (error) {
-      console.error('Error renovating contract:', error);
-      alert('Error al renovar el contrato!');
-    }
-  };
-
   const handleEditItem = async (itemData) => {
     try {
       const d = itemData || {};
@@ -426,9 +437,21 @@ export default function ClientesPage() {
         'ESTADO': d.activo ?? ''
       };
 
-      const response = await fetch(getCrudEndpoint(d.tipo), {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const endpoint = getCrudEndpoint(d.tipo);
+      console.log('📝 Editing item at:', endpoint);
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(backendPayload)
       });
 
@@ -458,9 +481,21 @@ export default function ClientesPage() {
         nif: item?.NIF || item?.nif,
         id: item?.id || ''
       };
-      const response = await fetch(getCrudEndpoint(tipo), {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const endpoint = getCrudEndpoint(tipo);
+      console.log('🗑️ Deleting item at:', endpoint);
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload)
       });
       if (response.ok) {
@@ -504,142 +539,6 @@ export default function ClientesPage() {
     fecha_proxima_renovacion: row['Fecha Proxima Renovacion'] || '',
     activo: row.ESTADO === null ? 'Sí' : row.ESTADO
   });
-
-  const handleUploadContract = async (item) => {
-    try {
-      console.log('Încărcare contract pentru:', item.NIF, item);
-      const itemName = item['NOMBRE O RAZÓN SOCIAL'] || item['NOMBRE O RAZON SOCIAL'];
-      
-      // Creează un input file hidden
-      const fileInput = document.createElement('input');
-      fileInput.type = 'file';
-      fileInput.accept = '.pdf,.doc,.docx,.txt,.jpg,.jpeg,.png';
-      fileInput.style.display = 'none';
-      
-      // Adaugă event listener pentru când se selectează un fișier
-      fileInput.addEventListener('change', async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        
-        console.log('Fișier selectat:', file.name, file.size, file.type);
-        
-        // Verifică dimensiunea fișierului (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-          alert('Fișierul este prea mare! Dimensiunea maximă este 10MB.');
-          return;
-        }
-        
-        // Cere tipul contractului
-        const contractType = prompt(
-          `Introduceți tipul contractului pentru ${itemName}:\n\n` +
-          `Opțiuni:\n` +
-          `- Contract de servicii\n` +
-          `- Contract de furnizare\n` +
-          `- Contract de colaborare\n` +
-          `- Contract de licență\n` +
-          `- Contract de distribuție\n` +
-          `- Alt tip (specificați)\n\n` +
-          `Tipul contractului:`
-        );
-        
-        if (!contractType || contractType.trim() === '') {
-          alert('Tipul contractului este obligatoriu!');
-          return;
-        }
-        
-        // Creează FormData pentru upload
-        const formData = new FormData();
-        formData.append('contract', file);
-        formData.append('nif', item.NIF);
-        formData.append('tipo', activeTab === 'clientes' ? 'cliente' : 'proveedor');
-        formData.append('nombre', itemName);
-        formData.append('contractType', contractType.trim());
-        
-        try {
-          // Convertește fișierul în base64
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const base64Data = reader.result.split(',')[1]; // Elimină prefix-ul data:application/pdf;base64,
-            
-            // Pregătește datele pentru backend
-            const uploadData = {
-              nif: item.NIF,
-              tipo: activeTab === 'clientes' ? 'cliente' : 'proveedor',
-              nombre: itemName,
-              contractType: contractType.trim(),
-              fechaSubida: new Date().toISOString(),
-              archivo: base64Data,
-              nombreArchivo: file.name,
-              tipoArchivo: file.type,
-              tamanoArchivo: file.size
-            };
-            
-            console.log('Uploading contract data to production:', {
-              nif: uploadData.nif,
-              tipo: uploadData.tipo,
-              nombre: uploadData.nombre,
-              contractType: uploadData.contractType,
-              fechaSubida: uploadData.fechaSubida,
-              nombreArchivo: uploadData.nombreArchivo,
-              tipoArchivo: uploadData.tipoArchivo,
-              tamanoArchivo: uploadData.tamanoArchivo,
-              archivoLength: uploadData.archivo.length
-            });
-            
-            // Trimite la endpoint-ul de producție prin proxy
-            const response = await fetch('/contracts', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(uploadData)
-            });
-            
-            if (response.ok) {
-              const result = await response.json();
-              console.log('Upload response:', result);
-              
-              alert(
-                `✅ Contract încărcat cu succes în producție!\n\n` +
-                `📄 Fișier: ${file.name}\n` +
-                `📏 Dimensiune: ${(file.size / 1024 / 1024).toFixed(2)}MB\n` +
-                `📋 Tip fișier: ${file.type}\n` +
-                `📝 Tip contract: ${contractType.trim()}\n` +
-                `📅 Data încărcare: ${new Date().toLocaleString('ro-RO')}\n\n` +
-                `👤 Pentru: ${itemName} (${item.NIF})\n\n` +
-                `Contractul a fost salvat în baza de date de producție.`
-              );
-            } else {
-              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-          };
-          
-          reader.onerror = () => {
-            throw new Error('Error al leer el archivo');
-          };
-          
-          reader.readAsDataURL(file);
-          
-        } catch (error) {
-          console.error('Error upload contract:', error);
-          alert(`Error la încărcarea contractului: ${error.message}`);
-        }
-      });
-      
-      // Adaugă input-ul la DOM și deschide file picker-ul
-      document.body.appendChild(fileInput);
-      fileInput.click();
-      
-      // Curăță input-ul după ce se închide
-      fileInput.addEventListener('change', () => {
-        document.body.removeChild(fileInput);
-      });
-      
-    } catch (error) {
-      console.error('Error încărcând contract:', error);
-      alert('Error la încărcarea contractului');
-    }
-  };
 
   const handleViewDetails = (item) => {
     // Debug: verificar NIF
@@ -1578,29 +1477,6 @@ Acciones
                                 className="text-xs bg-purple-50 hover:bg-purple-100"
                               >
                                 👁️
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRenovarContract(proveedor.NIF || index);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs text-green-600 hover:text-green-700"
-                              >
-                                🔄
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleUploadContract(proveedor);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs text-blue-600 hover:text-blue-700"
-                                title="Subir contrato"
-                              >
-                                📄
                               </Button>
                             </div>
                           </div>

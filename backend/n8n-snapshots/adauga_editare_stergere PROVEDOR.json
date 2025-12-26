@@ -1,0 +1,354 @@
+{
+  "name": "adauga/editare/stergere PROVEDOR",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "/P1/c7987861-3fe6-4314-9037-348bc80f7296",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -32,
+        0
+      ],
+      "id": "a4dc3a68-79b5-4af8-9e5e-3b81bcf7dc0f",
+      "name": "Webhook",
+      "webhookId": "c7987861-3fe6-4314-9037-348bc80f7296"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO `Proveedores` (\n  `NIF`,\n  `NOMBRE O RAZÓN SOCIAL`,\n  `EMAIL`,\n  `TELEFONO`,\n  `MÓVIL`,\n  `FAX`,\n  `DIRECCIÓN`,\n  `CODIGO POSTAL`,\n  `POBLACIÓN`,\n  `PROVINCIA`,\n  `PAÍS`,\n  `URL`,\n  `DESCUENTO POR DEFECTO`,\n  `LATITUD`,\n  `LONGITUD`,\n  `NOTAS PRIVADAS`,\n  `CUENTAS BANCARIAS`,\n  `fecha_creacion`,\n  `fecha_actualizacion`,\n  `ESTADO`\n) VALUES (\n  {{ $json[\"NIF\"] ? `'${$json[\"NIF\"]}'` : 'NULL' }},\n  {{ $json[\"NOMBRE O RAZÓN SOCIAL\"] ? `'${$json[\"NOMBRE O RAZÓN SOCIAL\"]}'` : 'NULL' }},\n  {{ $json[\"EMAIL\"] ? `'${$json[\"EMAIL\"]}'` : 'NULL' }},\n  {{ $json[\"TELEFONO\"] ? `'${$json[\"TELEFONO\"]}'` : 'NULL' }},\n  {{ $json[\"MÓVIL\"] ? `'${$json[\"MÓVIL\"]}'` : 'NULL' }},\n  {{ $json[\"FAX\"] ? `'${$json[\"FAX\"]}'` : 'NULL' }},\n  {{ $json[\"DIRECCIÓN\"] ? `'${$json[\"DIRECCIÓN\"]}'` : 'NULL' }},\n  {{ $json[\"CODIGO POSTAL\"] ? `'${$json[\"CODIGO POSTAL\"]}'` : 'NULL' }},\n  {{ $json[\"POBLACIÓN\"] ? `'${$json[\"POBLACIÓN\"]}'` : 'NULL' }},\n  {{ $json[\"PROVINCIA\"] ? `'${$json[\"PROVINCIA\"]}'` : 'NULL' }},\n  {{ $json[\"PAÍS\"] ? `'${$json[\"PAÍS\"]}'` : 'NULL' }},\n  {{ $json[\"URL\"] ? `'${$json[\"URL\"]}'` : 'NULL' }},\n  {{ $json[\"DESCUENTO POR DEFECTO\"] ? `'${$json[\"DESCUENTO POR DEFECTO\"]}'` : 'NULL' }},\n  {{ $json[\"LATITUD\"] ? `'${$json[\"LATITUD\"]}'` : 'NULL' }},\n  {{ $json[\"LONGITUD\"] ? `'${$json[\"LONGITUD\"]}'` : 'NULL' }},\n  {{ $json[\"NOTAS PRIVADAS\"] ? `'${$json[\"NOTAS PRIVADAS\"]}'` : 'NULL' }},\n  {{ $json[\"CUENTAS BANCARIAS\"] ? `'${$json[\"CUENTAS BANCARIAS\"]}'` : 'NULL' }},\n  {{ $json[\"fecha_creacion\"] ? `'${$json[\"fecha_creacion\"]}'` : 'NULL' }},\n  {{ $json[\"fecha_actualizacion\"] ? `'${$json[\"fecha_actualizacion\"]}'` : 'NULL' }},\n  {{ $json[\"ESTADO\"] ? `'${$json[\"ESTADO\"]}'` : 'NULL' }}\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        656,
+        -160
+      ],
+      "id": "57727199-bae3-4345-be43-db133c7e4790",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"mensaje\": \"✅ Registro exitoso. Los datos del proveedor se han añadido correctamente en la base de datos.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        848,
+        -160
+      ],
+      "id": "1f560009-5d52-484f-85b6-0196390e2bff",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $json.body ?? $json;\n\n// funcție helper pentru normalizare\nfunction val(key) {\n  const v = b[key];\n  if (v === undefined || v === null) return null;\n  if (typeof v === 'string') {\n    const s = v.trim();\n    return s === '' ? null : s;\n  }\n  return v;\n}\n\nreturn [{\n  action: val('action'),\n\n  // === Coloane reale din tabel ===\n  NIF: val('NIF') ?? val('nif'),\n  'NOMBRE O RAZÓN SOCIAL': val('NOMBRE O RAZON SOCIAL'),\n  EMAIL: val('EMAIL'),\n  TELEFONO: val('TELEFONO'),\n  'MÓVIL': val('MOVIL'),\n  FAX: val('FAX'),\n  'DIRECCIÓN': val('DIRECCION'),\n  'CODIGO POSTAL': val('CODIGO POSTAL'),\n  'POBLACIÓN': val('POBLACION'),\n  PROVINCIA: val('PROVINCIA'),\n  'PAÍS': val('PAIS'),\n  URL: val('URL'),\n  'DESCUENTO POR DEFECTO': val('DESCUENTO POR DEFECTO'),\n  LATITUD: val('LATITUD'),\n  LONGITUD: val('LONGITUD'),\n  'NOTAS PRIVADAS': val('NOTAS PRIVADAS'),\n  'CUENTAS BANCARIAS': val('CUENTAS BANCARIAS'),\n  fecha_creacion: new Date().toISOString().slice(0, 19).replace('T', ' '), // data curentă\n  fecha_actualizacion: new Date().toISOString().slice(0, 19).replace('T', ' '),\n  ESTADO: val('ESTADO') ?? 'Sí',\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        -144
+      ],
+      "id": "652733b6-de38-44b8-9103-8833f341d8d9",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json[\"body\"][\"action\"]}}",
+                    "rightValue": "add",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "503e7172-bd96-4863-8656-256d0331b88f"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Adauga"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0858384f-c245-428a-af8d-c13f751647d3",
+                    "leftValue": "={{$json[\"body\"][\"action\"]}}",
+                    "rightValue": "edit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Editeaza"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ef3bf7c0-37d9-4e76-be69-d8be8ab6845b",
+                    "leftValue": "={{$json[\"body\"][\"action\"]}}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Sterge"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        192,
+        -16
+      ],
+      "id": "cc9ff147-fd8e-4cd3-a38f-6b8e4194b3b4",
+      "name": "Switch",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $json.body ?? $json;\n\n// helper să convertim \"\" în null, să scăpăm de spații, etc.\nfunction val(key) {\n  const v = b[key];\n  if (v === undefined || v === null) return null;\n  if (typeof v === 'string') {\n    const s = v.trim();\n    return s === '' ? null : s;\n  }\n  return v;\n}\n\nreturn [{\n  id: val('id'), // necesar pentru WHERE\n\n  // mapăm payload -> coloanele reale din tabela `Proveedores`\n  NIF: val('NIF') ?? val('nif'),\n  'NOMBRE O RAZÓN SOCIAL': val('NOMBRE O RAZON SOCIAL'),\n  EMAIL: val('EMAIL'),\n  TELEFONO: val('TELEFONO'),\n  'MÓVIL': val('MOVIL'),\n  FAX: val('FAX'),\n  'DIRECCIÓN': val('DIRECCION'),\n  'CODIGO POSTAL': val('CODIGO POSTAL'),\n  'POBLACIÓN': val('POBLACION'),\n  PROVINCIA: val('PROVINCIA'),\n  'PAÍS': val('PAIS'),\n  URL: val('URL'),\n  'DESCUENTO POR DEFECTO': val('DESCUENTO POR DEFECTO'),\n  LATITUD: val('LATITUD'),\n  LONGITUD: val('LONGITUD'),\n  'NOTAS PRIVADAS': val('NOTAS PRIVADAS'),\n  'CUENTAS BANCARIAS': val('CUENTAS BANCARIAS'),\n\n  // timpii de audit\n  fecha_actualizacion: new Date().toISOString().slice(0, 19).replace('T', ' '),\n\n  // stare\n  ESTADO: val('ESTADO') ?? 'Sí',\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        32
+      ],
+      "id": "914309db-96e0-4768-b7f2-6070948d9c08",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE `Proveedores`\nSET\n  `NIF` = {{ $json[\"NIF\"] ? `'${$json[\"NIF\"]}'` : 'NULL' }},\n  `NOMBRE O RAZÓN SOCIAL` = {{ $json[\"NOMBRE O RAZÓN SOCIAL\"] ? `'${$json[\"NOMBRE O RAZÓN SOCIAL\"]}'` : 'NULL' }},\n  `EMAIL` = {{ $json[\"EMAIL\"] ? `'${$json[\"EMAIL\"]}'` : 'NULL' }},\n  `TELEFONO` = {{ $json[\"TELEFONO\"] ? `'${$json[\"TELEFONO\"]}'` : 'NULL' }},\n  `MÓVIL` = {{ $json[\"MÓVIL\"] ? `'${$json[\"MÓVIL\"]}'` : 'NULL' }},\n  `FAX` = {{ $json[\"FAX\"] ? `'${$json[\"FAX\"]}'` : 'NULL' }},\n  `DIRECCIÓN` = {{ $json[\"DIRECCIÓN\"] ? `'${$json[\"DIRECCIÓN\"]}'` : 'NULL' }},\n  `CODIGO POSTAL` = {{ $json[\"CODIGO POSTAL\"] ? `'${$json[\"CODIGO POSTAL\"]}'` : 'NULL' }},\n  `POBLACIÓN` = {{ $json[\"POBLACIÓN\"] ? `'${$json[\"POBLACIÓN\"]}'` : 'NULL' }},\n  `PROVINCIA` = {{ $json[\"PROVINCIA\"] ? `'${$json[\"PROVINCIA\"]}'` : 'NULL' }},\n  `PAÍS` = {{ $json[\"PAÍS\"] ? `'${$json[\"PAÍS\"]}'` : 'NULL' }},\n  `URL` = {{ $json[\"URL\"] ? `'${$json[\"URL\"]}'` : 'NULL' }},\n  `DESCUENTO POR DEFECTO` = {{ $json[\"DESCUENTO POR DEFECTO\"] ? `'${$json[\"DESCUENTO POR DEFECTO\"]}'` : 'NULL' }},\n  `LATITUD` = {{ $json[\"LATITUD\"] ? `'${$json[\"LATITUD\"]}'` : 'NULL' }},\n  `LONGITUD` = {{ $json[\"LONGITUD\"] ? `'${$json[\"LONGITUD\"]}'` : 'NULL' }},\n  `NOTAS PRIVADAS` = {{ $json[\"NOTAS PRIVADAS\"] ? `'${$json[\"NOTAS PRIVADAS\"]}'` : 'NULL' }},\n  `CUENTAS BANCARIAS` = {{ $json[\"CUENTAS BANCARIAS\"] ? `'${$json[\"CUENTAS BANCARIAS\"]}'` : 'NULL' }},\n  `fecha_actualizacion` = {{ $json[\"fecha_actualizacion\"] ? `'${$json[\"fecha_actualizacion\"]}'` : 'NULL' }},\n  `ESTADO` = {{ $json[\"ESTADO\"] ? `'${$json[\"ESTADO\"]}'` : 'NULL' }}\nWHERE `id` = {{$json.id}};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        608,
+        16
+      ],
+      "id": "11af042c-a13f-4cd5-8393-a4008f3cc2ac",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"mensaje\": \"✅ Edición exitosa. Los datos del proveedor se han actualizado correctamente en la base de datos.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        800,
+        32
+      ],
+      "id": "2c7695d0-c191-405f-bb2e-c25b369cd3be",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM Proveedores\nWHERE id = {{ $json.body.id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        400,
+        192
+      ],
+      "id": "37ef2a78-bfee-4d15-8976-35db3d50b951",
+      "name": "Execute a SQL query2",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"mensaje\": \"🗑️ Eliminación exitosa. El registro del cliente ha sido borrado correctamente de la base de datos.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        688,
+        224
+      ],
+      "id": "f94d71ff-a595-4fd1-8e34-15ad15547680",
+      "name": "Respond to Webhook2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query2": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "62d6869d-f797-4a89-89dc-8445774c5eca",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "iEkuTnlYqAihOL4n",
+  "tags": []
+}

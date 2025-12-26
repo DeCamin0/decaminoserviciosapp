@@ -1,0 +1,224 @@
+{
+  "name": "guardarcontractos",
+  "nodes": [
+    {
+      "parameters": {
+        "functionCode": "const data = items[0].json.body;\n\n// Funcție care verifică dacă data e validă și o transformă în ISO\nfunction formatDate(d) {\n  if (!d) return null;\n  const date = new Date(d);\n  return isNaN(date.getTime()) ? null : date.toISOString();\n}\n\nreturn [\n  {\n    json: {\n      nif: data.nif || 'FARA_NIF',\n      tipo: data.tipo || 'desconocido',\n      nombre: data.nombre || 'FARA_NOMBRE',\n      contractType: data.contractType || 'FARA_TIPO_CONTRATO',\n      fechaSubida: formatDate(data.fechaSubida) || new Date().toISOString(),\n      fechaRenovacion: formatDate(data.fechaRenovacion),\n      archivo: data.archivo || ''\n    }\n  }\n];"
+      },
+      "id": "1c979d19-1bab-49ef-885b-cb1c3f3a1f89",
+      "name": "Pregătește datele",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        432,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.action }}",
+                    "rightValue": "upload",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "44329c49-b86b-4336-bea2-7bba46a0dcd9"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Adauga"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cec392da-4a14-4c95-abd4-ca122dcdb977",
+                    "leftValue": "={{ $json.body.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Sterge"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        240,
+        64
+      ],
+      "id": "af0f4534-0660-4ec6-afbb-d31e1f204ad6",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "f1535e89-f74b-4df3-8516-5dfdda8c6b35",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "id": "ada6aedf-fdff-4a37-822c-5fbee3e80014",
+      "name": "Webhook - Contractos",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        32,
+        64
+      ],
+      "webhookId": "f1535e89-f74b-4df3-8516-5dfdda8c6b35"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM `ContratosClientes`\nWHERE `id` = {{ $json.body.id }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        160
+      ],
+      "id": "b55e0429-6519-43e9-b47f-d27194a55b1c",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"mensaje\": \"🗑️ Eliminación exitosa. El contrato del cliente ha sido borrado correctamente de la base de datos.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        656,
+        160
+      ],
+      "id": "87c75414-5bb4-4ed5-acf1-b1b073b58d0c",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO `ContratosClientes` (\n  `cliente_nif`,\n  `tipo_contrato`,\n  `fecha_subida`,\n  `fecha_renovacion`,\n  `archivo_base64`\n)\nVALUES (\n  {{ $json.nif ? `'${$json.nif}'` : 'NULL' }},\n  {{ $json.contractType ? `'${$json.contractType}'` : 'NULL' }},\n  {{ $json.fechaSubida ? `'${$json.fechaSubida}'` : 'NULL' }},\n  {{ $json.fechaRenovacion ? `'${$json.fechaRenovacion}'` : 'NULL' }},\n  {{ $json.archivo ? `'${$json.archivo}'` : 'NULL' }}\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        -48
+      ],
+      "id": "a22441a4-225c-4d62-84e7-006453ee28a1",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Pregătește datele": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Pregătește datele",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Contractos": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3b1d9e69-f504-4e45-af85-617bb13364f0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "GUlijhdOe5IhkmUp",
+  "tags": []
+}

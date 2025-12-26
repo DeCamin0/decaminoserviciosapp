@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Query,
   Body,
   UseGuards,
@@ -135,6 +136,27 @@ export class FichajesController {
       return result;
     } catch (error: any) {
       this.logger.error('❌ Error updating fichaje:', error);
+      throw error;
+    }
+  }
+
+  @Delete()
+  @UseGuards(JwtAuthGuard)
+  async deleteFichaje(@Body() body: any) {
+    try {
+      this.logger.log(
+        `📝 Delete fichaje request - ID: ${body.id || 'missing'}`,
+      );
+
+      if (!body.id) {
+        throw new BadRequestException('ID is required for delete');
+      }
+
+      const result = await this.fichajesService.deleteFichaje(body.id);
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error deleting fichaje:', error);
       throw error;
     }
   }

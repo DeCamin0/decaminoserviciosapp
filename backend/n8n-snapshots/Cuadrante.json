@@ -1,0 +1,94 @@
+{
+  "name": "Cuadrante",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "guardar-cuadrante-yyBov0qVQZEhX2TL",
+        "responseMode": "lastNode",
+        "responseData": "allEntries",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c2ac9e12-a3b4-4d60-ab8d-9e3fc96fc9e2",
+      "webhookId": "5e46ec7a-7b1c-463c-b995-93c080981f9a"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        624,
+        0
+      ],
+      "id": "8da099c2-3792-4437-bb5d-7710ac10ff03",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO cuadrante (\n    CODIGO, EMAIL, NOMBRE, LUNA, CENTRO,\n    ZI_1, ZI_2, ZI_3, ZI_4, ZI_5, ZI_6, ZI_7, ZI_8, ZI_9, ZI_10,\n    ZI_11, ZI_12, ZI_13, ZI_14, ZI_15, ZI_16, ZI_17, ZI_18, ZI_19, ZI_20,\n    ZI_21, ZI_22, ZI_23, ZI_24, ZI_25, ZI_26, ZI_27, ZI_28, ZI_29, ZI_30, ZI_31\n)\nVALUES (\n    {{ $json.body.CODIGO }},\n    '{{ $json.body.EMAIL }}',\n    '{{ $json.body.NOMBRE }}',\n    '{{ $json.body.LUNA }}',\n    '{{ $json.body.CENTRO }}',\n    '{{ $json.body.ZI_1 }}', '{{ $json.body.ZI_2 }}', '{{ $json.body.ZI_3 }}',\n    '{{ $json.body.ZI_4 }}', '{{ $json.body.ZI_5 }}', '{{ $json.body.ZI_6 }}',\n    '{{ $json.body.ZI_7 }}', '{{ $json.body.ZI_8 }}', '{{ $json.body.ZI_9 }}',\n    '{{ $json.body.ZI_10 }}', '{{ $json.body.ZI_11 }}', '{{ $json.body.ZI_12 }}',\n    '{{ $json.body.ZI_13 }}', '{{ $json.body.ZI_14 }}', '{{ $json.body.ZI_15 }}',\n    '{{ $json.body.ZI_16 }}', '{{ $json.body.ZI_17 }}', '{{ $json.body.ZI_18 }}',\n    '{{ $json.body.ZI_19 }}', '{{ $json.body.ZI_20 }}', '{{ $json.body.ZI_21 }}',\n    '{{ $json.body.ZI_22 }}', '{{ $json.body.ZI_23 }}', '{{ $json.body.ZI_24 }}',\n    '{{ $json.body.ZI_25 }}', '{{ $json.body.ZI_26 }}', '{{ $json.body.ZI_27 }}',\n    '{{ $json.body.ZI_28 }}', '{{ $json.body.ZI_29 }}', '{{ $json.body.ZI_30 }}',\n    '{{ $json.body.ZI_31 }}'\n)\nON DUPLICATE KEY UPDATE\n    EMAIL = VALUES(EMAIL),\n    NOMBRE = VALUES(NOMBRE),\n    CENTRO = VALUES(CENTRO),\n    ZI_1 = VALUES(ZI_1), ZI_2 = VALUES(ZI_2), ZI_3 = VALUES(ZI_3),\n    ZI_4 = VALUES(ZI_4), ZI_5 = VALUES(ZI_5), ZI_6 = VALUES(ZI_6),\n    ZI_7 = VALUES(ZI_7), ZI_8 = VALUES(ZI_8), ZI_9 = VALUES(ZI_9),\n    ZI_10 = VALUES(ZI_10), ZI_11 = VALUES(ZI_11), ZI_12 = VALUES(ZI_12),\n    ZI_13 = VALUES(ZI_13), ZI_14 = VALUES(ZI_14), ZI_15 = VALUES(ZI_15),\n    ZI_16 = VALUES(ZI_16), ZI_17 = VALUES(ZI_17), ZI_18 = VALUES(ZI_18),\n    ZI_19 = VALUES(ZI_19), ZI_20 = VALUES(ZI_20), ZI_21 = VALUES(ZI_21),\n    ZI_22 = VALUES(ZI_22), ZI_23 = VALUES(ZI_23), ZI_24 = VALUES(ZI_24),\n    ZI_25 = VALUES(ZI_25), ZI_26 = VALUES(ZI_26), ZI_27 = VALUES(ZI_27),\n    ZI_28 = VALUES(ZI_28), ZI_29 = VALUES(ZI_29), ZI_30 = VALUES(ZI_30),\n    ZI_31 = VALUES(ZI_31);\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        304,
+        0
+      ],
+      "id": "399ead9c-d41b-465c-b8d6-c15ee3f4c44e",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4d9561fe-2445-4771-97f6-6d23107e5d17",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "sDCsoDVc4bY5kl82",
+  "tags": []
+}

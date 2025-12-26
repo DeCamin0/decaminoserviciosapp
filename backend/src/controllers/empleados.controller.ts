@@ -35,6 +35,39 @@ export class EmpleadosController {
     return { success: true, empleado };
   }
 
+  @Get('cambios-pendientes')
+  @UseGuards(JwtAuthGuard)
+  async getCambiosPendientes() {
+    try {
+      this.logger.log('📋 Get cambios pendientes request');
+      const cambios = await this.empleadosService.getCambiosPendientes();
+      return cambios;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting cambios pendientes:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener cambios pendientes: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('stats')
+  @UseGuards(JwtAuthGuard)
+  async getEmpleadosStats() {
+    try {
+      this.logger.log('📊 Get empleados stats request');
+      const stats = await this.empleadosStatsService.getEmpleadosStats();
+      return stats;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting empleados stats:', error);
+      throw new BadRequestException(
+        `Error al obtener estadísticas: ${error.message}`,
+      );
+    }
+  }
+
   @Get()
   async getAll() {
     const empleados = await this.empleadosService.getAllEmpleados();
@@ -619,19 +652,6 @@ export class EmpleadosController {
       throw new BadRequestException(
         `Error al rechazar cambio: ${error.message}`,
       );
-    }
-  }
-
-  @Get('stats')
-  @UseGuards(JwtAuthGuard)
-  async getEmpleadosStats() {
-    try {
-      this.logger.log('📊 Get empleados stats request');
-      const stats = await this.empleadosStatsService.getEmpleadosStats();
-      return stats;
-    } catch (error: any) {
-      this.logger.error('❌ Error getting empleados stats:', error);
-      throw error;
     }
   }
 

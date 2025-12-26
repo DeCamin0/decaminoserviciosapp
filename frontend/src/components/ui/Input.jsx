@@ -10,10 +10,13 @@ const Input = ({
   multiline,
   rows = 4,
   id,
+  name,
   ...props 
 }) => {
   // Generează un ID unic dacă nu este furnizat
   const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+  // Generează un name din id dacă nu este furnizat
+  const inputName = name || (id ? id.replace(/[^a-zA-Z0-9]/g, '-') : inputId);
   
   return (
     <div className={className}>
@@ -25,6 +28,7 @@ const Input = ({
       {multiline ? (
         <textarea
           id={inputId}
+          name={inputName}
           rows={rows}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors resize-vertical"
           value={value}
@@ -36,6 +40,7 @@ const Input = ({
       ) : (
         <input
           id={inputId}
+          name={inputName}
           type={type}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors"
           value={value}

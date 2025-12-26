@@ -263,7 +263,6 @@ export const useAdminApi = () => {
             }
           }
           console.log('[Permissions] From backend processed:', permissions);
-          // Dacă nu sunt chei, mergem pe fallback n8n
           if (Object.keys(permissions).length > 0) {
             return permissions;
           }
@@ -272,87 +271,9 @@ export const useAdminApi = () => {
         console.warn('[Permissions] Backend response not OK:', backendRes.status);
       }
 
-      // 2) Fallback: n8n legacy
-      let url = routes.getPermissions;
-      if (userGrupo && module) {
-        const grupoModule = `${userGrupo}_${module}`;
-        url += `?grupo_module=${encodeURIComponent(grupoModule)}`;
-      } else if (userGrupo) {
-        url += `?grupo_module=${encodeURIComponent(userGrupo)}`;
-      }
-
-      console.log('[Permissions] Fallback to n8n:', url);
-
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      console.log('[Permissions] n8n status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`Error fetching permissions: ${response.status}`);
-      }
-
-      const responseText = await response.text();
-      console.log('[Permissions] n8n raw text:', responseText);
-
-      if (!responseText || responseText.trim() === '') {
-        console.warn('[Permissions] Empty response from n8n, using defaults');
-        return getDefaultPermissions();
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('[Permissions] Failed to parse JSON response:', parseError);
-        console.error('Response text was:', responseText);
-        throw new Error('Invalid JSON response from server');
-      }
-
-      console.log('[Permissions] n8n data received:', data);
-
-      if (data && Array.isArray(data)) {
-        const permissions = {};
-        for (const item of data) {
-          const grupoModule = item.grupo_module;
-          const permitted = item.permitted;
-          if (grupoModule) {
-            const parts = grupoModule.split('_');
-            if (parts.length >= 2) {
-              const grupo = parts[0];
-              const module = parts.slice(1).join('_');
-              if (!permissions[grupo]) {
-                permissions[grupo] = {};
-              }
-              permissions[grupo][module] = permitted === 'true' || permitted === true || permitted === '1' || permitted === 1;
-            }
-          }
-        }
-        console.log('[Permissions] n8n processed:', permissions);
-        return permissions;
-      } else if (data && typeof data === 'object') {
-        const permissions = {};
-        const grupoModule = data.grupo_module;
-        const permitted = data.permitted;
-        if (grupoModule) {
-          const parts = grupoModule.split('_');
-          if (parts.length >= 2) {
-            const grupo = parts[0];
-            const module = parts.slice(1).join('_');
-            if (!permissions[grupo]) {
-              permissions[grupo] = {};
-            }
-            permissions[grupo][module] = permitted === 'true' || permitted === true || permitted === '1' || permitted === 1;
-          }
-        }
-        console.log('[Permissions] n8n single processed:', permissions);
-        return permissions;
-      } else {
-        console.warn('[Permissions] No permissions found in n8n response, using defaults');
-        return getDefaultPermissions();
-      }
+      // Dacă backend-ul nu returnează date valide, folosim permisiuni default
+      console.warn('[Permissions] No valid permissions from backend, using defaults');
+      return getDefaultPermissions();
     } catch (error) {
       console.error('Error fetching permissions:', error);
       return getDefaultPermissions();

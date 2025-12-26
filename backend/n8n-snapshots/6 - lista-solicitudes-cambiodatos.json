@@ -1,0 +1,94 @@
+{
+  "name": "6 - lista-solicitudes-cambiodatos",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "lista-solicitudes-e6d15c117779",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "23654d10-d29b-404d-bde2-60a7c9a2b00c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        96
+      ],
+      "webhookId": "3f4f9f7a-1ca0-49df-923a-83c28c2f9175"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM SolicitudesCambiosPersonales",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -224,
+        96
+      ],
+      "id": "c16f69dd-5349-473b-8857-f2f1be833006",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        96
+      ],
+      "id": "e476d139-f7c2-44c5-9eb2-2b7295434f3c",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "rL4oA24ur052e543"
+  },
+  "versionId": "73a7a3eb-3d44-4381-a158-4731d2f31791",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "1x78ZIYcU4LXfmJ4",
+  "tags": []
+}

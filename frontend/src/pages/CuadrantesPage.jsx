@@ -164,6 +164,10 @@ export default function CuadrantesPage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedCentro, setSelectedCentro] = useState('');
   const [selectedGrupo, setSelectedGrupo] = useState('');
+  const [centroSearchTerm, setCentroSearchTerm] = useState('');
+  const [centroDropdownOpen, setCentroDropdownOpen] = useState(false);
+  const [centroSearchTermLista, setCentroSearchTermLista] = useState('');
+  const [centroDropdownOpenLista, setCentroDropdownOpenLista] = useState(false);
   const [festivosYear, setFestivosYear] = useState(new Date().getFullYear());
   const [festivosMonthFilter, setFestivosMonthFilter] = useState('all');
   const [festivosData, setFestivosData] = useState([]);
@@ -274,12 +278,24 @@ export default function CuadrantesPage() {
 
       console.log('💾 Salvando modificările:', cuadrantesToSave);
 
-      // Trimite la backend cu endpoint-ul de update (PRODUCCIÓN)
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/update/bce8a5c5-1ca7-4005-9646-22d6016945ab', {
+      // Add JWT token for authentication
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Trimite la backend cu endpoint-ul de update
+      const response = await fetch(routes.updateCuadrantes, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           cuadrantes: cuadrantesToSave,
           centro: selectedCentro,
@@ -318,6 +334,42 @@ export default function CuadrantesPage() {
   const [angajatiFiltrati, setAngajatiFiltrati] = useState([]);
   const [centros, setCentros] = useState([]);
   const [grupos, setGrupos] = useState([]);
+
+  // Filtrare centre pe baza search term-ului
+  const filteredCentros = useMemo(() => {
+    if (!centroSearchTerm.trim()) {
+      return centros;
+    }
+    const searchLower = centroSearchTerm.toLowerCase();
+    return centros.filter(centro => 
+      centro.toLowerCase().includes(searchLower)
+    );
+  }, [centros, centroSearchTerm]);
+
+  const filteredCentrosLista = useMemo(() => {
+    if (!centroSearchTermLista.trim()) {
+      return centros;
+    }
+    const searchLower = centroSearchTermLista.toLowerCase();
+    return centros.filter(centro => 
+      centro.toLowerCase().includes(searchLower)
+    );
+  }, [centros, centroSearchTermLista]);
+
+  // Reset search term când se schimbă selectedCentro din altă parte
+  useEffect(() => {
+    if (selectedCentro && !centroSearchTerm && !centroSearchTermLista) {
+      // Nu face nimic dacă search term-ul este deja gol
+      return;
+    }
+    // Dacă selectedCentro se schimbă și nu este în search term, resetează search term-urile
+    if (selectedCentro && centroSearchTerm && centroSearchTerm !== selectedCentro) {
+      setCentroSearchTerm('');
+    }
+    if (selectedCentro && centroSearchTermLista && centroSearchTermLista !== selectedCentro) {
+      setCentroSearchTermLista('');
+    }
+  }, [selectedCentro, centroSearchTerm, centroSearchTermLista]);
   const [horariosCentros, setHorariosCentros] = useState([]);
   const [horariosGrupos, setHorariosGrupos] = useState([]);
   const [settings, setSettings] = useState({});
@@ -571,11 +623,6 @@ export default function CuadrantesPage() {
     setAngajatiFiltrati(demoEmpleados);
     setCentros(demoClientes);
     setGrupos(['Admin', 'Supervisor', 'Empleado', 'Developer']);
-    
-    // Set default selections for demo
-    if (demoClientes.length > 0 && !selectedCentro) {
-      setSelectedCentro(demoClientes[0]);
-    }
   }, [selectedCentro]);
 
   // Funcție pentru încărcarea clienților
@@ -610,17 +657,6 @@ export default function CuadrantesPage() {
       console.log('📋 Lista clientes:', clientesNombres);
       
       setCentros(clientesNombres);
-      
-      // Setează primul client ca selecție default pentru managers o singură dată
-      if (clientesNombres.length > 0 && isManager) {
-        setSelectedCentro((prevCentro) => {
-          if (prevCentro) {
-            return prevCentro;
-          }
-          console.log('✅ Cliente seleccionado automáticamente:', clientesNombres[0]);
-          return clientesNombres[0];
-        });
-      }
     } catch (error) {
       console.error('❌ Error fetching clientes:', error);
     }
@@ -649,8 +685,24 @@ export default function CuadrantesPage() {
           const festivosUrl = `${FESTIVOS_ENDPOINT}${separator}accion=get&year=${encodeURIComponent(
             year,
           )}`;
+          
+          // Add JWT token for authentication
+          const token = localStorage.getItem('auth_token');
+          const headers = {
+            'Content-Type': 'application/json',
+            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+            'X-Client-Type': 'web-browser',
+            'User-Agent': 'DeCamino-Web-Client/1.0',
+          };
+          
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
           const response = await fetch(festivosUrl, {
             method: 'GET',
+            headers,
           });
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -671,9 +723,10 @@ export default function CuadrantesPage() {
             ? raw.festivos
             : [];
 
-          if (!festivosList.length) {
-            throw new Error('No festivos received');
-          }
+          // Nu aruncăm eroare dacă array-ul este gol - poate anul nu are festivos în baza de date
+          // if (!festivosList.length) {
+          //   throw new Error('No festivos received');
+          // }
 
           const normalized = festivosList.map((item, index) => {
             const inferredMonth =
@@ -795,8 +848,24 @@ export default function CuadrantesPage() {
 
     try {
       console.log('🔄 Enviando edición de festivo:', editUrl);
+      
+      // Add JWT token for authentication
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(editUrl, {
         method: 'GET',
+        headers,
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -879,7 +948,25 @@ export default function CuadrantesPage() {
 
     try {
       console.log('🗑️ Eliminando festivo:', deleteUrl);
-      const response = await fetch(deleteUrl, { method: 'GET' });
+      
+      // Add JWT token for authentication
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(deleteUrl, { 
+        method: 'GET',
+        headers,
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -1123,11 +1210,30 @@ export default function CuadrantesPage() {
       // Pentru fiecare angajat, verifică dacă are cuadrante salvate
       for (const emailAngajat of angajatiDinCuadrante) {
         try {
-          const resp = await fetch('https://n8n.decaminoservicios.com/webhook/get-cuadrantes-yyBov0qVQZEhX2TL', {
+          // Add JWT token for authentication
+          const token = localStorage.getItem('auth_token');
+          const headers = {
+            'Content-Type': 'application/json',
+            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+            'X-Client-Type': 'web-browser',
+            'User-Agent': 'DeCamino-Web-Client/1.0',
+          };
+          
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const resp = await fetch(routes.getCuadrantes, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ email: emailAngajat })
           });
+          
+          if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+          }
+          
           const data = await resp.json();
           const cuadranteAngajat = Array.isArray(data) ? data : [data];
           existente = existente.concat(cuadranteAngajat);
@@ -1494,11 +1600,30 @@ export default function CuadrantesPage() {
         // Pentru fiecare angajat, verifică dacă are cuadrante salvate
         for (const emailAngajat of angajatiDinCuadrante) {
           try {
-            const resp = await fetch('https://n8n.decaminoservicios.com/webhook/get-cuadrantes-yyBov0qVQZEhX2TL', {
+            // Add JWT token for authentication
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+              'Content-Type': 'application/json',
+              'X-App-Source': 'DeCamino-Web-App',
+              'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+              'X-Client-Type': 'web-browser',
+              'User-Agent': 'DeCamino-Web-Client/1.0',
+            };
+            
+            if (token) {
+              headers['Authorization'] = `Bearer ${token}`;
+            }
+            
+            const resp = await fetch(routes.getCuadrantes, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers,
               body: JSON.stringify({ email: emailAngajat })
             });
+            
+            if (!resp.ok) {
+              throw new Error(`HTTP ${resp.status}`);
+            }
+            
             const data = await resp.json();
             const cuadranteAngajat = Array.isArray(data) ? data : [data];
             cuadranteExistente = cuadranteExistente.concat(cuadranteAngajat);
@@ -1844,9 +1969,24 @@ export default function CuadrantesPage() {
         
         try {
           const { ...liniePentruSalvare } = linie;
-          const response = await fetch('https://n8n.decaminoservicios.com/webhook/guardar-cuadrante-yyBov0qVQZEhX2TL', {
+          
+          // Add JWT token for authentication
+          const token = localStorage.getItem('auth_token');
+          const headers = {
+            'Content-Type': 'application/json',
+            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+            'X-Client-Type': 'web-browser',
+            'User-Agent': 'DeCamino-Web-Client/1.0',
+          };
+          
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const response = await fetch(routes.saveCuadrante, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(liniePentruSalvare)
           });
           
@@ -1947,9 +2087,24 @@ export default function CuadrantesPage() {
         
         try {
           const { ...cuadrantePentruSalvare } = cuadrante;
-          const response = await fetch('https://n8n.decaminoservicios.com/webhook/guardar-cuadrante-yyBov0qVQZEhX2TL', {
+          
+          // Add JWT token for authentication
+          const token = localStorage.getItem('auth_token');
+          const headers = {
+            'Content-Type': 'application/json',
+            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+            'X-Client-Type': 'web-browser',
+            'User-Agent': 'DeCamino-Web-Client/1.0',
+          };
+          
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const response = await fetch(routes.saveCuadrante, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(cuadrantePentruSalvare)
           });
           
@@ -2231,87 +2386,6 @@ export default function CuadrantesPage() {
           </div>
         </div>
       )}
-      {/* Banner En Pruebas (azul) */}
-      <div 
-        className="relative group overflow-hidden"
-        style={{
-          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(29, 78, 216, 0.12) 100%)',
-          backdropFilter: 'blur(10px)',
-          borderRadius: '1.5rem',
-          border: '2px solid rgba(59, 130, 246, 0.35)',
-          boxShadow: '0 15px 40px rgba(59, 130, 246, 0.25)',
-          padding: '1.5rem'
-        }}
-      >
-        {/* Glow animado */}
-        <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-400 to-indigo-400 opacity-20 blur-xl animate-pulse"></div>
-        {/* Patrón de rayas diagonal */}
-        <div 
-          className="absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: 'repeating-linear-gradient(45deg, rgba(59,130,246,0.5) 0px, rgba(59,130,246,0.5) 10px, transparent 10px, transparent 20px)',
-          }}
-        ></div>
-        
-        <div className="relative flex flex-col sm:flex-row items-center gap-4">
-          {/* Icono 3D animado */}
-          <div className="flex-shrink-0">
-            <div className="relative inline-block">
-              <div className="absolute inset-0 bg-orange-400 rounded-full blur-md opacity-60 animate-pulse"></div>
-              <div 
-                className="relative w-16 h-16 rounded-full flex items-center justify-center shadow-xl transform group-hover:scale-110 group-hover:rotate-12 transition-all duration-300"
-                style={{
-                  background: 'linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)',
-                  boxShadow: '0 12px 30px rgba(59, 130, 246, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
-                }}
-              >
-                <span className="text-4xl">🧪</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Contenido */}
-          <div className="flex-1 text-center sm:text-left">
-            <h3 
-              className="text-xl sm:text-2xl font-black mb-2 bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 bg-clip-text text-transparent"
-              style={{ textShadow: '0 2px 10px rgba(59, 130, 246, 0.15)' }}
-            >
-              Página en Pruebas (Beta)
-            </h3>
-            <p className="text-blue-900 font-semibold text-sm sm:text-base leading-relaxed">
-              Estamos validando y mejorando esta sección. Algunos datos pueden no estar 100% actualizados. 
-              <span className="inline-block ml-2 font-black text-blue-700">¡Pronto estará completamente funcional!</span>
-            </p>
-          </div>
-
-          {/* Badge */}
-          <div 
-            className="flex-shrink-0"
-            style={{
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(29, 78, 216, 0.2) 100%)',
-              backdropFilter: 'blur(8px)',
-              borderRadius: '1rem',
-              border: '2px solid rgba(59, 130, 246, 0.35)',
-              boxShadow: '0 4px 15px rgba(59, 130, 246, 0.3)',
-              padding: '0.75rem 1.25rem'
-            }}
-          >
-            <div className="text-center">
-              <div className="text-blue-700 font-black text-xs uppercase tracking-wider mb-1">
-                Estado
-              </div>
-              <div className="text-blue-900 font-black text-lg flex items-center gap-2">
-                <span className="w-3 h-3 bg-blue-500 rounded-full animate-pulse shadow-lg"></span>
-                Beta
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Shimmer effect */}
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-      </div>
-
       {/* Header cu buton regresar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -2418,27 +2492,57 @@ export default function CuadrantesPage() {
                 </select>
               </div>
               
-              <div>
+              <div className="relative">
                 <label
                   htmlFor="generar-centro"
                   className="block text-sm font-medium text-gray-700 mb-2"
                 >
                   Centro
                 </label>
-                <select
-                  id="generar-centro"
-                  name="centro"
-                  value={selectedCentro}
-                  onChange={(e) => setSelectedCentro(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                >
-                  <option value="">Selecciona centro</option>
-                  {centros.map(centro => (
-                    <option key={centro} value={centro}>
-                      {centro}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    id="generar-centro"
+                    name="centro"
+                    type="text"
+                    value={centroSearchTerm || selectedCentro}
+                    onChange={(e) => {
+                      setCentroSearchTerm(e.target.value);
+                      setCentroDropdownOpen(true);
+                      if (!e.target.value) {
+                        setSelectedCentro('');
+                      }
+                    }}
+                    onFocus={() => setCentroDropdownOpen(true)}
+                    onBlur={() => {
+                      // Delay pentru a permite click pe opțiune
+                      setTimeout(() => setCentroDropdownOpen(false), 200);
+                    }}
+                    placeholder="Buscar o escribir centro..."
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  />
+                  {centroDropdownOpen && filteredCentros.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      {filteredCentros.map(centro => (
+                        <div
+                          key={centro}
+                          onClick={() => {
+                            setSelectedCentro(centro);
+                            setCentroSearchTerm('');
+                            setCentroDropdownOpen(false);
+                          }}
+                          className="p-2 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        >
+                          {centro}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {centroDropdownOpen && filteredCentros.length === 0 && centroSearchTerm && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-2 text-gray-500">
+                      No se encontraron centros
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div>
@@ -3559,31 +3663,60 @@ export default function CuadrantesPage() {
           <div className="space-y-6">
             {/* Selectors */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
+              <div className="relative">
                 <label
                   htmlFor="lista-centro"
                   className="block text-sm font-semibold text-gray-700 mb-2"
                 >
                   Centro de Trabajo:
                 </label>
-              <select
-                  id="lista-centro"
-                  name="listaCentro"
-                  value={selectedCentro}
-                  onChange={(e) => {
-                    setSelectedCentro(e.target.value);
-                    setSelectedEmpleado('');
-                  }}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                >
-                  <option value="">Selecciona un centro...</option>
-                  {centros.map(centro => (
-                    <option key={centro} value={centro}>
-                      {centro}
-                    </option>
-                ))}
-              </select>
-            </div>
+                <div className="relative">
+                  <input
+                    id="lista-centro"
+                    name="listaCentro"
+                    type="text"
+                    value={centroSearchTermLista || selectedCentro}
+                    onChange={(e) => {
+                      setCentroSearchTermLista(e.target.value);
+                      setCentroDropdownOpenLista(true);
+                      if (!e.target.value) {
+                        setSelectedCentro('');
+                        setSelectedEmpleado('');
+                      }
+                    }}
+                    onFocus={() => setCentroDropdownOpenLista(true)}
+                    onBlur={() => {
+                      // Delay pentru a permite click pe opțiune
+                      setTimeout(() => setCentroDropdownOpenLista(false), 200);
+                    }}
+                    placeholder="Buscar o escribir centro..."
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  />
+                  {centroDropdownOpenLista && filteredCentrosLista.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                      {filteredCentrosLista.map(centro => (
+                        <div
+                          key={centro}
+                          onClick={() => {
+                            setSelectedCentro(centro);
+                            setSelectedEmpleado('');
+                            setCentroSearchTermLista('');
+                            setCentroDropdownOpenLista(false);
+                          }}
+                          className="p-3 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        >
+                          {centro}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {centroDropdownOpenLista && filteredCentrosLista.length === 0 && centroSearchTermLista && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-gray-500">
+                      No se encontraron centros
+                    </div>
+                  )}
+                </div>
+              </div>
               
               <div>
                 <label
@@ -3702,26 +3835,34 @@ export default function CuadrantesPage() {
                       
                       console.log('📋 Cargando cuadrantes con payload:', payload);
                       
-                      // Llamar al endpoint de cuadrantes (PRODUCCIÓN)
-                      const params = new URLSearchParams(payload);
-                      const endpoint = `https://n8n.decaminoservicios.com/webhook/get-cuadrantes-yyBov0qVQZEhy2s?${params}`;
+                      // Add JWT token for authentication
+                      const token = localStorage.getItem('auth_token');
+                      const headers = {
+                        'Content-Type': 'application/json',
+                        'X-App-Source': 'DeCamino-Web-App',
+                        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+                        'X-Client-Type': 'web-browser',
+                        'User-Agent': 'DeCamino-Web-Client/1.0',
+                      };
+                      
+                      if (token) {
+                        headers['Authorization'] = `Bearer ${token}`;
+                      }
+                      
+                      // Construiește URL-ul pentru backend
+                      const params = new URLSearchParams();
+                      if (payload.centro) params.set('centro', payload.centro);
+                      if (payload.empleado) params.set('empleado', payload.empleado);
+                      if (payload.nombre) params.set('nombre', payload.nombre);
+                      if (payload.mesAno) params.set('mesAno', payload.mesAno);
+                      
+                      const endpoint = `${routes.getCuadrantes}${params.toString() ? '?' + params.toString() : ''}`;
                       console.log('🔗 Endpoint cuadrantes:', endpoint);
                       console.log('📋 Parámetros enviados:', payload);
-                      console.log('🔗 URL completa construida:', endpoint);
-                      console.log('📊 Payload original:', JSON.stringify(payload, null, 2));
-                      
-                      // TEST: también probar sin parámetros para ver todos los cuadrantes
-                      console.log('🧪 TEST: Probando endpoint sin parámetros...');
-                      const testResponse = await fetch('https://n8n.decaminoservicios.com/webhook/get-cuadrantes-yyBov0qVQZEhy2s');
-                      const testData = await testResponse.json();
-                      console.log('🧪 TEST sin parámetros - Longitud:', Array.isArray(testData) ? testData.length : 'No es array');
-                      console.log('🧪 TEST sin parámetros - Primeros 3:', Array.isArray(testData) ? testData.slice(0, 3) : testData);
                       
                       const response = await fetch(endpoint, {
                         method: 'GET',
-                        headers: {
-                          'Content-Type': 'application/json'
-                        }
+                        headers
                       });
                       
                       console.log('📡 Response status:', response.status);

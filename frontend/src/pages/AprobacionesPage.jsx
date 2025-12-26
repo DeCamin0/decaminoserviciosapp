@@ -189,11 +189,19 @@ export default function AprobacionesPage() {
       const url = API_ENDPOINTS.GET_CAMBIOS_PENDIENTES;
       console.log('[Aprobaciones] Fetching cambios from:', url);
       
+      // Adaugă JWT token pentru backend
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers
       });
       
       if (!response.ok) {

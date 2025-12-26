@@ -271,11 +271,31 @@ export default function SolicitudesPage() {
     }
   };
 
+  // Normalize group names - groups that represent the same service but with different contracts
+  // should be treated as the same group for availability calculations
+  const normalizeGroup = (groupName) => {
+    if (!groupName || typeof groupName !== 'string') return groupName || '';
+    
+    const trimmed = groupName.trim();
+    
+    // Map equivalent groups to a canonical group name
+    // "Limpiador" and "Auxiliar De Servicios - L" are the same service (different contracts)
+    const groupMapping = {
+      'Limpiador': 'Limpiador',
+      'Auxiliar De Servicios - L': 'Limpiador',
+      // Add more mappings here if needed in the future
+      // Example: 'Grupo A': 'Grupo Canonical',
+      //          'Grupo B': 'Grupo Canonical',
+    };
+    
+    // Return mapped group or original if no mapping exists
+    return groupMapping[trimmed] || trimmed;
+  };
+
   // Calculate availability limits based on month and group
   const getAvailabilityLimit = (month, groupSize, tipo) => {
     if (tipo === 'Vacaciones') {
-      const isSummerMonth = month >= 5 && month <= 7; // June (5), July (6), August (7)
-      const percentage = isSummerMonth ? 0.15 : 0.10; // 15% summer, 10% other months
+      const percentage = 0.15; // 15% all year
       return Math.max(1, Math.ceil(groupSize * percentage)); // At least 1 person
     } else if (tipo === 'Asunto Propio') {
       // For Asuntos Propios: max 4 people per day globally
@@ -400,19 +420,25 @@ export default function SolicitudesPage() {
       });
     }
 
+    // Normalize current user's group for comparison
+    const normalizedCurrentUserGroup = normalizeGroup(currentUserGroup);
+    
     // Pentru Vacaciones: obținem toți utilizatorii din același GRUP (toate centrele)
     // Pentru Asuntos Propios: obținem utilizatorii din același grup+centru
     let relevantUsers;
     if (tipo === 'Vacaciones') {
       // Vacaciones: limita este per grup (toate centrele din grup)
+      // Folosim normalizarea pentru a include grupuri echivalente (ex: "Limpiador" și "Auxiliar De Servicios - L")
       relevantUsers = users.filter(user => {
         const userGroup = user['GRUPO'] || user.grupo || '';
-        return userGroup === currentUserGroup;
+        const normalizedUserGroup = normalizeGroup(userGroup);
+        return normalizedUserGroup === normalizedCurrentUserGroup;
       });
     } else {
       // Asuntos Propios: limita este per grup+centru
       relevantUsers = users.filter(user => {
         const userGroup = user['GRUPO'] || user.grupo || '';
+        const normalizedUserGroup = normalizeGroup(userGroup);
         const userCenter = user['CENTRO TRABAJO'] || 
                           user['CENTRO DE TRABAJO'] || 
                           user['centro de trabajo'] || 
@@ -425,7 +451,7 @@ export default function SolicitudesPage() {
                           user['departamento'] ||
                           '';
         
-        return userGroup === currentUserGroup && userCenter === currentUserCenter;
+        return normalizedUserGroup === normalizedCurrentUserGroup && userCenter === currentUserCenter;
       });
     }
 
@@ -441,6 +467,7 @@ export default function SolicitudesPage() {
     
     console.log('🔍 Availability calculation:', {
       currentUserGroup,
+      normalizedCurrentUserGroup: normalizedCurrentUserGroup,
       currentUserCenter,
       groupSize,
       maxAllowed,
@@ -452,6 +479,7 @@ export default function SolicitudesPage() {
       relevantUsers: relevantUsers.map(u => ({
         name: u['NOMBRE / APELLIDOS'] || u.nombre,
         group: u['GRUPO'] || u.grupo,
+        normalizedGroup: normalizeGroup(u['GRUPO'] || u.grupo || ''),
         center: u['CENTRO TRABAJO'] || u['CENTRO DE TRABAJO'] || u['centro de trabajo']
       })),
       allSolicitudes: solicitudes.map(s => ({
@@ -460,6 +488,7 @@ export default function SolicitudesPage() {
         tipo: s.tipo,
         estado: s.estado,
         grupo: s.grupo || s['GRUPO'],
+        normalizedGrupo: normalizeGroup(s.grupo || s['GRUPO'] || ''),
         centro: s['CENTRO TRABAJO'] || s['centro de trabajo'] || s['CENTRO DE TRABAJO'],
         fecha: s.FECHA || `${s.fecha_inicio} - ${s.fecha_fin}`
       }))
@@ -515,9 +544,10 @@ export default function SolicitudesPage() {
             if (currentDate >= start && currentDate <= end) {
               if (tipo === 'Vacaciones') {
                 // ✅ Vacaciones: limită per GRUP (toate centrele din grup) + limită per grup+centru (max 1)
-                // Numărăm solicitările din ACELAȘI GRUP, indiferent de centru
-                if (solicitudGroup === currentUserGroup) {
-                  occupiedCount++; // Numără doar din același grup (toate centrele)
+                // Numărăm solicitările din ACELAȘI GRUP (folosind normalizare pentru grupuri echivalente), indiferent de centru
+                const normalizedSolicitudGroup = normalizeGroup(solicitudGroup);
+                if (normalizedSolicitudGroup === normalizedCurrentUserGroup) {
+                  occupiedCount++; // Numără doar din același grup normalizat (toate centrele)
                   
                   // Count people from same group+center (pentru limita per grup+centru)
                   if (solicitudCenter === currentUserCenter) {
@@ -529,7 +559,8 @@ export default function SolicitudesPage() {
                 occupiedCount++; // Numără toate solicitările global (din toate grupuri/centre)
                 
                 // Count people from same center (pentru limita per centru)
-                if (solicitudGroup === currentUserGroup && solicitudCenter === currentUserCenter) {
+                const normalizedSolicitudGroup = normalizeGroup(solicitudGroup);
+                if (normalizedSolicitudGroup === normalizedCurrentUserGroup && solicitudCenter === currentUserCenter) {
                   sameCenterCount++;
                 }
               } else {
@@ -591,6 +622,7 @@ export default function SolicitudesPage() {
             if (s.tipo !== tipo || (s.estado !== 'Aprobada' && s.estado !== 'Pendiente')) return false;
             
             const solicitudGroup = s.grupo || s['GRUPO'] || '';
+            const normalizedSolicitudGroup = normalizeGroup(solicitudGroup);
             const solicitudCenter = s['CENTRO TRABAJO'] || 
                                   s['centro de trabajo'] || 
                                   s['CENTRO DE TRABAJO'] || 
@@ -603,7 +635,7 @@ export default function SolicitudesPage() {
                                   s['departamento'] ||
                                   '';
             
-            if (solicitudGroup !== currentUserGroup || solicitudCenter !== currentUserCenter) return false;
+            if (normalizedSolicitudGroup !== normalizedCurrentUserGroup || solicitudCenter !== currentUserCenter) return false;
             
             // Check if this date falls within the solicitud date range
             let fechaInicio = '';
@@ -4079,8 +4111,8 @@ export default function SolicitudesPage() {
                       </div>
                     )}
                     
-                    {/* Availability info for Vacaciones and Asuntos Propios */}
-                    {!isOperationLoading('occupiedDates') && (tipo === 'Vacaciones' || tipo === 'Asunto Propio') && Object.keys(dateAvailability).length > 0 && (
+                    {/* Availability info for Vacaciones and Asuntos Propios - Only for managers */}
+                    {isManager && !isOperationLoading('occupiedDates') && (tipo === 'Vacaciones' || tipo === 'Asunto Propio') && Object.keys(dateAvailability).length > 0 && (
                       <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
@@ -4107,64 +4139,80 @@ export default function SolicitudesPage() {
                               const firstDate = Object.keys(dateAvailability)[0];
                               const firstAvailability = dateAvailability[firstDate];
                               
-                              // Calculate totals from allUsers
-                              // Use the center from dateAvailability which is already calculated correctly
+                              // Calculate totals from allUsers if available, otherwise use fallback
                               const currentUserCenter = firstAvailability.center || '';
                               const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
+                              const normalizedCurrentUserGroup = normalizeGroup(currentUserGroup);
                               
-                              const totalInGroup = allUsers.filter(user => 
-                                (user['GRUPO'] || user.grupo) === currentUserGroup
-                              ).length;
+                              let totalInGroup = 0;
+                              let totalInCenter = 0;
                               
-                              // Helper function to get center from user (same logic as in calculateDateAvailability)
-                              const getUserCenter = (user) => {
-                                if (!user) return '';
-                                // First, check the exact key used in DatosPage
-                                if (user['CENTRO TRABAJO'] && String(user['CENTRO TRABAJO']).trim()) {
-                                  return String(user['CENTRO TRABAJO']).trim();
-                                }
-                                const preferredKeys = [
-                                  'CENTRO DE TRABAJO',
-                                  'centro de trabajo',
-                                  'CENTRO_DE_TRABAJO',
-                                  'centroDeTrabajo',
-                                  'centro_trabajo',
-                                  'CENTRO',
-                                  'centro',
-                                  'CENTER',
-                                  'center',
-                                  'DEPARTAMENTO',
-                                  'departamento'
-                                ];
-                                for (const k of preferredKeys) {
-                                  if (user[k] && String(user[k]).trim()) {
-                                    return String(user[k]).trim();
+                              if (allUsers && allUsers.length > 0) {
+                                // Calculate totals from allUsers
+                                totalInGroup = allUsers.filter(user => {
+                                  const userGroup = user['GRUPO'] || user.grupo || '';
+                                  const normalizedUserGroup = normalizeGroup(userGroup);
+                                  return normalizedUserGroup === normalizedCurrentUserGroup;
+                                }).length;
+                                
+                                // Helper function to get center from user (same logic as in calculateDateAvailability)
+                                const getUserCenter = (user) => {
+                                  if (!user) return '';
+                                  // First, check the exact key used in DatosPage
+                                  if (user['CENTRO TRABAJO'] && String(user['CENTRO TRABAJO']).trim()) {
+                                    return String(user['CENTRO TRABAJO']).trim();
                                   }
-                                }
-                                // Heurística: primer campo cuyo nombre contiene 'centro' o 'trabajo'
-                                try {
-                                  const allKeys = Object.keys(user || {});
-                                  const key = allKeys.find(key => {
-                                    const lk = key.toLowerCase();
-                                    return (lk.includes('centro') || lk.includes('trabajo') || lk.includes('depart')) && String(user[key]).trim();
-                                  });
-                                  if (key) {
-                                    return String(user[key]).trim();
+                                  const preferredKeys = [
+                                    'CENTRO DE TRABAJO',
+                                    'centro de trabajo',
+                                    'CENTRO_DE_TRABAJO',
+                                    'centroDeTrabajo',
+                                    'centro_trabajo',
+                                    'CENTRO',
+                                    'centro',
+                                    'CENTER',
+                                    'center',
+                                    'DEPARTAMENTO',
+                                    'departamento'
+                                  ];
+                                  for (const k of preferredKeys) {
+                                    if (user[k] && String(user[k]).trim()) {
+                                      return String(user[k]).trim();
+                                    }
                                   }
-                                } catch (e) {
-                                  console.warn('Error in getUserCenter heuristics:', e);
-                                }
-                                return '';
-                              };
-                              
-                              const totalInCenter = allUsers.filter(user => {
-                                const userCenter = getUserCenter(user);
-                                return userCenter && currentUserCenter && userCenter === currentUserCenter;
-                              }).length;
+                                  // Heurística: primer campo cuyo nombre contiene 'centro' o 'trabajo'
+                                  try {
+                                    const allKeys = Object.keys(user || {});
+                                    const key = allKeys.find(key => {
+                                      const lk = key.toLowerCase();
+                                      return (lk.includes('centro') || lk.includes('trabajo') || lk.includes('depart')) && String(user[key]).trim();
+                                    });
+                                    if (key) {
+                                      return String(user[key]).trim();
+                                    }
+                                  } catch (e) {
+                                    console.warn('Error in getUserCenter heuristics:', e);
+                                  }
+                                  return '';
+                                };
+                                
+                                totalInCenter = allUsers.filter(user => {
+                                  const userCenter = getUserCenter(user);
+                                  return userCenter && currentUserCenter && userCenter === currentUserCenter;
+                                }).length;
+                              } else {
+                                // Fallback: use maxAllowed to estimate group size if allUsers is not loaded
+                                // maxAllowed is calculated as percentage of groupSize, so we can reverse it
+                                // For Vacaciones: maxAllowed = Math.ceil(groupSize * percentage), so groupSize ≈ maxAllowed / percentage
+                                const percentage = 0.15; // 15% all year
+                                const estimatedGroupSize = Math.ceil(firstAvailability.maxAllowed / percentage);
+                                totalInGroup = estimatedGroupSize;
+                                totalInCenter = 'N/A'; // Can't calculate without allUsers
+                              }
                               
                               return (
                                 <div className="text-xs text-blue-600 space-y-1">
-                                  <p><strong>Total empleados en centro:</strong> {totalInCenter}</p>
+                                  <p><strong>Total empleados en centro:</strong> {totalInCenter !== 'N/A' ? totalInCenter : 'Calculando...'}</p>
                                   <p><strong>Total empleados en grupo:</strong> {totalInGroup}</p>
                                   <p><strong>Límite per grup:</strong> {firstAvailability.total} personas</p>
                                 </div>
@@ -4220,17 +4268,17 @@ export default function SolicitudesPage() {
                           <span className="text-gray-700">Fechas pasadas</span>
                         </div>
                       </div>
-                      <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
-                        <p className="text-xs text-blue-700 font-medium">
-                          📊 Reglas de Disponibilidad:
-                        </p>
-                        <p className="text-xs text-blue-600 mt-1">
-                          • Verano (Jun-Ago): {tipo === 'Vacaciones' ? '15%' : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'}
-                        </p>
-                        <p className="text-xs text-blue-600">
-                          • Resto del año: {tipo === 'Vacaciones' ? '10%' : '15%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'}
-                        </p>
-                      </div>
+                      {/* Reglas de Disponibilidad - Only for managers */}
+                      {isManager && (
+                        <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
+                          <p className="text-xs text-blue-700 font-medium">
+                            📊 Reglas de Disponibilidad:
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            • {tipo === 'Vacaciones' ? '15%' : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
+                          </p>
+                        </div>
+                      )}
                     </div>
                     
                     {/* Selected dates info */}

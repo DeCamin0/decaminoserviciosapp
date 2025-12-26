@@ -420,4 +420,47 @@ export class FichajesService {
       );
     }
   }
+
+  /**
+   * Șterge un marcaje (fichaje) din baza de date
+   */
+  async deleteFichaje(id: string): Promise<{ success: true; message: string }> {
+    try {
+      // Validări
+      if (!id || id.trim() === '') {
+        throw new BadRequestException('ID is required');
+      }
+
+      // Verifică dacă marcajele există
+      const checkQuery = `SELECT ID FROM Fichaje WHERE ID = ${this.escapeSql(id.trim())} LIMIT 1`;
+      const existing = await this.prisma.$queryRawUnsafe<any[]>(checkQuery);
+
+      if (!existing || existing.length === 0) {
+        throw new BadRequestException(`Fichaje with ID ${id} not found`);
+      }
+
+      // Construiește query-ul DELETE
+      const deleteQuery = `
+        DELETE FROM Fichaje
+        WHERE ID = ${this.escapeSql(id.trim())}
+      `;
+
+      await this.prisma.$executeRawUnsafe(deleteQuery);
+
+      this.logger.log(`✅ Fichaje deleted: ID=${id}`);
+
+      return {
+        success: true,
+        message: 'Registro eliminado correctamente.',
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error deleting fichaje:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al eliminar fichaje: ${error.message}`,
+      );
+    }
+  }
 }

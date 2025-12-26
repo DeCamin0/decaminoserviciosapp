@@ -492,13 +492,22 @@ function RecentInspections() {
     try {
       console.log('🔍 Loading inspections from:', API_ENDPOINTS.GET_INSPECCIONES);
       
+      // Obține token-ul JWT din localStorage
+      const token = localStorage.getItem('auth_token');
+      const headers = { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      
+      // Adaugă token-ul JWT dacă există
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       // Încearcă să încarci de la API - schimb la GET pentru a testa
       const response = await fetch(API_ENDPOINTS.GET_INSPECCIONES, {
         method: 'GET',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
+        headers
       });
 
       console.log('📡 Response status:', response.status);
