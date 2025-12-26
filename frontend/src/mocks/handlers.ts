@@ -137,6 +137,9 @@ DemoStore.init(fixtures);
 
 export const handlers = [
   // Authentication endpoints
+  // ⚠️ DEAD CODE - endpoint-ul nu mai este folosit (routes.getUsuarios a fost înlocuit cu routes.getEmpleados)
+  // Comentat pentru că nu mai este folosit în cod
+  /*
   http.get('https://n8n.decaminoservicios.com/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142', async ({ request }) => {
     console.log('🎭 DEMO: Login request intercepted:', request.url);
     
@@ -163,6 +166,7 @@ export const handlers = [
     console.log('🎭 DEMO: Login successful for:', user.email);
     return ok([user]);
   }),
+  */
 
   // Empleados endpoints
   http.get('/api/empleados', async ({ request }) => {

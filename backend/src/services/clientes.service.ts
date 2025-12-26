@@ -30,33 +30,58 @@ export class ClientesService {
    */
   async addCliente(data: any): Promise<{ success: true; mensaje: string }> {
     try {
-      this.logger.log(`📝 Adding new cliente: ${data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || 'N/A'}`);
+      this.logger.log(
+        `📝 Adding new cliente: ${data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || 'N/A'}`,
+      );
 
       // Normalizează datele (acceptă atât câmpuri cu spații cât și cu underscore)
       const clienteData: any = {
         NIF: data.NIF || data.nif || null,
-        NOMBRE_O_RAZON_SOCIAL: data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || null,
+        NOMBRE_O_RAZON_SOCIAL:
+          data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || null,
         TIPO: data.TIPO || data.tipo || null,
         EMAIL: data.EMAIL || data.email || null,
         TELEFONO: data.TELEFONO || data.telefono || null,
         MOVIL: data.MOVIL || data.movil || null,
         FAX: data.FAX || data.fax || null,
         DIRECCION: data.DIRECCION || data.direccion || null,
-        CODIGO_POSTAL: data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null,
+        CODIGO_POSTAL:
+          data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null,
         POBLACION: data.POBLACION || data.poblacion || data.ciudad || null,
         PROVINCIA: data.PROVINCIA || data.provincia || null,
         PAIS: data.PAIS || data.pais || 'España',
         URL: data.URL || data.url || null,
-        DESCUENTO_POR_DEFECTO: data['DESCUENTO POR DEFECTO'] || data.DESCUENTO_POR_DEFECTO || data.descuento_por_defecto || null,
+        DESCUENTO_POR_DEFECTO:
+          data['DESCUENTO POR DEFECTO'] ||
+          data.DESCUENTO_POR_DEFECTO ||
+          data.descuento_por_defecto ||
+          null,
         LATITUD: data.LATITUD || data.latitud || null,
         LONGITUD: data.LONGITUD || data.longitud || null,
-        NOTAS_PRIVADAS: data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null,
-        CUENTAS_BANCARIAS: data['CUENTAS BANCARIAS'] || data.CUENTAS_BANCARIAS || data.cuentas_bancarias || null,
-        Fecha_Ultima_Renovacion: data['Fecha Ultima Renovacion'] || data.Fecha_Ultima_Renovacion || data.fecha_ultima_renovacion || null,
-        Fecha_Proxima_Renovacion: data['Fecha Proxima Renovacion'] || data.Fecha_Proxima_Renovacion || data.fecha_proxima_renovacion || null,
+        NOTAS_PRIVADAS:
+          data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null,
+        CUENTAS_BANCARIAS:
+          data['CUENTAS BANCARIAS'] ||
+          data.CUENTAS_BANCARIAS ||
+          data.cuentas_bancarias ||
+          null,
+        Fecha_Ultima_Renovacion:
+          data['Fecha Ultima Renovacion'] ||
+          data.Fecha_Ultima_Renovacion ||
+          data.fecha_ultima_renovacion ||
+          null,
+        Fecha_Proxima_Renovacion:
+          data['Fecha Proxima Renovacion'] ||
+          data.Fecha_Proxima_Renovacion ||
+          data.fecha_proxima_renovacion ||
+          null,
         ESTADO: data.ESTADO || data.estado || data.activo || 'Sí',
         CONTRACTO: data.CONTRACTO || data.contrato || null,
-        CuantoPuedeGastar: data.CuantoPuedeGastar || data.CuantoPuedeGastar || data.limite_gasto || null,
+        CuantoPuedeGastar:
+          data.CuantoPuedeGastar ||
+          data.CuantoPuedeGastar ||
+          data.limite_gasto ||
+          null,
       };
 
       // Folosim Prisma pentru INSERT
@@ -64,10 +89,13 @@ export class ClientesService {
         data: clienteData,
       });
 
-      this.logger.log(`✅ Cliente added successfully: ${clienteData.NOMBRE_O_RAZON_SOCIAL || 'N/A'}`);
+      this.logger.log(
+        `✅ Cliente added successfully: ${clienteData.NOMBRE_O_RAZON_SOCIAL || 'N/A'}`,
+      );
       return {
         success: true,
-        mensaje: '✅ Registro exitoso. Los datos del cliente se han añadido correctamente en la base de datos.',
+        mensaje:
+          '✅ Registro exitoso. Los datos del cliente se han añadido correctamente en la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error adding cliente:', error);
@@ -75,14 +103,19 @@ export class ClientesService {
         // Unique constraint violation (probabil NIF duplicat)
         throw new BadRequestException('El NIF ya existe en la base de datos.');
       }
-      throw new BadRequestException(`Error al añadir cliente: ${error.message}`);
+      throw new BadRequestException(
+        `Error al añadir cliente: ${error.message}`,
+      );
     }
   }
 
   /**
    * Actualizează un client existent
    */
-  async updateCliente(id: number, data: any): Promise<{ success: true; mensaje: string }> {
+  async updateCliente(
+    id: number,
+    data: any,
+  ): Promise<{ success: true; mensaje: string }> {
     try {
       this.logger.log(`📝 Updating cliente ID: ${id}`);
 
@@ -97,49 +130,121 @@ export class ClientesService {
 
       // Normalizează datele
       const updateData: any = {};
-      
-      if (data.NIF !== undefined || data.nif !== undefined) updateData.NIF = data.NIF || data.nif || null;
-      if (data['NOMBRE O RAZON SOCIAL'] !== undefined || data.NOMBRE_O_RAZON_SOCIAL !== undefined) {
-        updateData.NOMBRE_O_RAZON_SOCIAL = data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || null;
+
+      if (data.NIF !== undefined || data.nif !== undefined)
+        updateData.NIF = data.NIF || data.nif || null;
+      if (
+        data['NOMBRE O RAZON SOCIAL'] !== undefined ||
+        data.NOMBRE_O_RAZON_SOCIAL !== undefined
+      ) {
+        updateData.NOMBRE_O_RAZON_SOCIAL =
+          data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || null;
       }
-      if (data.TIPO !== undefined || data.tipo !== undefined) updateData.TIPO = data.TIPO || data.tipo || null;
-      if (data.EMAIL !== undefined || data.email !== undefined) updateData.EMAIL = data.EMAIL || data.email || null;
-      if (data.TELEFONO !== undefined || data.telefono !== undefined) updateData.TELEFONO = data.TELEFONO || data.telefono || null;
-      if (data.MOVIL !== undefined || data.movil !== undefined) updateData.MOVIL = data.MOVIL || data.movil || null;
-      if (data.FAX !== undefined || data.fax !== undefined) updateData.FAX = data.FAX || data.fax || null;
-      if (data.DIRECCION !== undefined || data.direccion !== undefined) updateData.DIRECCION = data.DIRECCION || data.direccion || null;
-      if (data['CODIGO POSTAL'] !== undefined || data.CODIGO_POSTAL !== undefined || data.cp !== undefined) {
-        updateData.CODIGO_POSTAL = data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null;
+      if (data.TIPO !== undefined || data.tipo !== undefined)
+        updateData.TIPO = data.TIPO || data.tipo || null;
+      if (data.EMAIL !== undefined || data.email !== undefined)
+        updateData.EMAIL = data.EMAIL || data.email || null;
+      if (data.TELEFONO !== undefined || data.telefono !== undefined)
+        updateData.TELEFONO = data.TELEFONO || data.telefono || null;
+      if (data.MOVIL !== undefined || data.movil !== undefined)
+        updateData.MOVIL = data.MOVIL || data.movil || null;
+      if (data.FAX !== undefined || data.fax !== undefined)
+        updateData.FAX = data.FAX || data.fax || null;
+      if (data.DIRECCION !== undefined || data.direccion !== undefined)
+        updateData.DIRECCION = data.DIRECCION || data.direccion || null;
+      if (
+        data['CODIGO POSTAL'] !== undefined ||
+        data.CODIGO_POSTAL !== undefined ||
+        data.cp !== undefined
+      ) {
+        updateData.CODIGO_POSTAL =
+          data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null;
       }
-      if (data.POBLACION !== undefined || data.poblacion !== undefined || data.ciudad !== undefined) {
-        updateData.POBLACION = data.POBLACION || data.poblacion || data.ciudad || null;
+      if (
+        data.POBLACION !== undefined ||
+        data.poblacion !== undefined ||
+        data.ciudad !== undefined
+      ) {
+        updateData.POBLACION =
+          data.POBLACION || data.poblacion || data.ciudad || null;
       }
-      if (data.PROVINCIA !== undefined || data.provincia !== undefined) updateData.PROVINCIA = data.PROVINCIA || data.provincia || null;
-      if (data.PAIS !== undefined || data.pais !== undefined) updateData.PAIS = data.PAIS || data.pais || null;
-      if (data.URL !== undefined || data.url !== undefined) updateData.URL = data.URL || data.url || null;
-      if (data['DESCUENTO POR DEFECTO'] !== undefined || data.DESCUENTO_POR_DEFECTO !== undefined || data.descuento_por_defecto !== undefined) {
-        updateData.DESCUENTO_POR_DEFECTO = data['DESCUENTO POR DEFECTO'] || data.DESCUENTO_POR_DEFECTO || data.descuento_por_defecto || null;
+      if (data.PROVINCIA !== undefined || data.provincia !== undefined)
+        updateData.PROVINCIA = data.PROVINCIA || data.provincia || null;
+      if (data.PAIS !== undefined || data.pais !== undefined)
+        updateData.PAIS = data.PAIS || data.pais || null;
+      if (data.URL !== undefined || data.url !== undefined)
+        updateData.URL = data.URL || data.url || null;
+      if (
+        data['DESCUENTO POR DEFECTO'] !== undefined ||
+        data.DESCUENTO_POR_DEFECTO !== undefined ||
+        data.descuento_por_defecto !== undefined
+      ) {
+        updateData.DESCUENTO_POR_DEFECTO =
+          data['DESCUENTO POR DEFECTO'] ||
+          data.DESCUENTO_POR_DEFECTO ||
+          data.descuento_por_defecto ||
+          null;
       }
-      if (data.LATITUD !== undefined || data.latitud !== undefined) updateData.LATITUD = data.LATITUD || data.latitud || null;
-      if (data.LONGITUD !== undefined || data.longitud !== undefined) updateData.LONGITUD = data.LONGITUD || data.longitud || null;
-      if (data['NOTAS PRIVADAS'] !== undefined || data.NOTAS_PRIVADAS !== undefined || data.notas !== undefined) {
-        updateData.NOTAS_PRIVADAS = data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null;
+      if (data.LATITUD !== undefined || data.latitud !== undefined)
+        updateData.LATITUD = data.LATITUD || data.latitud || null;
+      if (data.LONGITUD !== undefined || data.longitud !== undefined)
+        updateData.LONGITUD = data.LONGITUD || data.longitud || null;
+      if (
+        data['NOTAS PRIVADAS'] !== undefined ||
+        data.NOTAS_PRIVADAS !== undefined ||
+        data.notas !== undefined
+      ) {
+        updateData.NOTAS_PRIVADAS =
+          data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null;
       }
-      if (data['CUENTAS BANCARIAS'] !== undefined || data.CUENTAS_BANCARIAS !== undefined || data.cuentas_bancarias !== undefined) {
-        updateData.CUENTAS_BANCARIAS = data['CUENTAS BANCARIAS'] || data.CUENTAS_BANCARIAS || data.cuentas_bancarias || null;
+      if (
+        data['CUENTAS BANCARIAS'] !== undefined ||
+        data.CUENTAS_BANCARIAS !== undefined ||
+        data.cuentas_bancarias !== undefined
+      ) {
+        updateData.CUENTAS_BANCARIAS =
+          data['CUENTAS BANCARIAS'] ||
+          data.CUENTAS_BANCARIAS ||
+          data.cuentas_bancarias ||
+          null;
       }
-      if (data['Fecha Ultima Renovacion'] !== undefined || data.Fecha_Ultima_Renovacion !== undefined || data.fecha_ultima_renovacion !== undefined) {
-        updateData.Fecha_Ultima_Renovacion = data['Fecha Ultima Renovacion'] || data.Fecha_Ultima_Renovacion || data.fecha_ultima_renovacion || null;
+      if (
+        data['Fecha Ultima Renovacion'] !== undefined ||
+        data.Fecha_Ultima_Renovacion !== undefined ||
+        data.fecha_ultima_renovacion !== undefined
+      ) {
+        updateData.Fecha_Ultima_Renovacion =
+          data['Fecha Ultima Renovacion'] ||
+          data.Fecha_Ultima_Renovacion ||
+          data.fecha_ultima_renovacion ||
+          null;
       }
-      if (data['Fecha Proxima Renovacion'] !== undefined || data.Fecha_Proxima_Renovacion !== undefined || data.fecha_proxima_renovacion !== undefined) {
-        updateData.Fecha_Proxima_Renovacion = data['Fecha Proxima Renovacion'] || data.Fecha_Proxima_Renovacion || data.fecha_proxima_renovacion || null;
+      if (
+        data['Fecha Proxima Renovacion'] !== undefined ||
+        data.Fecha_Proxima_Renovacion !== undefined ||
+        data.fecha_proxima_renovacion !== undefined
+      ) {
+        updateData.Fecha_Proxima_Renovacion =
+          data['Fecha Proxima Renovacion'] ||
+          data.Fecha_Proxima_Renovacion ||
+          data.fecha_proxima_renovacion ||
+          null;
       }
-      if (data.ESTADO !== undefined || data.estado !== undefined || data.activo !== undefined) {
+      if (
+        data.ESTADO !== undefined ||
+        data.estado !== undefined ||
+        data.activo !== undefined
+      ) {
         updateData.ESTADO = data.ESTADO || data.estado || data.activo || null;
       }
-      if (data.CONTRACTO !== undefined || data.contrato !== undefined) updateData.CONTRACTO = data.CONTRACTO || data.contrato || null;
-      if (data.CuantoPuedeGastar !== undefined || data.limite_gasto !== undefined) {
-        updateData.CuantoPuedeGastar = data.CuantoPuedeGastar || data.limite_gasto || null;
+      if (data.CONTRACTO !== undefined || data.contrato !== undefined)
+        updateData.CONTRACTO = data.CONTRACTO || data.contrato || null;
+      if (
+        data.CuantoPuedeGastar !== undefined ||
+        data.limite_gasto !== undefined
+      ) {
+        updateData.CuantoPuedeGastar =
+          data.CuantoPuedeGastar || data.limite_gasto || null;
       }
 
       await this.prisma.clientes.update({
@@ -150,14 +255,17 @@ export class ClientesService {
       this.logger.log(`✅ Cliente updated successfully: ID ${id}`);
       return {
         success: true,
-        mensaje: '✅ Edición exitosa. Los datos del cliente se han actualizado correctamente en la base de datos.',
+        mensaje:
+          '✅ Edición exitosa. Los datos del cliente se han actualizado correctamente en la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error updating cliente:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al actualizar cliente: ${error.message}`);
+      throw new BadRequestException(
+        `Error al actualizar cliente: ${error.message}`,
+      );
     }
   }
 
@@ -184,14 +292,17 @@ export class ClientesService {
       this.logger.log(`✅ Cliente deleted successfully: ID ${id}`);
       return {
         success: true,
-        mensaje: '🗑️ Eliminación exitosa. El registro del cliente ha sido borrado correctamente de la base de datos.',
+        mensaje:
+          '🗑️ Eliminación exitosa. El registro del cliente ha sido borrado correctamente de la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error deleting cliente:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al eliminar cliente: ${error.message}`);
+      throw new BadRequestException(
+        `Error al eliminar cliente: ${error.message}`,
+      );
     }
   }
 
@@ -211,7 +322,8 @@ export class ClientesService {
       // Mapează câmpurile pentru compatibilitate cu frontend-ul
       const mapped = proveedores.map((p: any) => ({
         ...p,
-        'NOMBRE O RAZÓN SOCIAL': p.NOMBRE_O_RAZ_N_SOCIAL || p['NOMBRE O RAZÓN SOCIAL'] || null,
+        'NOMBRE O RAZÓN SOCIAL':
+          p.NOMBRE_O_RAZ_N_SOCIAL || p['NOMBRE O RAZÓN SOCIAL'] || null,
         NOMBRE_O_RAZON_SOCIAL: p.NOMBRE_O_RAZ_N_SOCIAL || null,
         DIRECCIÓN: p.DIRECCI_N || p.DIRECCIÓN || null,
         CODIGO_POSTAL: p.CODIGO_POSTAL || null,
@@ -225,7 +337,9 @@ export class ClientesService {
       return mapped;
     } catch (error: any) {
       this.logger.error('❌ Error fetching proveedores:', error);
-      throw new BadRequestException(`Error al cargar proveedores: ${error.message}`);
+      throw new BadRequestException(
+        `Error al cargar proveedores: ${error.message}`,
+      );
     }
   }
 
@@ -234,27 +348,48 @@ export class ClientesService {
    */
   async addProveedor(data: any): Promise<{ success: true; mensaje: string }> {
     try {
-      this.logger.log(`📝 Adding new proveedor: ${data['NOMBRE O RAZÓN SOCIAL'] || data.NOMBRE_O_RAZ_N_SOCIAL || 'N/A'}`);
+      this.logger.log(
+        `📝 Adding new proveedor: ${data['NOMBRE O RAZÓN SOCIAL'] || data.NOMBRE_O_RAZ_N_SOCIAL || 'N/A'}`,
+      );
 
       // Normalizează datele (acceptă atât câmpuri cu spații cât și cu underscore)
       const proveedorData: any = {
         NIF: data.NIF || data.nif || null,
-        NOMBRE_O_RAZ_N_SOCIAL: data['NOMBRE O RAZÓN SOCIAL'] || data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZ_N_SOCIAL || null,
+        NOMBRE_O_RAZ_N_SOCIAL:
+          data['NOMBRE O RAZÓN SOCIAL'] ||
+          data['NOMBRE O RAZON SOCIAL'] ||
+          data.NOMBRE_O_RAZ_N_SOCIAL ||
+          null,
         EMAIL: data.EMAIL || data.email || null,
         TELEFONO: data.TELEFONO || data.telefono || null,
         M_VIL: data.MÓVIL || data.MOVIL || data.movil || null,
         FAX: data.FAX || data.fax || null,
         DIRECCI_N: data.DIRECCIÓN || data.DIRECCION || data.direccion || null,
-        CODIGO_POSTAL: data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null,
-        POBLACI_N: data.POBLACIÓN || data.POBLACION || data.poblacion || data.ciudad || null,
+        CODIGO_POSTAL:
+          data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null,
+        POBLACI_N:
+          data.POBLACIÓN ||
+          data.POBLACION ||
+          data.poblacion ||
+          data.ciudad ||
+          null,
         PROVINCIA: data.PROVINCIA || data.provincia || null,
         PA_S: data.PAÍS || data.PAIS || data.pais || 'España',
         URL: data.URL || data.url || null,
-        DESCUENTO_POR_DEFECTO: data['DESCUENTO POR DEFECTO'] || data.DESCUENTO_POR_DEFECTO || data.descuento_por_defecto || null,
+        DESCUENTO_POR_DEFECTO:
+          data['DESCUENTO POR DEFECTO'] ||
+          data.DESCUENTO_POR_DEFECTO ||
+          data.descuento_por_defecto ||
+          null,
         LATITUD: data.LATITUD || data.latitud || null,
         LONGITUD: data.LONGITUD || data.longitud || null,
-        NOTAS_PRIVADAS: data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null,
-        CUENTAS_BANCARIAS: data['CUENTAS BANCARIAS'] || data.CUENTAS_BANCARIAS || data.cuentas_bancarias || null,
+        NOTAS_PRIVADAS:
+          data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null,
+        CUENTAS_BANCARIAS:
+          data['CUENTAS BANCARIAS'] ||
+          data.CUENTAS_BANCARIAS ||
+          data.cuentas_bancarias ||
+          null,
         ESTADO: data.ESTADO || data.estado || data.activo || 'Sí',
         // fecha_creacion și fecha_actualizacion sunt setate automat de Prisma
       };
@@ -264,10 +399,13 @@ export class ClientesService {
         data: proveedorData,
       });
 
-      this.logger.log(`✅ Proveedor added successfully: ${proveedorData.NOMBRE_O_RAZ_N_SOCIAL || 'N/A'}`);
+      this.logger.log(
+        `✅ Proveedor added successfully: ${proveedorData.NOMBRE_O_RAZ_N_SOCIAL || 'N/A'}`,
+      );
       return {
         success: true,
-        mensaje: '✅ Registro exitoso. Los datos del proveedor se han añadido correctamente en la base de datos.',
+        mensaje:
+          '✅ Registro exitoso. Los datos del proveedor se han añadido correctamente en la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error adding proveedor:', error);
@@ -275,14 +413,19 @@ export class ClientesService {
         // Unique constraint violation
         throw new BadRequestException('El NIF ya existe en la base de datos.');
       }
-      throw new BadRequestException(`Error al añadir proveedor: ${error.message}`);
+      throw new BadRequestException(
+        `Error al añadir proveedor: ${error.message}`,
+      );
     }
   }
 
   /**
    * Actualizează un furnizor existent
    */
-  async updateProveedor(id: number, data: any): Promise<{ success: true; mensaje: string }> {
+  async updateProveedor(
+    id: number,
+    data: any,
+  ): Promise<{ success: true; mensaje: string }> {
     try {
       this.logger.log(`📝 Updating proveedor ID: ${id}`);
 
@@ -297,43 +440,112 @@ export class ClientesService {
 
       // Normalizează datele
       const updateData: any = {};
-      
-      if (data.NIF !== undefined || data.nif !== undefined) updateData.NIF = data.NIF || data.nif || null;
-      if (data['NOMBRE O RAZÓN SOCIAL'] !== undefined || data['NOMBRE O RAZON SOCIAL'] !== undefined || data.NOMBRE_O_RAZ_N_SOCIAL !== undefined) {
-        updateData.NOMBRE_O_RAZ_N_SOCIAL = data['NOMBRE O RAZÓN SOCIAL'] || data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZ_N_SOCIAL || null;
+
+      if (data.NIF !== undefined || data.nif !== undefined)
+        updateData.NIF = data.NIF || data.nif || null;
+      if (
+        data['NOMBRE O RAZÓN SOCIAL'] !== undefined ||
+        data['NOMBRE O RAZON SOCIAL'] !== undefined ||
+        data.NOMBRE_O_RAZ_N_SOCIAL !== undefined
+      ) {
+        updateData.NOMBRE_O_RAZ_N_SOCIAL =
+          data['NOMBRE O RAZÓN SOCIAL'] ||
+          data['NOMBRE O RAZON SOCIAL'] ||
+          data.NOMBRE_O_RAZ_N_SOCIAL ||
+          null;
       }
-      if (data.EMAIL !== undefined || data.email !== undefined) updateData.EMAIL = data.EMAIL || data.email || null;
-      if (data.TELEFONO !== undefined || data.telefono !== undefined) updateData.TELEFONO = data.TELEFONO || data.telefono || null;
-      if (data.MÓVIL !== undefined || data.MOVIL !== undefined || data.movil !== undefined) {
+      if (data.EMAIL !== undefined || data.email !== undefined)
+        updateData.EMAIL = data.EMAIL || data.email || null;
+      if (data.TELEFONO !== undefined || data.telefono !== undefined)
+        updateData.TELEFONO = data.TELEFONO || data.telefono || null;
+      if (
+        data.MÓVIL !== undefined ||
+        data.MOVIL !== undefined ||
+        data.movil !== undefined
+      ) {
         updateData.M_VIL = data.MÓVIL || data.MOVIL || data.movil || null;
       }
-      if (data.FAX !== undefined || data.fax !== undefined) updateData.FAX = data.FAX || data.fax || null;
-      if (data.DIRECCIÓN !== undefined || data.DIRECCION !== undefined || data.direccion !== undefined) {
-        updateData.DIRECCI_N = data.DIRECCIÓN || data.DIRECCION || data.direccion || null;
+      if (data.FAX !== undefined || data.fax !== undefined)
+        updateData.FAX = data.FAX || data.fax || null;
+      if (
+        data.DIRECCIÓN !== undefined ||
+        data.DIRECCION !== undefined ||
+        data.direccion !== undefined
+      ) {
+        updateData.DIRECCI_N =
+          data.DIRECCIÓN || data.DIRECCION || data.direccion || null;
       }
-      if (data['CODIGO POSTAL'] !== undefined || data.CODIGO_POSTAL !== undefined || data.cp !== undefined) {
-        updateData.CODIGO_POSTAL = data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null;
+      if (
+        data['CODIGO POSTAL'] !== undefined ||
+        data.CODIGO_POSTAL !== undefined ||
+        data.cp !== undefined
+      ) {
+        updateData.CODIGO_POSTAL =
+          data['CODIGO POSTAL'] || data.CODIGO_POSTAL || data.cp || null;
       }
-      if (data.POBLACIÓN !== undefined || data.POBLACION !== undefined || data.poblacion !== undefined || data.ciudad !== undefined) {
-        updateData.POBLACI_N = data.POBLACIÓN || data.POBLACION || data.poblacion || data.ciudad || null;
+      if (
+        data.POBLACIÓN !== undefined ||
+        data.POBLACION !== undefined ||
+        data.poblacion !== undefined ||
+        data.ciudad !== undefined
+      ) {
+        updateData.POBLACI_N =
+          data.POBLACIÓN ||
+          data.POBLACION ||
+          data.poblacion ||
+          data.ciudad ||
+          null;
       }
-      if (data.PROVINCIA !== undefined || data.provincia !== undefined) updateData.PROVINCIA = data.PROVINCIA || data.provincia || null;
-      if (data.PAÍS !== undefined || data.PAIS !== undefined || data.pais !== undefined) {
+      if (data.PROVINCIA !== undefined || data.provincia !== undefined)
+        updateData.PROVINCIA = data.PROVINCIA || data.provincia || null;
+      if (
+        data.PAÍS !== undefined ||
+        data.PAIS !== undefined ||
+        data.pais !== undefined
+      ) {
         updateData.PA_S = data.PAÍS || data.PAIS || data.pais || null;
       }
-      if (data.URL !== undefined || data.url !== undefined) updateData.URL = data.URL || data.url || null;
-      if (data['DESCUENTO POR DEFECTO'] !== undefined || data.DESCUENTO_POR_DEFECTO !== undefined || data.descuento_por_defecto !== undefined) {
-        updateData.DESCUENTO_POR_DEFECTO = data['DESCUENTO POR DEFECTO'] || data.DESCUENTO_POR_DEFECTO || data.descuento_por_defecto || null;
+      if (data.URL !== undefined || data.url !== undefined)
+        updateData.URL = data.URL || data.url || null;
+      if (
+        data['DESCUENTO POR DEFECTO'] !== undefined ||
+        data.DESCUENTO_POR_DEFECTO !== undefined ||
+        data.descuento_por_defecto !== undefined
+      ) {
+        updateData.DESCUENTO_POR_DEFECTO =
+          data['DESCUENTO POR DEFECTO'] ||
+          data.DESCUENTO_POR_DEFECTO ||
+          data.descuento_por_defecto ||
+          null;
       }
-      if (data.LATITUD !== undefined || data.latitud !== undefined) updateData.LATITUD = data.LATITUD || data.latitud || null;
-      if (data.LONGITUD !== undefined || data.longitud !== undefined) updateData.LONGITUD = data.LONGITUD || data.longitud || null;
-      if (data['NOTAS PRIVADAS'] !== undefined || data.NOTAS_PRIVADAS !== undefined || data.notas !== undefined) {
-        updateData.NOTAS_PRIVADAS = data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null;
+      if (data.LATITUD !== undefined || data.latitud !== undefined)
+        updateData.LATITUD = data.LATITUD || data.latitud || null;
+      if (data.LONGITUD !== undefined || data.longitud !== undefined)
+        updateData.LONGITUD = data.LONGITUD || data.longitud || null;
+      if (
+        data['NOTAS PRIVADAS'] !== undefined ||
+        data.NOTAS_PRIVADAS !== undefined ||
+        data.notas !== undefined
+      ) {
+        updateData.NOTAS_PRIVADAS =
+          data['NOTAS PRIVADAS'] || data.NOTAS_PRIVADAS || data.notas || null;
       }
-      if (data['CUENTAS BANCARIAS'] !== undefined || data.CUENTAS_BANCARIAS !== undefined || data.cuentas_bancarias !== undefined) {
-        updateData.CUENTAS_BANCARIAS = data['CUENTAS BANCARIAS'] || data.CUENTAS_BANCARIAS || data.cuentas_bancarias || null;
+      if (
+        data['CUENTAS BANCARIAS'] !== undefined ||
+        data.CUENTAS_BANCARIAS !== undefined ||
+        data.cuentas_bancarias !== undefined
+      ) {
+        updateData.CUENTAS_BANCARIAS =
+          data['CUENTAS BANCARIAS'] ||
+          data.CUENTAS_BANCARIAS ||
+          data.cuentas_bancarias ||
+          null;
       }
-      if (data.ESTADO !== undefined || data.estado !== undefined || data.activo !== undefined) {
+      if (
+        data.ESTADO !== undefined ||
+        data.estado !== undefined ||
+        data.activo !== undefined
+      ) {
         updateData.ESTADO = data.ESTADO || data.estado || data.activo || null;
       }
       // Actualizează automat fecha_actualizacion
@@ -347,21 +559,26 @@ export class ClientesService {
       this.logger.log(`✅ Proveedor updated successfully: ID ${id}`);
       return {
         success: true,
-        mensaje: '✅ Edición exitosa. Los datos del proveedor se han actualizado correctamente en la base de datos.',
+        mensaje:
+          '✅ Edición exitosa. Los datos del proveedor se han actualizado correctamente en la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error updating proveedor:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al actualizar proveedor: ${error.message}`);
+      throw new BadRequestException(
+        `Error al actualizar proveedor: ${error.message}`,
+      );
     }
   }
 
   /**
    * Șterge un furnizor
    */
-  async deleteProveedor(id: number): Promise<{ success: true; mensaje: string }> {
+  async deleteProveedor(
+    id: number,
+  ): Promise<{ success: true; mensaje: string }> {
     try {
       this.logger.log(`📝 Deleting proveedor ID: ${id}`);
 
@@ -381,14 +598,17 @@ export class ClientesService {
       this.logger.log(`✅ Proveedor deleted successfully: ID ${id}`);
       return {
         success: true,
-        mensaje: '🗑️ Eliminación exitosa. El registro del proveedor ha sido borrado correctamente de la base de datos.',
+        mensaje:
+          '🗑️ Eliminación exitosa. El registro del proveedor ha sido borrado correctamente de la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error deleting proveedor:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al eliminar proveedor: ${error.message}`);
+      throw new BadRequestException(
+        `Error al eliminar proveedor: ${error.message}`,
+      );
     }
   }
 
@@ -400,7 +620,9 @@ export class ClientesService {
       this.logger.log(`📥 Fetching contracts for cliente NIF: ${nif}`);
 
       if (!nif || nif.trim() === '') {
-        throw new BadRequestException('NIF es requerido para obtener los contratos.');
+        throw new BadRequestException(
+          'NIF es requerido para obtener los contratos.',
+        );
       }
 
       const contratos = await this.prisma.contratosClientes.findMany({
@@ -428,14 +650,18 @@ export class ClientesService {
         archivo: c.archivo_base64,
       }));
 
-      this.logger.log(`✅ Found ${mapped.length} contracts for cliente NIF: ${nif}`);
+      this.logger.log(
+        `✅ Found ${mapped.length} contracts for cliente NIF: ${nif}`,
+      );
       return mapped;
     } catch (error: any) {
       this.logger.error('❌ Error fetching contratos cliente:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al cargar contratos: ${error.message}`);
+      throw new BadRequestException(
+        `Error al cargar contratos: ${error.message}`,
+      );
     }
   }
 
@@ -444,16 +670,23 @@ export class ClientesService {
    */
   async uploadContract(data: any): Promise<{ success: true; mensaje: string }> {
     try {
-      this.logger.log(`📤 Uploading contract for cliente NIF: ${data.nif || data.NIF || 'N/A'}`);
+      this.logger.log(
+        `📤 Uploading contract for cliente NIF: ${data.nif || data.NIF || 'N/A'}`,
+      );
 
       const nif = data.nif || data.NIF || '';
-      const tipoContrato = data.contractType || data.tipo_contrato || data.tipoContrato || '';
-      const fechaSubida = data.fechaSubida || data.fecha_subida || new Date().toISOString();
-      const fechaRenovacion = data.fechaRenovacion || data.fecha_renovacion || null;
+      const tipoContrato =
+        data.contractType || data.tipo_contrato || data.tipoContrato || '';
+      const fechaSubida =
+        data.fechaSubida || data.fecha_subida || new Date().toISOString();
+      const fechaRenovacion =
+        data.fechaRenovacion || data.fecha_renovacion || null;
       const archivoBase64 = data.archivo || data.archivo_base64 || '';
 
       if (!nif || nif.trim() === '') {
-        throw new BadRequestException('NIF es requerido para subir el contrato.');
+        throw new BadRequestException(
+          'NIF es requerido para subir el contrato.',
+        );
       }
 
       if (!tipoContrato || tipoContrato.trim() === '') {
@@ -514,10 +747,13 @@ export class ClientesService {
         });
       }
 
-      this.logger.log(`✅ Contract uploaded successfully for cliente NIF: ${nif}`);
+      this.logger.log(
+        `✅ Contract uploaded successfully for cliente NIF: ${nif}`,
+      );
       return {
         success: true,
-        mensaje: '✅ Contrato subido exitosamente. El contrato se ha guardado correctamente en la base de datos.',
+        mensaje:
+          '✅ Contrato subido exitosamente. El contrato se ha guardado correctamente en la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error uploading contract:', error);
@@ -525,16 +761,22 @@ export class ClientesService {
         throw error;
       }
       if (error.code === 'P2002') {
-        throw new BadRequestException('Ya existe un contrato con este tipo para este cliente.');
+        throw new BadRequestException(
+          'Ya existe un contrato con este tipo para este cliente.',
+        );
       }
-      throw new BadRequestException(`Error al subir contrato: ${error.message}`);
+      throw new BadRequestException(
+        `Error al subir contrato: ${error.message}`,
+      );
     }
   }
 
   /**
    * Șterge un contract după ID
    */
-  async deleteContract(id: number): Promise<{ success: true; mensaje: string }> {
+  async deleteContract(
+    id: number,
+  ): Promise<{ success: true; mensaje: string }> {
     try {
       this.logger.log(`🗑️ Deleting contract ID: ${id}`);
 
@@ -554,15 +796,17 @@ export class ClientesService {
       this.logger.log(`✅ Contract deleted successfully: ID ${id}`);
       return {
         success: true,
-        mensaje: '🗑️ Eliminación exitosa. El contrato del cliente ha sido borrado correctamente de la base de datos.',
+        mensaje:
+          '🗑️ Eliminación exitosa. El contrato del cliente ha sido borrado correctamente de la base de datos.',
       };
     } catch (error: any) {
       this.logger.error('❌ Error deleting contract:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al eliminar contrato: ${error.message}`);
+      throw new BadRequestException(
+        `Error al eliminar contrato: ${error.message}`,
+      );
     }
   }
 }
-

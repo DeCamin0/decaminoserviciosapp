@@ -42,14 +42,10 @@ import {
   LazyAdminDashboard,
   LazyInspeccionesPage,
   LazyMisInspeccionesPage,
-  LazyTareasPage,
-  LazyControlCorreoPage,
-  LazyIncidenciasPage,
+  // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (LazyTareasPage, LazyControlCorreoPage, LazyIncidenciasPage, LazyPaqueteriaCentroPage, LazyTareasCentroPage, LazyIncidenciasCentroPage)
   LazyCuadernosPage,
   LazyCuadernosPorCentroPage,
-  LazyTareasCentroPage,
-  LazyPaqueteriaCentroPage,
-  LazyIncidenciasCentroPage,
+  // LazyIncidenciasCentroPage, // ⚠️ ȘTERS - NU SE FOLOSEȘTE
   LazyPedidosPage,
   LazyEmpleadoPedidosPage,
   LazyComunicadosPage,
@@ -57,7 +53,7 @@ import {
   LazyComunicadoCreatePage
 } from './pages/lazy/LazyPages';
 
-import './i18n';
+// i18n este deja importat în main.jsx
 
 function App() {
   // Pornește migrarea PWA
@@ -158,17 +154,7 @@ function AppRoutes() {
         }
       />
       
-      {/* Ruta para tareas diarias */}
-      <Route
-        path="/tareas"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyTareasPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
+      {/* ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (TareasPage, ControlCorreoPage, IncidenciasPage) */}
 
       {/* Ruta para Cuadernos (tabs) */}
       <Route
@@ -177,30 +163,6 @@ function AppRoutes() {
           <ProtectedRoute>
             <MainLayout>
               <LazyCuadernosPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Ruta para CONTROL CORREO/PAQUETERÍA */}
-      <Route
-        path="/control-correo"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyControlCorreoPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Ruta para Incidencias */}
-      <Route
-        path="/incidencias"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyIncidenciasPage />
             </MainLayout>
           </ProtectedRoute>
         }
@@ -218,41 +180,10 @@ function AppRoutes() {
         }
       />
 
-      {/* Ruta para Tareas Por Centro */}
-      <Route
-        path="/cuadernos-centro/tareas"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyTareasCentroPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
+      {/* ⚠️ PAGINĂ MUTATĂ ÎN OLD - NU SE FOLOSEȘTE MOMENTAN (TareasCentroPage) */}
 
-      {/* Ruta para Paquetería Por Centro */}
-      <Route
-        path="/cuadernos-centro/paqueteria"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyPaqueteriaCentroPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Ruta para Incidencias Por Centro */}
-      <Route
-        path="/cuadernos-centro/incidencias"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyIncidenciasCentroPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
+      {/* ⚠️ PAGINĂ MUTATĂ ÎN OLD - NU SE FOLOSEȘTE MOMENTAN (PaqueteriaCentroPage) */}
+      {/* ⚠️ PAGINĂ ȘTEARSĂ - NU SE FOLOSEȘTE (IncidenciasCentroPage) */}
       
       {/* Ruta para solicitudes */}
       <Route
@@ -456,41 +387,7 @@ function AppRoutes() {
         }
       />
 
-      {/* Ruta para tareas diarias */}
-      <Route
-        path="/tareas"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyTareasPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Ruta para control correo */}
-      <Route
-        path="/control-correo"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyControlCorreoPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Ruta para incidencias */}
-      <Route
-        path="/incidencias"
-        element={
-          <ProtectedRoute>
-            <MainLayout>
-              <LazyIncidenciasPage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
-      />
+      {/* ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (TareasPage, ControlCorreoPage, IncidenciasPage) */}
 
       {/* Ruta para cuadernos */}
       <Route

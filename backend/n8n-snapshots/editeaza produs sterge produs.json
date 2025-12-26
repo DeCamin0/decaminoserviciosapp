@@ -1,0 +1,225 @@
+{
+  "name": "editeaza produs sterge produs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "5c49e67b-b81c-4187-8d0f-37bb32e9f217",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4800d31f-629c-42f7-832c-d2bc6293261c",
+      "name": "Webhook",
+      "webhookId": "5c49e67b-b81c-4187-8d0f-37bb32e9f217"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json[\"body\"][\"accion\"] }}",
+                    "rightValue": "edit",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "90070e84-665c-497c-b789-879c64a9463e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Edit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "90ee87b1-c5d5-49f5-ac8c-31f51eecf5a2",
+                    "leftValue": "={{ $json[\"body\"][\"accion\"] }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Delete"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "bba2bc73-218f-45f4-952d-58129b7b1299",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE `Productos`\nSET\n  `firma_id` = '{{ $json.body[\"firma_id\"] }}',\n  `FAMILIA/SUBFAMILIA` = '{{ $json.body[\"FAMILIA/SUBFAMILIA\"] }}',\n  `NOMBRE` = '{{ $json.body[\"NOMBRE\"] }}',\n  `DESCRIPCIÓN` = '{{ $json.body[\"DESCRIPCIÓN\"] }}',\n  `NOTAS PRIVADAS` = '{{ $json.body[\"NOTAS PRIVADAS\"] }}',\n  `TIPO DE UNIDAD` = '{{ $json.body[\"TIPO DE UNIDAD\"] }}',\n  `PRODUCTO VISIBLE (ACTIVO)` = '{{ $json.body[\"PRODUCTO VISIBLE (ACTIVO)\"] }}',\n  `CÓDIGO DE PRODUCTO (SKU)` = '{{ $json.body[\"CÓDIGO DE PRODUCTO (SKU)\"] }}',\n  `REFERENCIA PROVEEDOR` = '{{ $json.body[\"REFERENCIA PROVEEDOR\"] }}',\n  `PRECIO VENTA - BASE IMPONIBLE` = '{{ $json.body[\"PRECIO VENTA - BASE IMPONIBLE\"] }}',\n  `PRECIO VENTA - % DESCUENTO` = '{{ $json.body[\"PRECIO VENTA - % DESCUENTO\"] }}',\n  `PRECIO VENTA - % IVA` = '{{ $json.body[\"PRECIO VENTA - % IVA\"] }}',\n  `PRECIO VENTA - % RE` = '{{ $json.body[\"PRECIO VENTA - % RE\"] }}',\n  `P.V.P.` = '{{ $json.body[\"P.V.P.\"] }}',\n  `COSTE ADQUISICIÓN - BASE IMPONIBLE` = '{{ $json.body[\"COSTE ADQUISICIÓN - BASE IMPONIBLE\"] }}',\n  `COSTE ADQUISICIÓN - % IVA` = '{{ $json.body[\"COSTE ADQUISICIÓN - % IVA\"] }}',\n  `COSTE ADQUISICIÓN - % RE` = '{{ $json.body[\"COSTE ADQUISICIÓN - % RE\"] }}',\n  `COSTE ADQUISICIÓN TOTAL` = '{{ $json.body[\"COSTE ADQUISICIÓN TOTAL\"] }}',\n  `CONTROLAR STOCK` = '{{ $json.body[\"CONTROLAR STOCK\"] }}',\n  `STOCK ABSOLUTO` = '{{ $json.body[\"STOCK ABSOLUTO\"] }}',\n  `PERMITIR VENDER SIN STOCK` = '{{ $json.body[\"PERMITIR VENDER SIN STOCK\"] }}',\n  `ACTIVAR ALARMA DE STOCK` = '{{ $json.body[\"ACTIVAR ALARMA DE STOCK\"] }}',\n  `AVISAR CUANDO EL NÚMERO DE UNIDADES SEA INFERIOR A` = '{{ $json.body[\"AVISAR CUANDO EL NÚMERO DE UNIDADES SEA INFERIOR A\"] }}',\n  `AVISAR EN EL DASHBOARD` = '{{ $json.body[\"AVISAR EN EL DASHBOARD\"] }}',\n  `AVISAR MEDIANTE NOTIFICACIÓN` = '{{ $json.body[\"AVISAR MEDIANTE NOTIFICACIÓN\"] }}',\n  `AVISAR MEDIANTE CORREO ELECTRÓNICO` = '{{ $json.body[\"AVISAR MEDIANTE CORREO ELECTRÓNICO\"] }}'\nWHERE `id` = {{ $json.body[\"id\"] }};",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        416,
+        -96
+      ],
+      "id": "ab960ed8-340a-405a-9142-bc04ede5fdd9",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "IZlW9nTSFBfkvp1s",
+          "name": "decamino_facturacion"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM `Productos`\nWHERE `id` = {{ $json.body[\"id\"] }}\n  AND `firma_id` = '{{ $json.body[\"firma_id\"] }}';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        416,
+        96
+      ],
+      "id": "17404672-158c-40c4-937f-b44b30ab3025",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "mySql": {
+          "id": "IZlW9nTSFBfkvp1s",
+          "name": "decamino_facturacion"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"ok\",\n  \"message\": \"Producto actualizado correctamente\",\n  \"id\": \"={{ $node['Webhook'].json['body']['id'] }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        640,
+        -96
+      ],
+      "id": "34d0811a-5cb3-42bc-9e8c-e29e4057929c",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"ok\",\n  \"message\": \"Producto eliminado correctamente\",\n  \"id\": \"={{ $node['Webhook'].json['body']['id'] }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        640,
+        96
+      ],
+      "id": "5d555928-412f-4785-9766-4ecc74859047",
+      "name": "Respond to Webhook1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0e4ece91-710c-46c8-9072-b9bca3c8a996",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "P9u2rTpqUT7VU0vy",
+  "tags": []
+}

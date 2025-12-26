@@ -199,13 +199,15 @@ export class PushController {
     const user = req.user;
     const userId = user.userId || user.CODIGO;
 
-    const deletedCount = await this.pushService.deleteInvalidSubscriptions(userId);
+    const deletedCount =
+      await this.pushService.deleteInvalidSubscriptions(userId);
 
     return {
       success: true,
       message: `Șterse ${deletedCount} subscription-uri invalide pentru user ${userId}`,
       deletedCount,
-      nextStep: 'Reîncarcă aplicația pentru a recrea subscription-urile cu VAPID keys corecte',
+      nextStep:
+        'Reîncarcă aplicația pentru a recrea subscription-urile cu VAPID keys corecte',
     };
   }
 }

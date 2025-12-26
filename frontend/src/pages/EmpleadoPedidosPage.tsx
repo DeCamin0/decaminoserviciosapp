@@ -48,7 +48,8 @@ type LineaPedido = {
 };
 
 // ===== API ENDPOINT PENTRU PRODUSE =====
-const CATALOGO_API_URL = 'https://n8n.decaminoservicios.com/webhook/catalogo/bae4f329-a1be-4e66-9792-6b35aa2f4a51';
+// ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+const CATALOGO_API_URL = routes.getCatalogo;
 
 // ===== SISTEM DE NOTIFICĂRI MODERNE =====
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -375,16 +376,9 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         // Productos cargados exitosamente
         
         if (data && Array.isArray(data)) {
-          const productosFormateados = data.map((item: any) => ({
-            id: item.id,
-            numero: item['Número de artículo'] || item.numero || 'Sin número',
-            descripcion: item['Descripción de artículo'] || item.descripcion || 'Sin descripción',
-            precio: parseFloat(item['Precio por unidad'] || item.precio || 0),
-            imagen: item.fotoproducto && item.fotoproducto.data ? 
-              bufferToBase64(item.fotoproducto.data) : 
-              undefined
-          }));
-          setProductos(productosFormateados);
+          // ✅ Backend-ul returnează deja datele în formatul corect (id, numero, descripcion, precio, imagen)
+          // Nu mai trebuie să facem conversie de buffer, backend-ul returnează deja base64
+          setProductos(data);
         }
       } catch (error) {
         console.error('❌ Error loading productos:', error);
@@ -416,120 +410,31 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       
       // Cargando detalles para la comunidad
       
-      // Folosește endpoint-ul pentru toate produsele cu permisiuni pentru comunitatea selectată
-      const permisosEndpoint = 'https://n8n.decaminoservicios.com/webhook/8c8aa198-5b57-4203-bdd7-7f8ff060bf68';
-      const url = `${permisosEndpoint}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}`;
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const url = `${routes.getCatalogo}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}`;
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-        },
+        headers,
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Verifică dacă response-ul este gol
-      const responseText = await response.text();
-      
-      if (!responseText || responseText.trim() === '') {
-        // Empty response, trying fallback endpoint
-        
-        // Fallback: încearcă endpoint-ul original pentru produse
-        const fallbackEndpoint = 'https://n8n.decaminoservicios.com/webhook/b127e72a-df77-4c07-acc3-1e9d931d4f95';
-        const fallbackUrl = `${fallbackEndpoint}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}&todos_productos=true`;
-        
-        try {
-          const fallbackResponse = await fetch(fallbackUrl, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-App-Source': 'DeCamino-Web-App',
-              'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-            },
-          });
-          
-          if (fallbackResponse.ok) {
-            const fallbackText = await fallbackResponse.text();
-            if (fallbackText && fallbackText.trim() !== '') {
-              // Fallback endpoint returned data
-              const fallbackData = JSON.parse(fallbackText);
-              // Procesează datele din fallback
-              if (Array.isArray(fallbackData)) {
-                const productosConPermisos = fallbackData.map((item: any) => {
-                  // Folosește imagen_base64 direct din backend
-                  let imagenBase64 = '';
-                  if (item.imagen_base64) {
-                    // Dacă este deja base64, adaugă prefixul data:image/jpeg
-                    imagenBase64 = `data:image/jpeg;base64,${item.imagen_base64}`;
-                  } else if (item.fotoproducto && item.fotoproducto.data && Array.isArray(item.fotoproducto.data)) {
-                    // Fallback la conversia din Buffer
-                    imagenBase64 = bufferToBase64(item.fotoproducto.data);
-                  }
-                  
-                  return {
-                    id: item.producto_id,
-                    numero: item.numero_articulo,
-                    descripcion: item.descripcion,
-                    precio: parseFloat(item.precio),
-                    permitido: item.permitido === 1 || item.permitido === true,
-                    imagen: imagenBase64 || undefined
-                  };
-                });
-                
-                const productosConImagen = productosConPermisos.filter(p => p.imagen).length;
-                // Productos con imagen procesados
-                
-                setProductos(productosConPermisos);
-                
-                // NU schimbăm numele comunității - păstrăm numele corect
-                setComunidadDetalles(prev => ({
-                  ...prev!,
-                  id: comunidadId,
-                  productos: productosConPermisos,
-                  // Include datele complete ale comunității
-                  'NOMBRE O RAZON SOCIAL': prev?.datosCompletos?.['NOMBRE O RAZON SOCIAL'] || prev?.nombre || 'N/A',
-                  NIF: prev?.datosCompletos?.NIF || 'N/A',
-                  TELEFONO: prev?.datosCompletos?.TELEFONO || 'N/A',
-                  DIRECCION: prev?.datosCompletos?.DIRECCION || 'N/A',
-                  'CODIGO POSTAL': prev?.datosCompletos?.['CODIGO POSTAL'] || 'N/A',
-                  POBLACION: prev?.datosCompletos?.POBLACION || 'N/A',
-                  PROVINCIA: prev?.datosCompletos?.PROVINCIA || 'N/A',
-                  PAIS: prev?.datosCompletos?.PAIS || 'N/A',
-                  LATITUD: prev?.datosCompletos?.LATITUD || null,
-                  LONGITUD: prev?.datosCompletos?.LONGITUD || null
-                }));
-                
-                addToast('success', 'Detalles cargados', `Detalles de "${nombreComunidad}" cargados correctamente. ${productosConPermisos.length} productos con permisos.`);
-                return;
-              }
-            }
-          }
-        } catch (fallbackError) {
-          console.error('❌ Fallback endpoint also failed:', fallbackError);
-        }
-        
-        // Both endpoints failed, no products available
-        setProductos([]);
-        addToast('warning', 'Sin productos', `No se encontraron productos para "${nombreComunidad}".`);
-        return;
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-        // Detalles cargados exitosamente
-      } catch (parseError) {
-        console.error('❌ Error parsing JSON:', parseError);
-        setProductos([]);
-        return;
-      }
+      const data = await response.json();
       
       // Procesează răspunsul (obiect sau array de produse cu permisiuni)
       if (data && (Array.isArray(data) || typeof data === 'object')) {
@@ -550,10 +455,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
             
             return {
               id: item.producto_id,
-              numero: item.numero_articulo,
-              descripcion: item.descripcion,
-              precio: parseFloat(item.precio),
-              permitido: item.permitido === 1 || item.permitido === true,
+              numero: item.numero_articulo || '',
+              descripcion: item.descripcion || '',
+              precio: parseFloat(item.precio || 0),
+              permitido: item.permitido === 1 || item.permitido === true || item.permitido === '1',
               imagen: imagenBase64 || undefined
             };
           });
@@ -570,10 +475,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           
           productosConPermisos = [{
             id: data.producto_id,
-            numero: data.numero_articulo,
-            descripcion: data.descripcion,
-            precio: parseFloat(data.precio),
-            permitido: data.permitido === 1 || data.permitido === true,
+            numero: data.numero_articulo || '',
+            descripcion: data.descripcion || '',
+            precio: parseFloat(data.precio || 0),
+            permitido: data.permitido === 1 || data.permitido === true || data.permitido === '1',
             imagen: imagenBase64 || undefined
           }];
         }
@@ -786,14 +691,22 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     };
 
     try {
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/3ff7b3a7-840c-4385-8eac-689c1a91967f', {
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.savePedido, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -1044,7 +957,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                           </div>
                         </td>
                         <td className="py-2">
+                          <label htmlFor={`cantidad-pedido-${index}`} className="sr-only">Cantidad</label>
                           <Input
+                            id={`cantidad-pedido-${index}`}
+                            name={`cantidad-pedido-${index}`}
                             type="number"
                             min="1"
                             value={linea.cantidad}

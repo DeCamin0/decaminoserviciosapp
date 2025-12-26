@@ -17,17 +17,16 @@ export class GeocodingController {
 
   @Get('reverse')
   @UseGuards(JwtAuthGuard)
-  async reverseGeocode(
-    @Query('lat') lat: string,
-    @Query('lon') lon: string,
-  ) {
+  async reverseGeocode(@Query('lat') lat: string, @Query('lon') lon: string) {
     try {
       this.logger.log(
         `📝 Reverse geocode request - lat: ${lat || 'missing'}, lon: ${lon || 'missing'}`,
       );
 
       if (!lat || !lon) {
-        throw new BadRequestException('lat and lon query parameters are required');
+        throw new BadRequestException(
+          'lat and lon query parameters are required',
+        );
       }
 
       const latitude = parseFloat(lat);
@@ -55,7 +54,8 @@ export class GeocodingController {
             latitude,
             longitude,
           },
-          message: 'No se pudo obtener la dirección. Se muestran las coordenadas.',
+          message:
+            'No se pudo obtener la dirección. Se muestran las coordenadas.',
         };
       }
 
@@ -97,7 +97,8 @@ export class GeocodingController {
               latitude,
               longitude,
             },
-            message: 'No se pudo obtener la dirección. Se muestran las coordenadas.',
+            message:
+              'No se pudo obtener la dirección. Se muestran las coordenadas.',
           };
         }
       } catch {
@@ -109,4 +110,3 @@ export class GeocodingController {
     }
   }
 }
-

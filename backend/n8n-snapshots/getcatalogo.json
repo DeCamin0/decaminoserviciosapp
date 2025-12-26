@@ -1,0 +1,92 @@
+{
+  "name": "getcatalogo",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "/catalogo/bae4f329-a1be-4e66-9792-6b35aa2f4a51",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3ec09fe4-3e66-4904-b256-b31680af20e8",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        -144
+      ],
+      "webhookId": "bae4f329-a1be-4e66-9792-6b35aa2f4a51"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * \nFROM CatologoProductos;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        96,
+        -144
+      ],
+      "id": "6d561674-2001-410a-ab5b-0c8d2bdf3830",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        304,
+        -144
+      ],
+      "id": "5f6f5028-2ebf-409c-963b-2e19f8e304b1",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e0b2c064-b040-4824-8ecd-bc73fb07fdff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "1l40NNuBg4qUz2yl",
+  "tags": []
+}

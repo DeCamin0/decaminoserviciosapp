@@ -1401,33 +1401,126 @@ export default function DocumentosPage() {
       return;
     }
 
-    setLoading(true); // Mostrar loading
+    // ✅ INICIALIZAR AutoScript INMEDIATAMENTE después del click del usuario
+    // Esto asegura que Chrome considere la conexión WebSocket como iniciada por acción directa del usuario
+    console.log('🔧 Inicializando AutoScript (antes de fetch)...');
+    if (typeof AutoScript === 'undefined' || typeof window === 'undefined' || !window.AutoScript) {
+      console.error('❌ AutoScript no está disponible');
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'AutoScript no está disponible. Por favor, recarga la página.'
+      });
+      return;
+    }
+
     try {
+      window.AutoScript.cargarAppAfirma();
+      console.log('✅ AutoScript.cargarAppAfirma() inicializado correctamente');
+    } catch (error) {
+      console.error('❌ Error al inicializar AutoScript:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error al inicializar AutoFirma',
+        message: 'No se pudo inicializar AutoFirma. Por favor, asegúrate de que AutoFirma esté instalado correctamente.'
+      });
+      return;
+    }
+
+    setLoading(true); // Mostrar loading
+    
+    // ✅ Usar requestAnimationFrame para preservar el contexto de "user gesture"
+    // Esto permite que Chrome considere que la conexión WebSocket es iniciada por acción directa del usuario
+    // incluso después de operaciones asíncronas
+    // requestAnimationFrame se ejecuta en el mismo frame de renderizado, preservando el contexto
+    requestAnimationFrame(async () => {
+      try {
       console.log('🚀 Firmar con AutoScript para:', documento.fileName);
       
       // Descargar el PDF directamente usando el sistema de rutare centralizat
-      const response = await fetch(`${routes.downloadDocumentoOficial}?id=${authUser?.CODIGO}&documentId=${documento.doc_id}&email=${authUser?.EMAIL}&fileName=${encodeURIComponent(documento.fileName)}`);
-      const blob = await response.blob();
+      // Usar el mismo formato de email que en el resto del código
+      const email = authUser?.['CORREO ELECTRONICO'] || authUser?.email || authUser?.CORREO_ELECTRONICO || '';
+      const downloadUrl = `${routes.downloadDocumentoOficial}?id=${authUser?.CODIGO}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName)}`;
+      console.log('📥 Descargando PDF desde:', downloadUrl);
+      console.log('📧 Email usado:', email);
       
-      // Convertir el blob a Base64
-      const pdfBase64 = await blobToBase64(blob);
-      console.log('📄 PDF convertido a Base64, longitud:', pdfBase64.length);
+      // Obtener token JWT para autenticación
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       
-      // Verificar si AutoScript está disponible
-      if (typeof AutoScript === 'undefined') {
-        console.error('❌ AutoScript no está disponible');
+      const response = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: headers,
+        credentials: 'include'
+      });
+      
+      // Verificar si la respuesta es OK
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error al descargar PDF:', response.status, errorText);
         setNotification({
           type: 'error',
-          title: 'Error',
-          message: 'AutoScript no está disponible. Por favor, recarga la página.'
+          title: 'Error al descargar documento',
+          message: `No se pudo descargar el documento. Error ${response.status}: ${response.statusText}`
         });
+        setLoading(false);
         return;
       }
       
-      // Inicializar AutoScript
-      console.log('🔧 Inicializando AutoScript...');
-      if (typeof window !== 'undefined' && window.AutoScript) {
-        window.AutoScript.cargarAppAfirma();
+      // Verificar Content-Type
+      const contentType = response.headers.get('content-type');
+      console.log('📄 Content-Type recibido:', contentType);
+      
+      if (!contentType || !contentType.includes('application/pdf')) {
+        console.warn('⚠️ Advertencia: Content-Type no es PDF:', contentType);
+      }
+      
+      const blob = await response.blob();
+      console.log('📦 Blob descargado, tamaño:', blob.size, 'bytes');
+      
+      // Validar que el blob no esté vacío
+      if (blob.size === 0) {
+        console.error('❌ El PDF descargado está vacío');
+        setNotification({
+          type: 'error',
+          title: 'Error al descargar documento',
+          message: 'El documento descargado está vacío. Por favor, contacta con el administrador.'
+        });
+        setLoading(false);
+        return;
+      }
+      
+      // Validar tamaño mínimo (un PDF válido debe tener al menos algunos KB)
+      if (blob.size < 100) {
+        console.error('❌ El PDF descargado es demasiado pequeño:', blob.size, 'bytes');
+        setNotification({
+          type: 'error',
+          title: 'Error al descargar documento',
+          message: 'El documento descargado parece estar corrupto o vacío. Por favor, intenta descargarlo manualmente primero.'
+        });
+        setLoading(false);
+        return;
+      }
+      
+      // Convertir el blob a Base64
+      const pdfBase64 = await blobToBase64(blob);
+      console.log('📄 PDF convertido a Base64, longitud:', pdfBase64.length, 'caracteres');
+      
+      // Validar que Base64 no esté vacío
+      if (!pdfBase64 || pdfBase64.length < 100) {
+        console.error('❌ El Base64 generado es demasiado pequeño:', pdfBase64?.length);
+        setNotification({
+          type: 'error',
+          title: 'Error al procesar documento',
+          message: 'No se pudo convertir el documento a Base64 correctamente. Por favor, intenta nuevamente.'
+        });
+        setLoading(false);
+        return;
       }
       
       // === FIRMA VISIBLE PAdES ===
@@ -1451,14 +1544,18 @@ export default function DocumentosPage() {
         extraParams: extraParamsString
       });
       
-      // Llamar AutoScript.sign() con parámetros separados
-      if (typeof window !== 'undefined' && window.AutoScript) {
-        window.AutoScript.sign(
-        pdfBase64,           // dataB64 - string Base64
-        "SHA256withRSA",     // algorithm
-        "PAdES",             // format
-        extraParamsString,   // extraParams - string
-        (result) => {
+      // ✅ Usar setTimeout con delay 0 para preservar el contexto de "user gesture"
+      // cuando se llama a AutoScript.sign(), que internamente inicia el WebSocket
+      // Esto asegura que Chrome considere la conexión WebSocket como iniciada por acción directa del usuario
+      setTimeout(() => {
+        // Llamar AutoScript.sign() con parámetros separados
+        if (typeof window !== 'undefined' && window.AutoScript) {
+          window.AutoScript.sign(
+          pdfBase64,           // dataB64 - string Base64
+          "SHA256withRSA",     // algorithm
+          "PAdES",             // format
+          extraParamsString,   // extraParams - string
+          (result) => {
         console.log("✅ Documento firmado:", result);
         
         // Descargar el documento firmado
@@ -1487,7 +1584,7 @@ export default function DocumentosPage() {
         const payload = {
           "doc_id": documento.doc_id,
           "id": authUser?.CODIGO,
-          "correo_electronico": authUser?.email,
+          "correo_electronico": authUser?.['CORREO ELECTRONICO'] || authUser?.email || authUser?.CORREO_ELECTRONICO || '',
           "tipo_documento": documento.tipo_documento || documento.tipo || 'Documento',
           "nombre_archivo": documento.fileName.replace('.pdf', '_FIRMADO_DIGITAL.pdf'),
           "nombre_empleado": authUser?.['NOMBRE / APELLIDOS'],
@@ -1496,11 +1593,19 @@ export default function DocumentosPage() {
           "signed_b64": result
         };
         
+        // Obtener token JWT para autenticación
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         fetch(routes.autofirmaWebhook, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: headers,
+          credentials: 'include',
           body: JSON.stringify(payload)
         })
         .then(response => {
@@ -1529,15 +1634,71 @@ export default function DocumentosPage() {
         });
         }, (error) => {
           console.error('❌ Error al firmar:', error);
-          setNotification({
-            type: 'error',
-            title: 'Error al Firmar',
-            message: 'Hubo un error al firmar el documento: ' + error
+          console.error('❌ Error details:', {
+            error,
+            errorType: typeof error,
+            errorString: String(error),
+            errorStack: error?.stack
           });
+          
+          // Detectăm dacă eroarea este legată de conexiunea la AutoFirma
+          const errorMessage = String(error || '');
+          const errorLower = errorMessage.toLowerCase();
+          
+          const isConnectionError = errorLower.includes('java.lang.exception') || 
+                                   errorLower.includes('websocket') ||
+                                   errorLower.includes('connection') ||
+                                   errorLower.includes('failed') ||
+                                   errorLower.includes('applicationnotfoundexception') ||
+                                   errorLower.includes('timeout') ||
+                                   errorLower.includes('econnrefused');
+          
+          const isWebSocketError = errorLower.includes('websocket') || errorLower.includes('wss://');
+          const isJavaException = errorLower.includes('java.lang');
+          
+          if (isConnectionError || isWebSocketError) {
+            let detailedMessage = 'No se pudo conectar con AutoFirma.\n\n';
+            
+            if (isWebSocketError) {
+              detailedMessage += '🔌 Error de conexión WebSocket detectado.\n\n';
+            }
+            
+            if (isJavaException) {
+              detailedMessage += '⚠️ AutoFirma se abrió pero no pudo procesar la solicitud.\n\n';
+            }
+            
+            detailedMessage += 'Por favor:\n';
+            detailedMessage += '1. Verifica que AutoFirma esté instalado correctamente\n';
+            detailedMessage += '2. Cierra AutoFirma si está abierto y vuelve a intentar\n';
+            detailedMessage += '3. Verifica que no haya bloqueadores de ventanas emergentes\n';
+            detailedMessage += '4. Si el problema persiste, reinicia AutoFirma desde el menú Inicio\n';
+            detailedMessage += '5. Asegúrate de que el firewall no esté bloqueando AutoFirma';
+            
+            setNotification({
+              type: 'error',
+              title: 'Error de conexión con AutoFirma',
+              message: detailedMessage
+            });
+          } else {
+            setNotification({
+              type: 'error',
+              title: 'Error al Firmar',
+              message: `Hubo un error al firmar el documento.\n\nDetalles: ${errorMessage}\n\nPor favor, intenta nuevamente o contacta con el administrador si el problema persiste.`
+            });
+          }
           setLoading(false); // Ocultar loading también en caso de error
         }
         );
-      }
+        } else {
+          console.error('❌ window.AutoScript no está disponible después de fetch');
+          setNotification({
+            type: 'error',
+            title: 'Error',
+            message: 'AutoScript no está disponible. Por favor, recarga la página.'
+          });
+          setLoading(false);
+        }
+      }, 0); // ✅ setTimeout con delay 0 preserva el contexto de "user gesture" para WebSocket
       
       setNotification({
         type: 'info',
@@ -1546,13 +1707,15 @@ export default function DocumentosPage() {
       });
       
       } catch (error) {
-      console.error('❌ Error al firmar con AutoScript:', error);
-      setNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Hubo un error al descargar el PDF.'
-      });
-    }
+        console.error('❌ Error al firmar con AutoScript:', error);
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'Hubo un error al descargar el PDF.'
+        });
+        setLoading(false);
+      }
+    }); // ✅ requestAnimationFrame preserva el contexto de "user gesture" para WebSocket
   };
 
   // Función helper legacy para firmar con AutoFirma (ahora noop)

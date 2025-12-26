@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Card, Badge, Separator, Modal } from '../components/ui';
+import { Button, Card, Badge, Separator } from '../components/ui';
 import { ArrowLeft, MapPin, Phone, Mail, Globe, CreditCard, FileText, Building, User, AlertCircle } from 'lucide-react';
 import { routes } from '../utils/routes';
 import GeocodingAddress from '../components/GeocodingAddress';

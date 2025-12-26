@@ -89,7 +89,7 @@ const resources = {
       'cuadernosPorCentro.loading': 'Se încarcă caietele pe centre...',
       'tareasCentro.loading': 'Se încarcă sarcinile centrului...',
       'paqueteriaCentro.loading': 'Se încarcă poșta centrului...',
-      'incidenciasCentro.loading': 'Se încarcă incidențele centrului...',
+      // 'incidenciasCentro.loading': 'Se încarcă incidențele centrului...', // ⚠️ ȘTERS - NU SE FOLOSEȘTE
       'pedidos.loading': 'Se încarcă comenzile...',
       'empleadoPedidos.loading': 'Se încarcă comenzile angajatului...',
       
@@ -267,7 +267,7 @@ const resources = {
       'cuadernosPorCentro.loading': 'Cargando cuadernos por centro...',
       'tareasCentro.loading': 'Cargando tareas del centro...',
       'paqueteriaCentro.loading': 'Cargando paquetería del centro...',
-      'incidenciasCentro.loading': 'Cargando incidencias del centro...',
+      // 'incidenciasCentro.loading': 'Cargando incidencias del centro...', // ⚠️ ȘTERS - NU SE FOLOSEȘTE
       'pedidos.loading': 'Cargando pedidos...',
       'empleadoPedidos.loading': 'Cargando pedidos del empleado...',
       

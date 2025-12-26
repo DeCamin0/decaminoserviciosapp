@@ -33,7 +33,9 @@ export class FestivosService {
   async getFestivos(year: number): Promise<any[]> {
     try {
       if (!year || isNaN(year)) {
-        throw new BadRequestException('Year is required and must be a valid number');
+        throw new BadRequestException(
+          'Year is required and must be a valid number',
+        );
       }
 
       const query = `
@@ -90,9 +92,14 @@ export class FestivosService {
 
       // observed_date default la fecha dacă nu este specificat
       const observedDate = data.observed_date || data.fecha;
-      const active = data.active !== undefined 
-        ? (typeof data.active === 'boolean' ? (data.active ? 1 : 0) : Number(data.active))
-        : 1;
+      const active =
+        data.active !== undefined
+          ? typeof data.active === 'boolean'
+            ? data.active
+              ? 1
+              : 0
+            : Number(data.active)
+          : 1;
 
       const query = `
         INSERT INTO fiestas
@@ -115,7 +122,7 @@ export class FestivosService {
 
       // Obține ID-ul inserat
       const inserted = await this.prisma.$queryRawUnsafe<Array<{ id: number }>>(
-        `SELECT id FROM fiestas WHERE date = ${this.escapeSql(data.fecha)} AND name = ${this.escapeSql(data.nombre)} AND scope = ${this.escapeSql(data.scope)} ORDER BY id DESC LIMIT 1`
+        `SELECT id FROM fiestas WHERE date = ${this.escapeSql(data.fecha)} AND name = ${this.escapeSql(data.nombre)} AND scope = ${this.escapeSql(data.scope)} ORDER BY id DESC LIMIT 1`,
       );
 
       const id = inserted && inserted.length > 0 ? inserted[0].id : null;
@@ -128,9 +135,7 @@ export class FestivosService {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(
-        `Error al crear festivo: ${error.message}`,
-      );
+      throw new BadRequestException(`Error al crear festivo: ${error.message}`);
     }
   }
 
@@ -148,7 +153,9 @@ export class FestivosService {
   }): Promise<{ success: true }> {
     try {
       if (!data.id || isNaN(data.id)) {
-        throw new BadRequestException('id is required and must be a valid number');
+        throw new BadRequestException(
+          'id is required and must be a valid number',
+        );
       }
 
       const updates: string[] = [];
@@ -166,14 +173,19 @@ export class FestivosService {
         updates.push(`notes = ${this.escapeSql(data.notes)}`);
       }
       if (data.active !== undefined) {
-        const active = typeof data.active === 'boolean' 
-          ? (data.active ? 1 : 0) 
-          : Number(data.active);
+        const active =
+          typeof data.active === 'boolean'
+            ? data.active
+              ? 1
+              : 0
+            : Number(data.active);
         updates.push(`active = ${active}`);
       }
 
       if (updates.length === 0) {
-        throw new BadRequestException('At least one field must be provided for update');
+        throw new BadRequestException(
+          'At least one field must be provided for update',
+        );
       }
 
       const query = `
@@ -207,7 +219,9 @@ export class FestivosService {
   async deleteFestivo(id: number): Promise<{ success: true }> {
     try {
       if (!id || isNaN(id)) {
-        throw new BadRequestException('id is required and must be a valid number');
+        throw new BadRequestException(
+          'id is required and must be a valid number',
+        );
       }
 
       const query = `
@@ -233,4 +247,3 @@ export class FestivosService {
     }
   }
 }
-

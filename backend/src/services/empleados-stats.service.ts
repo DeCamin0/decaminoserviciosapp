@@ -82,7 +82,9 @@ export class EmpleadosStatsService {
 
       const stats = await Promise.all(statsPromises);
 
-      this.logger.log(`✅ Empleados stats retrieved: ${stats.length} empleados`);
+      this.logger.log(
+        `✅ Empleados stats retrieved: ${stats.length} empleados`,
+      );
 
       return stats;
     } catch (error: any) {
@@ -91,4 +93,3 @@ export class EmpleadosStatsService {
     }
   }
 }
-

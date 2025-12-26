@@ -100,7 +100,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
-import './i18n'
+import './i18n' // Side-effect import pentru inițializare
 import { handleBrowserExtensionErrors } from './utils/errorHandler'
 import { isDemoMode } from './utils/demo'
 import './registerSW'

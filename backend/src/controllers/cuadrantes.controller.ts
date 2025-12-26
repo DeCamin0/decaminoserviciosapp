@@ -56,7 +56,7 @@ export class CuadrantesController {
     try {
       // Suport pentru { email: string } - compatibil cu n8n endpoint get-cuadrantes-yyBov0qVQZEhX2TL
       const email = body.email;
-      
+
       // Frontend-ul trimite { codigo: string }
       // Workflow-ul n8n original folosea query params: centro, empleado (CODIGO), nombre
       const empleado = body.codigo || body.empleado;
@@ -122,9 +122,8 @@ export class CuadrantesController {
         `📝 Update cuadrantes bulk request - count: ${cuadrantes.length}, centro: ${body.centro || 'N/A'}, mesAno: ${body.mesAno || 'N/A'}`,
       );
 
-      const result = await this.cuadrantesService.updateCuadrantesBulk(
-        cuadrantes,
-      );
+      const result =
+        await this.cuadrantesService.updateCuadrantesBulk(cuadrantes);
 
       return result;
     } catch (error: any) {

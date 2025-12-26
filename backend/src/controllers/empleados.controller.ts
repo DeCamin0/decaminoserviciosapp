@@ -668,9 +668,7 @@ export class EmpleadosController {
       const { mesaj, subiect, destinatar, grup, codigo } = body;
 
       if (!mesaj || !subiect) {
-        throw new BadRequestException(
-          'mesaj și subiect sunt obligatorii',
-        );
+        throw new BadRequestException('mesaj și subiect sunt obligatorii');
       }
 
       // Verifică dacă SMTP este configurat
@@ -684,31 +682,38 @@ export class EmpleadosController {
 
       if (destinatar === 'angajat' && codigo) {
         // Trimite la un angajat specific
-        const empleado = await this.empleadosService.getEmpleadoByCodigo(codigo);
-        const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
-        const nombre = empleado['NOMBRE / APELLIDOS'] || empleado.NOMBRE_APELLIDOS || empleado.CODIGO;
-        
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        const email =
+          empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
+        const nombre =
+          empleado['NOMBRE / APELLIDOS'] ||
+          empleado.NOMBRE_APELLIDOS ||
+          empleado.CODIGO;
+
         if (!email) {
           throw new BadRequestException(
             `Angajatul ${codigo} nu are email configurat`,
           );
         }
-        
+
         emailRecipients = [{ email, nombre }];
       } else if (grup) {
         // Trimite la toți angajații dintr-un grup
         const empleados = await this.empleadosService.getAllEmpleados();
         const empleadosGrupo = empleados.filter(
-          (e) => (e.GRUPO || e.grupo) === grup && (e.ESTADO || e.estado) === 'ACTIVO',
+          (e) =>
+            (e.GRUPO || e.grupo) === grup &&
+            (e.ESTADO || e.estado) === 'ACTIVO',
         );
-        
+
         emailRecipients = empleadosGrupo
           .map((e) => ({
             email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
             nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
           }))
           .filter((r) => r.email && r.email.trim() !== '');
-        
+
         if (emailRecipients.length === 0) {
           throw new BadRequestException(
             `Nu s-au găsit angajați activi cu grupul ${grup} care au email configurat`,
@@ -724,7 +729,7 @@ export class EmpleadosController {
       // Folosim secvențial cu delay pentru a nu suprasolicita SMTP (similar cu n8n)
       for (let i = 0; i < emailRecipients.length; i++) {
         const recipient = emailRecipients[i];
-        
+
         // Template email identic cu n8n
         const html = `
           <html>
@@ -739,19 +744,24 @@ export class EmpleadosController {
             </body>
           </html>
         `;
-        
+
         try {
           await this.emailService.sendEmail(recipient.email, subiect, html, {
             bcc: ['decamino.rrhh@gmail.com'],
           });
-          this.logger.log(`✅ Email ${i + 1}/${emailRecipients.length} trimis către ${recipient.email} (${recipient.nombre})`);
-          
+          this.logger.log(
+            `✅ Email ${i + 1}/${emailRecipients.length} trimis către ${recipient.email} (${recipient.nombre})`,
+          );
+
           // Delay între email-uri (500ms) pentru a nu suprasolicita SMTP
           if (i < emailRecipients.length - 1) {
             await new Promise((resolve) => setTimeout(resolve, 500));
           }
         } catch (error: any) {
-          this.logger.error(`❌ Eroare la trimiterea email-ului către ${recipient.email}:`, error);
+          this.logger.error(
+            `❌ Eroare la trimiterea email-ului către ${recipient.email}:`,
+            error,
+          );
           // Continuă cu următorul email chiar dacă unul a eșuat
         }
       }
@@ -770,9 +780,7 @@ export class EmpleadosController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(
-        `Error al enviar email: ${error.message}`,
-      );
+      throw new BadRequestException(`Error al enviar email: ${error.message}`);
     }
   }
 }

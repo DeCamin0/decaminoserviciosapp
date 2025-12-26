@@ -1,0 +1,74 @@
+warning: in the working copy of 'backend/package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/app.module.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/comunicados/comunicados-debug.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/comunicados/comunicados.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/comunicados/comunicados.module.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/comunicados/comunicados.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/clientes.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/cuadrantes.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/empleados.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/festivos.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/fichajes.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/geocoding.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/horarios.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/online-users.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/permissions.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/controllers/push.controller.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/gateways/notifications.gateway.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/gateways/notifications.module.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/main.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/ausencias.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/clientes.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/email.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/empleados-stats.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/empleados.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/festivos.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/fichajes.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/geocoding.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/horarios.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/inspecciones.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/push.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/services/solicitudes.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/components/SendNotificationModal.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/components/admin/UserStats.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/config/autofirma.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/contexts/LocationContext.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/main.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/ClienteDetallePage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/CuadrantesPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/DocumentosPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/Fichaje.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/SolicitudesPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/utils/regulatedFetch.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/vite.config.js', LF will be replaced by CRLF the next time Git touches it
+ backend/package-lock.json                          |   375 [32m+[m[31m-[m
+ backend/package.json                               |     6 [32m+[m[31m-[m
+ backend/src/app.module.ts                          |    12 [32m+[m
+ backend/src/comunicados/comunicados.controller.ts  |    29 [32m+[m[31m-[m
+ backend/src/controllers/clientes.controller.ts     |    45 [32m+[m[31m-[m
+ backend/src/controllers/cuadrantes.controller.ts   |     7 [32m+[m[31m-[m
+ backend/src/controllers/empleados.controller.ts    |    46 [32m+[m[31m-[m
+ backend/src/controllers/festivos.controller.ts     |    73 [32m+[m[31m-[m
+ backend/src/controllers/fichajes.controller.ts     |    15 [32m+[m
+ backend/src/controllers/geocoding.controller.ts    |    16 [32m+[m[31m-[m
+ backend/src/controllers/horarios.controller.ts     |     4 [32m+[m[31m-[m
+ backend/src/controllers/online-users.controller.ts |     2 [31m-[m
+ backend/src/controllers/permissions.controller.ts  |    78 [32m+[m[31m-[m
+ backend/src/controllers/push.controller.ts         |     6 [32m+[m[31m-[m
+ backend/src/main.ts                                |    99 [32m+[m[31m-[m
+ backend/src/services/ausencias.service.ts          |    16 [32m+[m[31m-[m
+ backend/src/services/clientes.service.ts           |   494 [32m+[m[31m-[m
+ backend/src/services/email.service.ts              |     8 [32m+[m[31m-[m
+ backend/src/services/empleados-stats.service.ts    |     5 [32m+[m[31m-[m
+ backend/src/services/empleados.service.ts          |     4 [32m+[m[31m-[m
+ backend/src/services/festivos.service.ts           |    43 [32m+[m[31m-[m
+ backend/src/services/fichajes.service.ts           |    26 [32m+[m
+ backend/src/services/geocoding.service.ts          |   119 [32m+[m[31m-[m
+ backend/src/services/horarios.service.ts           |    79 [32m+[m[31m-[m
+ backend/src/services/push.service.ts               |    44 [32m+[m[31m-[m
+ backend/src/services/solicitudes.service.ts        |    16 [32m+[m[31m-[m
+ frontend/index.html                                |     2 [32m+[m[31m-[m
+ frontend/old/Admin_Permissions.xlsx                |    56 [31m-[m
+ frontend/old/GASTOS_TABLA_README.md                |   145 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button } from '../components/ui';
 import { Link, Navigate } from 'react-router-dom';
+import { routes } from '../utils/routes';
 
 export default function EstadisticasCuadrantesPage() {
   const { user: authUser } = useAuth();
@@ -32,10 +33,19 @@ export default function EstadisticasCuadrantesPage() {
   const fetchCuadrantesStats = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch cuadrantes
-      const response = await fetch('https://n8n.decaminoservicios.com/webhook/get-cuadrantes-yyBov0qVQZEhX2TL', {
+      // ✅ MIGRAT: Fetch cuadrantes din backend în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getCuadrantes, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
+        credentials: 'include',
         body: JSON.stringify({})
       });
       

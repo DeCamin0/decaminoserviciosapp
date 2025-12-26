@@ -59,7 +59,9 @@ export class ClientesController {
   @UseGuards(JwtAuthGuard)
   async crudCliente(@Body() body: any) {
     try {
-      this.logger.log(`📝 CRUD request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`);
+      this.logger.log(
+        `📝 CRUD request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`,
+      );
 
       const action = body.action?.toLowerCase();
 
@@ -76,14 +78,18 @@ export class ClientesController {
         }
         return await this.clientesService.deleteCliente(Number(body.id));
       } else {
-        throw new BadRequestException(`Invalid action: ${action}. Must be 'add', 'edit', or 'delete'.`);
+        throw new BadRequestException(
+          `Invalid action: ${action}. Must be 'add', 'edit', or 'delete'.`,
+        );
       }
     } catch (error: any) {
       this.logger.error('❌ Error in CRUD operation:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error en operación CRUD: ${error.message}`);
+      throw new BadRequestException(
+        `Error en operación CRUD: ${error.message}`,
+      );
     }
   }
 
@@ -109,7 +115,9 @@ export class ClientesController {
   @UseGuards(JwtAuthGuard)
   async crudProveedor(@Body() body: any) {
     try {
-      this.logger.log(`📝 CRUD proveedor request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`);
+      this.logger.log(
+        `📝 CRUD proveedor request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`,
+      );
 
       const action = body.action?.toLowerCase();
 
@@ -119,21 +127,28 @@ export class ClientesController {
         if (!body.id) {
           throw new BadRequestException('ID is required for edit operation');
         }
-        return await this.clientesService.updateProveedor(Number(body.id), body);
+        return await this.clientesService.updateProveedor(
+          Number(body.id),
+          body,
+        );
       } else if (action === 'delete') {
         if (!body.id) {
           throw new BadRequestException('ID is required for delete operation');
         }
         return await this.clientesService.deleteProveedor(Number(body.id));
       } else {
-        throw new BadRequestException(`Invalid action: ${action}. Must be 'add', 'edit', or 'delete'.`);
+        throw new BadRequestException(
+          `Invalid action: ${action}. Must be 'add', 'edit', or 'delete'.`,
+        );
       }
     } catch (error: any) {
       this.logger.error('❌ Error in CRUD proveedor operation:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error en operación CRUD proveedor: ${error.message}`);
+      throw new BadRequestException(
+        `Error en operación CRUD proveedor: ${error.message}`,
+      );
     }
   }
 
@@ -157,7 +172,9 @@ export class ClientesController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al cargar contratos: ${error.message}`);
+      throw new BadRequestException(
+        `Error al cargar contratos: ${error.message}`,
+      );
     }
   }
 
@@ -170,7 +187,9 @@ export class ClientesController {
   @UseGuards(JwtAuthGuard)
   async crudContract(@Body() body: any) {
     try {
-      this.logger.log(`📝 Contract CRUD request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`);
+      this.logger.log(
+        `📝 Contract CRUD request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`,
+      );
 
       const action = body.action?.toLowerCase();
 
@@ -182,14 +201,18 @@ export class ClientesController {
         }
         return await this.clientesService.deleteContract(Number(body.id));
       } else {
-        throw new BadRequestException(`Invalid action: ${action}. Must be 'upload' or 'delete'.`);
+        throw new BadRequestException(
+          `Invalid action: ${action}. Must be 'upload' or 'delete'.`,
+        );
       }
     } catch (error: any) {
       this.logger.error('❌ Error in contract CRUD operation:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error en operación de contrato: ${error.message}`);
+      throw new BadRequestException(
+        `Error en operación de contrato: ${error.message}`,
+      );
     }
   }
 }

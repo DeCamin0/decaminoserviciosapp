@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from '../ui';
+import { routes } from '../../utils/routes';
 
 export default function ClienteDetails({ cliente }) {
   const [centrosTrabajo, setCentrosTrabajo] = useState([]);
@@ -12,18 +13,48 @@ export default function ClienteDetails({ cliente }) {
     }
     setLoading(true);
     try {
-      // Fetch centre de lucru asociate cu clientul
-      const centrosResponse = await fetch('https://n8n.decaminoservicios.com/webhook/get-centros-trabajo');
+      // ✅ MIGRAT: folosim backend /api/clientes pentru centre de lucru
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const centrosResponse = await fetch(routes.getClientes, {
+        method: 'GET',
+        headers: headers,
+        credentials: 'include'
+      });
       const centrosData = await centrosResponse.json();
+      // Centrele de lucru sunt clienții care se potrivesc cu NIF sau nume
       const centrosCliente = Array.isArray(centrosData) ? 
-        centrosData.filter(centro => centro.cliente_id === cliente.NIF || centro.cliente === cliente['NOMBRE O RAZON SOCIAL']) : [];
+        centrosData.filter(centro => 
+          centro.NIF === cliente.NIF || 
+          centro['NOMBRE O RAZON SOCIAL'] === cliente['NOMBRE O RAZON SOCIAL'] ||
+          centro['NOMBRE O RAZÓN SOCIAL'] === cliente['NOMBRE O RAZON SOCIAL']
+        ).map(centro => ({
+          nombre: centro['NOMBRE O RAZON SOCIAL'] || centro['NOMBRE O RAZÓN SOCIAL'],
+          direccion: centro.DIRECCIÓN || centro.DIRECCION,
+          cliente_id: centro.NIF
+        })) : [];
       setCentrosTrabajo(centrosCliente);
 
-      // Fetch angajați care lucrează la acest client
-      const empleadosResponse = await fetch('https://n8n.decaminoservicios.com/webhook/get-angajati');
+      // ✅ MIGRAT: folosim backend /api/empleados pentru angajați
+      const empleadosResponse = await fetch(routes.getEmpleados, {
+        method: 'GET',
+        headers: headers,
+        credentials: 'include'
+      });
       const empleadosData = await empleadosResponse.json();
+      // Angajații care lucrează la acest client (filtrat după CENTRO TRABAJO)
+      const clienteNombre = cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'];
       const empleadosCliente = Array.isArray(empleadosData) ? 
-        empleadosData.filter(emp => emp.cliente_id === cliente.NIF || emp['CENTRO TRABAJO']?.includes(cliente['NOMBRE O RAZON SOCIAL'])) : [];
+        empleadosData.filter(emp => {
+          const centroTrabajo = emp['CENTRO TRABAJO'] || emp.CENTRO_TRABAJO || emp.centro || '';
+          return centroTrabajo && centroTrabajo.includes(clienteNombre);
+        }) : [];
       setEmpleados(empleadosCliente);
     } catch (error) {
       console.error('Error fetching related data:', error);

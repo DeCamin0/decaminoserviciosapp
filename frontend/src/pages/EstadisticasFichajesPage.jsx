@@ -44,8 +44,15 @@ export default function EstadisticasFichajesPage() {
       const centrosUnicos = [...new Set(empleadosArray.map(emp => emp['CENTRO TRABAJO']).filter(Boolean))];
       setCentros(['todos', ...centrosUnicos]);
 
-      // Fetch fichajes
-      const fichajesRes = await fetch(routes.getFichajes);
+      // Fetch fichajes (backend nou, fără n8n)
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const fichajesRes = await fetch(routes.getFichajes, { headers });
       const fichajesData = await fichajesRes.json();
       const fichajesArray = Array.isArray(fichajesData) ? fichajesData : [];
       

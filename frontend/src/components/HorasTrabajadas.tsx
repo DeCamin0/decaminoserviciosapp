@@ -612,38 +612,36 @@ async function fetchDetalle(
     let url = '';
     if (tipoDetalle === 'detallemensual') {
       const codigo = codigoEmpleado || String(empleadoId);
-      // Folosim endpoint-ul de producție
-      const baseUrl = import.meta.env.DEV 
-        ? '/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5'
-        : 'https://n8n.decaminoservicios.com/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5';
+      // ✅ MIGRAT: folosim backend /api/monthly-alerts în loc de n8n
       const params = new URLSearchParams({
         tipo: 'detallemensual',
         empleadoId: codigo,
-        empleadoNombre: empleadoNombre, // URLSearchParams face encoding automat
-        mes: mes,
-        lunaselectata: mes
+        mes: mes
       });
-      url = `${baseUrl}?${params.toString()}`;
+      url = `${routes.getMonthlyAlerts}?${params.toString()}`;
     } else {
-      // Endpoint pentru detalleanual
-      const baseUrl = import.meta.env.DEV 
-        ? '/webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b'
-        : 'https://n8n.decaminoservicios.com/webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b';
+      // ✅ MIGRAT: folosim backend /api/monthly-alerts pentru detalleanual
       const params = new URLSearchParams({
-        tipo: 'detalleanual',
+        tipo: 'anual',
         empleadoId: String(empleadoId),
-        empleadoNombre: empleadoNombre, // URLSearchParams face encoding automat
-        ano: mes.split('-')[0],
-        codigo: codigoEmpleado || String(empleadoId)
+        ano: mes.split('-')[0]
       });
-      url = `${baseUrl}?${params.toString()}`;
+      url = `${routes.getMonthlyAlerts}?${params.toString()}`;
     }
     
+    // Add JWT token for backend API calls
+    const token = localStorage.getItem('auth_token');
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      }
+      headers: headers,
+      credentials: 'include'
     });
 
     console.log('🔍 Detalle response status:', response.status);
@@ -835,24 +833,28 @@ async function fetchDetalle(
         if (tipoDetalle === 'detalleanual') {
           try {
             const codigo = codigoEmpleado || String(empleadoId);
-            // Folosim același endpoint ca la mensual, dar cu tipo=detalleanual
-            const baseUrl = import.meta.env.DEV 
-              ? '/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5'
-              : 'https://n8n.decaminoservicios.com/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5';
+            // ✅ MIGRAT: folosim backend /api/monthly-alerts pentru detalleanual
             const registrosParams = new URLSearchParams({
-              tipo: 'detalleanual',
+              tipo: 'anual',
               empleadoId: codigo,
-              empleadoNombre: empleadoNombre, // URLSearchParams face encoding automat
-              ano: mes.split('-')[0],
-              codigo: codigo
+              ano: mes.split('-')[0]
             });
-            const registrosUrl = `${baseUrl}?${registrosParams.toString()}`;
+            const registrosUrl = `${routes.getMonthlyAlerts}?${registrosParams.toString()}`;
             console.log('📝 Fetching registros anuales desde:', registrosUrl);
+            
+            // Add JWT token for backend API calls
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+              'Content-Type': 'application/json'
+            };
+            if (token) {
+              headers['Authorization'] = `Bearer ${token}`;
+            }
+
             const registrosResp = await fetch(registrosUrl, {
               method: 'GET',
-              headers: {
-                'Content-Type': 'application/json'
-              }
+              headers: headers,
+              credentials: 'include'
             });
 
             const registrosText = await registrosResp.text();
@@ -1026,28 +1028,30 @@ async function fetchRegistrosEmpleado(codigo: string, mes?: string, empleadoNomb
     return [];
   }
 
-  // Folosim endpoint-ul de producție (același ca fetchDetalle)
-  const baseUrl = import.meta.env.DEV 
-    ? '/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5'
-    : 'https://n8n.decaminoservicios.com/webhook/4d72fc30-1843-4473-9614-e06f8583f3b5';
-  
+  // ✅ MIGRAT: folosim backend /api/monthly-alerts în loc de n8n
   const params = new URLSearchParams({
     tipo: 'detallemensual',
     empleadoId: codigo,
-    empleadoNombre: empleadoNombre || '', // URLSearchParams face encoding automat
-    mes: mes || '',
-    lunaselectata: mes || ''
+    mes: mes || ''
   });
 
-  const url = `${baseUrl}?${params.toString()}`;
+  const url = `${routes.getMonthlyAlerts}?${params.toString()}`;
   console.log('📝 fetchRegistrosEmpleado URL:', url);
+
+  // Add JWT token for backend API calls
+  const token = localStorage.getItem('auth_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache'
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-cache'
-    }
+    headers: headers,
+    credentials: 'include'
   });
 
   const rawText = await response.text();

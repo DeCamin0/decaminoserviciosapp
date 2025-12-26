@@ -81,6 +81,21 @@ export class FichajesController {
     }
   }
 
+  @Get('all')
+  @UseGuards(JwtAuthGuard)
+  async getAllFichajes() {
+    try {
+      this.logger.log('📝 Get all fichajes request (for statistics)');
+
+      const fichajes = await this.fichajesService.getAllFichajes();
+
+      return fichajes;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting all fichajes:', error);
+      throw error;
+    }
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard)
   async addFichaje(@Body() body: any) {

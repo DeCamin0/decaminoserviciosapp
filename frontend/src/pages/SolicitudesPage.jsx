@@ -422,7 +422,7 @@ export default function SolicitudesPage() {
 
     // Normalize current user's group for comparison
     const normalizedCurrentUserGroup = normalizeGroup(currentUserGroup);
-    
+
     // Pentru Vacaciones: obținem toți utilizatorii din același GRUP (toate centrele)
     // Pentru Asuntos Propios: obținem utilizatorii din același grup+centru
     let relevantUsers;
@@ -4154,52 +4154,52 @@ export default function SolicitudesPage() {
                                   const normalizedUserGroup = normalizeGroup(userGroup);
                                   return normalizedUserGroup === normalizedCurrentUserGroup;
                                 }).length;
-                                
-                                // Helper function to get center from user (same logic as in calculateDateAvailability)
-                                const getUserCenter = (user) => {
-                                  if (!user) return '';
-                                  // First, check the exact key used in DatosPage
-                                  if (user['CENTRO TRABAJO'] && String(user['CENTRO TRABAJO']).trim()) {
-                                    return String(user['CENTRO TRABAJO']).trim();
+                              
+                              // Helper function to get center from user (same logic as in calculateDateAvailability)
+                              const getUserCenter = (user) => {
+                                if (!user) return '';
+                                // First, check the exact key used in DatosPage
+                                if (user['CENTRO TRABAJO'] && String(user['CENTRO TRABAJO']).trim()) {
+                                  return String(user['CENTRO TRABAJO']).trim();
+                                }
+                                const preferredKeys = [
+                                  'CENTRO DE TRABAJO',
+                                  'centro de trabajo',
+                                  'CENTRO_DE_TRABAJO',
+                                  'centroDeTrabajo',
+                                  'centro_trabajo',
+                                  'CENTRO',
+                                  'centro',
+                                  'CENTER',
+                                  'center',
+                                  'DEPARTAMENTO',
+                                  'departamento'
+                                ];
+                                for (const k of preferredKeys) {
+                                  if (user[k] && String(user[k]).trim()) {
+                                    return String(user[k]).trim();
                                   }
-                                  const preferredKeys = [
-                                    'CENTRO DE TRABAJO',
-                                    'centro de trabajo',
-                                    'CENTRO_DE_TRABAJO',
-                                    'centroDeTrabajo',
-                                    'centro_trabajo',
-                                    'CENTRO',
-                                    'centro',
-                                    'CENTER',
-                                    'center',
-                                    'DEPARTAMENTO',
-                                    'departamento'
-                                  ];
-                                  for (const k of preferredKeys) {
-                                    if (user[k] && String(user[k]).trim()) {
-                                      return String(user[k]).trim();
-                                    }
+                                }
+                                // Heurística: primer campo cuyo nombre contiene 'centro' o 'trabajo'
+                                try {
+                                  const allKeys = Object.keys(user || {});
+                                  const key = allKeys.find(key => {
+                                    const lk = key.toLowerCase();
+                                    return (lk.includes('centro') || lk.includes('trabajo') || lk.includes('depart')) && String(user[key]).trim();
+                                  });
+                                  if (key) {
+                                    return String(user[key]).trim();
                                   }
-                                  // Heurística: primer campo cuyo nombre contiene 'centro' o 'trabajo'
-                                  try {
-                                    const allKeys = Object.keys(user || {});
-                                    const key = allKeys.find(key => {
-                                      const lk = key.toLowerCase();
-                                      return (lk.includes('centro') || lk.includes('trabajo') || lk.includes('depart')) && String(user[key]).trim();
-                                    });
-                                    if (key) {
-                                      return String(user[key]).trim();
-                                    }
-                                  } catch (e) {
-                                    console.warn('Error in getUserCenter heuristics:', e);
-                                  }
-                                  return '';
-                                };
-                                
+                                } catch (e) {
+                                  console.warn('Error in getUserCenter heuristics:', e);
+                                }
+                                return '';
+                              };
+                              
                                 totalInCenter = allUsers.filter(user => {
-                                  const userCenter = getUserCenter(user);
-                                  return userCenter && currentUserCenter && userCenter === currentUserCenter;
-                                }).length;
+                                const userCenter = getUserCenter(user);
+                                return userCenter && currentUserCenter && userCenter === currentUserCenter;
+                              }).length;
                               } else {
                                 // Fallback: use maxAllowed to estimate group size if allUsers is not loaded
                                 // maxAllowed is calculated as percentage of groupSize, so we can reverse it
@@ -4270,14 +4270,14 @@ export default function SolicitudesPage() {
                       </div>
                       {/* Reglas de Disponibilidad - Only for managers */}
                       {isManager && (
-                        <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
-                          <p className="text-xs text-blue-700 font-medium">
-                            📊 Reglas de Disponibilidad:
-                          </p>
-                          <p className="text-xs text-blue-600 mt-1">
+                      <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
+                        <p className="text-xs text-blue-700 font-medium">
+                          📊 Reglas de Disponibilidad:
+                        </p>
+                        <p className="text-xs text-blue-600 mt-1">
                             • {tipo === 'Vacaciones' ? '15%' : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
-                          </p>
-                        </div>
+                        </p>
+                      </div>
                       )}
                     </div>
                     

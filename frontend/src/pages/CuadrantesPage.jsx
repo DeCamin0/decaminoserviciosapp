@@ -623,7 +623,7 @@ export default function CuadrantesPage() {
     setAngajatiFiltrati(demoEmpleados);
     setCentros(demoClientes);
     setGrupos(['Admin', 'Supervisor', 'Empleado', 'Developer']);
-  }, [selectedCentro]);
+  }, []);
 
   // Funcție pentru încărcarea clienților
   const fetchClientes = useCallback(async () => {
@@ -660,7 +660,7 @@ export default function CuadrantesPage() {
     } catch (error) {
       console.error('❌ Error fetching clientes:', error);
     }
-  }, [authUser?.isDemo, isManager]);
+  }, [authUser?.isDemo]);
 
   const loadFestivos = useCallback(
     async (year, options = {}) => {
@@ -2501,8 +2501,8 @@ export default function CuadrantesPage() {
                 </label>
                 <div className="relative">
                   <input
-                    id="generar-centro"
-                    name="centro"
+                  id="generar-centro"
+                  name="centro"
                     type="text"
                     value={centroSearchTerm || selectedCentro}
                     onChange={(e) => {
@@ -2518,7 +2518,7 @@ export default function CuadrantesPage() {
                       setTimeout(() => setCentroDropdownOpen(false), 200);
                     }}
                     placeholder="Buscar o escribir centro..."
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   />
                   {centroDropdownOpen && filteredCentros.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -2532,9 +2532,9 @@ export default function CuadrantesPage() {
                           }}
                           className="p-2 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                         >
-                          {centro}
+                      {centro}
                         </div>
-                      ))}
+                  ))}
                     </div>
                   )}
                   {centroDropdownOpen && filteredCentros.length === 0 && centroSearchTerm && (
@@ -3672,16 +3672,16 @@ export default function CuadrantesPage() {
                 </label>
                 <div className="relative">
                   <input
-                    id="lista-centro"
-                    name="listaCentro"
+                  id="lista-centro"
+                  name="listaCentro"
                     type="text"
                     value={centroSearchTermLista || selectedCentro}
-                    onChange={(e) => {
+                  onChange={(e) => {
                       setCentroSearchTermLista(e.target.value);
                       setCentroDropdownOpenLista(true);
                       if (!e.target.value) {
                         setSelectedCentro('');
-                        setSelectedEmpleado('');
+                    setSelectedEmpleado('');
                       }
                     }}
                     onFocus={() => setCentroDropdownOpenLista(true)}
@@ -3690,7 +3690,7 @@ export default function CuadrantesPage() {
                       setTimeout(() => setCentroDropdownOpenLista(false), 200);
                     }}
                     placeholder="Buscar o escribir centro..."
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   />
                   {centroDropdownOpenLista && filteredCentrosLista.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
@@ -3705,9 +3705,9 @@ export default function CuadrantesPage() {
                           }}
                           className="p-3 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                         >
-                          {centro}
+                      {centro}
                         </div>
-                      ))}
+                ))}
                     </div>
                   )}
                   {centroDropdownOpenLista && filteredCentrosLista.length === 0 && centroSearchTermLista && (
@@ -3716,7 +3716,7 @@ export default function CuadrantesPage() {
                     </div>
                   )}
                 </div>
-              </div>
+            </div>
               
               <div>
                 <label

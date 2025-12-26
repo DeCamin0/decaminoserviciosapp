@@ -234,7 +234,7 @@ export const LocationProvider = ({ children }) => {
       locationRequestedRef.current = false;
       setIsLoading(false);
     }
-  }, [currentLocation, getAddressFromCoords, handleLocationError]);
+  }, [currentLocation, getAddressFromCoords, handleLocationError, isLoading]);
 
   // Cerem geolocația automat când utilizatorul este autentificat
   // Folosim maximumAge mare (10 minute) pentru a folosi cache-ul browser-ului cât mai mult

@@ -59,12 +59,16 @@ export class AusenciasService {
     <span class="value">${ausenciaData.fecha}</span>
   </div>
   
-  ${ausenciaData.motivo ? `
+  ${
+    ausenciaData.motivo
+      ? `
   <div class="info-row">
     <span class="label">📝 Motivo:</span>
     <span class="value">${ausenciaData.motivo}</span>
   </div>
-  ` : ''}
+  `
+      : ''
+  }
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
@@ -88,14 +92,18 @@ export class AusenciasService {
     motivo?: string;
   }): Promise<void> {
     if (!this.emailService.isConfigured()) {
-      this.logger.warn('⚠️ Email service not configured. Email notification not sent.');
+      this.logger.warn(
+        '⚠️ Email service not configured. Email notification not sent.',
+      );
       return;
     }
 
     try {
       const { subject, html } = this.formatAusenciaEmailHtml(ausenciaData);
       await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html);
-      this.logger.log(`✅ Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia ${ausenciaData.codigo}`);
+      this.logger.log(
+        `✅ Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia ${ausenciaData.codigo}`,
+      );
     } catch (error: any) {
       this.logger.error(
         `❌ Error sending email notification (non-blocking): ${error.message}`,

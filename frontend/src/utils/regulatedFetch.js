@@ -43,10 +43,13 @@ const shouldRegulate = (urlString) => {
     const url = new URL(urlString, window.location.origin);
     const host = url.hostname;
     const path = url.pathname || '';
-    // Target n8n domains or the known webhook/proxy paths
+    // Target n8n domains or the known webhook/proxy paths (pentru endpoint-urile nemigrate)
+    // Și backend-ul nostru pentru rate limiting consistent
     return host.includes('n8n.decaminoservicios.com') ||
       path.startsWith('/webhook') ||
-      path.startsWith('/api/n8n');
+      path.startsWith('/api/n8n') ||
+      host.includes('api.decaminoservicios.com') ||
+      host === 'localhost' && url.port === '3000'; // Backend local în development
   } catch (err) {
     return false;
   }

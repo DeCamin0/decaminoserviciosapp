@@ -715,9 +715,7 @@ export class EmpleadosService {
         data_creare: cambio.data_creare,
       }));
 
-      this.logger.log(
-        `✅ Obținut ${mappedCambios.length} cambios pendientes`,
-      );
+      this.logger.log(`✅ Obținut ${mappedCambios.length} cambios pendientes`);
 
       return mappedCambios;
     } catch (error: any) {

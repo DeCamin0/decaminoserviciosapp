@@ -231,7 +231,7 @@ export const useAdminApi = () => {
   };
 
   // Permisiuni universale pentru toți utilizatorii
-  const getPermissions = useCallback(async (userGrupo = null, module = null) => {
+  const getPermissions = useCallback(async (userGrupo = null) => {
     try {
       // 1) Încearcă backend NestJS (direct DB)
       let urlBackend = routes.permissions;
@@ -285,12 +285,28 @@ export const useAdminApi = () => {
     return await getPermissions(); // Folosește același endpoint universal
   };
 
-  // Funcție specifică pentru Control Acces (toate permisiunile)
+  // ✅ MIGRAT: Funcție specifică pentru Control Acces (toate permisiunile)
+  // Folosește backend /api/permissions fără parametru grupo pentru a obține toate permisiunile
   const getAllPermissions = async () => {
     try {
-      const response = await fetch(routes.getPermissionsAdmin, {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Backend endpoint: /api/permissions (fără parametru grupo = toate permisiunile)
+      const url = routes.permissions; // Deja configurat în routes.js
+      
+      console.debug('[DEBUG] AccessMatrix - Fetching all permissions from backend:', url);
+      
+      const response = await fetch(url, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: headers,
+        credentials: 'include'
       });
 
       console.debug('[DEBUG] AccessMatrix - response status:', response.status);
@@ -300,37 +316,20 @@ export const useAdminApi = () => {
         throw new Error(`Error fetching all permissions: ${response.status}`);
       }
 
-      const responseText = await response.text();
+      const data = await response.json();
 
-      console.debug('[DEBUG] AccessMatrix - raw response length:', responseText.length);
-      console.debug('[DEBUG] AccessMatrix - raw response sample:', responseText.slice(0, 200));
-
-      if (!responseText || responseText.trim() === '') {
-        return getDefaultPermissions();
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('[DEBUG] AccessMatrix - JSON parse error:', parseError);
-        console.error('[DEBUG] AccessMatrix - response text that failed:', responseText);
-        throw new Error('Invalid JSON response from server');
-      }
+      console.debug('[DEBUG] AccessMatrix - parsed data type:', typeof data);
+      console.debug('[DEBUG] AccessMatrix - parsed data keys:', Object.keys(data || {}));
       
-      console.debug('[DEBUG] AccessMatrix - parsed data type:', Array.isArray(data) ? 'array' : typeof data);
-      if (Array.isArray(data)) {
-        console.debug('[DEBUG] AccessMatrix - parsed data sample:', data.slice(0, 3));
-      } else {
-        console.debug('[DEBUG] AccessMatrix - parsed data keys:', Object.keys(data || {}));
-      }
-      
-      // Verifică dacă răspunsul conține un array de permisiuni
-      if (data && Array.isArray(data)) {
+      // Backend returnează: { success: true, count: number, permissions: [...] }
+      if (data && data.success && Array.isArray(data.permissions)) {
+        console.debug('[DEBUG] AccessMatrix - permissions array length:', data.permissions.length);
+        console.debug('[DEBUG] AccessMatrix - parsed data sample:', data.permissions.slice(0, 3));
+        
         // Procesează toate permisiunile din array cu noua structură grupo_module
         const permissions = {};
         
-        for (const item of data) {
+        for (const item of data.permissions) {
           const grupoModule = item.grupo_module;
           const permitted = item.permitted;
           
@@ -351,8 +350,10 @@ export const useAdminApi = () => {
           }
         }
         
+        console.debug('[DEBUG] AccessMatrix - processed permissions keys:', Object.keys(permissions));
         return permissions;
       } else {
+        console.warn('[DEBUG] AccessMatrix - Invalid response format, using defaults');
         return getDefaultPermissions();
       }
     } catch (error) {
@@ -361,9 +362,19 @@ export const useAdminApi = () => {
     }
   };
 
+  // ✅ MIGRAT: folosește backend /api/permissions POST în loc de n8n
   const savePermissions = async (permissions) => {
     try {
-      console.log('Saving permissions to:', routes.savePermissions);
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      console.log('Saving permissions to backend:', routes.permissions);
       console.log('Permissions to save:', permissions);
       
       // Transformă obiectul de permisiuni în format grupo_module pentru backend
@@ -384,42 +395,34 @@ export const useAdminApi = () => {
       }
       
       console.log('Transformed permissions for backend:', permissionsArray);
-      console.log('Full request URL:', routes.savePermissions);
+      console.log('Full request URL:', routes.permissions);
       console.log('Request body:', JSON.stringify(permissionsArray, null, 2));
       
-      const response = await fetch(routes.savePermissions, {
+      const response = await fetch(routes.permissions, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(permissionsArray)
+        headers: headers,
+        body: JSON.stringify(permissionsArray),
+        credentials: 'include'
       });
 
       console.log('Save response status:', response.status);
-      console.log('Save response headers:', response.headers);
-      console.log('Save response url:', response.url);
+      console.log('Save response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
-        throw new Error(`Error saving permissions: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Error saving permissions:', errorText);
+        throw new Error(`Error saving permissions: ${response.status} - ${errorText}`);
       }
 
-      const responseText = await response.text();
-      console.log('Raw save response text:', responseText);
-
-      if (!responseText || responseText.trim() === '') {
-        console.warn('Empty save response received, assuming success');
-        return { success: true, message: 'Permissions saved successfully' };
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse save JSON response:', parseError);
-        console.error('Save response text was:', responseText);
-        return { success: true, message: 'Permissions saved (no confirmation received)' };
-      }
-
+      const data = await response.json();
       console.log('Save response data:', data);
-      return data;
+
+      // Backend returnează: { success: true, message: string, count: number, permissions: [...] }
+      if (data && data.success) {
+        return data;
+      } else {
+        throw new Error('Invalid response format from backend');
+      }
     } catch (error) {
       console.error('Error saving permissions:', error);
       throw error;
@@ -428,19 +431,28 @@ export const useAdminApi = () => {
 
   // Log activitate
   // Funcție pentru a obține toți utilizatorii din baza de date
+  // ✅ MIGRAT: folosește backend /api/empleados în loc de n8n
   const getAllUsers = async () => {
     try {
-      console.log('[DEBUG] Fetching all users from database...');
+      console.log('[DEBUG] Fetching all users from backend /api/empleados...');
       
-      const response = await fetch(routes.getUsuarios, {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(routes.getEmpleados, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
-        }
+        headers: headers,
+        credentials: 'include'
       });
       
       console.log('[DEBUG] Users response status:', response.status);
@@ -468,33 +480,63 @@ export const useAdminApi = () => {
     }
   };
 
+  // ✅ MIGRAT: folosește backend /api/activity-logs în loc de n8n
   const getActivityLog = async (filters = {}) => {
     try {
-      // Încearcă mai întâi endpoint-ul original
-      console.log('[DEBUG] Trying original endpoint:', routes.getActivityLog);
+      console.log('[DEBUG] Fetching activity logs from backend /api/activity-logs...');
       
-      let url = routes.getActivityLog;
-      const params = new URLSearchParams();
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json'
+      };
       
-      if (filters.limit) params.append('limit', filters.limit);
-      if (filters.offset) params.append('offset', filters.offset);
-      if (filters.user) params.append('user', filters.user);
-      if (filters.action) params.append('action', filters.action);
-      if (filters.date) params.append('date', filters.date);
-      
-      // Adaugă parametri pentru a obține toate logurile
-      params.append('all', 'true');
-      params.append('limit', '10000'); // Mărește limita pentru a obține toate logurile
-      
-      if (params.toString()) {
-        url += '?' + params.toString();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
       
+      // Construiește URL-ul pentru backend
+      const baseUrl = import.meta.env.DEV
+        ? 'http://localhost:3000/api/activity-logs'
+        : 'https://api.decaminoservicios.com/api/activity-logs';
+      
+      const params = new URLSearchParams();
+      
+      // Adaptează filtrele pentru backend
+      // Backend așteaptă: limit, action, email, grupo, dateFrom, dateTo
+      // Frontend trimite: limit, action, user, date
+      
+      if (filters.limit) {
+        params.append('limit', filters.limit.toString());
+      } else {
+        // Default limit mare pentru a obține toate logurile
+        params.append('limit', '10000');
+      }
+      
+      if (filters.action && filters.action !== 'todos') {
+        params.append('action', filters.action);
+      }
+      
+      // Pentru user, trebuie să găsim email-ul sau să folosim user direct
+      // Backend suportă doar email, dar putem căuta după user (nume) în loguri
+      // Pentru moment, ignorăm user filter dacă nu e email
+      // TODO: Optimizare - adăugă suport pentru user (nume) în backend
+      
+      if (filters.date) {
+        // Transformă date (YYYY-MM-DD) în dateFrom și dateTo pentru aceeași zi
+        params.append('dateFrom', filters.date);
+        // Adaugă 1 zi pentru a include toată ziua
+        const dateObj = new Date(filters.date);
+        dateObj.setDate(dateObj.getDate() + 1);
+        params.append('dateTo', dateObj.toISOString().split('T')[0]);
+      }
+      
+      const url = `${baseUrl}?${params.toString()}`;
       console.log('[DEBUG] Full URL:', url);
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: headers,
+        credentials: 'include'
       });
       
       console.log('[DEBUG] Response status:', response.status);
@@ -503,35 +545,31 @@ export const useAdminApi = () => {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
-      const responseText = await response.text();
-      console.log('[DEBUG] Response length:', responseText.length);
+      const data = await response.json();
+      console.log('[DEBUG] Response data:', data);
       
-      if (!responseText || responseText.trim() === '') {
-        throw new Error('Empty response');
+      // Backend returnează: { success: true, logs: [...], count: ... }
+      let logs = [];
+      if (data && data.success && Array.isArray(data.logs)) {
+        logs = data.logs;
+      } else if (Array.isArray(data)) {
+        logs = data;
+      } else if (data && Array.isArray(data.data)) {
+        logs = data.data;
       }
       
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error('Invalid JSON response');
+      // Filtrare suplimentară pentru user (nume) dacă e specificat
+      // (pentru că backend nu suportă încă filtrare după user/nume)
+      if (filters.user && filters.user !== 'todos') {
+        logs = logs.filter(log => 
+          log.user && log.user.toLowerCase().includes(filters.user.toLowerCase())
+        );
       }
       
-      console.log('[DEBUG] Data type:', typeof data);
-      console.log('[DEBUG] Data length:', Array.isArray(data) ? data.length : 'not array');
+      console.log('[DEBUG] Filtered logs count:', logs.length);
+      console.log('[DEBUG] First 3 logs:', logs.slice(0, 3));
       
-      // Folosește doar datele reale din backend
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        console.log('[DEBUG] Received single log, converting to array');
-        return [data];
-      } else if (Array.isArray(data) && data.length > 0) {
-        console.log('[DEBUG] Received array with', data.length, 'real logs');
-        console.log('[DEBUG] First 3 logs:', data.slice(0, 3));
-        return data;
-      } else {
-        console.log('[DEBUG] No valid data received, returning empty array');
-        return [];
-      }
+      return logs;
       
     } catch (error) {
       console.error('Error fetching activity log:', error);

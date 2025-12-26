@@ -213,7 +213,8 @@ export class HorariosService {
     const idFromPayl = p?.id ?? null;
     const idFromPayload = root?.payload?.id ?? null;
     const idFromRoot = root?.id ?? null;
-    const scheduleId = idFromBody ?? idFromPayl ?? idFromPayload ?? idFromRoot ?? null;
+    const scheduleId =
+      idFromBody ?? idFromPayl ?? idFromPayload ?? idFromRoot ?? null;
 
     const isEdit = rawMode
       ? ['edit', 'editar', 'update', 'actualizar'].includes(rawMode)
@@ -227,7 +228,13 @@ export class HorariosService {
 
     const out: any = {
       nombre: (
-        getFirst(p?.nombre, root?.payload?.nombre, root?.body?.nombre, root?.nombre, '') || ''
+        getFirst(
+          p?.nombre,
+          root?.payload?.nombre,
+          root?.body?.nombre,
+          root?.nombre,
+          '',
+        ) || ''
       ).trim(),
       centro_nombre: getFirst(
         root?.body?.centroNombre,
@@ -245,27 +252,63 @@ export class HorariosService {
         root?.body?.grupoId,
         root?.payload?.grupoId,
       ),
-      vigente_desde: getFirst(p?.vigenteDesde, root?.payload?.vigenteDesde, root?.body?.vigenteDesde, null),
-      vigente_hasta: getFirst(p?.vigenteHasta, root?.payload?.vigenteHasta, root?.body?.vigenteHasta, null),
+      vigente_desde: getFirst(
+        p?.vigenteDesde,
+        root?.payload?.vigenteDesde,
+        root?.body?.vigenteDesde,
+        null,
+      ),
+      vigente_hasta: getFirst(
+        p?.vigenteHasta,
+        root?.payload?.vigenteHasta,
+        root?.body?.vigenteHasta,
+        null,
+      ),
       wb: Number(
-        getFirst(p?.weeklyBreakMinutes, root?.payload?.weeklyBreakMinutes, root?.body?.weeklyBreakMinutes, 0),
+        getFirst(
+          p?.weeklyBreakMinutes,
+          root?.payload?.weeklyBreakMinutes,
+          root?.body?.weeklyBreakMinutes,
+          0,
+        ),
       ),
       em: Number(
-        getFirst(p?.entryMarginMinutes, root?.payload?.entryMarginMinutes, root?.body?.entryMarginMinutes, 0),
+        getFirst(
+          p?.entryMarginMinutes,
+          root?.payload?.entryMarginMinutes,
+          root?.body?.entryMarginMinutes,
+          0,
+        ),
       ),
       xm: Number(
-        getFirst(p?.exitMarginMinutes, root?.payload?.exitMarginMinutes, root?.body?.exitMarginMinutes, 0),
+        getFirst(
+          p?.exitMarginMinutes,
+          root?.payload?.exitMarginMinutes,
+          root?.body?.exitMarginMinutes,
+          0,
+        ),
       ),
     };
 
-    let totalHours = Number(getFirst(root?.totalWeekHours, root?.payload?.totalWeekHours, p?.totalWeekHours));
+    let totalHours = Number(
+      getFirst(
+        root?.totalWeekHours,
+        root?.payload?.totalWeekHours,
+        p?.totalWeekHours,
+      ),
+    );
     let totalMin = Number(
-      getFirst(root?.totalWeekMinutes, root?.payload?.totalWeekMinutes, p?.totalWeekMinutes),
+      getFirst(
+        root?.totalWeekMinutes,
+        root?.payload?.totalWeekMinutes,
+        p?.totalWeekMinutes,
+      ),
     );
 
     // Pentru calcul automat, folosim payload-ul complet (root?.payload sau p)
     const calcPayload = root?.payload ?? p ?? {};
-    if (Number.isNaN(totalMin)) totalMin = this.calcWeekMinutesFromIntervals(calcPayload);
+    if (Number.isNaN(totalMin))
+      totalMin = this.calcWeekMinutesFromIntervals(calcPayload);
     if (Number.isNaN(totalHours))
       totalHours = Math.round((totalMin / 60) * 100) / 100;
 
@@ -447,14 +490,22 @@ export class HorariosService {
     warnings?: string[];
   }> {
     this.logger.log('📝 Update horario request');
-    this.logger.log(`📝 Update body keys: ${Object.keys(body || {}).join(', ')}`);
-    this.logger.log(`📝 Update body.payload keys: ${body?.payload ? Object.keys(body.payload).join(', ') : 'no payload'}`);
-    this.logger.log(`📝 Update body.payload.id: ${body?.payload?.id || 'missing'}`);
+    this.logger.log(
+      `📝 Update body keys: ${Object.keys(body || {}).join(', ')}`,
+    );
+    this.logger.log(
+      `📝 Update body.payload keys: ${body?.payload ? Object.keys(body.payload).join(', ') : 'no payload'}`,
+    );
+    this.logger.log(
+      `📝 Update body.payload.id: ${body?.payload?.id || 'missing'}`,
+    );
 
     const normalized = this.normalizeForUpdate(body);
 
     if (!normalized.ok) {
-      this.logger.error(`❌ NormalizeForUpdate failed. Mode: ${normalized.mode}, Errors: ${JSON.stringify(normalized.errors)}, Warnings: ${JSON.stringify(normalized.warnings)}`);
+      this.logger.error(
+        `❌ NormalizeForUpdate failed. Mode: ${normalized.mode}, Errors: ${JSON.stringify(normalized.errors)}, Warnings: ${JSON.stringify(normalized.warnings)}`,
+      );
       throw new BadRequestException({
         ok: false,
         mode: normalized.mode,

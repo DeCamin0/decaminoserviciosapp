@@ -1,0 +1,102 @@
+{
+  "name": "get-permissions-admin",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "be960529-6a0b-4a6d-b0b9-2c0eed38576e",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f70bcdda-3029-4e88-b8e6-19176185e36c",
+      "name": "Get Permissions Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        48
+      ],
+      "webhookId": "be960529-6a0b-4a6d-b0b9-2c0eed38576e"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a2a81af9-5842-4573-82a0-9eff2f892ccd",
+      "name": "Return Permissions",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        48
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "Permissions",
+          "mode": "list",
+          "cachedResultName": "Permissions"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        864,
+        48
+      ],
+      "id": "5a3c6497-2818-47ab-997c-3fc49e61a87a",
+      "name": "Select rows from a table",
+      "alwaysOutputData": false,
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get Permissions Webhook": {
+      "main": [
+        [
+          {
+            "node": "Select rows from a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select rows from a table": {
+      "main": [
+        [
+          {
+            "node": "Return Permissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1fb4dffc-18d2-48d8-af12-f61ae1aaff98",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "qZETmKXbuiUqnm6t",
+  "tags": []
+}

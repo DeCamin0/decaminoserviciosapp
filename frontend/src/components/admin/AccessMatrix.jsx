@@ -34,7 +34,8 @@ export default function AccessMatrix() {
   const modules = useMemo(() => ([
     { id: 'dashboard', name: 'Panel Principal', icon: '🏠', description: 'Vista general e inicio' },
     { id: 'datos', name: 'Datos Personales', icon: '🆔', description: 'Información del empleado' },
-    { id: 'tareas', name: 'Tareas Diarias', icon: '📋', description: 'Gestión de tareas por día' },
+    // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
+    // { id: 'tareas', name: 'Tareas Diarias', icon: '📋', description: 'Gestión de tareas por día' },
     { id: 'empleados', name: 'Empleados', icon: '👥', description: 'Gestión de empleados' },
     { id: 'fichar', name: 'Fichar', icon: '⏰', description: 'Registro de jornada' },
     { id: 'solicitudes', name: 'Solicitudes', icon: '📝', description: 'Asuntos y vacaciones' },
@@ -74,7 +75,8 @@ export default function AccessMatrix() {
       Supervisor: {
         dashboard: true,
         datos: true,
-        tareas: true,
+        // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
+        // tareas: true,
         empleados: true,
         fichar: true,
         solicitudes: true,
@@ -93,7 +95,8 @@ export default function AccessMatrix() {
       Manager: {
         dashboard: true,
         datos: true,
-        tareas: true,
+        // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
+        // tareas: true,
         empleados: true,
         fichar: true,
         solicitudes: true,
@@ -112,7 +115,8 @@ export default function AccessMatrix() {
       Empleado: {
         dashboard: true,
         datos: true,
-        tareas: false,
+        // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
+        // tareas: false,
         empleados: false,
         fichar: true,
         solicitudes: true,

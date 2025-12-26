@@ -7,10 +7,25 @@ import { NetworkFirst } from 'workbox-strategies';
 precacheAndRoute(self.__WB_MANIFEST);
 
 // Cache API calls
+// Cache pentru n8n (pentru endpoint-urile nemigrate: EmpleadoPedidosPage, etc.)
 registerRoute(
   ({ url }) => url.origin === 'https://n8n.decaminoservicios.com',
   new NetworkFirst({
-    cacheName: 'api-cache',
+    cacheName: 'n8n-api-cache',
+    networkTimeoutSeconds: 10,
+  })
+);
+
+// Cache pentru backend-ul nostru (api.decaminoservicios.com sau localhost:3000)
+registerRoute(
+  ({ url }) => {
+    const origin = url.origin;
+    return origin === 'https://api.decaminoservicios.com' || 
+           origin === 'http://localhost:3000' ||
+           origin.includes('api.decaminoservicios.com');
+  },
+  new NetworkFirst({
+    cacheName: 'backend-api-cache',
     networkTimeoutSeconds: 10,
   })
 );

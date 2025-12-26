@@ -36,6 +36,7 @@ export default function EstadisticasPage() {
   const [fichajes, setFichajes] = useState([]);
   const [registrosHoras, setRegistrosHoras] = useState([]);
   const [showSinSalidaModal, setShowSinSalidaModal] = useState(false);
+  const [showSalidaIntarziataModal, setShowSalidaIntarziataModal] = useState(false);
 
   const hasStatisticsPermission = useCallback(() => {
     // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
@@ -92,8 +93,15 @@ export default function EstadisticasPage() {
       
       const totalEmpleados = empleadosFiltrados.length;
 
-      // Fetch fichajes
-      const fichajesRes = await fetch(routes.getFichajes);
+      // Fetch fichajes (backend nou, fără n8n)
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const fichajesRes = await fetch(routes.getFichajes, { headers });
       const fichajes = await parseJsonSafe(fichajesRes, 'fichajes');
       const fichajesArray = Array.isArray(fichajes) ? fichajes : fichajes ? [fichajes] : [];
       setFichajes(fichajesArray);
@@ -150,7 +158,18 @@ export default function EstadisticasPage() {
         solicitudesUrl += `?email=${encodeURIComponent(emailLogat)}`;
       }
       
-      const solicitudesRes = await fetch(solicitudesUrl);
+      // ✅ Adăugat JWT token pentru autentificare (folosim token-ul deja declarat mai sus)
+      const solicitudesHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        solicitudesHeaders['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const solicitudesRes = await fetch(solicitudesUrl, {
+        headers: solicitudesHeaders,
+        credentials: 'include'
+      });
       const solicitudes = await parseJsonSafe(solicitudesRes, 'solicitudes');
       const solicitudesArray = Array.isArray(solicitudes) ? solicitudes : solicitudes ? [solicitudes] : [];
       
@@ -159,11 +178,7 @@ export default function EstadisticasPage() {
         return estadoProps.some(prop => prop && prop.toString().trim().toLowerCase().replace(/\s+/g, '') === 'pendiente');
       }).length;
 
-      // Calculate detailed stats via backend webhook (fichajes agregados)
-      const fichajesAggUrl = import.meta.env.DEV
-        ? '/webhook/2e9a332d-5e08-4993-889a-fac54d282c6e'
-        : 'https://n8n.decaminoservicios.com/webhook/2e9a332d-5e08-4993-889a-fac54d282c6e';
-
+      // ✅ MIGRAT: Calculate detailed stats via backend /api/estadisticas (fichajes agregados)
       // Build payload based on selected period
       let payload = { tipo: 'mensual', ano: selectedYear, mes: selectedMonth, centro: selectedCentro, tipoRaport: 'fichajes' };
       if (selectedPeriod === 'anual') {
@@ -172,40 +187,97 @@ export default function EstadisticasPage() {
         payload = { tipo: 'rango', desde: customDateFrom, hasta: customDateTo, centro: selectedCentro, tipoRaport: 'fichajes' };
       }
 
+      // Validare parametri pentru a preveni error 500
+      if (payload.tipo === 'mensual' && (!payload.ano || !payload.mes)) {
+        console.warn('⚠️ Invalid payload for fichajes agregados (mensual):', payload);
+        payload = { tipo: 'mensual', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, centro: selectedCentro, tipoRaport: 'fichajes' };
+      }
+      if (payload.tipo === 'anual' && !payload.ano) {
+        console.warn('⚠️ Invalid payload for fichajes agregados (anual):', payload);
+        payload = { tipo: 'anual', ano: new Date().getFullYear(), centro: selectedCentro, tipoRaport: 'fichajes' };
+      }
+      if (payload.tipo === 'rango' && (!payload.desde || !payload.hasta)) {
+        console.warn('⚠️ Invalid payload for fichajes agregados (rango):', payload);
+        // Skip request dacă nu avem date valide pentru rango
+      }
+
       let entradas = 0;
       let salidas = 0;
       let sinSalida = 0;
       let faraIesireDetaliat = [];
-      try {
-        const resp = await fetch(fichajesAggUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const agg = await parseJsonSafe(resp, 'fichajes agregados');
-        const dataAgg = Array.isArray(agg) ? (agg?.[0] || {}) : (agg || {});
-        entradas = Number(dataAgg.intrari_total) || 0;
-        salidas = Number(dataAgg.iesiri_total) || 0;
-        sinSalida = Number(dataAgg.fara_iesire_total) || 0;
-        
-        // Parsez detaliile pentru "fara ieșire" - noua structură cu ZILE_FARA_IESIRE
-        if (dataAgg.fara_iesire_detaliat) {
-          try {
-            faraIesireDetaliat = typeof dataAgg.fara_iesire_detaliat === 'string' 
-              ? JSON.parse(dataAgg.fara_iesire_detaliat)
-              : dataAgg.fara_iesire_detaliat;
-            
-            // Verific dacă este array
-            if (Array.isArray(faraIesireDetaliat)) {
-              console.log('📊 Detalii fara_iesire parsate:', faraIesireDetaliat.length, 'empleados');
-            }
-          } catch (parseError) {
-            console.error('Error parsing fara_iesire_detaliat:', parseError);
-            faraIesireDetaliat = [];
+      let salidaIntarziata = 0;
+      let salidaIntarziataDetaliat = [];
+      
+      // Doar dacă payload-ul este valid
+      if ((payload.tipo === 'mensual' && payload.ano && payload.mes) ||
+          (payload.tipo === 'anual' && payload.ano) ||
+          (payload.tipo === 'rango' && payload.desde && payload.hasta)) {
+        try {
+          // ✅ Folosim token-ul deja declarat mai sus (linia 96)
+          const fichajesHeaders = {
+            'Content-Type': 'application/json',
+          };
+          if (token) {
+            fichajesHeaders['Authorization'] = `Bearer ${token}`;
           }
+
+          console.log('📊 Fetching fichajes agregados with payload:', payload);
+          const resp = await fetch(routes.getEstadisticas, {
+            method: 'POST',
+            headers: fichajesHeaders,
+            credentials: 'include',
+            body: JSON.stringify(payload)
+          });
+          
+          if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error('❌ Error fetching fichajes agregados:', resp.status, errorText);
+            throw new Error(`HTTP ${resp.status}: ${errorText.substring(0, 200)}`);
+          }
+          
+          const agg = await parseJsonSafe(resp, 'fichajes agregados');
+          const dataAgg = Array.isArray(agg) ? (agg?.[0] || {}) : (agg || {});
+          entradas = Number(dataAgg.intrari_total) || 0;
+          salidas = Number(dataAgg.iesiri_total) || 0;
+          sinSalida = Number(dataAgg.fara_iesire_total) || 0;
+          salidaIntarziata = Number(dataAgg.salida_intarziata_total) || 0;
+          
+          // Parsez detaliile pentru "fara ieșire" - noua structură cu ZILE_FARA_IESIRE
+          if (dataAgg.fara_iesire_detaliat) {
+            try {
+              faraIesireDetaliat = typeof dataAgg.fara_iesire_detaliat === 'string' 
+                ? JSON.parse(dataAgg.fara_iesire_detaliat)
+                : dataAgg.fara_iesire_detaliat;
+              
+              // Verific dacă este array
+              if (Array.isArray(faraIesireDetaliat)) {
+                console.log('📊 Detalii fara_iesire parsate:', faraIesireDetaliat.length, 'empleados');
+              }
+            } catch (parseError) {
+              console.error('Error parsing fara_iesire_detaliat:', parseError);
+              faraIesireDetaliat = [];
+            }
+          }
+          
+          // Parsez detaliile pentru "salida întârziată"
+          if (dataAgg.salida_intarziata_detaliat) {
+            try {
+              salidaIntarziataDetaliat = typeof dataAgg.salida_intarziata_detaliat === 'string' 
+                ? JSON.parse(dataAgg.salida_intarziata_detaliat)
+                : dataAgg.salida_intarziata_detaliat;
+              
+              // Verific dacă este array
+              if (Array.isArray(salidaIntarziataDetaliat)) {
+                console.log('📊 Detalii salida_intarziata parsate:', salidaIntarziataDetaliat.length, 'empleados');
+              }
+            } catch (parseError) {
+              console.error('Error parsing salida_intarziata_detaliat:', parseError);
+              salidaIntarziataDetaliat = [];
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching fichajes aggregate:', e);
         }
-      } catch (e) {
-        console.error('Error fetching fichajes aggregate:', e);
       }
 
       // Hours worked (optional here) - keep previous lightweight estimate if available
@@ -249,6 +321,8 @@ export default function EstadisticasPage() {
         salidas,
         sinSalida,
         faraIesireDetaliat, // Detalii pentru "Sin salida"
+        salidaIntarziata, // Total "Salida întârziată"
+        salidaIntarziataDetaliat, // Detalii pentru "Salida întârziată"
         totalFichajes: fichajesFiltrados.length,
         empleadosActivos: new Set(fichajesFiltrados.map(f => f['CORREO ELECTRONICO'])).size,
         horasTrabajadas: Math.round(horasTrabajadas * 100) / 100,
@@ -734,6 +808,38 @@ export default function EstadisticasPage() {
                     )}
                   </div>
                 </div>
+                
+                <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm">⏰</span>
+                    </div>
+                    <span className="font-medium text-gray-700">Salida întârziată</span>
+                    {detailedStats.salidaIntarziata > 0 && detailedStats.salidaIntarziataDetaliat?.length > 0 && (
+                      <button
+                        onClick={() => setShowSalidaIntarziataModal(true)}
+                        className="ml-2 text-orange-600 hover:text-orange-700 text-sm underline"
+                        title="Ver detalles"
+                      >
+                        Ver detalles
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-bold text-orange-600">{detailedStats.salidaIntarziata || 0}</span>
+                    {detailedStats.salidaIntarziata > 0 && detailedStats.salidaIntarziataDetaliat?.length > 0 && (
+                      <button
+                        onClick={() => setShowSalidaIntarziataModal(true)}
+                        className="p-1 text-orange-600 hover:bg-orange-100 rounded-full transition-colors"
+                        title="Ver detalles"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -938,6 +1044,153 @@ export default function EstadisticasPage() {
                   <button
                     onClick={() => setShowSinSalidaModal(false)}
                     className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pentru detalii "Salida întârziată" */}
+      {showSalidaIntarziataModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-lg">⏰</span>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800">Salida întârziată</h2>
+                  <p className="text-sm text-gray-500">Detalles de registros con salida después de 2+ días</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSalidaIntarziataModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {detailedStats.salidaIntarziataDetaliat && detailedStats.salidaIntarziataDetaliat.length > 0 ? (
+                <div className="space-y-4">
+                  {detailedStats.salidaIntarziataDetaliat.map((empleado, index) => {
+                    const zileFaraIesire = empleado.ZILE_FARA_IESIRE || [];
+                    const totalZile = zileFaraIesire.length;
+                    
+                    return (
+                      <div key={index} className="bg-white border border-orange-200 rounded-lg overflow-hidden">
+                        {/* Header angajat */}
+                        <div className="bg-orange-50 px-4 py-3 border-b border-orange-200">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                                <span className="text-white text-sm font-bold">{totalZile}</span>
+                              </div>
+                              <div>
+                                <div className="font-semibold text-gray-900">{empleado.NOMBRE || '-'}</div>
+                                <div className="text-xs text-gray-500">Código: {empleado.CODIGO || '-'}</div>
+                              </div>
+                            </div>
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                              {totalZile} día{totalZile !== 1 ? 's' : ''} con salida întârziată
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Lista zilelor */}
+                        {totalZile > 0 && (
+                          <div className="divide-y divide-gray-200">
+                            {zileFaraIesire.map((zile, zileIndex) => {
+                              // Calculează zilele între entrada și salida
+                              const fechaEntrada = zile.FECHA;
+                              const fechaSalida = zile.FECHA_SALIDA;
+                              let diasDiferencia = null;
+                              if (fechaEntrada && fechaSalida) {
+                                const entrada = new Date(fechaEntrada);
+                                const salida = new Date(fechaSalida);
+                                const diffTime = Math.abs(salida - entrada);
+                                diasDiferencia = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                              }
+                              
+                              return (
+                                <div key={zileIndex} className="px-4 py-3 hover:bg-gray-50">
+                                  <div className="grid grid-cols-4 gap-4">
+                                    <div>
+                                      <div className="text-xs font-medium text-gray-500 mb-1">Fecha Entrada</div>
+                                      <div className="text-sm text-gray-900">
+                                        {zile.FECHA ? new Date(zile.FECHA).toLocaleDateString('es-ES', { 
+                                          day: '2-digit', 
+                                          month: '2-digit', 
+                                          year: 'numeric' 
+                                        }) : '-'}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-medium text-gray-500 mb-1">Hora</div>
+                                      <div className="text-sm text-gray-900">{zile.HORA || '-'}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-medium text-gray-500 mb-1">Fecha Salida</div>
+                                      <div className="text-sm text-gray-900">
+                                        {fechaSalida ? new Date(fechaSalida).toLocaleDateString('es-ES', { 
+                                          day: '2-digit', 
+                                          month: '2-digit', 
+                                          year: 'numeric' 
+                                        }) : '-'}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-medium text-gray-500 mb-1">Días diferencia</div>
+                                      <div className="text-sm font-semibold text-orange-600">
+                                        {diasDiferencia !== null ? `${diasDiferencia} día${diasDiferencia !== 1 ? 's' : ''}` : '-'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="text-xs font-medium text-gray-500 mb-1">Dirección</div>
+                                    <div className="text-sm text-gray-700 truncate" title={zile.DIRECCION || '-'}>
+                                      {zile.DIRECCION || 'Sin dirección'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No hay detalles disponibles</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-200 p-4 bg-gray-50">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-600">
+                  <div>Total: {detailedStats.salidaIntarziataDetaliat?.length || 0} empleado(s) con salida întârziată</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {detailedStats.salidaIntarziataDetaliat?.reduce((sum, emp) => sum + (emp.ZILE_FARA_IESIRE?.length || 0), 0) || 0} registro(s) total(es)
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowSalidaIntarziataModal(false)}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
                   >
                     Cerrar
                   </button>

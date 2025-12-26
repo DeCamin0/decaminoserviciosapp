@@ -21,14 +21,12 @@ const ProveedorDetallePage = lazy(() => import('../ProveedorDetallePage'));
 const AdminDashboard = lazy(() => import('../AdminDashboard'));
 const InspeccionesPage = lazy(() => import('../InspeccionesPage'));
 const MisInspeccionesPage = lazy(() => import('../MisInspeccionesPage'));
-const TareasPage = lazy(() => import('../TareasPage'));
-const ControlCorreoPage = lazy(() => import('../ControlCorreoPage'));
-const IncidenciasPage = lazy(() => import('../IncidenciasPage'));
+// ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (TareasPage, ControlCorreoPage, IncidenciasPage, PaqueteriaCentroPage, TareasCentroPage)
 const CuadernosPage = lazy(() => import('../CuadernosPage'));
 const CuadernosPorCentroPage = lazy(() => import('../CuadernosPorCentroPage'));
-const TareasCentroPage = lazy(() => import('../centro/TareasCentroPage'));
-const PaqueteriaCentroPage = lazy(() => import('../centro/PaqueteriaCentroPage'));
-const IncidenciasCentroPage = lazy(() => import('../centro/IncidenciasCentroPage'));
+// const TareasCentroPage = lazy(() => import('../centro/TareasCentroPage')); // ⚠️ MUTATĂ ÎN OLD
+// const PaqueteriaCentroPage = lazy(() => import('../centro/PaqueteriaCentroPage')); // ⚠️ MUTATĂ ÎN OLD
+// const IncidenciasCentroPage = lazy(() => import('../centro/IncidenciasCentroPage')); // ⚠️ ȘTERS - NU SE FOLOSEȘTE
 const PedidosPage = lazy(() => import('../PedidosPage'));
 const EmpleadoPedidosPage = lazy(() => import('../EmpleadoPedidosPage'));
 const ComunicadosPage = lazy(() => import('../ComunicadosPage'));
@@ -198,32 +196,7 @@ export const LazyMisInspeccionesPage = (props) => {
   );
 };
 
-export const LazyTareasPage = (props) => {
-  const { t } = useTranslation();
-  return (
-    <Suspense fallback={<PageLoading title={t('tareas.loading')} />}>
-      <TareasPage {...props} />
-    </Suspense>
-  );
-};
-
-export const LazyControlCorreoPage = (props) => {
-  const { t } = useTranslation();
-  return (
-    <Suspense fallback={<PageLoading title={t('controlCorreo.loading')} />}>
-      <ControlCorreoPage {...props} />
-    </Suspense>
-  );
-};
-
-export const LazyIncidenciasPage = (props) => {
-  const { t } = useTranslation();
-  return (
-    <Suspense fallback={<PageLoading title={t('incidencias.loading')} />}>
-      <IncidenciasPage {...props} />
-    </Suspense>
-  );
-};
+// ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (TareasPage, ControlCorreoPage, IncidenciasPage)
 
 export const LazyCuadernosPage = (props) => {
   const { t } = useTranslation();
@@ -243,32 +216,34 @@ export const LazyCuadernosPorCentroPage = (props) => {
   );
 };
 
-export const LazyTareasCentroPage = (props) => {
-  const { t } = useTranslation();
-  return (
-    <Suspense fallback={<PageLoading title={t('tareasCentro.loading')} />}>
-      <TareasCentroPage {...props} />
-    </Suspense>
-  );
-};
+// ⚠️ PAGINĂ MUTATĂ ÎN OLD - NU SE FOLOSEȘTE MOMENTAN
+// export const LazyTareasCentroPage = (props) => {
+//   const { t } = useTranslation();
+//   return (
+//     <Suspense fallback={<PageLoading title={t('tareasCentro.loading')} />}>
+//       <TareasCentroPage {...props} />
+//     </Suspense>
+//   );
+// };
 
-export const LazyPaqueteriaCentroPage = (props) => {
-  const { t } = useTranslation();
-  return (
-    <Suspense fallback={<PageLoading title={t('paqueteriaCentro.loading')} />}>
-      <PaqueteriaCentroPage {...props} />
-    </Suspense>
-  );
-};
+// ⚠️ PAGINĂ MUTATĂ ÎN OLD - NU SE FOLOSEȘTE MOMENTAN
+// export const LazyPaqueteriaCentroPage = (props) => {
+//   const { t } = useTranslation();
+//   return (
+//     <Suspense fallback={<PageLoading title={t('paqueteriaCentro.loading')} />}>
+//       <PaqueteriaCentroPage {...props} />
+//     </Suspense>
+//   );
+// };
 
-export const LazyIncidenciasCentroPage = (props) => {
-  const { t } = useTranslation();
-  return (
-    <Suspense fallback={<PageLoading title={t('incidenciasCentro.loading')} />}>
-      <IncidenciasCentroPage {...props} />
-    </Suspense>
-  );
-};
+// export const LazyIncidenciasCentroPage = (props) => {
+//   const { t } = useTranslation();
+//   return (
+//     <Suspense fallback={<PageLoading title={t('incidenciasCentro.loading')} />}>
+//       <IncidenciasCentroPage {...props} />
+//     </Suspense>
+//   );
+// }; // ⚠️ ȘTERS - NU SE FOLOSEȘTE
 
 export const LazyPedidosPage = (props) => {
   const { t } = useTranslation();
@@ -331,14 +306,10 @@ export default {
   LazyAdminDashboard,
   LazyInspeccionesPage,
   LazyMisInspeccionesPage,
-  LazyTareasPage,
-  LazyControlCorreoPage,
-  LazyIncidenciasPage,
+  // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (LazyTareasPage, LazyControlCorreoPage, LazyIncidenciasPage, LazyPaqueteriaCentroPage, LazyTareasCentroPage, LazyIncidenciasCentroPage)
   LazyCuadernosPage,
   LazyCuadernosPorCentroPage,
-  LazyTareasCentroPage,
-  LazyPaqueteriaCentroPage,
-  LazyIncidenciasCentroPage,
+  // LazyIncidenciasCentroPage, // ⚠️ ȘTERS - NU SE FOLOSEȘTE
   LazyPedidosPage,
   LazyEmpleadoPedidosPage,
   LazyComunicadosPage,

@@ -1,0 +1,193 @@
+{
+  "name": "estatisticas",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0f7fad98-15bc-4aa3-b71c-1c4c4578e9d4",
+      "name": "Webhook",
+      "webhookId": "2e9a332d-5e08-4993-889a-fac54d282c6e"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        80
+      ],
+      "id": "d6d92880-2561-4524-be60-70707dce7195",
+      "name": "Prep Params"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        80
+      ],
+      "id": "c0803b8d-420f-4bd6-8b05-102d9e69d53b",
+      "name": "DB Stats Totale",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        832,
+        80
+      ],
+      "id": "f3e82f98-2756-4e5f-831e-1898ef70cb93",
+      "name": "Webhook Reply"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "83d77987-5166-43d1-8021-fb11b05456db",
+      "name": "Switch"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        416,
+        -96
+      ],
+      "id": "e6c19640-0099-40ca-898e-cfa4425edcd4",
+      "name": "DB Horas Trabajadas",
+      "credentials": {
+        "mySql": {
+          "id": "47tEcFVMWEV6ljvQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "697f2209-a58a-41d8-8f8c-ed44821b1ace",
+      "name": "Format Response Horas"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        832,
+        -96
+      ],
+      "id": "205603cc-97b6-4b89-8505-109dd368a9a5",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Params": {
+      "main": [
+        [
+          {
+            "node": "DB Stats Totale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB Stats Totale": {
+      "main": [
+        [
+          {
+            "node": "Webhook Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "DB Horas Trabajadas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB Horas Trabajadas": {
+      "main": [
+        [
+          {
+            "node": "Format Response Horas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response Horas": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6b14d210-8a8a-435d-bb94-9b048a2f40bd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "32836068b16891b53f6153f2e819808ea28fcbd1c151a3d5c9248593b7aebef9"
+  },
+  "id": "ftd7Sz2TnNeOghwZ",
+  "tags": []
+}

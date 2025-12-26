@@ -1,6 +1,6 @@
 import { PrepareResponse, StatusResponse, SigningError } from '../types/signing';
 import { AUTOFIRMA_CONFIG } from '../config/autofirma';
-import { N8N_CONFIG, getN8nUrl } from '../config/n8n-endpoints';
+import { N8N_CONFIG } from '../config/n8n-endpoints'; // getN8nUrl nu este folosit în acest fișier
 
 const API_BASE = import.meta.env.VITE_API_BASE || N8N_CONFIG.BASE_URL;
 

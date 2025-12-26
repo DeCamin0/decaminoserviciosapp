@@ -79,12 +79,16 @@ export class SolicitudesService {
     <span class="value">${solicitudData.estado}</span>
   </div>
   
-  ${solicitudData.motivo ? `
+  ${
+    solicitudData.motivo
+      ? `
   <div class="info-row">
     <span class="label">📝 Motivo:</span>
     <span class="value">${solicitudData.motivo}</span>
   </div>
-  ` : ''}
+  `
+      : ''
+  }
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
@@ -112,7 +116,7 @@ export class SolicitudesService {
     this.logger.log(
       `📧 [sendSolicitudEmail] Called for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
     );
-    
+
     if (!this.emailService.isConfigured()) {
       this.logger.warn(
         `⚠️ [sendSolicitudEmail] Email service not configured. Email notification not sent for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
@@ -672,7 +676,7 @@ export class SolicitudesService {
         if (!codigo && solicitudInfo) {
           codigo = solicitudInfo.codigo;
         }
-      } catch (error) {
+      } catch {
         this.logger.warn(
           '⚠️ Could not fetch solicitud info for Telegram notification',
         );
@@ -715,9 +719,7 @@ export class SolicitudesService {
           fecha:
             solicitudInfo.fecha_inicio && solicitudInfo.fecha_fin
               ? `${solicitudInfo.fecha_inicio} - ${solicitudInfo.fecha_fin}`
-              : solicitudInfo.fecha_inicio ||
-                solicitudInfo.fecha_fin ||
-                'N/A',
+              : solicitudInfo.fecha_inicio || solicitudInfo.fecha_fin || 'N/A',
           estado: solicitudInfo.estado || '',
           motivo: solicitudInfo.motivo,
           accion: 'delete' as const,

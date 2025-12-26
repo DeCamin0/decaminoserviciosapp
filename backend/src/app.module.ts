@@ -61,6 +61,12 @@ import { FestivosController } from './controllers/festivos.controller';
 import { FestivosService } from './services/festivos.service';
 import { GeocodingController } from './controllers/geocoding.controller';
 import { GeocodingService } from './services/geocoding.service';
+import { EstadisticasController } from './controllers/estadisticas.controller';
+import { EstadisticasService } from './services/estadisticas.service';
+import { CatalogoController } from './controllers/catalogo.controller';
+import { CatalogoService } from './services/catalogo.service';
+import { PedidosController } from './controllers/pedidos.controller';
+import { PedidosService } from './services/pedidos.service';
 
 @Module({
   imports: [
@@ -100,6 +106,9 @@ import { GeocodingService } from './services/geocoding.service';
     HorariosController,
     FestivosController,
     GeocodingController,
+    EstadisticasController,
+    CatalogoController,
+    PedidosController,
   ],
   providers: [
     AppService,
@@ -130,6 +139,9 @@ import { GeocodingService } from './services/geocoding.service';
     FestivosService,
     GeocodingService,
     ClientesService,
+    EstadisticasService,
+    CatalogoService,
+    PedidosService,
   ],
 })
 export class AppModule {}

@@ -7,7 +7,9 @@ import { setupWorker } from 'msw/browser';
 
 // Simple handlers for DEMO mode
 const handlers = [
+  // ⚠️ DEAD CODE - endpoint-ul nu mai este folosit (routes.getUsuarios a fost înlocuit cu routes.getEmpleados)
   // Basic login handler
+  /*
   {
     url: 'https://n8n.decaminoservicios.com/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142',
     method: 'GET',
@@ -34,6 +36,7 @@ const handlers = [
       });
     }
   }
+  */
 ];
 
 // Setup MSW worker with simple handlers

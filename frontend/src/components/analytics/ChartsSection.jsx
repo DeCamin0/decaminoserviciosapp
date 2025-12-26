@@ -20,17 +20,16 @@ const MONTH_NAMES = [
 
 const MONTH_NAMES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-const STATUS_ENDPOINT = import.meta.env.DEV
-  ? '/webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b'
-  : 'https://n8n.decaminoservicios.com/webhook/b8a9d8ae-2485-4ba1-bd9b-108535b1a76b';
+import { routes } from '../../utils/routes';
 
-const AUSENCIAS_ENDPOINT = import.meta.env.DEV
-  ? '/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb'
-  : 'https://n8n.decaminoservicios.com/webhook/be5911e1-28ad-4ab4-8ecd-a1fa65b6a0fb';
+// ✅ MIGRAT: folosim backend /api/horas-trabajadas în loc de n8n
+const STATUS_ENDPOINT = routes.getHorasTrabajadas;
 
-const RENDIMIENTO_ENDPOINT = import.meta.env.DEV
-  ? '/webhook/2e9a332d-5e08-4993-889a-fac54d282c6e'
-  : 'https://n8n.decaminoservicios.com/webhook/2e9a332d-5e08-4993-889a-fac54d282c6e';
+// ✅ MIGRAT: folosim backend /api/ausencias în loc de n8n
+const AUSENCIAS_ENDPOINT = routes.getAusencias;
+
+// ✅ MIGRAT: folosim backend /api/estadisticas în loc de n8n
+const RENDIMIENTO_ENDPOINT = routes.getEstadisticas;
 
 const getMonthName = (monthNumber) => MONTH_NAMES[monthNumber - 1] || 'Mes';
 
@@ -90,14 +89,13 @@ const ChartsSection = ({
     const now = new Date();
     const year = selectedYear || now.getFullYear();
     const month = selectedMonth || now.getMonth() + 1;
-    const timestamp = Date.now();
 
     if (selectedPeriod === 'anual') {
-      return `${STATUS_ENDPOINT}?tipo=anual&ano=${year}&t=${timestamp}`;
+      return `${STATUS_ENDPOINT}?tipo=anual&ano=${year}`;
     }
 
     const formattedMonth = `${year}-${String(month).padStart(2, '0')}`;
-    return `${STATUS_ENDPOINT}?tipo=mensual&lunaselectata=${formattedMonth}&t=${timestamp}`;
+    return `${STATUS_ENDPOINT}?tipo=mensual&lunaselectata=${formattedMonth}`;
   }, [selectedMonth, selectedPeriod, selectedYear]);
 
   const filterByCentro = useCallback(
@@ -130,22 +128,53 @@ const ChartsSection = ({
   );
 
   const fetchEmployeesDataset = useCallback(async () => {
-    const response = await fetch(statusUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache'
-      },
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      throw new Error('No se pudieron obtener los datos de empleados');
+    // Add JWT token for backend API calls
+    const token = localStorage.getItem('auth_token');
+    const headers = {
+      'Content-Type': 'application/json',
+      // Removed Cache-Control and Pragma headers - they cause CORS issues
+      // Browser will handle caching automatically
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const data = await response.json();
-    return normaliseEmployeesResponse(data);
+    console.log('[ChartsSection] Fetching employee status from:', statusUrl);
+    console.log('[ChartsSection] Headers:', headers);
+    console.log('[ChartsSection] Token present:', !!headers['Authorization']);
+
+    try {
+      const response = await fetch(statusUrl, {
+        method: 'GET',
+        headers: headers,
+        credentials: 'include',
+        cache: 'no-store'
+      });
+
+      console.log('[ChartsSection] Response status:', response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[ChartsSection] Error response:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+      }
+
+      const data = await response.json();
+      console.log('[ChartsSection] Response data type:', typeof data, 'isArray:', Array.isArray(data));
+      return normaliseEmployeesResponse(data);
+    } catch (error) {
+      console.error('[ChartsSection] Fetch error:', error);
+      console.error('[ChartsSection] Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack?.substring(0, 200)
+      });
+      // Check if it's a network error (backend not running or CORS issue)
+      if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+        console.warn('[ChartsSection] Network error - backend might not be running or CORS issue');
+      }
+      throw error;
+    }
   }, [statusUrl]);
 
   const calculateStatusFromDataset = useCallback((dataset) => {
@@ -201,7 +230,10 @@ const ChartsSection = ({
       setEmployeeStatus(calculateStatusFromDataset(filtered));
     } catch (error) {
       console.error('[ChartsSection] Error loading employee status', error);
+      // Set default values instead of zeros to avoid breaking the UI
+      // The error might be temporary (backend not ready, network issue, etc.)
       setEmployeeStatus({ ok: 0, enRiesgo: 0, excedido: 0 });
+      // Don't throw - allow the component to continue rendering
     } finally {
       setStatusLoading(false);
     }
@@ -321,13 +353,18 @@ const ChartsSection = ({
 
     setAusenciasLoading(true);
     try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(AUSENCIAS_ENDPOINT, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache'
-        },
+        headers: headers,
+        credentials: 'include',
         cache: 'no-store'
       });
 
@@ -394,11 +431,18 @@ const ChartsSection = ({
         tipoRaport: 'horasTrabajadasMensuales'
       };
 
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(RENDIMIENTO_ENDPOINT, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: headers,
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
 

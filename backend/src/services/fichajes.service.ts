@@ -200,6 +200,32 @@ export class FichajesService {
   }
 
   /**
+   * Obtine TOATE registros (fichajes) fără filtrare
+   * Folosit pentru paginile de statistici (accesibil doar pentru manageri/supervisori/admins)
+   */
+  async getAllFichajes(): Promise<any[]> {
+    try {
+      // Query SQL: toate registros fără filtrare
+      const query = `
+        SELECT *
+        FROM Fichaje
+        ORDER BY FECHA DESC, HORA DESC
+      `;
+
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      this.logger.log(`✅ All fichajes retrieved: ${rows.length} records`);
+
+      return rows;
+    } catch (error: any) {
+      this.logger.error('❌ Error retrieving all fichajes:', error);
+      throw new BadRequestException(
+        `Error al obtener todos los fichajes: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Adaugă un nou marcaje (fichaje) în baza de date
    */
   async addFichaje(fichajeData: {

@@ -4949,6 +4949,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                     </div>
                     
                     <input
+                      id="search-empleado-dropdown"
+                      name="search-empleado-dropdown"
                       type="text"
                       placeholder="🔍 Buscar empleado..."
                       value={searchEmpleadoDropdown}

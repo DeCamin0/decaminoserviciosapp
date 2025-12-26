@@ -643,12 +643,50 @@ export default function UserStats() {
                          }`}
                          onClick={isDate ? async () => {
                            try {
-                             // Extrage data din label (ex: "28.07.2025")
+                             // Extrage data din label (poate fi "28/7/2025", "28.07.2025", etc.)
                              const dateStr = detail.label;
-                             const [day, month, year] = dateStr.split('.');
+                             if (!dateStr) {
+                               throw new Error('Fecha no válida');
+                             }
+                             
+                             // Încearcă să parseze data din diferite formate
+                             let day, month, year;
+                             
+                             // Format: "DD.MM.YYYY" sau "DD/MM/YYYY"
+                             if (dateStr.includes('.')) {
+                               const parts = dateStr.split('.');
+                               if (parts.length === 3) {
+                                 [day, month, year] = parts;
+                               }
+                             } else if (dateStr.includes('/')) {
+                               const parts = dateStr.split('/');
+                               if (parts.length === 3) {
+                                 [day, month, year] = parts;
+                               }
+                             } else if (dateStr.includes('-')) {
+                               // Format: "YYYY-MM-DD"
+                               const parts = dateStr.split('-');
+                               if (parts.length === 3) {
+                                 [year, month, day] = parts;
+                               }
+                             }
+                             
+                             // Validare că toate părțile există
+                             if (!day || !month || !year) {
+                               // Încearcă să parseze direct ca Date
+                               const parsedDate = new Date(dateStr);
+                               if (isNaN(parsedDate.getTime())) {
+                                 throw new Error(`Formato de fecha no válido: ${dateStr}`);
+                               }
+                               // Extrage părțile din Date object
+                               year = parsedDate.getFullYear().toString();
+                               month = (parsedDate.getMonth() + 1).toString();
+                               day = parsedDate.getDate().toString();
+                             }
+                             
                              const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
                              
-                             console.log('[DEBUG] Clicked on date:', isoDate);
+                             console.log('[DEBUG] Clicked on date:', isoDate, 'from label:', dateStr);
                              
                              // Obține logurile pentru ziua respectivă
                              const activityLogs = await getActivityLog();

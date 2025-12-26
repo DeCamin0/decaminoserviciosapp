@@ -727,8 +727,10 @@ export default function AprobacionesPage() {
 
             {/* Checkbox "Enviar a Gestoria" în modal */}
             <div className="pt-4 border-t border-gray-200">
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label htmlFor="enviar-gestoria-checkbox" className="flex items-center gap-3 cursor-pointer">
                 <input
+                  id="enviar-gestoria-checkbox"
+                  name="enviar-gestoria"
                   type="checkbox"
                   checked={enviarAGestoriaMap[selectedItem.id || selectedItem.ID] || false}
                   onChange={(e) => {
@@ -826,8 +828,10 @@ export default function AprobacionesPage() {
             
             {/* Checkbox "Enviar a Gestoria" în modalul de confirmare */}
             <div className="pt-4 border-t border-gray-200">
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label htmlFor="enviar-gestoria-confirm-checkbox" className="flex items-center gap-3 cursor-pointer">
                 <input
+                  id="enviar-gestoria-confirm-checkbox"
+                  name="enviar-gestoria-confirm"
                   type="checkbox"
                   checked={enviarAGestoriaMap[cambioToApprove.id || cambioToApprove.ID] || false}
                   onChange={(e) => {

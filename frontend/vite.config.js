@@ -502,7 +502,11 @@ export default defineConfig({
         next();
       });
     },
+    // ⚠️ PROXY-URI N8N - Doar pentru development
+    // Proxy-urile dead code au fost comentate (contracte, AutoFirma legacy, login/usuarios migrat, avatare, inspecciones, documentos oficiales, etc.)
+    // Proxy-uri ACTIVE: /webhook (generic pentru endpoint-uri nemigrate), /api/n8n (generic pentru endpoint-uri nemigrate)
     proxy: {
+      // Generic proxy pentru toate endpoint-urile /webhook/* (folosit pentru multe endpoint-uri nemigrate)
       '/webhook': {
         target: 'https://n8n.decaminoservicios.com',
         changeOrigin: true,
@@ -531,104 +535,108 @@ export default defineConfig({
         },
       },
 
-      '/webhook-test': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 30000, // 30 secunde timeout pentru teste
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('webhook-test proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Test Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Test Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - webhook-test folosit doar în test-n8n-endpoint.js (fișier de test)
+      // '/webhook-test': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 30000, // 30 secunde timeout pentru teste
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('webhook-test proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Test Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Test Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      '/webhook/getavatar': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 30000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('getavatar proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Avatar Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Avatar Response:', proxyRes.statusCode, req.url);
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - getAvatar migrat la routes.getAvatar (backend /api/avatar)
+      // '/webhook/getavatar': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 30000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('getavatar proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Avatar Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Avatar Response:', proxyRes.statusCode, req.url);
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      '/contracts': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => {
-          // Pentru GET requests, folosește endpoint-ul de test pentru afișare
-          if (path.includes('?nif=')) {
-            return path.replace(/^\/contracts/, '/webhook/8e669710-0850-4b9b-b48e-fc19d09e4841');
-          }
-          // Pentru POST requests, folosește endpoint-ul de producție pentru upload
-          return path.replace(/^\/contracts/, '/webhook/f1535e89-f74b-4df3-8516-5dfdda8c6b35');
-        },
-        timeout: 30000, // 30 secunde pentru fișiere mari
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('contracts proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Contract Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Download Contract Response:', proxyRes.statusCode, req.url);
-          });
-        },
-      },
-      '/download-contract': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path.replace(/^\/download-contract/, '/webhook/6cb6b98c-9127-494c-8201-f097d14b9c13'),
-        timeout: 30000, // 30 secunde pentru fișiere mari
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('download-contract proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Download Contract Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Download Contract Response:', proxyRes.statusCode, req.url);
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - contractele au fost eliminate din ClientesPage.jsx
+      // '/contracts': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => {
+      //     // Pentru GET requests, folosește endpoint-ul de test pentru afișare
+      //     if (path.includes('?nif=')) {
+      //       return path.replace(/^\/contracts/, '/webhook/8e669710-0850-4b9b-b48e-fc19d09e4841');
+      //     }
+      //     // Pentru POST requests, folosește endpoint-ul de producție pentru upload
+      //     return path.replace(/^\/contracts/, '/webhook/f1535e89-f74b-4df3-8516-5dfdda8c6b35');
+      //   },
+      //   timeout: 30000, // 30 secunde pentru fișiere mari
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('contracts proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Contract Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Download Contract Response:', proxyRes.statusCode, req.url);
+      //     });
+      //   },
+      // },
+      // ⚠️ DEAD CODE - downloadContract nu este folosit nicăieri
+      // '/download-contract': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path.replace(/^\/download-contract/, '/webhook/6cb6b98c-9127-494c-8201-f097d14b9c13'),
+      //   timeout: 30000, // 30 secunde pentru fișiere mari
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('download-contract proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Download Contract Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Download Contract Response:', proxyRes.statusCode, req.url);
+      //     });
+      //   },
+      // },
       '/api/n8n': {
         target: 'https://n8n.decaminoservicios.com',
         changeOrigin: true,
@@ -658,347 +666,347 @@ export default defineConfig({
         }
       },
 
-      // Proxy specific pentru documentos oficiales
-      '/webhook/171d8236-6ef1-4b97-8605-096476bc1d8b': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('documentos oficiales proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Documentos Oficiales Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Documentos Oficiales Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - getDocumentosOficiales migrat la routes.getDocumentosOficiales (backend /api/documentos-oficiales)
+      // '/webhook/171d8236-6ef1-4b97-8605-096476bc1d8b': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('documentos oficiales proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Documentos Oficiales Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Documentos Oficiales Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru AutoFirma prepare endpoint
-      '/webhook/918cd7f3-c0b6-49da-9218-46723702224d': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 30000, // 30 secunde pentru fișiere mari
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('autofirma prepare proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending AutoFirma Prepare Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received AutoFirma Prepare Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-            // Asigură-te că răspunsul este JSON
-            proxyRes.headers['Content-Type'] = 'application/json';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - AutoFirma prepare endpoint (signingApi.ts mutat în archive/frontend-old/autofirma-signing/)
+      // '/webhook/918cd7f3-c0b6-49da-9218-46723702224d': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 30000, // 30 secunde pentru fișiere mari
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('autofirma prepare proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending AutoFirma Prepare Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received AutoFirma Prepare Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //       // Asigură-te că răspunsul este JSON
+      //       proxyRes.headers['Content-Type'] = 'application/json';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru inspecții endpoint
-      '/webhook/1ef2caab-fa60-4cf2-922d-e9ba2c5ea398': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('inspecciones proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Inspecciones Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Inspecciones Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - getInspecciones migrat la routes.getInspecciones (backend /api/inspecciones)
+      // '/webhook/1ef2caab-fa60-4cf2-922d-e9ba2c5ea398': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('inspecciones proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Inspecciones Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Inspecciones Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru descărcarea documentelor inspecții
-      '/webhook/f4d97660-c73f-45d3-ba3e-dfaf8eefece5': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 15000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('inspection download proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Inspection Download Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Inspection Download Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - downloadInspectionDocument migrat la routes.downloadInspectionDocument (backend /api/inspecciones/download)
+      // '/webhook/f4d97660-c73f-45d3-ba3e-dfaf8eefece5': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 15000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('inspection download proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Inspection Download Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Inspection Download Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru login și utilizatori endpoint (v1)
-      '/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('login proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Login Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Login Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - getUsuarios migrat la routes.getEmpleados (backend)
+      // '/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('login proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Login Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Login Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru autofirma webhook endpoint
-      '/webhook/v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 30000, // 30 secunde pentru fișiere mari
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('autofirma webhook proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending AutoFirma Webhook Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received AutoFirma Webhook Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - AutoFirma webhook endpoint (signingApi.ts mutat în archive/frontend-old/autofirma-signing/)
+      // '/webhook/v1/b066b1f7-cc6e-4b9e-a86f-7202a86acab4': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 30000, // 30 secunde pentru fișiere mari
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('autofirma webhook proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending AutoFirma Webhook Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received AutoFirma Webhook Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru log activity endpoint
-      '/webhook/v1/log-activity-yyBov0q': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('log-activity proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Log Activity Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Log Activity Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - log activity migrat la routes.getActivityLog (backend)
+      // '/webhook/v1/log-activity-yyBov0q': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('log-activity proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Log Activity Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Log Activity Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru reject cambio endpoint
-      '/webhook/rechazada-a2c3f9cb0ffd': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('reject-cambio proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Reject Cambio Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Reject Cambio Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - rejectCambio migrat la routes.rejectCambio (backend)
+      // '/webhook/rechazada-a2c3f9cb0ffd': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('reject-cambio proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Reject Cambio Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Reject Cambio Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru login endpoint
-      '/webhook/login-yyBov0qVQZEhX2TL': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('login proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Login Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Login Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - login migrat la routes.login (backend)
+      // '/webhook/login-yyBov0qVQZEhX2TL': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('login proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Login Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Login Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
 
-      // Proxy pentru download documento oficial
-      '/webhook/0f16c1e5-b9c6-4bcd-9e1d-2a7c8c62a29f': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 30000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('download documento oficial proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Download Documento Oficial Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Download Documento Oficial Response:', proxyRes.statusCode, req.url);
-            // Adaugă CORS headers la răspuns
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-            
-            // Detectează tipul de fișier din query params și setează Content-Type corespunzător
-            const url = req.url || '';
-            if (url.includes('.png') || url.includes('.jpg') || url.includes('.jpeg')) {
-              const extension = url.match(/\.(png|jpg|jpeg)/i)?.[1]?.toLowerCase();
-              if (extension === 'png') {
-                proxyRes.headers['Content-Type'] = 'image/png';
-              } else if (extension === 'jpg' || extension === 'jpeg') {
-                proxyRes.headers['Content-Type'] = 'image/jpeg';
-              }
-              console.log('🖼️ Image detected, Content-Type set to:', proxyRes.headers['Content-Type']);
-            } else if (url.includes('.gif')) {
-              proxyRes.headers['Content-Type'] = 'image/gif';
-              console.log('🖼️ GIF detected, Content-Type set to: image/gif');
-            } else if (url.includes('.webp')) {
-              proxyRes.headers['Content-Type'] = 'image/webp';
-              console.log('🖼️ WebP detected, Content-Type set to: image/webp');
-            } else if (url.includes('.pdf')) {
-              proxyRes.headers['Content-Type'] = 'application/pdf';
-              console.log('📄 PDF detected, Content-Type set to: application/pdf');
-            }
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - downloadDocumentoOficial migrat la routes.downloadDocumentoOficial (backend /api/documentos-oficiales/download)
+      // '/webhook/0f16c1e5-b9c6-4bcd-9e1d-2a7c8c62a29f': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 30000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('download documento oficial proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Download Documento Oficial Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Download Documento Oficial Response:', proxyRes.statusCode, req.url);
+      //       // Adaugă CORS headers la răspuns
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //       
+      //       // Detectează tipul de fișier din query params și setează Content-Type corespunzător
+      //       const url = req.url || '';
+      //       if (url.includes('.png') || url.includes('.jpg') || url.includes('.jpeg')) {
+      //         const extension = url.match(/\.(png|jpg|jpeg)/i)?.[1]?.toLowerCase();
+      //         if (extension === 'png') {
+      //           proxyRes.headers['Content-Type'] = 'image/png';
+      //         } else if (extension === 'jpg' || extension === 'jpeg') {
+      //           proxyRes.headers['Content-Type'] = 'image/jpeg';
+      //         }
+      //         console.log('🖼️ Image detected, Content-Type set to:', proxyRes.headers['Content-Type']);
+      //       } else if (url.includes('.gif')) {
+      //         proxyRes.headers['Content-Type'] = 'image/gif';
+      //         console.log('🖼️ GIF detected, Content-Type set to: image/gif');
+      //       } else if (url.includes('.webp')) {
+      //         proxyRes.headers['Content-Type'] = 'image/webp';
+      //         console.log('🖼️ WebP detected, Content-Type set to: image/webp');
+      //       } else if (url.includes('.pdf')) {
+      //         proxyRes.headers['Content-Type'] = 'application/pdf';
+      //         console.log('📄 PDF detected, Content-Type set to: application/pdf');
+      //       }
+      //     });
+      //   },
+      // },
 
-      // Proxy pentru inspecciones endpoint nuevo
-      '/webhook/e1590f70-8beb-4c9c-a04c-65fb4d571c90': {
-        target: 'https://n8n.decaminoservicios.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path,
-        timeout: 10000,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
-        },
-        configure: (proxy, options) => {
-          proxy.on('error', (err, req, res) => {
-            console.log('inspecciones proxy error', err);
-          });
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log('Sending Inspecciones Request to:', req.method, req.url);
-          });
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log('Received Inspecciones Response:', proxyRes.statusCode, req.url);
-            proxyRes.headers['Access-Control-Allow-Origin'] = '*';
-            proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-            proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
-          });
-        },
-      },
+      // ⚠️ DEAD CODE - getInspecciones migrat la routes.getInspecciones (backend /api/inspecciones)
+      // '/webhook/e1590f70-8beb-4c9c-a04c-65fb4d571c90': {
+      //   target: 'https://n8n.decaminoservicios.com',
+      //   changeOrigin: true,
+      //   secure: true,
+      //   rewrite: (path) => path,
+      //   timeout: 10000,
+      //   headers: {
+      //     'Access-Control-Allow-Origin': '*',
+      //     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      //     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With'
+      //   },
+      //   configure: (proxy, options) => {
+      //     proxy.on('error', (err, req, res) => {
+      //       console.log('inspecciones proxy error', err);
+      //     });
+      //     proxy.on('proxyReq', (proxyReq, req, res) => {
+      //       console.log('Sending Inspecciones Request to:', req.method, req.url);
+      //     });
+      //     proxy.on('proxyRes', (proxyRes, req, res) => {
+      //       console.log('Received Inspecciones Response:', proxyRes.statusCode, req.url);
+      //       proxyRes.headers['Access-Control-Allow-Origin'] = '*';
+      //       proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+      //       proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With';
+      //     });
+      //   },
+      // },
 
 
 

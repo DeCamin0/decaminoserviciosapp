@@ -36,8 +36,10 @@ export class FestivosController {
 
       // GET - Listare zile festive pentru un an
       if (accion === 'get') {
-        const year = query.year ? parseInt(query.year, 10) : new Date().getFullYear();
-        
+        const year = query.year
+          ? parseInt(query.year, 10)
+          : new Date().getFullYear();
+
         if (isNaN(year)) {
           throw new BadRequestException('year must be a valid number');
         }
@@ -54,14 +56,19 @@ export class FestivosController {
           scope: query.scope,
           ccaa: query.ccaa,
           observed_date: query.observed_date || query.observedDate,
-          active: query.active !== undefined 
-            ? (query.active === '1' || query.active === 1 || query.active === true)
-            : 1,
+          active:
+            query.active !== undefined
+              ? query.active === '1' ||
+                query.active === 1 ||
+                query.active === true
+              : 1,
           notes: query.notes,
         };
 
         if (!data.fecha || !data.nombre || !data.scope) {
-          throw new BadRequestException('fecha, nombre, and scope are required');
+          throw new BadRequestException(
+            'fecha, nombre, and scope are required',
+          );
         }
 
         const result = await this.festivosService.createFestivo(data);
@@ -72,7 +79,7 @@ export class FestivosController {
       // UPDATE - Editare zi festivă (acceptă și GET pentru compatibilitate cu n8n)
       if (accion === 'edit') {
         const id = query.id;
-        
+
         if (!id) {
           throw new BadRequestException('id is required for edit');
         }
@@ -83,9 +90,12 @@ export class FestivosController {
           nombre: query.nombre,
           scope: query.scope,
           notes: query.notes,
-          active: query.active !== undefined
-            ? (query.active === '1' || query.active === 1 || query.active === true)
-            : undefined,
+          active:
+            query.active !== undefined
+              ? query.active === '1' ||
+                query.active === 1 ||
+                query.active === true
+              : undefined,
         };
 
         const result = await this.festivosService.updateFestivo(data);
@@ -96,9 +106,11 @@ export class FestivosController {
       // DELETE - Ștergere zi festivă
       if (accion === 'delete') {
         const id = query.id ? parseInt(query.id, 10) : null;
-        
+
         if (!id || isNaN(id)) {
-          throw new BadRequestException('id is required and must be a valid number');
+          throw new BadRequestException(
+            'id is required and must be a valid number',
+          );
         }
 
         const result = await this.festivosService.deleteFestivo(id);
@@ -141,16 +153,23 @@ export class FestivosController {
           scope: query.scope || body.scope,
           ccaa: query.ccaa || body.ccaa,
           observed_date: query.observed_date || body.observed_date,
-          active: query.active !== undefined 
-            ? (query.active === '1' || query.active === 1 || query.active === true)
-            : (body.active !== undefined 
-                ? (body.active === '1' || body.active === 1 || body.active === true)
-                : 1),
+          active:
+            query.active !== undefined
+              ? query.active === '1' ||
+                query.active === 1 ||
+                query.active === true
+              : body.active !== undefined
+                ? body.active === '1' ||
+                  body.active === 1 ||
+                  body.active === true
+                : 1,
           notes: query.notes || body.notes,
         };
 
         if (!data.fecha || !data.nombre || !data.scope) {
-          throw new BadRequestException('fecha, nombre, and scope are required');
+          throw new BadRequestException(
+            'fecha, nombre, and scope are required',
+          );
         }
 
         const result = await this.festivosService.createFestivo(data);
@@ -161,7 +180,7 @@ export class FestivosController {
       // UPDATE - Editare zi festivă
       if (accion === 'edit') {
         const id = query.id || body.id;
-        
+
         if (!id) {
           throw new BadRequestException('id is required for edit');
         }
@@ -172,11 +191,16 @@ export class FestivosController {
           nombre: query.nombre || body.nombre,
           scope: query.scope || body.scope,
           notes: query.notes || body.notes,
-          active: query.active !== undefined
-            ? (query.active === '1' || query.active === 1 || query.active === true)
-            : (body.active !== undefined
-                ? (body.active === '1' || body.active === 1 || body.active === true)
-                : undefined),
+          active:
+            query.active !== undefined
+              ? query.active === '1' ||
+                query.active === 1 ||
+                query.active === true
+              : body.active !== undefined
+                ? body.active === '1' ||
+                  body.active === 1 ||
+                  body.active === true
+                : undefined,
         };
 
         const result = await this.festivosService.updateFestivo(data);
@@ -198,4 +222,3 @@ export class FestivosController {
     }
   }
 }
-

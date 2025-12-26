@@ -114,7 +114,9 @@ export class ComunicadosController {
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max per file
       fileFilter: (req, file, cb) => {
         // Log pentru debugging
-        console.log(`[Comunicados] File filter - name: ${file.originalname}, mimetype: ${file.mimetype}`);
+        console.log(
+          `[Comunicados] File filter - name: ${file.originalname}, mimetype: ${file.mimetype}`,
+        );
         cb(null, true); // Acceptă toate fișierele
       },
     }),
@@ -150,7 +152,9 @@ export class ComunicadosController {
 
     if (file) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-      console.log(`[Comunicados] File received: ${file.originalname}, size: ${file.size} bytes (${fileSizeMB} MB), mimetype: ${file.mimetype}`);
+      console.log(
+        `[Comunicados] File received: ${file.originalname}, size: ${file.size} bytes (${fileSizeMB} MB), mimetype: ${file.mimetype}`,
+      );
       archivoBuffer = Buffer.from(file.buffer);
       // Sanitizează numele fișierului: elimină caractere problematice și normalizează
       const originalName = file.originalname || `archivo_${Date.now()}`;
@@ -159,14 +163,16 @@ export class ComunicadosController {
         .replace(/[^\w\s.-]/g, '_') // Înlocuiește caractere speciale cu underscore
         .replace(/\s+/g, '_') // Înlocuiește spațiile multiple cu underscore
         .trim();
-      
+
       // Dacă numele este prea scurt sau gol după sanitizare, adaugă timestamp
       if (!nombreArchivo || nombreArchivo.length < 3) {
         const extension = originalName.split('.').pop() || 'bin';
         nombreArchivo = `archivo_${Date.now()}.${extension}`;
       }
-      
-      console.log(`[Comunicados] Sanitized filename: ${originalName} -> ${nombreArchivo}`);
+
+      console.log(
+        `[Comunicados] Sanitized filename: ${originalName} -> ${nombreArchivo}`,
+      );
     } else {
       console.log('[Comunicados] No file received in request');
     }
@@ -238,7 +244,9 @@ export class ComunicadosController {
 
     if (file) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-      console.log(`[Comunicados] Update - File received: ${file.originalname}, size: ${file.size} bytes (${fileSizeMB} MB), mimetype: ${file.mimetype}`);
+      console.log(
+        `[Comunicados] Update - File received: ${file.originalname}, size: ${file.size} bytes (${fileSizeMB} MB), mimetype: ${file.mimetype}`,
+      );
       archivoBuffer = Buffer.from(file.buffer);
       // Sanitizează numele fișierului: elimină caractere problematice și normalizează
       const originalName = file.originalname || `archivo_${Date.now()}`;
@@ -247,14 +255,16 @@ export class ComunicadosController {
         .replace(/[^\w\s.-]/g, '_') // Înlocuiește caractere speciale cu underscore
         .replace(/\s+/g, '_') // Înlocuiește spațiile multiple cu underscore
         .trim();
-      
+
       // Dacă numele este prea scurt sau gol după sanitizare, adaugă timestamp
       if (!nombreArchivo || nombreArchivo.length < 3) {
         const extension = originalName.split('.').pop() || 'bin';
         nombreArchivo = `archivo_${Date.now()}.${extension}`;
       }
-      
-      console.log(`[Comunicados] Update - Sanitized filename: ${originalName} -> ${nombreArchivo}`);
+
+      console.log(
+        `[Comunicados] Update - Sanitized filename: ${originalName} -> ${nombreArchivo}`,
+      );
     } else if (
       body.remove_archivo === true ||
       body.remove_archivo === 'true' ||
@@ -402,7 +412,6 @@ export class ComunicadosController {
       pushResult,
     };
   }
-
 
   /**
    * POST /api/comunicados/:id/marcar-leido

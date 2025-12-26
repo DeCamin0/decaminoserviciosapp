@@ -24,9 +24,13 @@ export class EmailService {
     // Logging detaliat pentru debugging
     this.logger.log('🔍 Checking SMTP configuration...');
     this.logger.log(`   SMTP_HOST: ${smtpHost ? '✅ Set' : '❌ MISSING'}`);
-    this.logger.log(`   SMTP_PORT: ${smtpPort || '❌ MISSING (using default 587)'}`);
+    this.logger.log(
+      `   SMTP_PORT: ${smtpPort || '❌ MISSING (using default 587)'}`,
+    );
     this.logger.log(`   SMTP_USER: ${smtpUser ? '✅ Set' : '❌ MISSING'}`);
-    this.logger.log(`   SMTP_PASSWORD: ${smtpPassword ? '✅ Set (hidden)' : '❌ MISSING'}`);
+    this.logger.log(
+      `   SMTP_PASSWORD: ${smtpPassword ? '✅ Set (hidden)' : '❌ MISSING'}`,
+    );
     this.logger.log(`   SMTP_SECURE: ${smtpSecure}`);
 
     if (!smtpHost || !smtpUser || !smtpPassword) {

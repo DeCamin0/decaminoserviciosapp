@@ -41,13 +41,11 @@ type PermisosState = {
 };
 
 // ===== API ENDPOINT PENTRU PRODUSE =====
-import { getN8nUrl } from '../utils/routes';
-
-const CATALOGO_API_URL = getN8nUrl('/webhook/catalogo/bae4f329-a1be-4e66-9792-6b35aa2f4a51');
-const ADD_PRODUCT_API_URL = getN8nUrl('/webhook/96759745-6289-41d4-9e5e-f253fbfab08c');
-const EDIT_DELETE_PRODUCT_API_URL = getN8nUrl('/webhook/5c49e67b-b81c-4187-8d0f-37bb32e9f217');
-const PERMISOS_API_URL = getN8nUrl('/webhook/2498ba38-1402-4b73-bb5b-c8b1097ecf4b');
-const PERMISOS_LOAD_API_URL = getN8nUrl('/webhook/8c8aa198-5b57-4203-bdd7-7f8ff060bf68');
+// ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+const CATALOGO_API_URL = routes.getCatalogo;
+const ADD_PRODUCT_API_URL = routes.addProducto;
+const EDIT_DELETE_PRODUCT_API_URL = routes.editDeleteProducto;
+const PERMISOS_API_URL = routes.savePermisos;
 
 // ===== SISTEM DE NOTIFICĂRI MODERNE =====
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -438,20 +436,26 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       console.log('📋 Comunidades disponibles:', comunidades.length);
       console.log('🔗 routes.getClientes:', routes.getClientes);
       
-      // Folosește endpoint-ul pentru toate produsele cu permisiuni pentru comunitatea selectată
-      const detallesEndpoint = getN8nUrl('/webhook/b127e72a-df77-4c07-acc3-1e9d931d4f95');
-      const url = `${detallesEndpoint}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}&todos_productos=true`;
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const url = `${routes.getCatalogo}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}`;
       console.log('🌐 URL generat:', url);
       
       console.log('🚀 Making request to:', url);
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-        },
+        headers,
       });
 
       console.log('📡 Response status:', response.status);
@@ -672,13 +676,15 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           <h2 className="text-xl font-semibold mb-4">Información del Pedido</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Empleado</label>
+              <div className="block text-sm font-medium text-gray-700 mb-1">Empleado</div>
               <p className="text-lg font-semibold text-gray-900">{usuarioActual.nombre}</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Comunidad</label>
+              <label htmlFor="comunidad-search" className="block text-sm font-medium text-gray-700 mb-1">Comunidad</label>
               <div className="relative">
                 <input
+                  id="comunidad-search"
+                  name="comunidad-search"
                   type="text"
                   placeholder="Escribe para buscar comunidad..."
                   value={comunidadSearchTerm}
@@ -686,6 +692,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                   onFocus={() => setShowComunidadDropdown(true)}
                   onBlur={() => setTimeout(() => setShowComunidadDropdown(false), 200)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  aria-label="Buscar comunidad"
                 />
                 {showComunidadDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -711,7 +718,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+              <div className="block text-sm font-medium text-gray-700 mb-1">Fecha</div>
               <p className="text-lg font-semibold text-gray-900">{formatDate()}</p>
             </div>
           </div>
@@ -725,42 +732,42 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
             <h3 className="text-lg font-semibold mb-4 text-blue-900">Información de la Comunidad</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Nombre</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles['NOMBRE O RAZON SOCIAL'] || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">NIF/CIF</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">NIF/CIF</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.NIF || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Teléfono</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.TELEFONO || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Dirección</div>
                 <p className="text-sm font-semibold text-gray-900">
                   {comunidadDetalles.DIRECCION || comunidadDetalles.DIRECCIÓN || 'N/A'}
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Código Postal</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Código Postal</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles['CODIGO POSTAL'] || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Población</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Población</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.POBLACION || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Provincia</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.PROVINCIA || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">País</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">País</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.PAIS || 'N/A'}</p>
               </div>
               {comunidadDetalles.LATITUD && comunidadDetalles.LONGITUD && (
                 <div className="md:col-span-2 lg:col-span-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Coordenadas GPS</label>
+                  <div className="block text-sm font-medium text-gray-700 mb-1">Coordenadas GPS</div>
                   <p className="text-sm font-semibold text-gray-900">
                     {comunidadDetalles.LATITUD}, {comunidadDetalles.LONGITUD}
                   </p>
@@ -895,28 +902,40 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                           </div>
                         </td>
                         <td className="p-2">
+                          <label htmlFor={`cantidad-${index}`} className="sr-only">Cantidad</label>
                           <Input
+                            id={`cantidad-${index}`}
+                            name={`cantidad-${index}`}
                             type="number"
                             value={linea.cantidad}
                             onChange={(e) => actualizarLinea(index, 'cantidad', Number(e.target.value))}
                             className="w-20"
+                            aria-label={`Cantidad para ${producto?.numero || 'producto'}`}
                           />
                         </td>
                         <td className="p-2">{formatMoney(linea.precio_unitario)}</td>
                         <td className="p-2">
+                          <label htmlFor={`descuento-${index}`} className="sr-only">Descuento línea</label>
                           <Input
+                            id={`descuento-${index}`}
+                            name={`descuento-${index}`}
                             type="number"
                             value={linea.descuento_linea}
                             onChange={(e) => actualizarLinea(index, 'descuento_linea', Number(e.target.value))}
                             className="w-20"
+                            aria-label={`Descuento línea para ${producto?.numero || 'producto'}`}
                           />
                         </td>
                         <td className="p-2">
+                          <label htmlFor={`iva-${index}`} className="sr-only">IVA porcentaje</label>
                           <Input
+                            id={`iva-${index}`}
+                            name={`iva-${index}`}
                             type="number"
                             value={linea.iva_porcentaje}
                             onChange={(e) => actualizarLinea(index, 'iva_porcentaje', Number(e.target.value))}
                             className="w-16"
+                            aria-label={`IVA porcentaje para ${producto?.numero || 'producto'}`}
                           />
                         </td>
                         <td className="p-2 font-semibold">{formatMoney(calc.total)}</td>
@@ -1093,53 +1112,34 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       }
       
       try {
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-Client-Type': 'web-browser',
+          'User-Agent': 'DeCamino-Web-Client/1.0'
+        };
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         const response = await fetch(CATALOGO_API_URL, {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-App-Source': 'DeCamino-Web-App',
-            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-            'X-Client-Type': 'web-browser',
-            'User-Agent': 'DeCamino-Web-Client/1.0'
-          }
+          headers
         });
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        // Verifică dacă răspunsul are conținut
-        const responseText = await response.text();
+        const data = await response.json();
         
-        if (!responseText || responseText.trim() === '') {
-          throw new Error('Empty response from API');
-        }
-        
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (parseError) {
-          throw new Error('Invalid JSON response from API');
-        }
-        
-        // Transformă datele din API în formatul nostru
-        const productosFromAPI = Array.isArray(data) ? data : [data];
-        const productosMapeados = productosFromAPI.map((producto: ProductoAPI2, index: number) => {
-          // Convertește imaginea din Buffer la base64 dacă există
-          let imagenBase64 = '';
-          if (producto.fotoproducto && producto.fotoproducto.data && Array.isArray(producto.fotoproducto.data)) {
-            imagenBase64 = bufferToBase64(producto.fotoproducto.data);
-          }
-
-          return {
-            id: producto.id || index + 1,
-            numero: producto['Número de artículo'] || producto.numero || producto.codigo || `PROD-${index + 1}`,
-            descripcion: producto['Descripción de artículo'] || producto.descripcion || producto.nombre || 'Sin descripción',
-            precio: parseFloat(producto['Precio por unidad'] || producto.precio || producto.precio_unitario || 0),
-            imagen: imagenBase64 || undefined
-          };
-        });
+        // ✅ Backend-ul returnează deja datele în formatul corect (id, numero, descripcion, precio, imagen)
+        // Nu mai trebuie să facem conversie de buffer, backend-ul returnează deja base64
+        const productosMapeados = Array.isArray(data) ? data : [data];
         
         setProductos(productosMapeados);
         
@@ -1179,17 +1179,25 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       console.log('🔍 Cargando permisos para:', { id: comunidadId, nombre: nombreComunidad });
       
       // Construiește URL-ul pentru încărcarea permisiunilor
-      const url = `${PERMISOS_LOAD_API_URL}?comunidad_id=${comunidadId}&comunidad_nombre=${encodeURIComponent(nombreComunidad)}`;
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const url = `${routes.getCatalogo}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}`;
       console.log('🌐 URL permisos:', url);
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -1313,14 +1321,22 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
 
       console.log('📤 Enviando permisos:', payload);
 
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(PERMISOS_API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -1346,9 +1362,11 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
           <h2 className="text-xl font-semibold mb-4">Seleccionar Comunidad</h2>
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Comunidad / Centro de Trabajo</label>
+              <label htmlFor="comunidad-search-permisos" className="block text-sm font-medium text-gray-700 mb-1">Comunidad / Centro de Trabajo</label>
               <div className="relative">
                 <input
+                  id="comunidad-search-permisos"
+                  name="comunidad-search-permisos"
                   type="text"
                   placeholder="Escribe para buscar comunidad..."
                   value={comunidadSearchTerm}
@@ -1356,6 +1374,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                   onFocus={() => setShowComunidadDropdown(true)}
                   onBlur={() => setTimeout(() => setShowComunidadDropdown(false), 200)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  aria-label="Buscar comunidad para permisos"
                 />
                 {showComunidadDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -1402,42 +1421,42 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
             <h3 className="text-lg font-semibold mb-4 text-blue-900">Información de la Comunidad</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Nombre</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles['NOMBRE O RAZON SOCIAL'] || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">NIF/CIF</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">NIF/CIF</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.NIF || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Teléfono</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.TELEFONO || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Dirección</div>
                 <p className="text-sm font-semibold text-gray-900">
                   {comunidadDetalles.DIRECCION || comunidadDetalles.DIRECCIÓN || 'N/A'}
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Código Postal</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Código Postal</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles['CODIGO POSTAL'] || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Población</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Población</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.POBLACION || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">Provincia</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.PROVINCIA || 'N/A'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">País</label>
+                <div className="block text-sm font-medium text-gray-700 mb-1">País</div>
                 <p className="text-sm font-semibold text-gray-900">{comunidadDetalles.PAIS || 'N/A'}</p>
               </div>
               {comunidadDetalles.LATITUD && comunidadDetalles.LONGITUD && (
                 <div className="md:col-span-2 lg:col-span-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Coordenadas GPS</label>
+                  <div className="block text-sm font-medium text-gray-700 mb-1">Coordenadas GPS</div>
                   <p className="text-sm font-semibold text-gray-900">
                     {comunidadDetalles.LATITUD}, {comunidadDetalles.LONGITUD}
                   </p>
@@ -1528,11 +1547,17 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                           <td className="p-3">{producto.descripcion}</td>
                           <td className="p-3">{formatMoney(producto.precio)}</td>
                           <td className="p-3 text-center">
+                            <label htmlFor={`permiso-${producto.id}`} className="sr-only">
+                              Permitido para {producto.numero}
+                            </label>
                             <input
+                              id={`permiso-${producto.id}`}
+                              name={`permiso-${producto.id}`}
                               type="checkbox"
                               checked={obtenerPermiso(producto.id)}
                               onChange={(e) => actualizarPermiso(producto.id, e.target.checked)}
                               className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                              aria-label={`Permitido para ${producto.numero} - ${producto.descripcion}`}
                             />
                           </td>
                         </tr>
@@ -1601,52 +1626,34 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       }
       
       try {
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-Client-Type': 'web-browser',
+          'User-Agent': 'DeCamino-Web-Client/1.0'
+        };
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         const response = await fetch(CATALOGO_API_URL, {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-App-Source': 'DeCamino-Web-App',
-            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-            'X-Client-Type': 'web-browser',
-            'User-Agent': 'DeCamino-Web-Client/1.0'
-          }
+          headers
         });
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const responseText = await response.text();
+        const data = await response.json();
         
-        if (!responseText || responseText.trim() === '') {
-          throw new Error('Empty response from API');
-        }
-        
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (parseError) {
-          throw new Error('Invalid JSON response from API');
-        }
-        
-        // Transformă datele din API în formatul nostru
-        const productosFromAPI = Array.isArray(data) ? data : [data];
-        const productosMapeados = productosFromAPI.map((producto: ProductoAPI2, index: number) => {
-          // Convertește imaginea din Buffer la base64 dacă există
-          let imagenBase64 = '';
-          if (producto.fotoproducto && producto.fotoproducto.data && Array.isArray(producto.fotoproducto.data)) {
-            imagenBase64 = bufferToBase64(producto.fotoproducto.data);
-          }
-
-          return {
-            id: producto.id || index + 1,
-            numero: producto['Número de artículo'] || producto.numero || producto.codigo || `PROD-${index + 1}`,
-            descripcion: producto['Descripción de artículo'] || producto.descripcion || producto.nombre || 'Sin descripción',
-            precio: parseFloat(producto['Precio por unidad'] || producto.precio || producto.precio_unitario || 0),
-            imagen: imagenBase64 || undefined
-          };
-        });
+        // ✅ Backend-ul returnează deja datele în formatul corect (id, numero, descripcion, precio, imagen)
+        // Nu mai trebuie să facem conversie de buffer, backend-ul returnează deja base64
+        const productosMapeados = Array.isArray(data) ? data : [data];
         
         setProductos(productosMapeados);
         
@@ -1744,16 +1751,24 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       console.log('📤 Payload editare:', payload);
       console.log('🖼️ Imagen incluida:', !!editingImagePreview);
 
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(EDIT_DELETE_PRODUCT_API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -1810,16 +1825,24 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       console.log('📤 Payload adăugare:', payload);
       console.log('🖼️ Imagen incluida:', !!newImagePreview);
 
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(ADD_PRODUCT_API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -1875,16 +1898,24 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
         "Precio por unidad": product.precio.toString()
       };
 
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(EDIT_DELETE_PRODUCT_API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -2158,6 +2189,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                     onChange={handleImageChange}
                     className="hidden"
                     id="image-upload"
+                    name="image-upload"
                   />
                   <label
                     htmlFor="image-upload"
@@ -2266,6 +2298,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                     onChange={handleNewImageChange}
                     className="hidden"
                     id="new-image-upload"
+                    name="new-image-upload"
                   />
                   <label
                     htmlFor="new-image-upload"

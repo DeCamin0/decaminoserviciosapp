@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Send, Search, User, XCircle } from 'lucide-react';
+import { routes } from '../utils/routes';
 
 /**
  * Modal pentru trimiterea notificărilor către alți angajați
@@ -22,19 +23,22 @@ const SendNotificationModal = ({ isOpen, onClose, currentUser }) => {
     setLoading(true);
     setError(null);
     try {
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
-      
-      // Folosește endpoint-ul pentru angajați
-      const response = await fetch(`${baseUrl}/api/n8n/webhook/v1/aec36db4-58d4-4175-8429-84d1c487e142`, {
-        headers: {
-          'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-        },
+      // ✅ MIGRAT: folosim backend /api/empleados în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-Client-Type': 'web-browser',
+        'User-Agent': 'DeCamino-Web-Client/1.0',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getEmpleados, {
+        method: 'GET',
+        headers: headers,
+        credentials: 'include'
       });
 
       if (!response.ok) {
