@@ -179,20 +179,54 @@ echo -e "${GREEN}✅ Prisma client generated${NC}"
 
 # 7. Aplică migrări sau sincronizează schema
 echo -e "${YELLOW}📋 Step 6: Applying database migrations...${NC}"
-if npx prisma migrate deploy 2>&1 | grep -q "P3005"; then
+
+# Exportă DATABASE_URL explicit din .env
+if [ -f ".env" ]; then
+    # Citește DATABASE_URL din .env
+    if grep -q "^DATABASE_URL=" .env; then
+        export $(grep "^DATABASE_URL=" .env | xargs)
+        echo -e "${GREEN}✅ DATABASE_URL exported from .env${NC}"
+    else
+        # Construiește din variabilele DB_*
+        source .env 2>/dev/null || true
+        DB_HOST=${DB_HOST:-localhost}
+        DB_PORT=${DB_PORT:-3306}
+        DB_USERNAME=${DB_USERNAME:-root}
+        DB_PASSWORD=${DB_PASSWORD:-}
+        DB_NAME=${DB_NAME:-decaminoservicios}
+        ENCODED_PASSWORD=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DB_PASSWORD'))" 2>/dev/null || echo "$DB_PASSWORD")
+        export DATABASE_URL="mysql://${DB_USERNAME}:${ENCODED_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+        echo -e "${GREEN}✅ DATABASE_URL constructed and exported${NC}"
+    fi
+else
+    echo -e "${RED}❌ .env file not found!${NC}"
+    exit 1
+fi
+
+# Verifică dacă DATABASE_URL este setat
+if [ -z "$DATABASE_URL" ]; then
+    echo -e "${RED}❌ DATABASE_URL is not set!${NC}"
+    exit 1
+fi
+
+# Încearcă să ruleze migrațiile
+MIGRATE_OUTPUT=$(npx prisma migrate deploy 2>&1)
+MIGRATE_EXIT_CODE=$?
+
+if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
     echo -e "${YELLOW}⚠️  Database is not empty (P3005). Using db push instead...${NC}"
     npx prisma db push --accept-data-loss || {
         echo -e "${RED}❌ Database sync failed! Check your DATABASE_URL in .env${NC}"
         exit 1
     }
     echo -e "${GREEN}✅ Database schema synchronized${NC}"
+elif [ $MIGRATE_EXIT_CODE -eq 0 ]; then
+    echo -e "${GREEN}✅ Migrations applied${NC}"
 else
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✅ Migrations applied${NC}"
-    else
-        echo -e "${RED}❌ Migration failed! Check your DATABASE_URL in .env${NC}"
-        exit 1
-    fi
+    echo -e "${RED}❌ Migration failed!${NC}"
+    echo "$MIGRATE_OUTPUT"
+    echo -e "${RED}Check your DATABASE_URL in .env${NC}"
+    exit 1
 fi
 
 # 8. Recompilează
