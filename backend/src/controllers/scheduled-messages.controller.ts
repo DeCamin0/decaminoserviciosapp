@@ -184,10 +184,18 @@ export class ScheduledMessagesController {
         ];
       }
 
+      // Helper function pentru normalizare email (lowercase, trim)
+      const normalizeEmail = (email: string) => (email || '').toLowerCase().trim();
+
+      // Log pentru debugging
+      this.logger.log(`📊 Recipients check: potentialRecipients=${potentialRecipients.length}, relevantEmails=${relevantEmails.length}`);
+      this.logger.log(`📊 Email statuses: ${relevantEmails.map((se: any) => `${se.recipient_email}:${se.status}`).join(', ')}`);
+
       // Compară destinatarii potențiali cu cei care au primit email
       const recipientsWithStatus = potentialRecipients.map((potential) => {
+        const normalizedPotentialEmail = normalizeEmail(potential.email);
         const sentEmail = relevantEmails.find(
-          (se: any) => se.recipient_email === potential.email,
+          (se: any) => normalizeEmail(se.recipient_email) === normalizedPotentialEmail,
         );
         return {
           email: potential.email,
@@ -199,15 +207,22 @@ export class ScheduledMessagesController {
         };
       });
 
+      // Calculează statisticile corect
+      const sentCount = recipientsWithStatus.filter((r) => r.status === 'sent').length;
+      const failedCount = recipientsWithStatus.filter((r) => r.status === 'failed').length;
+      const notSentCount = recipientsWithStatus.filter((r) => r.status === 'not_sent').length;
+
+      this.logger.log(`📊 Statistics: total=${potentialRecipients.length}, sent=${sentCount}, failed=${failedCount}, notSent=${notSentCount}`);
+
       return {
         success: true,
         data: {
           scheduledMessage: message,
           recipients: recipientsWithStatus,
           totalRecipients: potentialRecipients.length,
-          sentCount: relevantEmails.filter((se: any) => se.status === 'sent').length,
-          failedCount: relevantEmails.filter((se: any) => se.status === 'failed').length,
-          notSentCount: potentialRecipients.length - relevantEmails.length,
+          sentCount: sentCount,
+          failedCount: failedCount,
+          notSentCount: notSentCount,
         },
       };
     } catch (error: any) {

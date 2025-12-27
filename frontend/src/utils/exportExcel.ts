@@ -45,6 +45,16 @@ function isBrowser() {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
 
+// Helper function to convert column index (0-based) to Excel column letter (A, B, ..., Z, AA, AB, ...)
+function getExcelColumnLetter(index: number): string {
+  let result = '';
+  while (index >= 0) {
+    result = String.fromCharCode(65 + (index % 26)) + result;
+    index = Math.floor(index / 26) - 1;
+  }
+  return result;
+}
+
 // Interface pentru coloane Excel
 interface ExcelColumn {
   key: string;
@@ -100,7 +110,7 @@ export const exportToExcelWithHeader = async (
   companyNameCell.font = STYLES.companyName.font;
   companyNameCell.fill = STYLES.companyName.fill;
   companyNameCell.alignment = STYLES.companyName.alignment;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   // Company details (merged across all columns)
@@ -108,28 +118,28 @@ export const exportToExcelWithHeader = async (
   cifCell.value = `NIF: ${COMPANY_INFO.cif}`;
   cifCell.font = STYLES.companyDetails.font;
   cifCell.fill = STYLES.companyDetails.fill;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   const addressCell = worksheet.getCell(`A${currentRow}`);
   addressCell.value = `Dirección: ${COMPANY_INFO.address}`;
   addressCell.font = STYLES.companyDetails.font;
   addressCell.fill = STYLES.companyDetails.fill;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   const phoneCell = worksheet.getCell(`A${currentRow}`);
   phoneCell.value = `Teléfono: ${COMPANY_INFO.phone}`;
   phoneCell.font = STYLES.companyDetails.font;
   phoneCell.fill = STYLES.companyDetails.fill;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   const emailCell = worksheet.getCell(`A${currentRow}`);
   emailCell.value = `Email: ${COMPANY_INFO.email}`;
   emailCell.font = STYLES.companyDetails.font;
   emailCell.fill = STYLES.companyDetails.fill;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   // Empty row
@@ -141,7 +151,7 @@ export const exportToExcelWithHeader = async (
   titleCell.font = STYLES.reportTitle.font;
   titleCell.fill = STYLES.reportTitle.fill;
   titleCell.alignment = STYLES.reportTitle.alignment;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   // Period (merged across all columns)
@@ -150,7 +160,7 @@ export const exportToExcelWithHeader = async (
   periodCell.value = `Período: ${periodText}`;
   periodCell.font = STYLES.period.font;
   periodCell.alignment = STYLES.period.alignment;
-  worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(65 + columns.length - 1)}${currentRow}`);
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
   currentRow++;
 
   // Empty row
@@ -158,7 +168,7 @@ export const exportToExcelWithHeader = async (
 
   // Column headers
   columns.forEach((col, index) => {
-    const headerCell = worksheet.getCell(`${String.fromCharCode(65 + index)}${currentRow}`);
+    const headerCell = worksheet.getCell(`${getExcelColumnLetter(index)}${currentRow}`);
     headerCell.value = col.label;
     headerCell.font = STYLES.columnHeaders.font;
     headerCell.fill = STYLES.columnHeaders.fill;
@@ -169,7 +179,7 @@ export const exportToExcelWithHeader = async (
   // Data rows
   data.forEach(item => {
     columns.forEach((col, index) => {
-      const cell = worksheet.getCell(`${String.fromCharCode(65 + index)}${currentRow}`);
+      const cell = worksheet.getCell(`${getExcelColumnLetter(index)}${currentRow}`);
       const value = item[col.key];
       
       if (col.type === 'number') {
@@ -185,7 +195,7 @@ export const exportToExcelWithHeader = async (
   // Totals row if provided
   if (Object.keys(totals).length > 0) {
     columns.forEach((col, index) => {
-      const cell = worksheet.getCell(`${String.fromCharCode(65 + index)}${currentRow}`);
+      const cell = worksheet.getCell(`${getExcelColumnLetter(index)}${currentRow}`);
       
       if (totals[col.key] !== undefined) {
         cell.value = totals[col.key];

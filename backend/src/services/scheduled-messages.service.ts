@@ -189,12 +189,18 @@ export class ScheduledMessagesService {
     const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
 
     const filtered = messages.filter((msg) => {
+      if (!msg.send_time) {
+        this.logger.warn(`⚠️ Mesaj "${msg.name}" nu are send_time setat`);
+        return false;
+      }
       const [msgHour, msgMinute] = msg.send_time.split(':').map(Number);
-      // Verifică dacă ora curentă este >= ora de trimitere
-      return (
+      const isEligible = (
         currentHour > msgHour ||
         (currentHour === msgHour && currentMinute >= msgMinute)
       );
+      this.logger.log(`  - Mesaj "${msg.name}": send_time=${msg.send_time}, ora curentă=${currentTimeString}, eligibil=${isEligible}`);
+      // Verifică dacă ora curentă este >= ora de trimitere
+      return isEligible;
     });
 
     this.logger.log(`📋 Găsite ${messages.length} mesaje automate, ${filtered.length} eligibile pentru trimitere la ora ${currentTimeString}`);
