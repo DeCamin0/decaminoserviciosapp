@@ -41,6 +41,29 @@ export const routes = {
   addUser: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados'
     : 'https://api.decaminoservicios.com/api/empleados',
+  retrimiteFicha: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/retrimite-ficha'
+    : 'https://api.decaminoservicios.com/api/empleados/retrimite-ficha',
+  
+  // Scheduled Messages (Mesaje Automate)
+  getScheduledMessages: import.meta.env.DEV
+    ? 'http://localhost:3000/api/scheduled-messages'
+    : 'https://api.decaminoservicios.com/api/scheduled-messages',
+  createScheduledMessage: import.meta.env.DEV
+    ? 'http://localhost:3000/api/scheduled-messages'
+    : 'https://api.decaminoservicios.com/api/scheduled-messages',
+  updateScheduledMessage: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/scheduled-messages/${id}`
+    : `https://api.decaminoservicios.com/api/scheduled-messages/${id}`,
+  deleteScheduledMessage: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/scheduled-messages/${id}`
+    : `https://api.decaminoservicios.com/api/scheduled-messages/${id}`,
+  testTriggerScheduledMessages: import.meta.env.DEV
+    ? 'http://localhost:3000/api/scheduled-messages/test-trigger'
+    : 'https://api.decaminoservicios.com/api/scheduled-messages/test-trigger',
+  getScheduledMessageRecipients: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/scheduled-messages/${id}/recipients`
+    : `https://api.decaminoservicios.com/api/scheduled-messages/${id}/recipients`,
   cambioAprobacion: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/cambio-aprobacion'
     : 'https://api.decaminoservicios.com/api/empleados/cambio-aprobacion',
@@ -355,4 +378,21 @@ export const routes = {
   savePedido: import.meta.env.DEV
     ? 'http://localhost:3000/api/pedidos'
     : 'https://api.decaminoservicios.com/api/pedidos',
+  
+  // Sent Emails (Mensajes Enviados)
+  getSentEmails: import.meta.env.DEV
+    ? 'http://localhost:3000/api/sent-emails'
+    : 'https://api.decaminoservicios.com/api/sent-emails',
+  deleteSentEmail: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/sent-emails/${id}`
+    : `https://api.decaminoservicios.com/api/sent-emails/${id}`,
+  getSentEmailById: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/sent-emails/${id}`
+    : `https://api.decaminoservicios.com/api/sent-emails/${id}`,
+  sendEmail: import.meta.env.DEV
+    ? 'http://localhost:3000/api/sent-emails/send'
+    : 'https://api.decaminoservicios.com/api/sent-emails/send',
+  downloadAttachment: (attachmentId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/sent-emails/attachments/${attachmentId}`
+    : `https://api.decaminoservicios.com/api/sent-emails/attachments/${attachmentId}`,
 };

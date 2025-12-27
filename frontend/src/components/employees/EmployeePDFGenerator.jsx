@@ -8,6 +8,9 @@ const EmployeePDFGenerator = ({
   employeeData, 
   createdBy,
   enviarAGestoria = false,
+  mensajeAdicional = '',
+  archivosAdicionales = [],
+  isRetrimitere = false, // Flag pentru retrimitere ficha (nu adaugă în BD)
   onSuccess, 
   onError,
   showModal,
@@ -103,6 +106,18 @@ const EmployeePDFGenerator = ({
       formData.append('fecha', new Date().toISOString().split('T')[0]);
       formData.append('tipo', 'ficha_empleado');
       formData.append('enviarAGestoria', enviarAGestoria ? 'true' : 'false');
+      
+      // Adaugă mesajul adițional dacă există
+      if (mensajeAdicional && mensajeAdicional.trim() !== '') {
+        formData.append('mensajeAdicionalGestoria', mensajeAdicional);
+      }
+      
+      // Adaugă fișierele adiționale dacă există
+      if (archivosAdicionales && archivosAdicionales.length > 0) {
+        archivosAdicionales.forEach((file) => {
+          formData.append('archivosGestoria', file);
+        });
+      }
 
       // Trimite la backend-ul nou
       const token = localStorage.getItem('auth_token');
@@ -120,7 +135,10 @@ const EmployeePDFGenerator = ({
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      const response = await fetch(routes.addUser, {
+      // Folosește endpoint-ul de retrimitere dacă este cazul
+      const endpoint = isRetrimitere ? routes.retrimiteFicha : routes.addUser;
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: headers,
         body: formData

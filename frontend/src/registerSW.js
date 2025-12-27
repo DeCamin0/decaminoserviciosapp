@@ -11,6 +11,22 @@ const updateSW = registerSW({
   onRegistered(r) {
     // Log registrarea și atașează hooks de debug
     console.log('✅ SW Registered:', r);
+    
+    // Forțează verificarea actualizărilor la fiecare încărcare a aplicației
+    if (r) {
+      // Verifică actualizări imediat și apoi periodic
+      r.update().catch(err => {
+        console.log('⚠️ SW update check failed (ignored):', err);
+      });
+      
+      // Verifică actualizări periodic (la fiecare 5 minute)
+      setInterval(() => {
+        r.update().catch(err => {
+          console.log('⚠️ SW periodic update check failed (ignored):', err);
+        });
+      }, 5 * 60 * 1000); // 5 minute
+    }
+    
     try {
       if (r && typeof r === 'object') {
         const logSW = (sw) => {
@@ -25,6 +41,12 @@ const updateSW = registerSW({
         r.addEventListener?.('updatefound', () => {
           console.log('🆕 updatefound: a new ServiceWorker is installing');
           logSW(r.installing || r.waiting || r.active);
+          
+          // Dacă există un waiting worker, activează-l automat
+          if (r.waiting) {
+            console.log('🔄 Activating waiting Service Worker automatically...');
+            r.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
         });
 
         // log stările curente

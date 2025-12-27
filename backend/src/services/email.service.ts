@@ -113,6 +113,61 @@ export class EmailService {
   }
 
   /**
+   * Trimite email cu multiple attachments
+   */
+  async sendEmailWithAttachments(
+    to: string,
+    subject: string,
+    html: string,
+    attachments: Array<{
+      filename: string;
+      content: Buffer;
+      contentType?: string;
+    }>,
+    options?: {
+      from?: string;
+      bcc?: string[];
+    },
+  ): Promise<void> {
+    if (!this.transporter) {
+      throw new Error(
+        'SMTP transporter not initialized. Check SMTP configuration.',
+      );
+    }
+
+    const fromEmail =
+      options?.from ||
+      this.configService.get<string>('SMTP_FROM') ||
+      'DE CAMINO Servicios Auxiliares SL <info@decaminoservicios.com>';
+
+    const mailOptions = {
+      from: fromEmail,
+      to: to,
+      bcc: options?.bcc || [],
+      subject: subject,
+      html: html,
+      attachments: attachments.map((att) => ({
+        filename: att.filename,
+        content: att.content,
+        contentType: att.contentType || 'application/octet-stream',
+      })),
+    };
+
+    try {
+      const info = await this.transporter.sendMail(mailOptions);
+      const bccList = options?.bcc?.join(', ') || 'none';
+      this.logger.log(`✅ Email sent successfully with ${attachments.length} attachments:`);
+      this.logger.log(`   TO: ${to}`);
+      this.logger.log(`   BCC: ${bccList}`);
+      this.logger.log(`   Attachments: ${attachments.map(a => a.filename).join(', ')}`);
+      this.logger.log(`   MessageId: ${info.messageId}`);
+    } catch (error: any) {
+      this.logger.error(`❌ Error sending email to ${to}:`, error);
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+  }
+
+  /**
    * Trimite email simplu (fără attachment)
    */
   async sendEmail(

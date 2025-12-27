@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
 import { EmailService } from './email.service';
+import { SentEmailsService } from './sent-emails.service';
 
 @Injectable()
 export class SolicitudesService {
@@ -12,6 +13,7 @@ export class SolicitudesService {
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
     private readonly emailService: EmailService,
+    private readonly sentEmailsService: SentEmailsService,
   ) {}
 
   /**
@@ -124,19 +126,64 @@ export class SolicitudesService {
       return;
     }
 
+    // Definește variabilele înainte de try pentru a fi disponibile în catch
+    let subject = '';
+    let html = '';
+
     try {
-      const { subject, html } = this.formatSolicitudEmailHtml(solicitudData);
+      const emailData = this.formatSolicitudEmailHtml(solicitudData);
+      subject = emailData.subject;
+      html = emailData.html;
+      
       this.logger.log(
         `📧 [sendSolicitudEmail] Sending email for ${solicitudData.accion} - subject: ${subject}`,
       );
-      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html);
+      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
+        bcc: ['decamino.rrhh@gmail.com'],
+      });
       this.logger.log(
         `✅ [sendSolicitudEmail] Email notification sent to ${this.EMAIL_RECIPIENT} for ${solicitudData.accion} - solicitud ${solicitudData.codigo}`,
       );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: solicitudData.codigo || 'system',
+          recipientType: 'gestoria',
+          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientName: 'Solicitudes',
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendSolicitudEmail] Eroare la salvarea email-ului în BD: ${saveError.message}`,
+        );
+      }
     } catch (error: any) {
       this.logger.error(
         `❌ [sendSolicitudEmail] Error sending email notification for ${solicitudData.accion} (non-blocking): ${error.message}`,
       );
+      
+      // Salvează și email-urile eșuate în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: solicitudData.codigo || 'system',
+          recipientType: 'gestoria',
+          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientName: 'Solicitudes',
+          subject: subject || `Solicitud ${solicitudData.accion} - ${solicitudData.codigo}`,
+          message: html || '',
+          status: 'failed',
+          errorMessage: error.message || String(error),
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendSolicitudEmail] Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
+        );
+      }
+      
       // Nu aruncăm eroarea pentru a nu opri flow-ul principal
     }
   }

@@ -50,7 +50,8 @@ import {
   LazyEmpleadoPedidosPage,
   LazyComunicadosPage,
   LazyComunicadoDetailPage,
-  LazyComunicadoCreatePage
+  LazyComunicadoCreatePage,
+  LazyMensajesEnviadosPage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -467,6 +468,17 @@ function AppRoutes() {
         }
       />
 
+      {/* Ruta para Mensajes Enviados (solo para admini/developeri) */}
+      <Route
+        path="/mensajes-enviados"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LazyMensajesEnviadosPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
       
       {/* Redirect por defecto a inicio si estás logueado, sino a login */}
       <Route 

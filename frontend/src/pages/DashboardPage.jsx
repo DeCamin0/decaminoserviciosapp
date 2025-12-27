@@ -17,6 +17,7 @@ import {
   Clock,
   FileText,
   Folder,
+  Mail,
   Settings,
   ShoppingCart,
   UserCircle,
@@ -534,6 +535,19 @@ const InicioPage = () => {
       });
     }
 
+    // Mensajes Enviados - doar pentru admini/developeri
+    if (canAccessAdmin) {
+      list.push({
+        id: 'mensajes-enviados',
+        label: 'Mensajes Enviados',
+        hint: 'Gestiona y visualiza todos los mensajes enviados',
+        icon: <Mail className="h-6 w-6 text-white" />,
+        gradient: 'from-purple-500 via-violet-500 to-fuchsia-500',
+        href: '/mensajes-enviados',
+        role: 'manager',
+      });
+    }
+
     if (canAccessStats) {
       list.push({
         id: 'estadisticas',
@@ -892,9 +906,16 @@ const InicioPage = () => {
       }
 
       const endpoint = routes.getAvatarMe || routes.getAvatar;
+      console.log('🔍 [Dashboard] Fetching avatar:', {
+        endpoint,
+        hasToken: !!token,
+        tokenLength: token?.length || 0
+      });
+      
       const response = await fetch(endpoint, {
         method: 'GET',
-        headers
+        headers,
+        cache: 'no-store', // Forțează request fresh, fără cache
       });
 
       if (!response.ok) {

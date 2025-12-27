@@ -74,8 +74,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10MB
-        skipWaiting: false, // Schimbă la false pentru a aștepta confirmarea utilizatorului
-        clientsClaim: true,
+        skipWaiting: true, // Activează automat noul Service Worker (fără a aștepta)
+        clientsClaim: true, // Claim clients imediat pentru a activa noul Service Worker
         cleanupOutdatedCaches: true,
         // Adaugă versioning explicit pentru a forța actualizările
         // Workbox generează automat hash-uri pentru fișiere, dar adăugăm și un cache ID cu versiune

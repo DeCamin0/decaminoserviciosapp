@@ -32,6 +32,7 @@ const EmpleadoPedidosPage = lazy(() => import('../EmpleadoPedidosPage'));
 const ComunicadosPage = lazy(() => import('../ComunicadosPage'));
 const ComunicadoDetailPage = lazy(() => import('../ComunicadoDetailPage'));
 const ComunicadoCreatePage = lazy(() => import('../ComunicadoCreatePage'));
+const MensajesEnviadosPage = lazy(() => import('../MensajesEnviadosPage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -287,6 +288,14 @@ export const LazyComunicadoCreatePage = (props) => {
   );
 };
 
+export const LazyMensajesEnviadosPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando mensajes..." />}>
+      <MensajesEnviadosPage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -314,5 +323,6 @@ export default {
   LazyEmpleadoPedidosPage,
   LazyComunicadosPage,
   LazyComunicadoDetailPage,
-  LazyComunicadoCreatePage
+  LazyComunicadoCreatePage,
+  LazyMensajesEnviadosPage
 };

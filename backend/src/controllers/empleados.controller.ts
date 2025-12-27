@@ -6,16 +6,20 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   Body,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
 import { EmailService } from '../services/email.service';
 import { EmpleadosStatsService } from '../services/empleados-stats.service';
+import { NotificationsGateway } from '../gateways/notifications.gateway';
+import { NotificationsService } from '../services/notifications.service';
+import { SentEmailsService } from '../services/sent-emails.service';
 
 @Controller('api/empleados')
 export class EmpleadosController {
@@ -25,6 +29,9 @@ export class EmpleadosController {
     private readonly empleadosService: EmpleadosService,
     private readonly emailService: EmailService,
     private readonly empleadosStatsService: EmpleadosStatsService,
+    private readonly notificationsGateway: NotificationsGateway,
+    private readonly notificationsService: NotificationsService,
+    private readonly sentEmailsService: SentEmailsService,
   ) {}
 
   @Get('me')
@@ -76,11 +83,22 @@ export class EmpleadosController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('pdf'))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'pdf', maxCount: 1 },
+      { name: 'archivosGestoria', maxCount: 10 },
+    ]),
+  )
   async addEmpleado(
-    @UploadedFile() pdfFile: Express.Multer.File,
+    @UploadedFiles()
+    files: {
+      pdf?: Express.Multer.File[];
+      archivosGestoria?: Express.Multer.File[];
+    },
     @Body() body: any,
   ) {
+    const pdfFile = files?.pdf?.[0];
+    const archivosGestoria = files?.archivosGestoria || [];
     try {
       // Extragem datele din body
       const empleadoData = {
@@ -115,6 +133,24 @@ export class EmpleadosController {
 
       // Adăugăm empleado în baza de date
       const result = await this.empleadosService.addEmpleado(empleadoData);
+
+      // Trimite email de bun venit dacă este un angajat nou cu FECHA DE ALTA setată
+      // (indiferent de ESTADO, pentru că poate fi PENDIENTE la început)
+      if (
+        empleadoData['FECHA DE ALTA'] &&
+        empleadoData['FECHA DE ALTA'].trim() !== '' &&
+        empleadoData['CORREO ELECTRONICO'] &&
+        empleadoData['CORREO ELECTRONICO'].trim() !== ''
+      ) {
+        try {
+          await this.sendWelcomeEmailToEmpleado(empleadoData);
+        } catch (welcomeEmailError: any) {
+          this.logger.warn(
+            `⚠️ Eroare la trimiterea email-ului de bun venit către ${empleadoData.CODIGO}: ${welcomeEmailError.message}`,
+          );
+          // Nu oprește procesul dacă email-ul de bun venit eșuează
+        }
+      }
 
       // Salvăm PDF-ul în CarpetasDocumentos dacă există
       if (pdfFile && pdfFile.buffer) {
@@ -175,35 +211,152 @@ export class EmpleadosController {
               body.enviarAGestoria === true ||
               body.enviarAGestoria === '1';
 
+            // Mesaj adițional pentru gestorie
+            const mensajeAdicional = body.mensajeAdicionalGestoria || '';
+
+            // Pregătește attachments: PDF + fișierele adiționale
+            const attachments = [
+              {
+                filename: pdfFileName,
+                content: pdfFile.buffer,
+                contentType: 'application/pdf',
+              },
+            ];
+
+            // Adaugă fișierele adiționale dacă există
+            if (archivosGestoria.length > 0) {
+              archivosGestoria.forEach((file) => {
+                attachments.push({
+                  filename: file.originalname || 'attachment',
+                  content: file.buffer,
+                  contentType: file.mimetype || 'application/octet-stream',
+                });
+              });
+            }
+
+            // Adaugă mesajul adițional în HTML dacă există
+            let htmlFinal = html;
+            if (mensajeAdicional && mensajeAdicional.trim() !== '') {
+              htmlFinal = html.replace(
+                '</body>',
+                `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;">
+                  <strong>Mensaje adicional:</strong><br>
+                  <div style="white-space: pre-wrap;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
+                </div>
+                </body>`,
+              );
+            }
+
             if (enviarAGestoria) {
               // Dacă este bifat: trimite la gestoria (altemprado@gmail.com) cu BCC
-              await this.emailService.sendEmailWithAttachment(
-                'altemprado@gmail.com',
-                subject,
-                html,
-                pdfFile.buffer,
-                pdfFileName,
-                {
-                  bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com'],
-                },
-              );
+              if (attachments.length > 1) {
+                // Folosește sendEmailWithAttachments pentru multiple attachments
+                await this.emailService.sendEmailWithAttachments(
+                  'altemprado@gmail.com',
+                  subject,
+                  htmlFinal,
+                  attachments,
+                  {
+                    bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+                  },
+                );
+              } else {
+                // Folosește sendEmailWithAttachment pentru un singur attachment (PDF)
+                await this.emailService.sendEmailWithAttachment(
+                  'altemprado@gmail.com',
+                  subject,
+                  htmlFinal,
+                  pdfFile.buffer,
+                  pdfFileName,
+                  {
+                    bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+                  },
+                );
+              }
 
               this.logger.log(
-                `✅ Email trimis către gestoria (altemprado@gmail.com) pentru empleado ${empleadoData.CODIGO}`,
+                `✅ Email trimis către gestoria (altemprado@gmail.com) pentru empleado ${empleadoData.CODIGO} cu ${attachments.length} attachments`,
               );
+
+              // Salvează email-ul în BD
+              try {
+                const senderId = String(body.createdBy ? JSON.parse(body.createdBy).nombre : 'system');
+                await this.sentEmailsService.saveSentEmail({
+                  senderId,
+                  recipientType: 'gestoria',
+                  recipientEmail: 'altemprado@gmail.com',
+                  recipientName: 'Gestoria',
+                  subject,
+                  message: htmlFinal,
+                  additionalMessage: mensajeAdicional || undefined,
+                  status: 'sent',
+                  attachments: attachments.map((att) => ({
+                    filename: att.filename,
+                    fileContent: att.content,
+                    mimeType: att.contentType,
+                    fileSize: att.content.length,
+                  })),
+                });
+              } catch (saveError: any) {
+                this.logger.warn(
+                  `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+                );
+              }
             } else {
               // Dacă NU este bifat: trimite DOAR la info@decaminoservicios.com
-              await this.emailService.sendEmailWithAttachment(
-                'info@decaminoservicios.com',
-                subject,
-                html,
-                pdfFile.buffer,
-                pdfFileName,
-              );
+              if (attachments.length > 1) {
+                // Folosește sendEmailWithAttachments pentru multiple attachments
+                await this.emailService.sendEmailWithAttachments(
+                  'info@decaminoservicios.com',
+                  subject,
+                  htmlFinal,
+                  attachments,
+                  {
+                    bcc: ['decamino.rrhh@gmail.com'],
+                  },
+                );
+              } else {
+                // Folosește sendEmailWithAttachment pentru un singur attachment (PDF)
+                await this.emailService.sendEmailWithAttachment(
+                  'info@decaminoservicios.com',
+                  subject,
+                  htmlFinal,
+                  pdfFile.buffer,
+                  pdfFileName,
+                  {
+                    bcc: ['decamino.rrhh@gmail.com'],
+                  },
+                );
+              }
 
               this.logger.log(
-                `✅ Email trimis către info@decaminoservicios.com pentru empleado ${empleadoData.CODIGO}`,
+                `✅ Email trimis către info@decaminoservicios.com pentru empleado ${empleadoData.CODIGO} cu ${attachments.length} attachments`,
               );
+
+              // Salvează email-ul în BD
+              try {
+                const senderId = String(body.createdBy ? JSON.parse(body.createdBy).nombre : 'system');
+                await this.sentEmailsService.saveSentEmail({
+                  senderId,
+                  recipientType: 'gestoria',
+                  recipientEmail: 'info@decaminoservicios.com',
+                  recipientName: 'Info',
+                  subject,
+                  message: htmlFinal,
+                  additionalMessage: mensajeAdicional || undefined,
+                  status: 'sent',
+                  attachments: attachments.map((att) => ({
+                    filename: att.filename,
+                    fileContent: att.content,
+                    mimeType: att.contentType,
+                    fileSize: att.content.length,
+                  })),
+                });
+              } catch (saveError: any) {
+                this.logger.warn(
+                  `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+                );
+              }
             }
           } catch (emailError: any) {
             this.logger.error(
@@ -231,9 +384,393 @@ export class EmpleadosController {
     }
   }
 
+  @Post('retrimite-ficha')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'pdf', maxCount: 1 },
+      { name: 'archivosGestoria', maxCount: 10 },
+    ]),
+  )
+  async retrimiteFicha(
+    @UploadedFiles()
+    files: {
+      pdf?: Express.Multer.File[];
+      archivosGestoria?: Express.Multer.File[];
+    },
+    @Body() body: any,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const pdfFile = files?.pdf?.[0];
+      const archivosGestoria = files?.archivosGestoria || [];
+
+      if (!pdfFile || !pdfFile.buffer) {
+        throw new BadRequestException('PDF-ul este obligatoriu');
+      }
+
+      if (!body.CODIGO) {
+        throw new BadRequestException('CODIGO este obligatoriu');
+      }
+
+      // Verifică dacă angajatul există
+      const empleadoExistente =
+        await this.empleadosService.getEmpleadoByCodigo(body.CODIGO);
+      if (!empleadoExistente) {
+        throw new BadRequestException(
+          `Angajatul cu CODIGO ${body.CODIGO} nu există`,
+        );
+      }
+
+      // Nu modificăm angajatul în BD, doar trimitem ficha la gestorie
+      const nombreEmpleado =
+        body['NOMBRE / APELLIDOS'] || 'Sin Nombre';
+      const subject = `RE-ENVÍO FICHA: ${nombreEmpleado}`;
+      
+      let html = `
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+            <p>Hola,</p>
+            <p>Te reenvío los datos correspondientes a <strong>${nombreEmpleado}</strong> (Código: ${body.CODIGO}).</p>
+      `;
+
+      // Adaugă mesajul adițional dacă există
+      const mensajeAdicional = body.mensajeAdicionalGestoria || '';
+      if (mensajeAdicional) {
+        html += `
+            <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;">
+              <strong>Mensaje adicional:</strong><br>
+              <div style="white-space: pre-wrap;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
+            </div>
+        `;
+      }
+
+      html += `
+            <br>
+            <p>Un saludo,<br>
+            <em>Feliz día 🌞</em></p>
+          </body>
+        </html>
+      `;
+
+      const pdfFileName =
+        pdfFile.originalname ||
+        `Ficha_${nombreEmpleado.replace(/\s+/g, '_')}.pdf`;
+
+      // Pregătește attachments: PDF + fișierele adiționale
+      const attachments = [
+        {
+          filename: pdfFileName,
+          content: pdfFile.buffer,
+          contentType: 'application/pdf',
+        },
+      ];
+
+      // Adaugă fișierele adiționale dacă există
+      if (archivosGestoria.length > 0) {
+        archivosGestoria.forEach((file) => {
+          attachments.push({
+            filename: file.originalname || 'attachment',
+            content: file.buffer,
+            contentType: file.mimetype || 'application/octet-stream',
+          });
+        });
+      }
+
+      // Trimite la gestoria
+      if (attachments.length > 1) {
+        await this.emailService.sendEmailWithAttachments(
+          'altemprado@gmail.com',
+          subject,
+          html,
+          attachments,
+          {
+            bcc: [
+              'info@decaminoservicios.com',
+              'mirisjm@gmail.com',
+              'decamino.rrhh@gmail.com',
+            ],
+          },
+        );
+      } else {
+        await this.emailService.sendEmailWithAttachment(
+          'altemprado@gmail.com',
+          subject,
+          html,
+          pdfFile.buffer,
+          pdfFileName,
+          {
+            bcc: [
+              'info@decaminoservicios.com',
+              'mirisjm@gmail.com',
+              'decamino.rrhh@gmail.com',
+            ],
+          },
+        );
+      }
+
+      this.logger.log(
+        `✅ Ficha retrimisă către gestoria pentru empleado ${body.CODIGO} cu ${attachments.length} attachments`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        const senderId = String(
+          user?.CODIGO || user?.codigo || user?.userId || 'system',
+        );
+        await this.sentEmailsService.saveSentEmail({
+          senderId,
+          recipientType: 'gestoria',
+          recipientEmail: 'altemprado@gmail.com',
+          recipientName: 'Gestoria',
+          subject,
+          message: html,
+          additionalMessage: mensajeAdicional || undefined,
+          status: 'sent',
+          attachments: attachments.map((att) => ({
+            filename: att.filename,
+            fileContent: att.content,
+            mimeType: att.contentType,
+            fileSize: att.content.length,
+          })),
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Ficha retrimisă cu succes către gestoria',
+        codigo: body.CODIGO,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error retrimitere ficha:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al retrimitere ficha: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Trimite email de bun venit către angajat când se dă de alta sau se reactivează
+   */
+  private async sendWelcomeEmailToEmpleado(empleadoData: any) {
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn('⚠️ SMTP nu este configurat. Email-ul de bun venit nu va fi trimis.');
+      return;
+    }
+
+    const email = empleadoData['CORREO ELECTRONICO'] || empleadoData.CORREO_ELECTRONICO;
+    const nombre = empleadoData['NOMBRE / APELLIDOS'] || empleadoData.NOMBRE_APELLIDOS || 'Empleado';
+    const fechaAlta = empleadoData['FECHA DE ALTA'] || empleadoData.FECHA_DE_ALTA || '';
+
+    if (!email || !email.trim()) {
+      this.logger.warn(`⚠️ Angajatul ${empleadoData.CODIGO} nu are email configurat pentru email de bun venit`);
+      return;
+    }
+
+    if (!fechaAlta || !fechaAlta.trim()) {
+      this.logger.warn(`⚠️ Angajatul ${empleadoData.CODIGO} nu are FECHA DE ALTA pentru email de bun venit`);
+      return;
+    }
+
+    // Verifică dacă suntem după 1 ianuarie
+    const fechaLimite = new Date('2025-01-01');
+    const fechaActual = new Date();
+    const esDespuesDeEnero = fechaActual >= fechaLimite;
+
+    const subject = 'Bienvenido/a a De Camino - Acceso a la aplicación interna';
+    
+    // Formatează data de alta pentru mesaj
+    let fechaAltaFormateada = fechaAlta;
+    try {
+      // Încearcă să formateze data (dd/mm/yyyy sau dd-mm-yyyy)
+      if (fechaAlta.includes('/')) {
+        const [dd, mm, yyyy] = fechaAlta.split('/');
+        fechaAltaFormateada = `${dd}/${mm}/${yyyy}`;
+      } else if (fechaAlta.includes('-')) {
+        const [dd, mm, yyyy] = fechaAlta.split('-');
+        fechaAltaFormateada = `${dd}/${mm}/${yyyy}`;
+      }
+    } catch (e) {
+      // Folosește data originală dacă formatarea eșuează
+    }
+
+    // Mesaj diferit în funcție de data curentă
+    let html = '';
+    
+    if (esDespuesDeEnero) {
+      // Email pentru după 1 ianuarie (aplicația este obligatorie)
+      html = `
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <p>Hola <strong>${nombre}</strong>,</p>
+            
+            <p>A partir del <strong>${fechaAltaFormateada}</strong>, deberás utilizar la aplicación interna De Camino para todas las gestiones laborales.</p>
+            
+            <p><strong>El uso de la aplicación es obligatorio</strong> y sustituye completamente el uso de documentos en papel.</p>
+            
+            <p>La aplicación De Camino es la aplicación oficial de la empresa y se utiliza para:</p>
+            
+            <ul style="margin: 15px 0; padding-left: 25px;">
+              <li>fichaje y registro de horas trabajadas</li>
+              <li>consulta de horarios y cuadrantes</li>
+              <li>solicitud de vacaciones, días libres y asunto propio</li>
+              <li>acceso a documentación e información interna</li>
+            </ul>
+            
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>🔐 Datos de acceso</strong></p>
+              <p style="margin: 5px 0;"><strong>Usuario:</strong> el correo electrónico facilitado por la empresa</p>
+              <p style="margin: 5px 0;">La contraseña deberá solicitarse por WhatsApp a un responsable autorizado de la empresa.</p>
+            </div>
+            
+            <div style="background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>📲 Cómo instalar la aplicación</strong></p>
+              <p style="margin: 5px 0;">La aplicación no se descarga desde Google Play ni App Store.</p>
+              <p style="margin: 5px 0;">Se utiliza directamente desde el navegador del móvil.</p>
+              <ol style="margin: 10px 0; padding-left: 25px;">
+                <li>Abre el navegador de tu teléfono (Chrome en Android o Safari en iPhone)</li>
+                <li>Accede al siguiente enlace:</li>
+              </ol>
+              <p style="margin: 10px 0; text-align: center;">
+                <a href="https://app.decaminoservicios.com" style="color: #0066CC; font-weight: bold; font-size: 16px;">👉 https://app.decaminoservicios.com</a>
+              </p>
+              <ol start="3" style="margin: 10px 0; padding-left: 25px;">
+                <li>Introduce tu usuario y la contraseña facilitada por la empresa</li>
+                <li>Sigue las instrucciones para añadir la aplicación a la pantalla de inicio</li>
+                <li>Confirma la opción para disponer de la aplicación como un icono en tu móvil</li>
+              </ol>
+            </div>
+            
+            <p>Si tienes cualquier problema técnico o duda sobre el uso de la aplicación, puedes contactar con nosotros</p>
+            
+            <p>Gracias por tu colaboración.</p>
+            
+            <p><strong>Atentamente:</strong><br>
+            <strong>RRHH</strong><br>
+            <strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+          </body>
+        </html>
+      `;
+    } else {
+      // Email pentru înainte de 1 ianuarie (aplicația va fi disponibilă)
+      html = `
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <p>Hola <strong>${nombre}</strong>,</p>
+            
+            <p>A partir del <strong>${fechaAltaFormateada}</strong>, la aplicación interna De Camino estará disponible para que puedas empezar a utilizarla.</p>
+            
+            <p>A partir del <strong>1 de enero</strong>, el uso de la aplicación será obligatorio y sustituirá completamente el uso de documentos en papel.</p>
+            
+            <p>La aplicación De Camino es la aplicación oficial de la empresa y se utilizará para:</p>
+            
+            <ul style="margin: 15px 0; padding-left: 25px;">
+              <li>fichaje y registro de horas trabajadas</li>
+              <li>consulta de horarios y cuadrantes</li>
+              <li>solicitud de vacaciones, días libres y asunto propio</li>
+              <li>acceso a documentación e información interna</li>
+            </ul>
+            
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>🔐 Datos de acceso</strong></p>
+              <p style="margin: 5px 0;"><strong>Usuario:</strong> el correo electrónico facilitado por la empresa</p>
+              <p style="margin: 5px 0;">La contraseña deberá solicitarse por WhatsApp a un responsable autorizado de la empresa.</p>
+            </div>
+            
+            <div style="background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>📲 Cómo instalar la aplicación</strong></p>
+              <p style="margin: 5px 0;">La aplicación no se descarga desde Google Play ni App Store.</p>
+              <p style="margin: 5px 0;">Se utiliza directamente desde el navegador del móvil.</p>
+              <ol style="margin: 10px 0; padding-left: 25px;">
+                <li>Abre el navegador de tu teléfono (Chrome en Android o Safari en iPhone)</li>
+                <li>Accede al siguiente enlace:</li>
+              </ol>
+              <p style="margin: 10px 0; text-align: center;">
+                <a href="https://app.decaminoservicios.com" style="color: #0066CC; font-weight: bold; font-size: 16px;">👉 https://app.decaminoservicios.com</a>
+              </p>
+              <ol start="3" style="margin: 10px 0; padding-left: 25px;">
+                <li>Introduce tu usuario y la contraseña facilitada por la empresa</li>
+                <li>Sigue las instrucciones para añadir la aplicación a la pantalla de inicio</li>
+                <li>Confirma la opción para disponer de la aplicación como un icono en tu móvil</li>
+              </ol>
+            </div>
+            
+            <p>Si tienes cualquier problema técnico o duda sobre el uso de la aplicación, puedes contactar con nosotros</p>
+            
+            <p>Gracias por tu colaboración.</p>
+            
+            <p><strong>Atentamente:</strong><br>
+            <strong>RRHH</strong><br>
+            <strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+          </body>
+        </html>
+      `;
+    }
+
+    try {
+      await this.emailService.sendEmail(email, subject, html, {
+        bcc: ['decamino.rrhh@gmail.com'],
+      });
+
+      this.logger.log(
+        `✅ Email de bun venit trimis către ${email} (${nombre}) pentru FECHA DE ALTA: ${fechaAltaFormateada}`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: empleadoData.CODIGO,
+          recipientEmail: email,
+          recipientName: nombre,
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ Eroare la salvarea email-ului de bun venit în BD: ${saveError.message}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Eroare la trimiterea email-ului de bun venit către ${email}: ${error.message}`,
+      );
+      
+      // Salvează și email-urile eșuate în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: empleadoData.CODIGO,
+          recipientEmail: email,
+          recipientName: nombre,
+          subject,
+          message: html,
+          status: 'failed',
+          errorMessage: error.message || String(error),
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ Eroare la salvarea email-ului de bun venit eșuat în BD: ${saveError.message}`,
+        );
+      }
+      
+      throw error;
+    }
+  }
+
   @Put()
   @UseGuards(JwtAuthGuard)
-  async updateEmpleado(@Body() body: any) {
+  async updateEmpleado(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log(
         `📝 Update empleado request received. Body keys: ${Object.keys(body || {}).join(', ')}`,
@@ -244,6 +781,9 @@ export class EmpleadosController {
         this.logger.error(`❌ CODIGO missing. Body: ${JSON.stringify(body)}`);
         throw new BadRequestException('CODIGO is required');
       }
+
+      // Obține datele originale ale angajatului pentru a verifica dacă este o reactivare
+      const empleadoAnterior = await this.empleadosService.getEmpleadoByCodigo(body.CODIGO);
 
       // Extragem datele din body
       // Pentru parolă, includem doar dacă este trimisă și nu este goală (pentru a nu suprascrie parola existentă)
@@ -285,6 +825,59 @@ export class EmpleadosController {
         empleadoData,
       );
 
+      // Verifică dacă este o reactivare (ESTADO se schimbă din INACTIVO în ACTIVO) sau dacă se setează FECHA DE ALTA
+      const estadoAnterior = empleadoAnterior?.ESTADO || empleadoAnterior?.estado || '';
+      const estadoNuevo = empleadoData.ESTADO || empleadoAnterior?.ESTADO || empleadoAnterior?.estado || '';
+      const fechaAltaAnterior = empleadoAnterior?.['FECHA DE ALTA'] || empleadoAnterior?.FECHA_DE_ALTA || '';
+      // Folosește FECHA DE ALTA din body dacă există, altfel folosește cea anterioară
+      const fechaAltaNueva = body['FECHA DE ALTA'] || empleadoData['FECHA DE ALTA'] || fechaAltaAnterior || '';
+      
+      // Verifică dacă este reactivare (ESTADO din INACTIVO în ACTIVO)
+      const esReactivacion = estadoAnterior.toUpperCase() === 'INACTIVO' && estadoNuevo.toUpperCase() === 'ACTIVO';
+      // Verifică dacă se setează FECHA DE ALTA pentru prima dată (nu există anterior)
+      const esPrimeraFechaAlta = (!fechaAltaAnterior || fechaAltaAnterior.trim() === '') && fechaAltaNueva && fechaAltaNueva.trim() !== '';
+      // Verifică dacă există FECHA DE ALTA (fie nouă, fie existentă)
+      const tieneFechaAlta = fechaAltaNueva && fechaAltaNueva.trim() !== '';
+      
+      this.logger.log(
+        `🔍 [updateEmpleado] Verificare email bun venit pentru ${body.CODIGO}: esReactivacion=${esReactivacion}, esPrimeraFechaAlta=${esPrimeraFechaAlta}, tieneFechaAlta=${tieneFechaAlta}, estadoAnterior="${estadoAnterior}", estadoNuevo="${estadoNuevo}", fechaAltaAnterior="${fechaAltaAnterior}", fechaAltaNueva="${fechaAltaNueva}"`,
+      );
+      
+      // Trimite email de bun venit dacă:
+      // 1. Este reactivare (ESTADO din INACTIVO în ACTIVO) ȘI are FECHA DE ALTA (fie nouă, fie existentă)
+      // 2. SAU se setează FECHA DE ALTA pentru prima dată
+      if ((esReactivacion && tieneFechaAlta) || esPrimeraFechaAlta) {
+        const empleadoCompleto = {
+          ...empleadoAnterior,
+          ...empleadoData,
+          CODIGO: body.CODIGO,
+          'FECHA DE ALTA': fechaAltaNueva, // Asigură că folosește FECHA DE ALTA (nouă sau existentă)
+        };
+        
+        const emailEmpleado = empleadoCompleto['CORREO ELECTRONICO'] || empleadoCompleto.CORREO_ELECTRONICO;
+        if (emailEmpleado && emailEmpleado.trim() !== '') {
+          this.logger.log(
+            `📧 [updateEmpleado] Trimitere email bun venit către ${emailEmpleado} (${body.CODIGO}) - Reactivare: ${esReactivacion}, Primera Fecha Alta: ${esPrimeraFechaAlta}`,
+          );
+          try {
+            await this.sendWelcomeEmailToEmpleado(empleadoCompleto);
+          } catch (welcomeEmailError: any) {
+            this.logger.warn(
+              `⚠️ Eroare la trimiterea email-ului de bun venit către ${body.CODIGO}: ${welcomeEmailError.message}`,
+            );
+            // Nu oprește procesul dacă email-ul de bun venit eșuează
+          }
+        } else {
+          this.logger.warn(
+            `⚠️ [updateEmpleado] Angajatul ${body.CODIGO} nu are email configurat pentru email de bun venit`,
+          );
+        }
+      } else {
+        this.logger.log(
+          `ℹ️ [updateEmpleado] Email bun venit NU se trimite pentru ${body.CODIGO} - condițiile nu sunt îndeplinite`,
+        );
+      }
+
       // Trimite email la gestorie dacă este solicitat
       const enviarAGestoria =
         body.enviarAGestoria === 'true' ||
@@ -292,35 +885,36 @@ export class EmpleadosController {
         body.enviarAGestoria === '1';
 
       if (enviarAGestoria && this.emailService.isConfigured()) {
-        try {
-          // Construiește mesajul email cu informații despre actualizare
-          const emailBody =
-            body.emailBody ||
-            body.mesaj ||
-            'Se ha actualizado la información del empleado.';
-          const emailSubject =
-            body.emailSubject ||
-            body.subiect ||
-            `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`;
+        // Definește variabilele înainte de try pentru a fi disponibile în catch
+        const emailBody =
+          body.emailBody ||
+          body.mesaj ||
+          'Se ha actualizado la información del empleado.';
+        const emailSubject =
+          body.emailSubject ||
+          body.subiect ||
+          `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`;
 
-          // Formatează mesajul ca HTML pentru email
-          const htmlEmail = `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
-              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'N/A'}</p>
-                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.CODIGO || 'N/A'}</p>
-                <p style="margin: 5px 0;"><strong>Email:</strong> ${empleadoData['CORREO ELECTRONICO'] || 'N/A'}</p>
-              </div>
-              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
-                <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${emailBody.replace(/\n/g, '<br>')}</pre>
-              </div>
-              <p style="color: #666; font-size: 12px; margin-top: 20px;">
-                Actualizado por: ${body.updatedBy || 'Sistema'}<br>
-                Fecha: ${new Date().toLocaleString('es-ES')}
-              </p>
+        // Formatează mesajul ca HTML pentru email
+        const htmlEmail = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>Empleado:</strong> ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'N/A'}</p>
+              <p style="margin: 5px 0;"><strong>Código:</strong> ${body.CODIGO || 'N/A'}</p>
+              <p style="margin: 5px 0;"><strong>Email:</strong> ${empleadoData['CORREO ELECTRONICO'] || 'N/A'}</p>
             </div>
-          `;
+            <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
+              <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${emailBody.replace(/\n/g, '<br>')}</pre>
+            </div>
+            <p style="color: #666; font-size: 12px; margin-top: 20px;">
+              Actualizado por: ${body.updatedBy || 'Sistema'}<br>
+              Fecha: ${new Date().toLocaleString('es-ES')}
+            </p>
+          </div>
+        `;
+
+        try {
 
           // Trimite la gestoria (altemprado@gmail.com) cu BCC
           await this.emailService.sendEmail(
@@ -328,17 +922,61 @@ export class EmpleadosController {
             emailSubject,
             htmlEmail,
             {
-              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com'],
+              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
             },
           );
 
           this.logger.log(
             `✅ Email trimis către gestoria (altemprado@gmail.com) pentru actualizare empleado ${body.CODIGO}`,
           );
+
+          // Salvează email-ul în BD
+          try {
+            const senderId = String(
+              body.updatedBy ? body.updatedBy : (user?.CODIGO || user?.codigo || user?.userId || 'system'),
+            );
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: 'gestoria',
+              recipientEmail: 'altemprado@gmail.com',
+              recipientName: 'Gestoria',
+              subject: emailSubject,
+              message: htmlEmail,
+              additionalMessage: emailBody || undefined,
+              status: 'sent',
+            });
+          } catch (saveError: any) {
+            this.logger.warn(
+              `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+            );
+          }
         } catch (emailError: any) {
           this.logger.error(
             `❌ Eroare la trimiterea email-ului către gestoria: ${emailError.message}`,
           );
+          
+          // Salvează și email-urile eșuate în BD
+          try {
+            const senderId = String(
+              body.updatedBy ? body.updatedBy : (user?.CODIGO || user?.codigo || user?.userId || 'system'),
+            );
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: 'gestoria',
+              recipientEmail: 'altemprado@gmail.com',
+              recipientName: 'Gestoria',
+              subject: emailSubject || `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`,
+              message: htmlEmail || emailBody || 'Se ha actualizado la información del empleado.',
+              additionalMessage: emailBody || undefined,
+              status: 'failed',
+              errorMessage: emailError.message || String(emailError),
+            });
+          } catch (saveError: any) {
+            this.logger.warn(
+              `⚠️ Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
+            );
+          }
+          
           // Nu aruncăm eroare aici, pentru că actualizarea a reușit
         }
       }
@@ -412,7 +1050,7 @@ export class EmpleadosController {
             subject,
             html,
             {
-              bcc: ['info@decaminoservicios.com'],
+              bcc: ['info@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
             },
           );
 
@@ -528,7 +1166,7 @@ export class EmpleadosController {
             emailSubject,
             htmlEmail,
             {
-              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com'],
+              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
             },
           );
 
@@ -620,7 +1258,7 @@ export class EmpleadosController {
             subject,
             htmlEmail,
             {
-              bcc: ['info@decaminoservicios.com'],
+              bcc: ['info@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
             },
           );
 
@@ -657,7 +1295,7 @@ export class EmpleadosController {
 
   @Post('send-email')
   @UseGuards(JwtAuthGuard)
-  async sendEmailToEmpleado(@Body() body: any) {
+  async sendEmailToEmpleado(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log('📧 Send email request:', {
         destinatar: body.destinatar,
@@ -678,7 +1316,7 @@ export class EmpleadosController {
         );
       }
 
-      let emailRecipients: Array<{ email: string; nombre: string }> = [];
+      let emailRecipients: Array<{ email: string; nombre: string; codigo: string }> = [];
 
       if (destinatar === 'angajat' && codigo) {
         // Trimite la un angajat specific
@@ -697,9 +1335,33 @@ export class EmpleadosController {
           );
         }
 
-        emailRecipients = [{ email, nombre }];
+        emailRecipients = [{ email, nombre, codigo: String(empleado.CODIGO || codigo) }];
+      } else if (destinatar === 'toti') {
+        // Trimite la TOȚI angajații ACTIVI (indiferent de grup)
+        const empleados = await this.empleadosService.getAllEmpleados();
+        const empleadosActivos = empleados.filter(
+          (e) => (e.ESTADO || e.estado) === 'ACTIVO',
+        );
+
+        emailRecipients = empleadosActivos
+          .map((e) => ({
+            email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
+            nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            codigo: String(e.CODIGO),
+          }))
+          .filter((r) => r.email && r.email.trim() !== '');
+
+        if (emailRecipients.length === 0) {
+          throw new BadRequestException(
+            'Nu s-au găsit angajați activi care au email configurat',
+          );
+        }
+
+        this.logger.log(
+          `📧 Trimite email la TOȚI angajații activi: ${emailRecipients.length} destinatari`,
+        );
       } else if (grup) {
-        // Trimite la toți angajații dintr-un grup
+        // Trimite la toți angajații dintr-un grup (doar cei activi)
         const empleados = await this.empleadosService.getAllEmpleados();
         const empleadosGrupo = empleados.filter(
           (e) =>
@@ -711,6 +1373,7 @@ export class EmpleadosController {
           .map((e) => ({
             email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
             nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            codigo: String(e.CODIGO),
           }))
           .filter((r) => r.email && r.email.trim() !== '');
 
@@ -726,54 +1389,178 @@ export class EmpleadosController {
       }
 
       // Trimite email-uri către toți destinatarii
-      // Folosim secvențial cu delay pentru a nu suprasolicita SMTP (similar cu n8n)
+      // Folosim secvențial cu delay pentru a nu suprasolicita SMTP
+      // Pentru număr mare de destinatari, mărim delay-ul pentru a evita rate limiting
+      const totalRecipients = emailRecipients.length;
+      const delayMs = totalRecipients > 50 ? 1000 : 500; // 1s pentru >50, 500ms pentru mai puțini
+      
+      // Obține userId-ul utilizatorului curent pentru a trimite progresul
+      const currentUserId = user?.CODIGO || user?.codigo || user?.userId || 'unknown';
+      
+      this.logger.log(
+        `📧 Începe trimiterea email-urilor către ${totalRecipients} destinatari (delay: ${delayMs}ms între email-uri)`,
+      );
+
+      // Trimite progres inițial
+      this.notificationsGateway.sendToUser(currentUserId, {
+        type: 'email_progress',
+        total: totalRecipients,
+        current: 0,
+        success: 0,
+        failed: 0,
+        status: 'starting',
+      });
+
+      let successCount = 0;
+      let failedCount = 0;
+
       for (let i = 0; i < emailRecipients.length; i++) {
         const recipient = emailRecipients[i];
 
-        // Template email identic cu n8n
-        const html = `
-          <html>
-            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-              <p>Hola ${recipient.nombre},</p>
-              <div style="white-space: pre-wrap;">
-                ${mesaj.replace(/\n/g, '<br>')}
-              </div>
-              <p>Atentamente:<br>
-              <strong>RRHH</strong><br>
-              DE CAMINO SERVICIOS AUXILIARES SL</p>
-            </body>
-          </html>
-        `;
+        // Template email identic cu n8n - fără indentare pentru a evita spații
+        // Curăță mesajul de spații și linii goale
+        const mesajCleaned = (mesaj || '').trim().split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n');
+        const html = `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${recipient.nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p></body></html>`;
 
         try {
           await this.emailService.sendEmail(recipient.email, subiect, html, {
             bcc: ['decamino.rrhh@gmail.com'],
           });
-          this.logger.log(
-            `✅ Email ${i + 1}/${emailRecipients.length} trimis către ${recipient.email} (${recipient.nombre})`,
-          );
+          successCount++;
+          
+          // Salvează email-ul în BD
+          try {
+            const senderId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: destinatar === 'toti' ? 'toti' : destinatar === 'grup' ? 'grupo' : 'empleado',
+              recipientId: recipient.codigo || undefined,
+              recipientEmail: recipient.email,
+              recipientName: recipient.nombre,
+              subject: subiect,
+              message: html,
+              status: 'sent',
+            });
+          } catch (saveError: any) {
+            // Nu oprește procesul dacă salvarea eșuează
+            this.logger.warn(
+              `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+            );
+          }
+          
+          // Trimite notificare către angajatul care a primit email-ul
+          try {
+            const senderId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+            await this.notificationsService.notifyUser(
+              senderId,
+              recipient.codigo,
+              {
+                type: 'info',
+                title: 'Nuevo correo recibido',
+                message: `Has recibido un correo: ${subiect}`,
+                data: {
+                  subject: subiect,
+                  sender: user?.['NOMBRE / APELLIDOS'] || user?.nombre || 'RRHH',
+                },
+              },
+            );
+            this.logger.log(
+              `📬 Notificare trimisă către angajat ${recipient.codigo} (${recipient.nombre})`,
+            );
+          } catch (notifError: any) {
+            // Nu oprește procesul dacă notificarea eșuează
+            this.logger.warn(
+              `⚠️ Eroare la trimiterea notificării către ${recipient.codigo}: ${notifError.message}`,
+            );
+          }
+          
+          // Trimite progres prin WebSocket la fiecare email sau la fiecare 5 email-uri pentru număr mare
+          const progressInterval = totalRecipients > 20 ? 5 : 1;
+          if ((i + 1) % progressInterval === 0 || i === emailRecipients.length - 1) {
+            this.notificationsGateway.sendToUser(currentUserId, {
+              type: 'email_progress',
+              total: totalRecipients,
+              current: i + 1,
+              success: successCount,
+              failed: failedCount,
+              status: i === emailRecipients.length - 1 ? 'completed' : 'sending',
+            });
+          }
+          
+          // Log progres la fiecare 10 email-uri sau la ultimul
+          if ((i + 1) % 10 === 0 || i === emailRecipients.length - 1) {
+            this.logger.log(
+              `📧 Progres: ${i + 1}/${totalRecipients} email-uri procesate (${successCount} reușite, ${failedCount} eșuate)`,
+            );
+          }
 
-          // Delay între email-uri (500ms) pentru a nu suprasolicita SMTP
+          // Delay între email-uri pentru a nu suprasolicita SMTP
+          // Delay mai mare pentru număr mare de destinatari
           if (i < emailRecipients.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
         } catch (error: any) {
+          failedCount++;
           this.logger.error(
-            `❌ Eroare la trimiterea email-ului către ${recipient.email}:`,
-            error,
+            `❌ Eroare la trimiterea email-ului către ${recipient.email} (${recipient.nombre}):`,
+            error.message || error,
           );
+          
+          // Salvează și email-urile eșuate în BD
+          try {
+            const senderId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: destinatar === 'toti' ? 'toti' : destinatar === 'grup' ? 'grupo' : 'empleado',
+              recipientId: recipient.codigo || undefined,
+              recipientEmail: recipient.email,
+              recipientName: recipient.nombre,
+              subject: subiect,
+              message: html,
+              status: 'failed',
+              errorMessage: error.message || String(error),
+            });
+          } catch (saveError: any) {
+            this.logger.warn(
+              `⚠️ Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
+            );
+          }
+          
+          // Trimite progres și pentru erori
+          if ((i + 1) % 5 === 0 || i === emailRecipients.length - 1) {
+            this.notificationsGateway.sendToUser(currentUserId, {
+              type: 'email_progress',
+              total: totalRecipients,
+              current: i + 1,
+              success: successCount,
+              failed: failedCount,
+              status: 'sending',
+            });
+          }
           // Continuă cu următorul email chiar dacă unul a eșuat
         }
       }
 
+      // Trimite progres final
+      this.notificationsGateway.sendToUser(currentUserId, {
+        type: 'email_progress',
+        total: totalRecipients,
+        current: totalRecipients,
+        success: successCount,
+        failed: failedCount,
+        status: 'completed',
+      });
+
       this.logger.log(
-        `✅ Email trimis către ${emailRecipients.length} destinatari`,
+        `✅ Finalizat: ${successCount} email-uri trimise cu succes, ${failedCount} eșuate din ${totalRecipients} total`,
       );
 
       return {
         success: true,
-        message: `Email trimis către ${emailRecipients.length} destinatari`,
-        destinatari: emailRecipients.length,
+        message: `Email trimis către ${successCount} destinatari${failedCount > 0 ? ` (${failedCount} eșuate)` : ''}`,
+        destinatari: totalRecipients,
+        successCount,
+        failedCount,
       };
     } catch (error: any) {
       this.logger.error('❌ Error sending email:', error);

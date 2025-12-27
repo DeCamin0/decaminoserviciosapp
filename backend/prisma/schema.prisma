@@ -889,3 +889,67 @@ enum retenciones_irpf_categoria {
   CeutaYMelilla
   Antiguo
 }
+
+model SentEmail {
+  id                 String            @id @default(uuid()) @db.VarChar(36)
+  sender_id          String            @map("sender_id") @db.VarChar(50)
+  recipient_type     String            @map("recipient_type") @db.VarChar(50) // 'empleado', 'gestoria', 'grupo', 'toti'
+  recipient_id       String?           @map("recipient_id") @db.VarChar(50) // CODIGO sau null
+  recipient_email    String            @map("recipient_email") @db.VarChar(255)
+  recipient_name     String?           @map("recipient_name") @db.VarChar(255)
+  subject            String            @db.VarChar(500)
+  message            String            @db.Text
+  additional_message String?           @map("additional_message") @db.Text // Mesaj adițional pentru gestorie
+  status             String            @default("sent") @db.VarChar(20) // 'sent', 'failed'
+  error_message      String?           @map("error_message") @db.Text
+  scheduled_message_id String?         @map("scheduled_message_id") @db.VarChar(36) // ID-ul mesajului automat (dacă este trimis de cron)
+  created_at         DateTime          @default(now()) @map("created_at") @db.Timestamp(0)
+  sent_at            DateTime?         @map("sent_at") @db.Timestamp(0)
+  attachments        EmailAttachment[]
+
+  @@index([sender_id], map: "idx_sent_email_sender")
+  @@index([recipient_type, recipient_id], map: "idx_sent_email_recipient")
+  @@index([recipient_email], map: "idx_sent_email_recipient_email")
+  @@index([created_at], map: "idx_sent_email_created")
+  @@index([status], map: "idx_sent_email_status")
+  @@index([scheduled_message_id], map: "idx_sent_email_scheduled_message")
+  @@map("sent_emails")
+}
+
+model EmailAttachment {
+  id          String     @id @default(uuid()) @db.VarChar(36)
+  email_id    String     @map("email_id") @db.VarChar(36)
+  filename    String     @db.VarChar(255)
+  file_content Bytes     @map("file_content")
+  mime_type   String     @map("mime_type") @db.VarChar(100)
+  file_size   Int?       @map("file_size") // Size în bytes
+  created_at  DateTime   @default(now()) @map("created_at") @db.Timestamp(0)
+  email       SentEmail  @relation(fields: [email_id], references: [id], onDelete: Cascade, map: "fk_email_attachment_email")
+
+  @@index([email_id], map: "idx_email_attachment_email")
+  @@map("email_attachments")
+}
+
+model ScheduledMessage {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  name              String   @db.VarChar(255) // Nume descriptiv pentru mesaj
+  recipient_type    String   @map("recipient_type") @db.VarChar(50) // 'empleado', 'toti', 'grupo', 'gestoria'
+  recipient_id      String?  @map("recipient_id") @db.VarChar(50) // CODIGO sau GRUPO
+  recipient_email   String?  @map("recipient_email") @db.VarChar(255) // Pentru gestoria
+  subject           String   @db.VarChar(500)
+  message           String   @db.Text
+  additional_message String? @map("additional_message") @db.Text
+  is_active         Boolean  @default(true) @map("is_active") // Dacă mesajul este activ
+  start_date        DateTime @map("start_date") @db.Date // Data de început
+  end_date          DateTime @map("end_date") @db.Date // Data de sfârșit (ex: 2025-01-01)
+  send_time         String   @map("send_time") @db.VarChar(10) // Ora de trimitere (ex: "09:00")
+  last_sent_at      DateTime? @map("last_sent_at") @db.Timestamp(0) // Ultima dată când a fost trimis
+  created_by        String   @map("created_by") @db.VarChar(50) // CODIGO utilizatorului care a creat
+  created_at        DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@index([is_active, end_date], map: "idx_scheduled_message_active_end")
+  @@index([start_date, end_date], map: "idx_scheduled_message_dates")
+  @@index([created_by], map: "idx_scheduled_message_created_by")
+  @@map("scheduled_messages")
+}

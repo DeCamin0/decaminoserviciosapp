@@ -11,6 +11,7 @@ import { routes } from '../utils/routes';
 import Back3DButton from '../components/Back3DButton.jsx';
 import EmployeePDFGenerator from '../components/employees/EmployeePDFGenerator.jsx';
 import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 import activityLogger from '../utils/activityLogger';
 
@@ -285,6 +286,9 @@ export default function EmpleadosPage() {
   const [addSuccess, setAddSuccess] = useState(false);
   const [enviarAGestoria, setEnviarAGestoria] = useState(false);
   const [enviarAGestoriaEdit, setEnviarAGestoriaEdit] = useState(false); // Pentru modalul de editare
+  const [retrimiteFichaEdit, setRetrimiteFichaEdit] = useState(false); // Checkbox pentru retrimitere ficha în editare
+  const [mensajeAdicionalGestoria, setMensajeAdicionalGestoria] = useState(''); // Mesaj adițional pentru gestorie
+  const [archivosGestoria, setArchivosGestoria] = useState([]); // Fișiere multiple pentru gestorie
 
   // Estado para dropdowns de centro de trabajo
   const [showCentroDropdown, setShowCentroDropdown] = useState(false);
@@ -340,6 +344,10 @@ export default function EmpleadosPage() {
   const [emailError, setEmailError] = useState(null);
   const [emailSuccess, setEmailSuccess] = useState(false);
   const [selectedUserForEmail, setSelectedUserForEmail] = useState(null);
+  const [emailProgress, setEmailProgress] = useState(null); // { total, current, success, failed, status }
+  
+  // WebSocket pentru progres email
+  const { socket } = useWebSocket('/notifications');
 
   // State pentru lista de clienți
   const [clientes, setClientes] = useState([]);
@@ -1013,32 +1021,55 @@ export default function EmpleadosPage() {
 
   // Funcția pentru succesul PDF
   const handlePDFSuccess = async () => {
-    // Log crearea utilizatorului
-    await activityLogger.logAction('user_created_with_pdf', {
-      user: addForm['NOMBRE / APELLIDOS'],
-      email: addForm['CORREO ELECTRONICO'],
-      codigo: addForm.CODIGO,
-      created_by: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
-      created_by_email: authUser?.email,
-      pdf_generated: true
-    });
-    
-    setAddForm({
-      ...Object.fromEntries(SHEET_FIELDS.map(f => [f, ''])),
-      CODIGO: generateCodigo(),
-      EMPRESA: 'DE CAMINO SERVICIOS AUXILIARES SL',
-      ESTADO: 'PENDIENTE', // Default pentru angajați noi
-      DerechoPedidos: 'NO',
-      TrabajaFestivos: 'NO'
-    });
-    setAddSuccess(true);
-    setShowPDFModal(false);
-    setPdfEmployeeData(null);
-    
-    // Reîncarcă lista după adăugare cu cleanup
-    const reloadTimeoutId = setTimeout(() => fetchUsers(), 1000);
-    // Cleanup timeout-ul dacă componenta se unmount
-    return () => clearTimeout(reloadTimeoutId);
+    // Verifică dacă este pentru retrimitere ficha din editare
+    if (retrimiteFichaEdit && pdfEmployeeData) {
+      // Log retrimiterea fichei
+      await activityLogger.logAction('ficha_retrimisa_gestoria', {
+        empleado: pdfEmployeeData['NOMBRE / APELLIDOS'] || pdfEmployeeData.CODIGO,
+        codigo: pdfEmployeeData.CODIGO,
+        user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        email: authUser?.email,
+      });
+      
+      setAddSuccess(true);
+      setShowPDFModal(false);
+      setPdfEmployeeData(null);
+      setEnviarAGestoria(false);
+      setMensajeAdicionalGestoria('');
+      setArchivosGestoria([]);
+      setShowEditModal(false);
+      setRetrimiteFichaEdit(false);
+      
+      // Reîncarcă lista după retrimitere ficha
+      setTimeout(() => fetchUsers(), 500);
+    } else {
+      // Log crearea utilizatorului (pentru adăugare nouă)
+      await activityLogger.logAction('user_created_with_pdf', {
+        user: addForm['NOMBRE / APELLIDOS'],
+        email: addForm['CORREO ELECTRONICO'],
+        codigo: addForm.CODIGO,
+        created_by: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        created_by_email: authUser?.email,
+        pdf_generated: true
+      });
+      
+      setAddForm({
+        ...Object.fromEntries(SHEET_FIELDS.map(f => [f, ''])),
+        CODIGO: generateCodigo(),
+        EMPRESA: 'DE CAMINO SERVICIOS AUXILIARES SL',
+        ESTADO: 'PENDIENTE', // Default pentru angajați noi
+        DerechoPedidos: 'NO',
+        TrabajaFestivos: 'NO'
+      });
+      setAddSuccess(true);
+      setShowPDFModal(false);
+      setPdfEmployeeData(null);
+      
+      // Reîncarcă lista după adăugare cu cleanup
+      const reloadTimeoutId = setTimeout(() => fetchUsers(), 1000);
+      // Cleanup timeout-ul dacă componenta se unmount
+      return () => clearTimeout(reloadTimeoutId);
+    }
   };
 
   // Funcția pentru eroarea PDF
@@ -1052,7 +1083,7 @@ export default function EmpleadosPage() {
     setAddLoading(true);
     
     try {
-      console.log('🔍 [handleEditUser] editForm:', editForm);
+      console.log('🔍 [handleEditUser] EDITANDO empleado:', editForm);
       console.log('🔍 [handleEditUser] CODIGO:', editForm?.CODIGO);
       console.log('🔍 [handleEditUser] Body stringified:', JSON.stringify(editForm));
 
@@ -1070,7 +1101,7 @@ export default function EmpleadosPage() {
         fetchHeaders['Authorization'] = `Bearer ${token}`;
       }
 
-      // Construiește body-ul pentru request, incluzând parametrii pentru email
+      // Construiește body-ul pentru EDITARE (PUT request), incluzând parametrii pentru email
       const updateBody = { ...editForm };
       
       // Dacă trebuie să trimitem email la gestorie, adaugă parametrii necesari
@@ -1119,15 +1150,16 @@ export default function EmpleadosPage() {
         updateBody.updatedBy = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema';
       }
 
+      // EDITARE angajat (PUT request) - nu salvare (POST)
       const response = await fetch(API_ENDPOINTS.UPDATE_USER, {
-        method: 'PUT',
+        method: 'PUT', // PUT = EDITARE, nu POST = salvare
         headers: fetchHeaders,
         body: JSON.stringify(updateBody)
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ [handleEditUser] Error response:', errorText);
+        console.error('❌ [handleEditUser] Error al EDITAR empleado:', errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -1137,7 +1169,9 @@ export default function EmpleadosPage() {
       const normalizedSuccess = result?.success === true;
 
       if (normalizedSuccess) {
-        // Log actualizarea utilizatorului
+        console.log('✅ [handleEditUser] Empleado EDITADO correctamente');
+        
+        // Log EDITAREA utilizatorului (nu salvare)
         await activityLogger.logAction('user_updated', {
           user: editForm['NOMBRE / APELLIDOS'],
           email: editForm['CORREO ELECTRONICO'],
@@ -1151,16 +1185,80 @@ export default function EmpleadosPage() {
         // - TO: altemprado@gmail.com (gestoria)
         // - BCC: info@decaminoservicios.com, mirisjm@gmail.com
         
-        setShowEditModal(false);
-        setEnviarAGestoriaEdit(false); // Reset checkbox după salvare
-        setOriginalEmployeeData(null); // Reset datele originale după salvare
-        // Reîncarcă lista după editare
-        setTimeout(() => fetchUsers(), 500);
+        // Dacă checkbox-ul "Retrimite Ficha" este bifat, DUPĂ EDITARE se trimite ficha la gestorie
+        if (retrimiteFichaEdit && editForm.CODIGO) {
+          console.log('📄 [handleEditUser] Retrimite ficha a gestoria (después de editar)');
+          try {
+            // Generează mesajul automat bazat pe modificări
+            let mensajeRetrimite = '';
+            if (originalEmployeeData) {
+              const fechaAltaAnterior = originalEmployeeData['FECHA DE ALTA'] || originalEmployeeData.FECHA_DE_ALTA || '';
+              const fechaAltaNueva = editForm['FECHA DE ALTA'] || editForm.FECHA_DE_ALTA || '';
+              
+              if (fechaAltaAnterior !== fechaAltaNueva) {
+                mensajeRetrimite = `Vamos a volver a dar de alta a este empleado.\n\n`;
+                mensajeRetrimite += `Fecha de alta anterior: ${fechaAltaAnterior}\n`;
+                mensajeRetrimite += `Fecha de alta nueva: ${fechaAltaNueva}\n\n`;
+              }
+              
+              // Verifică și alte modificări importante
+              const camposImportantes = ['D.N.I. / NIE', 'SEG. SOCIAL', 'Nº Cuenta', 'NACIONALIDAD'];
+              const cambiosImportantes = [];
+              camposImportantes.forEach(campo => {
+                const valorAnterior = originalEmployeeData[campo] || '';
+                const valorNuevo = editForm[campo] || '';
+                if (String(valorAnterior).trim() !== String(valorNuevo).trim()) {
+                  cambiosImportantes.push(`${campo}: ${valorAnterior} → ${valorNuevo}`);
+                }
+              });
+              
+              if (cambiosImportantes.length > 0) {
+                mensajeRetrimite += `Otros cambios importantes:\n${cambiosImportantes.join('\n')}\n\n`;
+              }
+              
+              if (!mensajeRetrimite) {
+                mensajeRetrimite = `Se ha actualizado la información del empleado ${editForm['NOMBRE / APELLIDOS'] || editForm.CODIGO}.\n\nPor favor, revisa la ficha adjunta con los datos actualizados.`;
+              }
+              
+              mensajeRetrimite += `\nActualizado por: ${authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema'}\nFecha: ${new Date().toLocaleString('es-ES')}`;
+            } else {
+              mensajeRetrimite = `Se ha actualizado la información del empleado ${editForm['NOMBRE / APELLIDOS'] || editForm.CODIGO}.\n\nPor favor, revisa la ficha adjunta con los datos actualizados.`;
+            }
+            
+            // Folosește EmployeePDFGenerator pentru a genera și trimite ficha
+            setPdfEmployeeData({ ...editForm });
+            setEnviarAGestoria(true);
+            setMensajeAdicionalGestoria(mensajeRetrimite);
+            setArchivosGestoria([]);
+            setShowPDFModal(true);
+            // Nu închidem modalul încă, așteptăm confirmarea trimiterii fichei
+            // Reset checkbox-uri și date originale (modalul se va închide după trimiterea fichei)
+            setEnviarAGestoriaEdit(false);
+            setOriginalEmployeeData(null);
+          } catch (error) {
+            console.error('Error al retrimite ficha:', error);
+            setAddError('Error al retrimite ficha a gestoria. El empleado se ha EDITADO correctamente.');
+            setShowEditModal(false);
+            setRetrimiteFichaEdit(false);
+            setEnviarAGestoriaEdit(false);
+            setOriginalEmployeeData(null);
+            setTimeout(() => fetchUsers(), 500);
+          }
+        } else {
+          // Dacă nu se retrimite ficha, închidem modalul normal după EDITARE
+          setShowEditModal(false);
+          setEnviarAGestoriaEdit(false); // Reset checkbox după editare
+          setRetrimiteFichaEdit(false); // Reset checkbox retrimite ficha
+          setOriginalEmployeeData(null); // Reset datele originale după editare
+          // Reîncarcă lista după editare
+          setTimeout(() => fetchUsers(), 500);
+        }
       } else {
-        setAddError('No se pudo actualizar el usuario.');
+        setAddError('No se pudo EDITAR el empleado.');
       }
     } catch (e) {
-      setAddError('No se pudo actualizar el usuario.');
+      console.error('❌ [handleEditUser] Error al EDITAR empleado:', e);
+      setAddError('No se pudo EDITAR el empleado.');
     } finally {
       // Asigură deblocarea butonului în toate cazurile
       setAddLoading(false);
@@ -1416,8 +1514,47 @@ export default function EmpleadosPage() {
     setEditForm(mappedUser);
     setOriginalEmployeeData({ ...mappedUser }); // Salvează datele originale pentru comparație
     setEnviarAGestoriaEdit(false); // Reset checkbox la deschiderea modalului
+    setRetrimiteFichaEdit(false); // Reset checkbox retrimite ficha
     setShowEditModal(true);
   };
+
+  // Ascultă progresul email-urilor prin WebSocket
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleEmailProgress = (notification) => {
+      // Verifică dacă este un eveniment de progres email
+      if (notification.type === 'email_progress') {
+        console.log('📧 [Email Progress]', notification);
+        setEmailProgress({
+          total: notification.total,
+          current: notification.current,
+          success: notification.success,
+          failed: notification.failed,
+          status: notification.status, // 'starting', 'sending', 'completed'
+        });
+
+        // Dacă s-a finalizat, așteaptă puțin și apoi închide modalul
+        if (notification.status === 'completed') {
+          setTimeout(() => {
+            setEmailSuccess(true);
+            setEmailProgress(null);
+            setTimeout(() => {
+              setShowEmailModal(false);
+              setEmailSuccess(false);
+              setEmailProgress(null);
+            }, 2000);
+          }, 1000);
+        }
+      }
+    };
+
+    socket.on('notification', handleEmailProgress);
+
+    return () => {
+      socket.off('notification', handleEmailProgress);
+    };
+  }, [socket]);
 
   // Funcții pentru email
   const openEmailModal = (user) => {
@@ -1431,12 +1568,14 @@ export default function EmpleadosPage() {
     });
     setEmailError(null);
     setEmailSuccess(false);
+    setEmailProgress(null); // Reset progres
     setShowEmailModal(true);
   };
 
   const handleSendEmail = async () => {
     setEmailError(null);
     setEmailSuccess(false);
+    setEmailProgress(null); // Reset progres
     
     if (!emailForm.mensaje.trim()) {
       setEmailError('Por favor, escribe un mensaje.');
@@ -1480,30 +1619,38 @@ export default function EmpleadosPage() {
           subiect: emailForm.subiect,
           codigo: emailForm.destinatar === 'angajat' ? selectedUserForEmail?.CODIGO : undefined,
           user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
-          email: authUser?.email
+          email: authUser?.email,
+          total: result.destinatari,
+          successCount: result.successCount,
+          failedCount: result.failedCount,
         });
         
-        setEmailSuccess(true);
-        setEmailForm({
-          destinatar: 'angajat',
-          grup: 'Empleado',
-          subiect: '',
-          mensaje: ''
-        });
-        const emailTimeoutId = setTimeout(() => {
-          setShowEmailModal(false);
-          setEmailSuccess(false);
-        }, 2000);
-        // Cleanup timeout-ul dacă componenta se unmount
-        return () => clearTimeout(emailTimeoutId);
+        // Nu închidem modalul imediat - așteptăm progresul prin WebSocket
+        // Progresul va fi gestionat de useEffect-ul care ascultă WebSocket-ul
+        setEmailLoading(false);
+        
+        // Dacă nu există progres (pentru cazurile simple cu 1 email), închidem modalul
+        if (!emailProgress && result.destinatari <= 1) {
+          setEmailSuccess(true);
+          setEmailForm({
+            destinatar: 'angajat',
+            grup: 'Empleado',
+            subiect: '',
+            mensaje: ''
+          });
+          setTimeout(() => {
+            setShowEmailModal(false);
+            setEmailSuccess(false);
+          }, 2000);
+        }
       } else {
         setEmailError('Ha ocurrido un problema al enviar el correo.');
+        setEmailLoading(false);
       }
     } catch (error) {
       setEmailError('No se pudo enviar el correo.');
+      setEmailLoading(false);
     }
-    
-    setEmailLoading(false);
   };
 
   return (
@@ -2601,7 +2748,14 @@ export default function EmpleadosPage() {
                 <input
                   type="checkbox"
                   checked={enviarAGestoria}
-                  onChange={(e) => setEnviarAGestoria(e.target.checked)}
+                  onChange={(e) => {
+                    setEnviarAGestoria(e.target.checked);
+                    if (!e.target.checked) {
+                      // Reset câmpurile când se debifează
+                      setMensajeAdicionalGestoria('');
+                      setArchivosGestoria([]);
+                    }
+                  }}
                   className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                 />
                 <span className="text-sm font-medium text-gray-700">
@@ -2609,6 +2763,56 @@ export default function EmpleadosPage() {
                 </span>
               </label>
             </div>
+
+            {/* Câmpuri adiționale pentru gestorie (doar când checkbox-ul este bifat) */}
+            {enviarAGestoria && (
+              <div className="mt-6 space-y-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mensaje Adicional (opcional)
+                  </label>
+                  <textarea
+                    value={mensajeAdicionalGestoria}
+                    onChange={(e) => setMensajeAdicionalGestoria(e.target.value)}
+                    placeholder="Escribe un mensaje adicional que se enviará junto con el PDF..."
+                    rows={4}
+                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Archivos Adicionales (opcional)
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setArchivosGestoria(files);
+                    }}
+                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  {archivosGestoria.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {archivosGestoria.map((file, idx) => (
+                        <div key={idx} className="text-sm text-gray-600 flex items-center justify-between bg-white p-2 rounded">
+                          <span>📎 {file.name}</span>
+                          <button
+                            onClick={() => {
+                              setArchivosGestoria(archivosGestoria.filter((_, i) => i !== idx));
+                            }}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             
             <div className="mt-6 text-center">
               <Button
@@ -3176,8 +3380,8 @@ export default function EmpleadosPage() {
               </div>
             </div>
             
-            {/* Checkbox pentru "Enviar a Gestoria" */}
-            <div className="px-6 pb-4 flex items-center justify-center border-t border-gray-200">
+            {/* Checkbox-uri pentru "Enviar a Gestoria" și "Retrimite Ficha" */}
+            <div className="px-6 pb-4 flex flex-col gap-3 border-t border-gray-200">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -3189,6 +3393,24 @@ export default function EmpleadosPage() {
                   📧 Enviar a Gestoria
                 </span>
               </label>
+              
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={retrimiteFichaEdit}
+                  onChange={(e) => setRetrimiteFichaEdit(e.target.checked)}
+                  disabled={!editForm.CODIGO}
+                  className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  📄 Retrimite Ficha a Gestoria
+                </span>
+                {retrimiteFichaEdit && (
+                  <span className="text-xs text-purple-600 italic">
+                    (Se enviará automáticamente al guardar)
+                  </span>
+                )}
+              </label>
             </div>
             
             {/* Footer cu butoane ULTRA MODERN */}
@@ -3198,6 +3420,7 @@ export default function EmpleadosPage() {
                 onClick={() => {
                   setShowEditModal(false);
                   setEnviarAGestoriaEdit(false); // Reset checkbox la închidere
+                  setRetrimiteFichaEdit(false); // Reset checkbox retrimite ficha
                   setOriginalEmployeeData(null); // Reset datele originale
                 }}
                 className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-white border-2 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900"
@@ -3428,8 +3651,47 @@ export default function EmpleadosPage() {
             </div>
           </div>
 
+          {/* Bară de progres pentru trimiterea email-urilor */}
+          {emailProgress && (
+            <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-blue-900">
+                    {emailProgress.status === 'starting' && '⏳ Pregătire...'}
+                    {emailProgress.status === 'sending' && '📧 Se trimit email-uri...'}
+                    {emailProgress.status === 'completed' && '✅ Finalizat!'}
+                  </span>
+                  <span className="text-sm font-bold text-blue-700">
+                    {emailProgress.current} / {emailProgress.total}
+                  </span>
+                </div>
+                
+                {/* Bară de progres */}
+                <div className="w-full bg-blue-200 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-300 ease-out"
+                    style={{
+                      width: `${(emailProgress.current / emailProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+                
+                {/* Statistici */}
+                <div className="mt-3 flex items-center justify-between text-xs text-blue-700">
+                  <span>✅ Reușite: {emailProgress.success}</span>
+                  {emailProgress.failed > 0 && (
+                    <span className="text-red-600">❌ Eșuate: {emailProgress.failed}</span>
+                  )}
+                  <span className="font-semibold">
+                    {Math.round((emailProgress.current / emailProgress.total) * 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Mensajes de feedback moderno */}
-          {emailError && (
+          {emailError && !emailProgress && (
             <div className="mt-6 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
@@ -3443,7 +3705,7 @@ export default function EmpleadosPage() {
             </div>
           )}
           
-          {emailSuccess && (
+          {emailSuccess && !emailProgress && (
             <div className="mt-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
@@ -3473,7 +3735,8 @@ export default function EmpleadosPage() {
             onClick={handleSendEmail}
             variant="primary"
             size="lg"
-            loading={emailLoading}
+            loading={emailLoading || (emailProgress && emailProgress.status !== 'completed')}
+            disabled={emailLoading || (emailProgress && emailProgress.status !== 'completed')}
             disabled={emailLoading}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg"
           >
@@ -3497,6 +3760,9 @@ export default function EmpleadosPage() {
         employeeData={pdfEmployeeData}
         createdBy={authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre}
         enviarAGestoria={enviarAGestoria}
+        mensajeAdicional={mensajeAdicionalGestoria}
+        archivosAdicionales={archivosGestoria}
+        isRetrimitere={showEditModal && pdfEmployeeData ? true : false}
         onSuccess={handlePDFSuccess}
         onError={handlePDFError}
         showModal={showPDFModal}

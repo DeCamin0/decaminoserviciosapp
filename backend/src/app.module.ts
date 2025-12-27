@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from './config/config.module';
@@ -67,10 +68,16 @@ import { CatalogoController } from './controllers/catalogo.controller';
 import { CatalogoService } from './services/catalogo.service';
 import { PedidosController } from './controllers/pedidos.controller';
 import { PedidosService } from './services/pedidos.service';
+import { SentEmailsController } from './controllers/sent-emails.controller';
+import { SentEmailsService } from './services/sent-emails.service';
+import { ScheduledMessagesController } from './controllers/scheduled-messages.controller';
+import { ScheduledMessagesService } from './services/scheduled-messages.service';
+import { ScheduledMessagesCronService } from './services/scheduled-messages-cron.service';
 
 @Module({
   imports: [
     ConfigModule,
+    ScheduleModule.forRoot(), // Pentru cron jobs
     AuthModule,
     NotificationsModule,
     PrismaModule,
@@ -109,6 +116,8 @@ import { PedidosService } from './services/pedidos.service';
     EstadisticasController,
     CatalogoController,
     PedidosController,
+    SentEmailsController,
+    ScheduledMessagesController,
   ],
   providers: [
     AppService,
@@ -142,6 +151,9 @@ import { PedidosService } from './services/pedidos.service';
     EstadisticasService,
     CatalogoService,
     PedidosService,
+    SentEmailsService,
+    ScheduledMessagesService,
+    ScheduledMessagesCronService,
   ],
 })
 export class AppModule {}

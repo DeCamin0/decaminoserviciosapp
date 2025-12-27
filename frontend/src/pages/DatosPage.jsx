@@ -709,8 +709,17 @@ const [editLoading, setEditLoading] = useState(false);
         headers['Authorization'] = `Bearer ${token}`;
       }
       
+      console.log('🔍 [DatosPage] Fetching user data:', {
+        endpoint,
+        hasToken: !!token,
+        tokenLength: token?.length || 0,
+        headers: Object.keys(headers)
+      });
+      
       const res = await fetch(endpoint, {
-        headers
+        method: 'GET',
+        headers,
+        cache: 'no-store', // Forțează request fresh, fără cache
       });
       
       if (!res.ok) {

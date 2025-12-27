@@ -1191,7 +1191,13 @@ export default function SolicitudesPage() {
       // Para todos los usuarios (empleado y manager) - solicitudes personales
       const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
       const url = `${ENDPOINT}?email=${encodeURIComponent(email)}&codigo=${encodeURIComponent(userCode)}`;
-      console.log('DEBUG solicitari fetch url:', url);
+      console.log('🔍 [SolicitudesPage] Fetching solicitudes:', {
+        url,
+        endpoint: ENDPOINT,
+        email,
+        userCode,
+        hasAuthUser: !!authUser
+      });
       const result = await callApi(url);
       if (result.success) {
         const data = Array.isArray(result.data) ? result.data : [result.data];

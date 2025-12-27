@@ -37,6 +37,7 @@ export const useApi = () => {
 
       const response = await fetch(url, {
         headers,
+        cache: 'no-store', // Forțează request fresh, fără cache (important pentru PWA)
         ...options,
       });
 

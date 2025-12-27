@@ -286,6 +286,20 @@ export const AuthProvider = ({ children }) => {
       const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
       debug('AuthContext - localStorage.DerechoPedidos:', savedUser.DerechoPedidos);
 
+      // Șterge cache-urile API după login nou (pentru a forța refresh-ul datelor)
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (event) => {
+          if (event.data && event.data.success) {
+            console.log('[AuthContext] API cache cleared after login');
+          }
+        };
+        navigator.serviceWorker.controller.postMessage(
+          { type: 'CLEAR_API_CACHE' },
+          [channel.port2]
+        );
+      }
+
       // Log login (con delay para evitar requests simultáneos)
       // Folosește setTimeout cu cleanup pentru a preveni memory leaks
       setTimeout(() => {
@@ -314,6 +328,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Helper pentru a șterge cache-urile API din Service Worker
+  const clearAPICache = () => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (event) => {
+        if (event.data && event.data.success) {
+          console.log('[AuthContext] API cache cleared successfully');
+        }
+      };
+      navigator.serviceWorker.controller.postMessage(
+        { type: 'CLEAR_API_CACHE' },
+        [channel.port2]
+      );
+    }
+  };
+
   const logout = async () => {
     // Log logout (non-blocking, nu așteaptă)
     if (user) {
@@ -321,6 +351,9 @@ export const AuthProvider = ({ children }) => {
         console.error('Error logging logout:', error);
       });
     }
+    
+    // Șterge cache-urile API înainte de logout
+    clearAPICache();
     
     // Navighează imediat fără să aștepte logging-ul
     setUser(null);
