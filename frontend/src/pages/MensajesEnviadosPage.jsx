@@ -47,6 +47,18 @@ export default function MensajesEnviadosPage() {
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   
+  // Helper function pentru traducerea tipului de destinatar
+  const translateRecipientType = (type) => {
+    if (!type) return '';
+    const translations = {
+      'toti': 'Todos los Empleados',
+      'empleado': 'Empleado',
+      'grupo': 'Grupo',
+      'gestoria': 'Gestoria',
+    };
+    return translations[type] || type;
+  };
+
   // State pentru liste
   const [empleados, setEmpleados] = useState([]);
   const [grupos, setGrupos] = useState([]);
@@ -1066,7 +1078,7 @@ export default function MensajesEnviadosPage() {
                             {email.recipient_name || email.recipient_email}
                           </td>
                           <td className="border border-gray-300 px-4 py-2">{email.subject}</td>
-                          <td className="border border-gray-300 px-4 py-2">{email.recipient_type}</td>
+                          <td className="border border-gray-300 px-4 py-2">{translateRecipientType(email.recipient_type)}</td>
                           <td className="border border-gray-300 px-4 py-2">
                             <span className={`px-2 py-1 rounded text-sm ${
                               email.status === 'sent' 

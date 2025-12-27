@@ -356,20 +356,8 @@ export default function CuadrantesPage() {
     );
   }, [centros, centroSearchTermLista]);
 
-  // Reset search term când se schimbă selectedCentro din altă parte
-  useEffect(() => {
-    if (selectedCentro && !centroSearchTerm && !centroSearchTermLista) {
-      // Nu face nimic dacă search term-ul este deja gol
-      return;
-    }
-    // Dacă selectedCentro se schimbă și nu este în search term, resetează search term-urile
-    if (selectedCentro && centroSearchTerm && centroSearchTerm !== selectedCentro) {
-      setCentroSearchTerm('');
-    }
-    if (selectedCentro && centroSearchTermLista && centroSearchTermLista !== selectedCentro) {
-      setCentroSearchTermLista('');
-    }
-  }, [selectedCentro, centroSearchTerm, centroSearchTermLista]);
+  // Nu mai sincronizăm automat search term-urile cu selectedCentro
+  // pentru a permite utilizatorului să șteargă complet textul și să facă o nouă căutare
   const [horariosCentros, setHorariosCentros] = useState([]);
   const [horariosGrupos, setHorariosGrupos] = useState([]);
   const [settings, setSettings] = useState({});
@@ -1129,6 +1117,15 @@ export default function CuadrantesPage() {
             console.log(`✅ Match centro: "${centroTrabajo}" === "${selectedCentro}"`);
           }
           return centroMatch;
+        })
+        .filter(a => {
+          // Filtrează doar angajații activi
+          const estado = (a['ESTADO'] || a.estado || '').toString().trim().toUpperCase();
+          const isActivo = estado === 'ACTIVO';
+          if (!isActivo) {
+            console.log(`❌ Empleado inactivo excluido: ${a['NOMBRE / APELLIDOS']} (ESTADO: ${estado})`);
+          }
+          return isActivo;
         })
         .filter(a => {
           // Pentru manageri nu excludem utilizatorul curent
@@ -2504,11 +2501,12 @@ export default function CuadrantesPage() {
                   id="generar-centro"
                   name="centro"
                     type="text"
-                    value={centroSearchTerm || selectedCentro}
+                    value={centroSearchTerm}
                     onChange={(e) => {
-                      setCentroSearchTerm(e.target.value);
+                      const newValue = e.target.value;
+                      setCentroSearchTerm(newValue);
                       setCentroDropdownOpen(true);
-                      if (!e.target.value) {
+                      if (!newValue.trim()) {
                         setSelectedCentro('');
                       }
                     }}
@@ -2527,7 +2525,7 @@ export default function CuadrantesPage() {
                           key={centro}
                           onClick={() => {
                             setSelectedCentro(centro);
-                            setCentroSearchTerm('');
+                            setCentroSearchTerm(centro);
                             setCentroDropdownOpen(false);
                           }}
                           className="p-2 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
@@ -3675,13 +3673,14 @@ export default function CuadrantesPage() {
                   id="lista-centro"
                   name="listaCentro"
                     type="text"
-                    value={centroSearchTermLista || selectedCentro}
+                    value={centroSearchTermLista}
                   onChange={(e) => {
-                      setCentroSearchTermLista(e.target.value);
+                      const newValue = e.target.value;
+                      setCentroSearchTermLista(newValue);
                       setCentroDropdownOpenLista(true);
-                      if (!e.target.value) {
+                      if (!newValue.trim()) {
                         setSelectedCentro('');
-                    setSelectedEmpleado('');
+                        setSelectedEmpleado('');
                       }
                     }}
                     onFocus={() => setCentroDropdownOpenLista(true)}
@@ -3700,7 +3699,7 @@ export default function CuadrantesPage() {
                           onClick={() => {
                             setSelectedCentro(centro);
                             setSelectedEmpleado('');
-                            setCentroSearchTermLista('');
+                            setCentroSearchTermLista(centro);
                             setCentroDropdownOpenLista(false);
                           }}
                           className="p-3 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"

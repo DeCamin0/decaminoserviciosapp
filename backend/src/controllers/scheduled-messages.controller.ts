@@ -126,15 +126,102 @@ export class ScheduledMessagesController {
         throw new BadRequestException('Mesaj automat nu a fost găsit');
       }
 
-      // Obține toate email-urile trimise pentru acest mesaj automat
+      // Obține tipul de destinatar și alte informații necesare
+      const recipientType = message.recipient_type || (message as any).recipientType;
+      const messageSubject = message.subject || (message as any).subject;
+      const messageStartDate = new Date(message.start_date || (message as any).startDate);
+      const messageEndDate = new Date(message.end_date || (message as any).endDate);
+      const messageCreatedBy = message.created_by || (message as any).createdBy;
+
+      // Obține email-urile asociate direct cu mesajul automat (cu scheduled_message_id)
       const sentEmails = await this.sentEmailsService.getSentEmails({
         scheduledMessageId: id,
       });
 
-      const relevantEmails = sentEmails.emails || [];
+      let relevantEmails = sentEmails.emails || [];
+
+      // Căută și email-uri similare fără scheduled_message_id
+      // (același subject, recipient_type, sender, și dată în perioada mesajului automat)
+      this.logger.log(`📊 Email-uri găsite cu scheduled_message_id: ${relevantEmails.length}`);
+      
+      // Căută toate email-urile cu același recipient_type (fără scheduledMessageId pentru a găsi și cele fără)
+      const allEmailsByType = await this.sentEmailsService.getSentEmails({
+        recipientType: recipientType,
+        limit: 10000, // Obține toate email-urile de acest tip
+      });
+
+      this.logger.log(`📊 Total email-uri cu recipient_type="${recipientType}": ${(allEmailsByType.emails || []).length}`);
+      this.logger.log(`📊 Căutăm email-uri cu: subject="${messageSubject}", sender="${messageCreatedBy}", interval=[${messageStartDate.toISOString()}, ${messageEndDate.toISOString()}]`);
+
+      // Filtrează email-uri similare (același subject, recipient_type, și dată în perioada mesajului automat)
+      // Include toate email-urile care se potrivesc cu criteriile, indiferent de scheduled_message_id
+      // (cele cu scheduled_message_id corect sunt deja în relevantEmails și vor fi eliminate ca duplicate)
+      let filteredBySubject = 0;
+      let filteredByDate = 0;
+      let alreadyInRelevant = 0;
+      
+      const similar = (allEmailsByType.emails || []).filter((se: any) => {
+        // Exclude doar cele care sunt deja în relevantEmails (au scheduled_message_id = id)
+        if (se.scheduled_message_id === id) {
+          alreadyInRelevant++;
+          return false;
+        }
+        
+        // Trebuie să aibă același subject (comparare case-insensitive și trimmed)
+        const seSubject = (se.subject || '').trim();
+        const msgSubject = (messageSubject || '').trim();
+        if (seSubject.toLowerCase() !== msgSubject.toLowerCase()) {
+          filteredBySubject++;
+          return false;
+        }
+        
+        // Trebuie să aibă același recipient_type
+        if (se.recipient_type !== recipientType) {
+          return false;
+        }
+        
+        // Verifică dacă email-ul a fost trimis în perioada mesajului automat
+        // Extindem intervalul cu 1 zi înainte și după pentru a prinde email-uri trimise aproape de limite
+        const extendedStartDate = new Date(messageStartDate);
+        extendedStartDate.setDate(extendedStartDate.getDate() - 1);
+        const extendedEndDate = new Date(messageEndDate);
+        extendedEndDate.setDate(extendedEndDate.getDate() + 1);
+        
+        const emailDate = new Date(se.created_at);
+        const isInDateRange = emailDate >= extendedStartDate && emailDate <= extendedEndDate;
+        if (!isInDateRange) {
+          filteredByDate++;
+          return false;
+        }
+        
+        return true;
+      });
+
+      this.logger.log(`📊 Filtrare detaliată: exclude already_in_relevant=${alreadyInRelevant}, exclude subject=${filteredBySubject}, exclude date=${filteredByDate}`);
+      this.logger.log(`📊 Găsite ${similar.length} email-uri similare (inclusiv cele cu scheduled_message_id diferit)`);
+      
+      // Combină email-urile (elimină duplicatele pe baza recipient_email și created_at)
+      // Preferă email-urile cu scheduled_message_id corect când există duplicate
+      const allRelevant = [...relevantEmails, ...similar];
+      
+      // Grupează email-urile după recipient_email și created_at
+      const emailMap = new Map<string, any>();
+      
+      for (const email of allRelevant) {
+        const key = `${email.recipient_email.toLowerCase().trim()}_${new Date(email.created_at).getTime()}`;
+        const existing = emailMap.get(key);
+        
+        // Preferă email-ul cu scheduled_message_id corect
+        if (!existing || (email.scheduled_message_id === id && existing.scheduled_message_id !== id)) {
+          emailMap.set(key, email);
+        }
+      }
+      
+      const uniqueEmails = Array.from(emailMap.values());
+      relevantEmails = uniqueEmails;
+      this.logger.log(`📊 Total email-uri relevante (după eliminarea duplicatelor): ${relevantEmails.length}`);
 
       // Obține lista de destinatari potențiali
-      const recipientType = message.recipient_type || (message as any).recipientType;
       const recipientId = message.recipient_id || (message as any).recipientId;
       const recipientEmail = message.recipient_email || (message as any).recipientEmail;
 
