@@ -183,10 +183,14 @@ export class ScheduledMessagesService {
     }
 
     // Filtrează mesajele care trebuie trimise la ora curentă
+    // Folosim timezone-ul Europe/Madrid pentru comparare (Spania)
     const currentTime = new Date();
-    const currentHour = currentTime.getHours();
-    const currentMinute = currentTime.getMinutes();
+    const madridTime = new Date(currentTime.toLocaleString('en-US', { timeZone: 'Europe/Madrid' }));
+    const currentHour = madridTime.getHours();
+    const currentMinute = madridTime.getMinutes();
     const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+    
+    this.logger.log(`🕐 Ora curentă (UTC): ${currentTime.getHours()}:${String(currentTime.getMinutes()).padStart(2, '0')}, Ora curentă (Madrid): ${currentTimeString}`);
 
     const filtered = messages.filter((msg) => {
       if (!msg.send_time) {

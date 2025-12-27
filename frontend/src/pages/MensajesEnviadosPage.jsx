@@ -35,6 +35,9 @@ export default function MensajesEnviadosPage() {
   const [sentEmails, setSentEmails] = useState([]);
   const [totalEmails, setTotalEmails] = useState(0);
   const [loadingEmails, setLoadingEmails] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentOffset, setCurrentOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const [filters, setFilters] = useState({
     recipientType: '',
     status: '',
@@ -139,10 +142,20 @@ export default function MensajesEnviadosPage() {
   }, [canManageEmails]);
 
   // Încarcă istoricul mesajelor
-  const loadSentEmails = async () => {
+  const loadSentEmails = async (loadMore = false) => {
     if (!canManageEmails) return;
 
-    setLoadingEmails(true);
+    // Dacă încărcăm mai multe, folosim loadingMore, altfel loadingEmails
+    if (loadMore) {
+      if (loadingMore || !hasMore) return;
+      setLoadingMore(true);
+    } else {
+      setLoadingEmails(true);
+      setCurrentOffset(0);
+      setSentEmails([]);
+      setHasMore(true);
+    }
+
     try {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
@@ -152,11 +165,15 @@ export default function MensajesEnviadosPage() {
         : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
 
       const queryParams = new URLSearchParams();
-      if (filters.recipientType) queryParams.append('recipientType', filters.recipientType);
+      // Nu trimite recipientType dacă este gol sau "all" pentru a obține toate mesajele
+      if (filters.recipientType && filters.recipientType.trim() !== '' && filters.recipientType !== 'all') {
+        queryParams.append('recipientType', filters.recipientType);
+      }
       if (filters.status) queryParams.append('status', filters.status);
       if (filters.startDate) queryParams.append('startDate', filters.startDate);
       if (filters.endDate) queryParams.append('endDate', filters.endDate);
       queryParams.append('limit', '50');
+      queryParams.append('offset', loadMore ? currentOffset.toString() : '0');
 
       const response = await fetch(`${baseUrl}/api/sent-emails?${queryParams}`, {
         headers: {
@@ -167,23 +184,87 @@ export default function MensajesEnviadosPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setSentEmails(data.emails || []);
+        const newEmails = data.emails || [];
+        
+        if (loadMore) {
+          // Adaugă mesajele noi la lista existentă
+          setSentEmails(prev => {
+            const updated = [...prev, ...newEmails];
+            setCurrentOffset(updated.length);
+            setHasMore(updated.length < (data.total || 0));
+            return updated;
+          });
+        } else {
+          // Resetează lista cu mesajele noi
+          setSentEmails(newEmails);
+          setCurrentOffset(newEmails.length);
+          setHasMore(newEmails.length < (data.total || 0));
+        }
         setTotalEmails(data.total || 0);
       }
     } catch (error) {
       console.error('Error loading sent emails:', error);
     } finally {
-      setLoadingEmails(false);
+      if (loadMore) {
+        setLoadingMore(false);
+      } else {
+        setLoadingEmails(false);
+      }
     }
   };
 
   useEffect(() => {
     if (activeTab === 'historial') {
+      // Resetează când se schimbă filtrele sau tab-ul
+      setCurrentOffset(0);
+      setSentEmails([]);
+      setHasMore(true);
       loadSentEmails();
     } else if (activeTab === 'automaticos') {
       loadScheduledMessages();
     }
-  }, [activeTab, filters, canManageEmails]);
+  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails]);
+
+  // Infinite scroll - detectează când utilizatorul ajunge jos
+  useEffect(() => {
+    if (activeTab !== 'historial' || !hasMore || loadingMore || loadingEmails) return;
+
+    const sentinel = document.getElementById('email-sentinel');
+    if (!sentinel) {
+      // Dacă sentinel-ul nu există încă, încearcă din nou după un scurt delay
+      const timeout = setTimeout(() => {
+        const retrySentinel = document.getElementById('email-sentinel');
+        if (retrySentinel) {
+          const observer = new IntersectionObserver(
+            (entries) => {
+              if (entries[0].isIntersecting && hasMore && !loadingMore && !loadingEmails) {
+                loadSentEmails(true);
+              }
+            },
+            { threshold: 0.1 }
+          );
+          observer.observe(retrySentinel);
+          return () => observer.disconnect();
+        }
+      }, 100);
+      return () => clearTimeout(timeout);
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loadingEmails) {
+          loadSentEmails(true);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeTab, hasMore, loadingMore, loadingEmails]);
 
   // Încarcă mesajele automate
   const loadScheduledMessages = async () => {
@@ -904,9 +985,9 @@ export default function MensajesEnviadosPage() {
                     onChange={(e) => setFilters({ ...filters, recipientType: e.target.value })}
                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg"
                   >
-                    <option value="">Todos</option>
+                    <option value="">All</option>
                     <option value="empleado">Empleado</option>
-                    <option value="toti">Todos</option>
+                    <option value="toti">Todos los Empleados</option>
                     <option value="grupo">Grupo</option>
                     <option value="gestoria">Gestoria</option>
                   </select>
@@ -963,7 +1044,7 @@ export default function MensajesEnviadosPage() {
                   No hay mensajes enviados
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto overflow-y-auto max-h-[600px] border border-gray-300 rounded-lg">
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="bg-gray-100">
@@ -1053,12 +1134,21 @@ export default function MensajesEnviadosPage() {
                       ))}
                     </tbody>
                   </table>
+                  {/* Sentinel pentru infinite scroll */}
+                  <div id="email-sentinel" className="h-10 flex items-center justify-center py-4">
+                    {loadingMore && (
+                      <div className="text-gray-500 text-sm">Cargando más mensajes...</div>
+                    )}
+                    {!hasMore && sentEmails.length > 0 && (
+                      <div className="text-gray-500 text-sm">No hay más mensajes</div>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* Total */}
               <div className="text-sm text-gray-600">
-                Total: {totalEmails} mensajes
+                Total: {totalEmails} mensajes {sentEmails.length < totalEmails && `(mostrando ${sentEmails.length})`}
               </div>
             </div>
           )}
