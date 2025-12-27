@@ -63,18 +63,20 @@ cd "$BACKEND_DIR" || exit 1
 echo -e "${YELLOW}📋 Step 3: Configuring .env file...${NC}"
 if [ -f ".env.production" ]; then
     # Verifică dacă .env.production are deja SMTP configurat
-    HAS_SMTP_IN_PRODUCTION=$(grep -c "^SMTP_" .env.production 2>/dev/null || echo "0")
+    HAS_SMTP_IN_PRODUCTION=$(grep -c "^SMTP_" .env.production 2>/dev/null | head -1 || echo "0")
+    # Asigură-te că este un număr valid
+    HAS_SMTP_IN_PRODUCTION=${HAS_SMTP_IN_PRODUCTION:-0}
     
     if [ ! -f ".env" ] || [ ".env.production" -nt ".env" ]; then
         cp .env.production .env
         echo -e "${GREEN}✅ .env created/updated from .env.production${NC}"
-        if [ "$HAS_SMTP_IN_PRODUCTION" -gt 0 ]; then
+        if [ "$HAS_SMTP_IN_PRODUCTION" -gt 0 ] 2>/dev/null; then
             echo -e "${GREEN}✅ SMTP configuration found in .env.production and copied to .env${NC}"
         fi
     else
         echo -e "${GREEN}✅ .env file exists and is up to date${NC}"
         # Dacă .env.production are SMTP dar .env nu are, copiază doar SMTP din .env.production
-        if [ "$HAS_SMTP_IN_PRODUCTION" -gt 0 ] && ! grep -q "^SMTP_HOST=" .env; then
+        if [ "$HAS_SMTP_IN_PRODUCTION" -gt 0 ] 2>/dev/null && ! grep -q "^SMTP_HOST=" .env; then
             echo -e "${YELLOW}⚠️  SMTP found in .env.production but missing in .env, copying...${NC}"
             grep "^SMTP_" .env.production >> .env
             echo -e "${GREEN}✅ SMTP configuration copied from .env.production to .env${NC}"
