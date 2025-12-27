@@ -3737,7 +3737,6 @@ export default function EmpleadosPage() {
             size="lg"
             loading={emailLoading || (emailProgress && emailProgress.status !== 'completed')}
             disabled={emailLoading || (emailProgress && emailProgress.status !== 'completed')}
-            disabled={emailLoading}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg"
           >
             {emailLoading ? (
