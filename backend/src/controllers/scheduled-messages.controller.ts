@@ -231,7 +231,7 @@ export class ScheduledMessagesController {
         const empleado = await this.empleadosService.getEmpleadoByCodigo(recipientId);
         if (empleado) {
           const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
-          const nombre = empleado['NOMBRE / APELLIDOS'] || empleado.NOMBRE_APELLIDOS || empleado.CODIGO;
+          const nombre = this.empleadosService.getFormattedNombre(empleado);
           if (email) {
             potentialRecipients = [{ email, nombre, codigo: String(empleado.CODIGO) }];
           }
@@ -244,7 +244,7 @@ export class ScheduledMessagesController {
         potentialRecipients = empleadosActivos
           .map((e) => ({
             email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-            nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            nombre: this.empleadosService.getFormattedNombre(e),
             codigo: String(e.CODIGO),
           }))
           .filter((r) => r.email && r.email.trim() !== '');
@@ -258,7 +258,7 @@ export class ScheduledMessagesController {
         potentialRecipients = empleadosGrupo
           .map((e) => ({
             email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-            nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            nombre: this.empleadosService.getFormattedNombre(e),
             codigo: String(e.CODIGO),
           }))
           .filter((r) => r.email && r.email.trim() !== '');

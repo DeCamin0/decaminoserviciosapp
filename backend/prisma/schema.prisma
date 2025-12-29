@@ -10,6 +10,11 @@ datasource db {
 model User {
   CODIGO               String  @id @map("CODIGO") @db.VarChar(50)
   NOMBRE_APELLIDOS     String? @map("NOMBRE / APELLIDOS") @db.VarChar(255)
+  NOMBRE_APELLIDOS_BACKUP String? @map("NOMBRE_APELLIDOS_BACKUP") @db.VarChar(255)
+  NOMBRE               String? @map("NOMBRE") @db.VarChar(120)
+  APELLIDO1            String? @map("APELLIDO1") @db.VarChar(120)
+  APELLIDO2            String? @map("APELLIDO2") @db.VarChar(120)
+  NOMBRE_SPLIT_CONFIANZA Int @default(2) @map("NOMBRE_SPLIT_CONFIANZA") @db.TinyInt
   NACIONALIDAD         String? @db.VarChar(100)
   DIRECCION            String? @db.VarChar(700)
   DNI_NIE              String? @map("D.N.I. / NIE") @db.VarChar(50)
@@ -32,6 +37,7 @@ model User {
   CONTRASENA           String? @map("Contraseña") @db.VarChar(255)
   DerechoPedidos       String? @db.VarChar(100)
   TrabajaFestivos      String? @db.VarChar(50)
+  VACACIONES_RESTANTES_ANO_ANTERIOR Decimal? @map("VACACIONES_RESTANTES_ANO_ANTERIOR") @db.Decimal(5, 1)
 
   @@index([DNI_NIE], map: "idx_datos_dni")
   @@index([CENTRO_TRABAJO], map: "idx_datos_empleados_centro")
@@ -481,6 +487,24 @@ model Nominas {
   fecha_subida DateTime @default(now()) @db.DateTime(0)
   Mes          String?  @db.VarChar(100)
   Ano          String?  @db.VarChar(100)
+  accesos      NominasAccesos[]
+}
+
+model NominasAccesos {
+  id              Int      @id @default(autoincrement()) @db.UnsignedInt
+  nomina_id       Int      @map("nomina_id") @db.UnsignedInt
+  empleado_codigo String   @map("empleado_codigo") @db.VarChar(50)
+  empleado_nombre String   @map("empleado_nombre") @db.VarChar(255)
+  tipo_acceso     String   @map("tipo_acceso") @db.VarChar(20) // 'preview', 'download', 'email'
+  fecha_acceso    DateTime @default(now()) @map("fecha_acceso") @db.DateTime(0)
+  ip              String?  @map("ip") @db.VarChar(100)
+  user_agent      String?  @map("user_agent") @db.Text
+
+  nomina Nominas @relation(fields: [nomina_id], references: [id], onDelete: Cascade)
+
+  @@index([nomina_id, empleado_codigo], map: "idx_nomina_empleado")
+  @@index([fecha_acceso], map: "idx_fecha_acceso")
+  @@map("NominasAccesos")
 }
 
 model NotificariFichaje {
@@ -952,4 +976,134 @@ model ScheduledMessage {
   @@index([start_date, end_date], map: "idx_scheduled_message_dates")
   @@index([created_by], map: "idx_scheduled_message_created_by")
   @@map("scheduled_messages")
+}
+
+model Convenios {
+  id        Int             @id @default(autoincrement())
+  nombre    String          @unique @db.VarChar(200)
+  activo    Boolean         @default(true)
+  created_at DateTime       @default(now()) @db.Timestamp(0)
+  updated_at DateTime       @updatedAt @db.Timestamp(0)
+  grupos    ConvenioGrupo[]
+  config    ConvenioConfig?
+
+  @@index([activo], map: "idx_convenios_activo")
+  @@map("convenios")
+}
+
+model ConvenioGrupo {
+  id          Int       @id @default(autoincrement())
+  convenio_id Int       @map("convenio_id")
+  grupo_nombre String   @map("grupo_nombre") @db.VarChar(200)
+  activo      Boolean   @default(true)
+  created_at  DateTime  @default(now()) @db.Timestamp(0)
+  updated_at  DateTime  @updatedAt @db.Timestamp(0)
+  convenio    Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_grupo_convenio")
+
+  @@unique([grupo_nombre], map: "uq_convenio_grupo_nombre")
+  @@index([convenio_id], map: "idx_convenio_grupo_convenio")
+  @@index([activo], map: "idx_convenio_grupo_activo")
+  @@map("convenio_grupo")
+}
+
+model ConvenioConfig {
+  id                        Int       @id @default(autoincrement())
+  convenio_id               Int       @unique @map("convenio_id")
+  dias_vacaciones_anuales    Int       @default(31) @map("dias_vacaciones_anuales")
+  dias_asuntos_propios_anuales Int    @default(0) @map("dias_asuntos_propios_anuales")
+  activo                    Boolean   @default(true)
+  created_at                DateTime  @default(now()) @db.Timestamp(0)
+  updated_at                DateTime  @updatedAt @db.Timestamp(0)
+  convenio                  Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_config_convenio")
+
+  @@index([activo], map: "idx_convenio_config_activo")
+  @@map("convenio_config")
+}
+
+model AssistantAuditLog {
+  id              BigInt   @id @default(autoincrement())
+  usuario_id      String   @map("usuario_id") @db.VarChar(50)
+  usuario_nombre  String?  @map("usuario_nombre") @db.VarChar(255)
+  usuario_rol     String?  @map("usuario_rol") @db.VarChar(100)
+  mensaje         String   @db.Text
+  intent_detectado String? @map("intent_detectado") @db.VarChar(100)
+  confianza       Decimal? @db.Decimal(3, 2)
+  respuesta       String?  @db.Text
+  escalado        Boolean  @default(false)
+  ticket_id       String?  @map("ticket_id") @db.VarChar(50)
+  datos_consultados String? @map("datos_consultados") @db.Text
+  error           String?  @db.Text
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@index([usuario_id], map: "idx_audit_usuario")
+  @@index([intent_detectado], map: "idx_audit_intent")
+  @@index([created_at], map: "idx_audit_created")
+  @@map("assistant_audit_log")
+}
+
+model KbArticle {
+  id        Int      @id @default(autoincrement())
+  titulo    String   @db.VarChar(255)
+  contenido String   @db.Text
+  categoria String?  @db.VarChar(100)
+  tags      String?  @db.VarChar(500)
+  activo    Boolean  @default(true)
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@index([categoria], map: "idx_kb_categoria")
+  @@index([activo], map: "idx_kb_activo")
+  @@map("kb_articles")
+}
+
+model TicketAi {
+  id              String   @id @db.VarChar(50)
+  usuario_id      String   @map("usuario_id") @db.VarChar(50)
+  usuario_nombre  String?  @map("usuario_nombre") @db.VarChar(255)
+  usuario_rol     String?  @map("usuario_rol") @db.VarChar(100)
+  mensaje_original String  @map("mensaje_original") @db.Text
+  intent_detectado String? @map("intent_detectado") @db.VarChar(100)
+  contexto        String?  @db.Text
+  estado          String   @default("pendiente") @db.VarChar(50)
+  prioridad       String   @default("normal") @map("prioridad") @db.VarChar(20)
+  asignado_a      String?  @map("asignado_a") @db.VarChar(50)
+  respuesta_admin String?  @map("respuesta_admin") @db.Text
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at      DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  resuelto_at     DateTime? @map("resuelto_at") @db.Timestamp(0)
+
+  @@index([usuario_id], map: "idx_ticket_usuario")
+  @@index([estado], map: "idx_ticket_estado")
+  @@index([prioridad], map: "idx_ticket_prioridad")
+  @@index([created_at], map: "idx_ticket_created")
+  @@map("tickets_ai")
+}
+
+model CostePersonal {
+  id                      Int      @id @default(autoincrement())
+  codigo_empleado         String   @map("codigo_empleado") @db.VarChar(50)
+  nombre_empleado         String   @map("nombre_empleado") @db.VarChar(255)
+  nombre_bd               String?  @map("nombre_bd") @db.VarChar(255)
+  empleado_encontrado     Boolean  @default(true) @map("empleado_encontrado")
+  mes                     String   @map("mes") @db.VarChar(20)
+  ano                     Int      @map("ano")
+  total                   Decimal  @map("total") @db.Decimal(10, 2) @default(0)
+  total_calculado         Decimal  @map("total_calculado") @db.Decimal(10, 2) @default(0)
+  neto                    Decimal  @map("neto") @db.Decimal(10, 2) @default(0)
+  aportaciones_trabajador Decimal  @map("aportaciones_trabajador") @db.Decimal(10, 2) @default(0)
+  irpf                    Decimal  @map("irpf") @db.Decimal(10, 2) @default(0)
+  enfermedad_devolucion   Decimal  @map("enfermedad_devolucion") @db.Decimal(10, 2) @default(0)
+  embargos                Decimal  @map("embargos") @db.Decimal(10, 2) @default(0)
+  anticipo                Decimal  @map("anticipo") @db.Decimal(10, 2) @default(0)
+  absentismo_laboral      Decimal  @map("absentismo_laboral") @db.Decimal(10, 2) @default(0)
+  seg_social_empresa      Decimal  @map("seg_social_empresa") @db.Decimal(10, 2) @default(0)
+  total_aportaciones      Decimal  @map("total_aportaciones") @db.Decimal(10, 2) @default(0)
+  created_at              DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at              DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@unique([codigo_empleado, mes, ano], map: "unique_coste_empleado_mes_ano")
+  @@index([codigo_empleado], map: "idx_coste_codigo")
+  @@index([mes, ano], map: "idx_coste_mes_ano")
+  @@index([empleado_encontrado], map: "idx_coste_encontrado")
+  @@map("coste_personal")
 }

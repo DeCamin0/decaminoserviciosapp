@@ -17,6 +17,8 @@ import { routes } from '../utils/routes.js';
 import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 
 import activityLogger from '../utils/activityLogger';
+import NominasMatrixTab from '../components/gestoria/NominasMatrixTab';
+import CostePersonalTab from '../components/gestoria/CostePersonalTab';
 
 // Funcție pentru formatarea datelor în format frumos și consistent
 
@@ -379,7 +381,7 @@ export default function DocumentosEmpleadosPage() {
     });
   }, [bulkAvatarsLoaded, empleados, enqueueAvatar]);
 
-  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
+  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
 
   const [uploading, setUploading] = useState(false);
 
@@ -4143,6 +4145,42 @@ export default function DocumentosEmpleadosPage() {
                 </div>
               </button>
 
+              {/* Tab Gestoría Nóminas */}
+              <button
+                onClick={() => setActiveTab('gestoria-nominas')}
+                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'gestoria-nominas'
+                    ? 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-lg shadow-teal-200'
+                    : 'text-gray-600 hover:text-teal-600 hover:bg-teal-50/50'
+                }`}
+              >
+                {activeTab === 'gestoria-nominas' && (
+                  <div className="absolute inset-0 bg-teal-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                )}
+                <div className="relative flex items-center gap-2">
+                  <span className="text-base">💼</span>
+                  <span>Gestoría Nóminas</span>
+                </div>
+              </button>
+
+              {/* Tab Coste Personal */}
+              <button
+                onClick={() => setActiveTab('coste-personal')}
+                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'coste-personal'
+                    ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200'
+                    : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50/50'
+                }`}
+              >
+                {activeTab === 'coste-personal' && (
+                  <div className="absolute inset-0 bg-indigo-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                )}
+                <div className="relative flex items-center gap-2">
+                  <span className="text-base">💰</span>
+                  <span>Coste Personal</span>
+                </div>
+              </button>
+
               {selectedEmpleado && (
                 <>
                   {/* Tab Documentos */}
@@ -4740,6 +4778,16 @@ export default function DocumentosEmpleadosPage() {
           )}
 
 
+
+          {/* Tab Gestoría Nóminas (matriz) */}
+          {activeTab === 'gestoria-nominas' && (
+            <NominasMatrixTab />
+          )}
+
+          {/* Tab Coste Personal */}
+          {activeTab === 'coste-personal' && (
+            <CostePersonalTab />
+          )}
 
           {activeTab === 'nominas' && selectedEmpleado && (
 

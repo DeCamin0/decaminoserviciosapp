@@ -1,0 +1,27 @@
+[Unit]
+Description=DeCamino Servicios Backend API
+After=network.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/decaminoserviciosapp/backend
+Environment="NODE_ENV=production"
+EnvironmentFile=/opt/decaminoserviciosapp/backend/.env
+ExecStart=/usr/bin/node /opt/decaminoserviciosapp/backend/dist/src/main.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+

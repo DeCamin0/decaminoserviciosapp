@@ -17,6 +17,7 @@ import {
 import activityLogger from '../utils/activityLogger';
 import HorasTrabajadas from '../components/HorasTrabajadas';
 import HorasPermitidas from '../components/HorasPermitidas';
+import { calculateCuadranteHours, calculateHorarioHours } from '../utils/cuadrante-hours-helper';
 
 
 // Agrego función para normalizar hora
@@ -1684,55 +1685,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const daySchedule = cuadranteAsignado[dayKey];
       
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        let totalHours = 0;
-        
-        // IMPORTANT: Suportă multiple ture în formatul "08:00-12:00,14:00-18:00,20:00-00:00"
-        if (daySchedule.includes(',')) {
-          // Multiple ture separate prin virgulă
-          const timeMatches = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/g);
-          if (timeMatches) {
-            timeMatches.forEach(timeMatch => {
-              const match = timeMatch.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-              if (match) {
-                const startHour = parseInt(match[1]);
-                const startMin = parseInt(match[2]);
-                const endHour = parseInt(match[3]);
-                const endMin = parseInt(match[4]);
-                
-                let startTime = startHour + startMin / 60;
-                let endTime = endHour + endMin / 60;
-                
-                // Deal with overnight shifts
-                if (endTime < startTime) {
-                  endTime += 24;
-                }
-                
-                totalHours += (endTime - startTime);
-              }
-            });
-          }
-        } else {
-          // O singură tură în formatul "T1 08:00-16:00" sau "08:00-16:00"
-          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-          if (match) {
-            const startHour = parseInt(match[1]);
-            const startMin = parseInt(match[2]);
-            const endHour = parseInt(match[3]);
-            const endMin = parseInt(match[4]);
-            
-            let startTime = startHour + startMin / 60;
-            let endTime = endHour + endMin / 60;
-            
-            // Deal with overnight shifts
-            if (endTime < startTime) {
-              endTime += 24;
-            }
-            
-            totalHours = endTime - startTime;
-          }
-        }
-        
-        return totalHours > 0 ? totalHours.toFixed(2) : '0.00';
+        // Folosește helper-ul comun pentru calculul orelor
+        const hours = calculateCuadranteHours(daySchedule);
+        return hours > 0 ? hours.toFixed(2) : '0.00';
       }
       return '0.00';
     } else if (horarioAsignado && horarioAsignado.days) {
@@ -1741,59 +1696,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const daySchedule = horarioAsignado.days[dayKey];
       
       if (daySchedule) {
-        let totalHours = 0;
-        
-        // Helper pentru a calcula orele dintr-un interval
-        const calculateIntervalHours = (inTime, outTime) => {
-          // Verifică că valorile sunt string-uri valide în format HH:MM sau HH:MM:SS
-          if (typeof inTime !== 'string' || typeof outTime !== 'string') {
-            return 0;
-          }
-          
-          // Extrage doar HH:MM dacă e în format HH:MM:SS
-          const inStr = inTime.substring(0, 5);
-          const outStr = outTime.substring(0, 5);
-          
-          const startParts = inStr.split(':');
-          const endParts = outStr.split(':');
-          
-          if (startParts.length !== 2 || endParts.length !== 2) {
-            return 0;
-          }
-          
-          const startHour = parseInt(startParts[0], 10);
-          const startMin = parseInt(startParts[1], 10);
-          const endHour = parseInt(endParts[0], 10);
-          const endMin = parseInt(endParts[1], 10);
-          
-          if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin)) {
-            return 0;
-          }
-          
-          let startTime = startHour + startMin / 60;
-          let endTime = endHour + endMin / 60;
-          
-          if (endTime < startTime) {
-            endTime += 24; // overnight shift
-          }
-          
-          return endTime - startTime;
-        };
-        
-        // Calculează orele pentru fiecare interval
-        if (daySchedule.in1 && daySchedule.out1) {
-          totalHours += calculateIntervalHours(daySchedule.in1, daySchedule.out1);
-        }
-        
-        if (daySchedule.in2 && daySchedule.out2) {
-          totalHours += calculateIntervalHours(daySchedule.in2, daySchedule.out2);
-        }
-        
-        if (daySchedule.in3 && daySchedule.out3) {
-          totalHours += calculateIntervalHours(daySchedule.in3, daySchedule.out3);
-        }
-        
-        return totalHours > 0 ? totalHours.toFixed(2) : '0.00';
+        // Folosește helper-ul comun pentru calculul orelor
+        const hours = calculateHorarioHours(daySchedule);
+        return hours > 0 ? hours.toFixed(2) : '0.00';
       }
     }
     return '0.00';

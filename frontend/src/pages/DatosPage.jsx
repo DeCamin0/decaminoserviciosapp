@@ -6,6 +6,7 @@ import { Notification } from '../components/ui';
 import Edit3DButton from '../components/Edit3DButton.jsx';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { useLoadingState } from '../hooks/useLoadingState';
+import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
 
 // Función para calcular la antigüedad
 const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
@@ -766,6 +767,12 @@ const [editLoading, setEditLoading] = useState(false);
         const mappedUser = {
           'CODIGO': found['CODIGO'] || found.codigo || found.CODIGO || '',
           'NOMBRE / APELLIDOS': found['NOMBRE / APELLIDOS'] || found.nombre || found.NOMBRE || '',
+          // Nuevos campos separados
+          'NOMBRE': found['NOMBRE'] || found.NOMBRE || '',
+          'APELLIDO1': found['APELLIDO1'] || found.APELLIDO1 || '',
+          'APELLIDO2': found['APELLIDO2'] || found.APELLIDO2 || '',
+          'NOMBRE_SPLIT_CONFIANZA': found['NOMBRE_SPLIT_CONFIANZA'] || found.NOMBRE_SPLIT_CONFIANZA || found.nombre_split_confianza || 2,
+          'NOMBRE_APELLIDOS_BACKUP': found['NOMBRE_APELLIDOS_BACKUP'] || found.NOMBRE_APELLIDOS_BACKUP || '',
           'CORREO ELECTRONICO': found['CORREO ELECTRONICO'] || found.email || found.EMAIL || found['CORREO ELECTRÓNICO'] || '',
           'NACIONALIDAD': found['NACIONALIDAD'] || found.nacionalidad || '',
           'DIRECCION': found['DIRECCION'] || found.direccion || found['DIRECCIÓN'] || '',
@@ -982,7 +989,7 @@ const [editLoading, setEditLoading] = useState(false);
                         />
                       ) : (
                         <span className="text-white text-2xl font-bold">
-                          {(user['NOMBRE / APELLIDOS'] || '').split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          {getEmployeeInitials(user)}
                         </span>
                       )}
                   </div>
@@ -1022,7 +1029,7 @@ const [editLoading, setEditLoading] = useState(false);
               </div>
               <div className="flex-1">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {user['NOMBRE / APELLIDOS'] || 'Sin nombre'}
+                  {getFormattedNombre(user) || 'Sin nombre'}
                 </h2>
                 <p className="text-gray-600 mb-3">
                   {user['CORREO ELECTRONICO'] || 'Sin email'}
@@ -1067,7 +1074,7 @@ const [editLoading, setEditLoading] = useState(false);
                         />
                       ) : (
                         <span className="text-white text-lg font-bold">
-                          {(user['NOMBRE / APELLIDOS'] || '').split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          {getEmployeeInitials(user)}
                         </span>
                       )}
                     </div>
@@ -1114,7 +1121,7 @@ const [editLoading, setEditLoading] = useState(false);
                 </div>
                 <div className="flex-1 min-w-0">
                   <h2 className="text-lg font-bold text-gray-900 truncate">
-                    {user['NOMBRE / APELLIDOS'] || 'Sin nombre'}
+                    {getFormattedNombre(user) || 'Sin nombre'}
                   </h2>
                   <p className="text-sm text-gray-600 truncate">
                     {user['CORREO ELECTRONICO'] || 'Sin email'}
@@ -1249,8 +1256,33 @@ const [editLoading, setEditLoading] = useState(false);
                   </div>
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">👤 Nombre Completo</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['NOMBRE / APELLIDOS'] || '-'}</p>
+                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{getFormattedNombre(user) || '-'}</p>
                   </div>
+              {/* Campos separados si existen */}
+              {(user?.NOMBRE || user?.APELLIDO1 || user?.APELLIDO2) && (
+                <>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">📝 Nombre</label>
+                    <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.NOMBRE || '-'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">📝 Primer Apellido</label>
+                    <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.APELLIDO1 || '-'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-gray-700">📝 Segundo Apellido</label>
+                    <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.APELLIDO2 || '-'}</p>
+                  </div>
+                  {user.NOMBRE_SPLIT_CONFIANZA !== undefined && (
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-gray-700">ℹ️ Confianza del Split</label>
+                      <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                        {user.NOMBRE_SPLIT_CONFIANZA === 2 ? '✅ Confiado' : user.NOMBRE_SPLIT_CONFIANZA === 1 ? '⚠️ Incierto' : '❌ Fallido'}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">🌍 Nacionalidad</label>
                 <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.NACIONALIDAD || '-'}</p>

@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmpleadosService } from './empleados.service';
 
 @Injectable()
 export class MeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly empleadosService: EmpleadosService,
+  ) {}
 
   async getMe(currentUser: any) {
     const userId = currentUser?.userId;
@@ -13,7 +17,14 @@ export class MeService {
       throw new NotFoundException('User not found in token');
     }
 
-    // Fetch user via Prisma
+    // Fetch user via EmpleadosService to get all fields including new split columns
+    const empleadoData = await this.empleadosService.getEmpleadoByCodigo(userId);
+    
+    if (!empleadoData) {
+      throw new NotFoundException('User not found');
+    }
+    
+    // Also fetch via Prisma for permissions and other data
     const user = await this.prisma.user.findUnique({
       where: { CODIGO: userId },
     });
@@ -51,11 +62,8 @@ export class MeService {
 
     // Normalizează câmpuri canonice pentru frontend (alerte, afișare)
     const empleadoId = user.CODIGO;
-    const empleadoNombre =
-      user.NOMBRE_APELLIDOS ||
-      user.CORREO_ELECTRONICO ||
-      user.DNI_NIE ||
-      user.CODIGO;
+    // Use formatted nombre from empleadoData (includes new split columns)
+    const empleadoNombre = this.empleadosService.getFormattedNombre(empleadoData);
 
     // Detect role from GRUPO (consistent with auth.service.ts)
     const grupo = grupoFromToken || user.GRUPO || '';
@@ -80,6 +88,7 @@ export class MeService {
       success: true,
       user: {
         ...user,
+        ...empleadoData, // Include all fields from empleadoData (including new split columns)
         empleadoId,
         empleadoNombre,
         // aliases for frontend compatibility - folosește empleadoNombre care are fallback-uri

@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
+import { sheetToJson } from '../utils/excel-helper';
 
 @Injectable()
 export class BajasMedicasService {
@@ -124,15 +125,18 @@ export class BajasMedicasService {
   }> {
     try {
       // Citește Excel-ul
-      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+      const workbook = new ExcelJS.Workbook();
+      // exceljs acceptă Buffer, dar TypeScript are probleme cu tipurile
+      // Folosim type assertion pentru a rezolva incompatibilitatea de tipuri
+      await workbook.xlsx.load(fileBuffer as any);
 
       // Găsește sheet-ul "Común"
       const sheetName =
-        workbook.SheetNames.find(
-          (name) =>
-            name.toLowerCase().includes('común') ||
-            name.toLowerCase().includes('comun'),
-        ) || workbook.SheetNames[0];
+        workbook.worksheets.find(
+          (sheet) =>
+            sheet.name.toLowerCase().includes('común') ||
+            sheet.name.toLowerCase().includes('comun'),
+        )?.name || workbook.worksheets[0]?.name;
 
       if (!sheetName) {
         throw new BadRequestException('Nu s-a găsit niciun sheet în Excel');
@@ -140,8 +144,12 @@ export class BajasMedicasService {
 
       this.logger.log(`📄 Procesez sheet: "${sheetName}"`);
 
-      const worksheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(worksheet, {
+      const worksheet = workbook.getWorksheet(sheetName);
+      if (!worksheet) {
+        throw new BadRequestException(`Sheet "${sheetName}" nu a fost găsit`);
+      }
+
+      const rows = sheetToJson(worksheet, {
         raw: false,
         defval: '',
       });

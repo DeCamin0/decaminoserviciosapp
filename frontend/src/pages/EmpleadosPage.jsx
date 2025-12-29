@@ -14,6 +14,9 @@ import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } fro
 import { useWebSocket } from '../hooks/useWebSocket';
 
 import activityLogger from '../utils/activityLogger';
+import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
+import CorregirNombresTab from '../components/employees/CorregirNombresTab';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 
 // Función para generar el código
 const generateCodigo = () => {
@@ -85,6 +88,253 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 export default function EmpleadosPage() {
   const { user: authUser, authToken } = useAuth();
   const { callApi } = useApi();
+  
+  // State pentru estadísticas
+  const [estadisticas, setEstadisticas] = useState([]);
+  const [loadingEstadisticas, setLoadingEstadisticas] = useState(false);
+  const [errorEstadisticas, setErrorEstadisticas] = useState(null);
+  
+  // State pentru editare inline
+  const [editingCell, setEditingCell] = useState(null); // { codigo, field }
+  const [editingValue, setEditingValue] = useState('');
+  const [savingCell, setSavingCell] = useState(null);
+  
+  // State pentru liste de centre și grupuri
+  const [centrosList, setCentrosList] = useState([]);
+  const [gruposListForEdit, setGruposListForEdit] = useState([]);
+  
+  // State pentru combobox-uri (căutare/filtrare)
+  const [centroSearchTerm, setCentroSearchTerm] = useState('');
+  const [grupoSearchTerm, setGrupoSearchTerm] = useState('');
+  const [showCentroDropdown, setShowCentroDropdown] = useState(false);
+  const [showGrupoDropdown, setShowGrupoDropdown] = useState(false);
+
+  // Funcție pentru a obține estadísticas
+  const fetchEstadisticas = async () => {
+    setLoadingEstadisticas(true);
+    setErrorEstadisticas(null);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.getEstadisticasEmpleados, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al obtener estadísticas');
+      }
+      
+      const data = await response.json();
+      const estadisticasData = data.estadisticas || [];
+      setEstadisticas(estadisticasData);
+      
+      // Extrage centrele unice din statistici
+      const centrosFromEstadisticas = [...new Set(estadisticasData
+        .map(emp => emp.centro)
+        .filter(centro => centro && centro.trim() !== '' && centro !== '-')
+      )];
+      
+      // Combină cu centrele din clienți (dacă există)
+      const centrosFromClientes = (clientes || [])
+        .map(cliente => cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre)
+        .filter(nombre => nombre && nombre.trim() !== '');
+      
+      // Combină ambele liste și elimină duplicatele
+      const todosLosCentros = [...new Set([...centrosFromEstadisticas, ...centrosFromClientes])]
+        .filter(centro => centro && centro.trim() !== '')
+        .sort();
+      
+      setCentrosList(todosLosCentros);
+      console.log('✅ Centros cargados:', todosLosCentros.length, 'centros', todosLosCentros);
+    } catch (error) {
+      console.error('Error fetching estadísticas:', error);
+      setErrorEstadisticas(error.message);
+    } finally {
+      setLoadingEstadisticas(false);
+    }
+  };
+
+  const handleExportEstadisticasExcel = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = routes.exportEstadisticasEmpleadosExcel;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al exportar');
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error al exportar Excel:', err);
+      alert('Error al exportar Excel: ' + err.message);
+    }
+  };
+
+  const handleExportEstadisticasPDF = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = routes.exportEstadisticasEmpleadosPDF;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al exportar');
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error al exportar PDF:', err);
+      alert('Error al exportar PDF: ' + err.message);
+    }
+  };
+
+  // Funcție pentru a încărca lista de grupuri (pentru editare inline)
+  const fetchGruposForEdit = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.getGrupos, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al obtener grupos');
+      }
+      
+      const grupos = await response.json();
+      setGruposListForEdit(Array.isArray(grupos) ? grupos : []);
+    } catch (error) {
+      console.error('Error fetching grupos for edit:', error);
+      // Nu aruncăm eroare, doar logăm
+    }
+  };
+
+  // Funcții pentru editare inline
+  const startEditing = (codigo, field, currentValue) => {
+    setEditingCell({ codigo, field });
+    setEditingValue(currentValue || '');
+    // Resetează termenii de căutare când începe editarea
+    if (field === 'centro') {
+      setCentroSearchTerm(currentValue || '');
+      setShowCentroDropdown(true);
+    } else if (field === 'grupo') {
+      setGrupoSearchTerm(currentValue || '');
+      setShowGrupoDropdown(true);
+    }
+  };
+
+  const cancelEditing = () => {
+    setEditingCell(null);
+    setEditingValue('');
+    setCentroSearchTerm('');
+    setGrupoSearchTerm('');
+    setShowCentroDropdown(false);
+    setShowGrupoDropdown(false);
+  };
+  
+  // Funcții pentru filtrare combobox
+  const filteredCentros = centrosList.filter(centro =>
+    centro.toLowerCase().includes((centroSearchTerm || '').toLowerCase())
+  );
+  
+  const filteredGrupos = gruposListForEdit.filter(grupo =>
+    grupo.toLowerCase().includes((grupoSearchTerm || '').toLowerCase())
+  );
+
+  const saveCell = async (codigo, field, newValue) => {
+    if (savingCell) return; // Previne dubluri
+    
+    setSavingCell({ codigo, field });
+    try {
+      const token = localStorage.getItem('auth_token');
+      
+      // Construiește body-ul pentru actualizare
+      const body = { CODIGO: codigo };
+      
+      // Mapează field-urile la numele din backend
+      if (field === 'estado') {
+        body.ESTADO = newValue;
+      } else if (field === 'fecha_alta') {
+        body['FECHA DE ALTA'] = newValue;
+      } else if (field === 'centro') {
+        body['CENTRO TRABAJO'] = newValue;
+      } else if (field === 'grupo') {
+        body.GRUPO = newValue;
+      }
+
+      const response = await fetch(routes.updateUser, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || 'Error al actualizar');
+      }
+
+      // Actualizează local state-ul
+      setEstadisticas(prev => prev.map(emp => {
+        if (emp.CODIGO === codigo) {
+          const updated = { ...emp };
+          if (field === 'estado') {
+            updated.estado = newValue;
+          } else if (field === 'fecha_alta') {
+            updated.fecha_alta = newValue;
+          } else if (field === 'centro') {
+            updated.centro = newValue;
+          } else if (field === 'grupo') {
+            updated.grupo = newValue;
+          }
+          return updated;
+        }
+        return emp;
+      }));
+
+      setEditingCell(null);
+      setEditingValue('');
+    } catch (error) {
+      console.error('Error saving cell:', error);
+      alert(`Error al guardar: ${error.message}`);
+    } finally {
+      setSavingCell(null);
+    }
+  };
 
   // Funcții pentru validarea documentelor spaniole
   const validarSeguridadSocial = (numero) => {
@@ -259,10 +509,17 @@ export default function EmpleadosPage() {
       }
     });
 
+    // Include nuevos campos separados si existen
+    if (raw.NOMBRE !== undefined) mapped.NOMBRE = raw.NOMBRE || '';
+    if (raw.APELLIDO1 !== undefined) mapped.APELLIDO1 = raw.APELLIDO1 || '';
+    if (raw.APELLIDO2 !== undefined) mapped.APELLIDO2 = raw.APELLIDO2 || '';
+    if (raw.NOMBRE_SPLIT_CONFIANZA !== undefined) mapped.NOMBRE_SPLIT_CONFIANZA = raw.NOMBRE_SPLIT_CONFIANZA ?? 2;
+    if (raw.NOMBRE_APELLIDOS_BACKUP !== undefined) mapped.NOMBRE_APELLIDOS_BACKUP = raw.NOMBRE_APELLIDOS_BACKUP || '';
+
     return mapped;
   };
 
-  const [activeTab, setActiveTab] = useState('lista'); // 'lista' | 'adauga' | 'inspecciones'
+  const [activeTab, setActiveTab] = useState('lista'); // 'lista' | 'adauga' | 'inspecciones' | 'corregir-nombres' | 'estadisticas'
   const [users, setUsers] = useState([]);
   const [errorUsers, setErrorUsers] = useState(null);
   
@@ -281,6 +538,28 @@ export default function EmpleadosPage() {
     DerechoPedidos: 'NO',
     TrabajaFestivos: 'NO'
   }));
+  
+  // Sincronizare automată: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
+  useEffect(() => {
+    const nombre = (addForm.NOMBRE || '').trim();
+    const apellido1 = (addForm.APELLIDO1 || '').trim();
+    const apellido2 = (addForm.APELLIDO2 || '').trim();
+    
+    // Dacă există cel puțin unul din câmpurile separate completat, construim numele complet
+    if (nombre || apellido1 || apellido2) {
+      const parts = [nombre, apellido1, apellido2].filter(part => part && part !== '');
+      const nombreCompleto = parts.length > 0 ? parts.join(' ') : '';
+      
+      // Actualizăm doar dacă numele complet generat este diferit de cel existent
+      // sau dacă câmpul "NOMBRE / APELLIDOS" este gol
+      if (nombreCompleto && (nombreCompleto !== (addForm['NOMBRE / APELLIDOS'] || '').trim())) {
+        setAddForm(prev => ({
+          ...prev,
+          'NOMBRE / APELLIDOS': nombreCompleto
+        }));
+      }
+    }
+  }, [addForm.NOMBRE, addForm.APELLIDO1, addForm.APELLIDO2]);
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
@@ -290,8 +569,8 @@ export default function EmpleadosPage() {
   const [mensajeAdicionalGestoria, setMensajeAdicionalGestoria] = useState(''); // Mesaj adițional pentru gestorie
   const [archivosGestoria, setArchivosGestoria] = useState([]); // Fișiere multiple pentru gestorie
 
-  // Estado para dropdowns de centro de trabajo
-  const [showCentroDropdown, setShowCentroDropdown] = useState(false);
+  // Estado para dropdowns de centro de trabajo (pentru formularul de adăugare/editare)
+  const [showCentroDropdownAdd, setShowCentroDropdownAdd] = useState(false);
   const [showEditCentroDropdown, setShowEditCentroDropdown] = useState(false);
   
   // Estado para dropdowns de nacionalidad
@@ -903,12 +1182,20 @@ export default function EmpleadosPage() {
 
   // Funcție pentru filtrarea angajaților (memoizată pentru performanță)
   const getFilteredUsers = useMemo(() => {
+    // Filtru special: "sin_fecha_alta" - arată doar angajații fără Fecha Alta
+    if (searchBy === 'sin_fecha_alta') {
+      return users.filter((user) => {
+        const fechaAlta = user['FECHA DE ALTA'] || user['FECHA_DE_ALTA'] || user.fechaAlta || '';
+        return !fechaAlta || fechaAlta.toString().trim() === '';
+      });
+    }
+
     // În primul rând aplicăm filtrul de căutare
     const base = !searchTerm.trim()
       ? users
       : users.filter((user) => {
           const term = searchTerm.toLowerCase().trim();
-          const nombre = user['NOMBRE / APELLIDOS']?.toLowerCase() || '';
+          const nombre = getFormattedNombre(user)?.toLowerCase() || '';
           const codigo = user.CODIGO?.toLowerCase() || '';
           const email = user['CORREO ELECTRONICO']?.toLowerCase() || '';
           const grupo = (user['GRUPO'] || '').toString().toLowerCase();
@@ -917,6 +1204,7 @@ export default function EmpleadosPage() {
             (user['CENTRO TRABAJO'] || user.CENTRO_TRABAJO || '')
               .toString()
               .toLowerCase();
+          const fechaAlta = (user['FECHA DE ALTA'] || user['FECHA_DE_ALTA'] || user.fechaAlta || '').toString().toLowerCase();
 
           switch (searchBy) {
             case 'nombre':
@@ -931,6 +1219,9 @@ export default function EmpleadosPage() {
               return estado.includes(term);
             case 'centro':
               return centro.includes(term);
+            case 'fecha_alta':
+              // Caută în data de alta
+              return fechaAlta.includes(term);
             case 'todos':
             default:
               return (
@@ -939,7 +1230,8 @@ export default function EmpleadosPage() {
                 email.includes(term) ||
                 grupo.includes(term) ||
                 estado.includes(term) ||
-                centro.includes(term)
+                centro.includes(term) ||
+                fechaAlta.includes(term)
               );
           }
         });
@@ -974,6 +1266,12 @@ export default function EmpleadosPage() {
       return;
     }
     
+    // Fetch estadísticas când se schimbă tab-ul
+    if (activeTab === 'estadisticas') {
+      fetchEstadisticas();
+      fetchGruposForEdit(); // Încarcă lista de grupuri pentru editare
+    }
+    
     if (activeTab === 'lista') {
       fetchUsers();
     }
@@ -999,7 +1297,7 @@ export default function EmpleadosPage() {
           !Object.prototype.hasOwnProperty.call(employeeAvatars, user.CODIGO) &&
           !loadingAvatarsRef.current.has(user.CODIGO)
         ) {
-          loadEmployeeAvatar(user.CODIGO, user['NOMBRE / APELLIDOS']);
+          loadEmployeeAvatar(user.CODIGO, getFormattedNombre(user));
         }
       });
     }
@@ -1025,9 +1323,9 @@ export default function EmpleadosPage() {
     if (retrimiteFichaEdit && pdfEmployeeData) {
       // Log retrimiterea fichei
       await activityLogger.logAction('ficha_retrimisa_gestoria', {
-        empleado: pdfEmployeeData['NOMBRE / APELLIDOS'] || pdfEmployeeData.CODIGO,
+        empleado: getFormattedNombre(pdfEmployeeData) || pdfEmployeeData.CODIGO,
         codigo: pdfEmployeeData.CODIGO,
-        user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        user: getFormattedNombre(authUser) || authUser?.nombre,
         email: authUser?.email,
       });
       
@@ -1045,10 +1343,10 @@ export default function EmpleadosPage() {
     } else {
       // Log crearea utilizatorului (pentru adăugare nouă)
       await activityLogger.logAction('user_created_with_pdf', {
-        user: addForm['NOMBRE / APELLIDOS'],
+        user: getFormattedNombre({ ...addForm, CODIGO: addForm.CODIGO }) || addForm['NOMBRE / APELLIDOS'],
         email: addForm['CORREO ELECTRONICO'],
         codigo: addForm.CODIGO,
-        created_by: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        created_by: getFormattedNombre(authUser) || authUser?.nombre,
         created_by_email: authUser?.email,
         pdf_generated: true
       });
@@ -1127,7 +1425,7 @@ export default function EmpleadosPage() {
 
         // Construiește mesajul email
         let mensajeEmail = `Se ha actualizado la información del empleado:\n\n` +
-                           `Empleado: ${editForm['NOMBRE / APELLIDOS'] || 'N/A'}\n` +
+                           `Empleado: ${getFormattedNombre({ ...editForm, CODIGO: editForm.CODIGO }) || editForm['NOMBRE / APELLIDOS'] || 'N/A'}\n` +
                            `Código: ${editForm.CODIGO || 'N/A'}\n` +
                            `Email: ${editForm['CORREO ELECTRONICO'] || 'N/A'}\n\n`;
         
@@ -1142,12 +1440,12 @@ export default function EmpleadosPage() {
           mensajeEmail += `No se detectaron cambios en los campos.\n\n`;
         }
         
-        mensajeEmail += `Actualizado por: ${authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema'}\n` +
+        mensajeEmail += `Actualizado por: ${getFormattedNombre(authUser) || authUser?.nombre || 'Sistema'}\n` +
                        `Fecha: ${new Date().toLocaleString('es-ES')}`;
 
         updateBody.emailBody = mensajeEmail;
-        updateBody.emailSubject = `Actualización de datos - ${editForm['NOMBRE / APELLIDOS'] || editForm.CODIGO || 'Empleado'}`;
-        updateBody.updatedBy = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || 'Sistema';
+        updateBody.emailSubject = `Actualización de datos - ${getFormattedNombre({ ...editForm, CODIGO: editForm.CODIGO }) || editForm['NOMBRE / APELLIDOS'] || editForm.CODIGO || 'Empleado'}`;
+        updateBody.updatedBy = getFormattedNombre(authUser) || authUser?.nombre || 'Sistema';
       }
 
       // EDITARE angajat (PUT request) - nu salvare (POST)
@@ -1399,7 +1697,7 @@ export default function EmpleadosPage() {
                   alignment: 'center' 
                 },
             emp.CODIGO || '',
-            emp['NOMBRE / APELLIDOS'] || '',
+            getFormattedNombre(emp) || '',
             { text: emp['CORREO ELECTRONICO'] || '', fontSize: 7 },
             emp['D.N.I. / NIE'] || '',
             emp.TELEFONO || '',
@@ -1721,6 +2019,46 @@ export default function EmpleadosPage() {
               </div>
             </button>
           )}
+          {canManageEmployees && (
+            <button
+              onClick={() => setActiveTab('corregir-nombres')}
+              className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                activeTab === 'corregir-nombres'
+                  ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
+                  : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+              }`}
+            >
+              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                activeTab === 'corregir-nombres' 
+                  ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
+                  : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
+              }`}></div>
+              <div className="relative flex items-center gap-2">
+                <span className="text-xl">✏️</span>
+                <span>Corregir Nombres</span>
+              </div>
+            </button>
+          )}
+          {canManageEmployees && (
+            <button
+              onClick={() => setActiveTab('estadisticas')}
+              className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                activeTab === 'estadisticas'
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
+                  : 'bg-white text-orange-600 border-2 border-orange-200 hover:border-orange-400 hover:bg-orange-50'
+              }`}
+            >
+              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                activeTab === 'estadisticas' 
+                  ? 'bg-orange-400 opacity-30 blur-md animate-pulse' 
+                  : 'bg-orange-400 opacity-0 group-hover:opacity-20 blur-md'
+              }`}></div>
+              <div className="relative flex items-center gap-2">
+                <span className="text-xl">📊</span>
+                <span>Estadísticas Empleados</span>
+              </div>
+            </button>
+          )}
 
         </div>
 
@@ -1919,7 +2257,14 @@ export default function EmpleadosPage() {
                         type="text"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Buscar empleados..."
+                        placeholder={
+                          searchBy === 'sin_fecha_alta'
+                            ? 'Mostrando solo empleados sin Fecha Alta...'
+                            : searchBy === 'fecha_alta'
+                            ? 'Buscar por fecha...'
+                            : 'Buscar empleados...'
+                        }
+                        disabled={searchBy === 'sin_fecha_alta'}
                         className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
                       />
                     </div>
@@ -1942,6 +2287,8 @@ export default function EmpleadosPage() {
                         <option value="grupo">👥 Grupo</option>
                         <option value="estado">✅ Estado</option>
                         <option value="centro">📍 Centro</option>
+                        <option value="fecha_alta">📅 Fecha Alta</option>
+                        <option value="sin_fecha_alta">⚠️ Sin Fecha Alta</option>
                         <option value="todos">🔍 Todos</option>
                       </select>
                     </div>
@@ -2125,12 +2472,12 @@ export default function EmpleadosPage() {
                                 {employeeAvatars[user['CODIGO']] ? (
                                   <img 
                                     src={employeeAvatars[user['CODIGO']]} 
-                                    alt={user['NOMBRE / APELLIDOS']} 
+                                    alt={getFormattedNombre(user)} 
                                     className="w-full h-full object-cover"
                                   />
                                 ) : (
                                   <span className="text-red-600 font-bold text-sm">
-                                    {user['NOMBRE / APELLIDOS']?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+                                    {getEmployeeInitials(user)}
                                   </span>
                                 )}
                               </div>
@@ -2139,7 +2486,7 @@ export default function EmpleadosPage() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h3 className="font-bold text-gray-900">
-                                  {user['NOMBRE / APELLIDOS'] || 'Sin nombre'}
+                                  {getFormattedNombre(user) || 'Sin nombre'}
                                 </h3>
                                 {codigo && (
                                   <span className="flex items-center gap-1 text-[11px] font-medium text-gray-500">
@@ -2270,6 +2617,55 @@ export default function EmpleadosPage() {
                       readOnly
                       className="bg-gray-100"
                     />
+                  ) : field === 'NOMBRE / APELLIDOS' ? (
+                    <div className="space-y-3">
+                      <Input
+                        id={fieldId}
+                        name={field}
+                        value={addForm[field]}
+                        onChange={(e) => {
+                          // Permitem editare manuală, dar useEffect-ul va sincroniza dacă există câmpuri separate
+                          setAddForm(prev => ({ ...prev, [field]: e.target.value }));
+                        }}
+                        placeholder="NOMBRE / APELLIDOS (se completa automáticamente al escribir en campos separados)"
+                      />
+                      <div className="text-xs text-gray-500 mb-2">Opcional: Campos separados (se sincronizan automáticamente)</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label htmlFor="add-nombre" className="block text-xs text-gray-600 mb-1">Nombre</label>
+                          <Input
+                            id="add-nombre"
+                            name="NOMBRE"
+                            value={addForm.NOMBRE || ''}
+                            onChange={(e) => setAddForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
+                            placeholder="Nombre"
+                            className="text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="add-apellido1" className="block text-xs text-gray-600 mb-1">Primer Apellido</label>
+                          <Input
+                            id="add-apellido1"
+                            name="APELLIDO1"
+                            value={addForm.APELLIDO1 || ''}
+                            onChange={(e) => setAddForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
+                            placeholder="Primer Apellido"
+                            className="text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="add-apellido2" className="block text-xs text-gray-600 mb-1">Segundo Apellido</label>
+                          <Input
+                            id="add-apellido2"
+                            name="APELLIDO2"
+                            value={addForm.APELLIDO2 || ''}
+                            onChange={(e) => setAddForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
+                            placeholder="Segundo Apellido"
+                            className="text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   ) : field === 'D.N.I. / NIE' ? (
                     <div className="space-y-2">
                       <input
@@ -2501,12 +2897,12 @@ export default function EmpleadosPage() {
                         onChange={(e) => {
                           const value = e.target.value;
                           setAddForm(prev => ({ ...prev, [field]: value }));
-                          setShowCentroDropdown(true);
+                          setShowCentroDropdownAdd(true);
                         }}
-                        onFocus={() => setShowCentroDropdown(true)}
+                        onFocus={() => setShowCentroDropdownAdd(true)}
                         onBlur={() => {
                           // Delay to allow clicking on dropdown items
-                          setTimeout(() => setShowCentroDropdown(false), 200);
+                          setTimeout(() => setShowCentroDropdownAdd(false), 200);
                         }}
                       disabled={isOperationLoading('clientes')}
                       />
@@ -2515,7 +2911,7 @@ export default function EmpleadosPage() {
                       </div>
                       
                       {/* Dropdown de sugerencias */}
-                      {showCentroDropdown && addForm[field] && (
+                      {showCentroDropdownAdd && addForm[field] && (
                         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                           {clientes
                             .filter(cliente => 
@@ -2530,7 +2926,7 @@ export default function EmpleadosPage() {
                                 className="w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0"
                                 onClick={() => {
                                   setAddForm(prev => ({ ...prev, [field]: cliente['NOMBRE O RAZON SOCIAL'] }));
-                                  setShowCentroDropdown(false);
+                                  setShowCentroDropdownAdd(false);
                                 }}
                               >
                                 <div className="font-medium text-gray-900">{cliente['NOMBRE O RAZON SOCIAL']}</div>
@@ -2708,7 +3104,7 @@ export default function EmpleadosPage() {
                         <option key={hours} value={hours}>
                           {hours} {hours === 1 ? 'hora' : 'horas'}
                         </option>
-                      ))}
+                      )                      )}
                     </select>
                   ) : field === 'GRUPO' ? (
                     <select
@@ -2728,6 +3124,15 @@ export default function EmpleadosPage() {
                         ))
                       )}
                     </select>
+                  ) : field === 'DIRECCION' ? (
+                    <AddressAutocomplete
+                      id={fieldId}
+                      name={field}
+                      value={addForm[field] || ''}
+                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      placeholder="DIRECCION (escribe para buscar direcciones)"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
+                    />
                   ) : (
                     <Input
                       id={fieldId}
@@ -2842,6 +3247,362 @@ export default function EmpleadosPage() {
               </div>
             )}
           </div>
+        ) : activeTab === 'estadisticas' && canManageEmployees ? (
+          // Tab pentru estadísticas empleados
+          <div className="p-6 w-full">
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">📊 Estadísticas de Empleados</h2>
+            
+            {loadingEstadisticas ? (
+              <TableLoading columns={10} rows={5} className="p-4" />
+            ) : errorEstadisticas ? (
+              <div className="text-center text-red-600 font-bold py-8">{errorEstadisticas}</div>
+            ) : estadisticas.length === 0 ? (
+              <div className="text-center text-gray-500 py-8">No hay estadísticas disponibles</div>
+            ) : (
+              <div className="overflow-x-auto w-full">
+                <table className="w-full bg-white border border-gray-200 rounded-lg shadow-sm" style={{ minWidth: '1520px' }}>
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '80px' }}>CODIGO</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '200px' }}>nombre</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '200px' }}>email</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '100px' }}>estado</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '120px' }}>fecha alta</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '250px' }}>centro</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '150px' }}>grupo</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '60px' }}>cuadrante</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '60px' }}>horario</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '50px' }}>centro</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '280px' }}>detalles_faltantes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {estadisticas.map((emp, index) => (
+                      <tr key={emp.CODIGO || index} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-3 text-sm text-gray-900 font-mono">{emp.CODIGO || '-'}</td>
+                        <td className="px-3 py-3 text-sm text-gray-900 font-medium">{emp.nombre || '-'}</td>
+                        <td className="px-3 py-3 text-sm text-gray-600 break-words">{emp.email || '-'}</td>
+                        <td className="px-3 py-3 text-sm">
+                          {editingCell?.codigo === emp.CODIGO && editingCell?.field === 'estado' ? (
+                            <div className="flex items-center gap-1">
+                              <select
+                                id={`estado-edit-${emp.CODIGO}`}
+                                name={`estado-edit-${emp.CODIGO}`}
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                autoFocus
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'estado'}
+                              >
+                                <option value="ACTIVO">ACTIVO</option>
+                                <option value="INACTIVO">INACTIVO</option>
+                              </select>
+                              <button
+                                onClick={() => saveCell(emp.CODIGO, 'estado', editingValue)}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'estado'}
+                                className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                                title="Guardar"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'estado'}
+                                className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+                                title="Cancelar"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer hover:opacity-80 ${
+                                emp.estado === 'ACTIVO' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                              onClick={() => startEditing(emp.CODIGO, 'estado', emp.estado)}
+                              title="Click para editar"
+                            >
+                              {emp.estado || '-'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-sm text-gray-700">
+                          {editingCell?.codigo === emp.CODIGO && editingCell?.field === 'fecha_alta' ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="date"
+                                id={`fecha-alta-edit-${emp.CODIGO}`}
+                                name={`fecha-alta-edit-${emp.CODIGO}`}
+                                value={editingValue || ''}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                autoFocus
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'fecha_alta'}
+                              />
+                              <button
+                                onClick={() => saveCell(emp.CODIGO, 'fecha_alta', editingValue)}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'fecha_alta'}
+                                className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                                title="Guardar"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'fecha_alta'}
+                                className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+                                title="Cancelar"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className="font-mono text-xs cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded"
+                              onClick={() => startEditing(emp.CODIGO, 'fecha_alta', emp.fecha_alta)}
+                              title="Click para editar"
+                            >
+                              {emp.fecha_alta ? (
+                                emp.fecha_alta
+                              ) : (
+                                <span className="px-2 py-1 rounded bg-red-100 text-red-800 text-xs font-semibold">Sin fecha</span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-sm text-gray-700 break-words">
+                          {editingCell?.codigo === emp.CODIGO && editingCell?.field === 'centro' ? (
+                            <div className="flex items-center gap-1 relative centro-combobox-container">
+                              <div className="relative flex-1 min-w-[200px] max-w-[300px]">
+                                <input
+                                  type="text"
+                                  id={`centro-edit-${emp.CODIGO}`}
+                                  name={`centro-edit-${emp.CODIGO}`}
+                                  value={centroSearchTerm}
+                                  onChange={(e) => {
+                                    setCentroSearchTerm(e.target.value);
+                                    setEditingValue(e.target.value);
+                                    setShowCentroDropdown(true);
+                                  }}
+                                  onFocus={() => setShowCentroDropdown(true)}
+                                  className="text-xs border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  autoFocus
+                                  disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'centro'}
+                                  placeholder="Buscar o escribir centro..."
+                                />
+                                {showCentroDropdown && filteredCentros.length > 0 && (
+                                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                                    {filteredCentros.map((centro) => (
+                                      <div
+                                        key={centro}
+                                        onClick={() => {
+                                          setEditingValue(centro);
+                                          setCentroSearchTerm(centro);
+                                          setShowCentroDropdown(false);
+                                        }}
+                                        className="px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer"
+                                      >
+                                        {centro}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  saveCell(emp.CODIGO, 'centro', editingValue);
+                                  setShowCentroDropdown(false);
+                                }}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'centro'}
+                                className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                                title="Guardar"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'centro'}
+                                className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+                                title="Cancelar"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className="cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded"
+                              onClick={() => startEditing(emp.CODIGO, 'centro', emp.centro)}
+                              title="Click para editar"
+                            >
+                              {emp.centro || '-'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-sm text-gray-700">
+                          {editingCell?.codigo === emp.CODIGO && editingCell?.field === 'grupo' ? (
+                            <div className="flex items-center gap-1 relative grupo-combobox-container">
+                              <div className="relative flex-1 min-w-[150px] max-w-[200px]">
+                                <input
+                                  type="text"
+                                  id={`grupo-edit-${emp.CODIGO}`}
+                                  name={`grupo-edit-${emp.CODIGO}`}
+                                  value={grupoSearchTerm}
+                                  onChange={(e) => {
+                                    setGrupoSearchTerm(e.target.value);
+                                    setEditingValue(e.target.value);
+                                    setShowGrupoDropdown(true);
+                                  }}
+                                  onFocus={() => setShowGrupoDropdown(true)}
+                                  className="text-xs border border-gray-300 rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  autoFocus
+                                  disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'grupo'}
+                                  placeholder="Buscar o escribir grupo..."
+                                />
+                                {showGrupoDropdown && filteredGrupos.length > 0 && (
+                                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                                    {filteredGrupos.map((grupo) => (
+                                      <div
+                                        key={grupo}
+                                        onClick={() => {
+                                          setEditingValue(grupo);
+                                          setGrupoSearchTerm(grupo);
+                                          setShowGrupoDropdown(false);
+                                        }}
+                                        className="px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer"
+                                      >
+                                        {grupo}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  saveCell(emp.CODIGO, 'grupo', editingValue);
+                                  setShowGrupoDropdown(false);
+                                }}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'grupo'}
+                                className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                                title="Guardar"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={cancelEditing}
+                                disabled={savingCell?.codigo === emp.CODIGO && savingCell?.field === 'grupo'}
+                                className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+                                title="Cancelar"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className="cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded"
+                              onClick={() => startEditing(emp.CODIGO, 'grupo', emp.grupo)}
+                              title="Click para editar"
+                            >
+                              {emp.grupo || '-'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            emp.tiene_cuadrante === 'Sí' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {emp.tiene_cuadrante || '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            emp.tiene_horario === 'Sí' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {emp.tiene_horario || '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                            emp.tiene_centro === 'Sí' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {emp.tiene_centro || '-'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-sm text-gray-600">
+                          {emp.detalles_faltantes && emp.detalles_faltantes.trim() !== '' ? (
+                            <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-xs break-words inline-block max-w-full">
+                              {emp.detalles_faltantes}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                {/* Butoane de export */}
+                <div className="mt-4 flex gap-3 justify-end">
+                  <button
+                    onClick={handleExportEstadisticasExcel}
+                    disabled={loadingEstadisticas || estadisticas.length === 0}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <span>📊</span>
+                    <span>Exportar Excel</span>
+                  </button>
+                  <button
+                    onClick={handleExportEstadisticasPDF}
+                    disabled={loadingEstadisticas || estadisticas.length === 0}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <span>📄</span>
+                    <span>Exportar PDF</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'corregir-nombres' && canManageEmployees ? (
+          // Tab pentru corectare manuală split-uri
+          <CorregirNombresTab 
+            users={users}
+            onSave={async (codigo, data) => {
+              try {
+                const token = localStorage.getItem('auth_token');
+                const response = await fetch(routes.updateNombreSplit(codigo), {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : '',
+                  },
+                  body: JSON.stringify({
+                    CODIGO: codigo,
+                    ...data,
+                    NOMBRE_SPLIT_CONFIANZA: 2, // Setează confianza = 2 pentru corectare manuală
+                  }),
+                });
+                
+                if (!response.ok) {
+                  throw new Error('Error al guardar');
+                }
+                
+                // Reîncarcă lista
+                await fetchUsers();
+                return { success: true };
+              } catch (error) {
+                throw error;
+              }
+            }}
+          />
         ) : null}
       </Card>
 
@@ -3366,6 +4127,61 @@ export default function EmpleadosPage() {
                       </option>
                     ))}
                   </select>
+                ) : field === 'NOMBRE / APELLIDOS' ? (
+                  <div className="space-y-3">
+                    <Input
+                      id={fieldId}
+                      name={field}
+                      value={editForm[field] || ''}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    />
+                    {/* Campos separados si existen */}
+                    {(editForm?.NOMBRE || editForm?.APELLIDO1 || editForm?.APELLIDO2) && (
+                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">📝 Nombre</label>
+                          <Input
+                            value={editForm.NOMBRE || ''}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
+                            className="text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">📝 Primer Apellido</label>
+                          <Input
+                            value={editForm.APELLIDO1 || ''}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
+                            className="text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">📝 Segundo Apellido</label>
+                          <Input
+                            value={editForm.APELLIDO2 || ''}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
+                            className="text-sm"
+                          />
+                        </div>
+                        {editForm.NOMBRE_SPLIT_CONFIANZA !== undefined && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">ℹ️ Confianza del Split</label>
+                            <p className="text-xs text-gray-700 bg-white px-2 py-1 rounded border border-gray-200">
+                              {editForm.NOMBRE_SPLIT_CONFIANZA === 2 ? '✅ Confiado' : editForm.NOMBRE_SPLIT_CONFIANZA === 1 ? '⚠️ Incierto' : '❌ Fallido'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : field === 'DIRECCION' ? (
+                  <AddressAutocomplete
+                    id={fieldId}
+                    name={field}
+                    value={editForm[field] || ''}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    placeholder="DIRECCION (escribe para buscar direcciones)"
+                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  />
                 ) : (
                   <Input
                     id={fieldId}

@@ -5,12 +5,242 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import * as ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class EmpleadosService {
   private readonly logger = new Logger(EmpleadosService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Helper function to get formatted employee name
+   * Uses new split columns (NOMBRE, APELLIDO1, APELLIDO2) with fallback to original
+   */
+  getFormattedNombre(empleado: any): string {
+    // If confidence is 0 (failed) or new columns are not available, use original
+    const confianza = empleado.NOMBRE_SPLIT_CONFIANZA ?? empleado.nombre_split_confianza ?? 2;
+    const nombre = empleado.NOMBRE ?? empleado.nombre;
+    const apellido1 = empleado.APELLIDO1 ?? empleado.apellido1;
+    const apellido2 = empleado.APELLIDO2 ?? empleado.apellido2;
+    
+    // Use new columns if confidence is good (1 or 2) and they exist
+    if (confianza > 0 && nombre) {
+      const parts = [nombre, apellido1, apellido2].filter(p => p && p.trim() !== '');
+      if (parts.length > 0) {
+        return parts.join(' ');
+      }
+    }
+    
+    // Fallback to original column
+    return empleado['NOMBRE / APELLIDOS'] ?? 
+           empleado.NOMBRE_APELLIDOS ?? 
+           empleado.CODIGO ?? 
+           'Unknown';
+  }
+
+  /**
+   * Obtiene estadísticas completas de empleados (cuadrante, horario, centro)
+   * Nota: Acest endpoint este accesibil doar pentru manageri (protejat în frontend cu canManageEmployees)
+   */
+  async getEstadisticasEmpleados(): Promise<any[]> {
+    // Nu aplicăm RBAC aici - doar managerii pot accesa tab-ul în frontend
+    const query = `
+      SELECT
+        CAST(de.CODIGO AS CHAR) AS CODIGO,
+        de.\`NOMBRE / APELLIDOS\` AS nombre,
+        de.\`CORREO ELECTRONICO\` AS email,
+        de.ESTADO AS estado,
+        de.\`FECHA DE ALTA\` AS fecha_alta,
+        de.\`CENTRO TRABAJO\` AS centro,
+        de.\`GRUPO\` AS grupo,
+        CASE 
+          WHEN EXISTS (
+            SELECT 1 FROM cuadrante c 
+            WHERE CAST(c.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
+              AND c.LUNA = DATE_FORMAT(NOW(), '%Y-%m')
+          ) THEN 'Sí'
+          ELSE 'No'
+        END AS tiene_cuadrante,
+        CASE 
+          WHEN EXISTS (
+            SELECT 1 FROM horarios h
+            WHERE h.centro_nombre = de.\`CENTRO TRABAJO\`
+              AND h.grupo_nombre = de.\`GRUPO\`
+          ) THEN 'Sí'
+          ELSE 'No'
+        END AS tiene_horario,
+        CASE 
+          WHEN de.\`CENTRO TRABAJO\` IS NOT NULL 
+            AND TRIM(de.\`CENTRO TRABAJO\`) <> '' 
+          THEN 'Sí'
+          ELSE 'No'
+        END AS tiene_centro,
+        -- Doar datos personales faltantes (cuadrante/horario/centro au coloane separate)
+        -- Folosim CONCAT_WS pentru a adăuga automat virgule între elemente
+        CONCAT_WS(', ',
+          CASE WHEN de.\`D.N.I. / NIE\` IS NULL OR TRIM(de.\`D.N.I. / NIE\`) = '' THEN 'Sin DNI/NIE' ELSE NULL END,
+          CASE WHEN de.\`CORREO ELECTRONICO\` IS NULL OR TRIM(de.\`CORREO ELECTRONICO\`) = '' THEN 'Sin email' ELSE NULL END,
+          CASE WHEN de.TELEFONO IS NULL OR TRIM(de.TELEFONO) = '' THEN 'Sin teléfono' ELSE NULL END,
+          CASE WHEN de.DIRECCION IS NULL OR TRIM(de.DIRECCION) = '' THEN 'Sin dirección' ELSE NULL END,
+          CASE WHEN de.\`FECHA DE ALTA\` IS NULL OR TRIM(de.\`FECHA DE ALTA\`) = '' THEN 'Sin fecha alta' ELSE NULL END,
+          CASE WHEN de.\`SEG. SOCIAL\` IS NULL OR TRIM(de.\`SEG. SOCIAL\`) = '' THEN 'Sin seg. social' ELSE NULL END
+        ) AS detalles_faltantes
+      FROM DatosEmpleados de
+      ORDER BY de.\`NOMBRE / APELLIDOS\`
+    `;
+
+    try {
+      const results = await this.prisma.$queryRawUnsafe<any[]>(query);
+      this.logger.log(`✅ Estadísticas empleados retornó ${results?.length || 0} resultados`);
+      return results || [];
+    } catch (error: any) {
+      this.logger.error(`❌ Error en getEstadisticasEmpleados: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error al obtener estadísticas: ${error.message}`);
+    }
+  }
+
+  async exportEstadisticasEmpleadosExcel(): Promise<Buffer> {
+    try {
+      const estadisticas = await this.getEstadisticasEmpleados();
+      
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Estadísticas Empleados');
+      
+      // Headers
+      worksheet.columns = [
+        { header: 'CODIGO', key: 'CODIGO', width: 15 },
+        { header: 'NOMBRE', key: 'nombre', width: 30 },
+        { header: 'EMAIL', key: 'email', width: 30 },
+        { header: 'ESTADO', key: 'estado', width: 12 },
+        { header: 'FECHA ALTA', key: 'fecha_alta', width: 15 },
+        { header: 'CENTRO', key: 'centro', width: 40 },
+        { header: 'GRUPO', key: 'grupo', width: 25 },
+        { header: 'CUADRANTE', key: 'tiene_cuadrante', width: 12 },
+        { header: 'HORARIO', key: 'tiene_horario', width: 12 },
+        { header: 'CENTRO ASIGNADO', key: 'tiene_centro', width: 15 },
+        { header: 'DETALLES FALTANTES', key: 'detalles_faltantes', width: 50 },
+      ];
+      
+      // Style headers
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
+      
+      // Add data
+      estadisticas.forEach((emp) => {
+        worksheet.addRow({
+          CODIGO: emp.CODIGO,
+          nombre: emp.nombre,
+          email: emp.email,
+          estado: emp.estado,
+          fecha_alta: emp.fecha_alta || 'Sin fecha',
+          centro: emp.centro || '-',
+          grupo: emp.grupo || '-',
+          tiene_cuadrante: emp.tiene_cuadrante || 'No',
+          tiene_horario: emp.tiene_horario || 'No',
+          tiene_centro: emp.tiene_centro || 'No',
+          detalles_faltantes: emp.detalles_faltantes || '-',
+        });
+      });
+      
+      // Generate buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      return Buffer.from(buffer);
+    } catch (error: any) {
+      this.logger.error(`❌ Error en exportEstadisticasEmpleadosExcel: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error al exportar Excel: ${error.message}`);
+    }
+  }
+
+  async exportEstadisticasEmpleadosPDF(): Promise<Buffer> {
+    try {
+      const estadisticas = await this.getEstadisticasEmpleados();
+      
+      return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ 
+          size: 'A4',
+          layout: 'landscape',
+          margin: 50,
+        });
+        
+        const buffers: Buffer[] = [];
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(buffers);
+          resolve(pdfBuffer);
+        });
+        doc.on('error', reject);
+        
+        // Title
+        doc.fontSize(18).text('Estadísticas de Empleados', { align: 'center' });
+        doc.moveDown();
+        
+        // Table headers
+        const headers = ['CODIGO', 'NOMBRE', 'EMAIL', 'ESTADO', 'FECHA ALTA', 'CENTRO', 'GRUPO', 'CUADRANTE', 'HORARIO', 'CENTRO', 'DETALLES'];
+        const colWidths = [60, 120, 120, 60, 70, 120, 80, 60, 60, 60, 120];
+        let startY = doc.y;
+        let currentY = startY;
+        
+        // Draw header
+        doc.fontSize(8).font('Helvetica-Bold');
+        let x = 50;
+        headers.forEach((header, i) => {
+          doc.text(header, x, currentY, { width: colWidths[i], align: 'left' });
+          x += colWidths[i];
+        });
+        currentY += 20;
+        
+        // Draw rows
+        doc.font('Helvetica');
+        estadisticas.forEach((emp, index) => {
+          if (currentY > 700) {
+            doc.addPage();
+            currentY = 50;
+            // Redraw headers on new page
+            x = 50;
+            doc.font('Helvetica-Bold');
+            headers.forEach((header, i) => {
+              doc.text(header, x, currentY, { width: colWidths[i], align: 'left' });
+              x += colWidths[i];
+            });
+            currentY += 20;
+            doc.font('Helvetica');
+          }
+          
+          const row = [
+            emp.CODIGO || '-',
+            (emp.nombre || '-').substring(0, 25),
+            (emp.email || '-').substring(0, 25),
+            emp.estado || '-',
+            emp.fecha_alta || 'Sin fecha',
+            (emp.centro || '-').substring(0, 20),
+            (emp.grupo || '-').substring(0, 15),
+            emp.tiene_cuadrante || 'No',
+            emp.tiene_horario || 'No',
+            emp.tiene_centro || 'No',
+            (emp.detalles_faltantes || '-').substring(0, 20),
+          ];
+          
+          x = 50;
+          row.forEach((cell, i) => {
+            doc.fontSize(7).text(cell, x, currentY, { width: colWidths[i], align: 'left' });
+            x += colWidths[i];
+          });
+          currentY += 15;
+        });
+        
+        doc.end();
+      });
+    } catch (error: any) {
+      this.logger.error(`❌ Error en exportEstadisticasEmpleadosPDF: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
+    }
+  }
 
   async getEmpleadoByCodigo(codigo: string) {
     if (!codigo) {
@@ -21,6 +251,11 @@ export class EmpleadosService {
       SELECT 
         CODIGO,
         \`NOMBRE / APELLIDOS\`,
+        NOMBRE_APELLIDOS_BACKUP,
+        NOMBRE,
+        APELLIDO1,
+        APELLIDO2,
+        NOMBRE_SPLIT_CONFIANZA,
         \`NACIONALIDAD\`,
         \`DIRECCION\`,
         \`D.N.I. / NIE\`,
@@ -101,6 +336,11 @@ export class EmpleadosService {
       SELECT 
         CODIGO,
         \`NOMBRE / APELLIDOS\`,
+        NOMBRE_APELLIDOS_BACKUP,
+        NOMBRE,
+        APELLIDO1,
+        APELLIDO2,
+        NOMBRE_SPLIT_CONFIANZA,
         \`NACIONALIDAD\`,
         \`DIRECCION\`,
         \`D.N.I. / NIE\`,
@@ -156,13 +396,7 @@ export class EmpleadosService {
         empleado['Fecha Antigüedad'] ?? empleado.FECHA_ANTIGUEDAD ?? null,
       ANTIGUEDAD: empleado['Antigüedad'] ?? empleado.ANTIGUEDAD ?? null,
       empleadoId: empleado.CODIGO,
-      empleadoNombre:
-        empleado['NOMBRE / APELLIDOS'] ??
-        empleado.NOMBRE_APELLIDOS ??
-        empleado['CORREO ELECTRONICO'] ??
-        empleado.CORREO_ELECTRONICO ??
-        empleado.CODIGO ??
-        null,
+      empleadoNombre: this.getFormattedNombre(empleado),
       email:
         empleado['CORREO ELECTRONICO'] ?? empleado.CORREO_ELECTRONICO ?? null,
     }));
@@ -187,6 +421,10 @@ export class EmpleadosService {
   async addEmpleado(empleadoData: {
     CODIGO: string;
     'NOMBRE / APELLIDOS'?: string;
+    NOMBRE?: string;
+    APELLIDO1?: string;
+    APELLIDO2?: string;
+    NOMBRE_SPLIT_CONFIANZA?: number;
     NACIONALIDAD?: string;
     DIRECCION?: string;
     'D.N.I. / NIE'?: string;
@@ -220,6 +458,10 @@ export class EmpleadosService {
         INSERT INTO DatosEmpleados (
           \`CODIGO\`,
           \`NOMBRE / APELLIDOS\`,
+          \`NOMBRE\`,
+          \`APELLIDO1\`,
+          \`APELLIDO2\`,
+          \`NOMBRE_SPLIT_CONFIANZA\`,
           \`NACIONALIDAD\`,
           \`DIRECCION\`,
           \`D.N.I. / NIE\`,
@@ -244,6 +486,10 @@ export class EmpleadosService {
         ) VALUES (
           ${this.escapeSql(empleadoData.CODIGO)},
           ${this.escapeSql(empleadoData['NOMBRE / APELLIDOS'] || '')},
+          ${this.escapeSql(empleadoData.NOMBRE || null)},
+          ${this.escapeSql(empleadoData.APELLIDO1 || null)},
+          ${this.escapeSql(empleadoData.APELLIDO2 || null)},
+          ${empleadoData.NOMBRE_SPLIT_CONFIANZA !== undefined ? empleadoData.NOMBRE_SPLIT_CONFIANZA : (empleadoData.NOMBRE || empleadoData.APELLIDO1 || empleadoData.APELLIDO2 ? 2 : 0)},
           ${this.escapeSql(empleadoData.NACIONALIDAD || '')},
           ${this.escapeSql(empleadoData.DIRECCION || '')},
           ${this.escapeSql(empleadoData['D.N.I. / NIE'] || '')},
@@ -382,6 +628,94 @@ export class EmpleadosService {
       this.logger.error(`❌ Eroare la actualizarea empleado ${codigo}:`, error);
       throw new BadRequestException(
         `Eroare la actualizarea empleado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Actualizează câmpurile separate pentru nume (NOMBRE, APELLIDO1, APELLIDO2, NOMBRE_SPLIT_CONFIANZA)
+   * Folosit pentru corectare manuală a split-urilor
+   * Actualizează automat și coloana originală NOMBRE / APELLIDOS cu numele complet formatat
+   */
+  async updateNombreSplit(
+    codigo: string,
+    data: {
+      NOMBRE?: string;
+      APELLIDO1?: string;
+      APELLIDO2?: string;
+      NOMBRE_SPLIT_CONFIANZA?: number;
+    },
+  ): Promise<{ success: true; codigo: string }> {
+    if (!codigo) {
+      throw new BadRequestException('CODIGO is required');
+    }
+
+    try {
+      const updates: string[] = [];
+
+      // Dacă avem cel puțin un câmp actualizat, construim numele complet
+      let nombreCompleto = null;
+      if (data.NOMBRE !== undefined || data.APELLIDO1 !== undefined || data.APELLIDO2 !== undefined) {
+        // Citim valorile actuale din DB pentru a combina cu noile valori
+        const empleadoActual = await this.getEmpleadoByCodigo(codigo);
+        
+        // Folosim valorile noi dacă sunt furnizate, altfel valorile existente
+        const nombreFinal = data.NOMBRE !== undefined 
+          ? (data.NOMBRE || '').trim() 
+          : (empleadoActual?.NOMBRE || '').trim();
+        const apellido1Final = data.APELLIDO1 !== undefined 
+          ? (data.APELLIDO1 || '').trim() 
+          : (empleadoActual?.APELLIDO1 || '').trim();
+        const apellido2Final = data.APELLIDO2 !== undefined 
+          ? (data.APELLIDO2 || '').trim() 
+          : (empleadoActual?.APELLIDO2 || '').trim();
+        
+        // Construim numele complet: NOMBRE APELLIDO1 APELLIDO2 (fără valorile goale)
+        const partsFinal = [nombreFinal, apellido1Final, apellido2Final].filter(part => part && part !== '');
+        nombreCompleto = partsFinal.length > 0 ? partsFinal.join(' ') : null;
+      }
+
+      if (data.NOMBRE !== undefined) {
+        updates.push(`\`NOMBRE\` = ${this.escapeSql(data.NOMBRE || null)}`);
+      }
+      if (data.APELLIDO1 !== undefined) {
+        updates.push(`\`APELLIDO1\` = ${this.escapeSql(data.APELLIDO1 || null)}`);
+      }
+      if (data.APELLIDO2 !== undefined) {
+        updates.push(`\`APELLIDO2\` = ${this.escapeSql(data.APELLIDO2 || null)}`);
+      }
+      if (data.NOMBRE_SPLIT_CONFIANZA !== undefined) {
+        updates.push(`\`NOMBRE_SPLIT_CONFIANZA\` = ${data.NOMBRE_SPLIT_CONFIANZA}`);
+      }
+
+      // Actualizăm și coloana originală NOMBRE / APELLIDOS cu numele complet formatat
+      // în ordinea corectă: NOMBRE APELLIDO1 APELLIDO2
+      if (nombreCompleto !== null) {
+        updates.push(`\`NOMBRE / APELLIDOS\` = ${this.escapeSql(nombreCompleto)}`);
+      }
+
+      if (updates.length === 0) {
+        throw new BadRequestException('No fields to update');
+      }
+
+      const updateQuery = `
+        UPDATE DatosEmpleados SET
+          ${updates.join(',\n          ')}
+        WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
+      this.logger.log(`✅ Câmpuri separate actualizate pentru empleado ${codigo}, nombre completo: ${nombreCompleto || '(sin cambios)'}`);
+
+      return {
+        success: true,
+        codigo: codigo,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la actualizarea câmpurilor separate pentru ${codigo}:`, error);
+      throw new BadRequestException(
+        `Eroare la actualizarea câmpurilor separate: ${error.message}`,
       );
     }
   }

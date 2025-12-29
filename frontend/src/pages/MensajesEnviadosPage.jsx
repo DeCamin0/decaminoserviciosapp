@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { getFormattedNombre } from '../utils/employeeNameHelper';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Card, Button, Input, Modal } from '../components/ui';
 import { TableLoading } from '../components/ui/LoadingStates';
@@ -536,7 +537,7 @@ export default function MensajesEnviadosPage() {
           recipientType,
           recipientId: selectedEmpleado?.CODIGO || selectedGrupo || 'gestoria',
           subject,
-          user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+          user: getFormattedNombre(authUser) || authUser?.nombre,
           email: authUser?.email,
         });
 
@@ -605,7 +606,7 @@ export default function MensajesEnviadosPage() {
     }
     const searchLower = empleadoSearchTerm.toLowerCase();
     return activeEmpleados.filter(emp => {
-      const nombre = (emp['NOMBRE / APELLIDOS'] || emp.NOMBRE_APELLIDOS || '').toLowerCase();
+      const nombre = getFormattedNombre(emp).toLowerCase();
       const codigo = (emp.CODIGO || '').toLowerCase();
       const email = (emp['CORREO ELECTRONICO'] || emp.CORREO_ELECTRONICO || '').toLowerCase();
       return nombre.includes(searchLower) || codigo.includes(searchLower) || email.includes(searchLower);
@@ -735,7 +736,7 @@ export default function MensajesEnviadosPage() {
                     id="select-empleado"
                     name="empleado"
                     type="text"
-                    value={empleadoSearchTerm || selectedEmpleado?.['NOMBRE / APELLIDOS'] || selectedEmpleado?.NOMBRE_APELLIDOS || selectedEmpleado?.CODIGO || ''}
+                    value={empleadoSearchTerm || (selectedEmpleado ? getFormattedNombre(selectedEmpleado) : '') || selectedEmpleado?.CODIGO || ''}
                     onChange={(e) => {
                       setEmpleadoSearchTerm(e.target.value);
                       setShowEmpleadoDropdown(true);
@@ -769,7 +770,7 @@ export default function MensajesEnviadosPage() {
                           className="px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                         >
                           <div className="font-medium text-gray-800">
-                            {emp['NOMBRE / APELLIDOS'] || emp.NOMBRE_APELLIDOS || emp.CODIGO}
+                            {getFormattedNombre(emp) || emp.CODIGO}
                           </div>
                           <div className="text-sm text-gray-500">
                             {emp.CODIGO} {emp['CORREO ELECTRONICO'] || emp.CORREO_ELECTRONICO ? `• ${emp['CORREO ELECTRONICO'] || emp.CORREO_ELECTRONICO}` : ''}
@@ -794,7 +795,7 @@ export default function MensajesEnviadosPage() {
                   {/* Afișează angajatul selectat */}
                   {selectedEmpleado && !showEmpleadoDropdown && (
                     <div className="mt-2 text-sm text-gray-600">
-                      Seleccionado: <strong>{selectedEmpleado['NOMBRE / APELLIDOS'] || selectedEmpleado.NOMBRE_APELLIDOS || selectedEmpleado.CODIGO}</strong>
+                      Seleccionado: <strong>{getFormattedNombre(selectedEmpleado) || selectedEmpleado.CODIGO}</strong>
                       <button
                         onClick={() => {
                           setSelectedEmpleado(null);
@@ -1459,7 +1460,7 @@ export default function MensajesEnviadosPage() {
                 <option value="">Selectează...</option>
                 {activeEmpleados.map((emp) => (
                   <option key={emp.CODIGO} value={emp.CODIGO}>
-                    {emp['NOMBRE / APELLIDOS'] || emp.NOMBRE_APELLIDOS} ({emp.CODIGO})
+                    {getFormattedNombre(emp)} ({emp.CODIGO})
                   </option>
                 ))}
               </select>

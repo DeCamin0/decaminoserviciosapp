@@ -13,10 +13,12 @@ import {
   UploadedFiles,
   Body,
   Param,
+  Req,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { NominasService } from '../services/nominas.service';
 
 @Controller('api/nominas')
@@ -49,6 +51,8 @@ export class NominasController {
     @Query('id') id: string,
     @Query('nombre') nombre: string,
     @Res() res: Response,
+    @CurrentUser() user: any,
+    @Req() req: Request,
   ) {
     try {
       const idNumber = parseInt(id, 10);
@@ -63,6 +67,30 @@ export class NominasController {
 
       const { archivo, tipo_mime, nombre_archivo } =
         await this.nominasService.downloadNomina(idNumber, nombre || '');
+
+      // Loghează accesul (download)
+      const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
+      const empleadoNombre = user?.['NOMBRE / APELLIDOS'] || user?.nombre || nombre || '';
+      const ip = req.ip || req.socket.remoteAddress || undefined;
+      const userAgent = req.get('user-agent') || undefined;
+
+      if (empleadoCodigo) {
+        // Nu așteptăm răspunsul - logging-ul nu trebuie să blocheze download-ul
+        this.nominasService
+          .logNominaAcceso(
+            idNumber,
+            empleadoCodigo,
+            empleadoNombre,
+            'download',
+            ip,
+            userAgent,
+          )
+          .catch((logError: any) => {
+            this.logger.warn(
+              `⚠️ Eroare la logarea accesului (non-blocking): ${logError.message}`,
+            );
+          });
+      }
 
       // Setează headers pentru download
       res.setHeader('Content-Type', tipo_mime);
@@ -83,6 +111,78 @@ export class NominasController {
         throw error;
       }
       throw new BadRequestException('Error al descargar la nómina');
+    }
+  }
+
+  /**
+   * Endpoint pentru preview nómina (pentru tracking acces)
+   * GET /api/nominas/:id/preview?nombre=...
+   */
+  @Get(':id/preview')
+  async previewNomina(
+    @Param('id') id: string,
+    @Query('nombre') nombre: string,
+    @Res() res: Response,
+    @CurrentUser() user: any,
+    @Req() req: Request,
+  ) {
+    try {
+      const idNumber = parseInt(id, 10);
+
+      if (isNaN(idNumber)) {
+        throw new BadRequestException(`Parámetro "id" inválido: ${id}`);
+      }
+
+      this.logger.log(
+        `👁️ Preview nomina request - id: ${idNumber}, nombre: ${nombre || 'N/A'}`,
+      );
+
+      const { archivo, tipo_mime, nombre_archivo } =
+        await this.nominasService.downloadNomina(idNumber, nombre || '');
+
+      // Loghează accesul (preview)
+      const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
+      const empleadoNombre = user?.['NOMBRE / APELLIDOS'] || user?.nombre || nombre || '';
+      const ip = req.ip || req.socket.remoteAddress || undefined;
+      const userAgent = req.get('user-agent') || undefined;
+
+      if (empleadoCodigo) {
+        // Nu așteptăm răspunsul - logging-ul nu trebuie să blocheze preview-ul
+        this.nominasService
+          .logNominaAcceso(
+            idNumber,
+            empleadoCodigo,
+            empleadoNombre,
+            'preview',
+            ip,
+            userAgent,
+          )
+          .catch((logError: any) => {
+            this.logger.warn(
+              `⚠️ Eroare la logarea accesului (non-blocking): ${logError.message}`,
+            );
+          });
+      }
+
+      // Setează headers pentru preview (inline, nu download)
+      res.setHeader('Content-Type', tipo_mime);
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${nombre_archivo}"`,
+      );
+      res.setHeader('Content-Length', archivo.length.toString());
+
+      // Trimite buffer-ul ca răspuns
+      res.send(archivo);
+    } catch (error: any) {
+      this.logger.error('Error in NominasController.previewNomina:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException('Error al obtener preview de la nómina');
     }
   }
 
@@ -267,6 +367,194 @@ export class NominasController {
       }
       throw new BadRequestException(
         `Error al eliminar la nómina: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Endpoint pentru trimiterea unei nóminas prin email
+   * POST /api/nominas/:id/send-email
+   * Body: { email: string, nombre: string }
+   */
+  @Post(':id/send-email')
+  async sendNominaByEmail(
+    @Param('id') id: string,
+    @Body() body: { email: string; nombre: string },
+    @CurrentUser() user: any,
+    @Req() req: Request,
+  ) {
+    try {
+      const idNumber = parseInt(id, 10);
+
+      if (isNaN(idNumber)) {
+        throw new BadRequestException(`Parámetro "id" inválido: ${id}`);
+      }
+
+      if (!body.email || !body.nombre) {
+        throw new BadRequestException(
+          'Se requieren "email" y "nombre" en el body',
+        );
+      }
+
+      // Obține numele angajatului din user token sau din body
+      const empleadoNombre =
+        user?.['NOMBRE / APELLIDOS'] ||
+        user?.nombre ||
+        body.nombre ||
+        'Empleado';
+
+      this.logger.log(
+        `📧 Send nomina by email request - id: ${idNumber}, email: ${body.email}, nombre: ${body.nombre}`,
+      );
+
+      const result = await this.nominasService.sendNominaByEmail(
+        idNumber,
+        body.nombre,
+        body.email,
+        empleadoNombre,
+      );
+
+      // Loghează accesul (email)
+      const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
+      const ip = req?.ip || req?.socket?.remoteAddress || undefined;
+      const userAgent = req?.get('user-agent') || undefined;
+
+      this.logger.log(
+        `📧 Send email nómina ${idNumber} - empleado: ${empleadoCodigo}, nombre: ${empleadoNombre}`,
+      );
+
+      if (empleadoCodigo) {
+        // Așteptăm logging-ul pentru a ne asigura că se face
+        try {
+          await this.nominasService.logNominaAcceso(
+            idNumber,
+            empleadoCodigo,
+            empleadoNombre,
+            'email',
+            ip,
+            userAgent,
+          );
+          this.logger.log(`✅ Acces logat pentru email nómina ${idNumber}`);
+        } catch (logError: any) {
+          this.logger.error(
+            `❌ Eroare la logarea accesului (non-blocking): ${logError.message}`,
+            logError.stack,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `⚠️ Nu s-a putut loga accesul: empleadoCodigo=${empleadoCodigo}`,
+        );
+      }
+
+      return {
+        success: true,
+        message: result.message,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error in NominasController.sendNominaByEmail:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al enviar la nómina por email: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Endpoint pentru obținerea accesurilor la nóminas
+   * GET /api/nominas/:id/accesos (pentru accesurile unei nóminas specifice)
+   * GET /api/nominas/accesos?nominaId=...&empleadoCodigo=...&tipoAcceso=...
+   * 
+   * IMPORTANT: Ruta cu parametru trebuie să fie PRIMA pentru ca NestJS să o potrivească corect
+   */
+  @Get(':id/accesos')
+  @Get('accesos')
+  async getNominasAccesos(
+    @Param('id') id: string | undefined,
+    @Query('nominaId') nominaId: string | undefined,
+    @Query('empleadoCodigo') empleadoCodigo: string | undefined,
+    @Query('tipoAcceso') tipoAcceso: 'preview' | 'download' | 'email' | undefined,
+    @Query('fechaDesde') fechaDesde: string | undefined,
+    @Query('fechaHasta') fechaHasta: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      // Verifică permisiuni (doar admin/manager/developer pot vedea accesurile)
+      const grupo = user?.GRUPO || user?.grupo || '';
+      const canViewAccesos =
+        grupo === 'Admin' ||
+        grupo === 'Developer' ||
+        grupo === 'Manager' ||
+        grupo === 'Supervisor';
+
+      if (!canViewAccesos) {
+        throw new BadRequestException(
+          'No tienes permisos para ver los accesos a nóminas',
+        );
+      }
+
+      const filters: any = {};
+
+      // Dacă există id în path, folosește-l (dar ignoră dacă id este "accesos" - înseamnă că e ruta fără parametru)
+      if (id && id !== 'accesos') {
+        const idNumber = parseInt(id, 10);
+        if (!isNaN(idNumber)) {
+          filters.nominaId = idNumber;
+        }
+      } else if (nominaId) {
+        const idNumber = parseInt(nominaId, 10);
+        if (!isNaN(idNumber)) {
+          filters.nominaId = idNumber;
+        }
+      }
+
+      if (empleadoCodigo) {
+        filters.empleadoCodigo = empleadoCodigo;
+      }
+
+      if (tipoAcceso && ['preview', 'download', 'email'].includes(tipoAcceso)) {
+        filters.tipoAcceso = tipoAcceso;
+      }
+
+      if (fechaDesde) {
+        filters.fechaDesde = fechaDesde;
+      }
+
+      if (fechaHasta) {
+        filters.fechaHasta = fechaHasta;
+      }
+
+      if (limit) {
+        const limitNum = parseInt(limit, 10);
+        if (!isNaN(limitNum) && limitNum > 0) {
+          filters.limit = limitNum;
+        }
+      }
+
+      this.logger.log(`📊 [getNominasAccesos] Request - id: ${id}, nominaId: ${nominaId}, filters: ${JSON.stringify(filters)}`);
+
+      const accesos = await this.nominasService.getNominasAccesos(filters);
+
+      this.logger.log(`📊 [getNominasAccesos] Returning ${accesos.length} accesos`);
+
+      return {
+        success: true,
+        total: accesos.length,
+        accesos: accesos,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error in NominasController.getNominasAccesos:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener accesos: ${error.message}`,
       );
     }
   }

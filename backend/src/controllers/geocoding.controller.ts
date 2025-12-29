@@ -109,4 +109,85 @@ export class GeocodingController {
       throw error;
     }
   }
+
+  /**
+   * GET /api/geocoding/search
+   * Autocompletare adrese - returnează sugestii de adrese pentru un query
+   */
+  @Get('search')
+  @UseGuards(JwtAuthGuard)
+  async searchAddresses(
+    @Query('q') query: string,
+    @Query('limit') limit?: string,
+  ) {
+    try {
+      if (!query || query.trim() === '') {
+        return {
+          success: true,
+          results: [],
+        };
+      }
+
+      const limitNum = limit ? parseInt(limit, 10) : 5;
+      const results = await this.geocodingService.searchAddresses(
+        query,
+        limitNum,
+      );
+
+      return {
+        success: true,
+        results,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error in address search:', error);
+      return {
+        success: false,
+        results: [],
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * GET /api/geocoding/address-from-coords
+   * Obține adresa completă și precisă folosind coordonatele
+   * Folosit după selectarea unei adrese pentru a obține codul poștal corect
+   */
+  @Get('address-from-coords')
+  @UseGuards(JwtAuthGuard)
+  async getAddressFromCoords(
+    @Query('lat') lat: string,
+    @Query('lon') lon: string,
+  ) {
+    try {
+      if (!lat || !lon) {
+        throw new BadRequestException(
+          'lat and lon query parameters are required',
+        );
+      }
+
+      const result = await this.geocodingService.getAddressFromCoordinates(
+        lat,
+        lon,
+      );
+
+      if (!result) {
+        return {
+          success: false,
+          message: 'No se pudo obtener la dirección',
+        };
+      }
+
+      return {
+        success: true,
+        address: result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error getting address from coordinates:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
 }

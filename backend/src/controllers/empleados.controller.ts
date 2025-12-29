@@ -10,6 +10,7 @@ import {
   Body,
   BadRequestException,
   Logger,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -75,6 +76,66 @@ export class EmpleadosController {
     }
   }
 
+  @Get('estadisticas')
+  @UseGuards(JwtAuthGuard)
+  async getEstadisticasEmpleados() {
+    try {
+      this.logger.log('📊 Get estadísticas empleados request');
+      // Nu trebuie să verificăm RBAC aici - doar managerii pot accesa tab-ul în frontend
+      const estadisticas = await this.empleadosService.getEstadisticasEmpleados();
+      return { success: true, estadisticas };
+    } catch (error: any) {
+      this.logger.error('❌ Error getting estadísticas empleados:', error);
+      throw new BadRequestException(
+        `Error al obtener estadísticas: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('estadisticas/export-excel')
+  @UseGuards(JwtAuthGuard)
+  async exportEstadisticasExcel(@Res() res: any) {
+    try {
+      this.logger.log('📊 Export estadísticas empleados Excel request');
+      const buffer = await this.empleadosService.exportEstadisticasEmpleadosExcel();
+      
+      res.set({
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename=Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.xlsx`,
+        'Content-Length': buffer.length,
+      });
+      
+      res.send(buffer);
+    } catch (error: any) {
+      this.logger.error('❌ Error exporting estadísticas Excel:', error);
+      throw new BadRequestException(
+        `Error al exportar Excel: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('estadisticas/export-pdf')
+  @UseGuards(JwtAuthGuard)
+  async exportEstadisticasPDF(@Res() res: any) {
+    try {
+      this.logger.log('📊 Export estadísticas empleados PDF request');
+      const buffer = await this.empleadosService.exportEstadisticasEmpleadosPDF();
+      
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename=Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.pdf`,
+        'Content-Length': buffer.length,
+      });
+      
+      res.send(buffer);
+    } catch (error: any) {
+      this.logger.error('❌ Error exporting estadísticas PDF:', error);
+      throw new BadRequestException(
+        `Error al exportar PDF: ${error.message}`,
+      );
+    }
+  }
+
   @Get()
   async getAll() {
     const empleados = await this.empleadosService.getAllEmpleados();
@@ -104,6 +165,12 @@ export class EmpleadosController {
       const empleadoData = {
         CODIGO: body.CODIGO,
         'NOMBRE / APELLIDOS': body['NOMBRE / APELLIDOS'] || '',
+        NOMBRE: body.NOMBRE || null,
+        APELLIDO1: body.APELLIDO1 || null,
+        APELLIDO2: body.APELLIDO2 || null,
+        NOMBRE_SPLIT_CONFIANZA: body.NOMBRE_SPLIT_CONFIANZA !== undefined 
+          ? parseInt(body.NOMBRE_SPLIT_CONFIANZA) 
+          : (body.NOMBRE || body.APELLIDO1 || body.APELLIDO2 ? 2 : 0),
         NACIONALIDAD: body.NACIONALIDAD || '',
         DIRECCION: body.DIRECCION || '',
         'D.N.I. / NIE': body['D.N.I. / NIE'] || '',
@@ -154,7 +221,7 @@ export class EmpleadosController {
 
       // Salvăm PDF-ul în CarpetasDocumentos dacă există
       if (pdfFile && pdfFile.buffer) {
-        const nombreEmpleado = empleadoData['NOMBRE / APELLIDOS'] || '';
+        const nombreEmpleado = this.empleadosService.getFormattedNombre(empleadoData) || '';
         // Luăm email-ul din empleadoData sau din body (pentru a fi siguri)
         const correoElectronico =
           empleadoData['CORREO ELECTRONICO'] ||
@@ -187,7 +254,7 @@ export class EmpleadosController {
         } else {
           try {
             const nombreEmpleado =
-              empleadoData['NOMBRE / APELLIDOS'] || 'Sin Nombre';
+              this.empleadosService.getFormattedNombre(empleadoData) || 'Sin Nombre';
             const subject = `ALTA OPERARIA/O: ${nombreEmpleado}`;
             const html = `
               <html>
@@ -423,8 +490,9 @@ export class EmpleadosController {
       }
 
       // Nu modificăm angajatul în BD, doar trimitem ficha la gestorie
-      const nombreEmpleado =
-        body['NOMBRE / APELLIDOS'] || 'Sin Nombre';
+        // Get employee data to use formatted nombre
+        const empleadoForNombre = await this.empleadosService.getEmpleadoByCodigo(body.CODIGO);
+        const nombreEmpleado = this.empleadosService.getFormattedNombre(empleadoForNombre) || body['NOMBRE / APELLIDOS'] || 'Sin Nombre';
       const subject = `RE-ENVÍO FICHA: ${nombreEmpleado}`;
       
       let html = `
@@ -566,7 +634,7 @@ export class EmpleadosController {
     }
 
     const email = empleadoData['CORREO ELECTRONICO'] || empleadoData.CORREO_ELECTRONICO;
-    const nombre = empleadoData['NOMBRE / APELLIDOS'] || empleadoData.NOMBRE_APELLIDOS || 'Empleado';
+    const nombre = this.empleadosService.getFormattedNombre(empleadoData) || 'Empleado';
     const fechaAlta = empleadoData['FECHA DE ALTA'] || empleadoData.FECHA_DE_ALTA || '';
 
     if (!email || !email.trim()) {
@@ -839,14 +907,50 @@ export class EmpleadosController {
       // Verifică dacă există FECHA DE ALTA (fie nouă, fie existentă)
       const tieneFechaAlta = fechaAltaNueva && fechaAltaNueva.trim() !== '';
       
+      // Funcție helper pentru a parsea FECHA_DE_ALTA și a verifica dacă este în viitor sau astăzi
+      const parseFechaAlta = (fechaStr: string): Date | null => {
+        if (!fechaStr || fechaStr.trim() === '') return null;
+        
+        const str = fechaStr.trim();
+        // Formato YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+          const date = new Date(str);
+          if (!isNaN(date.getTime())) return date;
+        }
+        // Formato DD/MM/YYYY o DD-MM-YYYY
+        const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        if (match) {
+          const day = parseInt(match[1], 10);
+          const month = parseInt(match[2], 10) - 1;
+          let year = parseInt(match[3], 10);
+          if (year < 100) {
+            year = year < 50 ? 2000 + year : 1900 + year;
+          }
+          const date = new Date(year, month, day);
+          if (!isNaN(date.getTime())) return date;
+        }
+        return null;
+      };
+      
+      // Verifică dacă FECHA_DE_ALTA este în viitor sau astăzi (nu în trecut)
+      const fechaAltaDate = parseFechaAlta(fechaAltaNueva);
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const fechaAltaNormalizada = fechaAltaDate ? new Date(fechaAltaDate) : null;
+      if (fechaAltaNormalizada) {
+        fechaAltaNormalizada.setHours(0, 0, 0, 0);
+      }
+      // FECHA_DE_ALTA este în viitor sau astăzi (>= astăzi)
+      const fechaAltaEsFuturoOHoy = fechaAltaNormalizada ? fechaAltaNormalizada >= hoy : false;
+      
       this.logger.log(
-        `🔍 [updateEmpleado] Verificare email bun venit pentru ${body.CODIGO}: esReactivacion=${esReactivacion}, esPrimeraFechaAlta=${esPrimeraFechaAlta}, tieneFechaAlta=${tieneFechaAlta}, estadoAnterior="${estadoAnterior}", estadoNuevo="${estadoNuevo}", fechaAltaAnterior="${fechaAltaAnterior}", fechaAltaNueva="${fechaAltaNueva}"`,
+        `🔍 [updateEmpleado] Verificare email bun venit pentru ${body.CODIGO}: esReactivacion=${esReactivacion}, esPrimeraFechaAlta=${esPrimeraFechaAlta}, tieneFechaAlta=${tieneFechaAlta}, fechaAltaEsFuturoOHoy=${fechaAltaEsFuturoOHoy}, fechaAltaNueva="${fechaAltaNueva}"`,
       );
       
       // Trimite email de bun venit dacă:
-      // 1. Este reactivare (ESTADO din INACTIVO în ACTIVO) ȘI are FECHA DE ALTA (fie nouă, fie existentă)
-      // 2. SAU se setează FECHA DE ALTA pentru prima dată
-      if ((esReactivacion && tieneFechaAlta) || esPrimeraFechaAlta) {
+      // 1. Este reactivare (ESTADO din INACTIVO în ACTIVO) ȘI are FECHA DE ALTA (fie nouă, fie existentă) ȘI FECHA_DE_ALTA este în viitor sau astăzi
+      // 2. SAU se setează FECHA DE ALTA pentru prima dată ȘI FECHA_DE_ALTA este în viitor sau astăzi
+      if (((esReactivacion && tieneFechaAlta) || esPrimeraFechaAlta) && fechaAltaEsFuturoOHoy) {
         const empleadoCompleto = {
           ...empleadoAnterior,
           ...empleadoData,
@@ -900,7 +1004,7 @@ export class EmpleadosController {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <p style="margin: 5px 0;"><strong>Empleado:</strong> ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'N/A'}</p>
+              <p style="margin: 5px 0;"><strong>Empleado:</strong> ${this.empleadosService.getFormattedNombre(empleadoData) || body.CODIGO || 'N/A'}</p>
               <p style="margin: 5px 0;"><strong>Código:</strong> ${body.CODIGO || 'N/A'}</p>
               <p style="margin: 5px 0;"><strong>Email:</strong> ${empleadoData['CORREO ELECTRONICO'] || 'N/A'}</p>
             </div>
@@ -965,7 +1069,7 @@ export class EmpleadosController {
               recipientType: 'gestoria',
               recipientEmail: 'altemprado@gmail.com',
               recipientName: 'Gestoria',
-              subject: emailSubject || `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`,
+              subject: emailSubject || `Actualización de datos - ${this.empleadosService.getFormattedNombre(empleadoData) || body.CODIGO || 'Empleado'}`,
               message: htmlEmail || emailBody || 'Se ha actualizado la información del empleado.',
               additionalMessage: emailBody || undefined,
               status: 'failed',
@@ -1324,10 +1428,7 @@ export class EmpleadosController {
           await this.empleadosService.getEmpleadoByCodigo(codigo);
         const email =
           empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
-        const nombre =
-          empleado['NOMBRE / APELLIDOS'] ||
-          empleado.NOMBRE_APELLIDOS ||
-          empleado.CODIGO;
+        const nombre = this.empleadosService.getFormattedNombre(empleado);
 
         if (!email) {
           throw new BadRequestException(
@@ -1346,7 +1447,7 @@ export class EmpleadosController {
         emailRecipients = empleadosActivos
           .map((e) => ({
             email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-            nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            nombre: this.empleadosService.getFormattedNombre(e),
             codigo: String(e.CODIGO),
           }))
           .filter((r) => r.email && r.email.trim() !== '');
@@ -1372,7 +1473,7 @@ export class EmpleadosController {
         emailRecipients = empleadosGrupo
           .map((e) => ({
             email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-            nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            nombre: this.empleadosService.getFormattedNombre(e),
             codigo: String(e.CODIGO),
           }))
           .filter((r) => r.email && r.email.trim() !== '');
@@ -1460,7 +1561,7 @@ export class EmpleadosController {
                 message: `Has recibido un correo: ${subiect}`,
                 data: {
                   subject: subiect,
-                  sender: user?.['NOMBRE / APELLIDOS'] || user?.nombre || 'RRHH',
+                  sender: user?.nombre || (user ? this.empleadosService.getFormattedNombre(user) : null) || 'RRHH',
                 },
               },
             );
@@ -1568,6 +1669,44 @@ export class EmpleadosController {
         throw error;
       }
       throw new BadRequestException(`Error al enviar email: ${error.message}`);
+    }
+  }
+
+  /**
+   * Endpoint pentru actualizarea câmpurilor separate (NOMBRE, APELLIDO1, APELLIDO2)
+   * Folosit pentru corectare manuală a split-urilor
+   */
+  @Put(':codigo/nombre-split')
+  @UseGuards(JwtAuthGuard)
+  async updateNombreSplit(
+    @Body() body: { NOMBRE?: string; APELLIDO1?: string; APELLIDO2?: string; NOMBRE_SPLIT_CONFIANZA?: number },
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const codigo = (body as any).CODIGO || (body as any).codigo;
+      if (!codigo) {
+        throw new BadRequestException('CODIGO is required');
+      }
+
+      this.logger.log(`📝 Actualizare câmpuri separate pentru empleado ${codigo}`);
+
+      const result = await this.empleadosService.updateNombreSplit(codigo, {
+        NOMBRE: body.NOMBRE,
+        APELLIDO1: body.APELLIDO1,
+        APELLIDO2: body.APELLIDO2,
+        NOMBRE_SPLIT_CONFIANZA: body.NOMBRE_SPLIT_CONFIANZA ?? 2, // Default confianza = 2 pentru corectare manuală
+      });
+
+      return {
+        success: true,
+        message: 'Câmpuri separate actualizate cu succes',
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error updating nombre split:', error);
+      throw new BadRequestException(
+        `Error al actualizar campos separados: ${error.message}`,
+      );
     }
   }
 }

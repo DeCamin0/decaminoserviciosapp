@@ -167,11 +167,16 @@ export default function SolicitudesPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [solicitudes, setSolicitudes] = useState([]);
-  const [activeTab, setActiveTab] = useState('lista'); // 'lista' | 'nueva' | 'todas'
+  const [activeTab, setActiveTab] = useState('lista'); // 'lista' | 'nueva' | 'todas' | 'estadisticas'
   const [allSolicitudes, setAllSolicitudes] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [totalAsuntoPropioDays, setTotalAsuntoPropioDays] = useState(0);
   const [totalVacacionesDays, setTotalVacacionesDays] = useState(0);
+  
+  // Estadísticas states
+  const [estadisticas, setEstadisticas] = useState([]);
+  const [estadisticasLoading, setEstadisticasLoading] = useState(false);
+  const [editingRestantes, setEditingRestantes] = useState({}); // { codigo: value }
 
   // Calendar states for Vacaciones
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -1442,6 +1447,43 @@ export default function SolicitudesPage() {
     }
   }, [selectedTab, isManager, fetchBajasMedicas]);
 
+  // Cargar estadísticas cuando se abre el tab (solo una vez)
+  const estadisticasLoadedRef = useRef(false);
+  useEffect(() => {
+    // Reset ref cuando se cambia de tab
+    if (activeTab !== 'estadisticas') {
+      estadisticasLoadedRef.current = false;
+      return;
+    }
+    
+    // Cargar solo si es el tab de estadísticas, es manager, y no se ha cargado aún
+    if (activeTab === 'estadisticas' && isManager && !estadisticasLoadedRef.current) {
+      estadisticasLoadedRef.current = true;
+      const loadEstadisticas = async () => {
+        setEstadisticasLoading(true);
+        try {
+          console.log('🔄 Cargando estadísticas...');
+          const response = await callApi(routes.getVacacionesEstadisticas, {
+            method: 'GET',
+          });
+          console.log('✅ Respuesta estadísticas:', response);
+          // useApi wrappează răspunsul în {success: true, data: {...}}
+          if (response?.success && response?.data?.success && response?.data?.estadisticas) {
+            console.log('📊 Estadísticas recibidas:', response.data.estadisticas.length, 'empleados');
+            setEstadisticas(response.data.estadisticas);
+          } else {
+            console.warn('⚠️ Respuesta sin estadísticas:', response);
+          }
+        } catch (error) {
+          console.error('❌ Error cargando estadísticas:', error);
+        } finally {
+          setEstadisticasLoading(false);
+        }
+      };
+      loadEstadisticas();
+    }
+  }, [activeTab, isManager]); // Eliminado estadisticasLoading y callApi de dependencias
+
   const handleBajaUploadClick = useCallback(() => {
     if (!isManager) return;
     bajaFileInputRef.current?.click();
@@ -1536,7 +1578,69 @@ export default function SolicitudesPage() {
     ]
   );
 
+  const handleExportEstadisticasExcel = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = routes.exportVacacionesEstadisticasExcel;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al exportar');
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Estadisticas_Solicitudes_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error al exportar Excel:', err);
+      alert('Error al exportar Excel: ' + err.message);
+    }
+  };
+
+  const handleExportEstadisticasPDF = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = routes.exportVacacionesEstadisticasPDF;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al exportar');
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Estadisticas_Solicitudes_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Error al exportar PDF:', err);
+      alert('Error al exportar PDF: ' + err.message);
+    }
+  };
 
   // Polling cu pause/resume automat când tab-ul nu e activ + jitter
   usePolling(() => {
@@ -2867,38 +2971,73 @@ export default function SolicitudesPage() {
           </button>
 
           {isManager && (
-            <button
-              onClick={() => setActiveTab('todas')}
-              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'todas'
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                  : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'todas' 
-                  ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+            <>
+              <button
+                onClick={() => setActiveTab('todas')}
+                className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                  activeTab === 'todas'
+                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
+                    : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                }`}
+              >
+                {/* Glow effect */}
+                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
                   activeTab === 'todas' 
-                    ? 'bg-white/20' 
-                    : 'bg-blue-100 group-hover:bg-blue-200'
-                }`}>
-                  <span className={`text-xl ${
-                    activeTab === 'todas' ? 'text-white' : 'text-blue-600'
-                  }`}>👥</span>
+                    ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
+                    : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
+                }`}></div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                    activeTab === 'todas' 
+                      ? 'bg-white/20' 
+                      : 'bg-blue-100 group-hover:bg-blue-200'
+                  }`}>
+                    <span className={`text-xl ${
+                      activeTab === 'todas' ? 'text-white' : 'text-blue-600'
+                    }`}>👥</span>
+                  </div>
+                  <div className="text-left">
+                    <div className="text-lg font-bold">Todas las Solicitudes</div>
+                    <div className={`text-xs ${
+                      activeTab === 'todas' ? 'text-white/80' : 'text-blue-500'
+                    }`}>Gestionar equipo</div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="text-lg font-bold">Todas las Solicitudes</div>
-                  <div className={`text-xs ${
-                    activeTab === 'todas' ? 'text-white/80' : 'text-blue-500'
-                  }`}>Gestionar equipo</div>
+              </button>
+              
+              <button
+                onClick={() => setActiveTab('estadisticas')}
+                className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                  activeTab === 'estadisticas'
+                    ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
+                    : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                }`}
+              >
+                {/* Glow effect */}
+                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                  activeTab === 'estadisticas' 
+                    ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
+                    : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
+                }`}></div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                    activeTab === 'estadisticas' 
+                      ? 'bg-white/20' 
+                      : 'bg-purple-100 group-hover:bg-purple-200'
+                  }`}>
+                    <span className={`text-xl ${
+                      activeTab === 'estadisticas' ? 'text-white' : 'text-purple-600'
+                    }`}>📊</span>
+                  </div>
+                  <div className="text-left">
+                    <div className="text-lg font-bold">Estadísticas</div>
+                    <div className={`text-xs ${
+                      activeTab === 'estadisticas' ? 'text-white/80' : 'text-purple-500'
+                    }`}>Vacaciones y Asuntos Propios</div>
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+            </>
           )}
         </div>
 
@@ -3771,6 +3910,280 @@ export default function SolicitudesPage() {
                   );
                   })
                 )}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'estadisticas' ? (
+          // Tab Estadísticas - Vacaciones y Asuntos Propios
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-900">
+                Estadísticas de Solicitudes
+              </h2>
+              <button
+                onClick={async () => {
+                  setEstadisticasLoading(true);
+                  try {
+                    const response = await callApi(routes.getVacacionesEstadisticas, {
+                      method: 'GET',
+                    });
+                    // useApi wrappează răspunsul în {success: true, data: {...}}
+                    if (response?.success && response?.data?.success && response?.data?.estadisticas) {
+                      setEstadisticas(response.data.estadisticas);
+                    }
+                  } catch (error) {
+                    console.error('Error cargando estadísticas:', error);
+                    alert('Error al cargar estadísticas. Por favor, inténtalo de nuevo.');
+                  } finally {
+                    setEstadisticasLoading(false);
+                  }
+                }}
+                disabled={estadisticasLoading}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {estadisticasLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Cargando...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Actualizar
+                  </>
+                )}
+              </button>
+            </div>
+
+            {estadisticasLoading ? (
+              <div className="flex justify-center py-12">
+                <LoadingSpinner size="lg" text="Cargando estadísticas..." />
+              </div>
+            ) : estadisticas.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-xl">
+                <p className="text-gray-600 mb-4">No hay estadísticas disponibles</p>
+                <button
+                  onClick={async () => {
+                    setEstadisticasLoading(true);
+                    try {
+                      const response = await callApi(routes.getVacacionesEstadisticas, {
+                        method: 'GET',
+                      });
+                      // useApi wrappează răspunsul în {success: true, data: {...}}
+                      if (response?.success && response?.data?.success && response?.data?.estadisticas) {
+                        setEstadisticas(response.data.estadisticas);
+                      }
+                    } catch (error) {
+                      console.error('Error cargando estadísticas:', error);
+                      alert('Error al cargar estadísticas. Por favor, inténtalo de nuevo.');
+                    } finally {
+                      setEstadisticasLoading(false);
+                    }
+                  }}
+                  className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Cargar Estadísticas
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-200 rounded-xl overflow-hidden shadow-lg">
+                  <thead className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-sm font-bold sticky left-0 bg-purple-600 z-10">Empleado</th>
+                      <th className="px-6 py-4 text-left text-sm font-bold">Código</th>
+                      <th className="px-6 py-4 text-left text-sm font-bold">Grupo</th>
+                      <th className="px-6 py-4 text-center text-sm font-bold border-l-2 border-purple-400" colSpan={5}>
+                        🏖️ Vacaciones
+                      </th>
+                      <th className="px-6 py-4 text-center text-sm font-bold border-l-2 border-purple-400" colSpan={3}>
+                        📅 Asuntos Propios
+                      </th>
+                    </tr>
+                    <tr className="bg-purple-500/90">
+                      <th className="px-6 py-2 text-xs font-medium sticky left-0 bg-purple-500/90 z-10"></th>
+                      <th className="px-6 py-2 text-xs font-medium"></th>
+                      <th className="px-6 py-2 text-xs font-medium"></th>
+                      <th className="px-4 py-2 text-xs font-medium border-l-2 border-purple-400">Anuales</th>
+                      <th className="px-4 py-2 text-xs font-medium">Generados</th>
+                      <th className="px-4 py-2 text-xs font-medium">Consumidos</th>
+                      <th className="px-4 py-2 text-xs font-medium">Rest. Año Pasado</th>
+                      <th className="px-4 py-2 text-xs font-medium">Restantes</th>
+                      <th className="px-4 py-2 text-xs font-medium border-l-2 border-purple-400">Anuales</th>
+                      <th className="px-4 py-2 text-xs font-medium">Consumidos</th>
+                      <th className="px-4 py-2 text-xs font-medium">Restantes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {estadisticas.map((emp, idx) => (
+                      <tr 
+                        key={emp.codigo} 
+                        className={`hover:bg-gray-50 transition-colors ${
+                          idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                        }`}
+                      >
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900 sticky left-0 bg-inherit z-10 whitespace-nowrap">
+                          {emp.nombre}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">
+                          {emp.codigo}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                          {emp.grupo || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center text-gray-700 border-l-2 border-gray-200">
+                          {emp.vacaciones.dias_anuales}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center text-gray-700">
+                          {emp.vacaciones.dias_generados_hasta_hoy.toFixed(1)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center text-gray-700">
+                          {emp.vacaciones.dias_consumidos_aprobados}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center">
+                          {editingRestantes[emp.codigo] !== undefined ? (
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              value={editingRestantes[emp.codigo]}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value) || 0;
+                                setEditingRestantes({
+                                  ...editingRestantes,
+                                  [emp.codigo]: value,
+                                });
+                              }}
+                              onBlur={async () => {
+                                const newValue = editingRestantes[emp.codigo];
+                                const oldValue = emp.vacaciones.dias_restantes_ano_anterior || 0;
+                                
+                                if (newValue !== oldValue) {
+                                  try {
+                                    const response = await callApi(
+                                      routes.updateVacacionesRestantesAnoAnterior(emp.codigo),
+                                      {
+                                        method: 'PUT',
+                                        body: JSON.stringify({
+                                          restantes_ano_anterior: newValue,
+                                        }),
+                                      }
+                                    );
+                                    
+                                    if (response?.success) {
+                                      // Actualizar estadísticas localmente
+                                      setEstadisticas((prev) =>
+                                        prev.map((e) =>
+                                          e.codigo === emp.codigo
+                                            ? {
+                                                ...e,
+                                                vacaciones: {
+                                                  ...e.vacaciones,
+                                                  dias_restantes_ano_anterior: newValue,
+                                                  dias_restantes: Math.max(
+                                                    0,
+                                                    e.vacaciones.dias_generados_hasta_hoy +
+                                                      newValue -
+                                                      e.vacaciones.dias_consumidos_aprobados
+                                                  ),
+                                                },
+                                              }
+                                            : e
+                                        )
+                                      );
+                                    }
+                                  } catch (error) {
+                                    console.error('Error actualizando restantes año anterior:', error);
+                                    alert('Error al actualizar. Por favor, inténtalo de nuevo.');
+                                    // Revertir al valor anterior
+                                    setEditingRestantes({
+                                      ...editingRestantes,
+                                      [emp.codigo]: oldValue,
+                                    });
+                                  }
+                                }
+                                
+                                // Salir del modo edición
+                                const newEditing = { ...editingRestantes };
+                                delete newEditing[emp.codigo];
+                                setEditingRestantes(newEditing);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.target.blur();
+                                } else if (e.key === 'Escape') {
+                                  // Cancelar edición
+                                  const newEditing = { ...editingRestantes };
+                                  delete newEditing[emp.codigo];
+                                  setEditingRestantes(newEditing);
+                                }
+                              }}
+                              className="w-20 px-2 py-1 text-center border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                              autoFocus
+                            />
+                          ) : (
+                            <span
+                              className="text-gray-600 font-medium cursor-pointer hover:text-purple-600 hover:underline"
+                              onClick={() => {
+                                setEditingRestantes({
+                                  ...editingRestantes,
+                                  [emp.codigo]: emp.vacaciones.dias_restantes_ano_anterior || 0,
+                                });
+                              }}
+                              title="Click para editar"
+                            >
+                              {(emp.vacaciones.dias_restantes_ano_anterior || 0).toFixed(1)}
+                            </span>
+                          )}
+                        </td>
+                        <td className={`px-4 py-4 text-sm text-center font-semibold ${
+                          emp.vacaciones.dias_restantes < 5 
+                            ? 'text-red-600' 
+                            : emp.vacaciones.dias_restantes < 10 
+                            ? 'text-orange-600' 
+                            : 'text-green-600'
+                        }`}>
+                          {emp.vacaciones.dias_restantes.toFixed(1)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center text-gray-700 border-l-2 border-gray-200">
+                          {emp.asuntos_propios.dias_anuales}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center text-gray-700">
+                          {emp.asuntos_propios.dias_consumidos_aprobados}
+                        </td>
+                        <td className={`px-4 py-4 text-sm text-center font-semibold ${
+                          emp.asuntos_propios.dias_restantes < 2 
+                            ? 'text-red-600' 
+                            : emp.asuntos_propios.dias_restantes < 4 
+                            ? 'text-orange-600' 
+                            : 'text-green-600'
+                        }`}>
+                          {emp.asuntos_propios.dias_restantes.toFixed(1)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                {/* Butoane de export */}
+                <div className="mt-4 flex gap-3 justify-end">
+                  <button
+                    onClick={handleExportEstadisticasExcel}
+                    disabled={estadisticasLoading || estadisticas.length === 0}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <span>📊</span>
+                    <span>Exportar Excel</span>
+                  </button>
+                  <button
+                    onClick={handleExportEstadisticasPDF}
+                    disabled={estadisticasLoading || estadisticas.length === 0}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <span>📄</span>
+                    <span>Exportar PDF</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>

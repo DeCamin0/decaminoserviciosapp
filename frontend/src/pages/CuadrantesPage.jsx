@@ -2825,7 +2825,12 @@ export default function CuadrantesPage() {
                     <Card key={id} className="p-4">
                       <div className={`${isManager ? 'flex items-center gap-4 mb-4' : 'flex items-center justify-between'}`}>
                         <h4 className="font-bold text-gray-800 min-w-[120px]">
-                          {a['NOMBRE / APELLIDOS'] || a.NOMBRE || a.EMAIL}
+                          {(() => {
+                            const nombre = a.NOMBRE && a.APELLIDO1 
+                              ? [a.NOMBRE, a.APELLIDO1, a.APELLIDO2].filter(p => p).join(' ')
+                              : a['NOMBRE / APELLIDOS'] || a.NOMBRE || a.EMAIL;
+                            return nombre;
+                          })()}
                         </h4>
                         
                         {isManager && (

@@ -78,7 +78,7 @@ export class ScheduledMessagesCronService {
       const empleado = await this.empleadosService.getEmpleadoByCodigo(recipientId);
       if (empleado) {
         const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
-        const nombre = empleado['NOMBRE / APELLIDOS'] || empleado.NOMBRE_APELLIDOS || empleado.CODIGO;
+        const nombre = this.empleadosService.getFormattedNombre(empleado);
         if (email) {
           recipients = [{ email, nombre, codigo: String(empleado.CODIGO) }];
         }
@@ -91,7 +91,7 @@ export class ScheduledMessagesCronService {
       recipients = empleadosActivos
         .map((e) => ({
           email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-          nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            nombre: this.empleadosService.getFormattedNombre(e),
           codigo: String(e.CODIGO),
         }))
         .filter((r) => r.email && r.email.trim() !== '');
@@ -105,7 +105,7 @@ export class ScheduledMessagesCronService {
       recipients = empleadosGrupo
         .map((e) => ({
           email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-          nombre: e['NOMBRE / APELLIDOS'] || e.NOMBRE_APELLIDOS || e.CODIGO,
+            nombre: this.empleadosService.getFormattedNombre(e),
           codigo: String(e.CODIGO),
         }))
         .filter((r) => r.email && r.email.trim() !== '');

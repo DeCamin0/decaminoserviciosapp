@@ -34,9 +34,21 @@ export const routes = {
   getEmpleadoMe: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/me'
     : 'https://api.decaminoservicios.com/api/empleados/me',
+  getEstadisticasEmpleados: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/estadisticas'
+    : 'https://api.decaminoservicios.com/api/empleados/estadisticas',
+  exportEstadisticasEmpleadosExcel: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/estadisticas/export-excel'
+    : 'https://api.decaminoservicios.com/api/empleados/estadisticas/export-excel',
+  exportEstadisticasEmpleadosPDF: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/estadisticas/export-pdf'
+    : 'https://api.decaminoservicios.com/api/empleados/estadisticas/export-pdf',
   updateUser: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados'
     : 'https://api.decaminoservicios.com/api/empleados',
+  updateNombreSplit: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/empleados/${codigo}/nombre-split`
+    : `https://api.decaminoservicios.com/api/empleados/${codigo}/nombre-split`,
   // Acceptă multipart/form-data cu PDF și toate câmpurile empleado
   addUser: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados'
@@ -64,6 +76,76 @@ export const routes = {
   getScheduledMessageRecipients: (id) => import.meta.env.DEV
     ? `http://localhost:3000/api/scheduled-messages/${id}/recipients`
     : `https://api.decaminoservicios.com/api/scheduled-messages/${id}/recipients`,
+  
+  // Gestoría Nóminas
+  getGestoriaStats: (ano) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/stats?ano=${ano}`
+    : `https://api.decaminoservicios.com/api/gestoria/stats?ano=${ano}`,
+  getGestoriaEmpleados: (ano, options = {}) => {
+    const params = new URLSearchParams({ ano: ano.toString() });
+    if (options.pendientes) params.append('pendientes', '1');
+    if (options.q) params.append('q', options.q);
+    if (options.centro) params.append('centro', options.centro);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/gestoria/empleados?${params}`
+      : `https://api.decaminoservicios.com/api/gestoria/empleados?${params}`;
+  },
+  getGestoriaNominas: (employeeNombre, mes, ano) => {
+    const params = new URLSearchParams({ employeeNombre });
+    if (mes) params.append('mes', mes.toString());
+    if (ano) params.append('ano', ano.toString());
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/gestoria/nominas?${params}`
+      : `https://api.decaminoservicios.com/api/gestoria/nominas?${params}`;
+  },
+  uploadGestoriaNomina: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/nominas/upload'
+    : 'https://api.decaminoservicios.com/api/gestoria/nominas/upload',
+  uploadGestoriaBulk: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/nominas/upload-bulk'
+    : 'https://api.decaminoservicios.com/api/gestoria/nominas/upload-bulk',
+  downloadGestoriaNomina: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/nominas/${id}/download`
+    : `https://api.decaminoservicios.com/api/gestoria/nominas/${id}/download`,
+  deleteGestoriaNomina: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/nominas/${id}`
+    : `https://api.decaminoservicios.com/api/gestoria/nominas/${id}`,
+  uploadCostePersonal: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal/upload'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal/upload',
+  getCostePersonal: (mes, ano) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/coste-personal?mes=${mes}&ano=${ano}`
+    : `https://api.decaminoservicios.com/api/gestoria/coste-personal?mes=${mes}&ano=${ano}`,
+  saveCostePersonal: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal',
+  saveCostePersonalFromExcel: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal/save-from-excel'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal/save-from-excel',
+  updateCostePersonalField: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/coste-personal/${id}/field`
+    : `https://api.decaminoservicios.com/api/gestoria/coste-personal/${id}/field`,
+  poblarCostePersonalDesdeNominas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal/poblar-desde-nominas'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal/poblar-desde-nominas',
+  uploadPDFsParaCostePersonal: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal/upload-pdfs'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal/upload-pdfs',
+  saveCostePersonalFromPreview: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal/save-from-preview'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal/save-from-preview',
+  limpiarCostePersonalMes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/gestoria/coste-personal/limpiar-mes'
+    : 'https://api.decaminoservicios.com/api/gestoria/coste-personal/limpiar-mes',
+  exportCostePersonalExcel: (mes, ano) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/coste-personal/export-excel?mes=${mes}&ano=${ano}`
+    : `https://api.decaminoservicios.com/api/gestoria/coste-personal/export-excel?mes=${mes}&ano=${ano}`,
+  exportCostePersonalPDF: (mes, ano) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/coste-personal/export-pdf?mes=${mes}&ano=${ano}`
+    : `https://api.decaminoservicios.com/api/gestoria/coste-personal/export-pdf?mes=${mes}&ano=${ano}`,
+  buscarEmpleadoPorNombre: (nombre) => import.meta.env.DEV
+    ? `http://localhost:3000/api/gestoria/coste-personal/buscar-empleado?nombre=${encodeURIComponent(nombre)}`
+    : `https://api.decaminoservicios.com/api/gestoria/coste-personal/buscar-empleado?nombre=${encodeURIComponent(nombre)}`,
   cambioAprobacion: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/cambio-aprobacion'
     : 'https://api.decaminoservicios.com/api/empleados/cambio-aprobacion',
@@ -105,6 +187,28 @@ export const routes = {
   getSolicitudesByEmail: import.meta.env.DEV
     ? 'http://localhost:3000/api/solicitudes'
     : 'https://api.decaminoservicios.com/api/solicitudes',
+  
+  // Vacaciones (Vacations & Asuntos Propios)
+  getVacacionesSaldo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/vacaciones/saldo'
+    : 'https://api.decaminoservicios.com/api/vacaciones/saldo',
+  getVacacionesSaldoEmpleado: (empleadoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/vacaciones/saldo/${empleadoId}`
+    : `https://api.decaminoservicios.com/api/vacaciones/saldo/${empleadoId}`,
+  getVacacionesEstadisticas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/vacaciones/estadisticas'
+    : 'https://api.decaminoservicios.com/api/vacaciones/estadisticas',
+  exportVacacionesEstadisticasExcel: import.meta.env.DEV
+    ? 'http://localhost:3000/api/vacaciones/estadisticas/export-excel'
+    : 'https://api.decaminoservicios.com/api/vacaciones/estadisticas/export-excel',
+  exportVacacionesEstadisticasPDF: import.meta.env.DEV
+    ? 'http://localhost:3000/api/vacaciones/estadisticas/export-pdf'
+    : 'https://api.decaminoservicios.com/api/vacaciones/estadisticas/export-pdf',
+  updateVacacionesRestantesAnoAnterior: (empleadoId) =>
+    import.meta.env.DEV
+      ? `http://localhost:3000/api/vacaciones/restantes-ano-anterior/${empleadoId}`
+      : `https://api.decaminoservicios.com/api/vacaciones/restantes-ano-anterior/${empleadoId}`,
+  
   uploadBajasMedicas: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas'
     : 'https://api.decaminoservicios.com/api/bajas-medicas',
@@ -122,6 +226,15 @@ export const routes = {
   downloadNomina: import.meta.env.DEV
     ? 'http://localhost:3000/api/nominas/download'
     : 'https://api.decaminoservicios.com/api/nominas/download',
+  previewNomina: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/nominas/${id}/preview`
+    : `https://api.decaminoservicios.com/api/nominas/${id}/preview`,
+  getNominasAccesos: (nominaId) => import.meta.env.DEV
+    ? (nominaId ? `http://localhost:3000/api/nominas/${nominaId}/accesos` : 'http://localhost:3000/api/nominas/accesos')
+    : (nominaId ? `https://api.decaminoservicios.com/api/nominas/${nominaId}/accesos` : 'https://api.decaminoservicios.com/api/nominas/accesos'),
+  sendNominaByEmail: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/nominas/${id}/send-email`
+    : `https://api.decaminoservicios.com/api/nominas/${id}/send-email`,
   deleteNomina: import.meta.env.DEV
     ? 'http://localhost:3000/api/nominas/delete'
     : 'https://api.decaminoservicios.com/api/nominas/delete',
@@ -287,8 +400,10 @@ export const routes = {
     ? 'http://localhost:3000/api/empleados/reject-cambio'
     : 'https://api.decaminoservicios.com/api/empleados/reject-cambio',
   
-  // Chat AI - Folosește proxy n8n prin backend
-  chatAI: getN8nUrl('/webhook/chat-ai-6Ts3sq'),
+  // Chat AI - Backend NestJS (nou endpoint)
+  chatAI: import.meta.env.DEV
+    ? 'http://localhost:3000/api/assistant/message'
+    : 'https://api.decaminoservicios.com/api/assistant/message',
   
   // Chat (REST API - backend NestJS)
   chatRooms: import.meta.env.DEV
@@ -395,4 +510,18 @@ export const routes = {
   downloadAttachment: (attachmentId) => import.meta.env.DEV
     ? `http://localhost:3000/api/sent-emails/attachments/${attachmentId}`
     : `https://api.decaminoservicios.com/api/sent-emails/attachments/${attachmentId}`,
+  
+  // Geocoding - Autocompletare adrese
+  searchAddresses: (query, limit = 5) => {
+    const base = import.meta.env.DEV
+      ? 'http://localhost:3000'
+      : 'https://api.decaminoservicios.com';
+    return `${base}/api/geocoding/search?q=${encodeURIComponent(query)}&limit=${limit}`;
+  },
+  getAddressFromCoords: (lat, lon) => {
+    const base = import.meta.env.DEV
+      ? 'http://localhost:3000'
+      : 'https://api.decaminoservicios.com';
+    return `${base}/api/geocoding/address-from-coords?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
+  },
 };

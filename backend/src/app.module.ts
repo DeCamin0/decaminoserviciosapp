@@ -73,6 +73,10 @@ import { SentEmailsService } from './services/sent-emails.service';
 import { ScheduledMessagesController } from './controllers/scheduled-messages.controller';
 import { ScheduledMessagesService } from './services/scheduled-messages.service';
 import { ScheduledMessagesCronService } from './services/scheduled-messages-cron.service';
+import { GestoriaController } from './controllers/gestoria.controller';
+import { GestoriaService } from './services/gestoria.service';
+import { VacacionesModule } from './vacaciones/vacaciones.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
   imports: [
@@ -82,6 +86,8 @@ import { ScheduledMessagesCronService } from './services/scheduled-messages-cron
     NotificationsModule,
     PrismaModule,
     ComunicadosModule,
+    VacacionesModule,
+    AssistantModule,
   ],
   controllers: [
     AppController,
@@ -118,6 +124,8 @@ import { ScheduledMessagesCronService } from './services/scheduled-messages-cron
     PedidosController,
     SentEmailsController,
     ScheduledMessagesController,
+    GestoriaController,
+    // AssistantController se importa din AssistantModule
   ],
   providers: [
     AppService,
@@ -154,6 +162,7 @@ import { ScheduledMessagesCronService } from './services/scheduled-messages-cron
     SentEmailsService,
     ScheduledMessagesService,
     ScheduledMessagesCronService,
+    GestoriaService,
   ],
 })
 export class AppModule {}

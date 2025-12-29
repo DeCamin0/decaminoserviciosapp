@@ -665,10 +665,10 @@ export default function DocumentosPage() {
       let previewUrl;
       
       if (documento.tipo === 'Nómina') {
-        // Para nóminas, usar el endpoint específico con parámetros correctos
-        previewUrl = `${routes.downloadNomina}?id=${documento.id}&nombre=${encodeURIComponent(authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || '')}`;
+        // Para nóminas, usar el endpoint específico de preview (que loghează accesul)
+        previewUrl = `${routes.previewNomina(documento.id)}?nombre=${encodeURIComponent(authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || '')}`;
         console.log('📄 Preview para nómina:', previewUrl);
-        console.log('🔍 Endpoint usado:', routes.downloadNomina);
+        console.log('🔍 Endpoint usado:', routes.previewNomina(documento.id));
         console.log('🔍 ID nómina:', documento.id);
         console.log('🔍 Nombre:', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name);
         console.log('🔍 Parámetros enviados:', { id: documento.id, nombre: authUser?.['NOMBRE / APELLIDOS'] || authUser?.name });
@@ -2104,6 +2104,17 @@ export default function DocumentosPage() {
                     <p className="text-gray-600 text-xs sm:text-sm">Recibos de sueldo y documentos salariales</p>
                   </div>
                 </div>
+                
+                {/* Text legal pentru livrarea nóminelor */}
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>📋 Información Legal:</strong> Esta aplicación es el canal oficial 
+                    de entrega de nóminas. Al acceder a tu cuenta, aceptas que las nóminas 
+                    están disponibles y puestas a tu disposición. Todas las acciones de acceso 
+                    y descarga son registradas para cumplimiento legal.
+                  </p>
+                </div>
+                
                  <button
                    onClick={fetchNominas}
                    disabled={nominasLoading}
@@ -2171,7 +2182,7 @@ export default function DocumentosPage() {
                         )}
                         
                           {/* Actions */}
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2">
                             <button
                               onClick={() => handlePreviewDocument(item)}
                               className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
@@ -2180,6 +2191,68 @@ export default function DocumentosPage() {
                               <div className="relative flex items-center justify-center gap-1 sm:gap-2">
                                 <span className="text-xs sm:text-sm">👁️</span>
                                 <span className="text-xs sm:text-sm">Preview</span>
+                              </div>
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const token = localStorage.getItem('auth_token');
+                                  const userEmail = authUser?.email || authUser?.['CORREO ELECTRONICO'] || '';
+                                  const userName = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || '';
+                                  
+                                  if (!userEmail) {
+                                    setNotification({
+                                      type: 'error',
+                                      title: 'Error',
+                                      message: 'No se encontró tu email. Por favor, contacta con RRHH.'
+                                    });
+                                    return;
+                                  }
+
+                                  setNotification({
+                                    type: 'info',
+                                    title: 'Enviando...',
+                                    message: 'Enviando nómina por correo electrónico...'
+                                  });
+
+                                  const response = await fetch(routes.sendNominaByEmail(item.id), {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': token ? `Bearer ${token}` : '',
+                                    },
+                                    body: JSON.stringify({
+                                      email: userEmail,
+                                      nombre: userName,
+                                    }),
+                                  });
+
+                                  if (!response.ok) {
+                                    const errorData = await response.json();
+                                    throw new Error(errorData.message || 'Error al enviar email');
+                                  }
+
+                                  const data = await response.json();
+                                  setNotification({
+                                    type: 'success',
+                                    title: '✅ Email Enviado',
+                                    message: `Tu nómina ha sido enviada a ${userEmail}`
+                                  });
+                                } catch (error) {
+                                  console.error('❌ Error enviando nómina por email:', error);
+                                  setNotification({
+                                    type: 'error',
+                                    title: 'Error',
+                                    message: error.message || 'Error al enviar la nómina por email'
+                                  });
+                                }
+                              }}
+                              className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200"
+                            >
+                              <div className="absolute inset-0 rounded-lg bg-purple-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                              <div className="relative flex items-center justify-center gap-1 sm:gap-2">
+                                <span className="text-xs sm:text-sm">📧</span>
+                                <span className="text-xs sm:text-sm">Enviar por correo</span>
                               </div>
                             </button>
                             <button
@@ -3102,7 +3175,7 @@ export default function DocumentosPage() {
 
       {/* Modal de Preview - Modernizado */}
       {showPreviewModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
         <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 animate-in fade-in duration-300 relative">
             {/* Header moderno */}
             <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200">

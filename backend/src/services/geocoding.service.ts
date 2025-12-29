@@ -307,4 +307,158 @@ export class GeocodingService {
     // Frontend-ul va afișa coordonatele dacă adresa nu este disponibilă
     return '';
   }
+
+  /**
+   * Autocompletare adrese (forward geocoding) - returnează sugestii de adrese
+   * Folosește Nominatim Search API cu parametri optimizați pentru precizie
+   */
+  async searchAddresses(query: string, limit: number = 5): Promise<Array<{
+    display_name: string;
+    lat: string;
+    lon: string;
+    postcode?: string;
+    address?: any;
+  }>> {
+    if (!query || query.trim() === '') {
+      return [];
+    }
+
+    try {
+      const url = `${this.NOMINATIM_BASE_URL}/search`;
+      const params = {
+        q: query.trim(),
+        format: 'json',
+        limit: limit.toString(),
+        addressdetails: 1,
+        countrycodes: 'es', // Limitează la Spania
+        extratags: 1, // Include tag-uri suplimentare pentru mai multă precizie
+        namedetails: 1, // Include detalii despre nume
+      };
+
+      this.logger.log(
+        `🔍 Searching addresses for query: "${query}"`,
+      );
+
+      const response = await axios.get(url, {
+        params,
+        headers: {
+          'User-Agent': 'DeCaminoServiciosApp/1.0',
+        },
+        timeout: 5000,
+      });
+
+      if (!response.data || !Array.isArray(response.data)) {
+        return [];
+      }
+
+      const results = response.data.map((item: any) => ({
+        display_name: item.display_name || '',
+        lat: item.lat || '',
+        lon: item.lon || '',
+        postcode: item.address?.postcode || '',
+        address: item.address || {},
+      }));
+
+      this.logger.log(
+        `✅ Found ${results.length} address suggestions for "${query}"`,
+      );
+
+      return results;
+    } catch (error: any) {
+      this.logger.warn(
+        `⚠️ Error searching addresses for "${query}": ${error.message}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Obține adresa completă și precisă folosind coordonatele (reverse geocoding)
+   * Folosește această metodă după selectarea unei adrese pentru a obține codul poștal corect
+   * Folosește zoom=18 pentru precizie maximă și accept-language=es pentru formatare în spaniolă
+   */
+  async getAddressFromCoordinates(lat: string, lon: string): Promise<{
+    display_name: string;
+    postcode?: string;
+    address?: any;
+  } | null> {
+    try {
+      const latitude = parseFloat(lat);
+      const longitude = parseFloat(lon);
+
+      if (isNaN(latitude) || isNaN(longitude)) {
+        return null;
+      }
+
+      // Facem reverse geocoding cu parametri optimizați pentru precizie
+      const url = `${this.NOMINATIM_BASE_URL}/reverse`;
+      const params = {
+        format: 'json',
+        lat: lat,
+        lon: lon,
+        zoom: 18, // Precizie maximă pentru adrese
+        addressdetails: 1,
+        'accept-language': 'es', // Formatare în spaniolă
+        extratags: 1, // Include tag-uri suplimentare
+      };
+
+      const response = await axios.get(url, {
+        params,
+        headers: {
+          'User-Agent': 'DeCaminoServiciosApp/1.0',
+        },
+        timeout: 5000,
+      });
+
+      if (response.data) {
+        const addr = response.data.address || {};
+        let displayName = response.data.display_name || '';
+        
+        // Construim adresa formatată manual pentru a controla ordinea componentelor
+        // Format: "Calle, Număr, Cod Poștal, Localitate, Provincie, Țară"
+        const parts = [];
+        
+        if (addr.road || addr.pedestrian) {
+          parts.push(addr.road || addr.pedestrian);
+        }
+        if (addr.house_number) {
+          parts.push(addr.house_number);
+        }
+        if (addr.postcode) {
+          parts.push(addr.postcode);
+        }
+        if (addr.city || addr.town || addr.village || addr.municipality) {
+          parts.push(addr.city || addr.town || addr.village || addr.municipality);
+        }
+        if (addr.state || addr.region) {
+          parts.push(addr.state || addr.region);
+        }
+        if (addr.country) {
+          parts.push(addr.country);
+        }
+        
+        // Dacă am construit manual adresa, o folosim; altfel folosim display_name
+        if (parts.length > 0) {
+          displayName = parts.join(', ');
+        }
+
+        this.logger.log(
+          `✅ Address from coordinates: ${displayName} (postcode: ${addr.postcode || 'N/A'})`,
+        );
+
+        return {
+          display_name: displayName,
+          postcode: addr.postcode || '',
+          address: addr,
+        };
+      }
+
+      return null;
+    } catch (error: any) {
+      this.logger.warn(
+        `⚠️ Error getting address from coordinates: ${error.message}`,
+      );
+      return null;
+    }
+  }
 }

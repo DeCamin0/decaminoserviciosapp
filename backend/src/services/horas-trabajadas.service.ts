@@ -139,6 +139,11 @@ export class HorasTrabajadasService {
                 WHEN TRIM(val) LIKE '%:%-%:%' THEN (((TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(val),' ',-1),'-',-1),' ',1), '%H:%i'))
                                           - TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(val),' ',-1),'-', 1),' ',1), '%H:%i'))
                                           + 86400) % 86400) / 3600)
+                WHEN TRIM(val) REGEXP '^[0-9]+h[[:space:]]*\\([0-9]+×[0-9]+h\\)' THEN 
+                  -- Format "24h (3×8h)" - extrage orele per tură din paranteză (8h)
+                  CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(val), '×', -1), 'h', 1) AS DECIMAL(10,2))
+                WHEN TRIM(val) REGEXP '^[0-9]+h' THEN 
+                  CAST(SUBSTRING_INDEX(TRIM(val), 'h', 1) AS DECIMAL(10,2))
                 ELSE 0
               END
             ),2) AS horas_cuadrante_mes
@@ -154,9 +159,18 @@ export class HorasTrabajadasService {
             ROUND(
               CASE 
                 WHEN UPPER(TRIM(cu.val)) IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X') THEN 0
-                WHEN TRIM(cu.val) LIKE '%:%-%:%' THEN (((TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val),' ',-1),'-',-1),' ',1), '%H:%i'))
+                WHEN TRIM(cu.val) LIKE '%:%-%:%' THEN 
+                  -- Format "08:00-17:00" sau "09:00-15:00 / 16:00-20:00"
+                  -- Pentru moment, calculăm doar prima tură (pentru compatibilitate)
+                  -- Logica completă pentru ture multiple va fi implementată în frontend
+                  (((TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val),' ',-1),'-',-1),' ',1), '%H:%i'))
                                            - TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val),' ',-1),'-', 1),' ',1), '%H:%i'))
                                            + 86400) % 86400) / 3600)
+                WHEN TRIM(cu.val) REGEXP '^[0-9]+h[[:space:]]*\\([0-9]+×[0-9]+h\\)' THEN 
+                  -- Format "24h (3×8h)" - extrage orele per tură din paranteză (8h)
+                  CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val), '×', -1), 'h', 1) AS DECIMAL(10,2))
+                WHEN TRIM(cu.val) REGEXP '^[0-9]+h' THEN 
+                  CAST(SUBSTRING_INDEX(TRIM(cu.val), 'h', 1) AS DECIMAL(10,2))
                 ELSE 0
               END
             ,2) AS horas_cuadrante_dia
