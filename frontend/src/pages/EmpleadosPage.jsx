@@ -560,6 +560,31 @@ export default function EmpleadosPage() {
       }
     }
   }, [addForm.NOMBRE, addForm.APELLIDO1, addForm.APELLIDO2]);
+
+  // Sincronizare automată pentru editForm: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
+  useEffect(() => {
+    if (!editForm || Object.keys(editForm).length === 0) return;
+    
+    const nombre = (editForm.NOMBRE || '').trim();
+    const apellido1 = (editForm.APELLIDO1 || '').trim();
+    const apellido2 = (editForm.APELLIDO2 || '').trim();
+    
+    // Dacă există cel puțin unul din câmpurile separate completat, construim numele complet
+    if (nombre || apellido1 || apellido2) {
+      const parts = [nombre, apellido1, apellido2].filter(part => part && part !== '');
+      const nombreCompleto = parts.length > 0 ? parts.join(' ') : '';
+      
+      // Actualizăm doar dacă numele complet generat este diferit de cel existent
+      // sau dacă câmpul "NOMBRE / APELLIDOS" este gol
+      if (nombreCompleto && (nombreCompleto !== (editForm['NOMBRE / APELLIDOS'] || '').trim())) {
+        setEditForm(prev => ({
+          ...prev,
+          'NOMBRE / APELLIDOS': nombreCompleto
+        }));
+      }
+    }
+  }, [editForm?.NOMBRE, editForm?.APELLIDO1, editForm?.APELLIDO2]);
+
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
@@ -1401,6 +1426,20 @@ export default function EmpleadosPage() {
 
       // Construiește body-ul pentru EDITARE (PUT request), incluzând parametrii pentru email
       const updateBody = { ...editForm };
+      
+      // Asigură-te că câmpurile separate sunt incluse chiar dacă sunt goale
+      if (editForm.NOMBRE !== undefined) updateBody.NOMBRE = editForm.NOMBRE;
+      if (editForm.APELLIDO1 !== undefined) updateBody.APELLIDO1 = editForm.APELLIDO1;
+      if (editForm.APELLIDO2 !== undefined) updateBody.APELLIDO2 = editForm.APELLIDO2;
+      if (editForm.NOMBRE_SPLIT_CONFIANZA !== undefined) updateBody.NOMBRE_SPLIT_CONFIANZA = editForm.NOMBRE_SPLIT_CONFIANZA;
+      
+      console.log('🔍 [handleEditUser] updateBody cu câmpuri separate:', {
+        NOMBRE: updateBody.NOMBRE,
+        APELLIDO1: updateBody.APELLIDO1,
+        APELLIDO2: updateBody.APELLIDO2,
+        NOMBRE_SPLIT_CONFIANZA: updateBody.NOMBRE_SPLIT_CONFIANZA,
+        'NOMBRE / APELLIDOS': updateBody['NOMBRE / APELLIDOS']
+      });
       
       // Dacă trebuie să trimitem email la gestorie, adaugă parametrii necesari
       if (enviarAGestoriaEdit && originalEmployeeData) {

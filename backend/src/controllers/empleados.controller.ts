@@ -858,8 +858,16 @@ export class EmpleadosController {
       const contraseña = body.Contraseña?.trim() || null;
       const includePassword = contraseña !== null && contraseña !== '';
 
+      // Log pentru debugging
+      this.logger.log(`🔍 [updateEmpleado] Câmpuri separate primite: NOMBRE=${body.NOMBRE}, APELLIDO1=${body.APELLIDO1}, APELLIDO2=${body.APELLIDO2}, NOMBRE_SPLIT_CONFIANZA=${body.NOMBRE_SPLIT_CONFIANZA}`);
+
       const empleadoData: any = {
         'NOMBRE / APELLIDOS': body['NOMBRE / APELLIDOS'] || '',
+        // Câmpuri separate pentru nume (dacă sunt furnizate)
+        NOMBRE: body.NOMBRE !== undefined ? body.NOMBRE : undefined,
+        APELLIDO1: body.APELLIDO1 !== undefined ? body.APELLIDO1 : undefined,
+        APELLIDO2: body.APELLIDO2 !== undefined ? body.APELLIDO2 : undefined,
+        NOMBRE_SPLIT_CONFIANZA: body.NOMBRE_SPLIT_CONFIANZA !== undefined ? body.NOMBRE_SPLIT_CONFIANZA : undefined,
         NACIONALIDAD: body.NACIONALIDAD || '',
         DIRECCION: body.DIRECCION || '',
         'D.N.I. / NIE': body['D.N.I. / NIE'] || '',
@@ -1129,6 +1137,11 @@ export class EmpleadosController {
         FECHA_SOLICITUD: body.FECHA_SOLICITUD || new Date().toISOString(),
         FECHA_APROBACION: body.FECHA_APROBACION || new Date().toISOString(),
         ESTADO: body.ESTADO || 'pendiente',
+        // Campos separados (opcionales)
+        NOMBRE_SEPARADO: body.NOMBRE_SEPARADO,
+        APELLIDO1: body.APELLIDO1,
+        APELLIDO2: body.APELLIDO2,
+        NOMBRE_SPLIT_CONFIANZA: body.NOMBRE_SPLIT_CONFIANZA,
       });
 
       // Trimitem email de confirmare dacă SMTP este configurat

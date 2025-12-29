@@ -673,6 +673,10 @@ model SolicitudesCambiosPersonales {
   data_creare        String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(255)
   data_aprobare      String? @db.VarChar(255)
   CORREO_ELECTRONICO String? @db.VarChar(200)
+  NOMBRE_SEPARADO    String? @db.VarChar(255)
+  APELLIDO1          String? @db.VarChar(120)
+  APELLIDO2          String? @db.VarChar(120)
+  NOMBRE_SPLIT_CONFIANZA Int? @db.TinyInt
 }
 
 model TareasDiaria {

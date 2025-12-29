@@ -784,90 +784,97 @@ export default function AprobacionesPage() {
           setCambioToApprove(null);
         }}
         title="Confirmar aprobación"
+        size="lg"
       >
         {cambioToApprove && (
-          <div className="space-y-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <p className="text-sm text-yellow-800 font-medium mb-2">
-                ⚠️ ¿Estás seguro que deseas aprobar esta modificación?
-              </p>
-              <p className="text-sm text-yellow-700">
-                Esta acción actualizará los datos del empleado y no se puede deshacer.
-              </p>
+          <div className="flex flex-col">
+            {/* Conținut scrollabil */}
+            <div className="max-h-[50vh] overflow-y-auto space-y-4 pr-2 -mr-2">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-sm text-yellow-800 font-medium mb-2">
+                  ⚠️ ¿Estás seguro que deseas aprobar esta modificación?
+                </p>
+                <p className="text-sm text-yellow-700">
+                  Esta acción actualizará los datos del empleado y no se puede deshacer.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Empleado</label>
+                  <p className="text-gray-900 font-semibold">{cambioToApprove.NOMBRE || cambioToApprove.nombre || 'N/A'}</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Campo modificado</label>
+                  <p className="text-gray-900 font-semibold break-words">{cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || 'N/A'}</p>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Valor anterior</label>
+                    <p className="text-gray-500 line-through break-words text-sm">{cambioToApprove.VALOR_ANTERIOR || cambioToApprove.valor_anterior || '—'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Valor nuevo</label>
+                    <p className="text-green-600 font-bold break-words text-sm">{cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || '—'}</p>
+                  </div>
+                </div>
+                
+                {cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Motivo del cambio</label>
+                    <p className="text-gray-700 break-words text-sm">{cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON}</p>
+                  </div>
+                ) : null}
+              </div>
             </div>
             
-            <div className="space-y-3">
+            {/* Footer fixat cu checkbox și butoane - întotdeauna vizibil */}
+            <div className="flex-shrink-0 pt-4 mt-4 border-t border-gray-200 space-y-4 bg-white sticky bottom-0">
+              {/* Checkbox "Enviar a Gestoria" în modalul de confirmare */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">Empleado</label>
-                <p className="text-gray-900 font-semibold">{cambioToApprove.NOMBRE || cambioToApprove.nombre || 'N/A'}</p>
+                <label htmlFor="enviar-gestoria-confirm-checkbox" className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    id="enviar-gestoria-confirm-checkbox"
+                    name="enviar-gestoria-confirm"
+                    type="checkbox"
+                    checked={enviarAGestoriaMap[cambioToApprove.id || cambioToApprove.ID] || false}
+                    onChange={(e) => {
+                      const cambioId = cambioToApprove.id || cambioToApprove.ID;
+                      setEnviarAGestoriaMap(prev => ({
+                        ...prev,
+                        [cambioId]: e.target.checked
+                      }));
+                    }}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    📧 Enviar a Gestoria
+                  </span>
+                </label>
               </div>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Campo modificado</label>
-                <p className="text-gray-900 font-semibold">{cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || 'N/A'}</p>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Valor anterior</label>
-                  <p className="text-gray-500 line-through">{cambioToApprove.VALOR_ANTERIOR || cambioToApprove.valor_anterior || '—'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Valor nuevo</label>
-                  <p className="text-green-600 font-bold">{cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || '—'}</p>
-                </div>
-              </div>
-              
-              {cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Motivo del cambio</label>
-                  <p className="text-gray-700">{cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON}</p>
-                </div>
-              ) : null}
-            </div>
-            
-            {/* Checkbox "Enviar a Gestoria" în modalul de confirmare */}
-            <div className="pt-4 border-t border-gray-200">
-              <label htmlFor="enviar-gestoria-confirm-checkbox" className="flex items-center gap-3 cursor-pointer">
-                <input
-                  id="enviar-gestoria-confirm-checkbox"
-                  name="enviar-gestoria-confirm"
-                  type="checkbox"
-                  checked={enviarAGestoriaMap[cambioToApprove.id || cambioToApprove.ID] || false}
-                  onChange={(e) => {
-                    const cambioId = cambioToApprove.id || cambioToApprove.ID;
-                    setEnviarAGestoriaMap(prev => ({
-                      ...prev,
-                      [cambioId]: e.target.checked
-                    }));
+              <div className="flex gap-3 pb-2">
+                <Button
+                  onClick={confirmApproveCambio}
+                  disabled={processingAction}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  {processingAction ? 'Procesando...' : '✅ Sí, aprobar'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowApproveModal(false);
+                    setCambioToApprove(null);
                   }}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  📧 Enviar a Gestoria
-                </span>
-              </label>
-            </div>
-            
-            <div className="flex gap-3 pt-4">
-              <Button
-                onClick={confirmApproveCambio}
-                disabled={processingAction}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {processingAction ? 'Procesando...' : '✅ Sí, aprobar'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowApproveModal(false);
-                  setCambioToApprove(null);
-                }}
-                variant="outline"
-                className="flex-1"
-                disabled={processingAction}
-              >
-                Cancelar
-              </Button>
+                  variant="outline"
+                  className="flex-1"
+                  disabled={processingAction}
+                >
+                  Cancelar
+                </Button>
+              </div>
             </div>
           </div>
         )}

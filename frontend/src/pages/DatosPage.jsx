@@ -859,6 +859,30 @@ const [editLoading, setEditLoading] = useState(false);
     return () => clearTimeout(timeout);
   }, []);
 
+  // Sincronizare automată: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
+  useEffect(() => {
+    if (!editForm) return;
+    
+    const nombre = (editForm.NOMBRE || '').trim();
+    const apellido1 = (editForm.APELLIDO1 || '').trim();
+    const apellido2 = (editForm.APELLIDO2 || '').trim();
+    
+    // Dacă există cel puțin unul din câmpurile separate completat, construim numele complet
+    if (nombre || apellido1 || apellido2) {
+      const parts = [nombre, apellido1, apellido2].filter(part => part && part !== '');
+      const nombreCompleto = parts.length > 0 ? parts.join(' ') : '';
+      
+      // Actualizăm doar dacă numele complet generat este diferit de cel existent
+      // sau dacă câmpul "NOMBRE / APELLIDOS" este gol
+      if (nombreCompleto && (nombreCompleto !== (editForm['NOMBRE / APELLIDOS'] || '').trim())) {
+        setEditForm(prev => ({
+          ...prev,
+          'NOMBRE / APELLIDOS': nombreCompleto
+        }));
+      }
+    }
+  }, [editForm?.NOMBRE, editForm?.APELLIDO1, editForm?.APELLIDO2]);
+
   // Dacă datele principale nu mai încarcă, marcăm UI ready imediat
   // Nu așteptăm fetchClientes - este independent și nu blochează afișarea datelor utilizatorului
   useEffect(() => {
@@ -1720,6 +1744,61 @@ const [editLoading, setEditLoading] = useState(false);
                         <option value="SI">Sí</option>
                         <option value="NO">No</option>
                       </select>
+                    ) : field === 'NOMBRE / APELLIDOS' ? (
+                      <div className="space-y-3">
+                        <input
+                          id={fieldId}
+                          name={field}
+                          type="text"
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                          value={editForm[field] || ''}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                          placeholder="Ingresa nombre completo..."
+                        />
+                        {/* Campos separados si existen */}
+                        {(editForm?.NOMBRE || editForm?.APELLIDO1 || editForm?.APELLIDO2) && (
+                          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg space-y-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">📝 Nombre</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
+                                value={editForm.NOMBRE || ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
+                                placeholder="Nombre"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">📝 Primer Apellido</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
+                                value={editForm.APELLIDO1 || ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
+                                placeholder="Primer Apellido"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">📝 Segundo Apellido</label>
+                              <input
+                                type="text"
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
+                                value={editForm.APELLIDO2 || ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
+                                placeholder="Segundo Apellido"
+                              />
+                            </div>
+                            {editForm.NOMBRE_SPLIT_CONFIANZA !== undefined && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">ℹ️ Confianza del Split</label>
+                                <p className="text-xs text-gray-700 bg-white px-2 py-1 rounded border border-gray-200">
+                                  {editForm.NOMBRE_SPLIT_CONFIANZA === 2 ? '✅ Confiado' : editForm.NOMBRE_SPLIT_CONFIANZA === 1 ? '⚠️ Incierto' : '❌ Fallido'}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <input
                         id={fieldId}
@@ -1810,6 +1889,11 @@ const [editLoading, setEditLoading] = useState(false);
                        CODIGO: editForm['CODIGO'],
                        CORREO_ELECTRONICO: editForm['CORREO ELECTRONICO'],
                        NOMBRE: editForm['NOMBRE / APELLIDOS'],
+                       // Campos separados si existen
+                       NOMBRE_SEPARADO: editForm.NOMBRE || '',
+                       APELLIDO1: editForm.APELLIDO1 || '',
+                       APELLIDO2: editForm.APELLIDO2 || '',
+                       NOMBRE_SPLIT_CONFIANZA: editForm.NOMBRE_SPLIT_CONFIANZA !== undefined ? editForm.NOMBRE_SPLIT_CONFIANZA : undefined,
                        CAMPO_MODIFICADO: camposModificados.join(', '),
                        VALOR_ANTERIOR: Object.values(valoresAnteriores).join(', '),
                        VALOR_NUEVO: Object.values(valoresNuevos).join(', '),

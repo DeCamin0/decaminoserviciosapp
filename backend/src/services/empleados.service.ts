@@ -551,6 +551,10 @@ export class EmpleadosService {
     codigo: string,
     empleadoData: {
       'NOMBRE / APELLIDOS'?: string;
+      NOMBRE?: string;
+      APELLIDO1?: string;
+      APELLIDO2?: string;
+      NOMBRE_SPLIT_CONFIANZA?: number;
       NACIONALIDAD?: string;
       DIRECCION?: string;
       'D.N.I. / NIE'?: string;
@@ -587,9 +591,35 @@ export class EmpleadosService {
           ? `\`Contraseña\`            = ${this.escapeSql(empleadoData.Contraseña)},`
           : '';
 
+      // Construim câmpurile pentru nume separate (doar dacă sunt furnizate explicit)
+      // IMPORTANT: Salvăm și stringuri goale pentru a permite ștergerea câmpurilor
+      const nombreFields: string[] = [];
+      if (empleadoData.NOMBRE !== undefined) {
+        const nombreValue = empleadoData.NOMBRE === '' || empleadoData.NOMBRE === null ? 'NULL' : this.escapeSql(empleadoData.NOMBRE);
+        nombreFields.push(`\`NOMBRE\` = ${nombreValue}`);
+        this.logger.log(`🔍 [updateEmpleado] NOMBRE va fi actualizat: ${empleadoData.NOMBRE}`);
+      }
+      if (empleadoData.APELLIDO1 !== undefined) {
+        const apellido1Value = empleadoData.APELLIDO1 === '' || empleadoData.APELLIDO1 === null ? 'NULL' : this.escapeSql(empleadoData.APELLIDO1);
+        nombreFields.push(`\`APELLIDO1\` = ${apellido1Value}`);
+        this.logger.log(`🔍 [updateEmpleado] APELLIDO1 va fi actualizat: ${empleadoData.APELLIDO1}`);
+      }
+      if (empleadoData.APELLIDO2 !== undefined) {
+        const apellido2Value = empleadoData.APELLIDO2 === '' || empleadoData.APELLIDO2 === null ? 'NULL' : this.escapeSql(empleadoData.APELLIDO2);
+        nombreFields.push(`\`APELLIDO2\` = ${apellido2Value}`);
+        this.logger.log(`🔍 [updateEmpleado] APELLIDO2 va fi actualizat: ${empleadoData.APELLIDO2}`);
+      }
+      if (empleadoData.NOMBRE_SPLIT_CONFIANZA !== undefined) {
+        nombreFields.push(`\`NOMBRE_SPLIT_CONFIANZA\` = ${empleadoData.NOMBRE_SPLIT_CONFIANZA ?? 0}`);
+        this.logger.log(`🔍 [updateEmpleado] NOMBRE_SPLIT_CONFIANZA va fi actualizat: ${empleadoData.NOMBRE_SPLIT_CONFIANZA}`);
+      }
+      const nombreFieldsUpdate = nombreFields.length > 0 ? nombreFields.join(', ') + ',' : '';
+      this.logger.log(`🔍 [updateEmpleado] nombreFieldsUpdate: ${nombreFieldsUpdate}`);
+
       const updateQuery = `
         UPDATE DatosEmpleados SET
           \`NOMBRE / APELLIDOS\`    = ${this.escapeSql(empleadoData['NOMBRE / APELLIDOS'] ?? '')},
+          ${nombreFieldsUpdate}
           \`NACIONALIDAD\`          = ${this.escapeSql(empleadoData.NACIONALIDAD ?? '')},
           \`DIRECCION\`             = ${this.escapeSql(empleadoData.DIRECCION ?? '')},
           \`D.N.I. / NIE\`          = ${this.escapeSql(empleadoData['D.N.I. / NIE'] ?? '')},
@@ -830,18 +860,56 @@ export class EmpleadosService {
     FECHA_SOLICITUD: string;
     FECHA_APROBACION: string;
     ESTADO: string;
+    // Campos separados (opcionales)
+    NOMBRE_SEPARADO?: string;
+    APELLIDO1?: string;
+    APELLIDO2?: string;
+    NOMBRE_SPLIT_CONFIANZA?: number;
   }): Promise<{ success: true; id: string }> {
     try {
       // Formatează modificările (similar cu n8n Code node)
-      const camposModificados = data.CAMPO_MODIFICADO.split(',')
+      let camposModificados = data.CAMPO_MODIFICADO.split(',')
         .map((c) => c.trim())
         .filter((c) => c);
-      const valoresAnteriores = data.VALOR_ANTERIOR.split(',')
+      let valoresAnteriores = data.VALOR_ANTERIOR.split(',')
         .map((v) => v.trim())
         .filter((v) => v !== '');
-      const valoresNuevos = data.VALOR_NUEVO.split(',')
+      let valoresNuevos = data.VALOR_NUEVO.split(',')
         .map((v) => v.trim())
         .filter((v) => v !== '');
+
+      // Adaugă câmpurile separate dacă există și sunt modificate
+      if (data.NOMBRE_SEPARADO || data.APELLIDO1 || data.APELLIDO2) {
+        // Verifică dacă NOMBRE / APELLIDOS este în lista de câmpuri modificate
+        const nombreIndex = camposModificados.findIndex(c => 
+          c === 'NOMBRE / APELLIDOS' || c === 'NOMBRE_APELLIDOS'
+        );
+        
+        if (nombreIndex >= 0) {
+          // Dacă NOMBRE / APELLIDOS este modificat, adaugă și câmpurile separate
+          if (data.NOMBRE_SEPARADO) {
+            camposModificados.push('NOMBRE');
+            valoresNuevos.push(data.NOMBRE_SEPARADO);
+            // Găsește valoarea anterioară pentru NOMBRE (dacă există în user)
+            valoresAnteriores.push(''); // Va fi populat la aprobare dacă e necesar
+          }
+          if (data.APELLIDO1) {
+            camposModificados.push('APELLIDO1');
+            valoresNuevos.push(data.APELLIDO1);
+            valoresAnteriores.push('');
+          }
+          if (data.APELLIDO2) {
+            camposModificados.push('APELLIDO2');
+            valoresNuevos.push(data.APELLIDO2);
+            valoresAnteriores.push('');
+          }
+          if (data.NOMBRE_SPLIT_CONFIANZA !== undefined) {
+            camposModificados.push('NOMBRE_SPLIT_CONFIANZA');
+            valoresNuevos.push(data.NOMBRE_SPLIT_CONFIANZA.toString());
+            valoresAnteriores.push('');
+          }
+        }
+      }
 
       const campoFormatat = this.formatModificari(
         camposModificados,
@@ -863,6 +931,11 @@ export class EmpleadosService {
           data_creare: data.FECHA_SOLICITUD,
           data_aprobare: data.FECHA_APROBACION,
           CORREO_ELECTRONICO: data.CORREO_ELECTRONICO,
+          // Salvează câmpurile separate direct în coloane
+          NOMBRE_SEPARADO: data.NOMBRE_SEPARADO || null,
+          APELLIDO1: data.APELLIDO1 || null,
+          APELLIDO2: data.APELLIDO2 || null,
+          NOMBRE_SPLIT_CONFIANZA: data.NOMBRE_SPLIT_CONFIANZA || null,
         },
       });
 
@@ -921,14 +994,59 @@ export class EmpleadosService {
         );
       }
 
-      // Construiește query-ul UPDATE
-      const updateQuery = `
-        UPDATE DatosEmpleados
-        SET \`${campoName}\` = ${this.escapeSql(data.valor)}
-        WHERE CODIGO = ${this.escapeSql(data.codigo)}
-      `;
+      // Dacă se modifică "NOMBRE / APELLIDOS", verificăm și câmpurile separate
+      if (data.campo === 'NOMBRE / APELLIDOS') {
+        // Verificăm dacă există câmpurile separate în cambio
+        // Citim câmpurile separate folosind Prisma Client
+        const cambioDetails = await this.prisma.solicitudesCambiosPersonales.findUnique({
+          where: { id: data.id },
+          select: {
+            NOMBRE_SEPARADO: true,
+            APELLIDO1: true,
+            APELLIDO2: true,
+            NOMBRE_SPLIT_CONFIANZA: true,
+          },
+        });
 
-      await this.prisma.$executeRawUnsafe(updateQuery);
+        // Construim lista de câmpuri de actualizat
+        const setClauses: string[] = [
+          `\`${campoName}\` = ${this.escapeSql(data.valor)}`
+        ];
+
+        // Adăugăm câmpurile separate dacă există
+        if (cambioDetails?.NOMBRE_SEPARADO !== undefined && cambioDetails.NOMBRE_SEPARADO !== null) {
+          setClauses.push(`\`NOMBRE\` = ${this.escapeSql(cambioDetails.NOMBRE_SEPARADO)}`);
+        }
+        if (cambioDetails?.APELLIDO1 !== undefined && cambioDetails.APELLIDO1 !== null) {
+          setClauses.push(`\`APELLIDO1\` = ${this.escapeSql(cambioDetails.APELLIDO1)}`);
+        }
+        if (cambioDetails?.APELLIDO2 !== undefined && cambioDetails.APELLIDO2 !== null) {
+          setClauses.push(`\`APELLIDO2\` = ${this.escapeSql(cambioDetails.APELLIDO2)}`);
+        }
+        if (cambioDetails?.NOMBRE_SPLIT_CONFIANZA !== undefined && cambioDetails.NOMBRE_SPLIT_CONFIANZA !== null) {
+          setClauses.push(`\`NOMBRE_SPLIT_CONFIANZA\` = ${cambioDetails.NOMBRE_SPLIT_CONFIANZA}`);
+        }
+
+        // Construim query-ul UPDATE cu toate câmpurile
+        const setClause = setClauses.join(', ');
+
+        const updateQuery = `
+          UPDATE DatosEmpleados
+          SET ${setClause}
+          WHERE CODIGO = ${this.escapeSql(data.codigo)}
+        `;
+
+        await this.prisma.$executeRawUnsafe(updateQuery);
+      } else {
+        // Pentru alte câmpuri, actualizăm doar câmpul specificat
+        const updateQuery = `
+          UPDATE DatosEmpleados
+          SET \`${campoName}\` = ${this.escapeSql(data.valor)}
+          WHERE CODIGO = ${this.escapeSql(data.codigo)}
+        `;
+
+        await this.prisma.$executeRawUnsafe(updateQuery);
+      }
 
       this.logger.log(
         `✅ Cambio aprobat cu succes: ${data.id} pentru empleado ${data.codigo}, câmp: ${campoName}`,
@@ -959,6 +1077,10 @@ export class EmpleadosService {
     const campoMap: { [key: string]: string } = {
       'NOMBRE / APELLIDOS': 'NOMBRE / APELLIDOS',
       NOMBRE_APELLIDOS: 'NOMBRE / APELLIDOS',
+      NOMBRE: 'NOMBRE',
+      APELLIDO1: 'APELLIDO1',
+      APELLIDO2: 'APELLIDO2',
+      NOMBRE_SPLIT_CONFIANZA: 'NOMBRE_SPLIT_CONFIANZA',
       NACIONALIDAD: 'NACIONALIDAD',
       DIRECCION: 'DIRECCION',
       'D.N.I. / NIE': 'D.N.I. / NIE',
