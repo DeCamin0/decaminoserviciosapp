@@ -54,32 +54,46 @@ export class BajasMedicasService {
   }
 
   /**
-   * Parsează date în format MM/DD/YY sau MM/DD/YYYY către MySQL DATE
+   * Parsează date în format YYYY-MM-DD, MM/DD/YY sau MM/DD/YYYY către MySQL DATE
    */
   private parseExcelDate(dateStr: string | null | undefined): string {
     if (!dateStr || dateStr === '') return 'NULL';
 
     const str = String(dateStr).trim();
 
+    // Format YYYY-MM-DD (ISO format - deja în format MySQL)
+    const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (isoMatch) {
+      const year = parseInt(isoMatch[1], 10);
+      const month = parseInt(isoMatch[2], 10);
+      const day = parseInt(isoMatch[3], 10);
+      
+      // Validează că datele sunt corecte
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+        const formatted = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return this.escapeSql(formatted);
+      }
+    }
+
     // Format MM/DD/YY sau MM/DD/YYYY
     const match = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    if (!match) {
-      this.logger.warn(`⚠️ Date format neprevăzut: ${str}`);
-      return 'NULL';
+    if (match) {
+      const month = parseInt(match[1], 10);
+      const day = parseInt(match[2], 10);
+      let year = parseInt(match[3], 10);
+
+      // Convert 2-digit year to 4-digit (assume 2000-2099)
+      if (year < 100) {
+        year = year < 50 ? 2000 + year : 1900 + year;
+      }
+
+      // Format pentru MySQL DATE
+      const formatted = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return this.escapeSql(formatted);
     }
 
-    const month = parseInt(match[1], 10);
-    const day = parseInt(match[2], 10);
-    let year = parseInt(match[3], 10);
-
-    // Convert 2-digit year to 4-digit (assume 2000-2099)
-    if (year < 100) {
-      year = year < 50 ? 2000 + year : 1900 + year;
-    }
-
-    // Format pentru MySQL DATE
-    const formatted = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return this.escapeSql(formatted);
+    this.logger.warn(`⚠️ Date format neprevăzut: ${str}`);
+    return 'NULL';
   }
 
   /**
@@ -178,6 +192,13 @@ export class BajasMedicasService {
               .trim()
               .replace(/^0+/, '') || '0';
 
+          // Verifică dacă există "Fecha de alta" pentru a seta "Situación" = "Alta"
+          const fechaAltaParsed = this.parseExcelDate(row['Fecha de alta']);
+          const tieneFechaAlta = fechaAltaParsed !== 'NULL';
+          const situacionValue = tieneFechaAlta 
+            ? this.escapeSql('Alta')
+            : this.escapeSql(row.Situación || '');
+
           // Construiește query-ul INSERT cu lookup Codigo_Empleado
           const query = `
             INSERT INTO \`MutuaCasos\` (
@@ -204,13 +225,13 @@ export class BajasMedicasService {
               ${this.parseBoolean(row.Recaída)},
               ${this.parseExcelDate(row['Fecha baja'])},
               ${this.parseExcelDate(row['Fecha de alta prevista SPS'])},
-              ${this.parseExcelDate(row['Fecha de alta'])},
+              ${fechaAltaParsed},
               ${this.parseNumber(row['Días de baja'])},
               ${this.parseNumber(row['Días previstos Servicio Público de Salud'])},
               ${this.parseExcelDate(row['Fecha inicio subrogación'])},
               ${this.parseNumber(row['Jornadas perdidas desde la subrogación'])},
               ${this.parseNumber(row['Jornadas perdidas fijos discontinuos'])},
-              ${this.escapeSql(row.Situación || '')},
+              ${situacionValue},
               ${this.parseExcelDate(row['Inicio pago delegado'])},
               ${this.parseExcelDate(row['Fin pago delegado'])},
               ${this.parseBoolean(row['Pendiente validación INSS'])},
@@ -256,12 +277,15 @@ export class BajasMedicasService {
               \`Régimen\`=VALUES(\`Régimen\`), \`CIF\`=VALUES(\`CIF\`), \`CCC\`=VALUES(\`CCC\`),
               \`Razón Social\`=VALUES(\`Razón Social\`), \`Tipo\`=VALUES(\`Tipo\`), \`Recaída\`=VALUES(\`Recaída\`),
               \`Fecha baja\`=VALUES(\`Fecha baja\`), \`Fecha de alta prevista SPS\`=VALUES(\`Fecha de alta prevista SPS\`),
-              \`Fecha de alta\`=VALUES(\`Fecha de alta\`), \`Días de baja\`=VALUES(\`Días de baja\`),
+              \`Fecha de alta\`=COALESCE(VALUES(\`Fecha de alta\`), \`Fecha de alta\`), \`Días de baja\`=VALUES(\`Días de baja\`),
               \`Días previstos Servicio Público de Salud\`=VALUES(\`Días previstos Servicio Público de Salud\`),
               \`Fecha inicio subrogación\`=VALUES(\`Fecha inicio subrogación\`),
               \`Jornadas perdidas desde la subrogación\`=VALUES(\`Jornadas perdidas desde la subrogación\`),
               \`Jornadas perdidas fijos discontinuos\`=VALUES(\`Jornadas perdidas fijos discontinuos\`),
-              \`Situación\`=VALUES(\`Situación\`), \`Inicio pago delegado\`=VALUES(\`Inicio pago delegado\`),
+              \`Situación\`=CASE 
+                WHEN COALESCE(VALUES(\`Fecha de alta\`), \`Fecha de alta\`) IS NOT NULL THEN 'Alta'
+                ELSE COALESCE(VALUES(\`Situación\`), \`Situación\`)
+              END, \`Inicio pago delegado\`=VALUES(\`Inicio pago delegado\`),
               \`Fin pago delegado\`=VALUES(\`Fin pago delegado\`), \`Pendiente validación INSS\`=VALUES(\`Pendiente validación INSS\`),
               \`Última gestión Mutua\`=VALUES(\`Última gestión Mutua\`), \`Próxima gestión Mutua\`=VALUES(\`Próxima gestión Mutua\`),
               \`Demora recepción del parte de baja\`=VALUES(\`Demora recepción del parte de baja\`),
@@ -320,7 +344,7 @@ export class BajasMedicasService {
   async updateBajaMedica(
     idCaso: string,
     idPosicion: string,
-    updates: { fechaBaja?: string; fechaAlta?: string },
+    updates: { fechaBaja?: string; fechaAlta?: string; situacion?: string },
   ): Promise<any> {
     try {
       if (!idCaso || !idPosicion) {
@@ -339,6 +363,15 @@ export class BajasMedicasService {
       if (updates.fechaAlta !== undefined) {
         const fechaAltaSQL = this.parseExcelDate(updates.fechaAlta);
         updateFields.push('`Fecha de alta` = ' + fechaAltaSQL);
+        
+        // Dacă se setează "Fecha de alta" (nu este NULL), setăm automat "Situación" = "Alta"
+        if (fechaAltaSQL !== 'NULL') {
+          updateFields.push('`Situación` = ' + this.escapeSql('Alta'));
+        }
+      }
+
+      if (updates.situacion !== undefined) {
+        updateFields.push('`Situación` = ' + this.escapeSql(updates.situacion || ''));
       }
 
       if (updateFields.length === 0) {
@@ -379,6 +412,42 @@ export class BajasMedicasService {
       this.logger.error('❌ Error updating baja médica:', error);
       throw new BadRequestException(
         `Error al actualizar baja médica: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Actualizează automat "Situación" = "Alta" pentru toate cazurile care au "Fecha de alta" dar "Situación" nu este "Alta"
+   */
+  async fixSituacionForFechaAlta(): Promise<{
+    success: true;
+    updated: number;
+  }> {
+    try {
+      const query = `
+        UPDATE \`MutuaCasos\`
+        SET \`Situación\` = 'Alta',
+            \`updated_at\` = NOW()
+        WHERE \`Fecha de alta\` IS NOT NULL
+          AND \`Fecha de alta\` != ''
+          AND (\`Situación\` IS NULL OR \`Situación\` != 'Alta')
+      `;
+
+      const result = await this.prisma.$executeRawUnsafe(query);
+      const affectedRows = Number(result) || 0;
+
+      this.logger.log(
+        `✅ Actualizat "Situación" = "Alta" pentru ${affectedRows} cazuri cu "Fecha de alta"`,
+      );
+
+      return {
+        success: true,
+        updated: affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error fixing Situación for Fecha de alta:', error);
+      throw new BadRequestException(
+        `Error al actualizar Situación: ${error.message}`,
       );
     }
   }

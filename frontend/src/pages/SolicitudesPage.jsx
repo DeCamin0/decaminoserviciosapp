@@ -195,8 +195,10 @@ export default function SolicitudesPage() {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const bajaFileInputRef = useRef(null);
   const [allBajasMedicas, setAllBajasMedicas] = useState([]);
+  // State pentru filtrul de bajas médicas (null = toate, 'cerradas' = doar închise, 'abiertas' = doar deschise)
+  const [bajaFilter, setBajaFilter] = useState(null);
   // State pentru editare bajas médicas
-  const [editingBaja, setEditingBaja] = useState(null); // { idCaso, idPosicion, field: 'fechaBaja' | 'fechaAlta' }
+  const [editingBaja, setEditingBaja] = useState(null); // { idCaso, idPosicion, field: 'fechaBaja' | 'fechaAlta' | 'situacion' }
   const [editingBajaValue, setEditingBajaValue] = useState('');
   
   // Ausencias states
@@ -1372,8 +1374,15 @@ export default function SolicitudesPage() {
       const updateData = {
         idCaso,
         idPosicion,
-        [field === 'fechaBaja' ? 'fechaBaja' : 'fechaAlta']: newValue || null,
       };
+      
+      if (field === 'fechaBaja') {
+        updateData.fechaBaja = newValue || null;
+      } else if (field === 'fechaAlta') {
+        updateData.fechaAlta = newValue || null;
+      } else if (field === 'situacion') {
+        updateData.situacion = newValue || '';
+      }
 
       const token = localStorage.getItem('auth_token');
       const headers = {
@@ -1398,7 +1407,8 @@ export default function SolicitudesPage() {
       const result = await response.json();
       
       if (result.success) {
-        setSuccessMsg(`Fecha ${field === 'fechaBaja' ? 'baja' : 'alta'} actualizada correctamente.`);
+        const fieldName = field === 'fechaBaja' ? 'baja' : field === 'fechaAlta' ? 'alta' : 'situación';
+        setSuccessMsg(`${field === 'situacion' ? 'Situación' : `Fecha ${fieldName}`} actualizada correctamente.`);
         
         // Refreshează lista
         await fetchBajasMedicas();
@@ -2709,6 +2719,20 @@ export default function SolicitudesPage() {
         seen.add(item.id);
         return true;
       });
+      
+      // Aplică filtrul de bajas (cerradas/abiertas)
+      if (bajaFilter === 'cerradas') {
+        filtered = filtered.filter(item => {
+          const situacion = String(item.situacion || item.estado || '').toLowerCase();
+          return situacion.includes('alta') && !situacion.includes('prevista');
+        });
+      } else if (bajaFilter === 'abiertas') {
+        filtered = filtered.filter(item => {
+          const situacion = String(item.situacion || item.estado || '').toLowerCase();
+          return !situacion.includes('alta') || situacion.includes('prevista');
+        });
+      }
+      // Dacă bajaFilter === null, afișează toate (nu filtrează)
     } else {
       filtered = allSolicitudes;
     }
@@ -2773,7 +2797,7 @@ export default function SolicitudesPage() {
       return createdB.localeCompare(createdA); // Descendent - cele mai noi prima
     });
     return sorted;
-  }, [selectedTab, selectedUser, selectedMonth, allAusencias, allSolicitudes, allBajasMedicas, allUsers]);
+  }, [selectedTab, selectedUser, selectedMonth, allAusencias, allSolicitudes, allBajasMedicas, allUsers, bajaFilter]);
 
   // Statistici pentru bajas médicas
   const bajasStats = useMemo(() => {
@@ -3484,16 +3508,61 @@ export default function SolicitudesPage() {
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white rounded-lg p-4 border-2 border-blue-200 shadow-md">
+                  <div 
+                    onClick={() => setBajaFilter(null)}
+                    className={`bg-white rounded-lg p-4 border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
+                      bajaFilter === null 
+                        ? 'border-blue-400 shadow-lg scale-105' 
+                        : 'border-blue-200 hover:border-blue-300'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setBajaFilter(null);
+                      }
+                    }}
+                  >
                     <div className="text-sm font-medium text-gray-600 mb-1">Total Casos</div>
                     <div className="text-3xl font-bold text-blue-700">{bajasStats.total}</div>
                   </div>
-                  <div className="bg-white rounded-lg p-4 border-2 border-green-200 shadow-md">
+                  <div 
+                    onClick={() => setBajaFilter('cerradas')}
+                    className={`bg-white rounded-lg p-4 border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
+                      bajaFilter === 'cerradas' 
+                        ? 'border-green-400 shadow-lg scale-105' 
+                        : 'border-green-200 hover:border-green-300'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setBajaFilter('cerradas');
+                      }
+                    }}
+                  >
                     <div className="text-sm font-medium text-gray-600 mb-1">Casos Cerrados</div>
                     <div className="text-3xl font-bold text-green-700">{bajasStats.cerradas}</div>
                     <div className="text-xs text-gray-500 mt-1">Con alta médica</div>
                   </div>
-                  <div className="bg-white rounded-lg p-4 border-2 border-orange-200 shadow-md">
+                  <div 
+                    onClick={() => setBajaFilter('abiertas')}
+                    className={`bg-white rounded-lg p-4 border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
+                      bajaFilter === 'abiertas' 
+                        ? 'border-orange-400 shadow-lg scale-105' 
+                        : 'border-orange-200 hover:border-orange-300'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setBajaFilter('abiertas');
+                      }
+                    }}
+                  >
                     <div className="text-sm font-medium text-gray-600 mb-1">Casos Abiertos</div>
                     <div className="text-3xl font-bold text-orange-700">{bajasStats.abiertas}</div>
                     <div className="text-xs text-gray-500 mt-1">En seguimiento</div>
@@ -3581,13 +3650,58 @@ export default function SolicitudesPage() {
                                   </p>
                                 )}
                                 <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                  <span
-                                    className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${getSituacionColor(
-                                      item.situacion
-                                    )}`}
-                                  >
-                                    {item.situacion || 'Situación desconocida'}
-                                  </span>
+                                  {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'situacion' ? (
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="text"
+                                        value={editingBajaValue || ''}
+                                        onChange={(e) => setEditingBajaValue(e.target.value)}
+                                        className={`text-xs font-medium rounded-full px-3 py-1 border-2 border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${getSituacionColor(editingBajaValue)}`}
+                                        autoFocus
+                                        onBlur={() => {
+                                          if (editingBajaValue !== item.situacion) {
+                                            handleSaveBajaDate(item.casoId, item.posicionId, 'situacion', editingBajaValue);
+                                          } else {
+                                            setEditingBaja(null);
+                                            setEditingBajaValue('');
+                                          }
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            if (editingBajaValue !== item.situacion) {
+                                              handleSaveBajaDate(item.casoId, item.posicionId, 'situacion', editingBajaValue);
+                                            } else {
+                                              setEditingBaja(null);
+                                              setEditingBajaValue('');
+                                            }
+                                          } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            setEditingBaja(null);
+                                            setEditingBajaValue('');
+                                          }
+                                        }}
+                                        placeholder="Situación"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <span
+                                      className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full cursor-pointer hover:opacity-80 transition-opacity ${getSituacionColor(
+                                        item.situacion
+                                      )}`}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (isManager && item.casoId && item.posicionId) {
+                                          setEditingBaja({ idCaso: item.casoId, idPosicion: item.posicionId, field: 'situacion' });
+                                          setEditingBajaValue(item.situacion || '');
+                                        }
+                                      }}
+                                      title={isManager ? "Clic para editar" : ""}
+                                    >
+                                      {item.situacion || 'Situación desconocida'}
+                                    </span>
+                                  )}
                                   {item.fuente && (
                                     <span className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-rose-100 text-rose-800">
                                       Fuente: {item.fuente}
@@ -3704,7 +3818,7 @@ export default function SolicitudesPage() {
                             </div>
                             <div className="bg-white p-4 rounded-lg border border-gray-200 group-hover:bg-gray-50 transition-colors duration-300">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha baja</span>
-                              {editingBaja?.idCaso === item.idCaso && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaBaja' ? (
+                              {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaBaja' ? (
                                 <div className="flex items-center gap-2">
                                   <input
                                     type="date"
@@ -3714,7 +3828,7 @@ export default function SolicitudesPage() {
                                     autoFocus
                                     onBlur={() => {
                                       if (editingBajaValue !== item.fechaBaja) {
-                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaBaja', editingBajaValue);
+                                        handleSaveBajaDate(item.casoId, item.posicionId, 'fechaBaja', editingBajaValue);
                                       } else {
                                         setEditingBaja(null);
                                         setEditingBajaValue('');
@@ -3722,7 +3836,7 @@ export default function SolicitudesPage() {
                                     }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
-                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaBaja', editingBajaValue);
+                                        handleSaveBajaDate(item.casoId, item.posicionId, 'fechaBaja', editingBajaValue);
                                       } else if (e.key === 'Escape') {
                                         setEditingBaja(null);
                                         setEditingBajaValue('');
@@ -3733,9 +3847,11 @@ export default function SolicitudesPage() {
                               ) : (
                                 <p 
                                   className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
-                                  onClick={() => {
-                                    if (isManager) {
-                                      setEditingBaja({ idCaso: item.idCaso, idPosicion: item.posicionId, field: 'fechaBaja' });
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (isManager && item.casoId && item.posicionId) {
+                                      setEditingBaja({ idCaso: item.casoId, idPosicion: item.posicionId, field: 'fechaBaja' });
                                       // Convertește data pentru input type="date" (YYYY-MM-DD)
                                       const dateStr = item.fechaBaja;
                                       if (dateStr && dateStr !== '-') {
@@ -3765,7 +3881,7 @@ export default function SolicitudesPage() {
                             </div>
                             <div className="bg-white p-4 rounded-lg border border-gray-200 group-hover:bg-gray-50 transition-colors duration-300">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha alta</span>
-                              {editingBaja?.idCaso === item.idCaso && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaAlta' ? (
+                              {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaAlta' ? (
                                 <div className="flex items-center gap-2">
                                   <input
                                     type="date"
@@ -3775,7 +3891,7 @@ export default function SolicitudesPage() {
                                     autoFocus
                                     onBlur={() => {
                                       if (editingBajaValue !== item.fechaAlta) {
-                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaAlta', editingBajaValue);
+                                        handleSaveBajaDate(item.casoId, item.posicionId, 'fechaAlta', editingBajaValue);
                                       } else {
                                         setEditingBaja(null);
                                         setEditingBajaValue('');
@@ -3783,7 +3899,7 @@ export default function SolicitudesPage() {
                                     }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
-                                        handleSaveBajaDate(item.idCaso, item.posicionId, 'fechaAlta', editingBajaValue);
+                                        handleSaveBajaDate(item.casoId, item.posicionId, 'fechaAlta', editingBajaValue);
                                       } else if (e.key === 'Escape') {
                                         setEditingBaja(null);
                                         setEditingBajaValue('');
@@ -3794,9 +3910,11 @@ export default function SolicitudesPage() {
                               ) : (
                                 <p 
                                   className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
-                                  onClick={() => {
-                                    if (isManager) {
-                                      setEditingBaja({ idCaso: item.idCaso, idPosicion: item.posicionId, field: 'fechaAlta' });
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (isManager && item.casoId && item.posicionId) {
+                                      setEditingBaja({ idCaso: item.casoId, idPosicion: item.posicionId, field: 'fechaAlta' });
                                       // Convertește data pentru input type="date" (YYYY-MM-DD)
                                       const dateStr = item.fechaAlta;
                                       if (dateStr && dateStr !== '-') {

@@ -93,7 +93,7 @@ export class BajasMedicasController {
   @Put()
   async updateBajaMedica(@Body() body: any) {
     try {
-      const { idCaso, idPosicion, fechaBaja, fechaAlta } = body;
+      const { idCaso, idPosicion, fechaBaja, fechaAlta, situacion } = body;
 
       if (!idCaso || !idPosicion) {
         throw new BadRequestException(
@@ -101,18 +101,21 @@ export class BajasMedicasController {
         );
       }
 
-      if (fechaBaja === undefined && fechaAlta === undefined) {
+      if (fechaBaja === undefined && fechaAlta === undefined && situacion === undefined) {
         throw new BadRequestException(
-          'Trebuie să specifici cel puțin fechaBaja sau fechaAlta',
+          'Trebuie să specifici cel puțin fechaBaja, fechaAlta sau situacion',
         );
       }
 
-      const updates: { fechaBaja?: string; fechaAlta?: string } = {};
+      const updates: { fechaBaja?: string; fechaAlta?: string; situacion?: string } = {};
       if (fechaBaja !== undefined) {
         updates.fechaBaja = fechaBaja;
       }
       if (fechaAlta !== undefined) {
         updates.fechaAlta = fechaAlta;
+      }
+      if (situacion !== undefined) {
+        updates.situacion = situacion;
       }
 
       const result = await this.bajasMedicasService.updateBajaMedica(
@@ -124,6 +127,27 @@ export class BajasMedicasController {
       return result;
     } catch (error: any) {
       this.logger.error('❌ Error updating baja médica:', error);
+      throw error;
+    }
+  }
+
+  @Post('fix-situacion')
+  async fixSituacionForFechaAlta() {
+    try {
+      this.logger.log(
+        `🔧 Fix Situación pentru cazuri cu Fecha de alta`,
+      );
+
+      const result =
+        await this.bajasMedicasService.fixSituacionForFechaAlta();
+
+      return {
+        success: true,
+        message: `Actualizat "Situación" = "Alta" pentru ${result.updated} cazuri`,
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error fixing Situación:', error);
       throw error;
     }
   }
