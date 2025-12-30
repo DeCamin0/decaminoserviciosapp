@@ -591,8 +591,10 @@ export default function EmpleadosPage() {
   const [enviarAGestoria, setEnviarAGestoria] = useState(false);
   const [enviarAGestoriaEdit, setEnviarAGestoriaEdit] = useState(false); // Pentru modalul de editare
   const [retrimiteFichaEdit, setRetrimiteFichaEdit] = useState(false); // Checkbox pentru retrimitere ficha în editare
-  const [mensajeAdicionalGestoria, setMensajeAdicionalGestoria] = useState(''); // Mesaj adițional pentru gestorie
-  const [archivosGestoria, setArchivosGestoria] = useState([]); // Fișiere multiple pentru gestorie
+  const [mensajeAdicionalGestoria, setMensajeAdicionalGestoria] = useState(''); // Mesaj adițional pentru gestorie (addForm)
+  const [archivosGestoria, setArchivosGestoria] = useState([]); // Fișiere multiple pentru gestorie (addForm)
+  const [mensajeAdicionalGestoriaEdit, setMensajeAdicionalGestoriaEdit] = useState(''); // Mesaj adițional pentru gestorie (editForm)
+  const [archivosGestoriaEdit, setArchivosGestoriaEdit] = useState([]); // Fișiere multiple pentru gestorie (editForm)
 
   // Estado para dropdowns de centro de trabajo (pentru formularul de adăugare/editare)
   const [showCentroDropdownAdd, setShowCentroDropdownAdd] = useState(false);
@@ -1481,17 +1483,51 @@ export default function EmpleadosPage() {
         
         mensajeEmail += `Actualizado por: ${getFormattedNombre(authUser) || authUser?.nombre || 'Sistema'}\n` +
                        `Fecha: ${new Date().toLocaleString('es-ES')}`;
+        
+        // Adaugă mesajul adițional dacă există
+        if (mensajeAdicionalGestoriaEdit && mensajeAdicionalGestoriaEdit.trim()) {
+          mensajeEmail += `\n\n--- Mensaje Adicional ---\n${mensajeAdicionalGestoriaEdit}`;
+        }
 
         updateBody.emailBody = mensajeEmail;
+        updateBody.mensajeAdicionalGestoria = mensajeAdicionalGestoriaEdit || '';
         updateBody.emailSubject = `Actualización de datos - ${getFormattedNombre({ ...editForm, CODIGO: editForm.CODIGO }) || editForm['NOMBRE / APELLIDOS'] || editForm.CODIGO || 'Empleado'}`;
         updateBody.updatedBy = getFormattedNombre(authUser) || authUser?.nombre || 'Sistema';
       }
 
       // EDITARE angajat (PUT request) - nu salvare (POST)
+      // Dacă există fișiere, folosim FormData, altfel JSON
+      let requestBody;
+      let requestHeaders = { ...fetchHeaders };
+      
+      if (enviarAGestoriaEdit && archivosGestoriaEdit.length > 0) {
+        // Folosim FormData pentru a trimite fișierele
+        const formData = new FormData();
+        
+        // Adaugă toate câmpurile din updateBody
+        Object.keys(updateBody).forEach(key => {
+          if (updateBody[key] !== undefined && updateBody[key] !== null) {
+            formData.append(key, String(updateBody[key]));
+          }
+        });
+        
+        // Adaugă fișierele
+        archivosGestoriaEdit.forEach((file) => {
+          formData.append('archivosGestoria', file);
+        });
+        
+        requestBody = formData;
+        // Nu setăm Content-Type pentru FormData, browser-ul o setează automat cu boundary
+        delete requestHeaders['Content-Type'];
+      } else {
+        // Folosim JSON normal
+        requestBody = JSON.stringify(updateBody);
+      }
+      
       const response = await fetch(API_ENDPOINTS.UPDATE_USER, {
         method: 'PUT', // PUT = EDITARE, nu POST = salvare
-        headers: fetchHeaders,
-        body: JSON.stringify(updateBody)
+        headers: requestHeaders,
+        body: requestBody
       });
 
       if (!response.ok) {
@@ -1521,6 +1557,7 @@ export default function EmpleadosPage() {
         // Backend-ul verifică parametrul enviarAGestoria în body și trimite email-ul la:
         // - TO: altemprado@gmail.com (gestoria)
         // - BCC: info@decaminoservicios.com, mirisjm@gmail.com
+        // Fișierele sunt trimise automat în același request dacă există
         
         // Dacă checkbox-ul "Retrimite Ficha" este bifat, DUPĂ EDITARE se trimite ficha la gestorie
         if (retrimiteFichaEdit && editForm.CODIGO) {
@@ -1586,6 +1623,8 @@ export default function EmpleadosPage() {
           setShowEditModal(false);
           setEnviarAGestoriaEdit(false); // Reset checkbox după editare
           setRetrimiteFichaEdit(false); // Reset checkbox retrimite ficha
+          setMensajeAdicionalGestoriaEdit(''); // Reset mesaj adițional
+          setArchivosGestoriaEdit([]); // Reset fișiere
           setOriginalEmployeeData(null); // Reset datele originale după editare
           // Reîncarcă lista după editare
           setTimeout(() => fetchUsers(), 500);
@@ -1852,6 +1891,8 @@ export default function EmpleadosPage() {
     setOriginalEmployeeData({ ...mappedUser }); // Salvează datele originale pentru comparație
     setEnviarAGestoriaEdit(false); // Reset checkbox la deschiderea modalului
     setRetrimiteFichaEdit(false); // Reset checkbox retrimite ficha
+    setMensajeAdicionalGestoriaEdit(''); // Reset mesaj adițional
+    setArchivosGestoriaEdit([]); // Reset fișiere
     setShowEditModal(true);
   };
 
@@ -3648,9 +3689,9 @@ export default function EmpleadosPage() {
       {/* Modal ULTRA MODERN para editar empleado */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 animate-in fade-in duration-300">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] flex flex-col shadow-2xl border border-gray-200 animate-in fade-in duration-300">
             {/* Header ULTRA MODERN */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200">
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
@@ -3670,10 +3711,10 @@ export default function EmpleadosPage() {
               </div>
             </div>
             
-            {/* Content */}
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
+            {/* Content - SCROLLABIL */}
+            <div className="flex-1 overflow-y-auto p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {SHEET_FIELDS.map(field => {
+                {SHEET_FIELDS.filter(field => field !== 'NOMBRE' && field !== 'APELLIDO1' && field !== 'APELLIDO2' && field !== 'NOMBRE_SPLIT_CONFIANZA').map(field => {
                   const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
                   return (
                   <div key={field}>
@@ -4235,13 +4276,22 @@ export default function EmpleadosPage() {
               </div>
             </div>
             
+            {/* Checkbox-uri și câmpuri pentru gestorie - ÎNAINTE DE FOOTER, FIX */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50">
             {/* Checkbox-uri pentru "Enviar a Gestoria" și "Retrimite Ficha" */}
-            <div className="px-6 pb-4 flex flex-col gap-3 border-t border-gray-200">
+            <div className="px-6 pt-4 pb-3 flex flex-col gap-3">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={enviarAGestoriaEdit}
-                  onChange={(e) => setEnviarAGestoriaEdit(e.target.checked)}
+                  onChange={(e) => {
+                    setEnviarAGestoriaEdit(e.target.checked);
+                    if (!e.target.checked) {
+                      // Reset câmpurile când se debifează
+                      setMensajeAdicionalGestoriaEdit('');
+                      setArchivosGestoriaEdit([]);
+                    }
+                  }}
                   className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                 />
                 <span className="text-sm font-medium text-gray-700">
@@ -4268,14 +4318,68 @@ export default function EmpleadosPage() {
               </label>
             </div>
             
-            {/* Footer cu butoane ULTRA MODERN */}
-            <div className="flex gap-4 justify-end p-6 border-t border-gray-200 bg-gray-50">
+            {/* Câmpuri adiționale pentru gestorie (doar când checkbox-ul "Enviar a Gestoria" este bifat) */}
+            {enviarAGestoriaEdit && (
+              <div className="px-6 pb-4 space-y-4 bg-blue-50 border-t border-blue-200">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mensaje Adicional (opcional)
+                  </label>
+                  <textarea
+                    value={mensajeAdicionalGestoriaEdit}
+                    onChange={(e) => setMensajeAdicionalGestoriaEdit(e.target.value)}
+                    placeholder="Escribe un mensaje adicional que se enviará junto con la actualización..."
+                    rows={3}
+                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📎 Archivos Adicionales (opcional)
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setArchivosGestoriaEdit(files);
+                    }}
+                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer bg-white"
+                  />
+                  {archivosGestoriaEdit.length > 0 && (
+                    <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                      {archivosGestoriaEdit.map((file, idx) => (
+                        <div key={idx} className="text-sm text-gray-600 flex items-center justify-between bg-white p-2 rounded border border-gray-200">
+                          <span className="truncate flex-1">📎 {file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArchivosGestoriaEdit(archivosGestoriaEdit.filter((_, i) => i !== idx));
+                            }}
+                            className="text-red-500 hover:text-red-700 font-bold ml-2 flex-shrink-0"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            </div>
+            
+            {/* Footer cu butoane ULTRA MODERN - FIX */}
+            <div className="flex-shrink-0 flex gap-4 justify-end p-6 border-t border-gray-200 bg-gray-50">
               {/* Buton Cancelar */}
               <button
                 onClick={() => {
                   setShowEditModal(false);
                   setEnviarAGestoriaEdit(false); // Reset checkbox la închidere
                   setRetrimiteFichaEdit(false); // Reset checkbox retrimite ficha
+                  setMensajeAdicionalGestoriaEdit(''); // Reset mesaj adițional
+                  setArchivosGestoriaEdit([]); // Reset fișiere
                   setOriginalEmployeeData(null); // Reset datele originale
                 }}
                 className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-white border-2 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900"

@@ -395,7 +395,7 @@ const ComunicadoDetailPage = () => {
                     <span>Leído</span>
                   </div>
                 )}
-                {comunicado.leidos && comunicado.leidos.length > 0 && (
+                {canManageComunicados() && comunicado.leidos && comunicado.leidos.length > 0 && (
                   <button
                     onClick={() => setShowReadersModal(true)}
                     className="flex items-center gap-1 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors cursor-pointer"

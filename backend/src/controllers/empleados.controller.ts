@@ -838,7 +838,19 @@ export class EmpleadosController {
 
   @Put()
   @UseGuards(JwtAuthGuard)
-  async updateEmpleado(@Body() body: any, @CurrentUser() user: any) {
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'archivosGestoria', maxCount: 10 },
+    ]),
+  )
+  async updateEmpleado(
+    @UploadedFiles()
+    files: {
+      archivosGestoria?: Express.Multer.File[];
+    },
+    @Body() body: any,
+    @CurrentUser() user: any,
+  ) {
     try {
       this.logger.log(
         `📝 Update empleado request received. Body keys: ${Object.keys(body || {}).join(', ')}`,
@@ -1007,8 +1019,9 @@ export class EmpleadosController {
           body.subiect ||
           `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`;
 
-        // Formatează mesajul ca HTML pentru email
-        const htmlEmail = `
+        // Adaugă mesajul adițional dacă există
+        const mensajeAdicional = body.mensajeAdicionalGestoria || '';
+        let htmlEmail = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -1019,6 +1032,19 @@ export class EmpleadosController {
             <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
               <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${emailBody.replace(/\n/g, '<br>')}</pre>
             </div>
+        `;
+
+        // Adaugă mesajul adițional dacă există
+        if (mensajeAdicional && mensajeAdicional.trim()) {
+          htmlEmail += `
+            <div style="background-color: #e8f4f8; padding: 15px; border-left: 4px solid #007bff; margin: 20px 0;">
+              <strong>Mensaje adicional:</strong><br>
+              <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
+            </div>
+          `;
+        }
+
+        htmlEmail += `
             <p style="color: #666; font-size: 12px; margin-top: 20px;">
               Actualizado por: ${body.updatedBy || 'Sistema'}<br>
               Fecha: ${new Date().toLocaleString('es-ES')}
@@ -1027,16 +1053,42 @@ export class EmpleadosController {
         `;
 
         try {
+          // Obține fișierele dacă există
+          const archivosGestoria = files?.archivosGestoria || [];
+          
+          // Pregătește attachments
+          const attachments = [];
+          if (archivosGestoria.length > 0) {
+            archivosGestoria.forEach((file) => {
+              attachments.push({
+                filename: file.originalname || 'attachment',
+                content: file.buffer,
+                contentType: file.mimetype || 'application/octet-stream',
+              });
+            });
+          }
 
           // Trimite la gestoria (altemprado@gmail.com) cu BCC
-          await this.emailService.sendEmail(
-            'altemprado@gmail.com',
-            emailSubject,
-            htmlEmail,
-            {
-              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
-            },
-          );
+          if (attachments.length > 0) {
+            await this.emailService.sendEmailWithAttachments(
+              'altemprado@gmail.com',
+              emailSubject,
+              htmlEmail,
+              attachments,
+              {
+                bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+              },
+            );
+          } else {
+            await this.emailService.sendEmail(
+              'altemprado@gmail.com',
+              emailSubject,
+              htmlEmail,
+              {
+                bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+              },
+            );
+          }
 
           this.logger.log(
             `✅ Email trimis către gestoria (altemprado@gmail.com) pentru actualizare empleado ${body.CODIGO}`,
@@ -1054,8 +1106,14 @@ export class EmpleadosController {
               recipientName: 'Gestoria',
               subject: emailSubject,
               message: htmlEmail,
-              additionalMessage: emailBody || undefined,
+              additionalMessage: mensajeAdicional || emailBody || undefined,
               status: 'sent',
+              attachments: attachments.map((att) => ({
+                filename: att.filename,
+                fileContent: att.content,
+                mimeType: att.contentType,
+                fileSize: att.content.length,
+              })),
             });
           } catch (saveError: any) {
             this.logger.warn(

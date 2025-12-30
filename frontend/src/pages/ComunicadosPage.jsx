@@ -199,7 +199,7 @@ const ComunicadosPage = () => {
                           <User className="w-4 h-4" />
                           <span>Autor: {canManageComunicados() ? (comunicado.autor_nombre || comunicado.autor_id) : 'Empresa'}</span>
                         </div>
-                        {comunicado.leidos_count > 0 && (
+                        {canManageComunicados() && comunicado.leidos_count > 0 && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
