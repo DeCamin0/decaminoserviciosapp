@@ -79,6 +79,234 @@ export class GestoriaService {
   }
 
   /**
+   * Extrage Fecha Antigüedad din textul PDF
+   * @param textContent - Textul extras din PDF
+   * @returns Data în format YYYY-MM-DD sau null dacă nu se găsește
+   */
+  private extraerFechaAntiguedad(textContent: string): string | null {
+    try {
+      const textLower = textContent.toLowerCase();
+      
+      // Căutăm pattern-ul "fecha antigüedad" sau "fecha antiguedad" urmat de o dată
+      // Pattern-uri mai flexibile pentru a găsi datele
+      const patterns = [
+        /fecha\s+antigüedad\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antiguedad\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antigüedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antiguedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /antigüedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /antiguedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        // Pattern mai flexibil - poate fi pe linii diferite sau cu spații diferite
+        /fecha\s+antigüedad[^\d]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antiguedad[^\d]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        // Pattern pentru a găsi orice dată după "fecha antigüedad" (chiar dacă sunt caractere între, inclusiv newline)
+        /fecha\s+antigüedad[\s\S]{0,100}?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antiguedad[\s\S]{0,100}?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+      ];
+
+      this.logger.debug(`🔍 Căutând Fecha Antigüedad în text (${textContent.length} caractere)`);
+      
+      for (const pattern of patterns) {
+        const match = textContent.match(pattern);
+        if (match) {
+          // Încercăm mai întâi cu match[1] (grupul de captură)
+          let dateStr = match[1];
+          // Dacă nu există match[1], încercăm să extragem data din match[0]
+          if (!dateStr && match[0]) {
+            const dateMatchFromFull = match[0].match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+            if (dateMatchFromFull) {
+              dateStr = dateMatchFromFull[0];
+            }
+          }
+          
+          if (dateStr) {
+            this.logger.debug(`✅ Pattern găsit pentru Fecha Antigüedad: "${match[0]}", dateStr: "${dateStr}"`);
+            const dateMatch = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+            if (dateMatch) {
+              let day = parseInt(dateMatch[1], 10);
+              let month = parseInt(dateMatch[2], 10);
+              let year = parseInt(dateMatch[3], 10);
+              
+              // Normalizăm anul (dacă e 2 cifre)
+              if (year < 100) {
+                year = year < 50 ? 2000 + year : 1900 + year;
+              }
+              
+              // Formatăm ca DD/MM/YYYY
+              const fechaFormateada = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+              this.logger.log(`✅ Fecha Antigüedad extrasă: ${fechaFormateada} (din: "${match[0]}")`);
+              return fechaFormateada;
+            }
+          }
+        }
+      }
+      
+      this.logger.debug(`⚠️ Fecha Antigüedad nu a fost găsită în PDF`);
+      return null;
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la extragerea Fecha Antigüedad:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Extrage Fecha Baja din textul finiquito
+   * Pattern: "del X de [mes] al Y de [mes] de [an]" - luăm data finală (Y de [mes] de [an])
+   * @param textContent - Textul extras din PDF
+   * @returns Data în format YYYY-MM-DD sau null dacă nu se găsește
+   */
+  private extraerFechaBaja(textContent: string): string | null {
+    try {
+      const textLower = textContent.toLowerCase();
+      
+      // Numele lunilor în spaniolă
+      const meses = [
+        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+      ];
+      
+      // Pattern: "del X de [mes] al Y de [mes] de [an]"
+      // Sau variante: "del X al Y de [mes] de [an]"
+      // Anul poate fi "2025" sau "2.025"
+      const patterns = [
+        /del\s+(\d{1,2})\s+de\s+(\w+)\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/gi,
+        /del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/gi,
+      ];
+
+      for (const pattern of patterns) {
+        const match = textContent.match(pattern);
+        if (match && match[0]) {
+          this.logger.log(`🔍 Pattern găsit pentru Fecha Baja: "${match[0]}"`);
+          
+          // Pentru primul pattern: "del X de [mes1] al Y de [mes2] de [an]"
+          if (pattern.source.includes('de\\s+(\\w+)\\s+al')) {
+            const parts = match[0].match(/del\s+(\d{1,2})\s+de\s+(\w+)\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/i);
+            if (parts) {
+              const diaFinal = parseInt(parts[3], 10);
+              const mesNombre = parts[4].toLowerCase();
+              const anoStr = parts[5].replace(/\./g, ''); // Eliminăm punctele din an (ex: "2.025" -> "2025")
+              const ano = parseInt(anoStr, 10);
+              
+              const mesIndex = meses.findIndex(m => mesNombre.includes(m) || m.includes(mesNombre));
+              if (mesIndex !== -1) {
+                const mes = mesIndex + 1;
+                const fechaFormateada = `${String(diaFinal).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}`;
+                this.logger.log(`✅ Fecha Baja extrasă: ${fechaFormateada} (din: "${match[0]}")`);
+                return fechaFormateada;
+              }
+            }
+          } else {
+            // Pentru al doilea pattern: "del X al Y de [mes] de [an]"
+            const parts = match[0].match(/del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/i);
+            if (parts) {
+              const diaFinal = parseInt(parts[2], 10);
+              const mesNombre = parts[3].toLowerCase();
+              const anoStr = parts[4].replace(/\./g, ''); // Eliminăm punctele din an (ex: "2.025" -> "2025")
+              const ano = parseInt(anoStr, 10);
+              
+              const mesIndex = meses.findIndex(m => mesNombre.includes(m) || m.includes(mesNombre));
+              if (mesIndex !== -1) {
+                const mes = mesIndex + 1;
+                const fechaFormateada = `${String(diaFinal).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}`;
+                this.logger.log(`✅ Fecha Baja extrasă: ${fechaFormateada} (din: "${match[0]}")`);
+                return fechaFormateada;
+              }
+            }
+          }
+        }
+      }
+      
+      return null;
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la extragerea Fecha Baja:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Actualizează Fecha Alta, Fecha Antigüedad și Fecha Baja pentru un angajat dacă nu sunt setate
+   * @param codigo - CODIGO-ul angajatului
+   * @param fechaAlta - Data alta extrasă (format DD/MM/YYYY sau null) - de obicei = fechaAntiguedadExtraida
+   * @param fechaAntiguedad - Data antigüedad extrasă (format DD/MM/YYYY sau null)
+   * @param fechaBaja - Data baja extrasă (format DD/MM/YYYY sau null) - doar pentru finiquitos
+   * @param esFiniquito - Indică dacă este finiquito (pentru a da prioritate Fecha Baja pentru FECHA DE ALTA)
+   * @returns true dacă s-a actualizat ceva, false altfel
+   */
+  private async actualizarFechasEmpleado(
+    codigo: string,
+    fechaAlta: string | null,
+    fechaAntiguedad: string | null,
+    fechaBaja: string | null,
+    esFiniquito: boolean = false
+  ): Promise<boolean> {
+    try {
+      // Verificăm ce date are deja angajatul
+      const checkQuery = `
+        SELECT 
+          \`Fecha Antigüedad\`,
+          \`FECHA DE ALTA\`,
+          \`FECHA BAJA\`
+        FROM \`DatosEmpleados\`
+        WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+        LIMIT 1
+      `;
+      const empleado = await this.prisma.$queryRawUnsafe<Array<{
+        'Fecha Antigüedad': string | null;
+        'FECHA DE ALTA': string | null;
+        'FECHA BAJA': string | null;
+      }>>(checkQuery);
+
+      if (empleado.length === 0) {
+        this.logger.warn(`⚠️ Angajat cu CODIGO ${codigo} nu a fost găsit pentru actualizare fechas`);
+        return false;
+      }
+
+      const fechaAntiguedadActual = empleado[0]?.['Fecha Antigüedad'];
+      const fechaAltaActual = empleado[0]?.['FECHA DE ALTA'];
+      const fechaBajaActual = empleado[0]?.['FECHA BAJA'];
+
+      const updateFields: string[] = [];
+      
+      // Actualizăm FECHA DE ALTA dacă nu este setată - folosim ÎNTOTDEAUNA fechaAntiguedadExtraida
+      if (!fechaAltaActual && fechaAntiguedad) {
+        updateFields.push(`\`FECHA DE ALTA\` = ${this.escapeSql(fechaAntiguedad)}`);
+        this.logger.log(`📅 Va actualiza FECHA DE ALTA (din Fecha Antigüedad Extraida): ${fechaAntiguedad}`);
+      }
+      
+      // Actualizăm Fecha Antigüedad dacă nu este setată - folosim fechaAntiguedadExtraida
+      if (!fechaAntiguedadActual && fechaAntiguedad) {
+        updateFields.push(`\`Fecha Antigüedad\` = ${this.escapeSql(fechaAntiguedad)}`);
+        this.logger.log(`📅 Va actualiza Fecha Antigüedad (din Fecha Antigüedad Extraida): ${fechaAntiguedad}`);
+      }
+      
+      // Actualizăm FECHA BAJA dacă nu este setată - folosim fechaBajaExtraida
+      if (!fechaBajaActual && fechaBaja) {
+        updateFields.push(`\`FECHA BAJA\` = ${this.escapeSql(fechaBaja)}`);
+        this.logger.log(`📅 Va actualiza FECHA BAJA (din Fecha Baja Extraida): ${fechaBaja}`);
+      }
+
+      if (updateFields.length === 0) {
+        this.logger.log(`ℹ️ Angajat ${codigo} are deja toate datele setate sau nu s-au extras date noi`);
+        return false;
+      }
+
+      // Actualizăm în baza de date
+      const updateQuery = `
+        UPDATE \`DatosEmpleados\`
+        SET ${updateFields.join(', ')}
+        WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+      `;
+      await this.prisma.$executeRawUnsafe(updateQuery);
+      
+      this.logger.log(`✅ Date actualizate pentru angajat ${codigo}: ${updateFields.join(', ')}`);
+      return true;
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la actualizarea fechas pentru angajat ${codigo}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Detectează dacă un text PDF este un finiquito
    * @param textContent - Textul extras din PDF
    * @returns true dacă este finiquito, false altfel
@@ -1069,6 +1297,16 @@ export class GestoriaService {
     esFiniquito?: boolean;
     actualizaraEstado?: boolean;
     estadoActual?: string;
+    fechaAltaDB?: string;
+    fechaAntiguedadDB?: string;
+    fechaBajaDB?: string;
+    fechaAltaExtraida?: string;
+    fechaBajaExtraida?: string;
+    fechaAntiguedadExtraida?: string;
+    actualizaraFechaAlta?: boolean;
+    actualizaraFechaAntiguedad?: boolean;
+    actualizaraFechaBaja?: boolean;
+    tieneFiniquitoExistente?: boolean;
   }> {
     try {
       // Dacă avem CODIGO, rezolvăm numele complet
@@ -1094,13 +1332,14 @@ export class GestoriaService {
 
       // Detectăm dacă este finiquito (extragem textul din PDF)
       let esFiniquito = false;
+      let textContent: string = '';
       if (file.buffer) {
         try {
           const pdfParseModule = require('pdf-parse');
           const PDFParse = pdfParseModule.PDFParse;
           const pdfInstance = new PDFParse({ data: new Uint8Array(file.buffer) });
           const textResult = await pdfInstance.getText();
-          const textContent = (textResult && typeof textResult === 'object' && 'text' in textResult) 
+          textContent = (textResult && typeof textResult === 'object' && 'text' in textResult) 
             ? textResult.text 
             : (typeof textResult === 'string' ? textResult : '');
           esFiniquito = this.detectarFiniquito(textContent);
@@ -1139,25 +1378,99 @@ export class GestoriaService {
       }
 
       // Verificăm statusul actual al angajatului dacă este finiquito (pentru preview)
+      // Și extragem Fecha Antigüedad și Fecha Baja pentru finiquitos
+      // Pentru nóminas, extragem doar Fecha Antigüedad
       let estadoActual: string | null = null;
       let actualizaraEstado = false;
-      if (esFiniquito) {
-        const codigoParaVerificar = codigo || await this.obtenerCodigoPorNombre(nombreFinal);
-        if (codigoParaVerificar) {
-          const estadoQuery = `
-            SELECT \`ESTADO\`
-            FROM \`DatosEmpleados\`
-            WHERE \`CODIGO\` = ${this.escapeSql(codigoParaVerificar)}
-            LIMIT 1
-          `;
-          const estadoResult = await this.prisma.$queryRawUnsafe<Array<{ ESTADO: string }>>(
-            estadoQuery,
-          );
-          if (estadoResult.length > 0) {
-            estadoActual = estadoResult[0]?.ESTADO?.trim().toUpperCase() || null;
+      let fechaAltaDB: string | null = null;
+      let fechaAntiguedadDB: string | null = null;
+      let fechaBajaDB: string | null = null;
+      let fechaAltaExtraida: string | null = null;
+      let fechaBajaExtraida: string | null = null;
+      let fechaAntiguedadExtraida: string | null = null;
+      let tieneFiniquitoExistente = false;
+      let tieneFechaBajaEnDB = false;
+      
+      // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
+      const codigoParaVerificar = codigo || await this.obtenerCodigoPorNombre(nombreFinal);
+      
+      if (codigoParaVerificar) {
+        // Obținem statusul și datele existente din DB
+        const empleadoQuery = `
+          SELECT 
+            \`ESTADO\`,
+            \`FECHA DE ALTA\`,
+            \`Fecha Antigüedad\`,
+            \`FECHA BAJA\`
+          FROM \`DatosEmpleados\`
+          WHERE \`CODIGO\` = ${this.escapeSql(codigoParaVerificar)}
+          LIMIT 1
+        `;
+        const empleadoResult = await this.prisma.$queryRawUnsafe<Array<{
+          ESTADO: string;
+          'FECHA DE ALTA': string | null;
+          'Fecha Antigüedad': string | null;
+          'FECHA BAJA': string | null;
+        }>>(empleadoQuery);
+        
+        if (empleadoResult.length > 0) {
+          estadoActual = empleadoResult[0]?.ESTADO?.trim().toUpperCase() || null;
+          if (esFiniquito) {
             actualizaraEstado = estadoActual === 'ACTIVO';
           }
+          fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
+          fechaAntiguedadDB = empleadoResult[0]?.['Fecha Antigüedad'] || null;
+          fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+          
+          // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
+          if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
+            tieneFechaBajaEnDB = true;
+            this.logger.warn(`⚠️ Angajatul ${nombreFinal} (CODIGO: ${codigoParaVerificar}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`);
+          }
         }
+      }
+      
+      // Dacă este o nómina normală (nu finiquito), verificăm dacă angajatul are deja un finiquito urcat
+      if (!esFiniquito && codigoParaVerificar && !tieneFechaBajaEnDB) {
+        const finiquitoCheck = `
+          SELECT \`id\`, \`nombre\`, \`Mes\`, \`Ano\`
+          FROM \`Nominas\`
+          WHERE TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO%${nombreFinal.toUpperCase()}%`)}
+            OR TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO - ${nombreFinal.toUpperCase()}%`)}
+          LIMIT 1
+        `;
+        const finiquitoExistente = await this.prisma.$queryRawUnsafe<Array<{
+          id: number;
+          nombre: string;
+          Mes: string;
+          Ano: string;
+        }>>(finiquitoCheck);
+        
+        if (finiquitoExistente.length > 0) {
+          tieneFiniquitoExistente = true;
+          this.logger.warn(`⚠️ Angajatul ${nombreFinal} (CODIGO: ${codigoParaVerificar}) are deja un finiquito urcat: ${finiquitoExistente[0].nombre} (${finiquitoExistente[0].Mes}/${finiquitoExistente[0].Ano})`);
+        }
+      }
+      
+      // Extragem datele din PDF (nu depinde de codigo)
+      if (textContent) {
+        this.logger.debug(`🔍 Extragem datele din PDF pentru uploadNomina, codigo: ${codigoParaVerificar || 'null'}`);
+        // Pentru toate nóminas (inclusiv finiquitos), extragem Fecha Antigüedad
+        fechaAntiguedadExtraida = this.extraerFechaAntiguedad(textContent);
+        this.logger.debug(`📅 Fecha Antigüedad extrasă: ${fechaAntiguedadExtraida || 'null'}`);
+        
+        // Pentru finiquitos, extragem și Fecha Baja
+        if (esFiniquito) {
+          fechaBajaExtraida = this.extraerFechaBaja(textContent);
+          this.logger.debug(`📅 Fecha Baja extrasă: ${fechaBajaExtraida || 'null'}`);
+        }
+        
+        // Fecha Alta Extrasa = Fecha Antigüedad Extrasa (pentru toate nóminas)
+        if (fechaAntiguedadExtraida) {
+          fechaAltaExtraida = fechaAntiguedadExtraida;
+        }
+      } else {
+        this.logger.warn(`⚠️ textContent este gol pentru uploadNomina`);
       }
 
       // Dacă este preview mode, returnăm informații fără să salvăm
@@ -1165,12 +1478,27 @@ export class GestoriaService {
         this.logger.log(
           `🔍 Preview nómina: ${nombreFinalConTipo} - ${mes}/${ano}${esFiniquito ? ' (FINIQUITO detectat)' : ''}`,
         );
+        
+        // Calculăm ce se va actualiza dacă nu sunt setate în DB
+        const actualizaraFechaAlta = !fechaAltaDB && fechaAltaExtraida ? true : false;
+        const actualizaraFechaAntiguedad = !fechaAntiguedadDB && fechaAntiguedadExtraida ? true : false;
+        const actualizaraFechaBaja = esFiniquito && fechaBajaExtraida ? true : false; // Notă: Fecha Baja se folosește pentru FECHA DE ALTA dacă nu există
+        
         return {
           success: true,
           nombre: nombreFinalConTipo,
           esFiniquito,
           actualizaraEstado,
           estadoActual: estadoActual || undefined,
+          fechaAltaDB: fechaAltaDB || undefined,
+          fechaAntiguedadDB: fechaAntiguedadDB || undefined,
+          fechaBajaDB: fechaBajaDB || undefined,
+          fechaAltaExtraida: fechaAltaExtraida || undefined,
+          fechaBajaExtraida: fechaBajaExtraida || undefined,
+          fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
+          actualizaraFechaAlta,
+          actualizaraFechaAntiguedad,
+          actualizaraFechaBaja,
         };
       }
 
@@ -1213,15 +1541,41 @@ export class GestoriaService {
         `✅ Nómina uploaded: ${nombreFinalConTipo} - ${mes}/${ano} (ID: ${inserted[0]?.id})`,
       );
 
-      // Dacă este finiquito, actualizăm statusul angajatului la INACTIVO dacă este încă ACTIVO
-      if (esFiniquito) {
-        // Folosim codigo dacă există, altfel căutăm după nume (fără prefixul "FINIQUITO - ")
-        const codigoParaActualizar = codigo || await this.obtenerCodigoPorNombre(nombreFinal);
-        if (codigoParaActualizar) {
+      // Folosim codigo dacă există, altfel căutăm după nume (fără prefixul "FINIQUITO - " dacă e finiquito)
+      const codigoParaActualizar = codigo || await this.obtenerCodigoPorNombre(nombreFinal);
+      
+      if (codigoParaActualizar) {
+        // Dacă este finiquito, actualizăm statusul angajatului la INACTIVO dacă este încă ACTIVO
+        if (esFiniquito) {
           await this.actualizarEstadoEmpleadoSiActivo(codigoParaActualizar);
-        } else {
-          this.logger.warn(`⚠️ Nu s-a găsit CODIGO pentru ${nombreFinal} - statusul nu a fost actualizat`);
         }
+        
+        // Pentru toate nóminas (normale și finiquitos), extragem/actualizăm Fecha Antigüedad
+        // Pentru finiquitos, extragem și Fecha Baja
+        let fechaAlta: string | null = null;
+        let fechaAntiguedad: string | null = null;
+        let fechaBaja: string | null = null;
+        
+        try {
+          if (textContent) {
+            fechaAntiguedad = this.extraerFechaAntiguedad(textContent);
+            // Fecha Alta = Fecha Antigüedad extrasă
+            fechaAlta = fechaAntiguedad;
+            
+            if (esFiniquito) {
+              fechaBaja = this.extraerFechaBaja(textContent);
+            }
+            
+            // Actualizăm datele în baza de date dacă nu sunt setate
+            if (fechaAlta || fechaAntiguedad || fechaBaja) {
+              await this.actualizarFechasEmpleado(codigoParaActualizar, fechaAlta, fechaAntiguedad, fechaBaja, esFiniquito);
+            }
+          }
+        } catch (error: any) {
+          this.logger.error(`❌ Eroare la extragerea fechas din ${esFiniquito ? 'finiquito' : 'nómina'}:`, error);
+        }
+      } else {
+        this.logger.warn(`⚠️ Nu s-a găsit CODIGO pentru ${nombreFinal} - datele nu au fost actualizate`);
       }
 
       // Trimite notificare către angajat când se publică nómina
@@ -1282,6 +1636,11 @@ export class GestoriaService {
         nombre: nombreFinalConTipo,
         esFiniquito,
         actualizaraEstado: false, // Deja actualizat
+        fechaAltaDB: fechaAltaDB || undefined,
+        fechaAntiguedadDB: fechaAntiguedadDB || undefined,
+        fechaAltaExtraida: fechaAltaExtraida || undefined,
+        fechaBajaExtraida: fechaBajaExtraida || undefined,
+        fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
       };
     } catch (error: any) {
       if (error instanceof BadRequestException) {
@@ -1302,6 +1661,8 @@ export class GestoriaService {
     mes?: number, // Opcional - se poate detecta din PDF
     ano?: number, // Opcional - se poate detecta din PDF
     preview: boolean = false, // Si preview = true, nu salvează în DB
+    forceReplace: Array<{ pagina: number; codigo: string; nombre: string }> = [], // Lista de duplicate-uri marcate pentru înlocuire
+    forceFechaBaja: Array<{ pagina: number; codigo: string; nombre: string }> = [], // Lista de nóminas marcate pentru salvare chiar dacă au FECHA BAJA
   ): Promise<{
     total_paginas: number;
     procesadas: number;
@@ -1320,6 +1681,16 @@ export class GestoriaService {
       esFiniquito?: boolean;
       actualizaraEstado?: boolean;
       estadoActual?: string | null;
+      fechaAltaDB?: string;
+      fechaAntiguedadDB?: string;
+      fechaBajaDB?: string;
+      fechaAltaExtraida?: string;
+      fechaBajaExtraida?: string;
+      fechaAntiguedadExtraida?: string;
+      actualizaraFechaAlta?: boolean;
+      actualizaraFechaAntiguedad?: boolean;
+      actualizaraFechaBaja?: boolean;
+      tieneFiniquitoExistente?: boolean;
     }>;
   }> {
     try {
@@ -1350,8 +1721,18 @@ export class GestoriaService {
         inserted: boolean;
         error: string | null;
         esFiniquito?: boolean;
+        fechaAltaDB?: string;
+        fechaAntiguedadDB?: string;
+        fechaBajaDB?: string;
+        tieneFiniquitoExistente?: boolean;
+        fechaAltaExtraida?: string;
+        fechaBajaExtraida?: string;
+        fechaAntiguedadExtraida?: string;
         actualizaraEstado?: boolean;
         estadoActual?: string | null;
+        actualizaraFechaAlta?: boolean;
+        actualizaraFechaAntiguedad?: boolean;
+        actualizaraFechaBaja?: boolean;
       }> = [];
 
       let procesadas = 0;
@@ -1645,6 +2026,11 @@ export class GestoriaService {
             this.logger.debug(`📄 Page ${i + 1} - Nu este finiquito pentru ${nombreCompleto}`);
           }
 
+          // Verificăm dacă această pagină este marcată pentru înlocuire forțată
+          const shouldForceReplace = forceReplace.some(
+            fr => fr.pagina === (i + 1) && fr.codigo === codigo
+          );
+          
           // Verificăm duplicate
           const nombreNormalizedParaDuplicate = nombreFinal.trim().toUpperCase();
           const duplicateCheck = `
@@ -1659,25 +2045,133 @@ export class GestoriaService {
             duplicateCheck,
           );
 
-          if (duplicate.length > 0) {
+          // Dacă este duplicate dar e marcat pentru înlocuire forțată, continuăm procesarea normală
+          if (duplicate.length > 0 && !shouldForceReplace) {
             // Verificăm statusul actual al angajatului dacă este finiquito (pentru preview)
+            // Și extragem datele pentru toate nóminas (nu doar finiquitos)
             let estadoActual: string | null = null;
             let actualizaraEstado = false;
-            if (esFiniquito && codigo) {
-              const estadoQuery = `
-                SELECT \`ESTADO\`
+            let fechaAltaDB: string | null = null;
+            let fechaAntiguedadDB: string | null = null;
+            let fechaBajaDB: string | null = null;
+            let fechaAltaExtraida: string | null = null;
+            let fechaBajaExtraida: string | null = null;
+            let fechaAntiguedadExtraida: string | null = null;
+            let tieneFiniquitoExistente = false;
+            let tieneFechaBajaEnDB = false;
+            
+            // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
+            if (codigo) {
+              const empleadoQuery = `
+                SELECT 
+                  \`ESTADO\`,
+                  \`FECHA DE ALTA\`,
+                  \`Fecha Antigüedad\`,
+                  \`FECHA BAJA\`
                 FROM \`DatosEmpleados\`
                 WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
                 LIMIT 1
               `;
-              const estadoResult = await this.prisma.$queryRawUnsafe<Array<{ ESTADO: string }>>(
-                estadoQuery,
-              );
-              if (estadoResult.length > 0) {
-                estadoActual = estadoResult[0]?.ESTADO?.trim() || null;
-                actualizaraEstado = estadoActual?.toUpperCase() === 'ACTIVO';
+              const empleadoResult = await this.prisma.$queryRawUnsafe<Array<{
+                ESTADO: string;
+                'FECHA DE ALTA': string | null;
+                'Fecha Antigüedad': string | null;
+                'FECHA BAJA': string | null;
+              }>>(empleadoQuery);
+              
+              if (empleadoResult.length > 0) {
+                estadoActual = empleadoResult[0]?.ESTADO?.trim().toUpperCase() || null;
+                if (esFiniquito) {
+                  actualizaraEstado = estadoActual === 'ACTIVO';
+                }
+                fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
+                fechaAntiguedadDB = empleadoResult[0]?.['Fecha Antigüedad'] || null;
+                fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+                
+                // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
+                if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
+                  tieneFechaBajaEnDB = true;
+                  this.logger.warn(`⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`);
+                }
               }
             }
+            
+            // Dacă este o nómina normală (nu finiquito), verificăm dacă angajatul are deja un finiquito urcat
+            if (!esFiniquito && codigo && !tieneFechaBajaEnDB) {
+              const finiquitoCheck = `
+                SELECT \`id\`, \`nombre\`, \`Mes\`, \`Ano\`
+                FROM \`Nominas\`
+                WHERE TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO%${nombreCompleto.toUpperCase()}%`)}
+                  OR TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO - ${nombreCompleto.toUpperCase()}%`)}
+                LIMIT 1
+              `;
+              const finiquitoExistente = await this.prisma.$queryRawUnsafe<Array<{
+                id: number;
+                nombre: string;
+                Mes: string;
+                Ano: string;
+              }>>(finiquitoCheck);
+              
+              if (finiquitoExistente.length > 0) {
+                tieneFiniquitoExistente = true;
+                this.logger.warn(`⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja un finiquito urcat: ${finiquitoExistente[0].nombre} (${finiquitoExistente[0].Mes}/${finiquitoExistente[0].Ano})`);
+              }
+            }
+            
+            // Extragem datele din PDF (nu depinde de codigo)
+            if (textContent) {
+              this.logger.debug(`🔍 Extragem datele din PDF pentru pagina ${i + 1}, codigo: ${codigo || 'null'}`);
+              // Pentru toate nóminas (inclusiv finiquitos), extragem Fecha Antigüedad
+              fechaAntiguedadExtraida = this.extraerFechaAntiguedad(textContent);
+              this.logger.debug(`📅 Fecha Antigüedad extrasă: ${fechaAntiguedadExtraida || 'null'}`);
+              
+              // Pentru finiquitos, extragem și Fecha Baja
+              if (esFiniquito) {
+                fechaBajaExtraida = this.extraerFechaBaja(textContent);
+                this.logger.debug(`📅 Fecha Baja extrasă: ${fechaBajaExtraida || 'null'}`);
+              }
+              
+              // Fecha Alta Extrasa = Fecha Antigüedad Extrasa (pentru toate nóminas)
+              if (fechaAntiguedadExtraida) {
+                fechaAltaExtraida = fechaAntiguedadExtraida;
+              }
+            } else {
+              this.logger.warn(`⚠️ textContent este gol pentru pagina ${i + 1}`);
+            }
+            
+            // Dacă angajatul are FECHA BAJA setată și este o nómina normală, marchez ca eroare
+            if (tieneFechaBajaEnDB && !esFiniquito) {
+              detalle.push({
+                pagina: i + 1,
+                nombre_detectado: nombreDetectado,
+                mes_detectado: mesDetectado,
+                ano_detectado: anoDetectado,
+                empleado_encontrado: nombreCompleto,
+                codigo: codigo,
+                inserted: false,
+                error: `fecha_baja_establecida:${fechaBajaDB}`, // Format special pentru a putea extrage data
+                esFiniquito: esFiniquito,
+                actualizaraEstado: actualizaraEstado,
+                estadoActual: estadoActual,
+                fechaAltaDB: fechaAltaDB || undefined,
+                fechaAntiguedadDB: fechaAntiguedadDB || undefined,
+                fechaBajaDB: fechaBajaDB || undefined,
+                fechaAltaExtraida: fechaAltaExtraida || undefined,
+                fechaBajaExtraida: fechaBajaExtraida || undefined,
+                fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
+                actualizaraFechaAlta: false,
+                actualizaraFechaAntiguedad: false,
+                actualizaraFechaBaja: false,
+                tieneFiniquitoExistente,
+              });
+              erori++;
+              continue;
+            }
+            
+            // Calculăm ce se va actualiza dacă nu sunt setate în DB
+            const actualizaraFechaAlta = !fechaAltaDB && fechaAltaExtraida ? true : false;
+            const actualizaraFechaAntiguedad = !fechaAntiguedadDB && fechaAntiguedadExtraida ? true : false;
+            const actualizaraFechaBaja = esFiniquito && fechaBajaExtraida ? true : false;
             
             detalle.push({
               pagina: i + 1,
@@ -1691,61 +2185,234 @@ export class GestoriaService {
               esFiniquito: esFiniquito,
               actualizaraEstado: actualizaraEstado,
               estadoActual: estadoActual,
+              fechaAltaDB: fechaAltaDB || undefined,
+              fechaAntiguedadDB: fechaAntiguedadDB || undefined,
+              fechaBajaDB: fechaBajaDB || undefined,
+              fechaAltaExtraida: fechaAltaExtraida || undefined,
+              fechaBajaExtraida: fechaBajaExtraida || undefined,
+              fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
+              actualizaraFechaAlta,
+              actualizaraFechaAntiguedad,
+              actualizaraFechaBaja,
+              tieneFiniquitoExistente,
             });
             erori++;
             continue;
           }
 
           // Verificăm statusul actual al angajatului dacă este finiquito (pentru preview)
+          // Și extragem datele pentru toate nóminas (nu doar finiquitos)
           let estadoActual: string | null = null;
           let actualizaraEstado = false;
-          if (esFiniquito && codigo) {
-            const estadoQuery = `
-              SELECT \`ESTADO\`
+          let fechaAltaDB: string | null = null;
+          let fechaAntiguedadDB: string | null = null;
+          let fechaBajaDB: string | null = null;
+          let fechaAltaExtraida: string | null = null;
+          let fechaBajaExtraida: string | null = null;
+          let fechaAntiguedadExtraida: string | null = null;
+          let tieneFiniquitoExistente = false;
+          let tieneFechaBajaEnDB = false;
+          
+          // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
+          if (codigo) {
+            const empleadoQuery = `
+              SELECT 
+                \`ESTADO\`,
+                \`FECHA DE ALTA\`,
+                \`Fecha Antigüedad\`,
+                \`FECHA BAJA\`
               FROM \`DatosEmpleados\`
               WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
               LIMIT 1
             `;
-            const estadoResult = await this.prisma.$queryRawUnsafe<Array<{ ESTADO: string }>>(
-              estadoQuery,
-            );
-            if (estadoResult.length > 0) {
-              estadoActual = estadoResult[0]?.ESTADO?.trim() || null;
-              actualizaraEstado = estadoActual?.toUpperCase() === 'ACTIVO';
+            const empleadoResult = await this.prisma.$queryRawUnsafe<Array<{
+              ESTADO: string;
+              'FECHA DE ALTA': string | null;
+              'Fecha Antigüedad': string | null;
+              'FECHA BAJA': string | null;
+            }>>(empleadoQuery);
+            
+            if (empleadoResult.length > 0) {
+              estadoActual = empleadoResult[0]?.ESTADO?.trim().toUpperCase() || null;
+              if (esFiniquito) {
+                actualizaraEstado = estadoActual === 'ACTIVO';
+              }
+              fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
+              fechaAntiguedadDB = empleadoResult[0]?.['Fecha Antigüedad'] || null;
+              fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+              
+              // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
+              if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
+                tieneFechaBajaEnDB = true;
+                this.logger.warn(`⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`);
+              }
             }
+          }
+          
+          // Dacă este o nómina normală (nu finiquito), verificăm dacă angajatul are deja un finiquito urcat
+          if (!esFiniquito && codigo && !tieneFechaBajaEnDB) {
+            const finiquitoCheck = `
+              SELECT \`id\`, \`nombre\`, \`Mes\`, \`Ano\`
+              FROM \`Nominas\`
+              WHERE TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO%${nombreCompleto.toUpperCase()}%`)}
+                OR TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO - ${nombreCompleto.toUpperCase()}%`)}
+              LIMIT 1
+            `;
+            const finiquitoExistente = await this.prisma.$queryRawUnsafe<Array<{
+              id: number;
+              nombre: string;
+              Mes: string;
+              Ano: string;
+            }>>(finiquitoCheck);
+            
+            if (finiquitoExistente.length > 0) {
+              tieneFiniquitoExistente = true;
+              this.logger.warn(`⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja un finiquito urcat: ${finiquitoExistente[0].nombre} (${finiquitoExistente[0].Mes}/${finiquitoExistente[0].Ano})`);
+            }
+          }
+          
+          // Verificăm dacă această pagină este marcată pentru salvare forțată chiar dacă are FECHA BAJA
+          const shouldForceFechaBaja = forceFechaBaja.some(
+            fb => fb.pagina === (i + 1) && fb.codigo === codigo
+          );
+          
+          // Dacă angajatul are FECHA BAJA setată și este o nómina normală, marchez ca eroare (dacă nu e marcat pentru forțare)
+          if (tieneFechaBajaEnDB && !esFiniquito && !shouldForceFechaBaja) {
+            detalle.push({
+              pagina: i + 1,
+              nombre_detectado: nombreDetectado,
+              mes_detectado: mesDetectado,
+              ano_detectado: anoDetectado,
+              empleado_encontrado: nombreCompleto,
+              codigo: codigo,
+              inserted: false,
+              error: `fecha_baja_establecida:${fechaBajaDB}`, // Format special pentru a putea extrage data
+              esFiniquito: esFiniquito,
+              actualizaraEstado: actualizaraEstado,
+              estadoActual: estadoActual,
+              fechaAltaDB: fechaAltaDB || undefined,
+              fechaAntiguedadDB: fechaAntiguedadDB || undefined,
+              fechaBajaDB: fechaBajaDB || undefined,
+              fechaAltaExtraida: fechaAltaExtraida || undefined,
+              fechaBajaExtraida: fechaBajaExtraida || undefined,
+              fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
+              actualizaraFechaAlta: false,
+              actualizaraFechaAntiguedad: false,
+              actualizaraFechaBaja: false,
+              tieneFiniquitoExistente,
+            });
+            erori++;
+            continue;
+          }
+          
+          // Extragem datele din PDF (nu depinde de codigo)
+          if (textContent) {
+            this.logger.debug(`🔍 Extragem datele din PDF pentru pagina ${i + 1}, codigo: ${codigo || 'null'}`);
+            // Pentru toate nóminas (inclusiv finiquitos), extragem Fecha Antigüedad
+            fechaAntiguedadExtraida = this.extraerFechaAntiguedad(textContent);
+            this.logger.debug(`📅 Fecha Antigüedad extrasă: ${fechaAntiguedadExtraida || 'null'}`);
+            
+            // Pentru finiquitos, extragem și Fecha Baja
+            if (esFiniquito) {
+              fechaBajaExtraida = this.extraerFechaBaja(textContent);
+              this.logger.debug(`📅 Fecha Baja extrasă: ${fechaBajaExtraida || 'null'}`);
+            }
+            
+            // Fecha Alta Extrasa = Fecha Antigüedad Extrasa (pentru toate nóminas)
+            if (fechaAntiguedadExtraida) {
+              fechaAltaExtraida = fechaAntiguedadExtraida;
+            }
+          } else {
+            this.logger.warn(`⚠️ textContent este gol pentru pagina ${i + 1}`);
           }
 
           // Salvăm nómina DOAR dacă nu este preview mode
           let inserted = false;
           if (!preview) {
             const mesNombre = mesesNombres[mesFinal - 1];
-            const insertQuery = `
-              INSERT INTO \`Nominas\` (
-                \`nombre\`,
-                \`archivo\`,
-                \`tipo_mime\`,
-                \`fecha_subida\`,
-                \`Mes\`,
-                \`Ano\`
-              ) VALUES (
-                ${this.escapeSql(nombreFinal)},
-                FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
-                'application/pdf',
-                NOW(),
-                ${this.escapeSql(mesNombre)},
-                ${this.escapeSql(anoFinal.toString())}
-              )
-            `;
+            
+            // Dacă este duplicate dar e marcat pentru înlocuire, facem UPDATE
+            if (duplicate.length > 0 && shouldForceReplace) {
+              const updateQuery = `
+                UPDATE \`Nominas\`
+                SET 
+                  \`archivo\` = FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
+                  \`fecha_subida\` = NOW(),
+                  \`tipo_mime\` = 'application/pdf'
+                WHERE \`id\` = ${duplicate[0].id}
+              `;
+              await this.prisma.$executeRawUnsafe(updateQuery);
+              this.logger.log(`🔄 Nómina actualizată (forceReplace): ${nombreFinal} - ID: ${duplicate[0].id}`);
+              inserted = true;
+            } else if (!duplicate.length || shouldForceReplace) {
+              // INSERT normal (dacă nu e duplicate sau e marcat pentru înlocuire dar nu e duplicate - caz rar)
+              const insertQuery = `
+                INSERT INTO \`Nominas\` (
+                  \`nombre\`,
+                  \`archivo\`,
+                  \`tipo_mime\`,
+                  \`fecha_subida\`,
+                  \`Mes\`,
+                  \`Ano\`
+                ) VALUES (
+                  ${this.escapeSql(nombreFinal)},
+                  FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
+                  'application/pdf',
+                  NOW(),
+                  ${this.escapeSql(mesNombre)},
+                  ${this.escapeSql(anoFinal.toString())}
+                )
+              `;
 
-            await this.prisma.$executeRawUnsafe(insertQuery);
-            inserted = true;
+              await this.prisma.$executeRawUnsafe(insertQuery);
+              inserted = true;
+            }
 
             // Dacă este finiquito, actualizăm statusul angajatului la INACTIVO dacă este încă ACTIVO
+            // Și extragem/actualizăm Fecha Antigüedad și Fecha Baja
             if (esFiniquito && codigo) {
               await this.actualizarEstadoEmpleadoSiActivo(codigo);
+              
+              // Extragem Fecha Antigüedad și Fecha Baja din textul PDF
+              try {
+                if (textContent) {
+                  const fechaAntiguedad = this.extraerFechaAntiguedad(textContent);
+                  // Fecha Alta = Fecha Antigüedad extrasă
+                  const fechaAlta = fechaAntiguedad;
+                  const fechaBaja = this.extraerFechaBaja(textContent);
+                  
+                  // Actualizăm datele în baza de date dacă nu sunt setate
+                  if (fechaAlta || fechaAntiguedad || fechaBaja) {
+                    await this.actualizarFechasEmpleado(codigo, fechaAlta, fechaAntiguedad, fechaBaja, esFiniquito);
+                  }
+                }
+              } catch (error: any) {
+                this.logger.error(`❌ Eroare la extragerea fechas din finiquito (bulk):`, error);
+              }
+            } else if (!esFiniquito && codigo && inserted) {
+              // Pentru nóminas normale, actualizăm FECHA DE ALTA și Fecha Antigüedad dacă nu sunt setate
+              try {
+                if (textContent) {
+                  const fechaAntiguedad = this.extraerFechaAntiguedad(textContent);
+                  // Fecha Alta = Fecha Antigüedad extrasă
+                  const fechaAlta = fechaAntiguedad;
+                  
+                  // Actualizăm datele în baza de date dacă nu sunt setate (nu trimitem fechaBaja pentru nóminas normale)
+                  if (fechaAlta || fechaAntiguedad) {
+                    await this.actualizarFechasEmpleado(codigo, fechaAlta, fechaAntiguedad, null, false);
+                  }
+                }
+              } catch (error: any) {
+                this.logger.error(`❌ Eroare la extragerea fechas din nómina (bulk):`, error);
+              }
             }
           }
 
+          // Calculăm ce se va actualiza dacă nu sunt setate în DB
+          const actualizaraFechaAlta = !fechaAltaDB && fechaAltaExtraida ? true : false;
+          const actualizaraFechaAntiguedad = !fechaAntiguedadDB && fechaAntiguedadExtraida ? true : false;
+          const actualizaraFechaBaja = esFiniquito && fechaBajaExtraida ? true : false;
+          
           detalle.push({
             pagina: i + 1,
             nombre_detectado: nombreDetectado,
@@ -1758,6 +2425,15 @@ export class GestoriaService {
             esFiniquito: esFiniquito,
             actualizaraEstado: actualizaraEstado,
             estadoActual: estadoActual,
+            fechaAltaDB: fechaAltaDB || undefined,
+            fechaAntiguedadDB: fechaAntiguedadDB || undefined,
+            fechaBajaDB: fechaBajaDB || undefined,
+            fechaAltaExtraida: fechaAltaExtraida || undefined,
+            fechaBajaExtraida: fechaBajaExtraida || undefined,
+            fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
+            actualizaraFechaAlta,
+            actualizaraFechaAntiguedad,
+            actualizaraFechaBaja,
           });
           procesadas++;
 

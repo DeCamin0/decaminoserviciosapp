@@ -219,6 +219,30 @@ export class GestoriaController {
       const mes = body.mes ? parseInt(body.mes, 10) : undefined;
       const ano = body.ano ? parseInt(body.ano, 10) : undefined;
       const preview = body.preview === 'true' || body.preview === true;
+      
+      // Parse forceReplace list (JSON string)
+      let forceReplace: Array<{ pagina: number; codigo: string; nombre: string }> = [];
+      if (body.forceReplace) {
+        try {
+          forceReplace = typeof body.forceReplace === 'string' 
+            ? JSON.parse(body.forceReplace) 
+            : body.forceReplace;
+        } catch (e) {
+          this.logger.warn('⚠️ Error parsing forceReplace:', e);
+        }
+      }
+      
+      // Parse forceFechaBaja list (JSON string)
+      let forceFechaBaja: Array<{ pagina: number; codigo: string; nombre: string }> = [];
+      if (body.forceFechaBaja) {
+        try {
+          forceFechaBaja = typeof body.forceFechaBaja === 'string' 
+            ? JSON.parse(body.forceFechaBaja) 
+            : body.forceFechaBaja;
+        } catch (e) {
+          this.logger.warn('⚠️ Error parsing forceFechaBaja:', e);
+        }
+      }
 
       if (mes !== undefined && (isNaN(mes) || mes < 1 || mes > 12)) {
         throw new BadRequestException('Mes inválido (debe ser 1-12)');
@@ -228,7 +252,7 @@ export class GestoriaController {
         throw new BadRequestException('Año inválido');
       }
 
-      const result = await this.gestoriaService.uploadBulkNominas(file, mes, ano, preview);
+      const result = await this.gestoriaService.uploadBulkNominas(file, mes, ano, preview, forceReplace, forceFechaBaja);
 
       this.logger.log(
         `✅ Bulk upload by ${user?.userId || 'unknown'}: ${result.procesadas}/${result.total_paginas} procesadas`,

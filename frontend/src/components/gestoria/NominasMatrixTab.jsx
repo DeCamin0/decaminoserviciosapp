@@ -22,6 +22,10 @@ const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
     return `Duplicado para ${empleadoEncontrado || nombreDetectado || 'N/A'}`;
   } else if (error === 'mes_o_ano_no_detectado') {
     return 'Mes o año no detectado';
+  } else if (error.startsWith('fecha_baja_establecida:')) {
+    // Eroare specială pentru FECHA BAJA - extragem data
+    const fechaBaja = error.replace('fecha_baja_establecida:', '');
+    return `Empleado tiene FECHA BAJA establecida (${fechaBaja}). No se puede subir nómina.`;
   } else if (error.startsWith('error_procesamiento:')) {
     // Eroare de procesare - afișăm mesajul complet (truncat dacă e prea lung)
     const errorMsg = error.replace('error_procesamiento: ', '');
@@ -70,6 +74,8 @@ export default function NominasMatrixTab() {
   const [bulkUploadError, setBulkUploadError] = useState(null);
   const [showBulkVerificationModal, setShowBulkVerificationModal] = useState(false);
   const [bulkPreviewData, setBulkPreviewData] = useState(null);
+  const [forceReplaceItems, setForceReplaceItems] = useState(new Set()); // Set de index-uri pentru duplicate-uri marcate ca "forceReplace"
+  const [forceFechaBajaItems, setForceFechaBajaItems] = useState(new Set()); // Set de index-uri pentru nóminas cu FECHA BAJA marcate pentru salvare
   
   // Preview pentru upload simplu
   const [showUploadVerificationModal, setShowUploadVerificationModal] = useState(false);
@@ -631,6 +637,26 @@ export default function NominasMatrixTab() {
     try {
       const token = localStorage.getItem('auth_token');
       
+      // Construim lista de duplicate-uri marcate pentru înlocuire
+      const forceReplaceList = Array.from(forceReplaceItems).map(idx => {
+        const item = bulkPreviewData.detalle[idx];
+        return {
+          pagina: item.pagina,
+          codigo: item.codigo,
+          nombre: item.nombre_detectado,
+        };
+      });
+      
+      // Construim lista de nóminas cu FECHA BAJA marcate pentru salvare
+      const forceFechaBajaList = Array.from(forceFechaBajaItems).map(idx => {
+        const item = bulkPreviewData.detalle[idx];
+        return {
+          pagina: item.pagina,
+          codigo: item.codigo,
+          nombre: item.nombre_detectado,
+        };
+      });
+      
       // Procesăm toate fișierele
       const allResults = [];
       let totalPaginas = 0;
@@ -652,6 +678,14 @@ export default function NominasMatrixTab() {
         }
         if (anoFinal) {
           formData.append('ano', anoFinal.toString());
+        }
+        
+        // Trimitem lista de duplicate-uri marcate pentru înlocuire
+        if (forceReplaceList.length > 0) {
+          formData.append('forceReplace', JSON.stringify(forceReplaceList));
+        }
+        if (forceFechaBajaList.length > 0) {
+          formData.append('forceFechaBaja', JSON.stringify(forceFechaBajaList));
         }
 
         const response = await fetch(routes.uploadGestoriaBulk, {
@@ -699,6 +733,8 @@ export default function NominasMatrixTab() {
       setShowBulkVerificationModal(false);
       setBulkPreviewData(null);
       setShowBulkUploadModal(false);
+      setForceReplaceItems(new Set()); // Resetăm lista de duplicate-uri marcate
+      setForceFechaBajaItems(new Set()); // Resetăm lista de nóminas cu FECHA BAJA marcate
       
       // Recargar datos después de 2 segundos
       setTimeout(async () => {
@@ -1360,7 +1396,12 @@ export default function NominasMatrixTab() {
                 </div>
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                   <div className="text-sm text-green-600 font-medium">Listas para Subir</div>
-                  <div className="text-3xl font-bold text-green-700">{bulkPreviewData.procesadas}</div>
+                  <div className="text-3xl font-bold text-green-700">
+                    {bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
+                      (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
+                      (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
+                    ).length || 0)}
+                  </div>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                   <div className="text-sm text-red-600 font-medium">Con Errores</div>
@@ -1405,6 +1446,12 @@ export default function NominasMatrixTab() {
                         <th className="px-3 py-2 text-left">Mes/Año</th>
                         <th className="px-3 py-2 text-left">Empleado Encontrado</th>
                         <th className="px-3 py-2 text-left">Código</th>
+                        <th className="px-3 py-2 text-left">Fecha Alta (DB)</th>
+                        <th className="px-3 py-2 text-left">Fecha Alta Ext.</th>
+                        <th className="px-3 py-2 text-left">Fecha Antig. (DB)</th>
+                        <th className="px-3 py-2 text-left">Fecha Antig. Ext.</th>
+                        <th className="px-3 py-2 text-left">Fecha Baja (DB)</th>
+                        <th className="px-3 py-2 text-left">Fecha Baja Ext.</th>
                         <th className="px-3 py-2 text-left">Estado</th>
                       </tr>
                     </thead>
@@ -1453,12 +1500,92 @@ export default function NominasMatrixTab() {
                           </td>
                           <td className="px-3 py-2">{item.empleado_encontrado || '-'}</td>
                           <td className="px-3 py-2">{item.codigo || '-'}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.fechaAltaDB ? (
+                              <span className="text-gray-700">{item.fechaAltaDB}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.fechaAltaExtraida ? (
+                              <span className="text-green-600 font-semibold">{item.fechaAltaExtraida}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.fechaAntiguedadDB ? (
+                              <span className="text-gray-700">{item.fechaAntiguedadDB}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.fechaAntiguedadExtraida ? (
+                              <span className="text-blue-600 font-semibold">{item.fechaAntiguedadExtraida}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.fechaBajaDB ? (
+                              <span className="text-gray-700">{item.fechaBajaDB}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.fechaBajaExtraida ? (
+                              <span className="text-orange-600 font-semibold">{item.fechaBajaExtraida}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             <div className="space-y-1">
                               {item.inserted ? (
                                 <span className="text-green-600 font-semibold">✅ Listo</span>
                               ) : item.error === 'duplicate' ? (
-                                <span className="text-yellow-600 font-semibold">⚠️ Duplicado</span>
+                                <div className="flex flex-col gap-1">
+                                  {forceReplaceItems.has(idx) ? (
+                                    <span className="text-green-600 font-semibold">✅ Listo para subir (reemplazar)</span>
+                                  ) : (
+                                    <>
+                                      <span className="text-yellow-600 font-semibold">⚠️ Duplicado</span>
+                                      <button
+                                        onClick={() => {
+                                          const newSet = new Set(forceReplaceItems);
+                                          newSet.add(idx);
+                                          setForceReplaceItems(newSet);
+                                        }}
+                                        className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                                      >
+                                        Marcar para reemplazar
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : item.error && item.error.startsWith('fecha_baja_establecida:') ? (
+                                <div className="flex flex-col gap-1">
+                                  {forceFechaBajaItems.has(idx) ? (
+                                    <span className="text-green-600 font-semibold">✅ Listo para subir (con FECHA BAJA)</span>
+                                  ) : (
+                                    <>
+                                      <span className="text-red-600 font-semibold">❌ {getErrorText(item.error, item.nombre_detectado, item.empleado_encontrado)}</span>
+                                      <button
+                                        onClick={() => {
+                                          const newSet = new Set(forceFechaBajaItems);
+                                          newSet.add(idx);
+                                          setForceFechaBajaItems(newSet);
+                                        }}
+                                        className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                                      >
+                                        Confirmar y subir de todas formas
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               ) : item.error ? (
                                 <span className="text-red-600 font-semibold" title={item.error || 'Error'}>
                                   ❌ {getErrorText(item.error, item.nombre_detectado, item.empleado_encontrado)}
@@ -1471,6 +1598,11 @@ export default function NominasMatrixTab() {
                               {item.esFiniquito && item.actualizaraEstado && (
                                 <div className="text-xs text-orange-700 font-semibold mt-1">
                                   → Estado: {item.estadoActual} → INACTIVO
+                                </div>
+                              )}
+                              {item.tieneFiniquitoExistente && !item.esFiniquito && (
+                                <div className="text-xs text-red-700 font-semibold mt-1 bg-red-50 border border-red-200 rounded px-2 py-1">
+                                  ⚠️ Este angajatul are deja un FINIQUITO urcat!
                                 </div>
                               )}
                             </div>
@@ -1514,10 +1646,16 @@ export default function NominasMatrixTab() {
                 </button>
                 <button
                   onClick={handleConfirmBulkUpload}
-                  disabled={bulkUploading || bulkPreviewData.procesadas === 0}
+                  disabled={bulkUploading || (bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
+                    (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
+                    (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
+                  ).length || 0)) === 0}
                   className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-semibold"
                 >
-                  {bulkUploading ? 'Subiendo...' : `Confirmar y Subir (${bulkPreviewData.procesadas} nóminas)`}
+                  {bulkUploading ? 'Subiendo...' : `Confirmar y Subir (${bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
+                    (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
+                    (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
+                  ).length || 0)} nóminas)`}
                 </button>
               </div>
             </div>
