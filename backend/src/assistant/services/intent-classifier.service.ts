@@ -39,58 +39,147 @@ export class IntentClassifierService {
     // Patrones pentru fiecare intenție
     const patterns = {
       [IntentType.FICHAJES]: [
-        'fichaje', 'fichar', 'puntuar', 'entrada', 'salida', 'horas trabajadas',
-        'quien ha fichado', 'quién ha fichado', 'quien no ha fichado', 'quién no ha fichado',
-        'faltan fichar', 'no ha puntuado', 'no ha fichado',
-        'registro', 'registros de hoy', 'fichajes de hoy',
-        'quien', 'quién', 'ha fichado', 'han fichado', 'fichado hoy',
-        'tenia que trabajar', 'tenía que trabajar', 'deberia trabajar', 'debería trabajar',
-        'no ha registrado fichaje', 'no ha registrado el fichaje', 'falta fichar',
-        'según cuadrante', 'según horario', 'según los cuadrantes', 'según el horario',
-        'empleado que tenia que trabajar', 'empleados que tenian que trabajar',
+        'fichaje',
+        'fichar',
+        'puntuar',
+        'entrada',
+        'salida',
+        'horas trabajadas',
+        'quien ha fichado',
+        'quién ha fichado',
+        'quien no ha fichado',
+        'quién no ha fichado',
+        'faltan fichar',
+        'no ha puntuado',
+        'no ha fichado',
+        'registro',
+        'registros de hoy',
+        'fichajes de hoy',
+        'quien',
+        'quién',
+        'ha fichado',
+        'han fichado',
+        'fichado hoy',
+        'tenia que trabajar',
+        'tenía que trabajar',
+        'deberia trabajar',
+        'debería trabajar',
+        'no ha registrado fichaje',
+        'no ha registrado el fichaje',
+        'falta fichar',
+        'según cuadrante',
+        'según horario',
+        'según los cuadrantes',
+        'según el horario',
+        'empleado que tenia que trabajar',
+        'empleados que tenian que trabajar',
       ],
       [IntentType.CUADRANTE]: [
-        'cuadrante', 'turno', 'turnos', 'horario', 'horarios', 'planificación',
-        'cuando es mi turno', 'proximo turno', 'mi cuadrante',
+        'cuadrante',
+        'turno',
+        'turnos',
+        'horario',
+        'horarios',
+        'planificación',
+        'cuando es mi turno',
+        'proximo turno',
+        'mi cuadrante',
       ],
       [IntentType.VACACIONES]: [
-        'vacaciones', 'vacacion', 'vacante', 'dias de vacaciones', 'dias restantes',
-        'solicitud de vacaciones', 'solicitud de vacacion', 'solicitudes de vacaciones',
-        'pedida', 'pedido', 'esta pedida', 'esta pedido', 'han pedido',
-        'asuntos propios', 'dias disponibles',
-        'cuantos dias me quedan', 'balance de vacaciones',
-        'nombres de empleados', 'nombre de empleados', 'nombres', 'empleados',
-        'solicitudes', 'solicitud',
+        'vacaciones',
+        'vacacion',
+        'vacante',
+        'dias de vacaciones',
+        'dias restantes',
+        'solicitud de vacaciones',
+        'solicitud de vacacion',
+        'solicitudes de vacaciones',
+        'pedida',
+        'pedido',
+        'esta pedida',
+        'esta pedido',
+        'han pedido',
+        'asuntos propios',
+        'dias disponibles',
+        'cuantos dias me quedan',
+        'balance de vacaciones',
+        'nombres de empleados',
+        'nombre de empleados',
+        'nombres',
+        'empleados',
+        'solicitudes',
+        'solicitud',
       ],
       [IntentType.NOMINAS]: [
-        'nomina', 'nómina', 'fluturas', 'salario', 'sueldo', 'pago',
-        'tengo nomina', 'nomina de', 'descargar nomina',
+        'nomina',
+        'nómina',
+        'fluturas',
+        'salario',
+        'sueldo',
+        'pago',
+        'tengo nomina',
+        'nomina de',
+        'descargar nomina',
       ],
       [IntentType.DOCUMENTOS]: [
-        'documento', 'documentos', 'pdf', 'archivo', 'descargar',
-        'mis documentos', 'documentos personales',
+        'documento',
+        'documentos',
+        'pdf',
+        'archivo',
+        'descargar',
+        'mis documentos',
+        'documentos personales',
       ],
       [IntentType.PROCEDIMIENTOS]: [
-        'procedimiento', 'como hacer', 'pasos para', 'guia', 'manual',
-        'instrucciones', 'ayuda con',
+        'procedimiento',
+        'como hacer',
+        'pasos para',
+        'guia',
+        'manual',
+        'instrucciones',
+        'ayuda con',
       ],
       [IntentType.INCIDENCIAS]: [
-        'incidencia', 'problema', 'error', 'no funciona', 'ayuda',
-        'reportar', 'ticket',
+        'incidencia',
+        'problema',
+        'error',
+        'no funciona',
+        'ayuda',
+        'reportar',
+        'ticket',
       ],
       [IntentType.EMPLEADOS]: [
-        'listado de empleados', 'lista de empleados', 'todos los empleados',
-        'empleados con', 'empleados sin', 'estado de empleados',
-        'empleados que no tiene', 'empleados que no tienen',
-        'empleado que no tiene', 'empleado que no tienen',
-        'me puedes sacar los empleados', 'puedes sacar los empleados',
-        'sacar los empleados', 'mostrar los empleados',
-        'cuadrante asignado', 'horario asignado', 'centro asignado',
-        'tiene cuadrante', 'tiene horario', 'tiene centro',
-        'no tiene cuadrante', 'no tiene horario', 'no tiene centro',
-        'sin cuadrante', 'sin horario', 'sin centro',
-        'le falta centro', 'falta centro', 'falta centro de trabajo',
-        'listado completo', 'información de empleados',
+        'listado de empleados',
+        'lista de empleados',
+        'todos los empleados',
+        'empleados con',
+        'empleados sin',
+        'estado de empleados',
+        'empleados que no tiene',
+        'empleados que no tienen',
+        'empleado que no tiene',
+        'empleado que no tienen',
+        'me puedes sacar los empleados',
+        'puedes sacar los empleados',
+        'sacar los empleados',
+        'mostrar los empleados',
+        'cuadrante asignado',
+        'horario asignado',
+        'centro asignado',
+        'tiene cuadrante',
+        'tiene horario',
+        'tiene centro',
+        'no tiene cuadrante',
+        'no tiene horario',
+        'no tiene centro',
+        'sin cuadrante',
+        'sin horario',
+        'sin centro',
+        'le falta centro',
+        'falta centro',
+        'falta centro de trabajo',
+        'listado completo',
+        'información de empleados',
       ],
     };
 
@@ -111,8 +200,10 @@ export class IntentClassifierService {
 
     // Verifică pattern-uri compuse (mai precise)
     // "quién/quien" + "fichado" → FICHAJES
-    if ((mensajeLower.includes('quién') || mensajeLower.includes('quien')) && 
-        (mensajeLower.includes('fichado') || mensajeLower.includes('fichar'))) {
+    if (
+      (mensajeLower.includes('quién') || mensajeLower.includes('quien')) &&
+      (mensajeLower.includes('fichado') || mensajeLower.includes('fichar'))
+    ) {
       matches[IntentType.FICHAJES] += 3; // Bonus pentru pattern compus
       if (matches[IntentType.FICHAJES] > maxMatches) {
         maxMatches = matches[IntentType.FICHAJES];
@@ -121,11 +212,20 @@ export class IntentClassifierService {
     }
 
     // "empleados" + "cuadrante/horario/centro" → EMPLEADOS (prioritate)
-    if (mensajeLower.includes('empleados') || mensajeLower.includes('empleado')) {
-      if (mensajeLower.includes('cuadrante') || mensajeLower.includes('horario') || 
-          mensajeLower.includes('centro') || mensajeLower.includes('centro de trabajo') ||
-          mensajeLower.includes('no tiene') || mensajeLower.includes('sin ') ||
-          mensajeLower.includes('le falta') || mensajeLower.includes('falta')) {
+    if (
+      mensajeLower.includes('empleados') ||
+      mensajeLower.includes('empleado')
+    ) {
+      if (
+        mensajeLower.includes('cuadrante') ||
+        mensajeLower.includes('horario') ||
+        mensajeLower.includes('centro') ||
+        mensajeLower.includes('centro de trabajo') ||
+        mensajeLower.includes('no tiene') ||
+        mensajeLower.includes('sin ') ||
+        mensajeLower.includes('le falta') ||
+        mensajeLower.includes('falta')
+      ) {
         matches[IntentType.EMPLEADOS] += 5; // Bonus mare pentru pattern compus
         if (matches[IntentType.EMPLEADOS] > maxMatches) {
           maxMatches = matches[IntentType.EMPLEADOS];
@@ -150,7 +250,7 @@ export class IntentClassifierService {
     // Calculează confianza (0.0-1.0)
     // Pentru intent-uri cunoscute, confianza bazată pe numărul de matches
     let confianza = 0.1;
-    
+
     if (bestMatch !== IntentType.DESCONOCIDO && maxMatches > 0) {
       // Pentru intent-uri cunoscute, confianza bazată pe matches
       // 1 match = 0.6, 2 matches = 0.75, 3+ matches = 0.9+
@@ -161,11 +261,13 @@ export class IntentClassifierService {
       } else if (maxMatches === 1) {
         confianza = 0.6;
       }
-      
+
       // Bonus pentru pattern-uri compuse (deja adăugate în matches)
-      if (bestMatch === IntentType.FICHAJES && 
-          ((mensajeLower.includes('quién') || mensajeLower.includes('quien')) && 
-           (mensajeLower.includes('fichado') || mensajeLower.includes('fichar')))) {
+      if (
+        bestMatch === IntentType.FICHAJES &&
+        (mensajeLower.includes('quién') || mensajeLower.includes('quien')) &&
+        (mensajeLower.includes('fichado') || mensajeLower.includes('fichar'))
+      ) {
         confianza = Math.min(confianza + 0.1, 1.0);
       }
     }
@@ -198,19 +300,31 @@ export class IntentClassifierService {
     }
 
     // Nombre: "Juan Pérez" sau "de Juan"
-    const nombreMatch = mensaje.match(/\b(?:de|para|del)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/);
+    const nombreMatch = mensaje.match(
+      /\b(?:de|para|del)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/,
+    );
     if (nombreMatch) {
       entidades.nombre = nombreMatch[1];
     }
 
     // Detectează "tot mesul", "este mes", "mes actual", "todo el mes"
     const mesCompletoPatterns = [
-      'todo el mes', 'tot mesul', 'este mes', 'mes actual', 'mes corriente',
-      'todo el mes de', 'tot mesul de', 'este mes de', 'mes actual de',
-      'registros del mes', 'fichajes del mes', 'registros de este mes',
-      'fichajes de este mes', 'todos los registros del mes',
+      'todo el mes',
+      'tot mesul',
+      'este mes',
+      'mes actual',
+      'mes corriente',
+      'todo el mes de',
+      'tot mesul de',
+      'este mes de',
+      'mes actual de',
+      'registros del mes',
+      'fichajes del mes',
+      'registros de este mes',
+      'fichajes de este mes',
+      'todos los registros del mes',
     ];
-    
+
     let mesCompleto = false;
     for (const pattern of mesCompletoPatterns) {
       if (mensajeLower.includes(pattern)) {
@@ -220,15 +334,27 @@ export class IntentClassifierService {
     }
 
     // Fecha: "2024-01-15" sau "15/01/2024"
-    const fechaMatch = mensaje.match(/\b(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})\b/);
+    const fechaMatch = mensaje.match(
+      /\b(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})\b/,
+    );
     if (fechaMatch) {
       entidades.fecha = fechaMatch[1];
     }
 
     // Mes: "enero", "febrero", "noviembre", etc.
     const meses = [
-      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
     ];
     for (const mes of meses) {
       if (mensajeLower.includes(mes)) {
@@ -258,58 +384,90 @@ export class IntentClassifierService {
     // Filtre pentru listado empleados
     // Verifică mai întâi combinațiile (sunt mai specifice)
     // "no tiene cuadrante o horario" (OR) vs "no tiene cuadrante ni horario" (AND)
-    if ((mensajeLower.includes('no tiene cuadrante') || mensajeLower.includes('no tienen cuadrante') ||
-         mensajeLower.includes('sin cuadrante') || mensajeLower.includes('sin cuadrantes') ||
-         mensajeLower.includes('falta cuadrante') || mensajeLower.includes('faltan cuadrantes')) &&
-        (mensajeLower.includes('no tiene horario') || mensajeLower.includes('no tienen horario') ||
-         mensajeLower.includes('sin horario') || mensajeLower.includes('sin horarios') ||
-         mensajeLower.includes('falta horario') || mensajeLower.includes('faltan horarios'))) {
+    if (
+      (mensajeLower.includes('no tiene cuadrante') ||
+        mensajeLower.includes('no tienen cuadrante') ||
+        mensajeLower.includes('sin cuadrante') ||
+        mensajeLower.includes('sin cuadrantes') ||
+        mensajeLower.includes('falta cuadrante') ||
+        mensajeLower.includes('faltan cuadrantes')) &&
+      (mensajeLower.includes('no tiene horario') ||
+        mensajeLower.includes('no tienen horario') ||
+        mensajeLower.includes('sin horario') ||
+        mensajeLower.includes('sin horarios') ||
+        mensajeLower.includes('falta horario') ||
+        mensajeLower.includes('faltan horarios'))
+    ) {
       // Verifică dacă e "o" (OR) sau "ni" (AND)
-      if (mensajeLower.includes(' o ') || mensajeLower.includes(' o horario') || 
-          mensajeLower.includes(' o cuadrante') || mensajeLower.includes('o horario') ||
-          mensajeLower.includes('o cuadrante')) {
+      if (
+        mensajeLower.includes(' o ') ||
+        mensajeLower.includes(' o horario') ||
+        mensajeLower.includes(' o cuadrante') ||
+        mensajeLower.includes('o horario') ||
+        mensajeLower.includes('o cuadrante')
+      ) {
         entidades.filtro = 'sin_cuadrante_o_horario';
       } else {
         entidades.filtro = 'sin_cuadrante_ni_horario';
       }
-    } else if (mensajeLower.includes('no tiene cuadrante') || mensajeLower.includes('no tienen cuadrante') ||
-               mensajeLower.includes('sin cuadrante') || mensajeLower.includes('sin cuadrantes') ||
-               mensajeLower.includes('falta cuadrante') || mensajeLower.includes('faltan cuadrantes')) {
+    } else if (
+      mensajeLower.includes('no tiene cuadrante') ||
+      mensajeLower.includes('no tienen cuadrante') ||
+      mensajeLower.includes('sin cuadrante') ||
+      mensajeLower.includes('sin cuadrantes') ||
+      mensajeLower.includes('falta cuadrante') ||
+      mensajeLower.includes('faltan cuadrantes')
+    ) {
       entidades.filtro = 'sin_cuadrante';
-    } else if (mensajeLower.includes('no tiene horario') || mensajeLower.includes('no tienen horario') ||
-               mensajeLower.includes('sin horario') || mensajeLower.includes('sin horarios') ||
-               mensajeLower.includes('falta horario') || mensajeLower.includes('faltan horarios')) {
+    } else if (
+      mensajeLower.includes('no tiene horario') ||
+      mensajeLower.includes('no tienen horario') ||
+      mensajeLower.includes('sin horario') ||
+      mensajeLower.includes('sin horarios') ||
+      mensajeLower.includes('falta horario') ||
+      mensajeLower.includes('faltan horarios')
+    ) {
       entidades.filtro = 'sin_horario';
-    } else if (mensajeLower.includes('no tiene centro') || mensajeLower.includes('no tienen centro') ||
-               mensajeLower.includes('sin centro') || mensajeLower.includes('sin centros') ||
-               mensajeLower.includes('falta centro') || mensajeLower.includes('faltan centros') ||
-               mensajeLower.includes('centro de trabajo') || mensajeLower.includes('centro trabajo') ||
-               mensajeLower.includes('le falta centro') || mensajeLower.includes('falta centro de trabajo')) {
+    } else if (
+      mensajeLower.includes('no tiene centro') ||
+      mensajeLower.includes('no tienen centro') ||
+      mensajeLower.includes('sin centro') ||
+      mensajeLower.includes('sin centros') ||
+      mensajeLower.includes('falta centro') ||
+      mensajeLower.includes('faltan centros') ||
+      mensajeLower.includes('centro de trabajo') ||
+      mensajeLower.includes('centro trabajo') ||
+      mensajeLower.includes('le falta centro') ||
+      mensajeLower.includes('falta centro de trabajo')
+    ) {
       entidades.filtro = 'sin_centro';
     }
 
     // Detectează întrebări despre fichajes faltantes (angajați care ar trebui să lucreze dar nu au fichat)
-    if (mensajeLower.includes('tenia que trabajar') || 
-        mensajeLower.includes('tenía que trabajar') ||
-        mensajeLower.includes('tenian que trabajar') ||
-        mensajeLower.includes('tenían que trabajar') ||
-        mensajeLower.includes('deberia trabajar') ||
-        mensajeLower.includes('debería trabajar') ||
-        mensajeLower.includes('no ha registrado fichaje') ||
-        mensajeLower.includes('no ha registrado el fichaje') ||
-        mensajeLower.includes('no he registrado fichaje') ||
-        mensajeLower.includes('no he registrado el fichaje') ||
-        mensajeLower.includes('según cuadrante') ||
-        mensajeLower.includes('según horario') ||
-        mensajeLower.includes('según los cuadrantes') ||
-        mensajeLower.includes('según el horario') ||
-        mensajeLower.includes('quien tenia que trabajar') ||
-        mensajeLower.includes('quién tenía que trabajar')) {
+    if (
+      mensajeLower.includes('tenia que trabajar') ||
+      mensajeLower.includes('tenía que trabajar') ||
+      mensajeLower.includes('tenian que trabajar') ||
+      mensajeLower.includes('tenían que trabajar') ||
+      mensajeLower.includes('deberia trabajar') ||
+      mensajeLower.includes('debería trabajar') ||
+      mensajeLower.includes('no ha registrado fichaje') ||
+      mensajeLower.includes('no ha registrado el fichaje') ||
+      mensajeLower.includes('no he registrado fichaje') ||
+      mensajeLower.includes('no he registrado el fichaje') ||
+      mensajeLower.includes('según cuadrante') ||
+      mensajeLower.includes('según horario') ||
+      mensajeLower.includes('según los cuadrantes') ||
+      mensajeLower.includes('según el horario') ||
+      mensajeLower.includes('quien tenia que trabajar') ||
+      mensajeLower.includes('quién tenía que trabajar')
+    ) {
       entidades.tipo = 'fichajes_faltantes';
-      this.logger.log(`✅ [IntentClassifier] Detected fichajes_faltantes tipo from message: ${mensaje.substring(0, 100)}`);
+      this.logger.log(
+        `✅ [IntentClassifier] Detected fichajes_faltantes tipo from message: ${mensaje.substring(0, 100)}`,
+      );
     }
 
     return Object.keys(entidades).length > 0 ? entidades : undefined;
   }
 }
-

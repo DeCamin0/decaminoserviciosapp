@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { SentEmailsService } from './sent-emails.service';
 import { EmailService } from './email.service';
@@ -33,23 +33,32 @@ export class ScheduledMessagesCronService {
    * @param ignoreTimeCheck - Dacă este true, ignoră verificarea orei (pentru testare manuală)
    */
   async processScheduledMessages(ignoreTimeCheck: boolean = false) {
-    this.logger.log(`🕐 Verificare mesaje automate...${ignoreTimeCheck ? ' (testare manuală - ignoră verificarea orei)' : ''}`);
+    this.logger.log(
+      `🕐 Verificare mesaje automate...${ignoreTimeCheck ? ' (testare manuală - ignoră verificarea orei)' : ''}`,
+    );
 
     try {
-      const messagesToSend = await this.scheduledMessagesService.getMessagesToSendToday(ignoreTimeCheck);
+      const messagesToSend =
+        await this.scheduledMessagesService.getMessagesToSendToday(
+          ignoreTimeCheck,
+        );
 
       if (messagesToSend.length === 0) {
         this.logger.log('ℹ️ Nu există mesaje automate de trimis astăzi');
         return;
       }
 
-      this.logger.log(`📧 Găsite ${messagesToSend.length} mesaje automate de trimis`);
+      this.logger.log(
+        `📧 Găsite ${messagesToSend.length} mesaje automate de trimis`,
+      );
 
       for (const scheduledMessage of messagesToSend) {
         try {
           await this.sendScheduledMessage(scheduledMessage);
           await this.scheduledMessagesService.markAsSent(scheduledMessage.id);
-          this.logger.log(`✅ Mesaj automat trimis: ${scheduledMessage.name} (${scheduledMessage.id})`);
+          this.logger.log(
+            `✅ Mesaj automat trimis: ${scheduledMessage.name} (${scheduledMessage.id})`,
+          );
         } catch (error: any) {
           this.logger.error(
             `❌ Eroare la trimiterea mesajului automat ${scheduledMessage.id}: ${error.message}`,
@@ -58,7 +67,9 @@ export class ScheduledMessagesCronService {
         }
       }
     } catch (error: any) {
-      this.logger.error(`❌ Eroare în cron job pentru mesaje automate: ${error.message}`);
+      this.logger.error(
+        `❌ Eroare în cron job pentru mesaje automate: ${error.message}`,
+      );
     }
   }
 
@@ -67,17 +78,25 @@ export class ScheduledMessagesCronService {
       throw new Error('SMTP nu este configurat');
     }
 
-    let recipients: Array<{ email: string; nombre: string; codigo?: string }> = [];
+    let recipients: Array<{ email: string; nombre: string; codigo?: string }> =
+      [];
 
     // Obține destinatarii în funcție de tip
-    const recipientType = (scheduledMessage as any).recipient_type || scheduledMessage.recipientType;
-    const recipientId = (scheduledMessage as any).recipient_id || scheduledMessage.recipientId;
-    const recipientEmail = (scheduledMessage as any).recipient_email || scheduledMessage.recipientEmail;
-    
+    const recipientType =
+      (scheduledMessage as any).recipient_type ||
+      scheduledMessage.recipientType;
+    const recipientId =
+      (scheduledMessage as any).recipient_id || scheduledMessage.recipientId;
+    const recipientEmail =
+      (scheduledMessage as any).recipient_email ||
+      scheduledMessage.recipientEmail;
+
     if (recipientType === 'empleado' && recipientId) {
-      const empleado = await this.empleadosService.getEmpleadoByCodigo(recipientId);
+      const empleado =
+        await this.empleadosService.getEmpleadoByCodigo(recipientId);
       if (empleado) {
-        const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
+        const email =
+          empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
         const nombre = this.empleadosService.getFormattedNombre(empleado);
         if (email) {
           recipients = [{ email, nombre, codigo: String(empleado.CODIGO) }];
@@ -91,7 +110,7 @@ export class ScheduledMessagesCronService {
       recipients = empleadosActivos
         .map((e) => ({
           email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-            nombre: this.empleadosService.getFormattedNombre(e),
+          nombre: this.empleadosService.getFormattedNombre(e),
           codigo: String(e.CODIGO),
         }))
         .filter((r) => r.email && r.email.trim() !== '');
@@ -105,7 +124,7 @@ export class ScheduledMessagesCronService {
       recipients = empleadosGrupo
         .map((e) => ({
           email: e['CORREO ELECTRONICO'] || e.CORREO_ELECTRONICO,
-            nombre: this.empleadosService.getFormattedNombre(e),
+          nombre: this.empleadosService.getFormattedNombre(e),
           codigo: String(e.CODIGO),
         }))
         .filter((r) => r.email && r.email.trim() !== '');
@@ -123,19 +142,40 @@ export class ScheduledMessagesCronService {
     }
 
     // Construiește HTML-ul mesajului
-    const message = ((scheduledMessage as any).message || scheduledMessage.message || '').trim();
-    const additionalMessage = ((scheduledMessage as any).additional_message || scheduledMessage.additionalMessage || '').trim();
-    const subject = ((scheduledMessage as any).subject || scheduledMessage.subject || '').trim();
-    const createdBy = (scheduledMessage as any).created_by || scheduledMessage.createdBy;
-    
+    const message = (
+      (scheduledMessage as any).message ||
+      scheduledMessage.message ||
+      ''
+    ).trim();
+    const additionalMessage = (
+      (scheduledMessage as any).additional_message ||
+      scheduledMessage.additionalMessage ||
+      ''
+    ).trim();
+    const subject = (
+      (scheduledMessage as any).subject ||
+      scheduledMessage.subject ||
+      ''
+    ).trim();
+    const createdBy =
+      (scheduledMessage as any).created_by || scheduledMessage.createdBy;
+
     // Elimină liniile goale de la început și sfârșit
-    let htmlMessage = message.split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n');
+    let htmlMessage = message
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n');
     if (htmlMessage) {
       htmlMessage = htmlMessage.trim();
     }
-    
+
     if (additionalMessage) {
-      const additionalMsgCleaned = additionalMessage.split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n');
+      const additionalMsgCleaned = additionalMessage
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .join('\n');
       htmlMessage += `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;">
         <strong>Mensaje adicional:</strong><br>
         <div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div>
@@ -194,7 +234,7 @@ export class ScheduledMessagesCronService {
         this.logger.error(
           `❌ Eroare la trimiterea email-ului către ${recipient.email}: ${error.message}`,
         );
-        
+
         // Salvează și email-urile eșuate
         try {
           await this.sentEmailsService.saveSentEmail({
@@ -211,10 +251,11 @@ export class ScheduledMessagesCronService {
             scheduledMessageId: scheduledMessage.id, // Legătură cu mesajul automat
           });
         } catch (saveError: any) {
-          this.logger.warn(`⚠️ Eroare la salvarea email-ului eșuat: ${saveError.message}`);
+          this.logger.warn(
+            `⚠️ Eroare la salvarea email-ului eșuat: ${saveError.message}`,
+          );
         }
       }
     }
   }
 }
-

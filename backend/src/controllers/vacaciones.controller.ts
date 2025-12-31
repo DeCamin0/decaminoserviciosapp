@@ -46,9 +46,7 @@ export class VacacionesController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(
-        `Error al obtener saldo: ${error.message}`,
-      );
+      throw new BadRequestException(`Error al obtener saldo: ${error.message}`);
     }
   }
 
@@ -136,13 +134,14 @@ export class VacacionesController {
         `📊 Export estadísticas Excel request - requested by: ${user?.CODIGO || user?.codigo}`,
       );
       const buffer = await this.vacacionesService.exportEstadisticasExcel();
-      
+
       res.set({
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename=Estadisticas_Solicitudes_${new Date().toISOString().split('T')[0]}.xlsx`,
         'Content-Length': buffer.length,
       });
-      
+
       res.send(buffer);
     } catch (error: any) {
       this.logger.error('❌ Error exporting estadísticas Excel:', error);
@@ -163,19 +162,17 @@ export class VacacionesController {
         `📊 Export estadísticas PDF request - requested by: ${user?.CODIGO || user?.codigo}`,
       );
       const buffer = await this.vacacionesService.exportEstadisticasPDF();
-      
+
       res.set({
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename=Estadisticas_Solicitudes_${new Date().toISOString().split('T')[0]}.pdf`,
         'Content-Length': buffer.length,
       });
-      
+
       res.send(buffer);
     } catch (error: any) {
       this.logger.error('❌ Error exporting estadísticas PDF:', error);
-      throw new BadRequestException(
-        `Error al exportar PDF: ${error.message}`,
-      );
+      throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
   }
 
@@ -230,4 +227,3 @@ export class VacacionesController {
     }
   }
 }
-

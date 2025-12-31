@@ -55,10 +55,15 @@ export class AuditService {
       `;
 
       await this.prisma.$executeRawUnsafe(query);
-      
-      this.logger.debug(`✅ Audit log registrado para usuario ${data.usuario_id}`);
+
+      this.logger.debug(
+        `✅ Audit log registrado para usuario ${data.usuario_id}`,
+      );
     } catch (error: any) {
-      this.logger.error(`❌ Error registrando audit log: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error registrando audit log: ${error.message}`,
+        error.stack,
+      );
       // No lanzamos error - el audit es no crítico
     }
   }
@@ -69,4 +74,3 @@ export class AuditService {
     return `'${escaped}'`;
   }
 }
-

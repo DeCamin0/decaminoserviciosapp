@@ -17,10 +17,12 @@ export class AiResponseService {
       apiKey = process.env.OPENAI_API_KEY || null;
       this.logger.log('🔍 Trying process.env.OPENAI_API_KEY as fallback');
     }
-    
+
     this.isEnabled = !!apiKey;
 
-    this.logger.log(`🔍 OpenAI initialization check - API key present: ${!!apiKey}, length: ${apiKey?.length || 0}`);
+    this.logger.log(
+      `🔍 OpenAI initialization check - API key present: ${!!apiKey}, length: ${apiKey?.length || 0}`,
+    );
     if (apiKey) {
       this.logger.log(`🔍 API key preview: ${apiKey.substring(0, 15)}...`);
     }
@@ -31,15 +33,23 @@ export class AiResponseService {
           apiKey: apiKey,
           timeout: 30000, // 30 secunde timeout pentru răspunsuri cu date mari
         });
-        this.logger.log(`✅ OpenAI service initialized (API key: ${apiKey.substring(0, 10)}...)`);
+        this.logger.log(
+          `✅ OpenAI service initialized (API key: ${apiKey.substring(0, 10)}...)`,
+        );
       } catch (error: any) {
         this.logger.error(`❌ Error initializing OpenAI: ${error.message}`);
         this.isEnabled = false;
       }
     } else {
-      this.logger.warn('⚠️ OPENAI_API_KEY not found in environment, AI responses will be disabled');
-      this.logger.warn('⚠️ Make sure OPENAI_API_KEY is set in .env file and backend is restarted');
-      this.logger.warn(`⚠️ process.env.OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'exists' : 'not found'}`);
+      this.logger.warn(
+        '⚠️ OPENAI_API_KEY not found in environment, AI responses will be disabled',
+      );
+      this.logger.warn(
+        '⚠️ Make sure OPENAI_API_KEY is set in .env file and backend is restarted',
+      );
+      this.logger.warn(
+        `⚠️ process.env.OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'exists' : 'not found'}`,
+      );
     }
   }
 
@@ -57,7 +67,9 @@ export class AiResponseService {
     usuarioRol: string | null,
   ): Promise<string> {
     if (!this.isEnabled || !this.openai) {
-      this.logger.warn(`⚠️ OpenAI not enabled or not initialized. isEnabled: ${this.isEnabled}, openai: ${!!this.openai}`);
+      this.logger.warn(
+        `⚠️ OpenAI not enabled or not initialized. isEnabled: ${this.isEnabled}, openai: ${!!this.openai}`,
+      );
       return this.generateFallbackResponse(intent, data);
     }
 
@@ -67,7 +79,9 @@ export class AiResponseService {
       const systemPrompt = this.buildSystemPrompt(intent, usuarioRol);
       const userPrompt = this.buildUserPrompt(mensaje, intent, data, confianza);
 
-      this.logger.debug(`📝 System prompt length: ${systemPrompt.length}, User prompt length: ${userPrompt.length}`);
+      this.logger.debug(
+        `📝 System prompt length: ${systemPrompt.length}, User prompt length: ${userPrompt.length}`,
+      );
 
       // Adaugă timeout pentru apelul OpenAI (10 secunde)
       const completionPromise = this.openai.chat.completions.create({
@@ -82,21 +96,32 @@ export class AiResponseService {
 
       // Timeout de 30 secunde pentru răspunsuri cu date mari
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('OpenAI API timeout after 30 seconds')), 30000);
+        setTimeout(
+          () => reject(new Error('OpenAI API timeout after 30 seconds')),
+          30000,
+        );
       });
 
-      const completion = await Promise.race([completionPromise, timeoutPromise]);
+      const completion = await Promise.race([
+        completionPromise,
+        timeoutPromise,
+      ]);
 
       const response = completion.choices[0]?.message?.content?.trim();
       if (response) {
-        this.logger.log(`✅ AI response generated successfully (${response.length} chars)`);
+        this.logger.log(
+          `✅ AI response generated successfully (${response.length} chars)`,
+        );
         return response;
       }
 
       this.logger.warn('⚠️ AI response is empty, using fallback');
       return this.generateFallbackResponse(intent, data);
     } catch (error: any) {
-      this.logger.error(`❌ Error generating AI response: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error generating AI response: ${error.message}`,
+        error.stack,
+      );
       return this.generateFallbackResponse(intent, data);
     }
   }
@@ -107,7 +132,6 @@ export class AiResponseService {
   async generateClarificationRequest(
     intent: IntentType,
     mensaje: string,
-    usuarioRol: string | null,
   ): Promise<string> {
     if (!this.isEnabled || !this.openai) {
       // Fallback manual dacă AI nu e disponibil
@@ -158,7 +182,9 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
 
       return this.generateFallbackClarification(intent);
     } catch (error: any) {
-      this.logger.error(`❌ Error generating clarification request: ${error.message}`);
+      this.logger.error(
+        `❌ Error generating clarification request: ${error.message}`,
+      );
       return this.generateFallbackClarification(intent);
     }
   }
@@ -168,7 +194,8 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
    */
   private generateFallbackClarification(intent: IntentType): string {
     const clarifications: Record<IntentType, string> = {
-      [IntentType.FICHAJES]: `Para poder ayudarte con los registros de fichaje, necesito que especifiques:\n\n` +
+      [IntentType.FICHAJES]:
+        `Para poder ayudarte con los registros de fichaje, necesito que especifiques:\n\n` +
         `📅 **Fecha o período:**\n` +
         `- "registros de hoy"\n` +
         `- "registros de ayer"\n` +
@@ -195,24 +222,37 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
   /**
    * Construiește system prompt bazat pe intent și rol
    */
-  private buildSystemPrompt(intent: IntentType, usuarioRol: string | null): string {
-    const rolContext = usuarioRol?.toLowerCase().includes('admin') || 
-                       usuarioRol?.toLowerCase().includes('supervisor') ||
-                       usuarioRol?.toLowerCase().includes('manager') ||
-                       usuarioRol?.toLowerCase().includes('developer')
-      ? 'Eres un asistente para administradores/supervisores con acceso total a los datos.'
-      : 'Eres un asistente para empleados que solo puede acceder a sus propios datos.';
+  private buildSystemPrompt(
+    intent: IntentType,
+    usuarioRol: string | null,
+  ): string {
+    const rolContext =
+      usuarioRol?.toLowerCase().includes('admin') ||
+      usuarioRol?.toLowerCase().includes('supervisor') ||
+      usuarioRol?.toLowerCase().includes('manager') ||
+      usuarioRol?.toLowerCase().includes('developer')
+        ? 'Eres un asistente para administradores/supervisores con acceso total a los datos.'
+        : 'Eres un asistente para empleados que solo puede acceder a sus propios datos.';
 
     const intentContexts: Record<IntentType, string> = {
-      [IntentType.FICHAJES]: 'El usuario pregunta sobre fichajes (registros de entrada/salida) o empleados que deberían haber fichado pero no lo hicieron. Responde de forma clara y concisa. Si hay empleados sin cuadrante, horario o centro asignado, menciona claramente qué les falta (ej: "Sin cuadrante asignado", "Sin horario asignado", "Sin centro asignado"). Si hay muchos registros (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
-      [IntentType.CUADRANTE]: 'El usuario pregunta sobre cuadrantes (horarios de trabajo). Responde de forma clara y concisa. Si hay muchos registros, menciona que puede descargar los datos completos.',
-      [IntentType.VACACIONES]: 'El usuario pregunta sobre vacaciones o asuntos propios. Responde de forma clara y concisa.',
-      [IntentType.EMPLEADOS]: 'El usuario pregunta sobre un listado de empleados con su estado, cuadrantes, horarios y centros asignados. Presenta la información de forma clara y organizada. Si hay muchos empleados (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
-      [IntentType.NOMINAS]: 'El usuario pregunta sobre nóminas (payslips). Responde de forma clara y concisa. Si hay muchas nóminas, menciona que puede descargar los datos completos.',
-      [IntentType.DOCUMENTOS]: 'El usuario pregunta sobre documentos. Responde de forma clara y concisa.',
-      [IntentType.PROCEDIMIENTOS]: 'El usuario pregunta sobre procedimientos o cómo hacer algo. Responde de forma clara y concisa.',
-      [IntentType.INCIDENCIAS]: 'El usuario reporta una incidencia o problema. Responde de forma empática y profesional.',
-      [IntentType.DESCONOCIDO]: 'El usuario hace una pregunta general o saludo. Responde de forma amigable y profesional. Si no entiendes la pregunta, ofrece ayuda sobre qué puedes hacer.',
+      [IntentType.FICHAJES]:
+        'El usuario pregunta sobre fichajes (registros de entrada/salida) o empleados que deberían haber fichado pero no lo hicieron. Responde de forma clara y concisa. Si hay empleados sin cuadrante, horario o centro asignado, menciona claramente qué les falta (ej: "Sin cuadrante asignado", "Sin horario asignado", "Sin centro asignado"). Si hay muchos registros (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
+      [IntentType.CUADRANTE]:
+        'El usuario pregunta sobre cuadrantes (horarios de trabajo). Responde de forma clara y concisa. Si hay muchos registros, menciona que puede descargar los datos completos.',
+      [IntentType.VACACIONES]:
+        'El usuario pregunta sobre vacaciones o asuntos propios. Responde de forma clara y concisa.',
+      [IntentType.EMPLEADOS]:
+        'El usuario pregunta sobre un listado de empleados con su estado, cuadrantes, horarios y centros asignados. Presenta la información de forma clara y organizada. Si hay muchos empleados (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
+      [IntentType.NOMINAS]:
+        'El usuario pregunta sobre nóminas (payslips). Responde de forma clara y concisa. Si hay muchas nóminas, menciona que puede descargar los datos completos.',
+      [IntentType.DOCUMENTOS]:
+        'El usuario pregunta sobre documentos. Responde de forma clara y concisa.',
+      [IntentType.PROCEDIMIENTOS]:
+        'El usuario pregunta sobre procedimientos o cómo hacer algo. Responde de forma clara y concisa.',
+      [IntentType.INCIDENCIAS]:
+        'El usuario reporta una incidencia o problema. Responde de forma empática y profesional.',
+      [IntentType.DESCONOCIDO]:
+        'El usuario hace una pregunta general o saludo. Responde de forma amigable y profesional. Si no entiendes la pregunta, ofrece ayuda sobre qué puedes hacer.',
     };
 
     return `${rolContext}\n\n${intentContexts[intent]}\n\nResponde SIEMPRE en español, de forma natural y profesional. No uses emojis en exceso. Si hay datos, preséntalos de forma clara. Si hay muchos registros, menciona brevemente que puede descargar los datos completos.`;
@@ -245,31 +285,44 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
             const optimized: any = {};
             // Păstrează doar câmpurile esențiale
             // Nume: verifică multiple variante (fichajes, solicitudes, etc.)
-            if (item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || item.nombre) {
-              optimized.nombre = item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || item.nombre;
+            if (
+              item.nombre_apellidos ||
+              item['NOMBRE / APELLIDOS'] ||
+              item.nombre
+            ) {
+              optimized.nombre =
+                item.nombre_apellidos ||
+                item['NOMBRE / APELLIDOS'] ||
+                item.nombre;
             }
-            if (item.CODIGO || item.codigo) optimized.codigo = item.CODIGO || item.codigo;
+            if (item.CODIGO || item.codigo)
+              optimized.codigo = item.CODIGO || item.codigo;
             if (item.TIPO || item.tipo) optimized.tipo = item.TIPO || item.tipo;
             if (item.HORA || item.hora) optimized.hora = item.HORA || item.hora;
-            if (item.FECHA || item.fecha || item.fecha_inicio) optimized.fecha = item.FECHA || item.fecha || item.fecha_inicio;
+            if (item.FECHA || item.fecha || item.fecha_inicio)
+              optimized.fecha = item.FECHA || item.fecha || item.fecha_inicio;
             if (item.fecha_fin) optimized.fecha_fin = item.fecha_fin;
             if (item.estado) optimized.estado = item.estado;
             if (item.email) optimized.email = item.email;
             if (item.motivo) optimized.motivo = item.motivo;
             // Pentru fichajes faltantes: include detalii despre ce lipsește
-            if (item.detalles_faltantes) optimized.detalles_faltantes = item.detalles_faltantes;
+            if (item.detalles_faltantes)
+              optimized.detalles_faltantes = item.detalles_faltantes;
             if (item.fuente) optimized.fuente = item.fuente;
-            if (item.horas_plan !== undefined) optimized.horas_plan = item.horas_plan;
+            if (item.horas_plan !== undefined)
+              optimized.horas_plan = item.horas_plan;
             if (item.centro) optimized.centro = item.centro;
             // Pentru listado empleados: include toate câmpurile relevante
             if (item.estado) optimized.estado = item.estado;
-            if (item.tiene_cuadrante) optimized.tiene_cuadrante = item.tiene_cuadrante;
-            if (item.tiene_horario) optimized.tiene_horario = item.tiene_horario;
+            if (item.tiene_cuadrante)
+              optimized.tiene_cuadrante = item.tiene_cuadrante;
+            if (item.tiene_horario)
+              optimized.tiene_horario = item.tiene_horario;
             if (item.tiene_centro) optimized.tiene_centro = item.tiene_centro;
             if (item.grupo) optimized.grupo = item.grupo;
             return optimized;
           });
-          
+
           prompt += `Datos encontrados (${data.length} registro(s)):\n${JSON.stringify(optimizedData, null, 2)}\n\n`;
           if (data.length > 10) {
             prompt += `IMPORTANTE: Hay ${data.length} registros en total. Menciona brevemente que el usuario puede descargar todos los datos completos en Excel, TXT o PDF usando los botones de descarga que aparecerán. `;
@@ -300,16 +353,17 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
         // Agrupează după CODIGO pentru a număra câți angajați au fichat
         const empleadosMap = new Map<string, any>();
         const tiposCount: Record<string, number> = {};
-        
+
         data.forEach((item: any) => {
           const codigo = item.CODIGO || item.codigo;
-          const nombre = item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || 'N/A';
+          const nombre =
+            item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || 'N/A';
           const tipo = item.TIPO || item.tipo || 'N/A';
           const hora = item.HORA || item.hora || 'N/A';
-          
+
           // Numără tipurile
           tiposCount[tipo] = (tiposCount[tipo] || 0) + 1;
-          
+
           // Agrupează după angajat
           if (codigo && !empleadosMap.has(codigo)) {
             empleadosMap.set(codigo, {
@@ -324,11 +378,13 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
         });
 
         // Primele 5 angajați ca sample
-        const sampleEmpleados = Array.from(empleadosMap.values()).slice(0, 5).map(emp => ({
-          nombre: emp.nombre,
-          total_fichajes: emp.fichajes.length,
-          fichajes: emp.fichajes.slice(0, 2), // Primele 2 fichaje per angajat
-        }));
+        const sampleEmpleados = Array.from(empleadosMap.values())
+          .slice(0, 5)
+          .map((emp) => ({
+            nombre: emp.nombre,
+            total_fichajes: emp.fichajes.length,
+            fichajes: emp.fichajes.slice(0, 2), // Primele 2 fichaje per angajat
+          }));
 
         return {
           total_registros: data.length,
@@ -342,7 +398,8 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
         return {
           total_registros: data.length,
           muestra: data.slice(0, 3).map((item: any) => ({
-            nombre: item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || 'N/A',
+            nombre:
+              item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || 'N/A',
             fecha: item.FECHA || item.fecha || 'N/A',
             horas: item.HORAS || item.horas || 'N/A',
           })),
@@ -353,7 +410,8 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
         return {
           total_registros: data.length,
           muestra: data.slice(0, 3).map((item: any) => ({
-            nombre: item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || 'N/A',
+            nombre:
+              item.nombre_apellidos || item['NOMBRE / APELLIDOS'] || 'N/A',
             mes: item.MES || item.mes || 'N/A',
             año: item.AÑO || item.año || 'N/A',
           })),
@@ -377,9 +435,11 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
           total_registros: data.length,
           muestra: data.slice(0, 5).map((item: any) => {
             const optimized: any = {};
-            Object.keys(item).slice(0, 5).forEach(key => {
-              optimized[key] = item[key];
-            });
+            Object.keys(item)
+              .slice(0, 5)
+              .forEach((key) => {
+                optimized[key] = item[key];
+              });
             return optimized;
           }),
           nota: `Mostrando muestra de 5 registros de ${data.length} total.`,
@@ -390,26 +450,39 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
   /**
    * Răspuns fallback când AI nu este disponibil
    */
-  private generateFallbackResponse(intent: IntentType, data: any[] | any | null): string {
+  private generateFallbackResponse(
+    intent: IntentType,
+    data: any[] | any | null,
+  ): string {
     this.logger.warn(`⚠️ Using fallback response for intent: ${intent}`);
-    
+
     if (intent === IntentType.DESCONOCIDO) {
       return '¡Hola! Soy tu asistente virtual. Puedo ayudarte con consultas sobre fichajes, cuadrantes, vacaciones, nóminas, documentos y más. ¿En qué puedo ayudarte?';
     }
 
     if (!data || (Array.isArray(data) && data.length === 0)) {
       const intentMessages: Record<IntentType, string> = {
-        [IntentType.FICHAJES]: 'No se encontraron registros de fichaje para la fecha consultada.',
-        [IntentType.CUADRANTE]: 'No se encontró información del cuadrante para el período consultado.',
-        [IntentType.VACACIONES]: 'No se pudo obtener la información de vacaciones.',
-        [IntentType.EMPLEADOS]: 'No se encontraron empleados que cumplan con los criterios solicitados.',
-        [IntentType.NOMINAS]: 'No se encontraron nóminas para el período consultado.',
+        [IntentType.FICHAJES]:
+          'No se encontraron registros de fichaje para la fecha consultada.',
+        [IntentType.CUADRANTE]:
+          'No se encontró información del cuadrante para el período consultado.',
+        [IntentType.VACACIONES]:
+          'No se pudo obtener la información de vacaciones.',
+        [IntentType.EMPLEADOS]:
+          'No se encontraron empleados que cumplan con los criterios solicitados.',
+        [IntentType.NOMINAS]:
+          'No se encontraron nóminas para el período consultado.',
         [IntentType.DOCUMENTOS]: 'No se encontraron documentos.',
-        [IntentType.PROCEDIMIENTOS]: 'No se encontraron artículos de procedimientos.',
+        [IntentType.PROCEDIMIENTOS]:
+          'No se encontraron artículos de procedimientos.',
         [IntentType.INCIDENCIAS]: 'No se pudo procesar tu incidencia.',
-        [IntentType.DESCONOCIDO]: 'No he entendido tu pregunta. Por favor, reformula tu consulta.',
+        [IntentType.DESCONOCIDO]:
+          'No he entendido tu pregunta. Por favor, reformula tu consulta.',
       };
-      return intentMessages[intent] || 'No se encontraron datos para tu consulta. Por favor, intenta reformular tu pregunta.';
+      return (
+        intentMessages[intent] ||
+        'No se encontraron datos para tu consulta. Por favor, intenta reformular tu pregunta.'
+      );
     }
 
     // Pentru intent-uri cunoscute cu date, folosim ResponseGeneratorService
@@ -428,4 +501,3 @@ Genera una respuesta amigable que pida aclaración y ofrezca ejemplos concretos 
     return intentMessages[intent] || 'Procesando tu consulta...';
   }
 }
-

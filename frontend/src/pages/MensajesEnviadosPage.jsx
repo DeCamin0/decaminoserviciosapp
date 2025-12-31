@@ -1,17 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getFormattedNombre } from '../utils/employeeNameHelper';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Card, Button, Input, Modal } from '../components/ui';
 import { TableLoading } from '../components/ui/LoadingStates';
 import Back3DButton from '../components/Back3DButton';
 import { routes } from '../utils/routes';
-import { useLoadingState } from '../hooks/useLoadingState';
 import activityLogger from '../utils/activityLogger';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export default function MensajesEnviadosPage() {
   const { user: authUser } = useAuth();
-  const { setOperationLoading, isOperationLoading } = useLoadingState();
   
   // State pentru formular trimitere email
   const [activeTab, setActiveTab] = useState('enviar'); // 'enviar' | 'historial' | 'automaticos'
@@ -155,7 +153,7 @@ export default function MensajesEnviadosPage() {
   }, [canManageEmails]);
 
   // Încarcă istoricul mesajelor
-  const loadSentEmails = async (loadMore = false) => {
+  const loadSentEmails = useCallback(async (loadMore = false) => {
     if (!canManageEmails) return;
 
     // Dacă încărcăm mai multe, folosim loadingMore, altfel loadingEmails
@@ -224,7 +222,7 @@ export default function MensajesEnviadosPage() {
         setLoadingEmails(false);
       }
     }
-  };
+  }, [canManageEmails, loadingMore, hasMore, filters.recipientType, filters.status, filters.startDate, filters.endDate, currentOffset]);
 
   useEffect(() => {
     if (activeTab === 'historial') {
@@ -236,7 +234,7 @@ export default function MensajesEnviadosPage() {
     } else if (activeTab === 'automaticos') {
       loadScheduledMessages();
     }
-  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails]);
+  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails, loadSentEmails]);
 
   // Infinite scroll - detectează când utilizatorul ajunge jos
   useEffect(() => {
@@ -277,7 +275,7 @@ export default function MensajesEnviadosPage() {
     return () => {
       observer.disconnect();
     };
-  }, [activeTab, hasMore, loadingMore, loadingEmails]);
+  }, [activeTab, hasMore, loadingMore, loadingEmails, loadSentEmails]);
 
   // Încarcă mesajele automate
   const loadScheduledMessages = async () => {
@@ -560,10 +558,6 @@ export default function MensajesEnviadosPage() {
     try {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
-
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
 
       const url = routes.downloadAttachment(attachmentId);
       const response = await fetch(url, {

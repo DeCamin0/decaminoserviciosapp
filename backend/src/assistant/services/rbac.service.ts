@@ -24,7 +24,9 @@ export class RbacService {
    */
   getAccessLevel(rol: string | null | undefined): AccessLevel {
     if (!rol) {
-      this.logger.warn('⚠️ Rol necunoscut sau lipsă, aplicând mod Empleado (fail-closed)');
+      this.logger.warn(
+        '⚠️ Rol necunoscut sau lipsă, aplicând mod Empleado (fail-closed)',
+      );
       return AccessLevel.OWN_DATA_ONLY;
     }
 
@@ -90,4 +92,3 @@ export class RbacService {
     return `'${escaped}'`;
   }
 }
-

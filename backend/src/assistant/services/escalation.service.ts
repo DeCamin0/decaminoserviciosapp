@@ -25,7 +25,7 @@ export class EscalationService {
   }): Promise<string> {
     try {
       const ticketId = `TICKET-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
-      
+
       const query = `
         INSERT INTO tickets_ai (
           id,
@@ -54,14 +54,19 @@ export class EscalationService {
 
       await this.prisma.$executeRawUnsafe(query);
 
-      this.logger.log(`✅ Ticket creado: ${ticketId} para usuario ${data.usuario_id}`);
+      this.logger.log(
+        `✅ Ticket creado: ${ticketId} para usuario ${data.usuario_id}`,
+      );
 
       // Notifică admin prin Telegram
       await this.notifyAdmin(ticketId, data);
 
       return ticketId;
     } catch (error: any) {
-      this.logger.error(`❌ Error creando ticket: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error creando ticket: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -71,7 +76,8 @@ export class EscalationService {
    */
   private async notifyAdmin(ticketId: string, data: any): Promise<void> {
     try {
-      const mensaje = `🚨 Nuevo ticket de asistente AI\n\n` +
+      const mensaje =
+        `🚨 Nuevo ticket de asistente AI\n\n` +
         `📋 ID: ${ticketId}\n` +
         `👤 Usuario: ${data.usuario_nombre} (${data.usuario_id})\n` +
         `🎭 Rol: ${data.usuario_rol || 'N/A'}\n` +
@@ -80,10 +86,14 @@ export class EscalationService {
         `⚡ Prioridad: ${data.prioridad || 'normal'}`;
 
       await this.telegramService.sendMessage(mensaje);
-      
-      this.logger.log(`✅ Notificación Telegram enviada para ticket ${ticketId}`);
+
+      this.logger.log(
+        `✅ Notificación Telegram enviada para ticket ${ticketId}`,
+      );
     } catch (error: any) {
-      this.logger.warn(`⚠️ Error enviando notificación Telegram: ${error.message}`);
+      this.logger.warn(
+        `⚠️ Error enviando notificación Telegram: ${error.message}`,
+      );
       // No lanzamos error - el ticket ya está creado
     }
   }
@@ -94,4 +104,3 @@ export class EscalationService {
     return `'${escaped}'`;
   }
 }
-

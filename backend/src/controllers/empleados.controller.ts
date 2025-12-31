@@ -5,14 +5,13 @@ import {
   Put,
   UseGuards,
   UseInterceptors,
-  UploadedFile,
   UploadedFiles,
   Body,
   BadRequestException,
   Logger,
   Res,
 } from '@nestjs/common';
-import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
@@ -82,7 +81,8 @@ export class EmpleadosController {
     try {
       this.logger.log('📊 Get estadísticas empleados request');
       // Nu trebuie să verificăm RBAC aici - doar managerii pot accesa tab-ul în frontend
-      const estadisticas = await this.empleadosService.getEstadisticasEmpleados();
+      const estadisticas =
+        await this.empleadosService.getEstadisticasEmpleados();
       return { success: true, estadisticas };
     } catch (error: any) {
       this.logger.error('❌ Error getting estadísticas empleados:', error);
@@ -97,14 +97,16 @@ export class EmpleadosController {
   async exportEstadisticasExcel(@Res() res: any) {
     try {
       this.logger.log('📊 Export estadísticas empleados Excel request');
-      const buffer = await this.empleadosService.exportEstadisticasEmpleadosExcel();
-      
+      const buffer =
+        await this.empleadosService.exportEstadisticasEmpleadosExcel();
+
       res.set({
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename=Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.xlsx`,
         'Content-Length': buffer.length,
       });
-      
+
       res.send(buffer);
     } catch (error: any) {
       this.logger.error('❌ Error exporting estadísticas Excel:', error);
@@ -119,20 +121,19 @@ export class EmpleadosController {
   async exportEstadisticasPDF(@Res() res: any) {
     try {
       this.logger.log('📊 Export estadísticas empleados PDF request');
-      const buffer = await this.empleadosService.exportEstadisticasEmpleadosPDF();
-      
+      const buffer =
+        await this.empleadosService.exportEstadisticasEmpleadosPDF();
+
       res.set({
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename=Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.pdf`,
         'Content-Length': buffer.length,
       });
-      
+
       res.send(buffer);
     } catch (error: any) {
       this.logger.error('❌ Error exporting estadísticas PDF:', error);
-      throw new BadRequestException(
-        `Error al exportar PDF: ${error.message}`,
-      );
+      throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
   }
 
@@ -168,9 +169,12 @@ export class EmpleadosController {
         NOMBRE: body.NOMBRE || null,
         APELLIDO1: body.APELLIDO1 || null,
         APELLIDO2: body.APELLIDO2 || null,
-        NOMBRE_SPLIT_CONFIANZA: body.NOMBRE_SPLIT_CONFIANZA !== undefined 
-          ? parseInt(body.NOMBRE_SPLIT_CONFIANZA) 
-          : (body.NOMBRE || body.APELLIDO1 || body.APELLIDO2 ? 2 : 0),
+        NOMBRE_SPLIT_CONFIANZA:
+          body.NOMBRE_SPLIT_CONFIANZA !== undefined
+            ? parseInt(body.NOMBRE_SPLIT_CONFIANZA)
+            : body.NOMBRE || body.APELLIDO1 || body.APELLIDO2
+              ? 2
+              : 0,
         NACIONALIDAD: body.NACIONALIDAD || '',
         DIRECCION: body.DIRECCION || '',
         'D.N.I. / NIE': body['D.N.I. / NIE'] || '',
@@ -221,7 +225,8 @@ export class EmpleadosController {
 
       // Salvăm PDF-ul în CarpetasDocumentos dacă există
       if (pdfFile && pdfFile.buffer) {
-        const nombreEmpleado = this.empleadosService.getFormattedNombre(empleadoData) || '';
+        const nombreEmpleado =
+          this.empleadosService.getFormattedNombre(empleadoData) || '';
         // Luăm email-ul din empleadoData sau din body (pentru a fi siguri)
         const correoElectronico =
           empleadoData['CORREO ELECTRONICO'] ||
@@ -254,7 +259,8 @@ export class EmpleadosController {
         } else {
           try {
             const nombreEmpleado =
-              this.empleadosService.getFormattedNombre(empleadoData) || 'Sin Nombre';
+              this.empleadosService.getFormattedNombre(empleadoData) ||
+              'Sin Nombre';
             const subject = `ALTA OPERARIA/O: ${nombreEmpleado}`;
             const html = `
               <html>
@@ -324,7 +330,11 @@ export class EmpleadosController {
                   htmlFinal,
                   attachments,
                   {
-                    bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+                    bcc: [
+                      'info@decaminoservicios.com',
+                      'mirisjm@gmail.com',
+                      'decamino.rrhh@gmail.com',
+                    ],
                   },
                 );
               } else {
@@ -336,7 +346,11 @@ export class EmpleadosController {
                   pdfFile.buffer,
                   pdfFileName,
                   {
-                    bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+                    bcc: [
+                      'info@decaminoservicios.com',
+                      'mirisjm@gmail.com',
+                      'decamino.rrhh@gmail.com',
+                    ],
                   },
                 );
               }
@@ -347,7 +361,9 @@ export class EmpleadosController {
 
               // Salvează email-ul în BD
               try {
-                const senderId = String(body.createdBy ? JSON.parse(body.createdBy).nombre : 'system');
+                const senderId = String(
+                  body.createdBy ? JSON.parse(body.createdBy).nombre : 'system',
+                );
                 await this.sentEmailsService.saveSentEmail({
                   senderId,
                   recipientType: 'gestoria',
@@ -402,7 +418,9 @@ export class EmpleadosController {
 
               // Salvează email-ul în BD
               try {
-                const senderId = String(body.createdBy ? JSON.parse(body.createdBy).nombre : 'system');
+                const senderId = String(
+                  body.createdBy ? JSON.parse(body.createdBy).nombre : 'system',
+                );
                 await this.sentEmailsService.saveSentEmail({
                   senderId,
                   recipientType: 'gestoria',
@@ -481,8 +499,9 @@ export class EmpleadosController {
       }
 
       // Verifică dacă angajatul există
-      const empleadoExistente =
-        await this.empleadosService.getEmpleadoByCodigo(body.CODIGO);
+      const empleadoExistente = await this.empleadosService.getEmpleadoByCodigo(
+        body.CODIGO,
+      );
       if (!empleadoExistente) {
         throw new BadRequestException(
           `Angajatul cu CODIGO ${body.CODIGO} nu există`,
@@ -490,11 +509,16 @@ export class EmpleadosController {
       }
 
       // Nu modificăm angajatul în BD, doar trimitem ficha la gestorie
-        // Get employee data to use formatted nombre
-        const empleadoForNombre = await this.empleadosService.getEmpleadoByCodigo(body.CODIGO);
-        const nombreEmpleado = this.empleadosService.getFormattedNombre(empleadoForNombre) || body['NOMBRE / APELLIDOS'] || 'Sin Nombre';
+      // Get employee data to use formatted nombre
+      const empleadoForNombre = await this.empleadosService.getEmpleadoByCodigo(
+        body.CODIGO,
+      );
+      const nombreEmpleado =
+        this.empleadosService.getFormattedNombre(empleadoForNombre) ||
+        body['NOMBRE / APELLIDOS'] ||
+        'Sin Nombre';
       const subject = `RE-ENVÍO FICHA: ${nombreEmpleado}`;
-      
+
       let html = `
         <html>
           <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
@@ -629,31 +653,40 @@ export class EmpleadosController {
    */
   private async sendWelcomeEmailToEmpleado(empleadoData: any) {
     if (!this.emailService.isConfigured()) {
-      this.logger.warn('⚠️ SMTP nu este configurat. Email-ul de bun venit nu va fi trimis.');
+      this.logger.warn(
+        '⚠️ SMTP nu este configurat. Email-ul de bun venit nu va fi trimis.',
+      );
       return;
     }
 
-    const email = empleadoData['CORREO ELECTRONICO'] || empleadoData.CORREO_ELECTRONICO;
-    const nombre = this.empleadosService.getFormattedNombre(empleadoData) || 'Empleado';
-    const fechaAlta = empleadoData['FECHA DE ALTA'] || empleadoData.FECHA_DE_ALTA || '';
+    const email =
+      empleadoData['CORREO ELECTRONICO'] || empleadoData.CORREO_ELECTRONICO;
+    const nombre =
+      this.empleadosService.getFormattedNombre(empleadoData) || 'Empleado';
+    const fechaAlta =
+      empleadoData['FECHA DE ALTA'] || empleadoData.FECHA_DE_ALTA || '';
 
     if (!email || !email.trim()) {
-      this.logger.warn(`⚠️ Angajatul ${empleadoData.CODIGO} nu are email configurat pentru email de bun venit`);
+      this.logger.warn(
+        `⚠️ Angajatul ${empleadoData.CODIGO} nu are email configurat pentru email de bun venit`,
+      );
       return;
     }
 
     if (!fechaAlta || !fechaAlta.trim()) {
-      this.logger.warn(`⚠️ Angajatul ${empleadoData.CODIGO} nu are FECHA DE ALTA pentru email de bun venit`);
+      this.logger.warn(
+        `⚠️ Angajatul ${empleadoData.CODIGO} nu are FECHA DE ALTA pentru email de bun venit`,
+      );
       return;
     }
 
-    // Verifică dacă suntem după 1 ianuarie
-    const fechaLimite = new Date('2025-01-01');
+    // Verifică dacă suntem după 1 ianuarie al anului curent
+    const fechaLimite = new Date(new Date().getFullYear(), 0, 1); // 1 ianuarie an curent
     const fechaActual = new Date();
     const esDespuesDeEnero = fechaActual >= fechaLimite;
 
     const subject = 'Bienvenido/a a De Camino - Acceso a la aplicación interna';
-    
+
     // Formatează data de alta pentru mesaj
     let fechaAltaFormateada = fechaAlta;
     try {
@@ -665,13 +698,13 @@ export class EmpleadosController {
         const [dd, mm, yyyy] = fechaAlta.split('-');
         fechaAltaFormateada = `${dd}/${mm}/${yyyy}`;
       }
-    } catch (e) {
+    } catch {
       // Folosește data originală dacă formatarea eșuează
     }
 
     // Mesaj diferit în funcție de data curentă
     let html = '';
-    
+
     if (esDespuesDeEnero) {
       // Email pentru după 1 ianuarie (aplicația este obligatorie)
       html = `
@@ -812,7 +845,7 @@ export class EmpleadosController {
       this.logger.error(
         `❌ Eroare la trimiterea email-ului de bun venit către ${email}: ${error.message}`,
       );
-      
+
       // Salvează și email-urile eșuate în BD
       try {
         await this.sentEmailsService.saveSentEmail({
@@ -831,7 +864,7 @@ export class EmpleadosController {
           `⚠️ Eroare la salvarea email-ului de bun venit eșuat în BD: ${saveError.message}`,
         );
       }
-      
+
       throw error;
     }
   }
@@ -839,9 +872,7 @@ export class EmpleadosController {
   @Put()
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
-    FileFieldsInterceptor([
-      { name: 'archivosGestoria', maxCount: 10 },
-    ]),
+    FileFieldsInterceptor([{ name: 'archivosGestoria', maxCount: 10 }]),
   )
   async updateEmpleado(
     @UploadedFiles()
@@ -863,7 +894,9 @@ export class EmpleadosController {
       }
 
       // Obține datele originale ale angajatului pentru a verifica dacă este o reactivare
-      const empleadoAnterior = await this.empleadosService.getEmpleadoByCodigo(body.CODIGO);
+      const empleadoAnterior = await this.empleadosService.getEmpleadoByCodigo(
+        body.CODIGO,
+      );
 
       // Extragem datele din body
       // Pentru parolă, includem doar dacă este trimisă și nu este goală (pentru a nu suprascrie parola existentă)
@@ -871,7 +904,9 @@ export class EmpleadosController {
       const includePassword = contraseña !== null && contraseña !== '';
 
       // Log pentru debugging
-      this.logger.log(`🔍 [updateEmpleado] Câmpuri separate primite: NOMBRE=${body.NOMBRE}, APELLIDO1=${body.APELLIDO1}, APELLIDO2=${body.APELLIDO2}, NOMBRE_SPLIT_CONFIANZA=${body.NOMBRE_SPLIT_CONFIANZA}`);
+      this.logger.log(
+        `🔍 [updateEmpleado] Câmpuri separate primite: NOMBRE=${body.NOMBRE}, APELLIDO1=${body.APELLIDO1}, APELLIDO2=${body.APELLIDO2}, NOMBRE_SPLIT_CONFIANZA=${body.NOMBRE_SPLIT_CONFIANZA}`,
+      );
 
       const empleadoData: any = {
         'NOMBRE / APELLIDOS': body['NOMBRE / APELLIDOS'] || '',
@@ -879,7 +914,10 @@ export class EmpleadosController {
         NOMBRE: body.NOMBRE !== undefined ? body.NOMBRE : undefined,
         APELLIDO1: body.APELLIDO1 !== undefined ? body.APELLIDO1 : undefined,
         APELLIDO2: body.APELLIDO2 !== undefined ? body.APELLIDO2 : undefined,
-        NOMBRE_SPLIT_CONFIANZA: body.NOMBRE_SPLIT_CONFIANZA !== undefined ? body.NOMBRE_SPLIT_CONFIANZA : undefined,
+        NOMBRE_SPLIT_CONFIANZA:
+          body.NOMBRE_SPLIT_CONFIANZA !== undefined
+            ? body.NOMBRE_SPLIT_CONFIANZA
+            : undefined,
         NACIONALIDAD: body.NACIONALIDAD || '',
         DIRECCION: body.DIRECCION || '',
         'D.N.I. / NIE': body['D.N.I. / NIE'] || '',
@@ -914,23 +952,40 @@ export class EmpleadosController {
       );
 
       // Verifică dacă este o reactivare (ESTADO se schimbă din INACTIVO în ACTIVO) sau dacă se setează FECHA DE ALTA
-      const estadoAnterior = empleadoAnterior?.ESTADO || empleadoAnterior?.estado || '';
-      const estadoNuevo = empleadoData.ESTADO || empleadoAnterior?.ESTADO || empleadoAnterior?.estado || '';
-      const fechaAltaAnterior = empleadoAnterior?.['FECHA DE ALTA'] || empleadoAnterior?.FECHA_DE_ALTA || '';
+      const estadoAnterior =
+        empleadoAnterior?.ESTADO || empleadoAnterior?.estado || '';
+      const estadoNuevo =
+        empleadoData.ESTADO ||
+        empleadoAnterior?.ESTADO ||
+        empleadoAnterior?.estado ||
+        '';
+      const fechaAltaAnterior =
+        empleadoAnterior?.['FECHA DE ALTA'] ||
+        empleadoAnterior?.FECHA_DE_ALTA ||
+        '';
       // Folosește FECHA DE ALTA din body dacă există, altfel folosește cea anterioară
-      const fechaAltaNueva = body['FECHA DE ALTA'] || empleadoData['FECHA DE ALTA'] || fechaAltaAnterior || '';
-      
+      const fechaAltaNueva =
+        body['FECHA DE ALTA'] ||
+        empleadoData['FECHA DE ALTA'] ||
+        fechaAltaAnterior ||
+        '';
+
       // Verifică dacă este reactivare (ESTADO din INACTIVO în ACTIVO)
-      const esReactivacion = estadoAnterior.toUpperCase() === 'INACTIVO' && estadoNuevo.toUpperCase() === 'ACTIVO';
+      const esReactivacion =
+        estadoAnterior.toUpperCase() === 'INACTIVO' &&
+        estadoNuevo.toUpperCase() === 'ACTIVO';
       // Verifică dacă se setează FECHA DE ALTA pentru prima dată (nu există anterior)
-      const esPrimeraFechaAlta = (!fechaAltaAnterior || fechaAltaAnterior.trim() === '') && fechaAltaNueva && fechaAltaNueva.trim() !== '';
+      const esPrimeraFechaAlta =
+        (!fechaAltaAnterior || fechaAltaAnterior.trim() === '') &&
+        fechaAltaNueva &&
+        fechaAltaNueva.trim() !== '';
       // Verifică dacă există FECHA DE ALTA (fie nouă, fie existentă)
       const tieneFechaAlta = fechaAltaNueva && fechaAltaNueva.trim() !== '';
-      
+
       // Funcție helper pentru a parsea FECHA_DE_ALTA și a verifica dacă este în viitor sau astăzi
       const parseFechaAlta = (fechaStr: string): Date | null => {
         if (!fechaStr || fechaStr.trim() === '') return null;
-        
+
         const str = fechaStr.trim();
         // Formato YYYY-MM-DD
         if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
@@ -951,34 +1006,43 @@ export class EmpleadosController {
         }
         return null;
       };
-      
+
       // Verifică dacă FECHA_DE_ALTA este în viitor sau astăzi (nu în trecut)
       const fechaAltaDate = parseFechaAlta(fechaAltaNueva);
       const hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
-      const fechaAltaNormalizada = fechaAltaDate ? new Date(fechaAltaDate) : null;
+      const fechaAltaNormalizada = fechaAltaDate
+        ? new Date(fechaAltaDate)
+        : null;
       if (fechaAltaNormalizada) {
         fechaAltaNormalizada.setHours(0, 0, 0, 0);
       }
       // FECHA_DE_ALTA este în viitor sau astăzi (>= astăzi)
-      const fechaAltaEsFuturoOHoy = fechaAltaNormalizada ? fechaAltaNormalizada >= hoy : false;
-      
+      const fechaAltaEsFuturoOHoy = fechaAltaNormalizada
+        ? fechaAltaNormalizada >= hoy
+        : false;
+
       this.logger.log(
         `🔍 [updateEmpleado] Verificare email bun venit pentru ${body.CODIGO}: esReactivacion=${esReactivacion}, esPrimeraFechaAlta=${esPrimeraFechaAlta}, tieneFechaAlta=${tieneFechaAlta}, fechaAltaEsFuturoOHoy=${fechaAltaEsFuturoOHoy}, fechaAltaNueva="${fechaAltaNueva}"`,
       );
-      
+
       // Trimite email de bun venit dacă:
       // 1. Este reactivare (ESTADO din INACTIVO în ACTIVO) ȘI are FECHA DE ALTA (fie nouă, fie existentă) ȘI FECHA_DE_ALTA este în viitor sau astăzi
       // 2. SAU se setează FECHA DE ALTA pentru prima dată ȘI FECHA_DE_ALTA este în viitor sau astăzi
-      if (((esReactivacion && tieneFechaAlta) || esPrimeraFechaAlta) && fechaAltaEsFuturoOHoy) {
+      if (
+        ((esReactivacion && tieneFechaAlta) || esPrimeraFechaAlta) &&
+        fechaAltaEsFuturoOHoy
+      ) {
         const empleadoCompleto = {
           ...empleadoAnterior,
           ...empleadoData,
           CODIGO: body.CODIGO,
           'FECHA DE ALTA': fechaAltaNueva, // Asigură că folosește FECHA DE ALTA (nouă sau existentă)
         };
-        
-        const emailEmpleado = empleadoCompleto['CORREO ELECTRONICO'] || empleadoCompleto.CORREO_ELECTRONICO;
+
+        const emailEmpleado =
+          empleadoCompleto['CORREO ELECTRONICO'] ||
+          empleadoCompleto.CORREO_ELECTRONICO;
         if (emailEmpleado && emailEmpleado.trim() !== '') {
           this.logger.log(
             `📧 [updateEmpleado] Trimitere email bun venit către ${emailEmpleado} (${body.CODIGO}) - Reactivare: ${esReactivacion}, Primera Fecha Alta: ${esPrimeraFechaAlta}`,
@@ -1055,7 +1119,7 @@ export class EmpleadosController {
         try {
           // Obține fișierele dacă există
           const archivosGestoria = files?.archivosGestoria || [];
-          
+
           // Pregătește attachments
           const attachments = [];
           if (archivosGestoria.length > 0) {
@@ -1076,7 +1140,11 @@ export class EmpleadosController {
               htmlEmail,
               attachments,
               {
-                bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+                bcc: [
+                  'info@decaminoservicios.com',
+                  'mirisjm@gmail.com',
+                  'decamino.rrhh@gmail.com',
+                ],
               },
             );
           } else {
@@ -1085,7 +1153,11 @@ export class EmpleadosController {
               emailSubject,
               htmlEmail,
               {
-                bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+                bcc: [
+                  'info@decaminoservicios.com',
+                  'mirisjm@gmail.com',
+                  'decamino.rrhh@gmail.com',
+                ],
               },
             );
           }
@@ -1097,7 +1169,9 @@ export class EmpleadosController {
           // Salvează email-ul în BD
           try {
             const senderId = String(
-              body.updatedBy ? body.updatedBy : (user?.CODIGO || user?.codigo || user?.userId || 'system'),
+              body.updatedBy
+                ? body.updatedBy
+                : user?.CODIGO || user?.codigo || user?.userId || 'system',
             );
             await this.sentEmailsService.saveSentEmail({
               senderId,
@@ -1124,19 +1198,26 @@ export class EmpleadosController {
           this.logger.error(
             `❌ Eroare la trimiterea email-ului către gestoria: ${emailError.message}`,
           );
-          
+
           // Salvează și email-urile eșuate în BD
           try {
             const senderId = String(
-              body.updatedBy ? body.updatedBy : (user?.CODIGO || user?.codigo || user?.userId || 'system'),
+              body.updatedBy
+                ? body.updatedBy
+                : user?.CODIGO || user?.codigo || user?.userId || 'system',
             );
             await this.sentEmailsService.saveSentEmail({
               senderId,
               recipientType: 'gestoria',
               recipientEmail: 'altemprado@gmail.com',
               recipientName: 'Gestoria',
-              subject: emailSubject || `Actualización de datos - ${this.empleadosService.getFormattedNombre(empleadoData) || body.CODIGO || 'Empleado'}`,
-              message: htmlEmail || emailBody || 'Se ha actualizado la información del empleado.',
+              subject:
+                emailSubject ||
+                `Actualización de datos - ${this.empleadosService.getFormattedNombre(empleadoData) || body.CODIGO || 'Empleado'}`,
+              message:
+                htmlEmail ||
+                emailBody ||
+                'Se ha actualizado la información del empleado.',
               additionalMessage: emailBody || undefined,
               status: 'failed',
               errorMessage: emailError.message || String(emailError),
@@ -1146,7 +1227,7 @@ export class EmpleadosController {
               `⚠️ Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
             );
           }
-          
+
           // Nu aruncăm eroare aici, pentru că actualizarea a reușit
         }
       }
@@ -1341,7 +1422,11 @@ export class EmpleadosController {
             emailSubject,
             htmlEmail,
             {
-              bcc: ['info@decaminoservicios.com', 'mirisjm@gmail.com', 'decamino.rrhh@gmail.com'],
+              bcc: [
+                'info@decaminoservicios.com',
+                'mirisjm@gmail.com',
+                'decamino.rrhh@gmail.com',
+              ],
             },
           );
 
@@ -1491,7 +1576,11 @@ export class EmpleadosController {
         );
       }
 
-      let emailRecipients: Array<{ email: string; nombre: string; codigo: string }> = [];
+      let emailRecipients: Array<{
+        email: string;
+        nombre: string;
+        codigo: string;
+      }> = [];
 
       if (destinatar === 'angajat' && codigo) {
         // Trimite la un angajat specific
@@ -1507,7 +1596,9 @@ export class EmpleadosController {
           );
         }
 
-        emailRecipients = [{ email, nombre, codigo: String(empleado.CODIGO || codigo) }];
+        emailRecipients = [
+          { email, nombre, codigo: String(empleado.CODIGO || codigo) },
+        ];
       } else if (destinatar === 'toti') {
         // Trimite la TOȚI angajații ACTIVI (indiferent de grup)
         const empleados = await this.empleadosService.getAllEmpleados();
@@ -1565,10 +1656,11 @@ export class EmpleadosController {
       // Pentru număr mare de destinatari, mărim delay-ul pentru a evita rate limiting
       const totalRecipients = emailRecipients.length;
       const delayMs = totalRecipients > 50 ? 1000 : 500; // 1s pentru >50, 500ms pentru mai puțini
-      
+
       // Obține userId-ul utilizatorului curent pentru a trimite progresul
-      const currentUserId = user?.CODIGO || user?.codigo || user?.userId || 'unknown';
-      
+      const currentUserId =
+        user?.CODIGO || user?.codigo || user?.userId || 'unknown';
+
       this.logger.log(
         `📧 Începe trimiterea email-urilor către ${totalRecipients} destinatari (delay: ${delayMs}ms între email-uri)`,
       );
@@ -1591,7 +1683,12 @@ export class EmpleadosController {
 
         // Template email identic cu n8n - fără indentare pentru a evita spații
         // Curăță mesajul de spații și linii goale
-        const mesajCleaned = (mesaj || '').trim().split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n');
+        const mesajCleaned = (mesaj || '')
+          .trim()
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .join('\n');
         const html = `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${recipient.nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p></body></html>`;
 
         try {
@@ -1599,13 +1696,20 @@ export class EmpleadosController {
             bcc: ['decamino.rrhh@gmail.com'],
           });
           successCount++;
-          
+
           // Salvează email-ul în BD
           try {
-            const senderId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+            const senderId = String(
+              user?.CODIGO || user?.codigo || user?.userId || 'system',
+            );
             await this.sentEmailsService.saveSentEmail({
               senderId,
-              recipientType: destinatar === 'toti' ? 'toti' : destinatar === 'grup' ? 'grupo' : 'empleado',
+              recipientType:
+                destinatar === 'toti'
+                  ? 'toti'
+                  : destinatar === 'grup'
+                    ? 'grupo'
+                    : 'empleado',
               recipientId: recipient.codigo || undefined,
               recipientEmail: recipient.email,
               recipientName: recipient.nombre,
@@ -1619,10 +1723,12 @@ export class EmpleadosController {
               `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
             );
           }
-          
+
           // Trimite notificare către angajatul care a primit email-ul
           try {
-            const senderId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+            const senderId = String(
+              user?.CODIGO || user?.codigo || user?.userId || 'system',
+            );
             await this.notificationsService.notifyUser(
               senderId,
               recipient.codigo,
@@ -1632,7 +1738,12 @@ export class EmpleadosController {
                 message: `Has recibido un correo: ${subiect}`,
                 data: {
                   subject: subiect,
-                  sender: user?.nombre || (user ? this.empleadosService.getFormattedNombre(user) : null) || 'RRHH',
+                  sender:
+                    user?.nombre ||
+                    (user
+                      ? this.empleadosService.getFormattedNombre(user)
+                      : null) ||
+                    'RRHH',
                 },
               },
             );
@@ -1645,20 +1756,24 @@ export class EmpleadosController {
               `⚠️ Eroare la trimiterea notificării către ${recipient.codigo}: ${notifError.message}`,
             );
           }
-          
+
           // Trimite progres prin WebSocket la fiecare email sau la fiecare 5 email-uri pentru număr mare
           const progressInterval = totalRecipients > 20 ? 5 : 1;
-          if ((i + 1) % progressInterval === 0 || i === emailRecipients.length - 1) {
+          if (
+            (i + 1) % progressInterval === 0 ||
+            i === emailRecipients.length - 1
+          ) {
             this.notificationsGateway.sendToUser(currentUserId, {
               type: 'email_progress',
               total: totalRecipients,
               current: i + 1,
               success: successCount,
               failed: failedCount,
-              status: i === emailRecipients.length - 1 ? 'completed' : 'sending',
+              status:
+                i === emailRecipients.length - 1 ? 'completed' : 'sending',
             });
           }
-          
+
           // Log progres la fiecare 10 email-uri sau la ultimul
           if ((i + 1) % 10 === 0 || i === emailRecipients.length - 1) {
             this.logger.log(
@@ -1677,13 +1792,20 @@ export class EmpleadosController {
             `❌ Eroare la trimiterea email-ului către ${recipient.email} (${recipient.nombre}):`,
             error.message || error,
           );
-          
+
           // Salvează și email-urile eșuate în BD
           try {
-            const senderId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+            const senderId = String(
+              user?.CODIGO || user?.codigo || user?.userId || 'system',
+            );
             await this.sentEmailsService.saveSentEmail({
               senderId,
-              recipientType: destinatar === 'toti' ? 'toti' : destinatar === 'grup' ? 'grupo' : 'empleado',
+              recipientType:
+                destinatar === 'toti'
+                  ? 'toti'
+                  : destinatar === 'grup'
+                    ? 'grupo'
+                    : 'empleado',
               recipientId: recipient.codigo || undefined,
               recipientEmail: recipient.email,
               recipientName: recipient.nombre,
@@ -1697,7 +1819,7 @@ export class EmpleadosController {
               `⚠️ Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
             );
           }
-          
+
           // Trimite progres și pentru erori
           if ((i + 1) % 5 === 0 || i === emailRecipients.length - 1) {
             this.notificationsGateway.sendToUser(currentUserId, {
@@ -1750,8 +1872,13 @@ export class EmpleadosController {
   @Put(':codigo/nombre-split')
   @UseGuards(JwtAuthGuard)
   async updateNombreSplit(
-    @Body() body: { NOMBRE?: string; APELLIDO1?: string; APELLIDO2?: string; NOMBRE_SPLIT_CONFIANZA?: number },
-    @CurrentUser() user: any,
+    @Body()
+    body: {
+      NOMBRE?: string;
+      APELLIDO1?: string;
+      APELLIDO2?: string;
+      NOMBRE_SPLIT_CONFIANZA?: number;
+    },
   ) {
     try {
       const codigo = (body as any).CODIGO || (body as any).codigo;
@@ -1759,7 +1886,9 @@ export class EmpleadosController {
         throw new BadRequestException('CODIGO is required');
       }
 
-      this.logger.log(`📝 Actualizare câmpuri separate pentru empleado ${codigo}`);
+      this.logger.log(
+        `📝 Actualizare câmpuri separate pentru empleado ${codigo}`,
+      );
 
       const result = await this.empleadosService.updateNombreSplit(codigo, {
         NOMBRE: body.NOMBRE,

@@ -156,10 +156,14 @@ export class EmailService {
     try {
       const info = await this.transporter.sendMail(mailOptions);
       const bccList = options?.bcc?.join(', ') || 'none';
-      this.logger.log(`✅ Email sent successfully with ${attachments.length} attachments:`);
+      this.logger.log(
+        `✅ Email sent successfully with ${attachments.length} attachments:`,
+      );
       this.logger.log(`   TO: ${to}`);
       this.logger.log(`   BCC: ${bccList}`);
-      this.logger.log(`   Attachments: ${attachments.map(a => a.filename).join(', ')}`);
+      this.logger.log(
+        `   Attachments: ${attachments.map((a) => a.filename).join(', ')}`,
+      );
       this.logger.log(`   MessageId: ${info.messageId}`);
     } catch (error: any) {
       this.logger.error(`❌ Error sending email to ${to}:`, error);

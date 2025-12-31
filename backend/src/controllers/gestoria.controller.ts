@@ -14,7 +14,6 @@ import {
   BadRequestException,
   Logger,
   Res,
-  HttpStatus,
   ConflictException,
   Req,
 } from '@nestjs/common';
@@ -58,7 +57,9 @@ export class GestoriaController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al obtener estadísticas: ${error.message}`);
+      throw new BadRequestException(
+        `Error al obtener estadísticas: ${error.message}`,
+      );
     }
   }
 
@@ -94,7 +95,9 @@ export class GestoriaController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al obtener empleados: ${error.message}`);
+      throw new BadRequestException(
+        `Error al obtener empleados: ${error.message}`,
+      );
     }
   }
 
@@ -139,7 +142,9 @@ export class GestoriaController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al obtener nóminas: ${error.message}`);
+      throw new BadRequestException(
+        `Error al obtener nóminas: ${error.message}`,
+      );
     }
   }
 
@@ -193,7 +198,10 @@ export class GestoriaController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error uploading nómina:', error);
-      if (error instanceof BadRequestException || error instanceof ConflictException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ConflictException
+      ) {
         throw error;
       }
       throw new BadRequestException(`Error al subir nómina: ${error.message}`);
@@ -219,26 +227,36 @@ export class GestoriaController {
       const mes = body.mes ? parseInt(body.mes, 10) : undefined;
       const ano = body.ano ? parseInt(body.ano, 10) : undefined;
       const preview = body.preview === 'true' || body.preview === true;
-      
+
       // Parse forceReplace list (JSON string)
-      let forceReplace: Array<{ pagina: number; codigo: string; nombre: string }> = [];
+      let forceReplace: Array<{
+        pagina: number;
+        codigo: string;
+        nombre: string;
+      }> = [];
       if (body.forceReplace) {
         try {
-          forceReplace = typeof body.forceReplace === 'string' 
-            ? JSON.parse(body.forceReplace) 
-            : body.forceReplace;
+          forceReplace =
+            typeof body.forceReplace === 'string'
+              ? JSON.parse(body.forceReplace)
+              : body.forceReplace;
         } catch (e) {
           this.logger.warn('⚠️ Error parsing forceReplace:', e);
         }
       }
-      
+
       // Parse forceFechaBaja list (JSON string)
-      let forceFechaBaja: Array<{ pagina: number; codigo: string; nombre: string }> = [];
+      let forceFechaBaja: Array<{
+        pagina: number;
+        codigo: string;
+        nombre: string;
+      }> = [];
       if (body.forceFechaBaja) {
         try {
-          forceFechaBaja = typeof body.forceFechaBaja === 'string' 
-            ? JSON.parse(body.forceFechaBaja) 
-            : body.forceFechaBaja;
+          forceFechaBaja =
+            typeof body.forceFechaBaja === 'string'
+              ? JSON.parse(body.forceFechaBaja)
+              : body.forceFechaBaja;
         } catch (e) {
           this.logger.warn('⚠️ Error parsing forceFechaBaja:', e);
         }
@@ -252,7 +270,14 @@ export class GestoriaController {
         throw new BadRequestException('Año inválido');
       }
 
-      const result = await this.gestoriaService.uploadBulkNominas(file, mes, ano, preview, forceReplace, forceFechaBaja);
+      const result = await this.gestoriaService.uploadBulkNominas(
+        file,
+        mes,
+        ano,
+        preview,
+        forceReplace,
+        forceFechaBaja,
+      );
 
       this.logger.log(
         `✅ Bulk upload by ${user?.userId || 'unknown'}: ${result.procesadas}/${result.total_paginas} procesadas`,
@@ -267,7 +292,9 @@ export class GestoriaController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al procesar PDF masivo: ${error.message}`);
+      throw new BadRequestException(
+        `Error al procesar PDF masivo: ${error.message}`,
+      );
     }
   }
 
@@ -293,7 +320,8 @@ export class GestoriaController {
 
       // Loghează accesul (download) - folosim NominasService pentru logging
       const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
-      const empleadoNombre = user?.['NOMBRE / APELLIDOS'] || user?.nombre || nomina.nombre || '';
+      const empleadoNombre =
+        user?.['NOMBRE / APELLIDOS'] || user?.nombre || nomina.nombre || '';
       const ip = req.ip || req.socket.remoteAddress || undefined;
       const userAgent = req.get('user-agent') || undefined;
 
@@ -336,7 +364,9 @@ export class GestoriaController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al descargar nómina: ${error.message}`);
+      throw new BadRequestException(
+        `Error al descargar nómina: ${error.message}`,
+      );
     }
   }
 
@@ -367,7 +397,9 @@ export class GestoriaController {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Error al eliminar nómina: ${error.message}`);
+      throw new BadRequestException(
+        `Error al eliminar nómina: ${error.message}`,
+      );
     }
   }
 
@@ -434,11 +466,7 @@ export class GestoriaController {
    */
   @Get('coste-personal')
   @UseGuards(JwtAuthGuard)
-  async getCostePersonal(
-    @Query('mes') mes: string,
-    @Query('ano') ano: string,
-    @CurrentUser() user: any,
-  ) {
+  async getCostePersonal(@Query('mes') mes: string, @Query('ano') ano: string) {
     try {
       if (!mes || !ano) {
         throw new BadRequestException('Mes y año son requeridos');
@@ -449,7 +477,10 @@ export class GestoriaController {
         throw new BadRequestException('Año inválido');
       }
 
-      const data = await this.gestoriaService.getCostePersonal(mes.toUpperCase(), anoNum);
+      const data = await this.gestoriaService.getCostePersonal(
+        mes.toUpperCase(),
+        anoNum,
+      );
       return { success: true, data };
     } catch (error: any) {
       this.logger.error(`❌ Error obteniendo Coste Personal:`, error);
@@ -466,10 +497,7 @@ export class GestoriaController {
    */
   @Post('coste-personal')
   @UseGuards(JwtAuthGuard)
-  async saveCostePersonal(
-    @Body() body: any,
-    @CurrentUser() user: any,
-  ) {
+  async saveCostePersonal(@Body() body: any) {
     try {
       const result = await this.gestoriaService.saveCostePersonal(body);
       return { success: true, ...result };
@@ -489,12 +517,12 @@ export class GestoriaController {
   @Post('coste-personal/save-from-excel')
   @UseGuards(JwtAuthGuard)
   async saveCostePersonalFromExcel(
-    @Body() body: {
+    @Body()
+    body: {
       mes: string;
       ano: number;
       data: Array<any>;
     },
-    @CurrentUser() user: any,
   ) {
     try {
       const result = await this.gestoriaService.saveCostePersonalFromExcel(
@@ -504,7 +532,10 @@ export class GestoriaController {
       );
       return { success: true, ...result };
     } catch (error: any) {
-      this.logger.error(`❌ Error guardando Coste Personal desde Excel:`, error);
+      this.logger.error(
+        `❌ Error guardando Coste Personal desde Excel:`,
+        error,
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -521,7 +552,6 @@ export class GestoriaController {
   async updateCostePersonalField(
     @Param('id') id: string,
     @Body() body: { field: string; value: number },
-    @CurrentUser() user: any,
   ) {
     try {
       const result = await this.gestoriaService.updateCostePersonalField(
@@ -549,13 +579,13 @@ export class GestoriaController {
       storage: memoryStorage(),
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB per file
       fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
+        if (
+          file.mimetype === 'application/pdf' ||
+          file.originalname.endsWith('.pdf')
+        ) {
           cb(null, true);
         } else {
-          cb(
-            new BadRequestException('Solo se permiten archivos PDF'),
-            false,
-          );
+          cb(new BadRequestException('Solo se permiten archivos PDF'), false);
         }
       },
     }),
@@ -600,12 +630,12 @@ export class GestoriaController {
   @Post('coste-personal/save-from-preview')
   @UseGuards(JwtAuthGuard)
   async saveCostePersonalFromPreview(
-    @Body() body: {
+    @Body()
+    body: {
       mes: string;
       ano: number;
       preview: Array<any>;
     },
-    @CurrentUser() user: any,
   ) {
     try {
       if (!body.mes || !body.ano || !body.preview) {
@@ -620,7 +650,10 @@ export class GestoriaController {
 
       return { success: true, ...result };
     } catch (error: any) {
-      this.logger.error(`❌ Error guardando Coste Personal desde preview:`, error);
+      this.logger.error(
+        `❌ Error guardando Coste Personal desde preview:`,
+        error,
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -636,32 +669,38 @@ export class GestoriaController {
   @UseGuards(JwtAuthGuard)
   async poblarCostePersonalDesdeNominas(
     @Body() body: { mes: string; ano: number; preview?: boolean },
-    @CurrentUser() user: any,
   ) {
     try {
       if (!body.mes || !body.ano) {
         throw new BadRequestException('Mes y año son requeridos');
       }
 
-      const preview = body.preview === true || (typeof body.preview === 'string' && body.preview === 'true');
+      const preview =
+        body.preview === true ||
+        (typeof body.preview === 'string' && body.preview === 'true');
 
       if (preview) {
         // Preview mode - procesează dar nu salvează
-        const result = await this.gestoriaService.previewPoblarCostePersonalDesdeNominas(
-          body.mes,
-          body.ano,
-        );
+        const result =
+          await this.gestoriaService.previewPoblarCostePersonalDesdeNominas(
+            body.mes,
+            body.ano,
+          );
         return { success: true, preview: true, ...result };
       } else {
         // Save mode - procesează și salvează
-        const result = await this.gestoriaService.poblarCostePersonalDesdeNominas(
-          body.mes,
-          body.ano,
-        );
+        const result =
+          await this.gestoriaService.poblarCostePersonalDesdeNominas(
+            body.mes,
+            body.ano,
+          );
         return { success: true, preview: false, ...result };
       }
     } catch (error: any) {
-      this.logger.error(`❌ Error poblando Coste Personal desde nóminas:`, error);
+      this.logger.error(
+        `❌ Error poblando Coste Personal desde nóminas:`,
+        error,
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -674,25 +713,23 @@ export class GestoriaController {
    */
   @Get('coste-personal/buscar-empleado')
   @UseGuards(JwtAuthGuard)
-  async buscarEmpleadoPorNombre(
-    @Query('nombre') nombre: string,
-    @CurrentUser() user: any,
-  ) {
+  async buscarEmpleadoPorNombre(@Query('nombre') nombre: string) {
     try {
       if (!nombre || nombre.trim().length === 0) {
-        return { 
-          encontrado: false, 
-          codigo: null, 
-          nombre_bd: null, 
-          confianza: 0 
+        return {
+          encontrado: false,
+          codigo: null,
+          nombre_bd: null,
+          confianza: 0,
         };
       }
 
-      const empleadoEncontrado = await this.gestoriaService.findEmpleadoFlexible(
-        nombre.trim(),
-        null,
-        null,
-      );
+      const empleadoEncontrado =
+        await this.gestoriaService.findEmpleadoFlexible(
+          nombre.trim(),
+          null,
+          null,
+        );
 
       if (empleadoEncontrado) {
         return {
@@ -712,7 +749,9 @@ export class GestoriaController {
       }
     } catch (error: any) {
       this.logger.error(`❌ Error buscando empleado por nombre:`, error);
-      throw new BadRequestException(`Error al buscar empleado: ${error.message}`);
+      throw new BadRequestException(
+        `Error al buscar empleado: ${error.message}`,
+      );
     }
   }
 
@@ -770,10 +809,19 @@ export class GestoriaController {
         throw new BadRequestException('Mes y año son requeridos');
       }
 
-      const buffer = await this.gestoriaService.exportCostePersonalToExcel(mes, parseInt(ano));
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="Coste_Personal_${mes}_${ano}.xlsx"`);
+      const buffer = await this.gestoriaService.exportCostePersonalToExcel(
+        mes,
+        parseInt(ano),
+      );
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="Coste_Personal_${mes}_${ano}.xlsx"`,
+      );
       res.send(buffer);
     } catch (error: any) {
       this.logger.error(`❌ Error exportando Coste Personal a Excel:`, error);
@@ -800,10 +848,16 @@ export class GestoriaController {
         throw new BadRequestException('Mes y año son requeridos');
       }
 
-      const buffer = await this.gestoriaService.exportCostePersonalToPDF(mes, parseInt(ano));
-      
+      const buffer = await this.gestoriaService.exportCostePersonalToPDF(
+        mes,
+        parseInt(ano),
+      );
+
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="Coste_Personal_${mes}_${ano}.pdf"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="Coste_Personal_${mes}_${ano}.pdf"`,
+      );
       res.send(buffer);
     } catch (error: any) {
       this.logger.error(`❌ Error exportando Coste Personal a PDF:`, error);
@@ -814,4 +868,3 @@ export class GestoriaController {
     }
   }
 }
-

@@ -881,7 +881,7 @@ const [editLoading, setEditLoading] = useState(false);
         }));
       }
     }
-  }, [editForm?.NOMBRE, editForm?.APELLIDO1, editForm?.APELLIDO2]);
+  }, [editForm]);
 
   // Dacă datele principale nu mai încarcă, marcăm UI ready imediat
   // Nu așteptăm fetchClientes - este independent și nu blochează afișarea datelor utilizatorului

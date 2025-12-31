@@ -45,7 +45,7 @@ export class VacacionesService {
     `;
 
     const resultados = await this.prisma.$queryRawUnsafe<any[]>(query);
-    
+
     if (!resultados || resultados.length === 0) {
       // No log warning - algunos grupos (Developer, Supervisor, etc.) no tienen convenio asignado
       return null;
@@ -71,7 +71,8 @@ export class VacacionesService {
       convenio_id: convenioGrupo.convenio_id_real,
       convenio_nombre: convenioGrupo.convenio_nombre,
       dias_vacaciones_anuales: convenioGrupo.dias_vacaciones_anuales || 0,
-      dias_asuntos_propios_anuales: convenioGrupo.dias_asuntos_propios_anuales || 0,
+      dias_asuntos_propios_anuales:
+        convenioGrupo.dias_asuntos_propios_anuales || 0,
     };
   }
 
@@ -202,12 +203,6 @@ export class VacacionesService {
     codigo: string,
     tipo: 'Vacaciones' | 'Asunto Propio',
   ): Promise<number> {
-    // Normalizar tipo: "Asunto Propio" y "Asuntos Propios" son equivalentes
-    const tipoNormalizado =
-      tipo === 'Asunto Propio'
-        ? "('Asunto Propio', 'Asuntos Propios')"
-        : this.escapeSql(tipo);
-
     // Usar query raw para obtener solicitudes aprobadas
     const query =
       tipo === 'Asunto Propio'
@@ -283,16 +278,16 @@ export class VacacionesService {
   }> {
     try {
       // Obtener empleado
-            const empleado = await this.prisma.user.findUnique({
-              where: { CODIGO: codigo },
-              select: {
-                CODIGO: true,
-                GRUPO: true,
-                FECHA_DE_ALTA: true,
-                ESTADO: true,
-                VACACIONES_RESTANTES_ANO_ANTERIOR: true,
-              },
-            });
+      const empleado = await this.prisma.user.findUnique({
+        where: { CODIGO: codigo },
+        select: {
+          CODIGO: true,
+          GRUPO: true,
+          FECHA_DE_ALTA: true,
+          ESTADO: true,
+          VACACIONES_RESTANTES_ANO_ANTERIOR: true,
+        },
+      });
 
       if (!empleado) {
         throw new BadRequestException(
@@ -301,7 +296,9 @@ export class VacacionesService {
       }
 
       // Verificar estado (case-insensitive)
-      const estadoNormalizado = String(empleado.ESTADO || '').toUpperCase().trim();
+      const estadoNormalizado = String(empleado.ESTADO || '')
+        .toUpperCase()
+        .trim();
       if (estadoNormalizado !== 'ACTIVO') {
         this.logger.warn(
           `⚠️ Empleado ${codigo} no está activo (ESTADO: ${empleado.ESTADO})`,
@@ -329,9 +326,10 @@ export class VacacionesService {
       if (!convenio) {
         // Si no hay convenio, retornar valores por defecto (0) sin warning
         // (algunos grupos como Developer, Supervisor no tienen convenio asignado)
-        const restantesAnoAnteriorDefault = empleado.VACACIONES_RESTANTES_ANO_ANTERIOR
-          ? Number(empleado.VACACIONES_RESTANTES_ANO_ANTERIOR)
-          : 0;
+        const restantesAnoAnteriorDefault =
+          empleado.VACACIONES_RESTANTES_ANO_ANTERIOR
+            ? Number(empleado.VACACIONES_RESTANTES_ANO_ANTERIOR)
+            : 0;
         return {
           vacaciones: {
             dias_anuales: 0,
@@ -372,7 +370,9 @@ export class VacacionesService {
 
       // Calcular saldo restante (incluyendo días del año anterior)
       const diasRestantesVacaciones =
-        diasGeneradosVacaciones + restantesAnoAnterior - diasConsumidosVacaciones;
+        diasGeneradosVacaciones +
+        restantesAnoAnterior -
+        diasConsumidosVacaciones;
 
       const diasRestantesAsuntosPropios =
         convenio.dias_asuntos_propios_anuales - diasConsumidosAsuntosPropios;
@@ -396,10 +396,7 @@ export class VacacionesService {
         },
       };
     } catch (error: any) {
-      this.logger.error(
-        `❌ Error calculando saldo para ${codigo}:`,
-        error,
-      );
+      this.logger.error(`❌ Error calculando saldo para ${codigo}:`, error);
       throw new BadRequestException(
         `Error al calcular saldo: ${error.message}`,
       );
@@ -432,10 +429,7 @@ export class VacacionesService {
       // Obtener todos los empleados activos (case-insensitive)
       const empleados = await this.prisma.user.findMany({
         where: {
-          OR: [
-            { ESTADO: 'ACTIVO' },
-            { ESTADO: 'Activo' },
-          ],
+          OR: [{ ESTADO: 'ACTIVO' }, { ESTADO: 'Activo' }],
         },
         select: {
           CODIGO: true,
@@ -459,8 +453,7 @@ export class VacacionesService {
             return {
               codigo: empleado.CODIGO,
               nombre:
-                empleado.NOMBRE_APELLIDOS ||
-                `Empleado ${empleado.CODIGO}`,
+                empleado.NOMBRE_APELLIDOS || `Empleado ${empleado.CODIGO}`,
               grupo: empleado.GRUPO,
               vacaciones: saldo.vacaciones,
               asuntos_propios: saldo.asuntos_propios,
@@ -473,8 +466,7 @@ export class VacacionesService {
             return {
               codigo: empleado.CODIGO,
               nombre:
-                empleado.NOMBRE_APELLIDOS ||
-                `Empleado ${empleado.CODIGO}`,
+                empleado.NOMBRE_APELLIDOS || `Empleado ${empleado.CODIGO}`,
               grupo: empleado.GRUPO,
               vacaciones: {
                 dias_anuales: 0,
@@ -549,10 +541,10 @@ export class VacacionesService {
   async exportEstadisticasExcel(): Promise<Buffer> {
     try {
       const estadisticas = await this.obtenerEstadisticasTodos();
-      
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Estadísticas Solicitudes');
-      
+
       // Headers
       worksheet.columns = [
         { header: 'CODIGO', key: 'codigo', width: 15 },
@@ -561,13 +553,17 @@ export class VacacionesService {
         { header: 'VAC. ANUALES', key: 'vac_anuales', width: 12 },
         { header: 'VAC. GENERADOS', key: 'vac_generados', width: 15 },
         { header: 'VAC. CONSUMIDOS', key: 'vac_consumidos', width: 15 },
-        { header: 'VAC. REST. AÑO PASADO', key: 'vac_rest_ano_pasado', width: 20 },
+        {
+          header: 'VAC. REST. AÑO PASADO',
+          key: 'vac_rest_ano_pasado',
+          width: 20,
+        },
         { header: 'VAC. RESTANTES', key: 'vac_restantes', width: 15 },
         { header: 'ASUNTOS ANUALES', key: 'asuntos_anuales', width: 15 },
         { header: 'ASUNTOS CONSUMIDOS', key: 'asuntos_consumidos', width: 18 },
         { header: 'ASUNTOS RESTANTES', key: 'asuntos_restantes', width: 18 },
       ];
-      
+
       // Style headers
       worksheet.getRow(1).font = { bold: true };
       worksheet.getRow(1).fill = {
@@ -575,7 +571,7 @@ export class VacacionesService {
         pattern: 'solid',
         fgColor: { argb: 'FFE0E0E0' },
       };
-      
+
       // Add data
       estadisticas.forEach((emp) => {
         worksheet.addRow({
@@ -592,27 +588,32 @@ export class VacacionesService {
           asuntos_restantes: emp.asuntos_propios.dias_restantes.toFixed(1),
         });
       });
-      
+
       // Generate buffer
       const buffer = await workbook.xlsx.writeBuffer();
       return Buffer.from(buffer);
     } catch (error: any) {
-      this.logger.error(`❌ Error en exportEstadisticasExcel: ${error.message}`, error.stack);
-      throw new BadRequestException(`Error al exportar Excel: ${error.message}`);
+      this.logger.error(
+        `❌ Error en exportEstadisticasExcel: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error al exportar Excel: ${error.message}`,
+      );
     }
   }
 
   async exportEstadisticasPDF(): Promise<Buffer> {
     try {
       const estadisticas = await this.obtenerEstadisticasTodos();
-      
+
       return new Promise((resolve, reject) => {
-        const doc = new PDFDocument({ 
+        const doc = new PDFDocument({
           size: 'A4',
           layout: 'landscape',
           margin: 50,
         });
-        
+
         const buffers: Buffer[] = [];
         doc.on('data', buffers.push.bind(buffers));
         doc.on('end', () => {
@@ -620,17 +621,31 @@ export class VacacionesService {
           resolve(pdfBuffer);
         });
         doc.on('error', reject);
-        
+
         // Title
-        doc.fontSize(18).text('Estadísticas de Solicitudes', { align: 'center' });
+        doc
+          .fontSize(18)
+          .text('Estadísticas de Solicitudes', { align: 'center' });
         doc.moveDown();
-        
+
         // Table headers
-        const headers = ['CODIGO', 'NOMBRE', 'GRUPO', 'VAC. ANUALES', 'VAC. GEN.', 'VAC. CONS.', 'VAC. REST. AÑO PASADO', 'VAC. REST.', 'ASUNT. ANUALES', 'ASUNT. CONS.', 'ASUNT. REST.'];
+        const headers = [
+          'CODIGO',
+          'NOMBRE',
+          'GRUPO',
+          'VAC. ANUALES',
+          'VAC. GEN.',
+          'VAC. CONS.',
+          'VAC. REST. AÑO PASADO',
+          'VAC. REST.',
+          'ASUNT. ANUALES',
+          'ASUNT. CONS.',
+          'ASUNT. REST.',
+        ];
         const colWidths = [50, 120, 80, 60, 60, 60, 80, 60, 70, 70, 70];
-        let startY = doc.y;
+        const startY = doc.y;
         let currentY = startY;
-        
+
         // Draw header
         doc.fontSize(7).font('Helvetica-Bold');
         let x = 50;
@@ -639,10 +654,10 @@ export class VacacionesService {
           x += colWidths[i];
         });
         currentY += 20;
-        
+
         // Draw rows
         doc.font('Helvetica');
-        estadisticas.forEach((emp, index) => {
+        estadisticas.forEach((emp) => {
           if (currentY > 700) {
             doc.addPage();
             currentY = 50;
@@ -650,13 +665,16 @@ export class VacacionesService {
             x = 50;
             doc.font('Helvetica-Bold');
             headers.forEach((header, i) => {
-              doc.text(header, x, currentY, { width: colWidths[i], align: 'left' });
+              doc.text(header, x, currentY, {
+                width: colWidths[i],
+                align: 'left',
+              });
               x += colWidths[i];
             });
             currentY += 20;
             doc.font('Helvetica');
           }
-          
+
           const row = [
             emp.codigo || '-',
             (emp.nombre || '-').substring(0, 30),
@@ -670,21 +688,25 @@ export class VacacionesService {
             emp.asuntos_propios.dias_consumidos_aprobados.toString(),
             emp.asuntos_propios.dias_restantes.toFixed(1),
           ];
-          
+
           x = 50;
           row.forEach((cell, i) => {
-            doc.fontSize(6).text(cell, x, currentY, { width: colWidths[i], align: 'left' });
+            doc
+              .fontSize(6)
+              .text(cell, x, currentY, { width: colWidths[i], align: 'left' });
             x += colWidths[i];
           });
           currentY += 15;
         });
-        
+
         doc.end();
       });
     } catch (error: any) {
-      this.logger.error(`❌ Error en exportEstadisticasPDF: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error en exportEstadisticasPDF: ${error.message}`,
+        error.stack,
+      );
       throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
   }
 }
-

@@ -2232,7 +2232,7 @@ export default function DocumentosPage() {
                                     throw new Error(errorData.message || 'Error al enviar email');
                                   }
 
-                                  const data = await response.json();
+                                  await response.json();
                                   setNotification({
                                     type: 'success',
                                     title: '✅ Email Enviado',

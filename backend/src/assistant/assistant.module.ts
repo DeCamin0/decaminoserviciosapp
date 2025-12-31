@@ -31,4 +31,3 @@ import { VacacionesModule } from '../vacaciones/vacaciones.module';
   exports: [AssistantService],
 })
 export class AssistantModule {}
-

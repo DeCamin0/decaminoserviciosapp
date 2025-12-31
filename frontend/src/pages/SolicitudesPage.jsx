@@ -1492,7 +1492,7 @@ export default function SolicitudesPage() {
       };
       loadEstadisticas();
     }
-  }, [activeTab, isManager]); // Eliminado estadisticasLoading y callApi de dependencias
+  }, [activeTab, isManager, callApi]);
 
   const handleBajaUploadClick = useCallback(() => {
     if (!isManager) return;

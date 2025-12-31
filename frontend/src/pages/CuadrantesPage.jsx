@@ -2589,9 +2589,12 @@ export default function CuadrantesPage() {
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
                     className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   >
-                    {[2023, 2024, 2025, 2026].map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
+                    {Array.from({ length: 5 }, (_, i) => {
+                      const year = new Date().getFullYear() - 2 + i;
+                      return (
+                        <option key={year} value={year}>{year}</option>
+                      );
+                    })}
                   </select>
                   <button
                     type="button"
@@ -3765,30 +3768,19 @@ export default function CuadrantesPage() {
                     className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   >
                   <option value="">Todos los meses</option>
-                  <option value="2025-01">Enero 2025</option>
-                  <option value="2025-02">Febrero 2025</option>
-                  <option value="2025-03">Marzo 2025</option>
-                  <option value="2025-04">Abril 2025</option>
-                  <option value="2025-05">Mayo 2025</option>
-                  <option value="2025-06">Junio 2025</option>
-                  <option value="2025-07">Julio 2025</option>
-                  <option value="2025-08">Agosto 2025</option>
-                  <option value="2025-09">Septiembre 2025</option>
-                  <option value="2025-10">Octubre 2025</option>
-                  <option value="2025-11">Noviembre 2025</option>
-                  <option value="2025-12">Diciembre 2025</option>
-                  <option value="2026-01">Enero 2026</option>
-                  <option value="2026-02">Febrero 2026</option>
-                  <option value="2026-03">Marzo 2026</option>
-                  <option value="2026-04">Abril 2026</option>
-                  <option value="2026-05">Mayo 2026</option>
-                  <option value="2026-06">Junio 2026</option>
-                  <option value="2026-07">Julio 2026</option>
-                  <option value="2026-08">Agosto 2026</option>
-                  <option value="2026-09">Septiembre 2026</option>
-                  <option value="2026-10">Octubre 2026</option>
-                  <option value="2026-11">Noviembre 2026</option>
-                  <option value="2026-12">Diciembre 2026</option>
+                  {Array.from({ length: 36 }, (_, i) => {
+                    const date = new Date();
+                    date.setMonth(date.getMonth() - i);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                    const value = `${year}-${month}`;
+                    return (
+                      <option key={value} value={value}>
+                        {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+                      </option>
+                    );
+                  })}
                 </select>
                 {selectedMesAno && (
                   <button

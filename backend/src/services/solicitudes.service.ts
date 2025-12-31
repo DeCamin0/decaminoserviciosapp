@@ -134,7 +134,7 @@ export class SolicitudesService {
       const emailData = this.formatSolicitudEmailHtml(solicitudData);
       subject = emailData.subject;
       html = emailData.html;
-      
+
       this.logger.log(
         `📧 [sendSolicitudEmail] Sending email for ${solicitudData.accion} - subject: ${subject}`,
       );
@@ -165,7 +165,7 @@ export class SolicitudesService {
       this.logger.error(
         `❌ [sendSolicitudEmail] Error sending email notification for ${solicitudData.accion} (non-blocking): ${error.message}`,
       );
-      
+
       // Salvează și email-urile eșuate în BD
       try {
         await this.sentEmailsService.saveSentEmail({
@@ -173,7 +173,9 @@ export class SolicitudesService {
           recipientType: 'gestoria',
           recipientEmail: this.EMAIL_RECIPIENT,
           recipientName: 'Solicitudes',
-          subject: subject || `Solicitud ${solicitudData.accion} - ${solicitudData.codigo}`,
+          subject:
+            subject ||
+            `Solicitud ${solicitudData.accion} - ${solicitudData.codigo}`,
           message: html || '',
           status: 'failed',
           errorMessage: error.message || String(error),
@@ -183,7 +185,7 @@ export class SolicitudesService {
           `⚠️ [sendSolicitudEmail] Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
         );
       }
-      
+
       // Nu aruncăm eroarea pentru a nu opri flow-ul principal
     }
   }

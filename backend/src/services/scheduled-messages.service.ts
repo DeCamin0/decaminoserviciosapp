@@ -38,7 +38,9 @@ export class ScheduledMessagesService {
       },
     });
 
-    this.logger.log(`✅ Mesaj automat creat: ${scheduledMessage.id} - ${scheduledMessage.name}`);
+    this.logger.log(
+      `✅ Mesaj automat creat: ${scheduledMessage.id} - ${scheduledMessage.name}`,
+    );
     return scheduledMessage;
   }
 
@@ -85,12 +87,16 @@ export class ScheduledMessagesService {
   ): Promise<ScheduledMessage> {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
-    if (data.recipientType !== undefined) updateData.recipient_type = data.recipientType;
-    if (data.recipientId !== undefined) updateData.recipient_id = data.recipientId;
-    if (data.recipientEmail !== undefined) updateData.recipient_email = data.recipientEmail;
+    if (data.recipientType !== undefined)
+      updateData.recipient_type = data.recipientType;
+    if (data.recipientId !== undefined)
+      updateData.recipient_id = data.recipientId;
+    if (data.recipientEmail !== undefined)
+      updateData.recipient_email = data.recipientEmail;
     if (data.subject !== undefined) updateData.subject = data.subject;
     if (data.message !== undefined) updateData.message = data.message;
-    if (data.additionalMessage !== undefined) updateData.additional_message = data.additionalMessage;
+    if (data.additionalMessage !== undefined)
+      updateData.additional_message = data.additionalMessage;
     if (data.isActive !== undefined) updateData.is_active = data.isActive;
     if (data.startDate !== undefined) updateData.start_date = data.startDate;
     if (data.endDate !== undefined) updateData.end_date = data.endDate;
@@ -119,17 +125,25 @@ export class ScheduledMessagesService {
    * (active, între startDate și endDate, și nu au fost trimise astăzi)
    * @param ignoreTimeCheck - Dacă este true, ignoră verificarea orei (pentru testare manuală)
    */
-  async getMessagesToSendToday(ignoreTimeCheck: boolean = false): Promise<ScheduledMessage[]> {
+  async getMessagesToSendToday(
+    ignoreTimeCheck: boolean = false,
+  ): Promise<ScheduledMessage[]> {
     // Folosim doar partea de dată (YYYY-MM-DD) pentru comparații, ignorând ora și timezone-ul
     const today = new Date();
-    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayDateOnly = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
     const todayStart = new Date(todayDateOnly);
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(todayDateOnly);
     todayEnd.setHours(23, 59, 59, 999);
 
     // Log pentru debugging
-    this.logger.log(`🔍 Căutare mesaje automate - today: ${todayStart.toISOString()} - ${todayEnd.toISOString()}, ignoreTimeCheck: ${ignoreTimeCheck}`);
+    this.logger.log(
+      `🔍 Căutare mesaje automate - today: ${todayStart.toISOString()} - ${todayEnd.toISOString()}, ignoreTimeCheck: ${ignoreTimeCheck}`,
+    );
 
     // Mai întâi, obține toate mesajele active pentru debugging
     const allActiveMessages = await this.prisma.scheduledMessage.findMany({
@@ -138,10 +152,14 @@ export class ScheduledMessagesService {
       },
     });
 
-    this.logger.log(`📊 Total mesaje active în BD: ${allActiveMessages.length}`);
+    this.logger.log(
+      `📊 Total mesaje active în BD: ${allActiveMessages.length}`,
+    );
     if (allActiveMessages.length > 0) {
       allActiveMessages.forEach((msg) => {
-        this.logger.log(`  - ${msg.name}: start_date=${msg.start_date}, end_date=${msg.end_date}, last_sent_at=${msg.last_sent_at}`);
+        this.logger.log(
+          `  - ${msg.name}: start_date=${msg.start_date}, end_date=${msg.end_date}, last_sent_at=${msg.last_sent_at}`,
+        );
       });
     }
 
@@ -156,41 +174,67 @@ export class ScheduledMessagesService {
     const messages = allMessages.filter((msg) => {
       const startDate = new Date(msg.start_date);
       const endDate = new Date(msg.end_date);
-      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-      const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-      const todayDateOnlyCompare = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const startDateOnly = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth(),
+        startDate.getDate(),
+      );
+      const endDateOnly = new Date(
+        endDate.getFullYear(),
+        endDate.getMonth(),
+        endDate.getDate(),
+      );
+      const todayDateOnlyCompare = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+      );
 
       // Verifică dacă data de astăzi este între start_date și end_date
-      const isInPeriod = startDateOnly <= todayDateOnlyCompare && endDateOnly >= todayDateOnlyCompare;
+      const isInPeriod =
+        startDateOnly <= todayDateOnlyCompare &&
+        endDateOnly >= todayDateOnlyCompare;
 
       // Verifică dacă nu a fost trimis astăzi
       let notSentToday = true;
       if (msg.last_sent_at) {
         const lastSentDate = new Date(msg.last_sent_at);
-        const lastSentDateOnly = new Date(lastSentDate.getFullYear(), lastSentDate.getMonth(), lastSentDate.getDate());
+        const lastSentDateOnly = new Date(
+          lastSentDate.getFullYear(),
+          lastSentDate.getMonth(),
+          lastSentDate.getDate(),
+        );
         notSentToday = lastSentDateOnly < todayDateOnlyCompare;
       }
 
       return isInPeriod && notSentToday;
     });
 
-    this.logger.log(`📋 Mesaje găsite după filtrare (active, în perioadă, ne-trimise astăzi): ${messages.length}`);
+    this.logger.log(
+      `📋 Mesaje găsite după filtrare (active, în perioadă, ne-trimise astăzi): ${messages.length}`,
+    );
 
     // Dacă ignorăm verificarea orei (pentru testare manuală), returnăm toate mesajele
     if (ignoreTimeCheck) {
-      this.logger.log(`📋 Găsite ${messages.length} mesaje automate (ignorând verificarea orei pentru testare)`);
+      this.logger.log(
+        `📋 Găsite ${messages.length} mesaje automate (ignorând verificarea orei pentru testare)`,
+      );
       return messages;
     }
 
     // Filtrează mesajele care trebuie trimise la ora curentă
     // Folosim timezone-ul Europe/Madrid pentru comparare (Spania)
     const currentTime = new Date();
-    const madridTime = new Date(currentTime.toLocaleString('en-US', { timeZone: 'Europe/Madrid' }));
+    const madridTime = new Date(
+      currentTime.toLocaleString('en-US', { timeZone: 'Europe/Madrid' }),
+    );
     const currentHour = madridTime.getHours();
     const currentMinute = madridTime.getMinutes();
     const currentTimeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-    
-    this.logger.log(`🕐 Ora curentă (UTC): ${currentTime.getHours()}:${String(currentTime.getMinutes()).padStart(2, '0')}, Ora curentă (Madrid): ${currentTimeString}`);
+
+    this.logger.log(
+      `🕐 Ora curentă (UTC): ${currentTime.getHours()}:${String(currentTime.getMinutes()).padStart(2, '0')}, Ora curentă (Madrid): ${currentTimeString}`,
+    );
 
     const filtered = messages.filter((msg) => {
       if (!msg.send_time) {
@@ -198,16 +242,19 @@ export class ScheduledMessagesService {
         return false;
       }
       const [msgHour, msgMinute] = msg.send_time.split(':').map(Number);
-      const isEligible = (
+      const isEligible =
         currentHour > msgHour ||
-        (currentHour === msgHour && currentMinute >= msgMinute)
+        (currentHour === msgHour && currentMinute >= msgMinute);
+      this.logger.log(
+        `  - Mesaj "${msg.name}": send_time=${msg.send_time}, ora curentă=${currentTimeString}, eligibil=${isEligible}`,
       );
-      this.logger.log(`  - Mesaj "${msg.name}": send_time=${msg.send_time}, ora curentă=${currentTimeString}, eligibil=${isEligible}`);
       // Verifică dacă ora curentă este >= ora de trimitere
       return isEligible;
     });
 
-    this.logger.log(`📋 Găsite ${messages.length} mesaje automate, ${filtered.length} eligibile pentru trimitere la ora ${currentTimeString}`);
+    this.logger.log(
+      `📋 Găsite ${messages.length} mesaje automate, ${filtered.length} eligibile pentru trimitere la ora ${currentTimeString}`,
+    );
     return filtered;
   }
 
@@ -221,4 +268,3 @@ export class ScheduledMessagesService {
     });
   }
 }
-

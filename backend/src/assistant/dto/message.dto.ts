@@ -18,4 +18,3 @@ export class AssistantResponseDto {
   escalado?: boolean;
   ticket_id?: string;
 }
-

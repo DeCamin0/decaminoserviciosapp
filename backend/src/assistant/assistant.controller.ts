@@ -36,7 +36,8 @@ export class AssistantController {
       usuario: {
         id: body.usuario.id || currentUser?.userId || 'N/A',
         nombre: body.usuario.nombre || currentUser?.empleadoNombre || 'Usuario',
-        rol: body.usuario.rol || currentUser?.GRUPO || currentUser?.role || null,
+        rol:
+          body.usuario.rol || currentUser?.GRUPO || currentUser?.role || null,
       },
     };
 
@@ -46,4 +47,3 @@ export class AssistantController {
     return response;
   }
 }
-

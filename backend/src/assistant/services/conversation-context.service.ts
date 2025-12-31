@@ -37,8 +37,10 @@ export class ConversationContextService {
     };
 
     this.contexts.set(userId, context);
-    this.logger.log(`💾 Context salvat pentru ${userId}: intent=${intent}, entities=${JSON.stringify(entities)}`);
-    
+    this.logger.log(
+      `💾 Context salvat pentru ${userId}: intent=${intent}, entities=${JSON.stringify(entities)}`,
+    );
+
     // Cleanup automat pentru contexte expirate
     this.cleanupExpiredContexts();
   }
@@ -48,7 +50,7 @@ export class ConversationContextService {
    */
   getContext(userId: string): ConversationContext | null {
     const context = this.contexts.get(userId);
-    
+
     if (!context) {
       return null;
     }
@@ -74,14 +76,16 @@ export class ConversationContextService {
     currentIntent: IntentType,
   ): IntentResult['entidades'] | null {
     const context = this.getContext(userId);
-    
+
     if (!context) {
       return currentEntities;
     }
 
     // Dacă intent-ul curent este diferit de ultimul, nu folosim contextul
     if (context.lastIntent !== currentIntent) {
-      this.logger.log(`🔄 Intent diferit (${currentIntent} vs ${context.lastIntent}), nu folosim context`);
+      this.logger.log(
+        `🔄 Intent diferit (${currentIntent} vs ${context.lastIntent}), nu folosim context`,
+      );
       return currentEntities;
     }
 
@@ -93,7 +97,9 @@ export class ConversationContextService {
 
     // Dacă nu avem entități în întrebarea curentă, folosim entitățile din context
     if (context.lastEntities && Object.keys(context.lastEntities).length > 0) {
-      this.logger.log(`📋 Folosim entități din context: ${JSON.stringify(context.lastEntities)}`);
+      this.logger.log(
+        `📋 Folosim entități din context: ${JSON.stringify(context.lastEntities)}`,
+      );
       return context.lastEntities;
     }
 
@@ -103,16 +109,25 @@ export class ConversationContextService {
   /**
    * Verifică dacă o întrebare este un follow-up (nu are entități specifice dar are context)
    */
-  isFollowUpQuestion(userId: string, currentIntent: IntentType, currentEntities: IntentResult['entidades'] | null): boolean {
+  isFollowUpQuestion(
+    userId: string,
+    currentIntent: IntentType,
+    currentEntities: IntentResult['entidades'] | null,
+  ): boolean {
     const context = this.getContext(userId);
-    
+
     if (!context) {
       return false;
     }
 
     // Dacă intent-ul este același și nu avem entități noi, e probabil un follow-up
-    if (context.lastIntent === currentIntent && (!currentEntities || Object.keys(currentEntities).length === 0)) {
-      this.logger.log(`🔗 Detectat follow-up pentru ${userId}: intent=${currentIntent}`);
+    if (
+      context.lastIntent === currentIntent &&
+      (!currentEntities || Object.keys(currentEntities).length === 0)
+    ) {
+      this.logger.log(
+        `🔗 Detectat follow-up pentru ${userId}: intent=${currentIntent}`,
+      );
       return true;
     }
 
@@ -167,4 +182,3 @@ export class ConversationContextService {
     };
   }
 }
-

@@ -367,7 +367,7 @@ const EmployeePDF = ({ employeeData, createdBy }) => {
         {/* Footer compact */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            © 2025 DeCamino Servicios Auxiliares - Generado automáticamente
+            © {new Date().getFullYear()} DeCamino Servicios Auxiliares - Generado automáticamente
           </Text>
         </View>
       </Page>

@@ -20,24 +20,29 @@ export class EmpleadosService {
    */
   getFormattedNombre(empleado: any): string {
     // If confidence is 0 (failed) or new columns are not available, use original
-    const confianza = empleado.NOMBRE_SPLIT_CONFIANZA ?? empleado.nombre_split_confianza ?? 2;
+    const confianza =
+      empleado.NOMBRE_SPLIT_CONFIANZA ?? empleado.nombre_split_confianza ?? 2;
     const nombre = empleado.NOMBRE ?? empleado.nombre;
     const apellido1 = empleado.APELLIDO1 ?? empleado.apellido1;
     const apellido2 = empleado.APELLIDO2 ?? empleado.apellido2;
-    
+
     // Use new columns if confidence is good (1 or 2) and they exist
     if (confianza > 0 && nombre) {
-      const parts = [nombre, apellido1, apellido2].filter(p => p && p.trim() !== '');
+      const parts = [nombre, apellido1, apellido2].filter(
+        (p) => p && p.trim() !== '',
+      );
       if (parts.length > 0) {
         return parts.join(' ');
       }
     }
-    
+
     // Fallback to original column
-    return empleado['NOMBRE / APELLIDOS'] ?? 
-           empleado.NOMBRE_APELLIDOS ?? 
-           empleado.CODIGO ?? 
-           'Unknown';
+    return (
+      empleado['NOMBRE / APELLIDOS'] ??
+      empleado.NOMBRE_APELLIDOS ??
+      empleado.CODIGO ??
+      'Unknown'
+    );
   }
 
   /**
@@ -93,21 +98,28 @@ export class EmpleadosService {
 
     try {
       const results = await this.prisma.$queryRawUnsafe<any[]>(query);
-      this.logger.log(`✅ Estadísticas empleados retornó ${results?.length || 0} resultados`);
+      this.logger.log(
+        `✅ Estadísticas empleados retornó ${results?.length || 0} resultados`,
+      );
       return results || [];
     } catch (error: any) {
-      this.logger.error(`❌ Error en getEstadisticasEmpleados: ${error.message}`, error.stack);
-      throw new BadRequestException(`Error al obtener estadísticas: ${error.message}`);
+      this.logger.error(
+        `❌ Error en getEstadisticasEmpleados: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error al obtener estadísticas: ${error.message}`,
+      );
     }
   }
 
   async exportEstadisticasEmpleadosExcel(): Promise<Buffer> {
     try {
       const estadisticas = await this.getEstadisticasEmpleados();
-      
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Estadísticas Empleados');
-      
+
       // Headers
       worksheet.columns = [
         { header: 'CODIGO', key: 'CODIGO', width: 15 },
@@ -122,7 +134,7 @@ export class EmpleadosService {
         { header: 'CENTRO ASIGNADO', key: 'tiene_centro', width: 15 },
         { header: 'DETALLES FALTANTES', key: 'detalles_faltantes', width: 50 },
       ];
-      
+
       // Style headers
       worksheet.getRow(1).font = { bold: true };
       worksheet.getRow(1).fill = {
@@ -130,7 +142,7 @@ export class EmpleadosService {
         pattern: 'solid',
         fgColor: { argb: 'FFE0E0E0' },
       };
-      
+
       // Add data
       estadisticas.forEach((emp) => {
         worksheet.addRow({
@@ -147,27 +159,32 @@ export class EmpleadosService {
           detalles_faltantes: emp.detalles_faltantes || '-',
         });
       });
-      
+
       // Generate buffer
       const buffer = await workbook.xlsx.writeBuffer();
       return Buffer.from(buffer);
     } catch (error: any) {
-      this.logger.error(`❌ Error en exportEstadisticasEmpleadosExcel: ${error.message}`, error.stack);
-      throw new BadRequestException(`Error al exportar Excel: ${error.message}`);
+      this.logger.error(
+        `❌ Error en exportEstadisticasEmpleadosExcel: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error al exportar Excel: ${error.message}`,
+      );
     }
   }
 
   async exportEstadisticasEmpleadosPDF(): Promise<Buffer> {
     try {
       const estadisticas = await this.getEstadisticasEmpleados();
-      
+
       return new Promise((resolve, reject) => {
-        const doc = new PDFDocument({ 
+        const doc = new PDFDocument({
           size: 'A4',
           layout: 'landscape',
           margin: 50,
         });
-        
+
         const buffers: Buffer[] = [];
         doc.on('data', buffers.push.bind(buffers));
         doc.on('end', () => {
@@ -175,17 +192,29 @@ export class EmpleadosService {
           resolve(pdfBuffer);
         });
         doc.on('error', reject);
-        
+
         // Title
         doc.fontSize(18).text('Estadísticas de Empleados', { align: 'center' });
         doc.moveDown();
-        
+
         // Table headers
-        const headers = ['CODIGO', 'NOMBRE', 'EMAIL', 'ESTADO', 'FECHA ALTA', 'CENTRO', 'GRUPO', 'CUADRANTE', 'HORARIO', 'CENTRO', 'DETALLES'];
+        const headers = [
+          'CODIGO',
+          'NOMBRE',
+          'EMAIL',
+          'ESTADO',
+          'FECHA ALTA',
+          'CENTRO',
+          'GRUPO',
+          'CUADRANTE',
+          'HORARIO',
+          'CENTRO',
+          'DETALLES',
+        ];
         const colWidths = [60, 120, 120, 60, 70, 120, 80, 60, 60, 60, 120];
-        let startY = doc.y;
+        const startY = doc.y;
         let currentY = startY;
-        
+
         // Draw header
         doc.fontSize(8).font('Helvetica-Bold');
         let x = 50;
@@ -194,10 +223,10 @@ export class EmpleadosService {
           x += colWidths[i];
         });
         currentY += 20;
-        
+
         // Draw rows
         doc.font('Helvetica');
-        estadisticas.forEach((emp, index) => {
+        estadisticas.forEach((emp) => {
           if (currentY > 700) {
             doc.addPage();
             currentY = 50;
@@ -205,13 +234,16 @@ export class EmpleadosService {
             x = 50;
             doc.font('Helvetica-Bold');
             headers.forEach((header, i) => {
-              doc.text(header, x, currentY, { width: colWidths[i], align: 'left' });
+              doc.text(header, x, currentY, {
+                width: colWidths[i],
+                align: 'left',
+              });
               x += colWidths[i];
             });
             currentY += 20;
             doc.font('Helvetica');
           }
-          
+
           const row = [
             emp.CODIGO || '-',
             (emp.nombre || '-').substring(0, 25),
@@ -225,19 +257,24 @@ export class EmpleadosService {
             emp.tiene_centro || 'No',
             (emp.detalles_faltantes || '-').substring(0, 20),
           ];
-          
+
           x = 50;
           row.forEach((cell, i) => {
-            doc.fontSize(7).text(cell, x, currentY, { width: colWidths[i], align: 'left' });
+            doc
+              .fontSize(7)
+              .text(cell, x, currentY, { width: colWidths[i], align: 'left' });
             x += colWidths[i];
           });
           currentY += 15;
         });
-        
+
         doc.end();
       });
     } catch (error: any) {
-      this.logger.error(`❌ Error en exportEstadisticasEmpleadosPDF: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error en exportEstadisticasEmpleadosPDF: ${error.message}`,
+        error.stack,
+      );
       throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
   }
@@ -489,7 +526,7 @@ export class EmpleadosService {
           ${this.escapeSql(empleadoData.NOMBRE || null)},
           ${this.escapeSql(empleadoData.APELLIDO1 || null)},
           ${this.escapeSql(empleadoData.APELLIDO2 || null)},
-          ${empleadoData.NOMBRE_SPLIT_CONFIANZA !== undefined ? empleadoData.NOMBRE_SPLIT_CONFIANZA : (empleadoData.NOMBRE || empleadoData.APELLIDO1 || empleadoData.APELLIDO2 ? 2 : 0)},
+          ${empleadoData.NOMBRE_SPLIT_CONFIANZA !== undefined ? empleadoData.NOMBRE_SPLIT_CONFIANZA : empleadoData.NOMBRE || empleadoData.APELLIDO1 || empleadoData.APELLIDO2 ? 2 : 0},
           ${this.escapeSql(empleadoData.NACIONALIDAD || '')},
           ${this.escapeSql(empleadoData.DIRECCION || '')},
           ${this.escapeSql(empleadoData['D.N.I. / NIE'] || '')},
@@ -595,26 +632,48 @@ export class EmpleadosService {
       // IMPORTANT: Salvăm și stringuri goale pentru a permite ștergerea câmpurilor
       const nombreFields: string[] = [];
       if (empleadoData.NOMBRE !== undefined) {
-        const nombreValue = empleadoData.NOMBRE === '' || empleadoData.NOMBRE === null ? 'NULL' : this.escapeSql(empleadoData.NOMBRE);
+        const nombreValue =
+          empleadoData.NOMBRE === '' || empleadoData.NOMBRE === null
+            ? 'NULL'
+            : this.escapeSql(empleadoData.NOMBRE);
         nombreFields.push(`\`NOMBRE\` = ${nombreValue}`);
-        this.logger.log(`🔍 [updateEmpleado] NOMBRE va fi actualizat: ${empleadoData.NOMBRE}`);
+        this.logger.log(
+          `🔍 [updateEmpleado] NOMBRE va fi actualizat: ${empleadoData.NOMBRE}`,
+        );
       }
       if (empleadoData.APELLIDO1 !== undefined) {
-        const apellido1Value = empleadoData.APELLIDO1 === '' || empleadoData.APELLIDO1 === null ? 'NULL' : this.escapeSql(empleadoData.APELLIDO1);
+        const apellido1Value =
+          empleadoData.APELLIDO1 === '' || empleadoData.APELLIDO1 === null
+            ? 'NULL'
+            : this.escapeSql(empleadoData.APELLIDO1);
         nombreFields.push(`\`APELLIDO1\` = ${apellido1Value}`);
-        this.logger.log(`🔍 [updateEmpleado] APELLIDO1 va fi actualizat: ${empleadoData.APELLIDO1}`);
+        this.logger.log(
+          `🔍 [updateEmpleado] APELLIDO1 va fi actualizat: ${empleadoData.APELLIDO1}`,
+        );
       }
       if (empleadoData.APELLIDO2 !== undefined) {
-        const apellido2Value = empleadoData.APELLIDO2 === '' || empleadoData.APELLIDO2 === null ? 'NULL' : this.escapeSql(empleadoData.APELLIDO2);
+        const apellido2Value =
+          empleadoData.APELLIDO2 === '' || empleadoData.APELLIDO2 === null
+            ? 'NULL'
+            : this.escapeSql(empleadoData.APELLIDO2);
         nombreFields.push(`\`APELLIDO2\` = ${apellido2Value}`);
-        this.logger.log(`🔍 [updateEmpleado] APELLIDO2 va fi actualizat: ${empleadoData.APELLIDO2}`);
+        this.logger.log(
+          `🔍 [updateEmpleado] APELLIDO2 va fi actualizat: ${empleadoData.APELLIDO2}`,
+        );
       }
       if (empleadoData.NOMBRE_SPLIT_CONFIANZA !== undefined) {
-        nombreFields.push(`\`NOMBRE_SPLIT_CONFIANZA\` = ${empleadoData.NOMBRE_SPLIT_CONFIANZA ?? 0}`);
-        this.logger.log(`🔍 [updateEmpleado] NOMBRE_SPLIT_CONFIANZA va fi actualizat: ${empleadoData.NOMBRE_SPLIT_CONFIANZA}`);
+        nombreFields.push(
+          `\`NOMBRE_SPLIT_CONFIANZA\` = ${empleadoData.NOMBRE_SPLIT_CONFIANZA ?? 0}`,
+        );
+        this.logger.log(
+          `🔍 [updateEmpleado] NOMBRE_SPLIT_CONFIANZA va fi actualizat: ${empleadoData.NOMBRE_SPLIT_CONFIANZA}`,
+        );
       }
-      const nombreFieldsUpdate = nombreFields.length > 0 ? nombreFields.join(', ') + ',' : '';
-      this.logger.log(`🔍 [updateEmpleado] nombreFieldsUpdate: ${nombreFieldsUpdate}`);
+      const nombreFieldsUpdate =
+        nombreFields.length > 0 ? nombreFields.join(', ') + ',' : '';
+      this.logger.log(
+        `🔍 [updateEmpleado] nombreFieldsUpdate: ${nombreFieldsUpdate}`,
+      );
 
       const updateQuery = `
         UPDATE DatosEmpleados SET
@@ -685,23 +744,32 @@ export class EmpleadosService {
 
       // Dacă avem cel puțin un câmp actualizat, construim numele complet
       let nombreCompleto = null;
-      if (data.NOMBRE !== undefined || data.APELLIDO1 !== undefined || data.APELLIDO2 !== undefined) {
+      if (
+        data.NOMBRE !== undefined ||
+        data.APELLIDO1 !== undefined ||
+        data.APELLIDO2 !== undefined
+      ) {
         // Citim valorile actuale din DB pentru a combina cu noile valori
         const empleadoActual = await this.getEmpleadoByCodigo(codigo);
-        
+
         // Folosim valorile noi dacă sunt furnizate, altfel valorile existente
-        const nombreFinal = data.NOMBRE !== undefined 
-          ? (data.NOMBRE || '').trim() 
-          : (empleadoActual?.NOMBRE || '').trim();
-        const apellido1Final = data.APELLIDO1 !== undefined 
-          ? (data.APELLIDO1 || '').trim() 
-          : (empleadoActual?.APELLIDO1 || '').trim();
-        const apellido2Final = data.APELLIDO2 !== undefined 
-          ? (data.APELLIDO2 || '').trim() 
-          : (empleadoActual?.APELLIDO2 || '').trim();
-        
+        const nombreFinal =
+          data.NOMBRE !== undefined
+            ? (data.NOMBRE || '').trim()
+            : (empleadoActual?.NOMBRE || '').trim();
+        const apellido1Final =
+          data.APELLIDO1 !== undefined
+            ? (data.APELLIDO1 || '').trim()
+            : (empleadoActual?.APELLIDO1 || '').trim();
+        const apellido2Final =
+          data.APELLIDO2 !== undefined
+            ? (data.APELLIDO2 || '').trim()
+            : (empleadoActual?.APELLIDO2 || '').trim();
+
         // Construim numele complet: NOMBRE APELLIDO1 APELLIDO2 (fără valorile goale)
-        const partsFinal = [nombreFinal, apellido1Final, apellido2Final].filter(part => part && part !== '');
+        const partsFinal = [nombreFinal, apellido1Final, apellido2Final].filter(
+          (part) => part && part !== '',
+        );
         nombreCompleto = partsFinal.length > 0 ? partsFinal.join(' ') : null;
       }
 
@@ -709,19 +777,27 @@ export class EmpleadosService {
         updates.push(`\`NOMBRE\` = ${this.escapeSql(data.NOMBRE || null)}`);
       }
       if (data.APELLIDO1 !== undefined) {
-        updates.push(`\`APELLIDO1\` = ${this.escapeSql(data.APELLIDO1 || null)}`);
+        updates.push(
+          `\`APELLIDO1\` = ${this.escapeSql(data.APELLIDO1 || null)}`,
+        );
       }
       if (data.APELLIDO2 !== undefined) {
-        updates.push(`\`APELLIDO2\` = ${this.escapeSql(data.APELLIDO2 || null)}`);
+        updates.push(
+          `\`APELLIDO2\` = ${this.escapeSql(data.APELLIDO2 || null)}`,
+        );
       }
       if (data.NOMBRE_SPLIT_CONFIANZA !== undefined) {
-        updates.push(`\`NOMBRE_SPLIT_CONFIANZA\` = ${data.NOMBRE_SPLIT_CONFIANZA}`);
+        updates.push(
+          `\`NOMBRE_SPLIT_CONFIANZA\` = ${data.NOMBRE_SPLIT_CONFIANZA}`,
+        );
       }
 
       // Actualizăm și coloana originală NOMBRE / APELLIDOS cu numele complet formatat
       // în ordinea corectă: NOMBRE APELLIDO1 APELLIDO2
       if (nombreCompleto !== null) {
-        updates.push(`\`NOMBRE / APELLIDOS\` = ${this.escapeSql(nombreCompleto)}`);
+        updates.push(
+          `\`NOMBRE / APELLIDOS\` = ${this.escapeSql(nombreCompleto)}`,
+        );
       }
 
       if (updates.length === 0) {
@@ -736,14 +812,19 @@ export class EmpleadosService {
 
       await this.prisma.$executeRawUnsafe(updateQuery);
 
-      this.logger.log(`✅ Câmpuri separate actualizate pentru empleado ${codigo}, nombre completo: ${nombreCompleto || '(sin cambios)'}`);
+      this.logger.log(
+        `✅ Câmpuri separate actualizate pentru empleado ${codigo}, nombre completo: ${nombreCompleto || '(sin cambios)'}`,
+      );
 
       return {
         success: true,
         codigo: codigo,
       };
     } catch (error: any) {
-      this.logger.error(`❌ Eroare la actualizarea câmpurilor separate pentru ${codigo}:`, error);
+      this.logger.error(
+        `❌ Eroare la actualizarea câmpurilor separate pentru ${codigo}:`,
+        error,
+      );
       throw new BadRequestException(
         `Eroare la actualizarea câmpurilor separate: ${error.message}`,
       );
@@ -868,23 +949,23 @@ export class EmpleadosService {
   }): Promise<{ success: true; id: string }> {
     try {
       // Formatează modificările (similar cu n8n Code node)
-      let camposModificados = data.CAMPO_MODIFICADO.split(',')
+      const camposModificados = data.CAMPO_MODIFICADO.split(',')
         .map((c) => c.trim())
         .filter((c) => c);
-      let valoresAnteriores = data.VALOR_ANTERIOR.split(',')
+      const valoresAnteriores = data.VALOR_ANTERIOR.split(',')
         .map((v) => v.trim())
         .filter((v) => v !== '');
-      let valoresNuevos = data.VALOR_NUEVO.split(',')
+      const valoresNuevos = data.VALOR_NUEVO.split(',')
         .map((v) => v.trim())
         .filter((v) => v !== '');
 
       // Adaugă câmpurile separate dacă există și sunt modificate
       if (data.NOMBRE_SEPARADO || data.APELLIDO1 || data.APELLIDO2) {
         // Verifică dacă NOMBRE / APELLIDOS este în lista de câmpuri modificate
-        const nombreIndex = camposModificados.findIndex(c => 
-          c === 'NOMBRE / APELLIDOS' || c === 'NOMBRE_APELLIDOS'
+        const nombreIndex = camposModificados.findIndex(
+          (c) => c === 'NOMBRE / APELLIDOS' || c === 'NOMBRE_APELLIDOS',
         );
-        
+
         if (nombreIndex >= 0) {
           // Dacă NOMBRE / APELLIDOS este modificat, adaugă și câmpurile separate
           if (data.NOMBRE_SEPARADO) {
@@ -998,33 +1079,54 @@ export class EmpleadosService {
       if (data.campo === 'NOMBRE / APELLIDOS') {
         // Verificăm dacă există câmpurile separate în cambio
         // Citim câmpurile separate folosind Prisma Client
-        const cambioDetails = await this.prisma.solicitudesCambiosPersonales.findUnique({
-          where: { id: data.id },
-          select: {
-            NOMBRE_SEPARADO: true,
-            APELLIDO1: true,
-            APELLIDO2: true,
-            NOMBRE_SPLIT_CONFIANZA: true,
-          },
-        });
+        const cambioDetails =
+          await this.prisma.solicitudesCambiosPersonales.findUnique({
+            where: { id: data.id },
+            select: {
+              NOMBRE_SEPARADO: true,
+              APELLIDO1: true,
+              APELLIDO2: true,
+              NOMBRE_SPLIT_CONFIANZA: true,
+            },
+          });
 
         // Construim lista de câmpuri de actualizat
         const setClauses: string[] = [
-          `\`${campoName}\` = ${this.escapeSql(data.valor)}`
+          `\`${campoName}\` = ${this.escapeSql(data.valor)}`,
         ];
 
         // Adăugăm câmpurile separate dacă există
-        if (cambioDetails?.NOMBRE_SEPARADO !== undefined && cambioDetails.NOMBRE_SEPARADO !== null) {
-          setClauses.push(`\`NOMBRE\` = ${this.escapeSql(cambioDetails.NOMBRE_SEPARADO)}`);
+        if (
+          cambioDetails?.NOMBRE_SEPARADO !== undefined &&
+          cambioDetails.NOMBRE_SEPARADO !== null
+        ) {
+          setClauses.push(
+            `\`NOMBRE\` = ${this.escapeSql(cambioDetails.NOMBRE_SEPARADO)}`,
+          );
         }
-        if (cambioDetails?.APELLIDO1 !== undefined && cambioDetails.APELLIDO1 !== null) {
-          setClauses.push(`\`APELLIDO1\` = ${this.escapeSql(cambioDetails.APELLIDO1)}`);
+        if (
+          cambioDetails?.APELLIDO1 !== undefined &&
+          cambioDetails.APELLIDO1 !== null
+        ) {
+          setClauses.push(
+            `\`APELLIDO1\` = ${this.escapeSql(cambioDetails.APELLIDO1)}`,
+          );
         }
-        if (cambioDetails?.APELLIDO2 !== undefined && cambioDetails.APELLIDO2 !== null) {
-          setClauses.push(`\`APELLIDO2\` = ${this.escapeSql(cambioDetails.APELLIDO2)}`);
+        if (
+          cambioDetails?.APELLIDO2 !== undefined &&
+          cambioDetails.APELLIDO2 !== null
+        ) {
+          setClauses.push(
+            `\`APELLIDO2\` = ${this.escapeSql(cambioDetails.APELLIDO2)}`,
+          );
         }
-        if (cambioDetails?.NOMBRE_SPLIT_CONFIANZA !== undefined && cambioDetails.NOMBRE_SPLIT_CONFIANZA !== null) {
-          setClauses.push(`\`NOMBRE_SPLIT_CONFIANZA\` = ${cambioDetails.NOMBRE_SPLIT_CONFIANZA}`);
+        if (
+          cambioDetails?.NOMBRE_SPLIT_CONFIANZA !== undefined &&
+          cambioDetails.NOMBRE_SPLIT_CONFIANZA !== null
+        ) {
+          setClauses.push(
+            `\`NOMBRE_SPLIT_CONFIANZA\` = ${cambioDetails.NOMBRE_SPLIT_CONFIANZA}`,
+          );
         }
 
         // Construim query-ul UPDATE cu toate câmpurile

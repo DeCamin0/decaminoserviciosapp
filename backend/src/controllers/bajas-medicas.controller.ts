@@ -101,13 +101,21 @@ export class BajasMedicasController {
         );
       }
 
-      if (fechaBaja === undefined && fechaAlta === undefined && situacion === undefined) {
+      if (
+        fechaBaja === undefined &&
+        fechaAlta === undefined &&
+        situacion === undefined
+      ) {
         throw new BadRequestException(
           'Trebuie să specifici cel puțin fechaBaja, fechaAlta sau situacion',
         );
       }
 
-      const updates: { fechaBaja?: string; fechaAlta?: string; situacion?: string } = {};
+      const updates: {
+        fechaBaja?: string;
+        fechaAlta?: string;
+        situacion?: string;
+      } = {};
       if (fechaBaja !== undefined) {
         updates.fechaBaja = fechaBaja;
       }
@@ -134,12 +142,9 @@ export class BajasMedicasController {
   @Post('fix-situacion')
   async fixSituacionForFechaAlta() {
     try {
-      this.logger.log(
-        `🔧 Fix Situación pentru cazuri cu Fecha de alta`,
-      );
+      this.logger.log(`🔧 Fix Situación pentru cazuri cu Fecha de alta`);
 
-      const result =
-        await this.bajasMedicasService.fixSituacionForFechaAlta();
+      const result = await this.bajasMedicasService.fixSituacionForFechaAlta();
 
       return {
         success: true,

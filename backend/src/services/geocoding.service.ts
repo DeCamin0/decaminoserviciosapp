@@ -312,13 +312,18 @@ export class GeocodingService {
    * Autocompletare adrese (forward geocoding) - returnează sugestii de adrese
    * Folosește Nominatim Search API cu parametri optimizați pentru precizie
    */
-  async searchAddresses(query: string, limit: number = 5): Promise<Array<{
-    display_name: string;
-    lat: string;
-    lon: string;
-    postcode?: string;
-    address?: any;
-  }>> {
+  async searchAddresses(
+    query: string,
+    limit: number = 5,
+  ): Promise<
+    Array<{
+      display_name: string;
+      lat: string;
+      lon: string;
+      postcode?: string;
+      address?: any;
+    }>
+  > {
     if (!query || query.trim() === '') {
       return [];
     }
@@ -335,9 +340,7 @@ export class GeocodingService {
         namedetails: 1, // Include detalii despre nume
       };
 
-      this.logger.log(
-        `🔍 Searching addresses for query: "${query}"`,
-      );
+      this.logger.log(`🔍 Searching addresses for query: "${query}"`);
 
       const response = await axios.get(url, {
         params,
@@ -377,7 +380,10 @@ export class GeocodingService {
    * Folosește această metodă după selectarea unei adrese pentru a obține codul poștal corect
    * Folosește zoom=18 pentru precizie maximă și accept-language=es pentru formatare în spaniolă
    */
-  async getAddressFromCoordinates(lat: string, lon: string): Promise<{
+  async getAddressFromCoordinates(
+    lat: string,
+    lon: string,
+  ): Promise<{
     display_name: string;
     postcode?: string;
     address?: any;
@@ -413,11 +419,11 @@ export class GeocodingService {
       if (response.data) {
         const addr = response.data.address || {};
         let displayName = response.data.display_name || '';
-        
+
         // Construim adresa formatată manual pentru a controla ordinea componentelor
         // Format: "Calle, Număr, Cod Poștal, Localitate, Provincie, Țară"
         const parts = [];
-        
+
         if (addr.road || addr.pedestrian) {
           parts.push(addr.road || addr.pedestrian);
         }
@@ -428,7 +434,9 @@ export class GeocodingService {
           parts.push(addr.postcode);
         }
         if (addr.city || addr.town || addr.village || addr.municipality) {
-          parts.push(addr.city || addr.town || addr.village || addr.municipality);
+          parts.push(
+            addr.city || addr.town || addr.village || addr.municipality,
+          );
         }
         if (addr.state || addr.region) {
           parts.push(addr.state || addr.region);
@@ -436,7 +444,7 @@ export class GeocodingService {
         if (addr.country) {
           parts.push(addr.country);
         }
-        
+
         // Dacă am construit manual adresa, o folosim; altfel folosim display_name
         if (parts.length > 0) {
           displayName = parts.join(', ');

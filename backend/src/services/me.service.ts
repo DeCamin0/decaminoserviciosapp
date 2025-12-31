@@ -18,12 +18,13 @@ export class MeService {
     }
 
     // Fetch user via EmpleadosService to get all fields including new split columns
-    const empleadoData = await this.empleadosService.getEmpleadoByCodigo(userId);
-    
+    const empleadoData =
+      await this.empleadosService.getEmpleadoByCodigo(userId);
+
     if (!empleadoData) {
       throw new NotFoundException('User not found');
     }
-    
+
     // Also fetch via Prisma for permissions and other data
     const user = await this.prisma.user.findUnique({
       where: { CODIGO: userId },
@@ -63,7 +64,8 @@ export class MeService {
     // Normalizează câmpuri canonice pentru frontend (alerte, afișare)
     const empleadoId = user.CODIGO;
     // Use formatted nombre from empleadoData (includes new split columns)
-    const empleadoNombre = this.empleadosService.getFormattedNombre(empleadoData);
+    const empleadoNombre =
+      this.empleadosService.getFormattedNombre(empleadoData);
 
     // Detect role from GRUPO (consistent with auth.service.ts)
     const grupo = grupoFromToken || user.GRUPO || '';

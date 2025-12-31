@@ -39,7 +39,7 @@ const Footer = () => {
             <div className="absolute inset-0 w-12 h-12 sm:w-16 sm:h-16 bg-gray-600 dark:bg-gray-500 rounded-full opacity-20 dark:opacity-30 blur-md animate-pulse group-hover:bg-red-400 dark:group-hover:bg-red-500 group-hover:opacity-30 dark:group-hover:opacity-40 transition-all duration-300"></div>
           </a>
           <div className="flex items-center justify-center gap-2 text-white/80 dark:text-gray-200 text-xs sm:text-sm">
-            <span>© 2025</span>
+            <span>© {new Date().getFullYear()}</span>
             {/* Logo mic elegant pentru copyright - design alb și negru - CLICKABLE */}
             <a 
               href="https://decamino.es" 

@@ -512,7 +512,9 @@ export default function EstadisticasPage() {
     { id: 'personalizado', label: 'Personalizado', icon: '📈', description: 'De X a Y' }
   ];
 
-  const years = [2023, 2024, 2025];
+  // Ani dinamici: ultimii 3 ani + anul curent + următorul an (dacă e necesar)
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
   const months = [
     { id: 1, label: 'Enero' },
     { id: 2, label: 'Febrero' },

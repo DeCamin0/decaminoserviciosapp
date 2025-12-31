@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService, AccessLevel } from './rbac.service';
-import { IntentType } from './intent-classifier.service';
 import { calculateCuadranteHours } from '../../utils/cuadrante-hours-helper';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import * as mysql from 'mysql2/promise';
 
 @Injectable()
 export class DataQueryService {
@@ -21,32 +22,48 @@ export class DataQueryService {
     rol: string | null,
     entidades?: { codigo?: string; fecha?: string; mes?: string },
   ): Promise<any[]> {
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'CODIGO');
-    
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'CODIGO',
+    );
+
     let fechaCondition = '';
-    
+
     // Verifică dacă e cerut "tot mesul"
     if (entidades?.mes && entidades.mes.startsWith('completo_')) {
       const mesNombre = entidades.mes.replace('completo_', '');
       const meses = [
-        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+        'enero',
+        'febrero',
+        'marzo',
+        'abril',
+        'mayo',
+        'junio',
+        'julio',
+        'agosto',
+        'septiembre',
+        'octubre',
+        'noviembre',
+        'diciembre',
       ];
       const mesIndex = meses.indexOf(mesNombre);
-      
+
       if (mesIndex !== -1) {
         const ahora = new Date();
         const año = ahora.getFullYear();
         const mes = mesIndex + 1; // JavaScript months are 0-indexed, SQL months are 1-indexed
-        
+
         // Prima zi a lunii
         const fechaInicio = `${año}-${String(mes).padStart(2, '0')}-01`;
         // Ultima zi a lunii
         const ultimoDia = new Date(año, mes, 0).getDate();
         const fechaFin = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
-        
+
         fechaCondition = `AND DATE(FECHA) >= ${this.escapeSql(fechaInicio)} AND DATE(FECHA) <= ${this.escapeSql(fechaFin)}`;
-        this.logger.log(`📅 Query fichajes para mes completo: ${fechaInicio} a ${fechaFin}`);
+        this.logger.log(
+          `📅 Query fichajes para mes completo: ${fechaInicio} a ${fechaFin}`,
+        );
       } else {
         // Fallback la luna curentă
         const ahora = new Date();
@@ -56,7 +73,9 @@ export class DataQueryService {
         const ultimoDia = new Date(año, mes, 0).getDate();
         const fechaFin = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
         fechaCondition = `AND DATE(FECHA) >= ${this.escapeSql(fechaInicio)} AND DATE(FECHA) <= ${this.escapeSql(fechaFin)}`;
-        this.logger.log(`📅 Query fichajes para mes actual completo: ${fechaInicio} a ${fechaFin}`);
+        this.logger.log(
+          `📅 Query fichajes para mes actual completo: ${fechaInicio} a ${fechaFin}`,
+        );
       }
     } else if (entidades?.fecha) {
       fechaCondition = `AND DATE(FECHA) = '${this.escapeSql(entidades.fecha)}'`;
@@ -84,7 +103,7 @@ export class DataQueryService {
     `;
 
     this.logger.log(`🔍 Query fichajes: ${query.substring(0, 150)}...`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -98,8 +117,12 @@ export class DataQueryService {
     rol: string | null,
     fecha?: string,
   ): Promise<any[]> {
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'CODIGO');
-    
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'CODIGO',
+    );
+
     // Parsează data sau folosește data curentă
     let fechaDate: Date;
     if (fecha) {
@@ -107,13 +130,13 @@ export class DataQueryService {
     } else {
       fechaDate = new Date();
     }
-    
+
     const año = fechaDate.getFullYear();
     const mes = fechaDate.getMonth() + 1;
     const dia = fechaDate.getDate();
     const fechaFormatted = `${año}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
     const mesFormatted = `${año}-${String(mes).padStart(2, '0')}`;
-    
+
     // Folosește aceeași logică ca MonthlyAlertsService.getResumenMensual
     // Query simplificat bazat pe daily_plan și fichaje_dia pentru ziua specificată
     const query = `
@@ -460,8 +483,10 @@ export class DataQueryService {
       LIMIT 100
     `;
 
-    this.logger.log(`🔍 Query fichajes faltantes (folosind logica MonthlyAlerts): ${query.substring(0, 300)}...`);
-    
+    this.logger.log(
+      `🔍 Query fichajes faltantes (folosind logica MonthlyAlerts): ${query.substring(0, 300)}...`,
+    );
+
     // Prisma nu suportă multiple statements, trebuie să folosim mysql2 direct
     try {
       // Get database connection info from Prisma (same as MonthlyAlertsService)
@@ -491,18 +516,16 @@ export class DataQueryService {
         connectionConfig = dbUrl;
       }
 
-      const mysql = require('mysql2/promise');
-      
       // Create connection with multipleStatements enabled (same as MonthlyAlertsService)
       const connection = await mysql.createConnection({
         ...connectionConfig,
         multipleStatements: true,
       });
-      
+
       try {
         // Execute query with multiple statements enabled
         const queryResult = await connection.query(query);
-        
+
         // mysql2 with multipleStatements returns: [ [rows, fields] ]
         // But with multiple SET statements, the structure is:
         // [ [OkPacket1, OkPacket2, OkPacket3, OkPacket4, [actualRows]], [fields] ]
@@ -537,18 +560,25 @@ export class DataQueryService {
             }
           }
         }
-        
-        this.logger.log(`✅ Query fichajes faltantes retornó ${rows?.length || 0} resultados`);
-        
+
+        this.logger.log(
+          `✅ Query fichajes faltantes retornó ${rows?.length || 0} resultados`,
+        );
+
         // Procesează datele pentru a calcula corect orele pentru ture multiple
-        const processedResults = await this.processFichajesFaltantesResults(rows || []);
-        
+        const processedResults = await this.processFichajesFaltantesResults(
+          rows || [],
+        );
+
         return processedResults;
       } finally {
         await connection.end();
       }
     } catch (error: any) {
-      this.logger.error(`❌ Error en queryFichajesFaltantes: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error en queryFichajesFaltantes: ${error.message}`,
+        error.stack,
+      );
       return [];
     }
   }
@@ -562,8 +592,12 @@ export class DataQueryService {
     rol: string | null,
     filtro?: string,
   ): Promise<any[]> {
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'CODIGO');
-    
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'CODIGO',
+    );
+
     // Construiește condițiile WHERE pentru filtrare
     let filtroWhere = '';
     if (filtro === 'sin_cuadrante') {
@@ -616,7 +650,7 @@ export class DataQueryService {
             AND h.grupo_nombre = de.\`GRUPO\`
         )`;
     }
-    
+
     const query = `
       SELECT
         CAST(de.CODIGO AS CHAR) AS CODIGO,
@@ -696,10 +730,15 @@ export class DataQueryService {
 
     try {
       const results = await this.prisma.$queryRawUnsafe<any[]>(query);
-      this.logger.log(`✅ Query listado empleados retornó ${results?.length || 0} resultados (filtro: ${filtro || 'ninguno'})`);
+      this.logger.log(
+        `✅ Query listado empleados retornó ${results?.length || 0} resultados (filtro: ${filtro || 'ninguno'})`,
+      );
       return results || [];
     } catch (error: any) {
-      this.logger.error(`❌ Error en queryListadoEmpleados: ${error.message}`, error.stack);
+      this.logger.error(
+        `❌ Error en queryListadoEmpleados: ${error.message}`,
+        error.stack,
+      );
       return [];
     }
   }
@@ -707,12 +746,16 @@ export class DataQueryService {
   /**
    * Procesează rezultatele queryFichajesFaltantes pentru a calcula corect orele pentru ture multiple
    */
-  private async processFichajesFaltantesResults(results: any[]): Promise<any[]> {
+  private async processFichajesFaltantesResults(
+    results: any[],
+  ): Promise<any[]> {
     if (!results || results.length === 0) {
       return results;
     }
 
-    this.logger.log(`🔄 Processing ${results.length} results for horas recalculation...`);
+    this.logger.log(
+      `🔄 Processing ${results.length} results for horas recalculation...`,
+    );
 
     // Trebuie să obținem valorile originale din cuadrante pentru a calcula corect orele
     // Pentru fiecare rezultat, trebuie să verificăm dacă are cuadrante sau horario
@@ -720,15 +763,17 @@ export class DataQueryService {
       results.map(async (result) => {
         // Log pentru debugging - verifică dacă există angajați cu 24h
         if (result.horas_plan && parseFloat(result.horas_plan) >= 24) {
-          this.logger.warn(`🔍 Found employee with horas_plan >= 24: CODIGO ${result.CODIGO}, horas_plan: ${result.horas_plan}, fuente: ${result.fuente}`);
+          this.logger.warn(
+            `🔍 Found employee with horas_plan >= 24: CODIGO ${result.CODIGO}, horas_plan: ${result.horas_plan}, fuente: ${result.fuente}`,
+          );
         }
-        
+
         if (result.fuente === 'cuadrante' && result.fecha_esperada) {
           // Obține valoarea originală din cuadrante
           const fecha = new Date(result.fecha_esperada);
           const dia = fecha.getDate();
           const mesFormatted = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
-          
+
           try {
             // Folosește backticks pentru coloana ZI_X (poate conține spații sau caractere speciale)
             const cuadrante = await this.prisma.$queryRawUnsafe<any[]>(`
@@ -738,7 +783,7 @@ export class DataQueryService {
                 AND LUNA = ${this.escapeSql(mesFormatted)}
               LIMIT 1
             `);
-            
+
             if (cuadrante && cuadrante.length > 0 && cuadrante[0].val) {
               const valOriginal = cuadrante[0].val;
               const horasAnterioare = result.horas_plan;
@@ -751,12 +796,20 @@ export class DataQueryService {
                 );
               }
             } else {
-              this.logger.warn(`⚠️ No cuadrante found for CODIGO ${result.CODIGO}, dia ${dia}, mes ${mesFormatted}`);
+              this.logger.warn(
+                `⚠️ No cuadrante found for CODIGO ${result.CODIGO}, dia ${dia}, mes ${mesFormatted}`,
+              );
             }
           } catch (error: any) {
-            this.logger.warn(`⚠️ Error processing horas for CODIGO ${result.CODIGO}: ${error.message}`);
+            this.logger.warn(
+              `⚠️ Error processing horas for CODIGO ${result.CODIGO}: ${error.message}`,
+            );
           }
-        } else if (result.fuente === 'horario' && result.horas_plan && parseFloat(result.horas_plan) >= 24) {
+        } else if (
+          result.fuente === 'horario' &&
+          result.horas_plan &&
+          parseFloat(result.horas_plan) >= 24
+        ) {
           // Pentru horario, dacă e 24h, probabil e 3 ture de 8h → returnăm 8h per tură
           const horasAnterioare = result.horas_plan;
           if (parseFloat(horasAnterioare) === 24) {
@@ -768,7 +821,7 @@ export class DataQueryService {
         }
         // Pentru horario normal, calculul este deja corect (suma tuturor turelor)
         return result;
-      })
+      }),
     );
 
     this.logger.log(`✅ Processed ${processedResults.length} results`);
@@ -783,8 +836,12 @@ export class DataQueryService {
     rol: string | null,
     entidades?: { codigo?: string; mes?: string },
   ): Promise<any[]> {
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'CODIGO');
-    
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'CODIGO',
+    );
+
     let mesCondition = '';
     if (entidades?.mes) {
       mesCondition = `AND LUNA LIKE ${this.escapeSql(`%${entidades.mes}%`)}`;
@@ -811,7 +868,7 @@ export class DataQueryService {
     `;
 
     this.logger.log(`🔍 Query cuadrante: ${query.substring(0, 100)}...`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -825,9 +882,12 @@ export class DataQueryService {
     entidades?: { mes?: string; tipo?: string },
   ): Promise<any> {
     // Verifică RBAC
-    const accessLevel = this.rbacService.getAccessLevel(rol);
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'codigo');
-    
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'codigo',
+    );
+
     // Construiește condiții pentru query
     let tipoCondition = '';
     if (entidades?.tipo) {
@@ -836,16 +896,26 @@ export class DataQueryService {
       // Dacă nu e specificat, caută vacaciones (nu asuntos propios)
       tipoCondition = `AND tipo = 'vacaciones'`;
     }
-    
+
     let mesCondition = '';
     if (entidades?.mes) {
       const meses = [
-        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+        'enero',
+        'febrero',
+        'marzo',
+        'abril',
+        'mayo',
+        'junio',
+        'julio',
+        'agosto',
+        'septiembre',
+        'octubre',
+        'noviembre',
+        'diciembre',
       ];
       const mesNombre = entidades.mes.replace('completo_', '');
       const mesIndex = meses.indexOf(mesNombre);
-      
+
       if (mesIndex !== -1) {
         const ahora = new Date();
         // Verifică anul curent și anul viitor (dacă suntem în decembrie și întrebăm despre ianuarie)
@@ -855,13 +925,13 @@ export class DataQueryService {
           año = año + 1;
         }
         const mes = mesIndex + 1;
-        
+
         // Prima zi a lunii
         const fechaInicio = `${año}-${String(mes).padStart(2, '0')}-01`;
         // Ultima zi a lunii
         const ultimoDia = new Date(año, mes, 0).getDate();
         const fechaFin = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
-        
+
         // fecha_fin este VARCHAR, deci trebuie să convertim la DATE
         // Caută solicitudes care se suprapun cu luna specificată
         // O solicitare se suprapune dacă: fecha_inicio <= ultima zi a lunii AND (fecha_fin >= prima zi SAU fecha_fin este NULL)
@@ -875,10 +945,12 @@ export class DataQueryService {
             OR fecha_fin >= ${this.escapeSql(fechaInicio)}
           )
         )`;
-        this.logger.log(`📅 Query vacaciones para mes: ${fechaInicio} a ${fechaFin} (año: ${año})`);
+        this.logger.log(
+          `📅 Query vacaciones para mes: ${fechaInicio} a ${fechaFin} (año: ${año})`,
+        );
       }
     }
-    
+
     // Query pentru solicitudes de vacații
     // Dacă nu e specificat mes, returnează toate solicitudes de vacații (pentru întrebări de follow-up)
     const query = `
@@ -900,20 +972,24 @@ export class DataQueryService {
       ORDER BY fecha_solicitud DESC
       LIMIT 50
     `;
-    
+
     this.logger.log(`🔍 Query vacaciones complet:`);
     this.logger.log(`  - RBAC: ${rbacCondition}`);
     this.logger.log(`  - Tipo: ${tipoCondition}`);
     this.logger.log(`  - Mes: ${mesCondition || 'NINGUNO'}`);
     this.logger.log(`  - Query: ${query}`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
-    this.logger.log(`✅ Query vacaciones retornó ${results?.length || 0} resultados`);
-    
+    this.logger.log(
+      `✅ Query vacaciones retornó ${results?.length || 0} resultados`,
+    );
+
     if (results && results.length > 0) {
-      this.logger.log(`📋 Primeros resultados: ${JSON.stringify(results.slice(0, 3), null, 2)}`);
+      this.logger.log(
+        `📋 Primeros resultados: ${JSON.stringify(results.slice(0, 3), null, 2)}`,
+      );
     }
-    
+
     return results || [];
   }
 
@@ -927,11 +1003,13 @@ export class DataQueryService {
   ): Promise<any[]> {
     // Nominas nu au CODIGO direct, trebuie să verificăm prin User
     const accessLevel = this.rbacService.getAccessLevel(rol);
-    
+
     if (accessLevel === AccessLevel.OWN_DATA_ONLY) {
       // Pentru empleado, trebuie să verificăm dacă există nomina asociată
       // Deocamdată returnează toate nominas (va fi filtrat în frontend sau prin alt mecanism)
-      this.logger.warn('⚠️ Query nominas pentru empleado - necesită implementare specifică');
+      this.logger.warn(
+        '⚠️ Query nominas pentru empleado - necesită implementare specifică',
+      );
     }
 
     let mesCondition = '';
@@ -954,7 +1032,7 @@ export class DataQueryService {
     `;
 
     this.logger.log(`🔍 Query nominas: ${query.substring(0, 100)}...`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -967,8 +1045,12 @@ export class DataQueryService {
     rol: string | null,
     entidades?: { tipo?: string },
   ): Promise<any[]> {
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'codigo');
-    
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'codigo',
+    );
+
     let tipoCondition = '';
     if (entidades?.tipo) {
       tipoCondition = `AND tipo = ${this.escapeSql(entidades.tipo)}`;
@@ -994,7 +1076,7 @@ export class DataQueryService {
     `;
 
     this.logger.log(`🔍 Query solicitudes: ${query.substring(0, 100)}...`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -1002,12 +1084,13 @@ export class DataQueryService {
   /**
    * Query pentru DOCUMENTOS
    */
-  async queryDocumentos(
-    userId: string,
-    rol: string | null,
-  ): Promise<any[]> {
-    const rbacCondition = this.rbacService.buildRbacCondition(userId, rol, 'codigo');
-    
+  async queryDocumentos(userId: string, rol: string | null): Promise<any[]> {
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'codigo',
+    );
+
     const query = `
       SELECT 
         id,
@@ -1023,7 +1106,7 @@ export class DataQueryService {
     `;
 
     this.logger.log(`🔍 Query documentos: ${query.substring(0, 100)}...`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -1036,11 +1119,11 @@ export class DataQueryService {
     searchTerm?: string,
   ): Promise<any[]> {
     let conditions = 'activo = TRUE';
-    
+
     if (categoria) {
       conditions += ` AND categoria = ${this.escapeSql(categoria)}`;
     }
-    
+
     if (searchTerm) {
       conditions += ` AND (titulo LIKE ${this.escapeSql(`%${searchTerm}%`)} OR contenido LIKE ${this.escapeSql(`%${searchTerm}%`)})`;
     }
@@ -1059,7 +1142,7 @@ export class DataQueryService {
     `;
 
     this.logger.log(`🔍 Query KB articles: ${query.substring(0, 100)}...`);
-    
+
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -1070,4 +1153,3 @@ export class DataQueryService {
     return `'${escaped}'`;
   }
 }
-

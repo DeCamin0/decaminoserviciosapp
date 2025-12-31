@@ -1474,7 +1474,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
                     <>
                       <div className="grid grid-cols-3 gap-2">
                         {Array.from({ length: 12 }, (_, i) => {
-                          const month = new Date(2024, i).toLocaleDateString('es-ES', { month: 'short' });
+                          const month = new Date(new Date().getFullYear(), i).toLocaleDateString('es-ES', { month: 'short' });
                           const monthValue = `${new Date().getFullYear()}-${String(i + 1).padStart(2, '0')}`;
                           return (
                             <button

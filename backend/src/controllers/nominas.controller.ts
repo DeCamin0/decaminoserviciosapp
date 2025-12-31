@@ -70,7 +70,8 @@ export class NominasController {
 
       // Loghează accesul (download)
       const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
-      const empleadoNombre = user?.['NOMBRE / APELLIDOS'] || user?.nombre || nombre || '';
+      const empleadoNombre =
+        user?.['NOMBRE / APELLIDOS'] || user?.nombre || nombre || '';
       const ip = req.ip || req.socket.remoteAddress || undefined;
       const userAgent = req.get('user-agent') || undefined;
 
@@ -142,7 +143,8 @@ export class NominasController {
 
       // Loghează accesul (preview)
       const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
-      const empleadoNombre = user?.['NOMBRE / APELLIDOS'] || user?.nombre || nombre || '';
+      const empleadoNombre =
+        user?.['NOMBRE / APELLIDOS'] || user?.nombre || nombre || '';
       const ip = req.ip || req.socket.remoteAddress || undefined;
       const userAgent = req.get('user-agent') || undefined;
 
@@ -452,7 +454,10 @@ export class NominasController {
         message: result.message,
       };
     } catch (error: any) {
-      this.logger.error('❌ Error in NominasController.sendNominaByEmail:', error);
+      this.logger.error(
+        '❌ Error in NominasController.sendNominaByEmail:',
+        error,
+      );
       if (
         error instanceof BadRequestException ||
         error instanceof NotFoundException
@@ -469,7 +474,7 @@ export class NominasController {
    * Endpoint pentru obținerea accesurilor la nóminas
    * GET /api/nominas/:id/accesos (pentru accesurile unei nóminas specifice)
    * GET /api/nominas/accesos?nominaId=...&empleadoCodigo=...&tipoAcceso=...
-   * 
+   *
    * IMPORTANT: Ruta cu parametru trebuie să fie PRIMA pentru ca NestJS să o potrivească corect
    */
   @Get(':id/accesos')
@@ -478,7 +483,8 @@ export class NominasController {
     @Param('id') id: string | undefined,
     @Query('nominaId') nominaId: string | undefined,
     @Query('empleadoCodigo') empleadoCodigo: string | undefined,
-    @Query('tipoAcceso') tipoAcceso: 'preview' | 'download' | 'email' | undefined,
+    @Query('tipoAcceso')
+    tipoAcceso: 'preview' | 'download' | 'email' | undefined,
     @Query('fechaDesde') fechaDesde: string | undefined,
     @Query('fechaHasta') fechaHasta: string | undefined,
     @Query('limit') limit: string | undefined,
@@ -537,11 +543,15 @@ export class NominasController {
         }
       }
 
-      this.logger.log(`📊 [getNominasAccesos] Request - id: ${id}, nominaId: ${nominaId}, filters: ${JSON.stringify(filters)}`);
+      this.logger.log(
+        `📊 [getNominasAccesos] Request - id: ${id}, nominaId: ${nominaId}, filters: ${JSON.stringify(filters)}`,
+      );
 
       const accesos = await this.nominasService.getNominasAccesos(filters);
 
-      this.logger.log(`📊 [getNominasAccesos] Returning ${accesos.length} accesos`);
+      this.logger.log(
+        `📊 [getNominasAccesos] Returning ${accesos.length} accesos`,
+      );
 
       return {
         success: true,
@@ -549,7 +559,10 @@ export class NominasController {
         accesos: accesos,
       };
     } catch (error: any) {
-      this.logger.error('❌ Error in NominasController.getNominasAccesos:', error);
+      this.logger.error(
+        '❌ Error in NominasController.getNominasAccesos:',
+        error,
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }

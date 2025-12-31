@@ -296,50 +296,64 @@ export class NominasService {
     fechaDesde?: string;
     fechaHasta?: string;
     limit?: number;
-  }): Promise<Array<{
-    id: number;
-    nomina_id: number;
-    empleado_codigo: string;
-    empleado_nombre: string;
-    tipo_acceso: string;
-    fecha_acceso: Date;
-    ip: string | null;
-    user_agent: string | null;
-    nomina_nombre?: string;
-    nomina_mes?: string;
-    nomina_ano?: string;
-  }>> {
+  }): Promise<
+    Array<{
+      id: number;
+      nomina_id: number;
+      empleado_codigo: string;
+      empleado_nombre: string;
+      tipo_acceso: string;
+      fecha_acceso: Date;
+      ip: string | null;
+      user_agent: string | null;
+      nomina_nombre?: string;
+      nomina_mes?: string;
+      nomina_ano?: string;
+    }>
+  > {
     try {
       const conditions: string[] = [];
 
       if (filters?.nominaId) {
         const nominaIdValue = filters.nominaId;
-        const nominaIdNum = typeof nominaIdValue === 'number' 
-          ? nominaIdValue 
-          : parseInt(String(nominaIdValue), 10);
+        const nominaIdNum =
+          typeof nominaIdValue === 'number'
+            ? nominaIdValue
+            : parseInt(String(nominaIdValue), 10);
         if (!isNaN(nominaIdNum)) {
           conditions.push(`na.\`nomina_id\` = ${nominaIdNum}`);
         }
       }
 
       if (filters?.empleadoCodigo) {
-        conditions.push(`na.\`empleado_codigo\` = ${this.escapeSql(filters.empleadoCodigo)}`);
+        conditions.push(
+          `na.\`empleado_codigo\` = ${this.escapeSql(filters.empleadoCodigo)}`,
+        );
       }
 
       if (filters?.tipoAcceso) {
-        conditions.push(`na.\`tipo_acceso\` = ${this.escapeSql(filters.tipoAcceso)}`);
+        conditions.push(
+          `na.\`tipo_acceso\` = ${this.escapeSql(filters.tipoAcceso)}`,
+        );
       }
 
       if (filters?.fechaDesde) {
-        conditions.push(`na.\`fecha_acceso\` >= ${this.escapeSql(filters.fechaDesde)}`);
+        conditions.push(
+          `na.\`fecha_acceso\` >= ${this.escapeSql(filters.fechaDesde)}`,
+        );
       }
 
       if (filters?.fechaHasta) {
-        conditions.push(`na.\`fecha_acceso\` <= ${this.escapeSql(filters.fechaHasta)}`);
+        conditions.push(
+          `na.\`fecha_acceso\` <= ${this.escapeSql(filters.fechaHasta)}`,
+        );
       }
 
-      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      const limitClause = filters?.limit ? `LIMIT ${Math.min(filters.limit, 1000)}` : 'LIMIT 500';
+      const whereClause =
+        conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const limitClause = filters?.limit
+        ? `LIMIT ${Math.min(filters.limit, 1000)}`
+        : 'LIMIT 500';
 
       const query = `
         SELECT 
@@ -361,12 +375,18 @@ export class NominasService {
         ${limitClause}
       `;
 
-      this.logger.debug(`📝 [getNominasAccesos] Query: ${query.substring(0, 300)}...`);
-      this.logger.debug(`📝 [getNominasAccesos] Filters: ${JSON.stringify(filters)}`);
+      this.logger.debug(
+        `📝 [getNominasAccesos] Query: ${query.substring(0, 300)}...`,
+      );
+      this.logger.debug(
+        `📝 [getNominasAccesos] Filters: ${JSON.stringify(filters)}`,
+      );
 
       const result = await this.prisma.$queryRawUnsafe<any[]>(query);
-      
-      this.logger.debug(`📝 [getNominasAccesos] Found ${result.length} accesos`);
+
+      this.logger.debug(
+        `📝 [getNominasAccesos] Found ${result.length} accesos`,
+      );
 
       return result.map((row) => ({
         id: Number(row.id),
@@ -431,7 +451,9 @@ export class NominasService {
         )
       `;
 
-      this.logger.debug(`📝 Executing query: ${insertQuery.substring(0, 200)}...`);
+      this.logger.debug(
+        `📝 Executing query: ${insertQuery.substring(0, 200)}...`,
+      );
       const result = await this.prisma.$executeRawUnsafe(insertQuery);
       this.logger.debug(`📝 Query result: ${JSON.stringify(result)}`);
       this.logger.log(
@@ -499,12 +521,23 @@ export class NominasService {
 
       // Template HTML frumos pentru email
       const mesesNombres = [
-        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+        'enero',
+        'febrero',
+        'marzo',
+        'abril',
+        'mayo',
+        'junio',
+        'julio',
+        'agosto',
+        'septiembre',
+        'octubre',
+        'noviembre',
+        'diciembre',
       ];
-      const mesNombre = typeof mes === 'string' && mesesNombres.includes(mes.toLowerCase())
-        ? mes.charAt(0).toUpperCase() + mes.slice(1).toLowerCase()
-        : mes;
+      const mesNombre =
+        typeof mes === 'string' && mesesNombres.includes(mes.toLowerCase())
+          ? mes.charAt(0).toUpperCase() + mes.slice(1).toLowerCase()
+          : mes;
 
       const htmlTemplate = `
         <!DOCTYPE html>

@@ -108,7 +108,7 @@ export class AusenciasService {
       const emailData = this.formatAusenciaEmailHtml(ausenciaData);
       subject = emailData.subject;
       html = emailData.html;
-      
+
       await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
         bcc: ['decamino.rrhh@gmail.com'],
       });
@@ -136,7 +136,7 @@ export class AusenciasService {
       this.logger.error(
         `❌ Error sending email notification (non-blocking): ${error.message}`,
       );
-      
+
       // Salvează și email-urile eșuate în BD
       try {
         await this.sentEmailsService.saveSentEmail({
@@ -154,7 +154,7 @@ export class AusenciasService {
           `⚠️ Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
         );
       }
-      
+
       // Nu aruncăm eroarea pentru a nu opri flow-ul principal
     }
   }

@@ -491,7 +491,7 @@ export default function LoginPage() {
           {/* Copyright redesignat */}
           <div className="text-center mt-6">
             <div className="inline-flex items-center space-x-2 text-xs text-gray-400">
-              <span>© 2025</span>
+              <span>© {new Date().getFullYear()}</span>
               <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
               <span>De Camino Servicios Auxiliares SL</span>
               <div className="w-1 h-1 bg-gray-400 rounded-full"></div>

@@ -67,9 +67,16 @@ export class BajasMedicasService {
       const year = parseInt(isoMatch[1], 10);
       const month = parseInt(isoMatch[2], 10);
       const day = parseInt(isoMatch[3], 10);
-      
+
       // Validează că datele sunt corecte
-      if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1900 && year <= 2100) {
+      if (
+        month >= 1 &&
+        month <= 12 &&
+        day >= 1 &&
+        day <= 31 &&
+        year >= 1900 &&
+        year <= 2100
+      ) {
         const formatted = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         return this.escapeSql(formatted);
       }
@@ -195,7 +202,7 @@ export class BajasMedicasService {
           // Verifică dacă există "Fecha de alta" pentru a seta "Situación" = "Alta"
           const fechaAltaParsed = this.parseExcelDate(row['Fecha de alta']);
           const tieneFechaAlta = fechaAltaParsed !== 'NULL';
-          const situacionValue = tieneFechaAlta 
+          const situacionValue = tieneFechaAlta
             ? this.escapeSql('Alta')
             : this.escapeSql(row.Situación || '');
 
@@ -363,7 +370,7 @@ export class BajasMedicasService {
       if (updates.fechaAlta !== undefined) {
         const fechaAltaSQL = this.parseExcelDate(updates.fechaAlta);
         updateFields.push('`Fecha de alta` = ' + fechaAltaSQL);
-        
+
         // Dacă se setează "Fecha de alta" (nu este NULL), setăm automat "Situación" = "Alta"
         if (fechaAltaSQL !== 'NULL') {
           updateFields.push('`Situación` = ' + this.escapeSql('Alta'));
@@ -371,7 +378,9 @@ export class BajasMedicasService {
       }
 
       if (updates.situacion !== undefined) {
-        updateFields.push('`Situación` = ' + this.escapeSql(updates.situacion || ''));
+        updateFields.push(
+          '`Situación` = ' + this.escapeSql(updates.situacion || ''),
+        );
       }
 
       if (updateFields.length === 0) {

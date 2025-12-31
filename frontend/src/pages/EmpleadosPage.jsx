@@ -110,7 +110,7 @@ export default function EmpleadosPage() {
   const [showGrupoDropdown, setShowGrupoDropdown] = useState(false);
 
   // Funcție pentru a obține estadísticas
-  const fetchEstadisticas = async () => {
+  const fetchEstadisticas = useCallback(async () => {
     setLoadingEstadisticas(true);
     setErrorEstadisticas(null);
     try {
@@ -153,7 +153,7 @@ export default function EmpleadosPage() {
     } finally {
       setLoadingEstadisticas(false);
     }
-  };
+  }, [clientes]);
 
   const handleExportEstadisticasExcel = async () => {
     try {
@@ -559,7 +559,7 @@ export default function EmpleadosPage() {
         }));
       }
     }
-  }, [addForm.NOMBRE, addForm.APELLIDO1, addForm.APELLIDO2]);
+  }, [addForm]);
 
   // Sincronizare automată pentru editForm: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
   useEffect(() => {
@@ -583,7 +583,7 @@ export default function EmpleadosPage() {
         }));
       }
     }
-  }, [editForm?.NOMBRE, editForm?.APELLIDO1, editForm?.APELLIDO2]);
+  }, [editForm]);
 
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
@@ -1307,7 +1307,7 @@ export default function EmpleadosPage() {
     fetchGrupos();
     
     activityLogger.logPageAccess('empleados', authUser);
-  }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, fetchGrupos, setOperationLoading]);
+  }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, fetchGrupos, setOperationLoading, fetchEstadisticas]);
 
   // Cargar avatares para los empleados visibles
   useEffect(() => {
@@ -3656,31 +3656,27 @@ export default function EmpleadosPage() {
           <CorregirNombresTab 
             users={users}
             onSave={async (codigo, data) => {
-              try {
-                const token = localStorage.getItem('auth_token');
-                const response = await fetch(routes.updateNombreSplit(codigo), {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': token ? `Bearer ${token}` : '',
-                  },
-                  body: JSON.stringify({
-                    CODIGO: codigo,
-                    ...data,
-                    NOMBRE_SPLIT_CONFIANZA: 2, // Setează confianza = 2 pentru corectare manuală
-                  }),
-                });
-                
-                if (!response.ok) {
-                  throw new Error('Error al guardar');
-                }
-                
-                // Reîncarcă lista
-                await fetchUsers();
-                return { success: true };
-              } catch (error) {
-                throw error;
+              const token = localStorage.getItem('auth_token');
+              const response = await fetch(routes.updateNombreSplit(codigo), {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify({
+                  CODIGO: codigo,
+                  ...data,
+                  NOMBRE_SPLIT_CONFIANZA: 2, // Setează confianza = 2 pentru corectare manuală
+                }),
+              });
+              
+              if (!response.ok) {
+                throw new Error('Error al guardar');
               }
+              
+              // Reîncarcă lista
+              await fetchUsers();
+              return { success: true };
             }}
           />
         ) : null}

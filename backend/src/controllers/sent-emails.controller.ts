@@ -41,7 +41,8 @@ export class SentEmailsController {
   @Get()
   @UseGuards(JwtAuthGuard)
   async getSentEmails(
-    @Query() query: {
+    @Query()
+    query: {
       senderId?: string;
       recipientType?: string;
       recipientId?: string;
@@ -107,9 +108,8 @@ export class SentEmailsController {
     @Res() res: Response,
   ) {
     try {
-      const attachment = await this.sentEmailsService.getAttachmentById(
-        attachmentId,
-      );
+      const attachment =
+        await this.sentEmailsService.getAttachmentById(attachmentId);
 
       res.setHeader('Content-Type', attachment.mime_type);
       res.setHeader(
@@ -228,7 +228,9 @@ export class SentEmailsController {
       this.logger.log(`📎 Files received: ${files?.length || 0}`);
       if (files && files.length > 0) {
         files.forEach((file, idx) => {
-          this.logger.log(`📎 File ${idx + 1}: ${file.originalname}, size: ${file.size || file.buffer?.length || 0}, mimetype: ${file.mimetype}`);
+          this.logger.log(
+            `📎 File ${idx + 1}: ${file.originalname}, size: ${file.size || file.buffer?.length || 0}, mimetype: ${file.mimetype}`,
+          );
           if (!file.buffer || file.buffer.length === 0) {
             this.logger.warn(`⚠️ File ${idx + 1} has no buffer!`);
           }
@@ -236,25 +238,40 @@ export class SentEmailsController {
       } else {
         this.logger.warn('⚠️ No files received in request');
       }
-      
-      const attachments = files && files.length > 0
-        ? files
-            .filter((file) => file.buffer && file.buffer.length > 0) // Filtrează fișierele fără buffer
-            .map((file) => ({
-              filename: file.originalname || 'attachment',
-              content: file.buffer,
-              contentType: file.mimetype || 'application/octet-stream',
-            }))
-        : [];
-      
-      this.logger.log(`📎 Attachments prepared: ${attachments.length} (from ${files?.length || 0} files)`);
+
+      const attachments =
+        files && files.length > 0
+          ? files
+              .filter((file) => file.buffer && file.buffer.length > 0) // Filtrează fișierele fără buffer
+              .map((file) => ({
+                filename: file.originalname || 'attachment',
+                content: file.buffer,
+                contentType: file.mimetype || 'application/octet-stream',
+              }))
+          : [];
+
+      this.logger.log(
+        `📎 Attachments prepared: ${attachments.length} (from ${files?.length || 0} files)`,
+      );
 
       // Template HTML pentru email - fără indentare pentru a evita spații
       const htmlTemplate = (nombre: string, mesaj: string) => {
         // Curăță mesajul de spații și linii goale
-        const mesajCleaned = (mesaj || '').trim().split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n');
-        const additionalMsgCleaned = additionalMessage ? (additionalMessage || '').trim().split('\n').map(line => line.trim()).filter(line => line.length > 0).join('\n') : '';
-        
+        const mesajCleaned = (mesaj || '')
+          .trim()
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .join('\n');
+        const additionalMsgCleaned = additionalMessage
+          ? (additionalMessage || '')
+              .trim()
+              .split('\n')
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0)
+              .join('\n')
+          : '';
+
         return `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${additionalMsgCleaned ? `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;"><strong>Mensaje adicional:</strong><br><div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div></div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p></body></html>`;
       };
 
@@ -262,7 +279,9 @@ export class SentEmailsController {
       let failedCount = 0;
       const emailIds: string[] = [];
       const totalRecipients = recipients.length;
-      const currentUserId = String(user?.CODIGO || user?.codigo || user?.userId || 'system');
+      const currentUserId = String(
+        user?.CODIGO || user?.codigo || user?.userId || 'system',
+      );
 
       // Trimite progres inițial
       if (totalRecipients > 1) {
@@ -319,7 +338,7 @@ export class SentEmailsController {
             status: 'sent',
             attachments:
               attachments.length > 0
-                ? attachments.map((att, idx) => ({
+                ? attachments.map((att) => ({
                     filename: att.filename,
                     fileContent: att.content,
                     mimeType: att.contentType,
@@ -334,7 +353,10 @@ export class SentEmailsController {
           // Trimite progres prin WebSocket (doar pentru mai mulți destinatari)
           if (totalRecipients > 1) {
             const progressInterval = totalRecipients > 20 ? 5 : 1;
-            if ((i + 1) % progressInterval === 0 || i === recipients.length - 1) {
+            if (
+              (i + 1) % progressInterval === 0 ||
+              i === recipients.length - 1
+            ) {
               this.notificationsGateway.sendToUser(currentUserId, {
                 type: 'email_progress',
                 total: totalRecipients,
@@ -359,9 +381,7 @@ export class SentEmailsController {
                   data: {
                     subject,
                     sender:
-                      user?.['NOMBRE / APELLIDOS'] ||
-                      user?.nombre ||
-                      'RRHH',
+                      user?.['NOMBRE / APELLIDOS'] || user?.nombre || 'RRHH',
                     emailId: savedEmail.id,
                   },
                 },
@@ -416,7 +436,10 @@ export class SentEmailsController {
           // Trimite progres prin WebSocket (doar pentru mai mulți destinatari)
           if (totalRecipients > 1) {
             const progressInterval = totalRecipients > 20 ? 5 : 1;
-            if ((i + 1) % progressInterval === 0 || i === recipients.length - 1) {
+            if (
+              (i + 1) % progressInterval === 0 ||
+              i === recipients.length - 1
+            ) {
               this.notificationsGateway.sendToUser(currentUserId, {
                 type: 'email_progress',
                 total: totalRecipients,
@@ -466,4 +489,3 @@ export class SentEmailsController {
     }
   }
 }
-

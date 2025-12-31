@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { routes } from '../../utils/routes';
 
@@ -62,7 +62,7 @@ export default function CostePersonalTab() {
   // Încărcăm datele când se schimbă luna sau anul
   useEffect(() => {
     loadData();
-  }, [selectedMes, selectedAno]);
+  }, [loadData]);
 
   // Încărcăm lista de angajați când se deschide preview Excel
   useEffect(() => {
@@ -73,10 +73,10 @@ export default function CostePersonalTab() {
         loadEmpleadosList();
       }
     }
-  }, [showExcelPreviewModal]);
+  }, [showExcelPreviewModal, empleadosList.length, loadEmpleadosList]);
 
 
-  const loadEmpleadosList = async () => {
+  const loadEmpleadosList = useCallback(async () => {
     setLoadingEmpleados(true);
     try {
       const token = localStorage.getItem('auth_token');
@@ -106,7 +106,7 @@ export default function CostePersonalTab() {
     } finally {
       setLoadingEmpleados(false);
     }
-  };
+  }, []);
 
   const handleSelectEmpleado = (sheetIdx, rowIdx, empleado) => {
     const newExcelData = { ...excelPreviewData };
@@ -124,7 +124,7 @@ export default function CostePersonalTab() {
     setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -148,7 +148,7 @@ export default function CostePersonalTab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedMes, selectedAno]);
 
   const handleFileUpload = async (event) => {
     const file = event.target.files?.[0];
@@ -235,7 +235,7 @@ export default function CostePersonalTab() {
         throw new Error(errorData.message || 'Error al guardar datos');
       }
 
-      const saveResult = await saveResponse.json();
+      await saveResponse.json();
       setSuccess(true);
       setShowExcelPreviewModal(false);
       setExcelPreviewData(null);
@@ -244,48 +244,6 @@ export default function CostePersonalTab() {
       await loadData();
     } catch (saveErr) {
       setError(`Error al guardar: ${saveErr.message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveFromExcel = async (excelData) => {
-    if (!excelData || !excelData.sheets || excelData.sheets.length === 0) {
-      setError('No hay datos para guardar');
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      const token = localStorage.getItem('auth_token');
-      const firstSheet = excelData.sheets[0];
-      
-      const response = await fetch(routes.saveCostePersonalFromExcel, {
-        method: 'POST',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          mes: firstSheet.mes,
-          ano: firstSheet.ano,
-          data: firstSheet.data,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Error al guardar datos');
-      }
-
-      const result = await response.json();
-      setSuccess(true);
-      // Recărcăm datele
-      await loadData();
-    } catch (err) {
-      setError(err.message || 'Error al guardar datos');
     } finally {
       setSaving(false);
     }
@@ -562,7 +520,7 @@ export default function CostePersonalTab() {
         throw new Error(errorData.message || 'Error al guardar datos');
       }
 
-      const result = await response.json();
+      await response.json();
       setSuccess(true);
       setShowPdfsPreviewModal(false);
       setPdfsPreviewData(null);
@@ -605,7 +563,7 @@ export default function CostePersonalTab() {
         throw new Error(errorData.message || 'Error al guardar datos');
       }
 
-      const result = await response.json();
+      await response.json();
       setSuccess(true);
       setShowNominasPreviewModal(false);
       setNominasPreviewData(null);

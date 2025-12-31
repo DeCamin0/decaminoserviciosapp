@@ -45,7 +45,9 @@ export function sheetToJson(
             value = raw ? cell.value : cell.value.toISOString().split('T')[0];
           } else if (typeof cell.value === 'object' && 'result' in cell.value) {
             // Formula rezolvată
-            value = raw ? cell.value.result : String(cell.value.result || defval);
+            value = raw
+              ? cell.value.result
+              : String(cell.value.result || defval);
           } else if (typeof cell.value === 'number') {
             // Numere
             value = raw ? cell.value : String(cell.value);
@@ -65,4 +67,3 @@ export function sheetToJson(
 
   return rows;
 }
-

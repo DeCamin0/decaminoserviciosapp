@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import Chatbot from 'react-chatbot-kit';
@@ -165,27 +165,8 @@ const ChatBot = () => {
     }
   };
 
-  // Funcție pentru descărcare Excel/TXT/PDF
-  const handleDownload = async (accion) => {
-    const { tipo, payload } = accion;
-    const { datos, formato, intent } = payload;
-
-    try {
-      if (formato === 'excel') {
-        await downloadAsExcel(datos, intent);
-      } else if (formato === 'txt') {
-        await downloadAsTxt(datos, intent);
-      } else if (formato === 'pdf') {
-        await downloadAsPdf(datos, intent);
-      }
-    } catch (error) {
-      console.error('❌ Error al descargar:', error);
-      alert('Error al generar el archivo. Por favor, intenta de nuevo.');
-    }
-  };
-
   // Funcție pentru descărcare Excel
-  const downloadAsExcel = async (datos, intent) => {
+  const downloadAsExcel = useCallback(async (datos, intent) => {
     // Import dinamic pentru exceljs (dacă nu e deja importat)
     const ExcelJS = (await import('exceljs')).default;
     const workbook = new ExcelJS.Workbook();
@@ -212,10 +193,10 @@ const ChatBot = () => {
     link.download = `registros_${intent}_${new Date().toISOString().split('T')[0]}.xlsx`;
     link.click();
     window.URL.revokeObjectURL(url);
-  };
+  }, []);
 
   // Funcție pentru descărcare TXT
-  const downloadAsTxt = (datos, intent) => {
+  const downloadAsTxt = useCallback((datos, intent) => {
     if (!datos || datos.length === 0) return;
 
     const headers = Object.keys(datos[0]);
@@ -233,10 +214,10 @@ const ChatBot = () => {
     link.download = `registros_${intent}_${new Date().toISOString().split('T')[0]}.txt`;
     link.click();
     window.URL.revokeObjectURL(url);
-  };
+  }, []);
 
   // Funcție pentru descărcare PDF
-  const downloadAsPdf = async (datos, intent) => {
+  const downloadAsPdf = useCallback(async (datos, intent) => {
     try {
       const { jsPDF } = await import('jspdf');
       const doc = new jsPDF();
@@ -264,7 +245,7 @@ const ChatBot = () => {
         // Date (limitează la 50 de rânduri pentru a evita probleme)
         doc.setFont(undefined, 'normal');
         const maxRows = Math.min(50, datos.length);
-        datos.slice(0, maxRows).forEach((item, rowIdx) => {
+        datos.slice(0, maxRows).forEach((item) => {
           if (yPos > 280) {
             doc.addPage();
             yPos = 20;
@@ -287,7 +268,26 @@ const ChatBot = () => {
       // Fallback: descarcă ca TXT dacă PDF nu e disponibil
       downloadAsTxt(datos, intent);
     }
-  };
+  }, [downloadAsTxt]);
+
+  // Funcție pentru descărcare Excel/TXT/PDF
+  const handleDownload = useCallback(async (accion) => {
+    const { payload } = accion;
+    const { datos, formato, intent } = payload;
+
+    try {
+      if (formato === 'excel') {
+        await downloadAsExcel(datos, intent);
+      } else if (formato === 'txt') {
+        await downloadAsTxt(datos, intent);
+      } else if (formato === 'pdf') {
+        await downloadAsPdf(datos, intent);
+      }
+    } catch (error) {
+      console.error('❌ Error al descargar:', error);
+      alert('Error al generar el archivo. Por favor, intenta de nuevo.');
+    }
+  }, [downloadAsExcel, downloadAsTxt, downloadAsPdf]);
 
   // Action Provider pentru chatbot
   const ActionProvider = ({ createChatBotMessage, setState, children }) => {
@@ -360,7 +360,7 @@ const ChatBot = () => {
           const buttonsContainer = document.createElement('div');
           buttonsContainer.className = 'download-buttons-container';
           
-          actionsToAdd.forEach((accion, idx) => {
+          actionsToAdd.forEach((accion) => {
             const button = document.createElement('button');
             button.textContent = accion.label;
             button.onclick = () => {
@@ -380,7 +380,7 @@ const ChatBot = () => {
           
           const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
           let node;
-          while (node = walker.nextNode()) {
+          while ((node = walker.nextNode())) {
             let textChanged = false;
             markerVariants.forEach(marker => {
               if (node.textContent.includes(marker)) {
@@ -429,7 +429,7 @@ const ChatBot = () => {
           );
           
           let textNode;
-          while (textNode = walker.nextNode()) {
+          while ((textNode = walker.nextNode())) {
             const textContent = textNode.textContent || '';
             const hasMarker = markerVariants.some(marker => textContent.includes(marker));
             
@@ -443,7 +443,6 @@ const ChatBot = () => {
               for (let i = 0; i < 10 && messageContainer && messageContainer !== chatContainer; i++) {
                 const classList = messageContainer.classList || [];
                 const className = messageContainer.className || '';
-                const tagName = messageContainer.tagName || '';
                 
                 // Verifică dacă este un container de mesaj bot
                 if (

@@ -10,20 +10,22 @@
  * @param daySchedule - Format "08:00-17:00" sau "09:00-15:00 / 16:00-20:00" sau "24h (3×8h)"
  * @returns Orele calculate (per tură pentru ture separate, suma totală pentru orar compartit)
  */
-export function calculateCuadranteHours(daySchedule: string | null | undefined): number {
+export function calculateCuadranteHours(
+  daySchedule: string | null | undefined,
+): number {
   if (!daySchedule || daySchedule === 'LIBRE' || daySchedule.trim() === '') {
     return 0;
   }
-  
+
   const schedule = String(daySchedule).trim();
-  
+
   // Format "24h (3×8h)" - extrage orele per tură din paranteză
   const format24hMatch = schedule.match(/^(\d+)h\s*\((\d+)×(\d+)h\)/);
   if (format24hMatch) {
     const totalHours = parseInt(format24hMatch[1]);
     const shiftCount = parseInt(format24hMatch[2]);
     const hoursPerShift = parseInt(format24hMatch[3]);
-    
+
     // Dacă toate turele au aceeași durată și suma > 12h → orar cu ture separate
     if (totalHours > 12 && shiftCount >= 2) {
       return hoursPerShift; // Returnăm orele per tură
@@ -31,7 +33,7 @@ export function calculateCuadranteHours(daySchedule: string | null | undefined):
       return totalHours; // Returnăm suma totală
     }
   }
-  
+
   // Format simplu "8h" sau "24h"
   // NOTĂ: Dacă e "24h" fără paranteză, probabil e 3 ture de 8h
   // În practică, dacă e 24h, ar trebui să fie "24h (3×8h)"
@@ -45,36 +47,45 @@ export function calculateCuadranteHours(daySchedule: string | null | undefined):
     }
     return hours;
   }
-  
+
   // Format "08:00-17:00" sau "09:00-15:00 / 16:00-20:00"
   const separators = /[,/]/;
   const hasMultipleShifts = separators.test(schedule);
-  
+
   if (hasMultipleShifts) {
     // Multiple ture - extrage toate turele
-    const timeMatches = schedule.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g);
+    const timeMatches = schedule.match(
+      /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g,
+    );
     if (timeMatches && timeMatches.length > 0) {
       const shiftHours: number[] = [];
-      
-      timeMatches.forEach(timeMatch => {
-        const match = timeMatch.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+
+      timeMatches.forEach((timeMatch) => {
+        const match = timeMatch.match(
+          /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+        );
         if (match) {
-          const hours = parseIntervalHours(`${match[1]}:${match[2]}`, `${match[3]}:${match[4]}`);
+          const hours = parseIntervalHours(
+            `${match[1]}:${match[2]}`,
+            `${match[3]}:${match[4]}`,
+          );
           shiftHours.push(hours);
         }
       });
-      
+
       if (shiftHours.length > 0) {
         const firstShiftHours = shiftHours[0];
-        const allSame = shiftHours.every(h => Math.abs(h - firstShiftHours) < 0.01);
+        const allSame = shiftHours.every(
+          (h) => Math.abs(h - firstShiftHours) < 0.01,
+        );
         const totalHours = shiftHours.reduce((sum, h) => sum + h, 0);
-        
+
         // Distingem între:
         // 1. Orar cu ture separate (ex: 3×8h) - toate turele au aceeași durată (ex: 8h) și suma > 12h
         //    → Angajatul lucrează DOAR o tură pe zi → returnăm durata unei ture (8h)
         // 2. Orar compartit (ex: 09:00-15:00 / 16:00-20:00) - ture cu durate diferite sau suma < 12h
         //    → Angajatul lucrează TOATE turele în aceeași zi → returnăm suma totală (10h)
-        
+
         if (allSame && totalHours > 12 && shiftHours.length >= 2) {
           // Orar cu ture separate (ex: 3×8h = 24h total, dar angajatul lucrează doar 8h/zi)
           return firstShiftHours;
@@ -88,10 +99,13 @@ export function calculateCuadranteHours(daySchedule: string | null | undefined):
     // O singură tură în formatul "T1 08:00-16:00" sau "08:00-16:00"
     const match = schedule.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
     if (match) {
-      return parseIntervalHours(`${match[1]}:${match[2]}`, `${match[3]}:${match[4]}`);
+      return parseIntervalHours(
+        `${match[1]}:${match[2]}`,
+        `${match[3]}:${match[4]}`,
+      );
     }
   }
-  
+
   return 0;
 }
 
@@ -104,15 +118,15 @@ export function calculateCuadranteHours(daySchedule: string | null | undefined):
 function parseIntervalHours(startTime: string, endTime: string): number {
   const [startHour, startMin] = startTime.split(':').map(Number);
   const [endHour, endMin] = endTime.split(':').map(Number);
-  
-  let start = startHour + startMin / 60;
+
+  const start = startHour + startMin / 60;
   let end = endHour + endMin / 60;
-  
+
   // Deal with overnight shifts
   if (end < start) {
     end += 24;
   }
-  
+
   return end - start;
 }
 
@@ -120,7 +134,7 @@ function parseIntervalHours(startTime: string, endTime: string): number {
  * Returnează SQL CASE expression pentru calculul orelor dintr-un valor de cuadrante (ZI_X)
  * Folosește logica: dacă toate turele au aceeași durată și suma > 12h → orar cu ture separate (returnă durata unei ture)
  *                   altfel → orar compartit (returnă suma totală)
- * 
+ *
  * @param valColumn - Numele coloanei cu valoarea (ex: 'cu.val' sau 'val')
  * @returns SQL CASE expression
  */
@@ -178,7 +192,7 @@ export function getCuadranteHoursCaseSQL(valColumn: string): string {
 /**
  * Versiune simplificată pentru calculul orelor dintr-un valor de cuadrante
  * Folosită în query-uri complexe unde nu putem folosi subquery-uri
- * 
+ *
  * @param valColumn - Numele coloanei cu valoarea
  * @returns SQL CASE expression simplificat
  */
@@ -203,4 +217,3 @@ export function getCuadranteHoursSimpleSQL(valColumn: string): string {
     END
   `;
 }
-

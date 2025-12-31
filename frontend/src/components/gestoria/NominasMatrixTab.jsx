@@ -1,8 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getFormattedNombre } from '../../utils/employeeNameHelper';
 import { routes } from '../../utils/routes';
-import { useAuth } from '../../contexts/AuthContextBase';
 import ConfirmModal from '../ui/ConfirmModal';
 
 const MESES = [
@@ -37,7 +35,6 @@ const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
 };
 
 export default function NominasMatrixTab() {
-  const { user: authUser } = useAuth();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [empleados, setEmpleados] = useState([]);
   const [stats, setStats] = useState({ empleados_activos: 0, con_nomina: 0, sin_nomina: 0 });
@@ -156,7 +153,7 @@ export default function NominasMatrixTab() {
   }, [empleados, searchTerm, centroFilter, showPendientes, filterByNomina]);
 
   // Încărcare date
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -233,11 +230,11 @@ export default function NominasMatrixTab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedYear, showPendientes]);
 
   useEffect(() => {
     fetchData();
-  }, [selectedYear, showPendientes]);
+  }, [fetchData]);
 
   // Scroll la top când se deschide modalul
   useEffect(() => {
