@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import type { StringValue } from 'ms';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthService } from '../services/auth.service';
 import { AuthController } from '../controllers/auth.controller';
@@ -15,7 +16,7 @@ import { AuthController } from '../controllers/auth.controller';
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
         signOptions: {
-          expiresIn: configService.get<string>('jwt.expiresIn'),
+          expiresIn: configService.get<string>('jwt.expiresIn') as StringValue,
         },
       }),
     }),

@@ -59,23 +59,34 @@ export default function CostePersonalTab() {
     rowKey: null, // Identifică rândul curent (sheetIdx-idx)
   });
 
-  // Încărcăm datele când se schimbă luna sau anul
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Funcție pentru încărcarea datelor (mutată aici pentru a fi disponibilă pentru useEffect)
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.getCostePersonal(selectedMes, selectedAno), {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
 
-  // Încărcăm lista de angajați când se deschide preview Excel
-  useEffect(() => {
-    if (showExcelPreviewModal) {
-      console.log('📋 Modal opened, empleadosList length:', empleadosList.length);
-      if (empleadosList.length === 0) {
-        console.log('📋 Loading empleados list...');
-        loadEmpleadosList();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al cargar datos');
       }
+
+      const result = await response.json();
+      setData(result.data || []);
+    } catch (err) {
+      setError(err.message || 'Error al cargar datos');
+      setData([]);
+    } finally {
+      setLoading(false);
     }
-  }, [showExcelPreviewModal, empleadosList.length, loadEmpleadosList]);
+  }, [selectedMes, selectedAno]);
 
-
+  // Funcție pentru încărcarea listei de angajați (mutată aici pentru a fi disponibilă pentru useEffect)
   const loadEmpleadosList = useCallback(async () => {
     setLoadingEmpleados(true);
     try {
@@ -108,6 +119,22 @@ export default function CostePersonalTab() {
     }
   }, []);
 
+  // Încărcăm datele când se schimbă luna sau anul
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Încărcăm lista de angajați când se deschide preview Excel
+  useEffect(() => {
+    if (showExcelPreviewModal) {
+      console.log('📋 Modal opened, empleadosList length:', empleadosList.length);
+      if (empleadosList.length === 0) {
+        console.log('📋 Loading empleados list...');
+        loadEmpleadosList();
+      }
+    }
+  }, [showExcelPreviewModal, empleadosList.length, loadEmpleadosList]);
+
   const handleSelectEmpleado = (sheetIdx, rowIdx, empleado) => {
     const newExcelData = { ...excelPreviewData };
     const nombreCompleto = empleado['NOMBRE / APELLIDOS'] || '';
@@ -123,32 +150,6 @@ export default function CostePersonalTab() {
     setEditingCell(null);
     setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
   };
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = localStorage.getItem('auth_token');
-      const response = await fetch(routes.getCostePersonal(selectedMes, selectedAno), {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Error al cargar datos');
-      }
-
-      const result = await response.json();
-      setData(result.data || []);
-    } catch (err) {
-      setError(err.message || 'Error al cargar datos');
-      setData([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedMes, selectedAno]);
 
   const handleFileUpload = async (event) => {
     const file = event.target.files?.[0];

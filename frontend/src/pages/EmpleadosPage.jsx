@@ -109,6 +109,17 @@ export default function EmpleadosPage() {
   const [showCentroDropdown, setShowCentroDropdown] = useState(false);
   const [showGrupoDropdown, setShowGrupoDropdown] = useState(false);
 
+  // State pentru lista de clienți (mutat aici pentru a fi disponibil pentru fetchEstadisticas)
+  const [clientes, setClientes] = useState([]);
+  
+  // Ref pentru a stoca valoarea curentă a clientes (pentru a preveni loop-ul în fetchEstadisticas)
+  const clientesRef = useRef(clientes);
+  
+  // Actualizăm ref-ul când se schimbă clientes
+  useEffect(() => {
+    clientesRef.current = clientes;
+  }, [clientes]);
+
   // Funcție pentru a obține estadísticas
   const fetchEstadisticas = useCallback(async () => {
     setLoadingEstadisticas(true);
@@ -135,8 +146,8 @@ export default function EmpleadosPage() {
         .filter(centro => centro && centro.trim() !== '' && centro !== '-')
       )];
       
-      // Combină cu centrele din clienți (dacă există)
-      const centrosFromClientes = (clientes || [])
+      // Combină cu centrele din clienți (folosim valoarea curentă din ref)
+      const centrosFromClientes = (clientesRef.current || [])
         .map(cliente => cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre)
         .filter(nombre => nombre && nombre.trim() !== '');
       
@@ -153,7 +164,7 @@ export default function EmpleadosPage() {
     } finally {
       setLoadingEstadisticas(false);
     }
-  }, [clientes]);
+  }, []); // Eliminăm clientes din dependențe pentru a preveni loop-ul
 
   const handleExportEstadisticasExcel = async () => {
     try {
@@ -654,9 +665,6 @@ export default function EmpleadosPage() {
   
   // WebSocket pentru progres email
   const { socket } = useWebSocket('/notifications');
-
-  // State pentru lista de clienți
-  const [clientes, setClientes] = useState([]);
 
   // State pentru avatares de empleados
   const [employeeAvatars, setEmployeeAvatars] = useState({});
@@ -1293,12 +1301,6 @@ export default function EmpleadosPage() {
       return;
     }
     
-    // Fetch estadísticas când se schimbă tab-ul
-    if (activeTab === 'estadisticas') {
-      fetchEstadisticas();
-      fetchGruposForEdit(); // Încarcă lista de grupuri pentru editare
-    }
-    
     if (activeTab === 'lista') {
       fetchUsers();
     }
@@ -1307,7 +1309,19 @@ export default function EmpleadosPage() {
     fetchGrupos();
     
     activityLogger.logPageAccess('empleados', authUser);
-  }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, fetchGrupos, setOperationLoading, fetchEstadisticas]);
+  }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, fetchGrupos, setOperationLoading]);
+
+  // Separate useEffect pentru estadísticas - doar când se schimbă tab-ul
+  useEffect(() => {
+    if (authUser?.isDemo) {
+      return;
+    }
+    
+    if (activeTab === 'estadisticas') {
+      fetchEstadisticas();
+      fetchGruposForEdit(); // Încarcă lista de grupuri pentru editare
+    }
+  }, [activeTab, authUser, fetchEstadisticas]);
 
   // Cargar avatares para los empleados visibles
   useEffect(() => {
