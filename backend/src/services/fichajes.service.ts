@@ -77,6 +77,45 @@ export class FichajesService {
   }
 
   /**
+   * Obtine ultimul marcaj (fichaje) pentru un codigo dat, indiferent de lună
+   * Folosit pentru a verifica dacă există un turn deschis
+   */
+  async getUltimoRegistro(codigo: string): Promise<any | null> {
+    try {
+      if (!codigo || codigo.trim() === '') {
+        throw new BadRequestException('CODIGO is required');
+      }
+
+      const codigoClean = codigo.trim();
+
+      // Query SQL: ultimul marcaj pentru codigo dat, ordonat după FECHA și HORA
+      const query = `
+        SELECT *
+        FROM Fichaje
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+        ORDER BY FECHA DESC, HORA DESC
+        LIMIT 1
+      `;
+
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      this.logger.log(
+        `✅ Ultimo registro retrieved: ${rows.length > 0 ? 'found' : 'not found'} (codigo: ${codigoClean})`,
+      );
+
+      return rows.length > 0 ? rows[0] : null;
+    } catch (error: any) {
+      this.logger.error('❌ Error retrieving ultimo registro:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener ultimo registro: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Obtine toate registros (fichajes) pentru TOȚI angajații pentru o lună specifică
    * Folosit pentru manageri/supervisori pentru a vedea toate marcajele dintr-o lună
    */
@@ -319,9 +358,22 @@ export class FichajesService {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(
-        `Error al agregar fichaje: ${error.message}`,
-      );
+
+      // Extrage mesajul relevant din eroarea Prisma
+      let errorMessage = error.message || 'Error desconocido';
+
+      // Dacă este o eroare Prisma cu meta.message, folosește mesajul din meta
+      if (error.meta && error.meta.message) {
+        errorMessage = error.meta.message;
+      } else if (error.message) {
+        // Încearcă să extragă mesajul din formatul Prisma complex
+        const metaMatch = error.message.match(/Message: `([^`]+)`/);
+        if (metaMatch) {
+          errorMessage = metaMatch[1];
+        }
+      }
+
+      throw new BadRequestException(errorMessage);
     }
   }
 
@@ -348,12 +400,82 @@ export class FichajesService {
         throw new BadRequestException('ID is required');
       }
 
-      // Verifică dacă marcajele există
-      const checkQuery = `SELECT ID FROM Fichaje WHERE ID = ${this.escapeSql(id.trim())} LIMIT 1`;
+      // Verifică dacă marcajele există și obține datele curente
+      const checkQuery = `
+        SELECT ID, CODIGO, TIPO, FECHA, HORA 
+        FROM Fichaje 
+        WHERE ID = ${this.escapeSql(id.trim())} 
+        LIMIT 1
+      `;
       const existing = await this.prisma.$queryRawUnsafe<any[]>(checkQuery);
 
       if (!existing || existing.length === 0) {
         throw new BadRequestException(`Fichaje with ID ${id} not found`);
+      }
+
+      const currentFichaje = existing[0];
+      const currentCodigo = currentFichaje.CODIGO;
+      const currentTipo = currentFichaje.TIPO;
+      const currentFecha = currentFichaje.FECHA;
+      const currentHora = currentFichaje.HORA;
+
+      const newTipo = fichajeData.tipo?.trim();
+      const newCodigo = fichajeData.codigo?.trim() || currentCodigo;
+      const newFecha = fichajeData.data?.trim() || currentFecha;
+      const newHora = fichajeData.hora?.trim() || currentHora;
+
+      // Dacă se schimbă TIPO, validăm că nu se creează 2 Entrada sau 2 Salida consecutive
+      if (newTipo && newTipo !== currentTipo) {
+        // Obține registrele pentru același CODIGO, ordonate cronologic
+        const validationQuery = `
+          SELECT ID, TIPO, FECHA, HORA
+          FROM Fichaje
+          WHERE CODIGO = ${this.escapeSql(newCodigo)}
+            AND ID != ${this.escapeSql(id.trim())}
+          ORDER BY FECHA ASC, HORA ASC
+        `;
+        const relatedFichajes =
+          await this.prisma.$queryRawUnsafe<any[]>(validationQuery);
+
+        // Folosește noile valori de FECHA/HORA pentru a calcula poziția în secvență
+        const newDateTime = `${newFecha} ${newHora}`;
+        let previousFichaje: any = null;
+        let nextFichaje: any = null;
+
+        for (let i = 0; i < relatedFichajes.length; i++) {
+          const fichajeDateTime = `${relatedFichajes[i].FECHA} ${relatedFichajes[i].HORA}`;
+          if (fichajeDateTime < newDateTime) {
+            previousFichaje = relatedFichajes[i];
+          } else if (fichajeDateTime > newDateTime) {
+            nextFichaje = relatedFichajes[i];
+            break;
+          }
+        }
+
+        // Verifică dacă noua valoare ar crea 2 Entrada sau 2 Salida consecutive
+        if (newTipo === 'Entrada') {
+          if (previousFichaje && previousFichaje.TIPO === 'Entrada') {
+            throw new BadRequestException(
+              'Nu se pot avea 2 Entrada consecutive. Există deja o Entrada înainte de acest registru.',
+            );
+          }
+          if (nextFichaje && nextFichaje.TIPO === 'Entrada') {
+            throw new BadRequestException(
+              'Nu se pot avea 2 Entrada consecutive. Există deja o Entrada după acest registru.',
+            );
+          }
+        } else if (newTipo === 'Salida') {
+          if (previousFichaje && previousFichaje.TIPO === 'Salida') {
+            throw new BadRequestException(
+              'Nu se pot avea 2 Salida consecutive. Există deja o Salida înainte de acest registru.',
+            );
+          }
+          if (nextFichaje && nextFichaje.TIPO === 'Salida') {
+            throw new BadRequestException(
+              'Nu se pot avea 2 Salida consecutive. Există deja o Salida după acest registru.',
+            );
+          }
+        }
       }
 
       // Construiește query-ul UPDATE doar cu câmpurile care sunt trimise

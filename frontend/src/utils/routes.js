@@ -46,6 +46,12 @@ export const routes = {
   updateUser: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados'
     : 'https://api.decaminoservicios.com/api/empleados',
+  changePassword: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/change-password'
+    : 'https://api.decaminoservicios.com/api/empleados/change-password',
+  getPassword: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/empleados/get-password/${codigo}`
+    : `https://api.decaminoservicios.com/api/empleados/get-password/${codigo}`,
   updateNombreSplit: (codigo) => import.meta.env.DEV
     ? `http://localhost:3000/api/empleados/${codigo}/nombre-split`
     : `https://api.decaminoservicios.com/api/empleados/${codigo}/nombre-split`,
@@ -157,6 +163,9 @@ export const routes = {
   getRegistros: import.meta.env.DEV
     ? 'http://localhost:3000/api/registros'
     : 'https://api.decaminoservicios.com/api/registros',
+  getUltimoRegistro: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/ultimo'
+    : 'https://api.decaminoservicios.com/api/registros/ultimo',
   getRegistrosEmpleados: import.meta.env.DEV
     ? 'http://localhost:3000/api/registros/empleados'
     : 'https://api.decaminoservicios.com/api/registros/empleados',

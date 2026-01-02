@@ -362,8 +362,8 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: 'ro', // limba implicită
-    fallbackLng: 'ro',
+    lng: 'es', // limba implicită (spaniolă)
+    fallbackLng: 'es',
     supportedLngs: ['ro', 'es'],
     interpolation: {
       escapeValue: false,

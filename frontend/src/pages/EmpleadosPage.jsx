@@ -539,6 +539,8 @@ export default function EmpleadosPage() {
   const [editForm, setEditForm] = useState({});
   const [originalEmployeeData, setOriginalEmployeeData] = useState(null); // Datele originale pentru comparație
   const [showEditModal, setShowEditModal] = useState(false);
+  const [mostrarContraseña, setMostrarContraseña] = useState(false); // State pentru afișarea parolei
+  const [loadingPassword, setLoadingPassword] = useState(false); // State pentru loading la obținerea parolei
 
   // Formulario para añadir empleado
   const [addForm, setAddForm] = useState(() => ({
@@ -2671,7 +2673,7 @@ export default function EmpleadosPage() {
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {SHEET_FIELDS.map(field => {
+              {SHEET_FIELDS.filter(field => field !== 'Contraseña').map(field => {
                 const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
                 return (
                 <div key={field}>
@@ -2699,7 +2701,6 @@ export default function EmpleadosPage() {
                     {field === 'ESTADO' && '📊'} 
                     {field === 'DerechoPedidos' && '🛒'} 
                     {field === 'TrabajaFestivos' && '🎉'} 
-                    {field === 'Contraseña' && '🔑'} 
                     {field === 'CuantoPuedeGastar' && '💰'} 
                     {field}
                   </label>
@@ -3137,16 +3138,6 @@ export default function EmpleadosPage() {
                       <option value="NO">❌ NO</option>
                       <option value="SI">✅ SI</option>
                     </select>
-                  ) : field === 'Contraseña' ? (
-                    <input
-                      id={fieldId}
-                      name={field}
-                      type="text"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 hover:border-gray-300"
-                      value={addForm[field] || ''}
-                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
-                      placeholder="Introduce la contraseña"
-                    />
                   ) : field === 'CuantoPuedeGastar' ? (
                     <div className="space-y-2">
                       <input
@@ -4155,15 +4146,70 @@ export default function EmpleadosPage() {
                     <option value="SI">🎉 SÍ</option>
                   </select>
                 ) : field === 'Contraseña' ? (
-                  <input
-                    id={fieldId}
-                    name={field}
-                    type="text"
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 hover:border-gray-300"
-                    value={editForm[field] || ''}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
-                    placeholder="Introduce la contraseña"
-                  />
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        id={fieldId}
+                        name={field}
+                        type="text"
+                        readOnly
+                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                        value={editForm[field] || ''}
+                        placeholder={mostrarContraseña ? "No hay contraseña guardada" : "Haz clic en 'Mostrar contraseña' para verla"}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!mostrarContraseña && !editForm[field]) {
+                            // Obține parola de la backend
+                            setLoadingPassword(true);
+                            try {
+                              const codigo = editForm.CODIGO;
+                              if (!codigo) {
+                                alert('Error: No se encontró el código del empleado');
+                                return;
+                              }
+                              const result = await callApi(routes.getPassword(codigo));
+                              if (result.success && result.data) {
+                                setEditForm(prev => ({ ...prev, [field]: result.data.password || '' }));
+                                setMostrarContraseña(true);
+                              } else {
+                                alert(result.error || 'Error al obtener la contraseña');
+                              }
+                            } catch (error) {
+                              console.error('Error obteniendo contraseña:', error);
+                              alert('Error al obtener la contraseña');
+                            } finally {
+                              setLoadingPassword(false);
+                            }
+                          } else {
+                            // Ascunde parola
+                            setMostrarContraseña(false);
+                            setEditForm(prev => ({ ...prev, [field]: '' }));
+                          }
+                        }}
+                        disabled={loadingPassword}
+                        className="px-4 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none whitespace-nowrap"
+                      >
+                        {loadingPassword ? (
+                          <span className="flex items-center gap-2">
+                            <span className="animate-spin">⏳</span>
+                            <span>Cargando...</span>
+                          </span>
+                        ) : mostrarContraseña ? (
+                          'Ocultar contraseña'
+                        ) : (
+                          'Mostrar contraseña'
+                        )}
+                      </button>
+                    </div>
+                    {mostrarContraseña && editForm[field] && (
+                      <p className="text-xs text-gray-500 flex items-center gap-1">
+                        <span>🔒</span>
+                        <span>La contraseña es solo de lectura y no se puede editar aquí</span>
+                      </p>
+                    )}
+                  </div>
                 ) : field === 'CuantoPuedeGastar' ? (
                   <div className="space-y-2">
                     <input

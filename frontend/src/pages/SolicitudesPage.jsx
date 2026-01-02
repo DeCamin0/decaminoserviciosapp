@@ -4478,6 +4478,48 @@ export default function SolicitudesPage() {
                   </select>
                 </div>
 
+                {/* Aviso sobre vacaciones - solo para Vacaciones */}
+                {tipo === 'Vacaciones' && (
+                  <div 
+                    className="relative mt-4 p-4 rounded-lg border-l-4"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)',
+                      borderColor: '#f59e0b',
+                      boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)'
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-amber-900 mb-2">
+                          Información importante sobre vacaciones
+                        </h4>
+                        <div className="text-xs sm:text-sm text-amber-800 space-y-1.5 leading-relaxed">
+                          <p>
+                            Las vacaciones deberán solicitarse e iniciarse exclusivamente en días laborables según el turno de trabajo asignado.
+                          </p>
+                          <p>
+                            No podrán iniciarse en días de descanso semanal ni días no laborables.
+                          </p>
+                          <p className="font-medium mt-2">
+                            Las solicitudes de vacaciones deberán presentarse con un mínimo de dos meses de antelación.
+                          </p>
+                          <p>
+                            En caso contrario, la empresa podrá ajustar las fechas solicitadas en función de las necesidades organizativas, adecuando el inicio al primer día laborable disponible.
+                          </p>
+                          <p>
+                            Dicha adaptación no supondrá en ningún caso la reducción del número total de días de vacaciones del trabajador.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Período Solicitado - Calendar for Vacaciones or Asuntos Propios */}
                 {tipo === 'Vacaciones' ? (
                   // Calendar for Vacaciones

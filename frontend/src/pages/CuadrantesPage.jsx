@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import activityLogger from '../utils/activityLogger';
-import { Button, Card, Input, Select, Modal } from '../components/ui';
+import { Button, Card, Input, Select, Modal, Notification } from '../components/ui';
 import { useApi } from '../hooks/useApi';
 import { routes } from '../utils/routes.js';
 import ScheduleEditor from '../components/ScheduleEditor';
@@ -184,6 +184,7 @@ export default function CuadrantesPage() {
   const [horariosLista, setHorariosLista] = useState([]);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [toast, setToast] = useState(null); // {type: 'success'|'error', message: string}
+  const [notification, setNotification] = useState(null); // {type: 'success'|'error'|'warning', title: string, message: string}
   const [cuadrantesLista, setCuadrantesLista] = useState([]);
   const [error, setError] = useState('');
 
@@ -251,30 +252,62 @@ export default function CuadrantesPage() {
     try {
       setLoading(true);
       
-      // Construir payload cu modificările și metadata completă
-      const cuadrantesToSave = cuadrantesLista.map((cuadrante, index) => {
-        const modifiedCuadrante = { ...cuadrante };
+      // Construir payload cu SOLO los cuadrantes modificados
+      const cuadrantesToSave = [];
+      
+      // Agrupar modificările por cuadrante (index) și luna
+      const modificariPorCuadrante = {};
+      
+      // Recopilar todas las modificaciones
+      Object.keys(editedCuadrantes).forEach(key => {
+        const [indexStr, dayStr] = key.split('_');
+        const index = parseInt(indexStr, 10);
+        const day = parseInt(dayStr, 10);
         
-        // Aplicar modificările pentru acest cuadrante
-        for (let day = 1; day <= 31; day++) {
-          const key = `${index}_${day}`;
-          if (editedCuadrantes[key] !== undefined) {
-            modifiedCuadrante[`ZI_${day}`] = editedCuadrantes[key];
-          }
+        if (!modificariPorCuadrante[index]) {
+          modificariPorCuadrante[index] = {
+            cuadrante: cuadrantesLista[index],
+            modificari: {}
+          };
         }
-        
-        // Asegurar que todos los campos necesarios están presentes
-        return {
-          ...modifiedCuadrante,
-          CODIGO: modifiedCuadrante.CODIGO || '',
-          NOMBRE: modifiedCuadrante.NOMBRE || modifiedCuadrante.nombre || '',
-          EMAIL: modifiedCuadrante.EMAIL || modifiedCuadrante.email || '',
-          CENTRO: modifiedCuadrante.CENTRO || selectedCentro || '',
-          LUNA: modifiedCuadrante.LUNA || selectedMesAno || '',
-          updated_at: new Date().toISOString(),
-          updated_by: authUser?.email || authUser?.['CORREO ELECTRONICO'] || 'unknown'
-        };
+        modificariPorCuadrante[index].modificari[day] = editedCuadrantes[key];
       });
+      
+      // Construir solo los cuadrantes que tienen modificaciones
+      // IMPORTANT: Construim un obiect NOU cu DOAR metadata și zilele modificate
+      // Nu includem toate zilele din cuadrantele existente pentru a evita inversări
+      Object.keys(modificariPorCuadrante).forEach(indexStr => {
+        const index = parseInt(indexStr, 10);
+        const { cuadrante, modificari } = modificariPorCuadrante[index];
+        
+        if (!cuadrante) return;
+        
+        // Construir LUNA din selectedMonth și selectedYear (sau selectedMesAno dacă este setat)
+        // IMPORTANT: Nu folosim cuadrante.LUNA pentru că poate fi din altă lună
+        const lunaParaGuardar = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+        
+        // Construim un obiect NOU cu DOAR metadata și zilele modificate
+        const cuadranteParaGuardar = {
+          CODIGO: cuadrante.CODIGO || '',
+          NOMBRE: cuadrante.NOMBRE || cuadrante.nombre || '',
+          EMAIL: cuadrante.EMAIL || cuadrante.email || '',
+          CENTRO: cuadrante.CENTRO || selectedCentro || '',
+          LUNA: lunaParaGuardar, // Folosim luna selectată, nu cea din cuadrantele existente
+        };
+        
+        // Adăugăm DOAR zilele modificate (nu toate zilele din cuadrantele existente)
+        Object.keys(modificari).forEach(day => {
+          cuadranteParaGuardar[`ZI_${day}`] = modificari[day];
+        });
+        
+        cuadrantesToSave.push(cuadranteParaGuardar);
+      });
+      
+      // Si no hay modificaciones, no hacer nada
+      if (cuadrantesToSave.length === 0) {
+        setLoading(false);
+        return;
+      }
 
       console.log('💾 Salvando modificările:', cuadrantesToSave);
 
@@ -1908,7 +1941,11 @@ export default function CuadrantesPage() {
       setLunaPreview(selectedMonth);
     } catch (error) {
       console.error('Eroare la generarea anului:', error);
-      alert('Error al generar los cuadrantes para todo el año!');
+      setNotification({
+        type: 'error',
+        title: '❌ Error al Generar',
+        message: 'Error al generar los cuadrantes para todo el año. Por favor, intenta de nuevo.',
+      });
     } finally {
       setLoading(false);
     }
@@ -1939,9 +1976,17 @@ export default function CuadrantesPage() {
     
     if (toateLiniile.length === 0) {
       if (luniExcluse.length > 0) {
-        alert(`Todos los meses generados (${luniExcluse.map(l => MONTHS[l]).join(', ')}) ya existen en el sistema!\n\nPara sobrescribir, presiona nuevamente el botón "Guardar Todo el Año".`);
-      } else {
-        alert('No hay meses para guardar!');
+        setNotification({
+          type: 'warning',
+          title: '⚠️ Meses Ya Existentes',
+          message: `Todos los meses generados (${luniExcluse.map(l => MONTHS[l]).join(', ')}) ya existen en el sistema!\n\nPara sobrescribir, presiona nuevamente el botón "Guardar Todo el Año".`,
+        });
+        } else {
+        setNotification({
+          type: 'warning',
+          title: '⚠️ Sin Meses para Guardar',
+          message: 'No hay meses para guardar. Todos los meses ya existen en el sistema.',
+        });
       }
       setLoading(false);
       return;
@@ -2010,26 +2055,41 @@ export default function CuadrantesPage() {
       setProgress({ current: 0, total: 0, message: '' });
       
       if (failCount === 0) {
-        let mesaj = '';
+        let title = '';
+        let message = '';
         if (userChoice === true) {
-          mesaj = `✅ Todos los cuadrantes para todo el año han sido guardados con éxito! (${successCount}/${totalRequests})`;
+          title = '✅ ¡Cuadrantes Guardados!';
+          message = `Todos los cuadrantes para todo el año han sido guardados con éxito! (${successCount}/${totalRequests})`;
         } else {
           const luniSalvate = luniPentruSalvare.map(l => MONTHS[l]).join(', ');
           const luniSarite = luniExcluse.map(l => MONTHS[l]).join(', ');
-                      mesaj = `✅ Los cuadrantes para ${luniSalvate} han sido guardados con éxito! (${successCount}/${totalRequests})`;
+          title = '✅ ¡Cuadrantes Guardados!';
+          message = `Los cuadrantes para ${luniSalvate} han sido guardados con éxito! (${successCount}/${totalRequests})`;
           if (luniExcluse.length > 0) {
-                          mesaj += `\n\n⏭️ Los meses ${luniSarite} han sido omitidos (ya existen en el sistema).`;
+            message += `\n\n⏭️ Los meses ${luniSarite} han sido omitidos (ya existen en el sistema).`;
           }
         }
-        alert(mesaj);
+        setNotification({
+          type: 'success',
+          title: title,
+          message: message,
+        });
         setActiveTab('generar');
         setCuadranteAn(null);
       } else {
-        alert(`⚠️ Error al guardar anual: ${successCount} guardadas con éxito, ${failCount} fallos de ${totalRequests} total.\n\nVerifica la consola del navegador (F12) para detalles sobre errores.`);
+        setNotification({
+          type: 'error',
+          title: '⚠️ Error al Guardar',
+          message: `${successCount} guardadas con éxito, ${failCount} fallos de ${totalRequests} total.\n\nVerifica la consola del navegador (F12) para detalles sobre errores.`,
+        });
       }
           } catch (error) {
         console.error('Eroare la salvare:', error);
-        alert('❌ Error al guardar!');
+        setNotification({
+          type: 'error',
+          title: '❌ Error al Guardar',
+          message: 'Ha ocurrido un error al guardar los cuadrantes. Por favor, intenta de nuevo.',
+        });
         setProgress({ current: 0, total: 0, message: '' });
     } finally {
       setLoading(false);
@@ -2137,21 +2197,34 @@ export default function CuadrantesPage() {
           overwritten: lunaExistenta
         }, authUser);
 
-        let mesaj = '';
-        if (lunaExistenta) {
-          mesaj = `✅ Los cuadrantes para ${MONTHS[selectedMonth]} ${selectedYear} han sido sobrescritos con éxito! (${successCount}/${totalRequests})`;
-        } else {
-          mesaj = `✅ Los cuadrantes para ${MONTHS[selectedMonth]} ${selectedYear} han sido guardados con éxito! (${successCount}/${totalRequests})`;
-        }
-        alert(mesaj);
+        const title = lunaExistenta 
+          ? '✅ ¡Cuadrantes Sobrescritos!'
+          : '✅ ¡Cuadrantes Guardados!';
+        const message = lunaExistenta
+          ? `Los cuadrantes para ${MONTHS[selectedMonth]} ${selectedYear} han sido sobrescritos con éxito! (${successCount}/${totalRequests})`
+          : `Los cuadrantes para ${MONTHS[selectedMonth]} ${selectedYear} han sido guardados con éxito! (${successCount}/${totalRequests})`;
+        
+        setNotification({
+          type: 'success',
+          title: title,
+          message: message,
+        });
         setActiveTab('generar');
         setCuadrantePreview([]);
       } else {
-        alert(`⚠️ Error al guardar mensual: ${successCount} guardadas con éxito, ${failCount} fallos de ${totalRequests} total.\n\nVerifica la consola del navegador (F12) para detalles sobre errores.`);
+        setNotification({
+          type: 'error',
+          title: '⚠️ Error al Guardar',
+          message: `${successCount} guardadas con éxito, ${failCount} fallos de ${totalRequests} total.\n\nVerifica la consola del navegador (F12) para detalles sobre errores.`,
+        });
       }
           } catch (error) {
         console.error('Error saving cuadrante:', error);
-        alert('❌ Error al guardar!');
+        setNotification({
+          type: 'error',
+          title: '❌ Error al Guardar',
+          message: 'Ha ocurrido un error al guardar los cuadrantes. Por favor, intenta de nuevo.',
+        });
         setProgress({ current: 0, total: 0, message: '' });
     } finally {
       setLoading(false);
@@ -3768,19 +3841,56 @@ export default function CuadrantesPage() {
                     className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   >
                   <option value="">Todos los meses</option>
-                  {Array.from({ length: 36 }, (_, i) => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() - i);
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-                    const value = `${year}-${month}`;
-                    return (
-                      <option key={value} value={value}>
-                        {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+                  {(() => {
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+                    const currentMonth = now.getMonth(); // 0-11
+                    const options = [];
+                    
+                    // Adăugăm toate lunile din anul curent
+                    for (let month = 0; month <= 11; month++) {
+                      const date = new Date(currentYear, month, 1);
+                      const monthStr = String(month + 1).padStart(2, '0');
+                      const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                      const value = `${currentYear}-${monthStr}`;
+                      options.push({
+                        value,
+                        label: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+                        year: currentYear,
+                        month: month
+                      });
+                    }
+                    
+                    // Adăugăm luna anterioară (dacă nu este deja în anul curent)
+                    if (currentMonth === 0) {
+                      // Dacă suntem în ianuarie, adăugăm decembrie anul trecut
+                      const prevYear = currentYear - 1;
+                      const date = new Date(prevYear, 11, 1); // Decembrie
+                      const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                      const value = `${prevYear}-12`;
+                      options.unshift({
+                        value,
+                        label: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+                        year: prevYear,
+                        month: 11
+                      });
+                    }
+                    
+                    // Sortăm descrescător (luna curentă primul, apoi restul)
+                    // Anul mai mare primul, apoi luna mai mare primul
+                    options.sort((a, b) => {
+                      if (a.year !== b.year) {
+                        return b.year - a.year; // Anul mai mare primul
+                      }
+                      return b.month - a.month; // Luna mai mare primul
+                    });
+                    
+                    return options.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
-                    );
-                  })}
+                    ));
+                  })()}
                 </select>
                 {selectedMesAno && (
                   <button
@@ -4802,6 +4912,16 @@ export default function CuadrantesPage() {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Componenta de Notificări Moderne */}
+      {notification && (
+        <Notification
+          type={notification.type}
+          title={notification.title}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );

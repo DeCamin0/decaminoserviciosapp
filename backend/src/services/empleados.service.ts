@@ -313,7 +313,8 @@ export class EmpleadosService {
         \`Fecha Antigüedad\`,
         \`Antigüedad\`,
         \`DerechoPedidos\`,
-        \`TrabajaFestivos\`
+        \`TrabajaFestivos\`,
+        \`Contraseña\`
       FROM DatosEmpleados
       WHERE CODIGO = ${codigo}
       LIMIT 1
@@ -453,6 +454,44 @@ export class EmpleadosService {
   }
 
   /**
+   * Generează o parolă provizorie aleatorie și sigură
+   */
+  private generateTemporaryPassword(): string {
+    // Generează o parolă de 12 caractere cu:
+    // - 2 majuscule
+    // - 2 minuscule
+    // - 2 cifre
+    // - 2 caractere speciale
+    const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijkmnpqrstuvwxyz';
+    const numbers = '23456789';
+    const special = '!@#$%&*';
+
+    let password = '';
+    // Adaugă câte un caracter din fiecare categorie
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += special[Math.floor(Math.random() * special.length)];
+    password += special[Math.floor(Math.random() * special.length)];
+
+    // Completează până la 12 caractere cu caractere aleatorii
+    const allChars = uppercase + lowercase + numbers + special;
+    while (password.length < 12) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+
+    // Amestecă caracterele pentru a fi mai aleatorie
+    return password
+      .split('')
+      .sort(() => Math.random() - 0.5)
+      .join('');
+  }
+
+  /**
    * Adaugă un nou empleado în baza de date
    */
   async addEmpleado(empleadoData: {
@@ -484,12 +523,19 @@ export class EmpleadosService {
     DerechoPedidos?: string;
     TrabajaFestivos?: string;
     Contraseña?: string;
-  }): Promise<{ success: true; codigo: string }> {
+  }): Promise<{ success: true; codigo: string; temporaryPassword?: string }> {
     if (!empleadoData.CODIGO) {
       throw new BadRequestException('CODIGO is required');
     }
 
     try {
+      // Generează parolă provizorie dacă nu este furnizată sau este golă
+      const hasPasswordProvided =
+        empleadoData.Contraseña && empleadoData.Contraseña.trim() !== '';
+      const temporaryPassword = hasPasswordProvided
+        ? empleadoData.Contraseña
+        : this.generateTemporaryPassword();
+
       // Construim query-ul INSERT
       const insertQuery = `
         INSERT INTO DatosEmpleados (
@@ -519,7 +565,8 @@ export class EmpleadosService {
           \`Fecha Antigüedad\`,
           \`Antigüedad\`,
           \`DerechoPedidos\`,
-          \`TrabajaFestivos\`
+          \`TrabajaFestivos\`,
+          \`Contraseña\`
         ) VALUES (
           ${this.escapeSql(empleadoData.CODIGO)},
           ${this.escapeSql(empleadoData['NOMBRE / APELLIDOS'] || '')},
@@ -547,17 +594,22 @@ export class EmpleadosService {
           ${this.escapeSql(empleadoData['Fecha Antigüedad'] || null)},
           ${this.escapeSql(empleadoData.Antigüedad || null)},
           ${this.escapeSql(empleadoData.DerechoPedidos || 'NO')},
-          ${this.escapeSql(empleadoData.TrabajaFestivos || 'NO')}
+          ${this.escapeSql(empleadoData.TrabajaFestivos || 'NO')},
+          ${this.escapeSql(temporaryPassword)}
         )
       `;
 
       await this.prisma.$executeRawUnsafe(insertQuery);
 
-      this.logger.log(`✅ Empleado adăugat cu succes: ${empleadoData.CODIGO}`);
+      const wasPasswordGenerated = !hasPasswordProvided;
+      this.logger.log(
+        `✅ Empleado adăugat cu succes: ${empleadoData.CODIGO}${wasPasswordGenerated ? ' (con contraseña temporal generada)' : ''}`,
+      );
 
       return {
         success: true,
         codigo: empleadoData.CODIGO,
+        temporaryPassword: wasPasswordGenerated ? temporaryPassword : undefined, // Returnează parola provizorie doar dacă a fost generată
       };
     } catch (error: any) {
       this.logger.error(
@@ -915,12 +967,14 @@ export class EmpleadosService {
 
     for (let i = 0; i < camposModificados.length; i++) {
       const campo = camposModificados[i]?.trim() || '';
+      if (!campo) continue; // Sare peste câmpuri goale
+
       const valorViejo = valoresAnteriores[i]?.trim() || '(gol)';
       const valorNuevo = valoresNuevos[i]?.trim() || '(gol)';
 
-      if (valorViejo !== valorNuevo) {
-        resultado.push(`${campo}: "${valorViejo}" → "${valorNuevo}"`);
-      }
+      // Include toate câmpurile, chiar dacă valorile sunt identice
+      // (utilizatorul poate dori să salveze modificări chiar dacă valorile par identice)
+      resultado.push(`${campo}: "${valorViejo}" → "${valorNuevo}"`);
     }
 
     return resultado.join('\n');
@@ -948,55 +1002,149 @@ export class EmpleadosService {
     NOMBRE_SPLIT_CONFIANZA?: number;
   }): Promise<{ success: true; id: string }> {
     try {
-      // Formatează modificările (similar cu n8n Code node)
-      const camposModificados = data.CAMPO_MODIFICADO.split(',')
-        .map((c) => c.trim())
-        .filter((c) => c);
-      const valoresAnteriores = data.VALOR_ANTERIOR.split(',')
-        .map((v) => v.trim())
-        .filter((v) => v !== '');
-      const valoresNuevos = data.VALOR_NUEVO.split(',')
-        .map((v) => v.trim())
-        .filter((v) => v !== '');
+      // Log pentru debugging
+      this.logger.debug(
+        `🔍 [createCambioAprobacion] Date primite: CAMPO_MODIFICADO="${data.CAMPO_MODIFICADO}", VALOR_ANTERIOR="${data.VALOR_ANTERIOR}", VALOR_NUEVO="${data.VALOR_NUEVO}"`,
+      );
+      this.logger.debug(
+        `🔍 [createCambioAprobacion] Câmpuri separate: NOMBRE_SEPARADO="${data.NOMBRE_SEPARADO}", APELLIDO1="${data.APELLIDO1}", APELLIDO2="${data.APELLIDO2}"`,
+      );
 
-      // Adaugă câmpurile separate dacă există și sunt modificate
-      if (data.NOMBRE_SEPARADO || data.APELLIDO1 || data.APELLIDO2) {
-        // Verifică dacă NOMBRE / APELLIDOS este în lista de câmpuri modificate
-        const nombreIndex = camposModificados.findIndex(
-          (c) => c === 'NOMBRE / APELLIDOS' || c === 'NOMBRE_APELLIDOS',
+      // Formatează modificările (similar cu n8n Code node)
+      // Verifică dacă CAMPO_MODIFICADO există și nu este gol
+      let camposModificados: string[] = [];
+      let valoresAnteriores: string[] = [];
+      let valoresNuevos: string[] = [];
+
+      if (data.CAMPO_MODIFICADO && data.CAMPO_MODIFICADO.trim()) {
+        camposModificados = data.CAMPO_MODIFICADO.split(',')
+          .map((c) => c.trim())
+          .filter((c) => c);
+      }
+
+      if (data.VALOR_ANTERIOR && data.VALOR_ANTERIOR.trim()) {
+        valoresAnteriores = data.VALOR_ANTERIOR.split(',').map((v) => v.trim());
+        // Nu filtram valorile goale, pentru a păstra sincronizarea cu camposModificados
+      }
+
+      if (data.VALOR_NUEVO && data.VALOR_NUEVO.trim()) {
+        valoresNuevos = data.VALOR_NUEVO.split(',').map((v) => v.trim());
+        // Nu filtram valorile goale, pentru a păstra sincronizarea cu camposModificados
+      }
+
+      // Dacă nu avem câmpuri modificate din CAMPO_MODIFICADO, dar avem câmpuri separate,
+      // construim lista de câmpuri din câmpurile separate
+      if (
+        camposModificados.length === 0 &&
+        (data.NOMBRE_SEPARADO || data.APELLIDO1 || data.APELLIDO2)
+      ) {
+        this.logger.debug(
+          `🔍 [createCambioAprobacion] CAMPO_MODIFICADO este gol, construim din câmpuri separate`,
         );
 
-        if (nombreIndex >= 0) {
-          // Dacă NOMBRE / APELLIDOS este modificat, adaugă și câmpurile separate
-          if (data.NOMBRE_SEPARADO) {
-            camposModificados.push('NOMBRE');
-            valoresNuevos.push(data.NOMBRE_SEPARADO);
-            // Găsește valoarea anterioară pentru NOMBRE (dacă există în user)
-            valoresAnteriores.push(''); // Va fi populat la aprobare dacă e necesar
-          }
-          if (data.APELLIDO1) {
-            camposModificados.push('APELLIDO1');
-            valoresNuevos.push(data.APELLIDO1);
-            valoresAnteriores.push('');
-          }
-          if (data.APELLIDO2) {
-            camposModificados.push('APELLIDO2');
-            valoresNuevos.push(data.APELLIDO2);
-            valoresAnteriores.push('');
-          }
-          if (data.NOMBRE_SPLIT_CONFIANZA !== undefined) {
-            camposModificados.push('NOMBRE_SPLIT_CONFIANZA');
-            valoresNuevos.push(data.NOMBRE_SPLIT_CONFIANZA.toString());
-            valoresAnteriores.push('');
-          }
+        // Verifică dacă NOMBRE / APELLIDOS este modificat (prin câmpurile separate)
+        if (data.NOMBRE_SEPARADO || data.APELLIDO1 || data.APELLIDO2) {
+          camposModificados.push('NOMBRE / APELLIDOS');
+          // Folosim VALOR_ANTERIOR dacă există, altfel "(gol)"
+          valoresAnteriores.push(data.VALOR_ANTERIOR?.trim() || '(gol)');
+          // Construim valoarea nouă din câmpurile separate
+          const nombreCompleto = [
+            data.NOMBRE_SEPARADO,
+            data.APELLIDO1,
+            data.APELLIDO2,
+          ]
+            .filter((v) => v && v.trim())
+            .join(' ');
+          valoresNuevos.push(nombreCompleto || '(gol)');
         }
       }
 
-      const campoFormatat = this.formatModificari(
+      // Adaugă câmpurile separate DOAR dacă NOMBRE / APELLIDOS este efectiv în lista de câmpuri modificate
+      // Verifică dacă NOMBRE / APELLIDOS este în lista de câmpuri modificate
+      const nombreIndex = camposModificados.findIndex(
+        (c) => c === 'NOMBRE / APELLIDOS' || c === 'NOMBRE_APELLIDOS',
+      );
+
+      // Dacă NOMBRE / APELLIDOS este modificat (din CAMPO_MODIFICADO sau din câmpuri separate),
+      // adaugă și câmpurile separate pentru tracking
+      if (nombreIndex >= 0) {
+        if (data.NOMBRE_SEPARADO) {
+          camposModificados.push('NOMBRE');
+          valoresNuevos.push(data.NOMBRE_SEPARADO);
+          valoresAnteriores.push('(gol)'); // Va fi populat la aprobare dacă e necesar
+        }
+        if (data.APELLIDO1) {
+          camposModificados.push('APELLIDO1');
+          valoresNuevos.push(data.APELLIDO1);
+          valoresAnteriores.push('(gol)');
+        }
+        if (data.APELLIDO2) {
+          camposModificados.push('APELLIDO2');
+          valoresNuevos.push(data.APELLIDO2);
+          valoresAnteriores.push('(gol)');
+        }
+        if (data.NOMBRE_SPLIT_CONFIANZA !== undefined) {
+          camposModificados.push('NOMBRE_SPLIT_CONFIANZA');
+          valoresNuevos.push(data.NOMBRE_SPLIT_CONFIANZA.toString());
+          valoresAnteriores.push('(gol)');
+        }
+      }
+
+      // Sincronizează arrays-urile pentru a avea același număr de elemente
+      // Folosim lungimea lui camposModificados ca referință (numărul de câmpuri modificate)
+      const camposLength = camposModificados.length;
+
+      // Completează arrays-urile de valori până la lungimea câmpurilor
+      while (valoresAnteriores.length < camposLength) {
+        valoresAnteriores.push('');
+      }
+      while (valoresNuevos.length < camposLength) {
+        valoresNuevos.push('');
+      }
+
+      // Tăiem arrays-urile de valori dacă sunt mai lungi decât câmpurile
+      // (ignorăm valorile extra care nu au câmpuri corespunzătoare)
+      if (valoresAnteriores.length > camposLength) {
+        valoresAnteriores = valoresAnteriores.slice(0, camposLength);
+      }
+      if (valoresNuevos.length > camposLength) {
+        valoresNuevos = valoresNuevos.slice(0, camposLength);
+      }
+
+      let campoFormatat = this.formatModificari(
         camposModificados,
         valoresAnteriores,
         valoresNuevos,
       );
+
+      this.logger.debug(
+        `🔍 [createCambioAprobacion] Rezultat: camposModificados.length=${camposModificados.length}, campoFormatat.length=${campoFormatat ? campoFormatat.length : 0}`,
+      );
+      if (campoFormatat) {
+        this.logger.debug(
+          `🔍 [createCambioAprobacion] campoFormatat="${campoFormatat.substring(0, 200)}${campoFormatat.length > 200 ? '...' : ''}"`,
+        );
+      }
+
+      // Verifică dacă campoFormatat este gol - dacă da, folosește un fallback
+      if (!campoFormatat || !campoFormatat.trim()) {
+        this.logger.warn(
+          `⚠️ [createCambioAprobacion] campoFormatat este gol! Folosim fallback.`,
+        );
+        // Fallback: construiește din datele disponibile
+        if (data.CAMPO_MODIFICADO && data.CAMPO_MODIFICADO.trim()) {
+          campoFormatat = `${data.CAMPO_MODIFICADO}: "${data.VALOR_ANTERIOR || '(gol)'}" → "${data.VALOR_NUEVO || '(gol)'}"`;
+        } else if (data.NOMBRE_SEPARADO || data.APELLIDO1 || data.APELLIDO2) {
+          const nombreCompleto = [
+            data.NOMBRE_SEPARADO,
+            data.APELLIDO1,
+            data.APELLIDO2,
+          ]
+            .filter((v) => v && v.trim())
+            .join(' ');
+          campoFormatat = `NOMBRE / APELLIDOS: "${data.VALOR_ANTERIOR || '(gol)'}" → "${nombreCompleto || '(gol)'}"`;
+        }
+      }
 
       // Salvează în baza de date
       await this.prisma.solicitudesCambiosPersonales.create({
@@ -1065,20 +1213,175 @@ export class EmpleadosService {
         },
       });
 
-      // Actualizează câmpul în DatosEmpleados
-      // Parsează câmpul pentru a obține numele exact al coloanei
-      const campoName = this.getCampoName(data.campo);
+      // Parsează câmpurile și valorile din cambio
+      // cambio.campo conține formatul: "campo: \"valoare_veche\" → \"valoare_noua\"\n..."
+      // cambio.valoare_noua conține valorile concatenate cu virgulă: "val1, val2, val3"
 
-      if (!campoName) {
-        throw new BadRequestException(
-          `Câmpul "${data.campo}" nu este valid pentru actualizare`,
+      const camposModificados: string[] = [];
+      const valoresNuevos: string[] = [];
+
+      // Log pentru debugging - vezi exact ce format are cambio.campo
+      this.logger.debug(
+        `🔍 [approveCambio] cambio.campo: ${JSON.stringify(cambio.campo)}`,
+      );
+      this.logger.debug(
+        `🔍 [approveCambio] cambio.valoare_noua: ${JSON.stringify(cambio.valoare_noua)}`,
+      );
+      this.logger.debug(
+        `🔍 [approveCambio] cambio.valoare_veche: ${JSON.stringify(cambio.valoare_veche)}`,
+      );
+
+      // Parsează cambio.campo pentru a obține lista de câmpuri
+      if (cambio.campo) {
+        const lineas = cambio.campo.split('\n').filter((l) => l.trim());
+        this.logger.debug(
+          `🔍 [approveCambio] Liniile parseate din cambio.campo: ${lineas.length}`,
         );
+
+        for (const linea of lineas) {
+          // Format: "campo: \"valoare_veche\" → \"valoare_noua\""
+          // Regex mai robust care gestionează și caractere speciale în valori
+          // Încearcă mai multe formate
+          let match = linea.match(/^([^:]+):\s*"[^"]*"\s*→\s*"([^"]*)"/);
+
+          if (!match) {
+            // Încearcă fără ghilimele în valoare nouă
+            match = linea.match(/^([^:]+):\s*"[^"]*"\s*→\s*(.+)$/);
+            if (match) {
+              const campo = match[1].trim();
+              let valorNuevo = match[2].trim();
+              // Elimină ghilimele dacă există
+              valorNuevo = valorNuevo.replace(/^["']|["']$/g, '');
+              camposModificados.push(campo);
+              valoresNuevos.push(valorNuevo);
+              this.logger.debug(
+                `✅ [approveCambio] Parsat (fără ghilimele): ${campo} → ${valorNuevo}`,
+              );
+              continue;
+            }
+          }
+
+          if (!match) {
+            // Încearcă format simplu: "campo: valoare_veche → valoare_noua"
+            match = linea.match(/^([^:]+):\s*(.+?)\s*→\s*(.+)$/);
+            if (match) {
+              const campo = match[1].trim();
+              let valorNuevo = match[3].trim();
+              // Elimină ghilimele dacă există
+              valorNuevo = valorNuevo.replace(/^["']|["']$/g, '');
+              camposModificados.push(campo);
+              valoresNuevos.push(valorNuevo);
+              this.logger.debug(
+                `✅ [approveCambio] Parsat (format simplu): ${campo} → ${valorNuevo}`,
+              );
+              continue;
+            }
+          }
+
+          if (match) {
+            const campo = match[1].trim();
+            let valorNuevo = match[2]?.trim() || '';
+            // Elimină ghilimele dacă există
+            valorNuevo = valorNuevo.replace(/^["']|["']$/g, '');
+            camposModificados.push(campo);
+            valoresNuevos.push(valorNuevo);
+            this.logger.debug(
+              `✅ [approveCambio] Parsat: ${campo} → ${valorNuevo}`,
+            );
+          } else {
+            // Log pentru debugging dacă nu se poate parsea o linie
+            this.logger.warn(
+              `⚠️ Nu s-a putut parsea linia din cambio.campo: ${linea}`,
+            );
+          }
+        }
+      }
+
+      // Dacă nu am putut parsea din cambio.campo, încercăm să parsez din valoare_noua și valoare_veche
+      if (camposModificados.length === 0 && cambio.valoare_noua) {
+        this.logger.warn(
+          `⚠️ [approveCambio] Nu s-au putut parsea câmpurile din cambio.campo. Încerc fallback...`,
+        );
+
+        // Încearcă să parseze din data.campo dacă este furnizat
+        if (data.campo && data.campo.trim()) {
+          // Dacă data.campo conține virgule, parsează ca listă de câmpuri
+          if (data.campo.includes(',')) {
+            const camposList = data.campo
+              .split(',')
+              .map((c) => c.trim())
+              .filter((c) => c);
+            const valoresList = cambio.valoare_noua
+              .split(',')
+              .map((v) => v.trim())
+              .filter((v) => v);
+
+            // Asigură-te că avem același număr de câmpuri și valori
+            const minLength = Math.min(camposList.length, valoresList.length);
+            for (let i = 0; i < minLength; i++) {
+              if (camposList[i] && valoresList[i] !== undefined) {
+                camposModificados.push(camposList[i]);
+                valoresNuevos.push(valoresList[i]);
+              }
+            }
+
+            this.logger.debug(
+              `✅ [approveCambio] Parsat din data.campo (multiple): ${camposModificados.length} câmpuri`,
+            );
+          } else {
+            // Un singur câmp - folosește toată valoarea
+            camposModificados.push(data.campo.trim());
+            valoresNuevos.push(cambio.valoare_noua);
+            this.logger.debug(
+              `✅ [approveCambio] Parsat din data.campo (singur): ${data.campo}`,
+            );
+          }
+        } else if (!cambio.campo || cambio.campo.trim() === '') {
+          // Dacă cambio.campo este gol, încercă să parsez din valoare_veche și valoare_noua
+          // dar trebuie să știm lista de câmpuri - nu putem face asta fără informații suplimentare
+          this.logger.error(
+            `❌ [approveCambio] cambio.campo este gol sau NULL. cambio.valoare_noua: "${cambio.valoare_noua}", cambio.valoare_veche: "${cambio.valoare_veche}"`,
+          );
+          throw new BadRequestException(
+            `Nu s-au putut parsea câmpurile modificate. cambio.campo este gol sau NULL. Verifică dacă cambio-ul a fost salvat corect.`,
+          );
+        } else {
+          // Dacă avem cambio.campo dar nu s-a putut parsea, aruncă eroare descriptivă
+          this.logger.error(
+            `❌ [approveCambio] Nu s-au putut parsea câmpurile. cambio.campo: "${cambio.campo?.substring(0, 200)}...", cambio.valoare_noua: "${cambio.valoare_noua}"`,
+          );
+          throw new BadRequestException(
+            `Nu s-au putut parsea câmpurile modificate. Formatul cambio.campo nu este recunoscut. Verifică formatul: "${cambio.campo?.substring(0, 100)}..."`,
+          );
+        }
+      }
+
+      // Construim lista de câmpuri de actualizat
+      const setClauses: string[] = [];
+
+      // Procesăm fiecare câmp modificat
+      for (let i = 0; i < camposModificados.length; i++) {
+        const campo = camposModificados[i];
+        const valorNuevo = valoresNuevos[i] || '';
+
+        const campoName = this.getCampoName(campo);
+        if (!campoName) {
+          this.logger.warn(
+            `⚠️ Câmpul "${campo}" nu este valid pentru actualizare, se va omite`,
+          );
+          continue;
+        }
+
+        setClauses.push(`\`${campoName}\` = ${this.escapeSql(valorNuevo)}`);
       }
 
       // Dacă se modifică "NOMBRE / APELLIDOS", verificăm și câmpurile separate
-      if (data.campo === 'NOMBRE / APELLIDOS') {
+      const nombreIndex = camposModificados.findIndex(
+        (c) => c === 'NOMBRE / APELLIDOS' || c === 'NOMBRE_APELLIDOS',
+      );
+
+      if (nombreIndex >= 0) {
         // Verificăm dacă există câmpurile separate în cambio
-        // Citim câmpurile separate folosind Prisma Client
         const cambioDetails =
           await this.prisma.solicitudesCambiosPersonales.findUnique({
             where: { id: data.id },
@@ -1089,11 +1392,6 @@ export class EmpleadosService {
               NOMBRE_SPLIT_CONFIANZA: true,
             },
           });
-
-        // Construim lista de câmpuri de actualizat
-        const setClauses: string[] = [
-          `\`${campoName}\` = ${this.escapeSql(data.valor)}`,
-        ];
 
         // Adăugăm câmpurile separate dacă există
         if (
@@ -1128,30 +1426,27 @@ export class EmpleadosService {
             `\`NOMBRE_SPLIT_CONFIANZA\` = ${cambioDetails.NOMBRE_SPLIT_CONFIANZA}`,
           );
         }
-
-        // Construim query-ul UPDATE cu toate câmpurile
-        const setClause = setClauses.join(', ');
-
-        const updateQuery = `
-          UPDATE DatosEmpleados
-          SET ${setClause}
-          WHERE CODIGO = ${this.escapeSql(data.codigo)}
-        `;
-
-        await this.prisma.$executeRawUnsafe(updateQuery);
-      } else {
-        // Pentru alte câmpuri, actualizăm doar câmpul specificat
-        const updateQuery = `
-          UPDATE DatosEmpleados
-          SET \`${campoName}\` = ${this.escapeSql(data.valor)}
-          WHERE CODIGO = ${this.escapeSql(data.codigo)}
-        `;
-
-        await this.prisma.$executeRawUnsafe(updateQuery);
       }
 
+      if (setClauses.length === 0) {
+        throw new BadRequestException(
+          'Nu s-au găsit câmpuri valide pentru actualizare',
+        );
+      }
+
+      // Construim query-ul UPDATE cu toate câmpurile
+      const setClause = setClauses.join(', ');
+
+      const updateQuery = `
+        UPDATE DatosEmpleados
+        SET ${setClause}
+        WHERE CODIGO = ${this.escapeSql(data.codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
       this.logger.log(
-        `✅ Cambio aprobat cu succes: ${data.id} pentru empleado ${data.codigo}, câmp: ${campoName}`,
+        `✅ Cambio aprobat cu succes: ${data.id} pentru empleado ${data.codigo}, câmpuri: ${camposModificados.join(', ')}`,
       );
 
       return {
@@ -1284,6 +1579,23 @@ export class EmpleadosService {
     }
   }
 
+  /**
+   * Obține un cambio după ID (helper method)
+   */
+  async getCambioById(id: string): Promise<any> {
+    try {
+      const cambio = await this.prisma.solicitudesCambiosPersonales.findUnique({
+        where: { id },
+      });
+      return cambio;
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la obținerea cambio-ului: ${error.message}`);
+      throw new BadRequestException(
+        `Eroare la obținerea cambio-ului: ${error.message}`,
+      );
+    }
+  }
+
   async rejectCambio(data: {
     id: string;
   }): Promise<{ success: true; message: string }> {
@@ -1319,6 +1631,178 @@ export class EmpleadosService {
       }
       throw new BadRequestException(
         `Eroare la respingerea cambio-ului: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Schimbă parola unui angajat după verificarea vechii parole
+   */
+  async changePassword(
+    codigo: string,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<{ success: true; message: string }> {
+    if (!codigo) {
+      throw new BadRequestException('CODIGO is required');
+    }
+
+    if (!oldPassword || !oldPassword.trim()) {
+      throw new BadRequestException('La contraseña actual es obligatoria');
+    }
+
+    if (!newPassword || !newPassword.trim()) {
+      throw new BadRequestException('La nueva contraseña es obligatoria');
+    }
+
+    // Validări pentru noua parolă - condiții minime de securitate
+    const password = newPassword.trim();
+
+    // Longitudine minimă: 9 caractere (12 recomandat)
+    if (password.length < 9) {
+      throw new BadRequestException(
+        'La nueva contraseña debe tener al menos 9 caracteres (se recomienda 12)',
+      );
+    }
+
+    if (password.length > 100) {
+      throw new BadRequestException(
+        'La nueva contraseña no puede tener más de 100 caracteres',
+      );
+    }
+
+    // Verifică complexitatea parolei
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(
+      password,
+    );
+
+    const errors: string[] = [];
+    if (!hasUpperCase) {
+      errors.push('al menos 1 letra mayúscula (A-Z)');
+    }
+    if (!hasLowerCase) {
+      errors.push('al menos 1 letra minúscula (a-z)');
+    }
+    if (!hasNumber) {
+      errors.push('al menos 1 número (0-9)');
+    }
+    if (!hasSpecialChar) {
+      errors.push('al menos 1 carácter especial (! @ # $ % ^ & * ( ) _ + - =)');
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException(
+        `La nueva contraseña debe contener: ${errors.join(', ')}`,
+      );
+    }
+
+    try {
+      // Obține angajatul din baza de date
+      const empleado = await this.getEmpleadoByCodigo(codigo);
+      if (!empleado) {
+        throw new BadRequestException('Empleado no encontrado');
+      }
+
+      // Verifică vechea parolă - compară cu DNI_NIE sau Contraseña
+      const dniPassword = String(
+        empleado['D.N.I. / NIE'] || empleado.DNI_NIE || '',
+      ).trim();
+      const contraseñaPassword = String(
+        empleado.Contraseña ||
+          empleado['Contraseña'] ||
+          empleado.CONTRASENA ||
+          '',
+      ).trim();
+      const inputOldPassword = oldPassword.trim();
+
+      this.logger.debug(
+        `🔍 [changePassword] Verificando contraseña - DNI: ${dniPassword ? '***' : 'empty'}, Contraseña: ${contraseñaPassword ? '***' : 'empty'}, Input length: ${inputOldPassword.length}`,
+      );
+
+      if (
+        dniPassword !== inputOldPassword &&
+        contraseñaPassword !== inputOldPassword
+      ) {
+        this.logger.warn(
+          `⚠️ [changePassword] Contraseña actual incorrecta para codigo: ${codigo}`,
+        );
+        throw new BadRequestException('La contraseña actual es incorrecta');
+      }
+
+      // Verifică dacă noua parolă este diferită de vechea parolă
+      if (newPassword.trim() === inputOldPassword) {
+        throw new BadRequestException(
+          'La nueva contraseña debe ser diferente a la contraseña actual',
+        );
+      }
+
+      // Actualizează parola în baza de date
+      const query = `
+        UPDATE DatosEmpleados
+        SET \`Contraseña\` = ${this.escapeSql(newPassword.trim())}
+        WHERE CODIGO = ${this.escapeSql(codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(query);
+
+      this.logger.log(
+        `✅ Contraseña cambiada exitosamente para empleado: ${codigo}`,
+      );
+
+      return {
+        success: true,
+        message: 'Contraseña cambiada exitosamente',
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error al cambiar contraseña:`, error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al cambiar contraseña: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Obtiene la contraseña de un empleado (solo para managers/admins)
+   */
+  async getPassword(codigo: string): Promise<string | null> {
+    try {
+      if (!codigo || codigo.trim() === '') {
+        throw new BadRequestException('CODIGO is required');
+      }
+
+      const codigoClean = codigo.trim();
+
+      const query = `
+        SELECT \`Contraseña\`
+        FROM DatosEmpleados
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+        LIMIT 1
+      `;
+
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      if (rows.length > 0 && rows[0].Contraseña) {
+        this.logger.log(`✅ Contraseña retrieved for codigo: ${codigoClean}`);
+        return String(rows[0].Contraseña);
+      } else {
+        this.logger.log(
+          `🔍 No se encontró contraseña para codigo: ${codigoClean}`,
+        );
+        return null;
+      }
+    } catch (error: any) {
+      this.logger.error('❌ Error retrieving password:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener la contraseña: ${error.message}`,
       );
     }
   }

@@ -244,7 +244,7 @@ export default function AprobacionesPage() {
       }
     } catch (error) {
       console.error('Error fetching pending cambios:', error);
-      setErrorCambios('Eroare la încărcarea modificărilor în așteptare.');
+      setErrorCambios('Error al cargar las modificaciones pendientes.');
       setPendingCambios([]);
     } finally {
       setLoadingCambios(false);
@@ -277,23 +277,34 @@ export default function AprobacionesPage() {
     setShowApproveModal(true);
   };
 
-  // Helper pentru a extrage numele câmpului din string-ul formatat
-  const extractCampoName = (campoString) => {
-    if (!campoString) return campoString;
+  // Helper pentru a parsea și extrage toate câmpurile modificate din cambio.campo
+  const parseCamposModificados = (campoString) => {
+    if (!campoString) return [];
     
-    // Dacă string-ul conține ":" sau "→", extrage doar partea dinainte
-    // Ex: "D.N.I. / NIE: \"Demo2024\" → \"DemoDNI\"" => "D.N.I. / NIE"
-    if (campoString.includes(':')) {
-      return campoString.split(':')[0].trim();
+    // Parsează formatul: "campo: \"valoare_veche\" → \"valoare_noua\"\n..."
+    const lineas = campoString.split('\n').filter(l => l.trim());
+    const campos = [];
+    
+    for (const linea of lineas) {
+      // Format: "campo: \"valoare_veche\" → \"valoare_noua\""
+      const match = linea.match(/^([^:]+):\s*"[^"]*"\s*→\s*"([^"]*)"/);
+      if (match) {
+        const campo = match[1].trim();
+        campos.push(campo);
+      }
     }
     
-    // Dacă string-ul conține "→", extrage doar partea dinainte
-    if (campoString.includes('→')) {
-      return campoString.split('→')[0].trim();
+    return campos;
+  };
+
+  // Helper pentru a formata lista de câmpuri pentru afișare
+  const formatCamposForDisplay = (campoString) => {
+    const campos = parseCamposModificados(campoString);
+    if (campos.length > 0) {
+      return campos.join(', ');
     }
-    
-    // Altfel, returnează string-ul original
-    return campoString.trim();
+    // Fallback la valoarea originală dacă nu se poate parsea
+    return campoString || 'N/A';
   };
 
   const confirmApproveCambio = async () => {
@@ -323,18 +334,24 @@ export default function AprobacionesPage() {
 
     setProcessingAction(true);
     try {
-      // Extrage numele câmpului curat (fără formatare)
-      const campoRaw = cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || '';
-      const campoName = extractCampoName(campoRaw);
+      // Parsează lista de câmpuri din cambio.campo pentru a o trimite la backend
+      const camposList = parseCamposModificados(
+        cambioToApprove.campo || cambioToApprove.CAMPO_MODIFICADO || ''
+      );
       
       // Pregătesc datele în formatul cerut pentru backend
+      // Backend-ul va parsea cambio.campo pentru a obține lista de câmpuri,
+      // dar trimitem și lista de câmpuri ca fallback
       const approvalData = {
         id: cambioToApprove.id || cambioToApprove.ID,
         codigo: cambioToApprove.codigo || cambioToApprove.CODIGO,
         email: cambioToApprove.CORREO_ELECTRONICO,
         nombre: cambioToApprove.NOMBRE,
-        campo: campoName, // Numele câmpului curat, fără formatare
-        valor: cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua
+        // Trimitem lista de câmpuri parseată (separată prin virgulă) ca fallback
+        campo: camposList.length > 0 
+          ? camposList.join(', ') 
+          : (cambioToApprove.campo || cambioToApprove.CAMPO_MODIFICADO || ''),
+        valor: cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || ''
       };
 
       // Dacă checkbox-ul este bifat, adaugă parametrii pentru email la gestoria
@@ -412,7 +429,7 @@ export default function AprobacionesPage() {
         setNotification({
           type: 'error',
           title: 'Error',
-          message: `Eroare la aprobarea modificării! Status: ${response.status}`
+          message: `Error al aprobar la modificación! Estado: ${response.status}`
         });
       }
     } catch (error) {
@@ -420,7 +437,7 @@ export default function AprobacionesPage() {
       setNotification({
         type: 'error',
         title: 'Error',
-        message: 'Eroare la aprobarea modificării!'
+        message: 'Error al aprobar la modificación!'
       });
     } finally {
       setProcessingAction(false);
@@ -529,7 +546,7 @@ export default function AprobacionesPage() {
         setNotification({
           type: 'error',
           title: 'Error',
-          message: `Eroare la respingerea modificării! Status: ${response.status}`
+          message: `Error al rechazar la modificación! Estado: ${response.status}`
         });
       }
     } catch (error) {
@@ -537,7 +554,7 @@ export default function AprobacionesPage() {
       setNotification({
         type: 'error',
         title: 'Error',
-        message: 'Eroare la respingerea modificării!'
+        message: 'Error al rechazar la modificación!'
       });
     } finally {
       setProcessingAction(false);
@@ -807,7 +824,9 @@ export default function AprobacionesPage() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Campo modificado</label>
-                  <p className="text-gray-900 font-semibold break-words">{cambioToApprove.CAMPO_MODIFICADO || cambioToApprove.campo || 'N/A'}</p>
+                  <p className="text-gray-900 font-semibold break-words">
+                    {formatCamposForDisplay(cambioToApprove.campo || cambioToApprove.CAMPO_MODIFICADO)}
+                  </p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">

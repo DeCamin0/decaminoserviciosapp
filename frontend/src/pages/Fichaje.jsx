@@ -286,26 +286,36 @@ function useMadridClock(resyncIntervalMs = 60000, authUser = null) {
         return;
       }
       
+      // Folosim ora locală convertită la timezone-ul Europe/Madrid (fără request extern)
+      // JavaScript nativ poate calcula ora în orice timezone fără API extern
       try {
-        const resp = await fetch('https://worldtimeapi.org/api/timezone/Europe/Madrid');
-        if (resp.ok) {
+        // Încearcă să obțină ora din API (opțional, pentru sincronizare mai precisă)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // Timeout scurt de 3 secunde
+        
+        const resp = await fetch('https://worldtimeapi.org/api/timezone/Europe/Madrid', {
+          signal: controller.signal,
+        }).catch(() => null); // Nu aruncă eroare, doar returnează null
+        
+        clearTimeout(timeoutId);
+        
+        if (resp && resp.ok) {
           const data = await resp.json();
           baseEpoch = new Date(data.datetime).getTime();
           basePerf = performance.now();
           update();
         } else {
-          if (!baseEpoch) {
-            baseEpoch = Date.now();
-            basePerf = performance.now();
-            update();
-          }
-        }
-      } catch (_) {
-        if (!baseEpoch) {
+          // Fallback: folosim ora locală convertită la timezone-ul Europe/Madrid
+          // JavaScript poate calcula ora în orice timezone fără API extern
           baseEpoch = Date.now();
           basePerf = performance.now();
           update();
         }
+      } catch (error) {
+        // Fallback: folosim ora locală (JavaScript va formata corect pentru timezone-ul Europe/Madrid)
+        baseEpoch = Date.now();
+        basePerf = performance.now();
+        update();
       }
       setSyncing(false);
     };
@@ -350,6 +360,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [fichando, setFichando] = useState(false);
   const [lastFichaje, setLastFichaje] = useState(null);
+  // State pentru ultimul marcaj global (indiferent de lună) - folosit pentru a verifica dacă există un turn deschis
+  const [ultimoMarcajeGlobal, setUltimoMarcajeGlobal] = useState(null);
+  // eslint-disable-next-line no-unused-vars
+  const [loadingUltimoMarcaje, setLoadingUltimoMarcaje] = useState(false); // Poate fi folosit în viitor pentru loading indicator
   // Folosim locația globală din LocationContext
   const locationContext = useLocation();
   const { currentLocation, currentAddress } = locationContext;
@@ -1084,6 +1098,66 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     return canRegisterIncidencia;
   }, [logs]);
 
+  // Funcție pentru a obține ultimul marcaj global (indiferent de lună)
+  const fetchUltimoMarcajeGlobal = useCallback(async () => {
+    const userCode = authUser?.['CODIGO'] || authUser?.codigo;
+    if (!userCode) {
+      setUltimoMarcajeGlobal(null);
+      return;
+    }
+
+    // Skip real data fetch in DEMO mode
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Skipping fetchUltimoMarcajeGlobal');
+      return;
+    }
+
+    setLoadingUltimoMarcaje(true);
+    try {
+      const url = `${API_ENDPOINTS.ULTIMO_REGISTRO}?codigo=${encodeURIComponent(userCode)}`;
+      const result = await callApi(url);
+      if (result.success && result.data) {
+        setUltimoMarcajeGlobal(result.data);
+        console.log('✅ Ultimo marcaje global retrieved:', result.data);
+      } else {
+        setUltimoMarcajeGlobal(null);
+      }
+    } catch (error) {
+      console.error('Error fetching ultimo marcaje global:', error);
+      setUltimoMarcajeGlobal(null);
+    } finally {
+      setLoadingUltimoMarcaje(false);
+    }
+  }, [authUser, callApi]);
+
+  // Fetch ultimul marcaj global când se schimbă userCode sau după un fichaje nou
+  useEffect(() => {
+    fetchUltimoMarcajeGlobal();
+  }, [fetchUltimoMarcajeGlobal]);
+
+  const canUseIncidenceExit = useMemo(() => {
+    // Permite "Salida para incidencia" dacă există un turn deschis (ultimul marcaj este "Entrada")
+    // Acest buton trebuie să fie deblocat pentru a permite închiderea unui turn deschis,
+    // chiar dacă butonul normal "Salida" este blocat din cauza restricțiilor de orar
+    // Folosim ultimoMarcajeGlobal pentru a verifica indiferent de lună
+    if (ultimoMarcajeGlobal) {
+      const tipo = ultimoMarcajeGlobal.tipo || ultimoMarcajeGlobal.TIPO;
+      // Returnează true dacă ultimul marcaj este "Entrada" (turn deschis)
+      // Astfel, utilizatorul poate închide turnul deschis folosind "Salida para incidencia"
+      return tipo === 'Entrada';
+    }
+    
+    // Fallback: verifică și în logs dacă ultimoMarcajeGlobal nu este disponibil
+    if (!logs || logs.length === 0) return false;
+    const sortedLogs = [...logs].sort((a, b) => {
+      const dateA = new Date(`${a.data} ${a.hora}`);
+      const dateB = new Date(`${b.data} ${b.hora}`);
+      return dateB - dateA;
+    });
+    const ultimoMarcaje = sortedLogs[0];
+    return ultimoMarcaje && ultimoMarcaje.tipo === 'Entrada';
+  }, [ultimoMarcajeGlobal, logs]);
+
   const fetchLogs = useCallback(async (month = selectedMonth) => {
     setLoadingLogs(true);
     setChangingMonth(month !== selectedMonth);
@@ -1303,16 +1377,6 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     return (hours || 0) * 60 + (minutes || 0);
   };
 
-  const canUseIncidenceExit = useMemo(() => {
-    if (!logs || logs.length === 0) return false;
-    const sortedLogs = [...logs].sort((a, b) => {
-      const dateA = new Date(`${a.data} ${a.hora}`);
-      const dateB = new Date(`${b.data} ${b.hora}`);
-      return dateB - dateA;
-    });
-    const ultimoMarcaje = sortedLogs[0];
-    return ultimoMarcaje && ultimoMarcaje.tipo === 'Entrada';
-  }, [logs]);
 
   const handleFichar = async (tipo, customMotivo = '', options = {}) => {
     const { bypassSchedule = false } = options;
@@ -1535,6 +1599,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         setLogs(prevLogs => [newFichaje, ...prevLogs]);
         setLastFichaje(newFichaje);
 
+        // Reîncarcă ultimul marcaj global pentru a actualiza starea butonului "Salida para incidencia"
+        fetchUltimoMarcajeGlobal().catch(err => {
+          console.warn('Error reloading ultimo marcaje global after fichaje:', err);
+        });
+
         // După orice marcaje, reîncarcă din backend pentru a aduce DURACIÓN calculată de DB
         // Folosim același endpoint ca la inițializare (fetchLogs) pentru consistență
         if (tipo === 'Salida' || tipo === 'Entrada') {
@@ -1576,19 +1645,113 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         }
       } else {
         console.error('Error from API:', result.error);
+        console.log('🔍 [Fichaje] Full error object:', JSON.stringify(result, null, 2));
+        
+        // Detectăm eroarea specifică despre fichajes consecutive
+        let errorTitle = t('error.saveError');
+        let errorMessage = t('error.saveErrorDetails');
+        
+        const errorText = (result.error || '').toLowerCase();
+        console.log('🔍 [Fichaje] Error text (lowercase):', errorText);
+        console.log('🔍 [Fichaje] Error text length:', errorText.length);
+        
+        // Verifică dacă este eroarea despre fichajes consecutive
+        // Verifică mai multe variante ale mesajului
+        const hasNuSePot = errorText.includes('nu se pot înregistra');
+        const has2Entrada2Salida = errorText.includes('2 entrada/2 salida consecutive');
+        const hasEntrada2Salida = errorText.includes('entrada/2 salida consecutive');
+        const hasEntradaConsecutiv = errorText.includes('entrada consecutiv');
+        const hasSalidaConsecutiv = errorText.includes('salida consecutiv');
+        const hasConsecutive = errorText.includes('consecutive');
+        
+        console.log('🔍 [Fichaje] Checking conditions:', {
+          hasNuSePot,
+          has2Entrada2Salida,
+          hasEntrada2Salida,
+          hasEntradaConsecutiv,
+          hasSalidaConsecutiv,
+          hasConsecutive
+        });
+        
+        if (hasNuSePot || has2Entrada2Salida || hasEntrada2Salida || 
+            hasEntradaConsecutiv || hasSalidaConsecutiv || hasConsecutive) {
+          errorTitle = 'Error al Registrar';
+          
+          // Detectează tipul specific de eroare
+          if (errorText.includes('2 entrada') && !errorText.includes('2 salida')) {
+            // Doar Entrada consecutivă - înseamnă că există deja un turn deschis
+            errorMessage = 'No se pueden registrar 2 Entradas consecutivas. Es posible que hayas olvidado cerrar la entrada anterior. Por favor, verifica tus registros. Puedes usar "Salida para incidencia" para cerrar el turno abierto.';
+            // Forțează reîncărcarea logs și ultimul marcaj global pentru a actualiza starea butonului "Salida para incidencia"
+            setTimeout(() => {
+              fetchLogs(selectedMonth).catch(err => {
+                console.warn('Error reloading logs after consecutive entrada error:', err);
+              });
+              fetchUltimoMarcajeGlobal().catch(err => {
+                console.warn('Error reloading ultimo marcaje global after consecutive entrada error:', err);
+              });
+            }, 500);
+          } else if (errorText.includes('2 salida') && !errorText.includes('2 entrada')) {
+            // Doar Salida consecutivă
+            errorMessage = 'No se pueden registrar 2 Salidas consecutivas. Es posible que hayas olvidado cerrar la salida anterior. Por favor, verifica tus registros.';
+          } else {
+            // Ambele tipuri sau mesaj generic
+            errorMessage = 'No se pueden registrar 2 fichajes del mismo tipo consecutivos. Es posible que hayas olvidado cerrar el registro anterior. Por favor, verifica tus registros.';
+            // Pentru cazul generic, verificăm dacă este vorba despre 2 Entrada și forțăm reîncărcarea
+            if (errorText.includes('entrada')) {
+              setTimeout(() => {
+                fetchLogs(selectedMonth).catch(err => {
+                  console.warn('Error reloading logs after consecutive fichaje error:', err);
+                });
+                fetchUltimoMarcajeGlobal().catch(err => {
+                  console.warn('Error reloading ultimo marcaje global after consecutive fichaje error:', err);
+                });
+              }, 500);
+            }
+          }
+          console.log('✅ [Fichaje] Detected consecutive fichaje error, showing message:', errorMessage);
+        } else {
+          console.log('⚠️ [Fichaje] Error not recognized as consecutive fichaje error');
+        }
+        
         setNotification({
           type: 'error',
-          title: t('error.saveError'),
-          message: t('error.saveErrorDetails')
+          title: errorTitle,
+          message: errorMessage
         });
       }
     } catch (error) {
       console.error('Error saving fichaje:', error);
-              setNotification({
-          type: 'error',
-          title: t('error.saveError'),
-          message: t('error.saveErrorDetails')
-        });
+      
+      // Detectăm eroarea specifică despre fichajes consecutive
+      let errorTitle = t('error.saveError');
+      let errorMessage = t('error.saveErrorDetails');
+      
+      const errorText = (error?.message || error?.toString() || '').toLowerCase();
+      
+      // Verifică dacă este eroarea despre fichajes consecutive
+      if (errorText.includes('nu se pot înregistra') || 
+          errorText.includes('2 entrada/2 salida consecutive') ||
+          errorText.includes('consecutive')) {
+        errorTitle = 'Error al Registrar';
+        
+        // Detectează tipul specific de eroare
+        if (errorText.includes('2 entrada') && !errorText.includes('2 salida')) {
+          // Doar Entrada consecutivă
+          errorMessage = 'No se pueden registrar 2 Entradas consecutivas. Es posible que hayas olvidado cerrar la entrada anterior. Por favor, verifica tus registros.';
+        } else if (errorText.includes('2 salida') && !errorText.includes('2 entrada')) {
+          // Doar Salida consecutivă
+          errorMessage = 'No se pueden registrar 2 Salidas consecutivas. Es posible que hayas olvidado cerrar la salida anterior. Por favor, verifica tus registros.';
+        } else {
+          // Ambele tipuri sau mesaj generic
+          errorMessage = 'No se pueden registrar 2 fichajes del mismo tipo consecutivos. Es posible que hayas olvidado cerrar el registro anterior. Por favor, verifica tus registros.';
+        }
+      }
+      
+      setNotification({
+        type: 'error',
+        title: errorTitle,
+        message: errorMessage
+      });
     } finally {
       // Aseguramos que fichando se resetee SIEMPRE, sin importar el resultado
       setFichando(false);
@@ -2289,8 +2452,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
                   : !canUseIncidenceExit
-                    ? 'Debes registrar una entrada antes de usar esta salida'
-                    : 'Salida imprevista para incidencia'
+                    ? 'Debes registrar una entrada antes de usar esta salida para cerrar el turno abierto'
+                    : 'Salida imprevista para incidencia. Permite cerrar un turno abierto incluso si el botón normal de Salida está bloqueado.'
               }
             >
               <div className="absolute inset-0 rounded-xl bg-amber-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
@@ -4053,19 +4216,64 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           message: editIdx !== null ? 'El registro ha sido actualizado correctamente.' : 'El registro ha sido creado correctamente.'
         });
       } else {
+        // Detectăm eroarea specifică despre fichajes consecutive
+        let errorTitle = 'Error de Guardado';
+        let errorMessage = result.error || 'No se pudo guardar el registro. Por favor, intenta de nuevo.';
+        
+        const errorText = (result.error || '').toLowerCase();
+        
+        // Verifică dacă este eroarea despre fichajes consecutive
+        if (errorText.includes('nu se pot înregistra') || 
+            errorText.includes('2 entrada/2 salida consecutive') ||
+            errorText.includes('consecutive')) {
+          errorTitle = 'Error al Registrar';
+          
+          // Detectează tipul specific de eroare
+          if (errorText.includes('2 entrada') && !errorText.includes('2 salida')) {
+            // Doar Entrada consecutivă
+            errorMessage = 'No se pueden registrar 2 Entradas consecutivas. Es posible que hayas olvidado cerrar la entrada anterior. Por favor, verifica tus registros.';
+          } else if (errorText.includes('2 salida') && !errorText.includes('2 entrada')) {
+            // Doar Salida consecutivă
+            errorMessage = 'No se pueden registrar 2 Salidas consecutivas. Es posible que hayas olvidado cerrar la salida anterior. Por favor, verifica tus registros.';
+          } else {
+            // Ambele tipuri sau mesaj generic
+            errorMessage = 'No se pueden registrar 2 fichajes del mismo tipo consecutivos. Es posible que hayas olvidado cerrar el registro anterior. Por favor, verifica tus registros.';
+          }
+        }
+        
         setNotification({
           type: 'error',
-          title: 'Error de Guardado',
-          message: result.error || 'No se pudo guardar el registro. Por favor, intenta de nuevo.'
+          title: errorTitle,
+          message: errorMessage
         });
       }
     } catch (error) {
       console.error('Error saving registro:', error);
-              setNotification({
-          type: 'error',
-          title: t('error.saveError'),
-          message: t('error.saveErrorSimple')
-        });
+      
+      // Detectăm eroarea specifică despre fichajes consecutive
+      let errorTitle = t('error.saveError');
+      let errorMessage = t('error.saveErrorSimple');
+      
+      const errorText = error?.message || error?.toString() || '';
+      if (errorText.includes('Nu se pot înregistra 2 Entrada') || 
+          errorText.includes('Nu se pot înregistra 2 Salida') ||
+          errorText.includes('2 Entrada/2 Salida consecutive') ||
+          errorText.includes('consecutive')) {
+        errorTitle = 'Error al Registrar';
+        if (errorText.includes('Entrada')) {
+          errorMessage = 'No se pueden registrar 2 Entradas consecutivas. Es posible que hayas olvidado cerrar la entrada anterior. Por favor, verifica tus registros.';
+        } else if (errorText.includes('Salida')) {
+          errorMessage = 'No se pueden registrar 2 Salidas consecutivas. Es posible que hayas olvidado cerrar la salida anterior. Por favor, verifica tus registros.';
+        } else {
+          errorMessage = 'No se pueden registrar 2 fichajes del mismo tipo consecutivos. Es posible que hayas olvidado cerrar el registro anterior. Por favor, verifica tus registros.';
+        }
+      }
+      
+      setNotification({
+        type: 'error',
+        title: errorTitle,
+        message: errorMessage
+      });
     }
   };
 
@@ -5891,20 +6099,30 @@ export default function FichajePage() {
       // Initialize Madrid time from an authoritative API, not device clock
       (async () => {
         try {
-          const resp = await fetch('https://worldtimeapi.org/api/timezone/Europe/Madrid');
-          if (resp.ok) {
+          // Încearcă să obțină ora din API (opțional, pentru sincronizare mai precisă)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000); // Timeout scurt de 3 secunde
+          
+          const resp = await fetch('https://worldtimeapi.org/api/timezone/Europe/Madrid', {
+            signal: controller.signal,
+          }).catch(() => null); // Nu aruncă eroare, doar returnează null
+          
+          clearTimeout(timeoutId);
+          
+          if (resp && resp.ok) {
             const data = await resp.json();
             // data.datetime example: 2025-10-02T14:21:06.123456+02:00
             const base = new Date(data.datetime).getTime();
             setMadridNowMs(base);
             updateMadridTimeFromMs(base);
           } else {
-            // fallback to device time once if API fails
+            // Fallback: folosim ora locală (JavaScript va formata corect pentru timezone-ul Europe/Madrid)
             const base = Date.now();
             setMadridNowMs(base);
             updateMadridTimeFromMs(base);
           }
         } catch (_) {
+          // Fallback: folosim ora locală (JavaScript va formata corect pentru timezone-ul Europe/Madrid)
           const base = Date.now();
           setMadridNowMs(base);
           updateMadridTimeFromMs(base);

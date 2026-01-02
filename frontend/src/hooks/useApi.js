@@ -32,18 +32,51 @@ export const useApi = () => {
         const token = localStorage.getItem('auth_token');
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
+          console.log('🔑 [useApi] JWT token added to request');
+        } else {
+          console.warn('⚠️ [useApi] No auth token found in localStorage for backend endpoint');
+        }
+      }
+
+      // Extrage headers din options pentru a nu le suprascrie
+      const { headers: optionsHeaders, ...restOptions } = options;
+      
+      // Merge headers-urile: base headers + options headers (options headers au prioritate pentru Content-Type, etc.)
+      const finalHeaders = {
+        ...headers,
+        ...optionsHeaders,
+      };
+      
+      // Re-adaugă Authorization dacă a fost setat (pentru a preveni suprascrierea)
+      if (isBackendEndpoint) {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          finalHeaders['Authorization'] = `Bearer ${token}`;
         }
       }
 
       const response = await fetch(url, {
-        headers,
+        headers: finalHeaders,
         cache: 'no-store', // Forțează request fresh, fără cache (important pentru PWA)
-        ...options,
+        ...restOptions,
       });
 
       console.log('useApi response status:', response.status);
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Încearcă să extragă mesajul de eroare din răspunsul JSON
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          console.log('🔍 [useApi] Error response data:', JSON.stringify(errorData, null, 2));
+          errorMessage = errorData?.message || errorData?.error || errorMessage;
+          console.log('🔍 [useApi] Extracted error message:', errorMessage);
+        } catch (jsonError) {
+          // Dacă nu e JSON, folosește mesajul default
+          console.log('🔍 [useApi] Error parsing JSON, using default message');
+          console.log('🔍 [useApi] JSON parsing error:', jsonError);
+        }
+        // Aruncă eroarea cu mesajul extras (sau default dacă nu s-a putut extrage)
+        throw new Error(errorMessage);
       }
 
       // Verifică tipul de conținut al răspunsului

@@ -369,7 +369,7 @@ export default function MisInspeccionesPage() {
               const pdfUrl = typeof data.pdfUrl === 'string' ? data.pdfUrl : String(data.pdfUrl);
               setPreviewData({ ...inspection, pdfUrl });
             } else {
-              setPreviewData({ ...inspection, error: 'PDF-ul nu este disponibil pentru preview' });
+              setPreviewData({ ...inspection, error: 'El PDF no está disponible para la vista previa' });
             }
           } catch (jsonError) {
             // Fallback: încearcă să creeze un blob URL
@@ -383,7 +383,7 @@ export default function MisInspeccionesPage() {
               console.log('✅ Fallback URL creado para inspección PDF:', isIOS ? 'base64' : 'blob');
               setPreviewData({ ...inspection, pdfUrl: url });
             } else {
-              setPreviewData({ ...inspection, error: 'Nu s-a putut încărca PDF-ul pentru preview (blob gol)' });
+              setPreviewData({ ...inspection, error: 'No se pudo cargar el PDF para la vista previa (blob vacío)' });
             }
           }
         }
@@ -454,12 +454,12 @@ export default function MisInspeccionesPage() {
           
           // Verifică dacă răspunsul este array gol sau obiect gol
           if (Array.isArray(data) && data.length === 0) {
-            alert('Nu s-a găsit PDF-ul pentru această inspecție');
+            alert('No se encontró el PDF para esta inspección');
             return;
           }
           
           if (Array.isArray(data) && data.length > 0 && Object.keys(data[0]).length === 0) {
-            alert('PDF-ul nu este disponibil pentru această inspecție');
+            alert('El PDF no está disponible para esta inspección');
             return;
           }
           
@@ -478,10 +478,10 @@ export default function MisInspeccionesPage() {
               window.URL.revokeObjectURL(url);
               document.body.removeChild(a);
             } else {
-              alert('Eroare la descărcarea PDF-ului din URL');
+              alert('Error al descargar el PDF desde la URL');
             }
           } else {
-            alert('PDF-ul nu este disponibil pentru această inspecție');
+            alert('El PDF no está disponible para esta inspección');
           }
         } catch (jsonError) {
           // Încearcă să descarce direct ca PDF (fallback)
@@ -497,7 +497,7 @@ export default function MisInspeccionesPage() {
           document.body.removeChild(a);
         }
       } else {
-        alert('Eroare la descărcarea PDF-ului');
+        alert('Error al descargar el PDF');
       }
     } catch (error) {
       console.error('❌ Error downloading PDF:', error);

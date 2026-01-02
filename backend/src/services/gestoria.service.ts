@@ -1631,6 +1631,9 @@ export class GestoriaService {
     actualizaraFechaAntiguedad?: boolean;
     actualizaraFechaBaja?: boolean;
     tieneFiniquitoExistente?: boolean;
+    segSocialDB?: string;
+    segSocialExtraido?: string;
+    actualizaraSegSocial?: boolean;
   }> {
     try {
       // Dacă avem CODIGO, rezolvăm numele complet
@@ -1721,19 +1724,22 @@ export class GestoriaService {
       let fechaBajaExtraida: string | null = null;
       let fechaAntiguedadExtraida: string | null = null;
       let tieneFechaBajaEnDB = false;
+      let segSocialDB: string | null = null;
+      let segSocialExtraido: string | null = null;
 
       // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
       const codigoParaVerificar =
         codigo || (await this.obtenerCodigoPorNombre(nombreFinal));
 
       if (codigoParaVerificar) {
-        // Obținem statusul și datele existente din DB
+        // Obținem statusul și datele existente din DB (inclusiv SEG. SOCIAL)
         const empleadoQuery = `
           SELECT 
             \`ESTADO\`,
             \`FECHA DE ALTA\`,
             \`Fecha Antigüedad\`,
-            \`FECHA BAJA\`
+            \`FECHA BAJA\`,
+            \`SEG. SOCIAL\`
           FROM \`DatosEmpleados\`
           WHERE \`CODIGO\` = ${this.escapeSql(codigoParaVerificar)}
           LIMIT 1
@@ -1744,6 +1750,7 @@ export class GestoriaService {
             'FECHA DE ALTA': string | null;
             'Fecha Antigüedad': string | null;
             'FECHA BAJA': string | null;
+            'SEG. SOCIAL': string | null;
           }>
         >(empleadoQuery);
 
@@ -1756,6 +1763,7 @@ export class GestoriaService {
           fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
           fechaAntiguedadDB = empleadoResult[0]?.['Fecha Antigüedad'] || null;
           fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+          segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
           // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
           if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
@@ -1815,6 +1823,21 @@ export class GestoriaService {
         if (fechaAntiguedadExtraida) {
           fechaAltaExtraida = fechaAntiguedadExtraida;
         }
+
+        // Extragem SEG. SOCIAL din PDF
+        const lines = textContent.split('\n');
+        for (const line of lines) {
+          const segSocialMatch = line.match(
+            /Núm\s+afiliación\s+Seg\.\s+Social:\s*(\d{10,15})/i,
+          );
+          if (segSocialMatch) {
+            segSocialExtraido = segSocialMatch[1].trim().replace(/\s+/g, '');
+            this.logger.debug(
+              `✅ Seg. Social extras din PDF: ${segSocialExtraido}`,
+            );
+            break;
+          }
+        }
       } else {
         this.logger.warn(`⚠️ textContent este gol pentru uploadNomina`);
       }
@@ -1832,6 +1855,10 @@ export class GestoriaService {
           !fechaAntiguedadDB && fechaAntiguedadExtraida ? true : false;
         const actualizaraFechaBaja =
           esFiniquito && fechaBajaExtraida ? true : false; // Notă: Fecha Baja se folosește pentru FECHA DE ALTA dacă nu există
+        const actualizaraSegSocial =
+          (!segSocialDB || segSocialDB.trim() === '') && segSocialExtraido
+            ? true
+            : false;
 
         return {
           success: true,
@@ -1848,6 +1875,9 @@ export class GestoriaService {
           actualizaraFechaAlta,
           actualizaraFechaAntiguedad,
           actualizaraFechaBaja,
+          segSocialDB: segSocialDB || undefined,
+          segSocialExtraido: segSocialExtraido || undefined,
+          actualizaraSegSocial,
         };
       }
 
@@ -1924,10 +1954,58 @@ export class GestoriaService {
                 fechaBaja,
               );
             }
+
+            // Extragem și actualizăm SEG. SOCIAL dacă nu există în DB
+            const lines = textContent.split('\n');
+            for (const line of lines) {
+              const segSocialMatch = line.match(
+                /Núm\s+afiliación\s+Seg\.\s+Social:\s*(\d{10,15})/i,
+              );
+              if (segSocialMatch) {
+                const segSocialExtraido = segSocialMatch[1]
+                  .trim()
+                  .replace(/\s+/g, '');
+                this.logger.debug(
+                  `✅ Seg. Social extras din PDF: ${segSocialExtraido}`,
+                );
+
+                // Verificăm dacă SEG. SOCIAL există în DB
+                const segSocialCheck = `
+                  SELECT \`SEG. SOCIAL\`
+                  FROM \`DatosEmpleados\`
+                  WHERE \`CODIGO\` = ${this.escapeSql(codigoParaActualizar)}
+                  LIMIT 1
+                `;
+                const segSocialResult =
+                  await this.prisma.$queryRawUnsafe<
+                    Array<{ 'SEG. SOCIAL': string | null }>
+                  >(segSocialCheck);
+
+                const segSocialActual =
+                  segSocialResult[0]?.['SEG. SOCIAL'] || null;
+                if (!segSocialActual || segSocialActual.trim() === '') {
+                  // Actualizăm SEG. SOCIAL în DB
+                  const updateSegSocial = `
+                    UPDATE \`DatosEmpleados\`
+                    SET \`SEG. SOCIAL\` = ${this.escapeSql(segSocialExtraido)}
+                    WHERE \`CODIGO\` = ${this.escapeSql(codigoParaActualizar)}
+                  `;
+                  await this.prisma.$executeRawUnsafe(updateSegSocial);
+                  this.logger.log(
+                    `✅ SEG. SOCIAL actualizat pentru ${codigoParaActualizar}: ${segSocialExtraido}`,
+                  );
+                } else {
+                  this.logger.debug(
+                    `ℹ️ SEG. SOCIAL deja există în DB pentru ${codigoParaActualizar}: ${segSocialActual}`,
+                  );
+                }
+                break;
+              }
+            }
           }
         } catch (error: any) {
           this.logger.error(
-            `❌ Eroare la extragerea fechas din ${esFiniquito ? 'finiquito' : 'nómina'}:`,
+            `❌ Eroare la extragerea fechas/SEG. SOCIAL din ${esFiniquito ? 'finiquito' : 'nómina'}:`,
             error,
           );
         }
@@ -2071,6 +2149,9 @@ export class GestoriaService {
       actualizaraFechaAntiguedad?: boolean;
       actualizaraFechaBaja?: boolean;
       tieneFiniquitoExistente?: boolean;
+      segSocialDB?: string;
+      segSocialExtraido?: string;
+      actualizaraSegSocial?: boolean;
     }>;
   }> {
     try {
@@ -2526,13 +2607,15 @@ export class GestoriaService {
             let tieneFechaBajaEnDB = false;
 
             // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
+            let segSocialDB: string | null = null;
             if (codigo) {
               const empleadoQuery = `
                 SELECT 
                   \`ESTADO\`,
                   \`FECHA DE ALTA\`,
                   \`Fecha Antigüedad\`,
-                  \`FECHA BAJA\`
+                  \`FECHA BAJA\`,
+                  \`SEG. SOCIAL\`
                 FROM \`DatosEmpleados\`
                 WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
                 LIMIT 1
@@ -2543,6 +2626,7 @@ export class GestoriaService {
                   'FECHA DE ALTA': string | null;
                   'Fecha Antigüedad': string | null;
                   'FECHA BAJA': string | null;
+                  'SEG. SOCIAL': string | null;
                 }>
               >(empleadoQuery);
 
@@ -2556,6 +2640,7 @@ export class GestoriaService {
                 fechaAntiguedadDB =
                   empleadoResult[0]?.['Fecha Antigüedad'] || null;
                 fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+                segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
                 // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
                 if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
@@ -2623,6 +2708,13 @@ export class GestoriaService {
               );
             }
 
+            // SEG. SOCIAL este deja extras anterior (segSocialDetectado)
+            const segSocialExtraido = segSocialDetectado;
+            const actualizaraSegSocial =
+              (!segSocialDB || segSocialDB.trim() === '') && segSocialExtraido
+                ? true
+                : false;
+
             // Dacă angajatul are FECHA BAJA setată și este o nómina normală, marchez ca eroare
             if (tieneFechaBajaEnDB && !esFiniquito) {
               detalle.push({
@@ -2647,7 +2739,14 @@ export class GestoriaService {
                 actualizaraFechaAntiguedad: false,
                 actualizaraFechaBaja: false,
                 tieneFiniquitoExistente,
-              });
+                segSocialDB: segSocialDB || undefined,
+                segSocialExtraido: segSocialDetectado || undefined,
+                actualizaraSegSocial:
+                  (!segSocialDB || segSocialDB.trim() === '') &&
+                  segSocialDetectado
+                    ? true
+                    : false,
+              } as any);
               erori++;
               continue;
             }
@@ -2682,7 +2781,10 @@ export class GestoriaService {
               actualizaraFechaAntiguedad,
               actualizaraFechaBaja,
               tieneFiniquitoExistente,
-            });
+              segSocialDB: segSocialDB || undefined,
+              segSocialExtraido: segSocialExtraido || undefined,
+              actualizaraSegSocial: actualizaraSegSocial || false,
+            } as any);
             erori++;
             continue;
           }
@@ -2701,13 +2803,15 @@ export class GestoriaService {
           let tieneFechaBajaEnDB = false;
 
           // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
+          let segSocialDB: string | null = null;
           if (codigo) {
             const empleadoQuery = `
               SELECT 
                 \`ESTADO\`,
                 \`FECHA DE ALTA\`,
                 \`Fecha Antigüedad\`,
-                \`FECHA BAJA\`
+                \`FECHA BAJA\`,
+                \`SEG. SOCIAL\`
               FROM \`DatosEmpleados\`
               WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
               LIMIT 1
@@ -2718,6 +2822,7 @@ export class GestoriaService {
                 'FECHA DE ALTA': string | null;
                 'Fecha Antigüedad': string | null;
                 'FECHA BAJA': string | null;
+                'SEG. SOCIAL': string | null;
               }>
             >(empleadoQuery);
 
@@ -2731,6 +2836,7 @@ export class GestoriaService {
               fechaAntiguedadDB =
                 empleadoResult[0]?.['Fecha Antigüedad'] || null;
               fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+              segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
               // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
               if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
@@ -2797,7 +2903,14 @@ export class GestoriaService {
               actualizaraFechaAntiguedad: false,
               actualizaraFechaBaja: false,
               tieneFiniquitoExistente,
-            });
+              segSocialDB: segSocialDB || undefined,
+              segSocialExtraido: segSocialDetectado || undefined,
+              actualizaraSegSocial:
+                (!segSocialDB || segSocialDB.trim() === '') &&
+                segSocialDetectado
+                  ? true
+                  : false,
+            } as any);
             erori++;
             continue;
           }
@@ -2828,6 +2941,13 @@ export class GestoriaService {
           } else {
             this.logger.warn(`⚠️ textContent este gol pentru pagina ${i + 1}`);
           }
+
+          // SEG. SOCIAL este deja extras anterior (segSocialDetectado)
+          const segSocialExtraido = segSocialDetectado;
+          const actualizaraSegSocial =
+            (!segSocialDB || segSocialDB.trim() === '') && segSocialExtraido
+              ? true
+              : false;
 
           // Salvăm nómina DOAR dacă nu este preview mode
           let inserted = false;
@@ -2896,10 +3016,39 @@ export class GestoriaService {
                       fechaBaja,
                     );
                   }
+
+                  // Actualizăm SEG. SOCIAL dacă nu există în DB
+                  if (segSocialDetectado) {
+                    const segSocialCheck = `
+                      SELECT \`SEG. SOCIAL\`
+                      FROM \`DatosEmpleados\`
+                      WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+                      LIMIT 1
+                    `;
+                    const segSocialResult =
+                      await this.prisma.$queryRawUnsafe<
+                        Array<{ 'SEG. SOCIAL': string | null }>
+                      >(segSocialCheck);
+
+                    const segSocialActual =
+                      segSocialResult[0]?.['SEG. SOCIAL'] || null;
+                    if (!segSocialActual || segSocialActual.trim() === '') {
+                      // Actualizăm SEG. SOCIAL în DB
+                      const updateSegSocial = `
+                        UPDATE \`DatosEmpleados\`
+                        SET \`SEG. SOCIAL\` = ${this.escapeSql(segSocialDetectado)}
+                        WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+                      `;
+                      await this.prisma.$executeRawUnsafe(updateSegSocial);
+                      this.logger.log(
+                        `✅ SEG. SOCIAL actualizat pentru ${codigo}: ${segSocialDetectado}`,
+                      );
+                    }
+                  }
                 }
               } catch (error: any) {
                 this.logger.error(
-                  `❌ Eroare la extragerea fechas din finiquito (bulk):`,
+                  `❌ Eroare la extragerea fechas/SEG. SOCIAL din finiquito (bulk):`,
                   error,
                 );
               }
@@ -2921,10 +3070,39 @@ export class GestoriaService {
                       null,
                     );
                   }
+
+                  // Actualizăm SEG. SOCIAL dacă nu există în DB
+                  if (segSocialDetectado) {
+                    const segSocialCheck = `
+                      SELECT \`SEG. SOCIAL\`
+                      FROM \`DatosEmpleados\`
+                      WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+                      LIMIT 1
+                    `;
+                    const segSocialResult =
+                      await this.prisma.$queryRawUnsafe<
+                        Array<{ 'SEG. SOCIAL': string | null }>
+                      >(segSocialCheck);
+
+                    const segSocialActual =
+                      segSocialResult[0]?.['SEG. SOCIAL'] || null;
+                    if (!segSocialActual || segSocialActual.trim() === '') {
+                      // Actualizăm SEG. SOCIAL în DB
+                      const updateSegSocial = `
+                        UPDATE \`DatosEmpleados\`
+                        SET \`SEG. SOCIAL\` = ${this.escapeSql(segSocialDetectado)}
+                        WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
+                      `;
+                      await this.prisma.$executeRawUnsafe(updateSegSocial);
+                      this.logger.log(
+                        `✅ SEG. SOCIAL actualizat pentru ${codigo}: ${segSocialDetectado}`,
+                      );
+                    }
+                  }
                 }
               } catch (error: any) {
                 this.logger.error(
-                  `❌ Eroare la extragerea fechas din nómina (bulk):`,
+                  `❌ Eroare la extragerea fechas/SEG. SOCIAL din nómina (bulk):`,
                   error,
                 );
               }
@@ -2960,7 +3138,11 @@ export class GestoriaService {
             actualizaraFechaAlta,
             actualizaraFechaAntiguedad,
             actualizaraFechaBaja,
-          });
+            tieneFiniquitoExistente,
+            segSocialDB: segSocialDB || undefined,
+            segSocialExtraido: segSocialExtraido || undefined,
+            actualizaraSegSocial,
+          } as any);
           procesadas++;
 
           // Trimite notificare către angajat când se publică nómina (doar dacă nu e preview)

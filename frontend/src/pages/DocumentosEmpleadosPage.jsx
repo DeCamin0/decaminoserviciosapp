@@ -2425,7 +2425,7 @@ export default function DocumentosEmpleadosPage() {
           })
           .catch(error => {
             console.error('❌ Error al enviar al backend:', error);
-            showNotification('warning', 'AutoFirma', 'Documentul a fost semnat și descărcat, dar a existat o eroare la trimiterea la server.');
+            showNotification('warning', 'AutoFirma', 'El documento ha sido firmado y descargado, pero hubo un error al enviarlo al servidor.');
           });
         }
       );

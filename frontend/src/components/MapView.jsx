@@ -160,7 +160,7 @@ const MapView = ({ lat, lng, clientName, className = "h-64 w-full", clients = nu
       <div className={`${className} bg-red-50 rounded-lg flex items-center justify-center min-h-[800px]`}>
         <div className="text-center text-red-600">
           <div className="text-4xl mb-2">❌</div>
-          <p>Eroare la încărcarea hărții</p>
+          <p>Error al cargar el mapa</p>
           <p className="text-xs mt-2">Google Maps API error</p>
         </div>
       </div>

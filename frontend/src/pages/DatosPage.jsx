@@ -2,10 +2,12 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes.js';
 import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, clearAvatarCacheFor, DEFAULT_AVATAR } from '../utils/avatarCache';
-import { Notification } from '../components/ui';
+import { Notification, Modal, Input, Button } from '../components/ui';
 import Edit3DButton from '../components/Edit3DButton.jsx';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { useLoadingState } from '../hooks/useLoadingState';
+import { useApi } from '../hooks/useApi';
+import { API_ENDPOINTS } from '../utils/constants';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
 
 // Función para calcular la antigüedad
@@ -73,6 +75,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 
 export default function DatosPage() {
   const { user: authUser } = useAuth();
+  const { callApi } = useApi();
   const [user, setUser] = useState(null);
   const [uiReady, setUiReady] = useState(false); // decuplează percepția UI de fetch
   const [error, setError] = useState(null);
@@ -101,6 +104,21 @@ const [editLoading, setEditLoading] = useState(false);
   const [deletingAvatar, setDeletingAvatar] = useState(false);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  
+  // State pentru modalul de schimbare parolă
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showPasswords, setShowPasswords] = useState({
+    oldPassword: false,
+    newPassword: false,
+    confirmPassword: false
+  });
 
   const email = authUser?.email || user?.email || user?.CORREO_ELECTRONICO || authUser?.CORREO_ELECTRONICO || '';
   const resolvedCodigo = user?.CODIGO || authUser?.CODIGO || '';
@@ -533,6 +551,103 @@ const [editLoading, setEditLoading] = useState(false);
       setImageError('Error al eliminar la imagen. Inténtalo de nuevo.');
     } finally {
       setImageLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    
+    // Validări
+    if (!passwordForm.oldPassword || !passwordForm.oldPassword.trim()) {
+      setPasswordError('La contraseña actual es obligatoria');
+      return;
+    }
+    
+    if (!passwordForm.newPassword || !passwordForm.newPassword.trim()) {
+      setPasswordError('La nueva contraseña es obligatoria');
+      return;
+    }
+    
+    const newPassword = passwordForm.newPassword.trim();
+    
+    // Longitudine minimă: 9 caractere (12 recomandat)
+    if (newPassword.length < 9) {
+      setPasswordError('La nueva contraseña debe tener al menos 9 caracteres (se recomienda 12)');
+      return;
+    }
+    
+    // Verifică complexitatea parolei
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newPassword);
+    
+    const errors = [];
+    if (!hasUpperCase) {
+      errors.push('al menos 1 letra mayúscula (A-Z)');
+    }
+    if (!hasLowerCase) {
+      errors.push('al menos 1 letra minúscula (a-z)');
+    }
+    if (!hasNumber) {
+      errors.push('al menos 1 número (0-9)');
+    }
+    if (!hasSpecialChar) {
+      errors.push('al menos 1 carácter especial (! @ # $ % ^ & * ( ) _ + - =)');
+    }
+    
+    if (errors.length > 0) {
+      setPasswordError(`La nueva contraseña debe contener: ${errors.join(', ')}`);
+      return;
+    }
+    
+    if (newPassword !== passwordForm.confirmPassword.trim()) {
+      setPasswordError('Las contraseñas no coinciden');
+      return;
+    }
+    
+    if (newPassword === passwordForm.oldPassword.trim()) {
+      setPasswordError('La nueva contraseña debe ser diferente a la contraseña actual');
+      return;
+    }
+    
+    setChangingPassword(true);
+    
+    try {
+      const codigo = user?.CODIGO || authUser?.CODIGO || resolvedCodigo;
+      if (!codigo) {
+        throw new Error('No se pudo obtener el código del empleado');
+      }
+      
+      const result = await callApi(API_ENDPOINTS.CHANGE_PASSWORD, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          codigo,
+          oldPassword: passwordForm.oldPassword.trim(),
+          newPassword: passwordForm.newPassword.trim(),
+        }),
+      });
+      
+      if (result.success) {
+        setNotification({
+          type: 'success',
+          title: 'Contraseña Cambiada',
+          message: 'Tu contraseña ha sido cambiada exitosamente',
+        });
+        setShowChangePasswordModal(false);
+        setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+        setPasswordError('');
+      } else {
+        setPasswordError(result.error || 'Error al cambiar la contraseña. Inténtalo de nuevo.');
+      }
+    } catch (error) {
+      console.error('Error changing password:', error);
+      setPasswordError(error.message || 'Error al cambiar la contraseña. Inténtalo de nuevo.');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -970,23 +1085,32 @@ const [editLoading, setEditLoading] = useState(false);
         </div>
         
         {user && (
-          <Edit3DButton
-            onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
-            size="md"
-            className="hidden sm:inline-flex"
-          >
-            Editar datos
-          </Edit3DButton>
-        )}
-        
-        {user && (
-          <Edit3DButton
-            onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
-            size="sm"
-            className="sm:hidden"
-          >
-            Editar
-          </Edit3DButton>
+          <div className="flex gap-2 sm:gap-3 items-center">
+            <Edit3DButton
+              onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
+              size="md"
+              className="hidden sm:inline-flex"
+            >
+              Editar datos
+            </Edit3DButton>
+            <Edit3DButton
+              onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
+              size="sm"
+              className="sm:hidden"
+            >
+              Editar
+            </Edit3DButton>
+            <button
+              onClick={() => {
+                setShowChangePasswordModal(true);
+                setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+                setPasswordError('');
+              }}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+            >
+              Cambiar Contraseña
+            </button>
+          </div>
         )}
       </div>
 
@@ -2140,6 +2264,199 @@ const [editLoading, setEditLoading] = useState(false);
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal pentru schimbarea parolei */}
+      {showChangePasswordModal && (
+        <Modal
+          isOpen={showChangePasswordModal}
+          onClose={() => {
+            setShowChangePasswordModal(false);
+            setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+            setPasswordError('');
+            setShowPasswords({ oldPassword: false, newPassword: false, confirmPassword: false });
+          }}
+          title="Cambiar Contraseña"
+        >
+          <div className="space-y-4">
+            {passwordError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {passwordError}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Contraseña Actual
+              </label>
+              <div className="relative">
+                <Input
+                  type={showPasswords.oldPassword ? 'text' : 'password'}
+                  value={passwordForm.oldPassword}
+                  onChange={(e) => {
+                    setPasswordForm({ ...passwordForm, oldPassword: e.target.value });
+                    setPasswordError('');
+                  }}
+                  placeholder="Ingresa tu contraseña actual"
+                  className="w-full pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswords({ ...showPasswords, oldPassword: !showPasswords.oldPassword })}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                >
+                  {showPasswords.oldPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Nueva Contraseña
+              </label>
+              <div className="relative">
+                <Input
+                  type={showPasswords.newPassword ? 'text' : 'password'}
+                  value={passwordForm.newPassword}
+                  onChange={(e) => {
+                    setPasswordForm({ ...passwordForm, newPassword: e.target.value });
+                    setPasswordError('');
+                  }}
+                  placeholder="Mínimo 9 caracteres (12 recomendado)"
+                  className="w-full pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswords({ ...showPasswords, newPassword: !showPasswords.newPassword })}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                >
+                  {showPasswords.newPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs font-semibold text-blue-900 mb-2">
+                  Condiciones de seguridad requeridas:
+                </p>
+                <ul className="text-xs text-blue-800 space-y-1.5">
+                  <li className="flex items-center gap-2">
+                    <span className={`flex-shrink-0 ${passwordForm.newPassword.length >= 9 ? 'text-green-600' : 'text-gray-400'}`}>
+                      {passwordForm.newPassword.length >= 9 ? '✅' : '○'}
+                    </span>
+                    <span className={passwordForm.newPassword.length >= 9 ? 'text-green-700 font-medium' : ''}>
+                      Mínimo 9 caracteres {passwordForm.newPassword.length >= 12 ? '(12 recomendado ✓)' : '(12 recomendado)'}
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className={`flex-shrink-0 ${/[A-Z]/.test(passwordForm.newPassword) ? 'text-green-600' : 'text-gray-400'}`}>
+                      {/[A-Z]/.test(passwordForm.newPassword) ? '✅' : '○'}
+                    </span>
+                    <span className={/[A-Z]/.test(passwordForm.newPassword) ? 'text-green-700 font-medium' : ''}>
+                      Al menos 1 letra mayúscula (A-Z)
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className={`flex-shrink-0 ${/[a-z]/.test(passwordForm.newPassword) ? 'text-green-600' : 'text-gray-400'}`}>
+                      {/[a-z]/.test(passwordForm.newPassword) ? '✅' : '○'}
+                    </span>
+                    <span className={/[a-z]/.test(passwordForm.newPassword) ? 'text-green-700 font-medium' : ''}>
+                      Al menos 1 letra minúscula (a-z)
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className={`flex-shrink-0 ${/[0-9]/.test(passwordForm.newPassword) ? 'text-green-600' : 'text-gray-400'}`}>
+                      {/[0-9]/.test(passwordForm.newPassword) ? '✅' : '○'}
+                    </span>
+                    <span className={/[0-9]/.test(passwordForm.newPassword) ? 'text-green-700 font-medium' : ''}>
+                      Al menos 1 número (0-9)
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className={`flex-shrink-0 ${/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(passwordForm.newPassword) ? 'text-green-600' : 'text-gray-400'}`}>
+                      {/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(passwordForm.newPassword) ? '✅' : '○'}
+                    </span>
+                    <span className={/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(passwordForm.newPassword) ? 'text-green-700 font-medium' : ''}>
+                      Al menos 1 carácter especial (! @ # $ % ^ & * ( ) _ + - =)
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Confirmar Nueva Contraseña
+              </label>
+              <div className="relative">
+                <Input
+                  type={showPasswords.confirmPassword ? 'text' : 'password'}
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => {
+                    setPasswordForm({ ...passwordForm, confirmPassword: e.target.value });
+                    setPasswordError('');
+                  }}
+                  placeholder="Confirma tu nueva contraseña"
+                  className="w-full pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswords({ ...showPasswords, confirmPassword: !showPasswords.confirmPassword })}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                >
+                  {showPasswords.confirmPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowChangePasswordModal(false);
+                  setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+                  setPasswordError('');
+                }}
+                disabled={changingPassword}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleChangePassword}
+                disabled={changingPassword}
+                className="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600"
+              >
+                {changingPassword ? 'Cambiando...' : 'Cambiar Contraseña'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Componenta de Notificări */}

@@ -39,6 +39,24 @@ export class FichajesController {
     }
   }
 
+  @Get('ultimo')
+  @UseGuards(JwtAuthGuard)
+  async getUltimoRegistro(@Query('codigo') codigo: string) {
+    try {
+      this.logger.log(
+        `📝 Get ultimo registro request - codigo: ${codigo || 'missing'}`,
+      );
+
+      const ultimoRegistro =
+        await this.fichajesService.getUltimoRegistro(codigo);
+
+      return ultimoRegistro;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting ultimo registro:', error);
+      throw error;
+    }
+  }
+
   @Get('empleados')
   @UseGuards(JwtAuthGuard)
   async getRegistrosEmpleados(@Query('mes') mes: string) {

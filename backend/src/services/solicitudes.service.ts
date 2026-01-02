@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
 import { EmailService } from './email.service';
 import { SentEmailsService } from './sent-emails.service';
+import { NotificationsService } from './notifications.service';
+import { EmpleadosService } from './empleados.service';
 
 @Injectable()
 export class SolicitudesService {
@@ -14,6 +16,8 @@ export class SolicitudesService {
     private readonly telegramService: TelegramService,
     private readonly emailService: EmailService,
     private readonly sentEmailsService: SentEmailsService,
+    private readonly notificationsService: NotificationsService,
+    private readonly empleadosService: EmpleadosService,
   ) {}
 
   /**
@@ -92,6 +96,24 @@ export class SolicitudesService {
       : ''
   }
   
+  ${
+    solicitudData.tipo === 'Vacaciones' || solicitudData.tipo === 'Vacación'
+      ? `
+  <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;">
+  <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+    <h3 style="margin-top: 0; color: #856404; font-size: 14px; font-weight: bold;">ℹ️ Información importante sobre vacaciones:</h3>
+    <div style="color: #856404; font-size: 12px; line-height: 1.8;">
+      <p style="margin: 8px 0;">Las vacaciones deberán solicitarse e iniciarse exclusivamente en días laborables según el turno de trabajo asignado.</p>
+      <p style="margin: 8px 0;">No podrán iniciarse en días de descanso semanal ni días no laborables.</p>
+      <p style="margin: 8px 0; font-weight: bold;">Las solicitudes de vacaciones deberán presentarse con un mínimo de dos meses de antelación.</p>
+      <p style="margin: 8px 0;">En caso contrario, la empresa podrá ajustar las fechas solicitadas en función de las necesidades organizativas, adecuando el inicio al primer día laborable disponible.</p>
+      <p style="margin: 8px 0;">Dicha adaptación no supondrá en ningún caso la reducción del número total de días de vacaciones del trabajador.</p>
+    </div>
+  </div>
+  `
+      : ''
+  }
+  
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
     Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
@@ -104,7 +126,120 @@ export class SolicitudesService {
   }
 
   /**
-   * Trimite email pentru notificare solicitare
+   * Trimite email către angajat când i se schimbă solicitarea
+   */
+  private async sendSolicitudEmailToEmpleado(solicitudData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    estado: string;
+    motivo?: string;
+    accion: 'create' | 'update' | 'delete';
+    email?: string;
+  }): Promise<void> {
+    this.logger.log(
+      `📧 [sendSolicitudEmailToEmpleado] Called for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
+    );
+
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn(
+        `⚠️ [sendSolicitudEmailToEmpleado] Email service not configured. Email notification not sent to empleado for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
+      );
+      return;
+    }
+
+    // Obține email-ul angajatului
+    let empleadoEmail = solicitudData.email;
+    if (!empleadoEmail && solicitudData.codigo) {
+      try {
+        const empleado = await this.empleadosService.getEmpleadoByCodigo(
+          solicitudData.codigo,
+        );
+        empleadoEmail =
+          empleado?.['CORREO ELECTRONICO'] ||
+          empleado?.CORREO_ELECTRONICO ||
+          null;
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ [sendSolicitudEmailToEmpleado] Could not fetch empleado email for ${solicitudData.codigo}: ${error.message}`,
+        );
+      }
+    }
+
+    if (!empleadoEmail || empleadoEmail.trim() === '') {
+      this.logger.warn(
+        `⚠️ [sendSolicitudEmailToEmpleado] No email found for empleado ${solicitudData.codigo}, skipping email notification`,
+      );
+      return;
+    }
+
+    // Definește variabilele înainte de try pentru a fi disponibile în catch
+    let subject = '';
+    let html = '';
+
+    try {
+      const emailData = this.formatSolicitudEmailHtml(solicitudData);
+      subject = emailData.subject;
+      html = emailData.html;
+
+      this.logger.log(
+        `📧 [sendSolicitudEmailToEmpleado] Sending email to empleado ${empleadoEmail} for ${solicitudData.accion} - subject: ${subject}`,
+      );
+      await this.emailService.sendEmail(empleadoEmail, subject, html);
+      this.logger.log(
+        `✅ [sendSolicitudEmailToEmpleado] Email notification sent to ${empleadoEmail} for ${solicitudData.accion} - solicitud ${solicitudData.codigo}`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: solicitudData.codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: solicitudData.nombre,
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendSolicitudEmailToEmpleado] Eroare la salvarea email-ului în BD: ${saveError.message}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [sendSolicitudEmailToEmpleado] Error sending email notification to empleado for ${solicitudData.accion} (non-blocking): ${error.message}`,
+      );
+
+      // Salvează și email-urile eșuate în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: solicitudData.codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: solicitudData.nombre,
+          subject:
+            subject ||
+            `Solicitud ${solicitudData.accion} - ${solicitudData.codigo}`,
+          message: html || '',
+          status: 'failed',
+          errorMessage: error.message || String(error),
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendSolicitudEmailToEmpleado] Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
+        );
+      }
+
+      // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+    }
+  }
+
+  /**
+   * Trimite email pentru notificare solicitare (către gestoria)
    */
   private async sendSolicitudEmail(solicitudData: {
     codigo: string;
@@ -430,10 +565,11 @@ export class SolicitudesService {
         estado: estado,
         motivo: data.motivo,
         accion: 'create' as const,
+        email: data.email,
       };
 
       setImmediate(() => {
-        // Telegram notification
+        // Telegram notification (către gestoria)
         this.telegramService
           .sendSolicitudNotification(solicitudNotificationData)
           .catch((telegramError: any) => {
@@ -442,14 +578,67 @@ export class SolicitudesService {
             );
           });
 
-        // Email notification
-        this.sendSolicitudEmail(solicitudNotificationData).catch(
-          (emailError: any) => {
-            this.logger.warn(
-              `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
-            );
-          },
+        // Email notification către gestoria
+        this.logger.log(
+          `📧 [CREATE] Attempting to send email notification to gestoria - solicitud: ${solicitudNotificationData.codigo}, tipo: ${solicitudNotificationData.tipo}, accion: ${solicitudNotificationData.accion}`,
         );
+        this.sendSolicitudEmail(solicitudNotificationData)
+          .then(() => {
+            this.logger.log(
+              `✅ [CREATE] Email notification sent to gestoria successfully - solicitud: ${solicitudNotificationData.codigo}`,
+            );
+          })
+          .catch((emailError: any) => {
+            this.logger.error(
+              `❌ [CREATE] Error sending email notification to gestoria (non-blocking): ${emailError.message}`,
+            );
+          });
+
+        // Email notification către angajat
+        this.logger.log(
+          `📧 [CREATE] Attempting to send email notification to empleado - solicitud: ${solicitudNotificationData.codigo}`,
+        );
+        this.sendSolicitudEmailToEmpleado(solicitudNotificationData)
+          .then(() => {
+            this.logger.log(
+              `✅ [CREATE] Email notification sent to empleado successfully - solicitud: ${solicitudNotificationData.codigo}`,
+            );
+          })
+          .catch((emailError: any) => {
+            this.logger.error(
+              `❌ [CREATE] Error sending email notification to empleado (non-blocking): ${emailError.message}`,
+            );
+          });
+
+        // Notificare în aplicație către angajat
+        if (solicitudNotificationData.codigo) {
+          this.logger.log(
+            `📬 [CREATE] Attempting to send in-app notification to empleado - solicitud: ${solicitudNotificationData.codigo}`,
+          );
+          this.notificationsService
+            .notifyUser('system', solicitudNotificationData.codigo, {
+              type: 'success',
+              title: 'Solicitud creada',
+              message: `Tu solicitud de ${solicitudNotificationData.tipo} (${solicitudNotificationData.fecha}) ha sido creada. Estado: ${solicitudNotificationData.estado}`,
+              data: {
+                solicitudId: data.id,
+                tipo: solicitudNotificationData.tipo,
+                fecha: solicitudNotificationData.fecha,
+                estado: solicitudNotificationData.estado,
+                motivo: solicitudNotificationData.motivo,
+              },
+            })
+            .then(() => {
+              this.logger.log(
+                `✅ [CREATE] In-app notification sent to empleado successfully - solicitud: ${solicitudNotificationData.codigo}`,
+              );
+            })
+            .catch((notifError: any) => {
+              this.logger.error(
+                `❌ [CREATE] Error sending in-app notification to empleado (non-blocking): ${notifError.message}`,
+              );
+            });
+        }
       });
 
       return {
@@ -654,10 +843,11 @@ export class SolicitudesService {
           estado: solicitud.estado || estado || '',
           motivo: solicitud.motivo || motivo || '',
           accion: 'update' as const,
+          email: solicitud.email || data.email,
         };
 
         setImmediate(() => {
-          // Telegram notification
+          // Telegram notification (către gestoria)
           this.telegramService
             .sendSolicitudNotification(solicitudNotificationData)
             .catch((telegramError: any) => {
@@ -666,21 +856,67 @@ export class SolicitudesService {
               );
             });
 
-          // Email notification
+          // Email notification către gestoria
           this.logger.log(
-            `📧 [UPDATE] Attempting to send email notification - solicitud: ${solicitudNotificationData.codigo}, tipo: ${solicitudNotificationData.tipo}, accion: ${solicitudNotificationData.accion}`,
+            `📧 [UPDATE] Attempting to send email notification to gestoria - solicitud: ${solicitudNotificationData.codigo}, tipo: ${solicitudNotificationData.tipo}, accion: ${solicitudNotificationData.accion}`,
           );
           this.sendSolicitudEmail(solicitudNotificationData)
             .then(() => {
               this.logger.log(
-                `✅ [UPDATE] Email notification sent successfully - solicitud: ${solicitudNotificationData.codigo}`,
+                `✅ [UPDATE] Email notification sent to gestoria successfully - solicitud: ${solicitudNotificationData.codigo}`,
               );
             })
             .catch((emailError: any) => {
               this.logger.error(
-                `❌ [UPDATE] Error sending email notification (non-blocking): ${emailError.message}`,
+                `❌ [UPDATE] Error sending email notification to gestoria (non-blocking): ${emailError.message}`,
               );
             });
+
+          // Email notification către angajat
+          this.logger.log(
+            `📧 [UPDATE] Attempting to send email notification to empleado - solicitud: ${solicitudNotificationData.codigo}`,
+          );
+          this.sendSolicitudEmailToEmpleado(solicitudNotificationData)
+            .then(() => {
+              this.logger.log(
+                `✅ [UPDATE] Email notification sent to empleado successfully - solicitud: ${solicitudNotificationData.codigo}`,
+              );
+            })
+            .catch((emailError: any) => {
+              this.logger.error(
+                `❌ [UPDATE] Error sending email notification to empleado (non-blocking): ${emailError.message}`,
+              );
+            });
+
+          // Notificare în aplicație către angajat
+          if (solicitudNotificationData.codigo) {
+            this.logger.log(
+              `📬 [UPDATE] Attempting to send in-app notification to empleado - solicitud: ${solicitudNotificationData.codigo}`,
+            );
+            this.notificationsService
+              .notifyUser('system', solicitudNotificationData.codigo, {
+                type: 'info',
+                title: 'Solicitud actualizada',
+                message: `Tu solicitud de ${solicitudNotificationData.tipo} (${solicitudNotificationData.fecha}) ha sido actualizada. Estado: ${solicitudNotificationData.estado}`,
+                data: {
+                  solicitudId: id,
+                  tipo: solicitudNotificationData.tipo,
+                  fecha: solicitudNotificationData.fecha,
+                  estado: solicitudNotificationData.estado,
+                  motivo: solicitudNotificationData.motivo,
+                },
+              })
+              .then(() => {
+                this.logger.log(
+                  `✅ [UPDATE] In-app notification sent to empleado successfully - solicitud: ${solicitudNotificationData.codigo}`,
+                );
+              })
+              .catch((notifError: any) => {
+                this.logger.error(
+                  `❌ [UPDATE] Error sending in-app notification to empleado (non-blocking): ${notifError.message}`,
+                );
+              });
+          }
         });
       } else {
         this.logger.warn(

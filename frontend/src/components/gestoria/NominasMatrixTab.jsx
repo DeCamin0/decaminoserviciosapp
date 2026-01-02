@@ -1449,6 +1449,8 @@ export default function NominasMatrixTab() {
                         <th className="px-3 py-2 text-left">Fecha Antig. Ext.</th>
                         <th className="px-3 py-2 text-left">Fecha Baja (DB)</th>
                         <th className="px-3 py-2 text-left">Fecha Baja Ext.</th>
+                        <th className="px-3 py-2 text-left">SEG. SOCIAL (DB)</th>
+                        <th className="px-3 py-2 text-left">SEG. SOCIAL Ext.</th>
                         <th className="px-3 py-2 text-left">Estado</th>
                       </tr>
                     </thead>
@@ -1537,6 +1539,23 @@ export default function NominasMatrixTab() {
                               <span className="text-orange-600 font-semibold">{item.fechaBajaExtraida}</span>
                             ) : (
                               <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.segSocialDB ? (
+                              <span className="text-gray-700">{item.segSocialDB}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {item.segSocialExtraido ? (
+                              <span className="text-blue-600 font-semibold">{item.segSocialExtraido}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                            {item.actualizaraSegSocial && (
+                              <span className="ml-1 text-yellow-600" title="Se actualizará en la base de datos">⚠️</span>
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -1705,6 +1724,95 @@ export default function NominasMatrixTab() {
                   )}
                 </div>
               </div>
+
+              {/* Información de SEG. SOCIAL */}
+              {(uploadPreviewData.segSocialDB || uploadPreviewData.segSocialExtraido) && (
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-4">
+                  <div className="font-bold text-blue-900 mb-3">📋 Seguridad Social</div>
+                  <div className="space-y-2 text-sm">
+                    {uploadPreviewData.segSocialDB && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-blue-700">En Base de Datos:</span>
+                        <span className="text-blue-900">{uploadPreviewData.segSocialDB}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.segSocialExtraido && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-blue-700">Extraído de Nómina:</span>
+                        <span className="text-blue-900 font-semibold">{uploadPreviewData.segSocialExtraido}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.actualizaraSegSocial && (
+                      <div className="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded">
+                        <span className="text-yellow-800 font-semibold">
+                          ⚠️ Se actualizará SEG. SOCIAL en la base de datos (no existe actualmente)
+                        </span>
+                      </div>
+                    )}
+                    {!uploadPreviewData.actualizaraSegSocial && uploadPreviewData.segSocialDB && uploadPreviewData.segSocialExtraido && (
+                      <div className="mt-2 p-2 bg-green-100 border border-green-300 rounded">
+                        <span className="text-green-800">
+                          ✓ SEG. SOCIAL ya existe en la base de datos, no se actualizará
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Información de Fechas */}
+              {(uploadPreviewData.fechaAltaDB || uploadPreviewData.fechaAltaExtraida || 
+                uploadPreviewData.fechaAntiguedadDB || uploadPreviewData.fechaAntiguedadExtraida ||
+                uploadPreviewData.fechaBajaDB || uploadPreviewData.fechaBajaExtraida) && (
+                <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 mb-4">
+                  <div className="font-bold text-purple-900 mb-3">📅 Fechas</div>
+                  <div className="space-y-2 text-sm">
+                    {uploadPreviewData.fechaAltaDB && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-purple-700">Fecha Alta (DB):</span>
+                        <span className="text-purple-900">{uploadPreviewData.fechaAltaDB}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.fechaAltaExtraida && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-purple-700">Fecha Alta (Nómina):</span>
+                        <span className="text-purple-900 font-semibold">{uploadPreviewData.fechaAltaExtraida}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.fechaAntiguedadDB && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-purple-700">Fecha Antigüedad (DB):</span>
+                        <span className="text-purple-900">{uploadPreviewData.fechaAntiguedadDB}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.fechaAntiguedadExtraida && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-purple-700">Fecha Antigüedad (Nómina):</span>
+                        <span className="text-purple-900 font-semibold">{uploadPreviewData.fechaAntiguedadExtraida}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.fechaBajaDB && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-purple-700">Fecha Baja (DB):</span>
+                        <span className="text-purple-900">{uploadPreviewData.fechaBajaDB}</span>
+                      </div>
+                    )}
+                    {uploadPreviewData.fechaBajaExtraida && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-purple-700">Fecha Baja (Nómina):</span>
+                        <span className="text-purple-900 font-semibold">{uploadPreviewData.fechaBajaExtraida}</span>
+                      </div>
+                    )}
+                    {(uploadPreviewData.actualizaraFechaAlta || uploadPreviewData.actualizaraFechaAntiguedad || uploadPreviewData.actualizaraFechaBaja) && (
+                      <div className="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded">
+                        <span className="text-yellow-800 font-semibold">
+                          ⚠️ Se actualizarán las fechas en la base de datos
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Alerta Finiquito */}
               {uploadPreviewData.esFiniquito && (

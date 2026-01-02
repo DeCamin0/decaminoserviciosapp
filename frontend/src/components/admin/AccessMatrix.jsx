@@ -350,7 +350,7 @@ export default function AccessMatrix() {
       setTimeout(() => setShowSaveModal(false), 2000);
     } catch (error) {
       console.error('Error saving permissions:', error);
-      alert('Eroare la salvarea permisiunilor!');
+      alert('Error al guardar los permisos!');
     } finally {
       setSaving(false);
     }

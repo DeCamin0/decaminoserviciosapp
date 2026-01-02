@@ -7,6 +7,8 @@ import {
   UseInterceptors,
   UploadedFiles,
   Body,
+  Param,
+  Req,
   BadRequestException,
   Logger,
   Res,
@@ -214,7 +216,15 @@ export class EmpleadosController {
         empleadoData['CORREO ELECTRONICO'].trim() !== ''
       ) {
         try {
-          await this.sendWelcomeEmailToEmpleado(empleadoData);
+          // Pasează parola provizorie în empleadoData pentru email
+          const empleadoDataWithPassword = {
+            ...empleadoData,
+            temporaryPassword: result.temporaryPassword || undefined, // Parola provizorie generată
+          };
+          this.logger.log(
+            `🔍 [addEmpleado] Enviando email de bienvenida con temporaryPassword: ${empleadoDataWithPassword.temporaryPassword ? 'SÍ' : 'NO'}`,
+          );
+          await this.sendWelcomeEmailToEmpleado(empleadoDataWithPassword);
         } catch (welcomeEmailError: any) {
           this.logger.warn(
             `⚠️ Eroare la trimiterea email-ului de bun venit către ${empleadoData.CODIGO}: ${welcomeEmailError.message}`,
@@ -284,8 +294,24 @@ export class EmpleadosController {
               body.enviarAGestoria === true ||
               body.enviarAGestoria === '1';
 
-            // Mesaj adițional pentru gestorie
-            const mensajeAdicional = body.mensajeAdicionalGestoria || '';
+            // Mesaj adițional pentru gestorie (excludem parola)
+            let mensajeAdicional = body.mensajeAdicionalGestoria || '';
+            mensajeAdicional = mensajeAdicional.replace(
+              /Contraseña[:\s]*[^\n]*/gi,
+              '',
+            );
+            mensajeAdicional = mensajeAdicional.replace(
+              /CONTRASENA[:\s]*[^\n]*/gi,
+              '',
+            );
+            mensajeAdicional = mensajeAdicional.replace(
+              /password[:\s]*[^\n]*/gi,
+              '',
+            );
+            mensajeAdicional = mensajeAdicional.replace(
+              /Password[:\s]*[^\n]*/gi,
+              '',
+            );
 
             // Pregătește attachments: PDF + fișierele adiționale
             const attachments = [
@@ -526,8 +552,20 @@ export class EmpleadosController {
             <p>Te reenvío los datos correspondientes a <strong>${nombreEmpleado}</strong> (Código: ${body.CODIGO}).</p>
       `;
 
-      // Adaugă mesajul adițional dacă există
-      const mensajeAdicional = body.mensajeAdicionalGestoria || '';
+      // Adaugă mesajul adițional dacă există (excludem parola)
+      let mensajeAdicional = body.mensajeAdicionalGestoria || '';
+      // IMPORTANT: Excludem parola din mensajeAdicional pentru a nu o trimite niciodată către gestoria
+      mensajeAdicional = mensajeAdicional.replace(
+        /Contraseña[:\s]*[^\n]*/gi,
+        '',
+      );
+      mensajeAdicional = mensajeAdicional.replace(
+        /CONTRASENA[:\s]*[^\n]*/gi,
+        '',
+      );
+      mensajeAdicional = mensajeAdicional.replace(/password[:\s]*[^\n]*/gi, '');
+      mensajeAdicional = mensajeAdicional.replace(/Password[:\s]*[^\n]*/gi, '');
+
       if (mensajeAdicional) {
         html += `
             <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;">
@@ -666,6 +704,11 @@ export class EmpleadosController {
     const fechaAlta =
       empleadoData['FECHA DE ALTA'] || empleadoData.FECHA_DE_ALTA || '';
 
+    // Log pentru debugging
+    this.logger.log(
+      `🔍 [sendWelcomeEmailToEmpleado] temporaryPassword: ${empleadoData.temporaryPassword ? 'SÍ (' + empleadoData.temporaryPassword.substring(0, 3) + '...)' : 'NO'}`,
+    );
+
     if (!email || !email.trim()) {
       this.logger.warn(
         `⚠️ Angajatul ${empleadoData.CODIGO} nu are email configurat pentru email de bun venit`,
@@ -727,8 +770,21 @@ export class EmpleadosController {
             
             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
               <p style="margin: 5px 0;"><strong>🔐 Datos de acceso</strong></p>
-              <p style="margin: 5px 0;"><strong>Usuario:</strong> el correo electrónico facilitado por la empresa</p>
+              <p style="margin: 5px 0;"><strong>Usuario:</strong> ${email}</p>
+              ${
+                empleadoData.temporaryPassword
+                  ? `
+              <p style="margin: 5px 0;"><strong>Contraseña temporal:</strong> <code style="background-color: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: bold; color: #0066CC;">${empleadoData.temporaryPassword}</code></p>
+              <div style="background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin-top: 10px; border-radius: 4px;">
+                <p style="margin: 5px 0; color: #856404; font-weight: bold;">⚠️ IMPORTANTE:</p>
+                <p style="margin: 5px 0; color: #856404;">Esta es una contraseña temporal. Por seguridad, te recomendamos <strong>cambiarla inmediatamente</strong> después de iniciar sesión por primera vez.</p>
+                <p style="margin: 5px 0; color: #856404;">Puedes cambiar tu contraseña desde la sección "Datos Personales" en la aplicación.</p>
+              </div>
+              `
+                  : `
               <p style="margin: 5px 0;">La contraseña deberá solicitarse por WhatsApp a un responsable autorizado de la empresa.</p>
+              `
+              }
             </div>
             
             <div style="background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -781,8 +837,21 @@ export class EmpleadosController {
             
             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
               <p style="margin: 5px 0;"><strong>🔐 Datos de acceso</strong></p>
-              <p style="margin: 5px 0;"><strong>Usuario:</strong> el correo electrónico facilitado por la empresa</p>
+              <p style="margin: 5px 0;"><strong>Usuario:</strong> ${email}</p>
+              ${
+                empleadoData.temporaryPassword
+                  ? `
+              <p style="margin: 5px 0;"><strong>Contraseña temporal:</strong> <code style="background-color: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: bold; color: #0066CC;">${empleadoData.temporaryPassword}</code></p>
+              <div style="background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin-top: 10px; border-radius: 4px;">
+                <p style="margin: 5px 0; color: #856404; font-weight: bold;">⚠️ IMPORTANTE:</p>
+                <p style="margin: 5px 0; color: #856404;">Esta es una contraseña temporal. Por seguridad, te recomendamos <strong>cambiarla inmediatamente</strong> después de iniciar sesión por primera vez.</p>
+                <p style="margin: 5px 0; color: #856404;">Puedes cambiar tu contraseña desde la sección "Datos Personales" en la aplicación.</p>
+              </div>
+              `
+                  : `
               <p style="margin: 5px 0;">La contraseña deberá solicitarse por WhatsApp a un responsable autorizado de la empresa.</p>
+              `
+              }
             </div>
             
             <div style="background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -1074,17 +1143,42 @@ export class EmpleadosController {
 
       if (enviarAGestoria && this.emailService.isConfigured()) {
         // Definește variabilele înainte de try pentru a fi disponibile în catch
-        const emailBody =
+        // IMPORTANT: Excludem parola din emailBody pentru a nu o trimite niciodată către gestoria
+        let emailBody =
           body.emailBody ||
           body.mesaj ||
           'Se ha actualizado la información del empleado.';
+
+        // Elimină orice referință la parolă din emailBody
+        emailBody = emailBody.replace(/Contraseña[:\s]*[^\n]*/gi, '');
+        emailBody = emailBody.replace(/CONTRASENA[:\s]*[^\n]*/gi, '');
+        emailBody = emailBody.replace(/password[:\s]*[^\n]*/gi, '');
+        emailBody = emailBody.replace(/Password[:\s]*[^\n]*/gi, '');
+
         const emailSubject =
           body.emailSubject ||
           body.subiect ||
           `Actualización de datos - ${empleadoData['NOMBRE / APELLIDOS'] || body.CODIGO || 'Empleado'}`;
 
-        // Adaugă mesajul adițional dacă există
-        const mensajeAdicional = body.mensajeAdicionalGestoria || '';
+        // Adaugă mesajul adițional dacă există (excludem și aici parola)
+        let mensajeAdicional = body.mensajeAdicionalGestoria || '';
+        mensajeAdicional = mensajeAdicional.replace(
+          /Contraseña[:\s]*[^\n]*/gi,
+          '',
+        );
+        mensajeAdicional = mensajeAdicional.replace(
+          /CONTRASENA[:\s]*[^\n]*/gi,
+          '',
+        );
+        mensajeAdicional = mensajeAdicional.replace(
+          /password[:\s]*[^\n]*/gi,
+          '',
+        );
+        mensajeAdicional = mensajeAdicional.replace(
+          /Password[:\s]*[^\n]*/gi,
+          '',
+        );
+
         let htmlEmail = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
@@ -1356,20 +1450,101 @@ export class EmpleadosController {
       if (!body.codigo && !body.CODIGO) {
         throw new BadRequestException('CODIGO-ul empleado este obligatoriu');
       }
-      if (!body.campo && !body.CAMPO_MODIFICADO) {
-        throw new BadRequestException('Câmpul de modificat este obligatoriu');
-      }
-      if (body.valor === undefined && body.VALOR_NUEVO === undefined) {
-        throw new BadRequestException('Valoarea nouă este obligatorie');
+
+      // Obține cambio-ul pentru a extrage datele necesare
+      let cambioData: any = null;
+      try {
+        cambioData = await this.empleadosService.getCambioById(
+          body.id || body.ID,
+        );
+        if (!cambioData) {
+          throw new BadRequestException(
+            `Cambio cu ID ${body.id || body.ID} nu a fost găsit`,
+          );
+        }
+      } catch (error: any) {
+        if (error instanceof BadRequestException) {
+          throw error;
+        }
+        this.logger.warn(`⚠️ Nu s-a putut obține cambio-ul: ${error.message}`);
       }
 
+      // Obține email-ul angajatului din cambio dacă nu este furnizat în body
+      let emailEmpleado = body.email || body.CORREO_ELECTRONICO;
+      if (!emailEmpleado && cambioData) {
+        emailEmpleado = cambioData.CORREO_ELECTRONICO;
+      }
+
+      // Obține campo și valor din cambio dacă nu sunt furnizate în body
+      const campoFromBody = body.campo || body.CAMPO_MODIFICADO;
+      const valorFromBody = body.valor || body.VALOR_NUEVO;
+
+      // Dacă nu există campo în body, folosim din cambio (nu mai aruncăm eroare)
+      // approveCambio va parsea cambio.campo pentru a obține lista de câmpuri
+
       // Aprobă cambio-ul
+      // Folosim campo și valor din body dacă există, altfel approveCambio va parsea din cambio
       const result = await this.empleadosService.approveCambio({
         id: body.id || body.ID,
-        codigo: body.codigo || body.CODIGO,
-        campo: body.campo || body.CAMPO_MODIFICADO,
-        valor: body.valor || body.VALOR_NUEVO || '',
+        codigo: body.codigo || body.CODIGO || cambioData?.codigo || '',
+        campo: campoFromBody || cambioData?.campo || '',
+        valor: valorFromBody || cambioData?.valoare_noua || '',
       });
+
+      // Trimite email către angajat dacă email este disponibil
+      if (emailEmpleado && this.emailService.isConfigured()) {
+        try {
+          const emailDestinatario = emailEmpleado;
+          const campoModificado =
+            body.campo || body.CAMPO_MODIFICADO || 'el campo solicitado';
+          const valorNuevo = body.valor || body.VALOR_NUEVO || 'N/A';
+
+          const subject = 'Tu solicitud de cambio ha sido aprobada';
+          const htmlEmail = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0066CC;">Solicitud de Cambio Aprobada</h2>
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
+              </div>
+              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
+                <p>¡Hola!</p>
+                <p>
+                  Tu solicitud para modificar el campo <strong>"${campoModificado}"</strong> ha sido aprobada y actualizada.
+                </p>
+                <p><strong>Nuevo valor:</strong> ${valorNuevo}</p>
+                <p style="margin-top: 15px;">
+                  Los cambios ya están reflejados en tu perfil. Puedes verificar tu información actualizada en la aplicación.
+                </p>
+              </div>
+              <p style="color: #666; font-size: 12px; margin-top: 20px;">
+                Gracias,<br>
+                Equipo de Recursos Humanos<br>
+                DE CAMINO Servicios Auxiliares SL
+              </p>
+            </div>
+          `;
+
+          // Trimite către angajat cu BCC la info@decaminoservicios.com
+          await this.emailService.sendEmail(
+            emailDestinatario,
+            subject,
+            htmlEmail,
+            {
+              bcc: ['info@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
+            },
+          );
+
+          this.logger.log(
+            `✅ Email de aprobare trimis către ${emailDestinatario} pentru cambio ${body.id || body.ID}`,
+          );
+        } catch (emailError: any) {
+          this.logger.error(
+            `❌ Eroare la trimiterea email-ului de aprobare către angajat: ${emailError.message}`,
+          );
+          // Nu aruncăm eroare aici, pentru că aprobarea a reușit
+        }
+      }
 
       // Trimite email la gestoria dacă este solicitat
       const enviarAGestoria =
@@ -1380,7 +1555,8 @@ export class EmpleadosController {
       if (enviarAGestoria && this.emailService.isConfigured()) {
         try {
           // Construiește mesajul email cu informații despre aprobare
-          const emailBody =
+          // IMPORTANT: Excludem parola din emailBody pentru a nu o trimite niciodată către gestoria
+          let emailBody =
             body.emailBody ||
             body.mesaj ||
             `Se ha aprobado y actualizado la información del empleado:\n\n` +
@@ -1391,6 +1567,31 @@ export class EmpleadosController {
               `Valor nuevo: ${body.valor || body.VALOR_NUEVO || 'N/A'}\n\n` +
               `Aprobado por: ${body.updatedBy || 'Sistema'}\n` +
               `Fecha: ${new Date().toLocaleString('es-ES')}`;
+
+          // Elimină orice referință la parolă din emailBody
+          emailBody = emailBody.replace(/Contraseña[:\s]*[^\n]*/gi, '');
+          emailBody = emailBody.replace(/CONTRASENA[:\s]*[^\n]*/gi, '');
+          emailBody = emailBody.replace(/password[:\s]*[^\n]*/gi, '');
+          emailBody = emailBody.replace(/Password[:\s]*[^\n]*/gi, '');
+
+          // Excludem parola și din câmpurile modificate dacă este cazul
+          const campoModificado = body.campo || body.CAMPO_MODIFICADO || 'N/A';
+          if (
+            campoModificado.toLowerCase().includes('contraseña') ||
+            campoModificado.toLowerCase().includes('contrasena') ||
+            campoModificado.toLowerCase().includes('password')
+          ) {
+            // Nu trimitem email dacă singurul câmp modificat este parola
+            this.logger.warn(
+              `⚠️ Se intentó enviar email a gestoria con cambio de contraseña - BLOQUEADO para ${body.codigo || body.CODIGO}`,
+            );
+            return {
+              success: true,
+              message:
+                'Cambio aprobado y actualizado correctamente (email a gestoria bloqueado - cambio de contraseña)',
+              ...result,
+            };
+          }
 
           const emailSubject =
             body.emailSubject ||
@@ -1907,6 +2108,155 @@ export class EmpleadosController {
       throw new BadRequestException(
         `Error al actualizar campos separados: ${error.message}`,
       );
+    }
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Body() body: { codigo: string; oldPassword: string; newPassword: string },
+    @CurrentUser() user: any,
+    @Req() req: any,
+  ) {
+    try {
+      this.logger.log(
+        `📝 Change password request - CODIGO: ${body.codigo || 'missing'}`,
+      );
+
+      if (!body.codigo || !body.oldPassword || !body.newPassword) {
+        throw new BadRequestException(
+          'CODIGO, oldPassword y newPassword son obligatorios',
+        );
+      }
+
+      // Verifică că utilizatorul își schimbă propria parolă sau este manager
+      const userCodigo = user?.userId || user?.CODIGO;
+      const isManager = user?.isManager || false;
+
+      if (body.codigo !== userCodigo && !isManager) {
+        throw new BadRequestException(
+          'No tienes permiso para cambiar la contraseña de otro usuario',
+        );
+      }
+
+      const result = await this.empleadosService.changePassword(
+        body.codigo,
+        body.oldPassword,
+        body.newPassword,
+      );
+
+      // Trimite email de notificare către info@decaminoservicios.com
+      if (result.success && this.emailService.isConfigured()) {
+        try {
+          // Obține informații despre angajat
+          const empleado = await this.empleadosService.getEmpleadoByCodigo(
+            body.codigo,
+          );
+          const nombreEmpleado =
+            this.empleadosService.getFormattedNombre(empleado) || body.codigo;
+
+          // Obține IP-ul clientului
+          const clientIp =
+            req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+            req.headers['x-real-ip'] ||
+            req.connection?.remoteAddress ||
+            req.socket?.remoteAddress ||
+            req.ip ||
+            'Desconocido';
+
+          // Obține ora curentă
+          const fechaHora = new Date().toLocaleString('es-ES', {
+            timeZone: 'Europe/Madrid',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+
+          const subject = `Notificación: Cambio de contraseña - ${nombreEmpleado}`;
+          const htmlEmail = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0066CC;">Notificación de Cambio de Contraseña</h2>
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${nombreEmpleado}</p>
+                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo}</p>
+                <p style="margin: 5px 0;"><strong>Email:</strong> ${empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO || 'N/A'}</p>
+              </div>
+              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
+                <p style="margin: 5px 0;"><strong>Fecha y hora:</strong> ${fechaHora}</p>
+                <p style="margin: 5px 0;"><strong>Ubicación (IP):</strong> ${clientIp}</p>
+                <p style="margin-top: 15px;">
+                  El empleado <strong>${nombreEmpleado}</strong> (Código: ${body.codigo}) ha cambiado su contraseña exitosamente.
+                </p>
+              </div>
+              <p style="color: #666; font-size: 12px; margin-top: 20px;">
+                Este es un mensaje automático del sistema.<br>
+                DE CAMINO Servicios Auxiliares SL
+              </p>
+            </div>
+          `;
+
+          await this.emailService.sendEmail(
+            'info@decaminoservicios.com',
+            subject,
+            htmlEmail,
+            {
+              bcc: ['decamino.rrhh@gmail.com'],
+            },
+          );
+
+          this.logger.log(
+            `✅ Email de notificación de cambio de contraseña enviado a info@decaminoservicios.com para empleado ${body.codigo}`,
+          );
+        } catch (emailError: any) {
+          this.logger.warn(
+            `⚠️ Error al enviar email de notificación de cambio de contraseña: ${emailError.message}`,
+          );
+          // Nu aruncăm eroare aici, pentru că schimbarea parolei a reușit
+        }
+      }
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error changing password:', error);
+      throw error;
+    }
+  }
+
+  @Get('get-password/:codigo')
+  @UseGuards(JwtAuthGuard)
+  async getPassword(@CurrentUser() user: any, @Param('codigo') codigo: string) {
+    try {
+      this.logger.log(
+        `🔍 Get password request - CODIGO: ${codigo || 'missing'}`,
+      );
+
+      if (!codigo) {
+        throw new BadRequestException('CODIGO es obligatorio');
+      }
+
+      // Verifică că utilizatorul este manager/admin
+      const isManager = user?.isManager || false;
+      const userCodigo = user?.userId || user?.CODIGO;
+
+      // Doar managerii pot vedea parola altor utilizatori
+      if (codigo !== userCodigo && !isManager) {
+        throw new BadRequestException(
+          'No tienes permiso para ver la contraseña de otro usuario',
+        );
+      }
+
+      const password = await this.empleadosService.getPassword(codigo);
+
+      return {
+        success: true,
+        password: password || '',
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error getting password:', error);
+      throw error;
     }
   }
 }

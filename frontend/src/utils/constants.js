@@ -4,8 +4,11 @@ import { routes } from './routes.js';
 export const API_ENDPOINTS = {
   USERS: routes.getEmpleados,
   UPDATE_USER: routes.updateUser,
+  CHANGE_PASSWORD: routes.changePassword,
+  GET_PASSWORD: routes.getPassword,
   FICHAJE: routes.getFichajes,
   REGISTROS: routes.getRegistros,
+  ULTIMO_REGISTRO: routes.getUltimoRegistro,
   REGISTROS_EMPLEADOS: routes.getRegistrosEmpleados,
   REGISTROS_PERIODO: routes.getRegistrosPeriodo,
   FICHAJE_ADD: routes.addFichaje,
