@@ -77,6 +77,8 @@ import { GestoriaController } from './controllers/gestoria.controller';
 import { GestoriaService } from './services/gestoria.service';
 import { VacacionesModule } from './vacaciones/vacaciones.module';
 import { AssistantModule } from './assistant/assistant.module';
+import { MonitoringService } from './services/monitoring.service';
+import { MonitoringController } from './controllers/monitoring.controller';
 
 @Module({
   imports: [
@@ -125,6 +127,7 @@ import { AssistantModule } from './assistant/assistant.module';
     SentEmailsController,
     ScheduledMessagesController,
     GestoriaController,
+    MonitoringController,
     // AssistantController se importa din AssistantModule
   ],
   providers: [
@@ -163,6 +166,7 @@ import { AssistantModule } from './assistant/assistant.module';
     ScheduledMessagesService,
     ScheduledMessagesCronService,
     GestoriaService,
+    MonitoringService,
   ],
 })
 export class AppModule {}

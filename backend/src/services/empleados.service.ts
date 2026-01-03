@@ -1806,4 +1806,45 @@ export class EmpleadosService {
       );
     }
   }
+
+  /**
+   * Resetează parola unui angajat și trimite email cu noua parolă
+   */
+  async resetPasswordAndSendEmail(
+    codigo: string,
+  ): Promise<{ success: true; temporaryPassword: string }> {
+    try {
+      // Obține angajatul
+      const empleado = await this.getEmpleadoByCodigo(codigo);
+      if (!empleado) {
+        throw new BadRequestException('Empleado no encontrado');
+      }
+
+      // Generează o parolă nouă
+      const newPassword = this.generateTemporaryPassword();
+
+      // Actualizează parola în baza de date
+      const query = `
+        UPDATE DatosEmpleados
+        SET \`Contraseña\` = ${this.escapeSql(newPassword)}
+        WHERE CODIGO = ${this.escapeSql(codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(query);
+
+      this.logger.log(
+        `✅ Parolă resetată pentru angajat: ${codigo}`,
+      );
+
+      return {
+        success: true,
+        temporaryPassword: newPassword,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error resetting password: ${error.message}`,
+      );
+      throw error;
+    }
+  }
 }

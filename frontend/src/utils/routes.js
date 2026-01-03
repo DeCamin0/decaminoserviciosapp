@@ -52,6 +52,9 @@ export const routes = {
   getPassword: (codigo) => import.meta.env.DEV
     ? `http://localhost:3000/api/empleados/get-password/${codigo}`
     : `https://api.decaminoservicios.com/api/empleados/get-password/${codigo}`,
+  resetPassword: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/empleados/reset-password/${codigo}`
+    : `https://api.decaminoservicios.com/api/empleados/reset-password/${codigo}`,
   updateNombreSplit: (codigo) => import.meta.env.DEV
     ? `http://localhost:3000/api/empleados/${codigo}/nombre-split`
     : `https://api.decaminoservicios.com/api/empleados/${codigo}/nombre-split`,

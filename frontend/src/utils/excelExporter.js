@@ -3,8 +3,7 @@
 
 export { 
   exportToExcelWithHeader, 
-  exportGastosToExcel, 
-  exportFacturasToExcel 
+  exportGastosToExcel 
 } from './exportExcel.js';
 
 // Note: The old xlsx-based implementation has been replaced with exceljs

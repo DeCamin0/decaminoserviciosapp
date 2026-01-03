@@ -48,6 +48,9 @@ backend/coverage/
 
 # Frontend specific
 frontend/dist/
+
+# n8n snapshots (may contain secrets)
+backend/n8n-snapshots/
 frontend/build/
 frontend/.vite/
 frontend/android/.gradle/

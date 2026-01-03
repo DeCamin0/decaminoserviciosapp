@@ -1,9 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { json, urlencoded } from 'express';
+import { GlobalExceptionFilter } from './filters/global-exception.filter';
+import { TelegramService } from './services/telegram.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Global exception filter pentru alerting Telegram
+  // Obținem instanța TelegramService din context
+  const telegramService = app.get(TelegramService);
+  app.useGlobalFilters(new GlobalExceptionFilter(telegramService));
 
   // Trust proxy pentru a extrage corect IP-ul din headers
   // NestJS folosește Express sub hood, deci putem accesa instanța Express

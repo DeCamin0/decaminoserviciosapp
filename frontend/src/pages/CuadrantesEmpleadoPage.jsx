@@ -107,7 +107,17 @@ function normalizeDateInput(value) {
 
   }
 
+  // Format DD/MM/YYYY sau DD-MM-YYYY (cu 2 cifre)
   if (/^\d{2}[-/]\d{2}[-/]\d{4}/.test(str)) {
+
+    const [day, month, year] = str.split(/[-/]/);
+
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  }
+
+  // Format D/M/YYYY sau D-M-YYYY (cu 1-2 cifre pentru zi și lună) - ex: "8/2/2026"
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(str)) {
 
     const [day, month, year] = str.split(/[-/]/);
 
@@ -1385,13 +1395,13 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // Adaug luniile curente și următoarele (an curent și următorul)
+  // Adaug luniile curente: decembrie anul anterior + toate lunile din anul curent
 
   const currentDate = new Date();
 
   const currentYear = currentDate.getFullYear();
 
-  const nextYear = currentYear + 1;
+  const previousYear = currentYear - 1;
 
   
 
@@ -1399,7 +1409,15 @@ export default function CuadrantesEmpleadoPage() {
 
   
 
-  // Adaug luniile din anul curent (de la luna curentă înainte)
+  // Adaug decembrie din anul anterior (primul în listă)
+
+  const decembrieAnterior = `${previousYear}-12`;
+
+  luniCurente.push(decembrieAnterior);
+
+  
+
+  // Adaug toate lunile din anul curent (enero = 1 până la decembrie = 12)
 
   for (let month = 1; month <= 12; month++) {
 
@@ -1411,29 +1429,42 @@ export default function CuadrantesEmpleadoPage() {
 
   
 
-  // Adaug luniile din anul următor
+  // Combin luniile din cuadrantes cu cele curente și elimin duplicatele
 
-  for (let month = 1; month <= 12; month++) {
-
-    const yearMonth = `${nextYear}-${String(month).padStart(2, '0')}`;
-
-    luniCurente.push(yearMonth);
-
-  }
+  const luniDisponibileRaw = [...new Set([...luniDinCuadrantes, ...luniCurente])];
 
   
 
-  // Combin luniile din cuadrantes cu cele curente și elimin duplicatele
+  // Filtrez doar luniile relevante: decembrie anul anterior + toate lunile din anul curent
 
-  const luniDisponibile = [...new Set([...luniDinCuadrantes, ...luniCurente])].sort((a, b) => {
+  // Și le sortez astfel: decembrie anul anterior primul, apoi lunile din anul curent în ordine
 
-    // Sortez luniile în ordine cronologică
+  const luniDisponibile = luniDisponibileRaw.filter(luna => {
+
+    const [year, month] = luna.split('-').map(Number);
+
+    // Include decembrie anul anterior
+    if (year === previousYear && month === 12) return true;
+    // Include toate lunile din anul curent
+    if (year === currentYear && month >= 1 && month <= 12) return true;
+    return false;
+  }).sort((a, b) => {
 
     const [yearA, monthA] = a.split('-').map(Number);
 
     const [yearB, monthB] = b.split('-').map(Number);
 
     
+
+    // Decembrie anul anterior este întotdeauna primul
+
+    if (yearA === previousYear && monthA === 12) return -1;
+
+    if (yearB === previousYear && monthB === 12) return 1;
+
+    
+
+    // Apoi sortăm cronologic (an, apoi lună)
 
     if (yearA !== yearB) return yearA - yearB;
 
@@ -1825,7 +1856,13 @@ const getFirstValue = (record, keys) => {
         }
 
         if (inicio && fin) {
-          const isInRange = fechaZi >= inicio && fechaZi <= fin;
+          // Normalizează ambele date la începutul zilei (00:00:00) pentru comparare corectă
+          const inicioNormalizat = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+          // Setează fin la sfârșitul zilei (23:59:59.999) pentru a include ziua de sfârșit
+          const finNormalizat = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate(), 23, 59, 59, 999);
+          const fechaZiNormalizat = new Date(fechaZi.getFullYear(), fechaZi.getMonth(), fechaZi.getDate());
+          
+          const isInRange = fechaZiNormalizat >= inicioNormalizat && fechaZiNormalizat <= finNormalizat;
 
           
 
@@ -1927,12 +1964,40 @@ const getFirstValue = (record, keys) => {
 
         
 
-        if (tipZi && tipZi.startsWith('T1')) {
-
-          tip = 'T1';
-
-          orar = tipZi.replace('T1 ', '');
-
+        if (tipZi) {
+          const tipZiStr = String(tipZi).trim();
+          
+          // Verifică dacă este LIBRE sau goală
+          if (tipZiStr === '' || tipZiStr.toUpperCase() === 'LIBRE' || tipZiStr.toUpperCase() === 'LIB') {
+            tip = 'LIBRE';
+            orar = '';
+          }
+          // Verifică formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
+          else if (tipZiStr.startsWith('T1') || tipZiStr.startsWith('T2') || tipZiStr.startsWith('T3')) {
+            // Extrage tipul (T1, T2, T3)
+            const turnMatch = tipZiStr.match(/^(T[123])\s*(.*)$/);
+            if (turnMatch) {
+              tip = turnMatch[1]; // T1, T2 sau T3
+              orar = turnMatch[2] || ''; // Orarul fără prefix
+            } else {
+              tip = tipZiStr.startsWith('T1') ? 'T1' : tipZiStr.startsWith('T2') ? 'T2' : 'T3';
+              orar = tipZiStr.replace(/^T[123]\s*/, '');
+            }
+          }
+          // Verifică dacă este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
+          else if (tipZiStr.match(/^\d{1,2}:\d{2}/)) {
+            tip = 'T1';
+            orar = tipZiStr;
+          }
+          // Altfel, setează ca LIBRE
+          else {
+            tip = 'LIBRE';
+            orar = '';
+          }
+        } else {
+          // Dacă nu există valoare pentru această zi, rămâne LIBRE (valoarea default)
+          tip = 'LIBRE';
+          orar = '';
         }
 
       } else {
@@ -2154,6 +2219,16 @@ const getFirstValue = (record, keys) => {
     let totalMinute = 0;
     let totalSeconds = 0;
 
+    // Filtrez fichajes pentru luna selectată
+    const fichajesLunaSelectata = fichajes.filter(f => {
+      const fecha = f["FECHA"] || '';
+      // Verific dacă data începe cu YYYY-MM corespunzător lunii selectate
+      const fechaPrefix = `${year}-${String(month).padStart(2, '0')}`;
+      return fecha.startsWith(fechaPrefix);
+    });
+
+    console.log('Fichajes pentru luna selectată:', fichajesLunaSelectata.length, 'din total:', fichajes.length);
+
     // Prefer suma directă a câmpului DURACION (HH:MM:SS) din backend, doar pentru înregistrările de tip Salida
     const parseHHMMSS = (s) => {
       if (!s || typeof s !== 'string') return 0;
@@ -2169,7 +2244,7 @@ const getFirstValue = (record, keys) => {
       return 0;
     };
 
-    const totalSecFromDuraciones = fichajes
+    const totalSecFromDuraciones = fichajesLunaSelectata
       .filter(f => f["TIPO"] === 'Salida' && typeof f["DURACION"] === 'string')
       .reduce((acc, f) => acc + parseHHMMSS(f["DURACION"]), 0);
 
@@ -2185,7 +2260,7 @@ const getFirstValue = (record, keys) => {
 
       for (let day = 1; day <= maxDay; day++) {
         const dataZi = formatDateYMD(year, month, day);
-        const fichajesZi = fichajes.filter(f => (f["FECHA"] || '').startsWith(dataZi));
+        const fichajesZi = fichajesLunaSelectata.filter(f => (f["FECHA"] || '').startsWith(dataZi));
 
         console.log(`Day ${day}, dataZi: ${dataZi}, fichajesZi:`, fichajesZi);
 

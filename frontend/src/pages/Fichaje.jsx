@@ -18,6 +18,7 @@ import activityLogger from '../utils/activityLogger';
 import HorasTrabajadas from '../components/HorasTrabajadas';
 import HorasPermitidas from '../components/HorasPermitidas';
 import { calculateCuadranteHours, calculateHorarioHours } from '../utils/cuadrante-hours-helper';
+import { debug as loggerDebug, warn, error as logError, success, demo, info } from '../utils/logger';
 
 
 // Agrego función para normalizar hora
@@ -32,41 +33,41 @@ function padTime(t) {
 
 // Funcție pentru calculul zilelor din FECHA combinată (ex: "2025-10-09 - 2025-10-23")
 function calculateDaysFromCombinedDate(fechaCombinada) {
-  console.log('🔍 calculateDaysFromCombinedDate called with:', fechaCombinada);
+  loggerDebug('calculateDaysFromCombinedDate called with:', fechaCombinada);
   if (!fechaCombinada || fechaCombinada === '-' || fechaCombinada === '') {
-    console.log('🔍 Empty fecha, returning 0');
+    loggerDebug('Empty fecha, returning 0');
     return 0;
   }
   try {
     // Verifică dacă FECHA conține " - " (format combinat)
     if (fechaCombinada.includes(' - ')) {
       const [fechaInicio, fechaFin] = fechaCombinada.split(' - ');
-      console.log('🔍 Split dates:', fechaInicio, fechaFin);
+      loggerDebug('Split dates:', fechaInicio, fechaFin);
       const start = new Date(fechaInicio.trim());
       const end = new Date(fechaFin.trim());
-      console.log('🔍 Parsed dates:', start, end);
+      loggerDebug('Parsed dates:', start, end);
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        console.log('🔍 Invalid dates, returning 0');
+        loggerDebug('Invalid dates, returning 0');
         return 0;
       }
       const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-      console.log('🔍 Calculated days:', days);
+      loggerDebug('Calculated days:', days);
       return days;
     }
     // Dacă nu e format combinat, returnează 1 zi
-    console.log('🔍 Not combined format, returning 1');
+    loggerDebug('Not combined format, returning 1');
     return 1;
   } catch (error) {
-    console.log('🔍 Error calculating days:', error);
+    loggerDebug('Error calculating days:', error);
     return 0;
   }
 }
 
 // Funcție pentru formatarea datelor cu liniuță
 function formatDateRange(fechaCombinada) {
-  console.log('🔍 formatDateRange called with:', fechaCombinada);
+  loggerDebug('formatDateRange called with:', fechaCombinada);
   if (!fechaCombinada || fechaCombinada === '-' || fechaCombinada === '') {
-    console.log('🔍 Empty fecha, returning —');
+    loggerDebug('Empty fecha, returning —');
     return '—';
   }
   try {
@@ -81,29 +82,29 @@ function formatDateRange(fechaCombinada) {
     // Verifică dacă este interval (cu spații normale)
     if (fechaNormalized.includes(' - ')) {
       const [fechaInicio, fechaFin] = fechaNormalized.split(' - ');
-      console.log('🔍 Split dates for formatting:', fechaInicio, fechaFin);
+      loggerDebug('Split dates for formatting:', fechaInicio, fechaFin);
       
       // Verifică dacă este aceeași dată
       if (fechaInicio.trim() === fechaFin.trim()) {
         // Dacă este aceeași dată, returnează doar data formatată o singură dată
         const formatted = fechaInicio.trim().split('-').reverse().join('/');
-        console.log('🔍 Single date (same start/end):', formatted);
+        loggerDebug('Single date (same start/end):', formatted);
         return formatted;
       }
       
       const startFormatted = fechaInicio.trim().split('-').reverse().join('/');
       const endFormatted = fechaFin.trim().split('-').reverse().join('/');
       const result = `${startFormatted} - ${endFormatted}`;
-      console.log('🔍 Formatted interval result:', result);
+      loggerDebug('Formatted interval result:', result);
       return result;
     }
     
     // Dacă nu e format combinat, formatează data normală
     const result = fechaNormalized.split('-').reverse().join('/');
-    console.log('🔍 Single date formatted:', result);
+    loggerDebug('Single date formatted:', result);
     return result;
   } catch (error) {
-    console.log('🔍 Error formatting date:', error);
+    loggerDebug('Error formatting date:', error);
     return '—';
   }
 }
@@ -278,7 +279,7 @@ function useMadridClock(resyncIntervalMs = 60000, authUser = null) {
       
       // Skip real time sync in DEMO mode
       if (authUser?.isDemo) {
-        console.log('🎭 DEMO mode: Using local time instead of worldtimeapi');
+        demo('Using local time instead of worldtimeapi');
         baseEpoch = Date.now();
         basePerf = performance.now();
         update();
@@ -362,8 +363,6 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [lastFichaje, setLastFichaje] = useState(null);
   // State pentru ultimul marcaj global (indiferent de lună) - folosit pentru a verifica dacă există un turn deschis
   const [ultimoMarcajeGlobal, setUltimoMarcajeGlobal] = useState(null);
-  // eslint-disable-next-line no-unused-vars
-  const [loadingUltimoMarcaje, setLoadingUltimoMarcaje] = useState(false); // Poate fi folosit în viitor pentru loading indicator
   // Folosim locația globală din LocationContext
   const locationContext = useLocation();
   const { currentLocation, currentAddress } = locationContext;
@@ -386,8 +385,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
 
     // Dacă deja avem locație cached, nu mai cerem
-    if (currentLocation) {
-      console.log('📍 Fichaje: Using existing cached location');
+    // Folosim locationContextRef.current pentru a evita dependența directă
+    const ctx = locationContextRef.current;
+    if (ctx?.currentLocation) {
+      info('Fichaje: Using existing cached location');
       locationRequestedOnMountRef.current = true;
       return;
     }
@@ -395,14 +396,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     const requestLocationOnPageAccess = async () => {
       try {
         locationRequestedOnMountRef.current = true; // Marchează că am cerut deja
-        console.log('📍 Fichaje page accessed - requesting location (using cache if available)...');
-        // Cere locația folosind contextul global
+        info('Fichaje page accessed - requesting location (using cache if available)...');
+        // Cere locația folosind contextul global prin ref pentru a evita dependența în useEffect
         // maximumAge: 600000 (10 min) înseamnă că dacă avem locație cache-uită mai recentă de 10 min, o folosește
         // Browser-ul returnează locația cached fără să activeze GPS-ul, reducând warning-urile
-        await locationContext.getCurrentLocation();
-        console.log('✅ Location obtained on Fichaje page access');
+        const ctx = locationContextRef.current;
+        await ctx.getCurrentLocation();
+        success('Location obtained on Fichaje page access');
       } catch (error) {
-        console.warn('⚠️ Could not get location on page access:', error);
+        warn('Could not get location on page access:', error);
         locationRequestedOnMountRef.current = false; // Permite retry dacă eșuează
         // Nu aruncăm eroare - continuăm fără locație, utilizatorul poate încerca din nou la check-in
       }
@@ -410,8 +412,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
     // Cere locația când se montează componenta (la accesarea paginii)
     requestLocationOnPageAccess();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Fără dependențe - doar la mount (o singură dată)
+    // Empty deps array - rulează doar la mount (o singură dată)
+    // locationContext este accesat prin locationContextRef.current pentru a evita dependența
+  }, []); // locationContextRef este un ref stabil, currentLocation este folosit doar pentru verificare inițială
 
   // State pentru tab-uri și ausencias
   const [activeTab, setActiveTab] = useState('registros');
@@ -482,8 +485,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
     
-    console.log('🔍 Checking absence status for today:', todayStr);
-    console.log('🔍 Available ausencias:', ausencias);
+    loggerDebug('Checking absence status for today:', todayStr);
+    loggerDebug('Available ausencias:', ausencias);
     
     // Verifică mai întâi baja médica (prioritate)
     let currentBaja = null;
@@ -494,7 +497,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         // Verifică dacă Situación este "Alta" - dacă da, nu este activă
         const situacion = baja.Situacion || baja.situacion || baja['Situación'] || baja.estado || baja.ESTADO || '';
         if (situacion && situacion.toLowerCase().includes('alta')) {
-          console.log('✅ Baja médica cu Situación "Alta" - nu este activă:', baja);
+          success('Baja médica cu Situación "Alta" - nu este activă:', baja);
           return false;
         }
         
@@ -518,7 +521,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         
           // Dacă fechaFin este în trecut, baja médica nu este activă
           if (today > finDate) {
-            console.log('✅ Baja médica cu fecha_alta în trecut - nu este activă:', { fechaFin: fin, today: todayStr });
+            success('Baja médica cu fecha_alta în trecut - nu este activă:', { fechaFin: fin, today: todayStr });
             return false;
           }
           
@@ -541,7 +544,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         situacion: currentBaja.Situacion || currentBaja.situacion || currentBaja['Situación'] || currentBaja.estado || '',
         motivo: currentBaja.Motivo || currentBaja.motivo || 'Baja médica'
       });
-      console.log('🚫 Utilizatorul este în baja médica:', currentBaja);
+      warn('Utilizatorul este în baja médica:', currentBaja);
       return;
     }
     
@@ -554,7 +557,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const fechaInicio = a.fecha_inicio || a.fechaInicio || a.FECHA_INICIO;
       const fechaFin = a.fecha_fin || a.fechaFin || a.FECHA_FIN;
       
-      console.log('🔍 Checking ausencia:', {
+      loggerDebug('Checking ausencia:', {
         ausenciaFecha,
         fechaInicio,
         fechaFin,
@@ -563,7 +566,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       
       // Verifică data exactă
       if (ausenciaFecha && ausenciaFecha.startsWith(todayStr)) {
-        console.log('✅ Found exact date match:', ausenciaFecha);
+        success('Found exact date match:', ausenciaFecha);
         return true;
       }
       
@@ -572,7 +575,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const inicio = new Date(fechaInicio);
         const fin = new Date(fechaFin);
         const isInRange = today >= inicio && today <= fin;
-        console.log('🔍 Range check:', {
+        loggerDebug('Range check:', {
           inicio: inicio.toISOString().split('T')[0],
           fin: fin.toISOString().split('T')[0],
           today: todayStr,
@@ -593,7 +596,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const finDateOnly = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
         
         const isInRange = todayDateOnly >= inicioDateOnly && todayDateOnly <= finDateOnly;
-        console.log('🔍 Range check from ausenciaFecha:', {
+        loggerDebug('Range check from ausenciaFecha:', {
           ausenciaFecha,
           fechaInicioStr,
           fechaFinStr,
@@ -613,11 +616,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const absenceType = currentAbsence.TIPO || currentAbsence.tipo || 'AUSENCIA';
       setIsOnVacationOrAbsence(true);
       setCurrentAbsenceType(absenceType);
-      console.log('🚫 Utilizatorul este în absență:', absenceType, currentAbsence);
+      warn('Utilizatorul este în absență:', absenceType, currentAbsence);
     } else {
       setIsOnVacationOrAbsence(false);
       setCurrentAbsenceType('');
-      console.log('✅ Utilizatorul nu este în absență pentru ziua curentă');
+      success('Utilizatorul nu este în absență pentru ziua curentă');
     }
   }, [ausencias, bajasMedicas, normalizeDateInput]);
 
@@ -646,7 +649,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const token = localStorage.getItem('auth_token');
         const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}codigo=${encodeURIComponent(empleadoCodigo)}`;
         
-        console.log('✅ [Fichaje] Folosind backend-ul nou (getBajasMedicas):', url);
+        info('[Fichaje] Folosind backend-ul nou (getBajasMedicas):', url);
         
         const headers = {
           'Content-Type': 'application/json',
@@ -668,10 +671,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         // Backend-ul filtrează deja după codigo, dar păstrăm filtrarea pentru compatibilitate
         const listaArray = Array.isArray(lista) ? lista : [];
 
-        console.log(`✅ [Fichaje] Bajas médicas primite din backend: ${listaArray.length} items`);
+        success(`[Fichaje] Bajas médicas primite din backend: ${listaArray.length} items`);
         setBajasMedicas(listaArray);
       } catch (error) {
-        console.error('❌ Error fetching bajas médicas:', error);
+        error('Error fetching bajas médicas:', error);
         setBajasMedicas([]);
       }
     }
@@ -681,11 +684,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
   // Verifică statusul de absență când se încarcă ausencias sau bajas médicas
   useEffect(() => {
-    console.log('🔍 Ausencias loaded:', ausencias.length, 'items');
-    console.log('🔍 Bajas médicas loaded:', bajasMedicas.length, 'items');
+    loggerDebug('Ausencias loaded:', ausencias.length, 'items');
+    loggerDebug('Bajas médicas loaded:', bajasMedicas.length, 'items');
     checkCurrentAbsenceStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ausencias, bajasMedicas]); // Eliminat checkCurrentAbsenceStatus din dependențe pentru a evita re-render-uri infinite
+  }, [ausencias, bajasMedicas, checkCurrentAbsenceStatus]); // checkCurrentAbsenceStatus este memoizat cu useCallback
 
   const fetchMonthlyAlerts = useCallback(async (month, notifyOnResult = false) => {
     if (!isAuthenticated || !authUser) return null;
@@ -857,7 +859,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchAusencias');
+      demo('Skipping fetchAusencias');
       setLoadingAusencias(false);
       return;
     }
@@ -865,7 +867,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     try {
       const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
       if (!userCode) {
-        console.error('No user code available for fetching ausencias');
+        logError('No user code available for fetching ausencias');
         setAusencias([]);
         setLoadingAusencias(false);
         return;
@@ -873,7 +875,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
       // Folosim backend-ul nou (fără n8n)
       const url = `${routes.getAusencias}?codigo=${encodeURIComponent(userCode)}`;
-      console.log('✅ [Fichaje] Folosind backend-ul nou (getAusencias):', url);
+      info('[Fichaje] Folosind backend-ul nou (getAusencias):', url);
       
       const token = localStorage.getItem('auth_token');
       const headers = {};
@@ -886,21 +888,21 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       
       if (result.success) {
         const rawData = Array.isArray(result.data) ? result.data : [result.data];
-        console.log('Ausencias raw data received:', rawData);
+        loggerDebug('Ausencias raw data received:', rawData);
         
         // Mapăm datele pentru a fi siguri că au structura corectă
         const mappedData = rawData.map(item => {
-          console.log('🔍 Mapping item:', item);
+          loggerDebug('Mapping item:', item);
           
           // Caută câmpul pentru oră în toate variantele posibile
           const hora = item.hora || item.HORA || item.time || item.hora_registro || 
                       item.HORA_REGISTRO || item.TIMESTAMP || item.timestamp || 
                       item.HORA_DE_REGISTRO || item.creado_at || item.CREADO_AT || '';
           
-          console.log('🔍 Found hora:', hora);
+          loggerDebug('Found hora:', hora);
           
           const fechaCombinada = item.FECHA || item.fecha || item.data || item.DATA || item.date || '';
-          console.log('🔍 Found FECHA:', fechaCombinada);
+          loggerDebug('Found FECHA:', fechaCombinada);
           
           const diasAprobados = item.dias_aprobados ?? item.DIAS_APROBADOS ?? item.diasAprobados ?? null;
           const horasAprobadas = item.horas_aprobadas ?? item.HORAS_APROBADAS ?? item.horasAprobadas ?? null;
@@ -926,13 +928,13 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const sortedData = mappedData.sort((a, b) => {
           // Dacă nu avem oră, sortăm după ID (mai mare = mai recent)
           if (!a.hora || !b.hora) {
-            console.log('🔍 Sorting by ID - A:', a.id, 'B:', b.id);
+            loggerDebug('Sorting by ID - A:', a.id, 'B:', b.id);
             return (b.id || 0) - (a.id || 0);
           }
           
           // Verifică dacă datele sunt valide
           if (!a.data || !b.data) {
-            console.log('🔍 Sorting - invalid data:', { a: a.data, b: b.data });
+            loggerDebug('Sorting - invalid data:', { a: a.data, b: b.data });
             return (b.id || 0) - (a.id || 0);
           }
           
@@ -940,7 +942,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           const dateTimeA = `${a.data} ${a.hora}`;
           const dateTimeB = `${b.data} ${b.hora}`;
           
-          console.log('🔍 Sorting - A:', dateTimeA, 'B:', dateTimeB);
+          loggerDebug('Sorting - A:', dateTimeA, 'B:', dateTimeB);
           
           // Încearcă să parseze data în format ISO
           let dateA, dateB;
@@ -953,19 +955,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             dateA = new Date(isoA);
             dateB = new Date(isoB);
             
-            console.log('🔍 Sorting - dateA:', dateA, 'dateB:', dateB);
-            console.log('🔍 Sorting - dateB - dateA:', dateB - dateA);
+            loggerDebug('Sorting - dateA:', dateA, 'dateB:', dateB);
+            loggerDebug('Sorting - dateB - dateA:', dateB - dateA);
             
             // Sortăm descendent (cele mai recente primul)
             return dateB - dateA;
           } catch (error) {
-            console.error('🔍 Sorting error:', error);
+            error('Sorting error:', error);
             // Fallback la sortare după ID
             return (b.id || 0) - (a.id || 0);
           }
         });
         
-        console.log('Ausencias mapped and sorted data:', sortedData);
+        loggerDebug('Ausencias mapped and sorted data:', sortedData);
         
         // Calculează totalul de durată pentru ausencias
         let totalSeconds = 0;
@@ -988,7 +990,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const totalSecs = totalSeconds % 60;
         const totalDuration = `${totalHours.toString().padStart(2, '0')}:${totalMinutes.toString().padStart(2, '0')}:${totalSecs.toString().padStart(2, '0')}`;
         
-        console.log('🔍 Total ausencia duration:', totalDuration, 'seconds:', totalSeconds);
+        loggerDebug('Total ausencia duration:', totalDuration, 'seconds:', totalSeconds);
         setTotalAusenciaDuration(totalDuration);
         
         // Calculează totalul de zile pentru Asunto Propio
@@ -997,11 +999,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           if (item.tipo === 'Asunto Propio') {
             const days = getApprovedDaysCount(item);
             totalAsuntoPropioDays += days;
-            console.log('🔍 Asunto Propio item:', item.FECHA, 'approved days:', days);
+            loggerDebug('Asunto Propio item:', item.FECHA, 'approved days:', days);
           }
         });
         
-        console.log('🔍 Total Asunto Propio days:', totalAsuntoPropioDays);
+        loggerDebug('Total Asunto Propio days:', totalAsuntoPropioDays);
         setTotalAsuntoPropioDays(totalAsuntoPropioDays);
         
         // Calculează totalul de zile pentru Vacaciones
@@ -1010,26 +1012,26 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           if (item.tipo === 'Vacaciones') {
             const days = getApprovedDaysCount(item);
             totalVacacionesDays += days;
-            console.log('🔍 Vacaciones item:', item.FECHA, 'approved days:', days);
+            loggerDebug('Vacaciones item:', item.FECHA, 'approved days:', days);
           }
         });
         
-        console.log('🔍 Total Vacaciones days:', totalVacacionesDays);
+        loggerDebug('Total Vacaciones days:', totalVacacionesDays);
         setTotalVacacionesDays(totalVacacionesDays);
         
         // Log all ausencias data
-        console.log('🔍 All ausencias loaded:', sortedData.length, 'items');
+        loggerDebug('All ausencias loaded:', sortedData.length, 'items');
         
         setAusencias(sortedData);
       } else {
-        console.error('Error fetching ausencias:', result.error);
+        logError('Error fetching ausencias:', result.error);
         setAusencias([]);
         setTotalAusenciaDuration(null);
         setTotalAsuntoPropioDays(null);
         setTotalVacacionesDays(null);
       }
     } catch (error) {
-      console.error('Error fetching ausencias:', error);
+      logError('Error fetching ausencias:', error);
       setAusencias([]);
       setTotalAusenciaDuration(null);
       setTotalAsuntoPropioDays(null);
@@ -1042,16 +1044,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   // Încarcă ausencias imediat când se încarcă componenta pentru a bloca butoanele
   useEffect(() => {
     if (isAuthenticated && authUser) {
-      console.log('🔍 Fetching ausencias for button blocking');
+      loggerDebug('Fetching ausencias for button blocking');
       fetchAusencias();
     }
   }, [isAuthenticated, authUser, fetchAusencias]);
 
   // Încarcă din nou ausencias când se schimbă tab-ul la "ausencias" pentru afișare
   useEffect(() => {
-    console.log('🔍 useEffect triggered - activeTab:', activeTab);
+    loggerDebug('useEffect triggered - activeTab:', activeTab);
     if (activeTab === 'ausencias' && isAuthenticated && authUser) {
-      console.log('🔍 Refreshing ausencias for display');
+      loggerDebug('Refreshing ausencias for display');
       fetchAusencias();
     }
   }, [activeTab, authUser, fetchAusencias, isAuthenticated]);
@@ -1108,25 +1110,22 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchUltimoMarcajeGlobal');
+      demo('Skipping fetchUltimoMarcajeGlobal');
       return;
     }
 
-    setLoadingUltimoMarcaje(true);
     try {
       const url = `${API_ENDPOINTS.ULTIMO_REGISTRO}?codigo=${encodeURIComponent(userCode)}`;
       const result = await callApi(url);
       if (result.success && result.data) {
         setUltimoMarcajeGlobal(result.data);
-        console.log('✅ Ultimo marcaje global retrieved:', result.data);
+        success('Ultimo marcaje global retrieved:', result.data);
       } else {
         setUltimoMarcajeGlobal(null);
       }
     } catch (error) {
-      console.error('Error fetching ultimo marcaje global:', error);
+      logError('Error fetching ultimo marcaje global:', error);
       setUltimoMarcajeGlobal(null);
-    } finally {
-      setLoadingUltimoMarcaje(false);
     }
   }, [authUser, callApi]);
 
@@ -1164,7 +1163,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchLogs');
+      demo('Skipping fetchLogs');
       setLoadingLogs(false);
       return [];
     }
@@ -1190,7 +1189,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         // Obtiene los marcajes para cada código con filtro de mes
         for (const cod of codigos) {
           const url = `${routes.getRegistros}?CODIGO=${encodeURIComponent(cod)}&MES=${encodeURIComponent(month)}`;
-          console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistros):', url);
+          info('[Fichaje] Folosind backend-ul nou (getRegistros):', url);
           
           const token = localStorage.getItem('auth_token');
           const headers = {};
@@ -1208,7 +1207,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       } else {
         // Pentru empleados, obține marcajele doar pentru codigo-ul principal cu filtro de mes
         const url = `${routes.getRegistros}?CODIGO=${encodeURIComponent(codigo)}&MES=${encodeURIComponent(month)}`;
-        console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistros):', url);
+        info('[Fichaje] Folosind backend-ul nou (getRegistros):', url);
         
         const token = localStorage.getItem('auth_token');
         const headers = {};
@@ -1283,7 +1282,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const totalSecs = totalSeconds % 60;
         const totalDuration = `${totalHours.toString().padStart(2, '0')}:${totalMinutes.toString().padStart(2, '0')}:${totalSecs.toString().padStart(2, '0')}`;
         
-        console.log('🔍 Total fichaje duration:', totalDuration, 'seconds:', totalSeconds);
+        loggerDebug('Total fichaje duration:', totalDuration, 'seconds:', totalSeconds);
         setTotalFichajeDuration(totalDuration);
 
         setLogs(sortedLogs);
@@ -1299,7 +1298,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         return [];
       }
     } catch (error) {
-      console.error('Error fetching logs:', error);
+      logError('Error fetching logs:', error);
       setLogs([]);
       setTotalFichajeDuration(null);
     }
@@ -1315,7 +1314,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
 
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Using demo fichajes data instead of fetching from backend');
+      demo('Using demo fichajes data instead of fetching from backend');
       setDemoFichajes();
       setLoadingLogs(false);
       return;
@@ -1337,7 +1336,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         ? `${routes.getTargetOreGrupo}?grupo=${encodeURIComponent(grupo)}`
         : `${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/horas-asignadas?grupo=${encodeURIComponent(grupo)}`;
       
-      console.log('✅ [Fichaje] Folosind backend-ul nou (getHorasAsignadas):', url);
+      info('[Fichaje] Folosind backend-ul nou (getHorasAsignadas):', url);
       
       const token = localStorage.getItem('auth_token');
       const headers = {
@@ -1365,7 +1364,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         return 162; // Default para grupos desconocidos
       }
     } catch (error) {
-      console.error('❌ Error fetching horas asignadas:', error);
+      logError('Error fetching horas asignadas:', error);
       return 162; // Default en caso de error
     }
   };
@@ -1441,7 +1440,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     // Dacă nu avem locație cached, cere-o acum (fallback pentru cazuri rare)
     if (!loc) {
       try {
-        console.log('📍 No location cached, requesting now...');
+        info('No location cached, requesting now...');
         loc = await locationContext.getCurrentLocation();
         // Obține adresa prin reverse geocoding folosind funcția din context
         if (loc) {
@@ -1453,19 +1452,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           }
         }
       } catch (error) {
-        console.warn('Geolocation not available or denied:', error);
+        warn('Geolocation not available or denied:', error);
         // Continuă fără locație - marcajul se salvează oricum
       }
     } else {
       // Avem locație cached - folosim-o direct
-      console.log('✅ Using cached location from page access');
+      success('Using cached location from page access');
     }
     
     // Salvează marcajul în backend (cu sau fără locație)
     try {
       await saveFichaje(tipo, loc, address, fichajeCustomMotivo);
     } catch (error) {
-      console.error('Error saving fichaje:', error);
+      logError('Error saving fichaje:', error);
       setFichando(false);
     }
   };
@@ -1480,7 +1479,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const userCode = authUser?.['CODIGO'] || authUser?.codigo;
       
       if (!userEmail || !userName || !userCode) {
-        console.error('Missing user data:', {
+        logError('Missing user data:', {
           email: userEmail,
           nombre: userName,
           codigo: userCode
@@ -1514,7 +1513,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         horasMensuales = 0; // Duration is now calculated by database triggers
         horasAsignadas = horasAsignadasResult;
       } catch (error) {
-        console.log('Timeout sau eroare la calculul orelor lunare, continuăm cu valori default');
+        warn('Timeout sau eroare la calculul orelor lunare, continuăm cu valori default');
         // Continuă cu valori default
       }
       
@@ -1561,7 +1560,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         motivo: customMotivo || (tipo === 'Entrada' ? 'Entrada registrada desde web' : 'Salida registrada desde web')
       };
 
-      console.log('✅ [Fichaje] Folosind backend-ul nou (addFichaje):', API_ENDPOINTS.FICHAJE_ADD);
+      info('[Fichaje] Folosind backend-ul nou (addFichaje):', API_ENDPOINTS.FICHAJE_ADD);
       
       const token = localStorage.getItem('auth_token');
       const headers = {
@@ -1581,7 +1580,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       if (result.success) {
         // Log crearea fichaje (non-blocking pentru viteză)
         activityLogger.logFichajeCreated(fichajeData, authUser).catch(error => {
-          console.warn('Error logging activity (non-blocking):', error);
+          warn('Error logging activity (non-blocking):', error);
         });
         
         // Actualizează UI-ul instant fără să reîncarcă toate marcajele
@@ -1601,7 +1600,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
         // Reîncarcă ultimul marcaj global pentru a actualiza starea butonului "Salida para incidencia"
         fetchUltimoMarcajeGlobal().catch(err => {
-          console.warn('Error reloading ultimo marcaje global after fichaje:', err);
+          warn('Error reloading ultimo marcaje global after fichaje:', err);
         });
 
         // După orice marcaje, reîncarcă din backend pentru a aduce DURACIÓN calculată de DB
@@ -1631,7 +1630,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 return;
               }
             } catch (error) {
-              console.warn('Error reloading logs:', error);
+              warn('Error reloading logs:', error);
             }
 
             // Continuă să încerci până la ~30s (DB poate întârzia calculul DURACION)
@@ -1644,16 +1643,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           setTimeout(tryReload, 300);
         }
       } else {
-        console.error('Error from API:', result.error);
-        console.log('🔍 [Fichaje] Full error object:', JSON.stringify(result, null, 2));
+        logError('Error from API:', result.error);
+        loggerDebug('[Fichaje] Full error object:', JSON.stringify(result, null, 2));
         
         // Detectăm eroarea specifică despre fichajes consecutive
         let errorTitle = t('error.saveError');
         let errorMessage = t('error.saveErrorDetails');
         
         const errorText = (result.error || '').toLowerCase();
-        console.log('🔍 [Fichaje] Error text (lowercase):', errorText);
-        console.log('🔍 [Fichaje] Error text length:', errorText.length);
+        loggerDebug('[Fichaje] Error text (lowercase):', errorText);
+        loggerDebug('[Fichaje] Error text length:', errorText.length);
         
         // Verifică dacă este eroarea despre fichajes consecutive
         // Verifică mai multe variante ale mesajului
@@ -1664,7 +1663,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const hasSalidaConsecutiv = errorText.includes('salida consecutiv');
         const hasConsecutive = errorText.includes('consecutive');
         
-        console.log('🔍 [Fichaje] Checking conditions:', {
+        loggerDebug('[Fichaje] Checking conditions:', {
           hasNuSePot,
           has2Entrada2Salida,
           hasEntrada2Salida,
@@ -1684,10 +1683,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             // Forțează reîncărcarea logs și ultimul marcaj global pentru a actualiza starea butonului "Salida para incidencia"
             setTimeout(() => {
               fetchLogs(selectedMonth).catch(err => {
-                console.warn('Error reloading logs after consecutive entrada error:', err);
+                warn('Error reloading logs after consecutive entrada error:', err);
               });
               fetchUltimoMarcajeGlobal().catch(err => {
-                console.warn('Error reloading ultimo marcaje global after consecutive entrada error:', err);
+                warn('Error reloading ultimo marcaje global after consecutive entrada error:', err);
               });
             }, 500);
           } else if (errorText.includes('2 salida') && !errorText.includes('2 entrada')) {
@@ -1700,17 +1699,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             if (errorText.includes('entrada')) {
               setTimeout(() => {
                 fetchLogs(selectedMonth).catch(err => {
-                  console.warn('Error reloading logs after consecutive fichaje error:', err);
+                  warn('Error reloading logs after consecutive fichaje error:', err);
                 });
                 fetchUltimoMarcajeGlobal().catch(err => {
-                  console.warn('Error reloading ultimo marcaje global after consecutive fichaje error:', err);
+                  warn('Error reloading ultimo marcaje global after consecutive fichaje error:', err);
                 });
               }, 500);
             }
           }
-          console.log('✅ [Fichaje] Detected consecutive fichaje error, showing message:', errorMessage);
+          success('[Fichaje] Detected consecutive fichaje error, showing message:', errorMessage);
         } else {
-          console.log('⚠️ [Fichaje] Error not recognized as consecutive fichaje error');
+          warn('[Fichaje] Error not recognized as consecutive fichaje error');
         }
         
         setNotification({
@@ -1720,7 +1719,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         });
       }
     } catch (error) {
-      console.error('Error saving fichaje:', error);
+      logError('Error saving fichaje:', error);
       
       // Detectăm eroarea specifică despre fichajes consecutive
       let errorTitle = t('error.saveError');
@@ -1763,7 +1762,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   };
 
   // Funcție pentru a obține orarul zilei curente
-  const getCurrentDaySchedule = () => {
+
+  // Memoizează rezultatul pentru a evita recalculări la fiecare render
+  // Recalculează doar când se schimbă cuadranteAsignado sau horarioAsignado
+  const currentDaySchedule = useMemo(() => {
     if (cuadranteAsignado) {
       const today = new Date().getDate();
       const dayKey = `ZI_${today}`;
@@ -1791,54 +1793,42 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
       const daySchedule = horarioAsignado.days[dayKey];
       
-      // Debug logging
-      console.log('🔍 DEBUG getCurrentDaySchedule - today:', today, 'dayKey:', dayKey);
-      console.log('🔍 DEBUG getCurrentDaySchedule - daySchedule:', daySchedule);
-      console.log('🔍 DEBUG getCurrentDaySchedule - horarioAsignado.days:', horarioAsignado.days);
-      
-      if (daySchedule) {
-        const intervals = [];
-        // Verifică că valorile sunt string-uri valide în format HH:MM
-        const isValidTime = (time) => {
-          const isValid = typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
-          if (!isValid && time) {
-            console.log('⚠️ DEBUG - Invalid time format:', time, 'type:', typeof time);
-          }
-          return isValid;
-        };
-        
-        console.log('🔍 DEBUG - in1:', daySchedule.in1, 'out1:', daySchedule.out1);
-        console.log('🔍 DEBUG - in2:', daySchedule.in2, 'out2:', daySchedule.out2);
-        console.log('🔍 DEBUG - in3:', daySchedule.in3, 'out3:', daySchedule.out3);
-        
-        if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
-          // Extrage doar HH:MM dacă e în format HH:MM:SS
-          const in1 = daySchedule.in1.substring(0, 5);
-          const out1 = daySchedule.out1.substring(0, 5);
-          intervals.push(`${in1} - ${out1}`);
-        }
-        if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
-          const in2 = daySchedule.in2.substring(0, 5);
-          const out2 = daySchedule.out2.substring(0, 5);
-          intervals.push(`${in2} - ${out2}`);
-        }
-        if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
-          const in3 = daySchedule.in3.substring(0, 5);
-          const out3 = daySchedule.out3.substring(0, 5);
-          intervals.push(`${in3} - ${out3}`);
-        }
-        
-        console.log('🔍 DEBUG - intervals:', intervals);
-        
-        if (intervals.length > 0) {
-          return intervals.join(' / ');
-        }
-      } else {
-        console.log('⚠️ DEBUG - daySchedule is null/undefined for dayKey:', dayKey);
+      // Eliminat log-urile excessive - se execută doar logica necesară
+      if (!daySchedule) {
+        return null; // Nu mai logăm cazurile comune de zile libere
       }
+      
+      const intervals = [];
+      // Verifică că valorile sunt string-uri valide în format HH:MM
+      const isValidTime = (time) => {
+        return typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
+      };
+      
+      if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
+        // Extrage doar HH:MM dacă e în format HH:MM:SS
+        const in1 = daySchedule.in1.substring(0, 5);
+        const out1 = daySchedule.out1.substring(0, 5);
+        intervals.push(`${in1} - ${out1}`);
+      }
+      if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
+        const in2 = daySchedule.in2.substring(0, 5);
+        const out2 = daySchedule.out2.substring(0, 5);
+        intervals.push(`${in2} - ${out2}`);
+      }
+      if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
+        const in3 = daySchedule.in3.substring(0, 5);
+        const out3 = daySchedule.out3.substring(0, 5);
+        intervals.push(`${in3} - ${out3}`);
+      }
+      
+      if (intervals.length > 0) {
+        return intervals.join(' / ');
+      }
+      
+      return null; // Dacă daySchedule există dar nu are intervale valide
     }
     return null;
-  };
+  }, [cuadranteAsignado, horarioAsignado]);
 
   // Funcție pentru a calcula orele zilnice din orarul curent
   const getCurrentDayHours = () => {
@@ -1866,22 +1856,121 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
     return '0.00';
   };
-  const currentDaySchedule = getCurrentDaySchedule();
 
   // Memoizează rezultatele pentru Entrada și Salida pentru a evita recalculări inutile
   // Recalculează doar când se schimbă horarioAsignado sau cuadranteAsignado
 
+  // Verifică dacă tura este completă (s-au făcut ambele, Entrada și Salida)
+  const isShiftComplete = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    const hasEntradaToday = logs.some(log => {
+      const logDate = log.data || log.FECHA || log.fecha;
+      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+    });
+    const hasSalidaToday = logs.some(log => {
+      const logDate = log.data || log.FECHA || log.fecha;
+      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
+    });
+    
+    // Pentru ture nocturne: verifică dacă există Entrada ieri seara
+    const hasEntradaYesterday = logs.some(log => {
+      const logDate = log.data || log.FECHA || log.fecha;
+      return logDate && logDate.startsWith(yesterdayStr) && (log.tipo || log.TIPO) === 'Entrada';
+    });
+    
+    // Verifică dacă este tură nocturnă (pentru cuadrante)
+    let isOvernightShiftToday = false;
+    if (cuadranteAsignado) {
+      const currentDay = new Date().getDate();
+      const dayKey = `ZI_${currentDay}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        let intervals = [];
+        if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
+          const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+          if (match) {
+            intervals = [{ start: match[1], end: match[2] }];
+          }
+        } else {
+          intervals = daySchedule.split(',').map(interval => {
+            const [start, end] = interval.trim().split('-');
+            return { start: start?.trim(), end: end?.trim() };
+          }).filter(interval => interval.start && interval.end);
+        }
+        
+        if (intervals.length > 0) {
+          const firstInterval = intervals[0];
+          const startTime = (parseInt(firstInterval.start.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.start.split(':')[1]) || 0);
+          const endTime = (parseInt(firstInterval.end.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.end.split(':')[1]) || 0);
+          isOvernightShiftToday = endTime < startTime;
+        }
+      }
+    }
+    
+    // Tura este completă dacă:
+    // 1. Ambele făcute astăzi (tură normală), SAU
+    // 2. Salida astăzi + Entrada ieri + este tură nocturnă (tură nocturnă care s-a terminat dimineața)
+    return (hasEntradaToday && hasSalidaToday) || 
+           (hasSalidaToday && hasEntradaYesterday && isOvernightShiftToday);
+  }, [logs, cuadranteAsignado]);
+
   const isEntradaAllowed = useMemo(() => {
-    return isTimeWithinSchedule('Entrada');
-  }, [isTimeWithinSchedule]);
+    // Verifică dacă există orar/cuadrante pentru ziua curentă
+    // Dacă nu există orar pentru ziua curentă, NU permite fichar
+    if (!horarioAsignado && !cuadranteAsignado) {
+      return false; // Nu permite fichar fără orar/cuadrante
+    }
+    
+    // Verifică dacă există orar pentru ziua curentă (pentru horario)
+    if (horarioAsignado && !cuadranteAsignado) {
+      const now = new Date();
+      const currentDay = now.getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][currentDay];
+      const daySchedule = horarioAsignado.days?.[dayKey];
+      
+      // Dacă nu există orar pentru ziua curentă sau nu are intervale valide, NU permite
+      if (!daySchedule) {
+        return false;
+      }
+      const hasIntervals = (daySchedule.in1 && daySchedule.out1) || 
+                          (daySchedule.in2 && daySchedule.out2) || 
+                          (daySchedule.in3 && daySchedule.out3);
+      if (!hasIntervals) {
+        return false; // Nu are intervale valide pentru ziua curentă
+      }
+    }
+    
+    // Dacă tura este completă, verifică doar dacă este timpul corect pentru următoarea tură
+    if (isShiftComplete) {
+      return isTimeWithinSchedule('Entrada');
+    }
+    // Dacă tura nu este completă și există orar, permite oricând (pentru cazul când uită să ficheze)
+    return true;
+  }, [isTimeWithinSchedule, isShiftComplete, horarioAsignado, cuadranteAsignado]);
 
   const isSalidaAllowed = useMemo(() => {
+    // Dacă tura este completă, Salida este dezactivată (tura s-a terminat)
+    if (isShiftComplete) {
+      return false;
+    }
+    // Dacă tura nu este completă, verifică programul normal
     return isTimeWithinSchedule('Salida');
-  }, [isTimeWithinSchedule]);
+  }, [isTimeWithinSchedule, isShiftComplete]);
 
   // Memoizează rezultatul calculului pentru mesajul informativ (evită recalculare la fiecare secundă)
   const timeRestrictionMessage = useMemo(() => {
     if (!horarioAsignado && !cuadranteAsignado) return null;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const hasEntradaToday = logs.some(log => {
+      const logDate = log.data || log.FECHA || log.fecha;
+      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+    });
     
     // Verifică dacă există mai mult de 1 interval în orar (ture partajate)
     let intervalCount = 0;
@@ -1902,8 +1991,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         });
       }
     } else if (horarioAsignado && horarioAsignado.days) {
-      const today = new Date().getDay();
-      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+      const todayDayOfWeek = new Date().getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][todayDayOfWeek];
       const daySchedule = horarioAsignado.days[dayKey];
       if (daySchedule) {
         if (daySchedule.in1 && daySchedule.out1) {
@@ -1921,15 +2010,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       }
     }
     
-    const today = new Date().toISOString().split('T')[0];
-    const hasEntradaToday = logs.some(log => {
-      const logDate = log.data || log.FECHA || log.fecha;
-      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
-    });
-    const hasSalidaToday = logs.some(log => {
-      const logDate = log.data || log.FECHA || log.fecha;
-      return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
-    });
+    // Folosește isShiftComplete calculat anterior (verifică corect și pentru ture nocturne)
     
     // Dacă există mai mult de 1 interval, verifică în ce interval ne aflăm
     if (intervalCount > 1 && intervals.length > 0) {
@@ -1993,8 +2074,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           });
         }
       } else if (horarioAsignado && horarioAsignado.days) {
-        const today = new Date().getDay();
-        const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+        const todayDayOfWeek = new Date().getDay();
+        const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][todayDayOfWeek];
         const daySchedule = horarioAsignado.days[dayKey];
         
         if (daySchedule) {
@@ -2063,7 +2144,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       return 'Has completado tu jornada laboral de hoy.';
     };
     
-    if (hasEntradaToday && hasSalidaToday && (horarioAsignado || cuadranteAsignado)) {
+    if (isShiftComplete && (horarioAsignado || cuadranteAsignado)) {
       const entradaLog = logs.find(log => {
         const logDate = log.data || log.FECHA || log.fecha;
         return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
@@ -2081,12 +2162,24 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       }
     }
     
+    // Dacă tura este completă (ambele făcute), arată MEREU mesajul pentru următoarea Entrada
+    if (isShiftComplete) {
+      // Tura completă - arată când este următoarea Entrada
+      const entradaMessage = getTimeRestrictionMessage('Entrada');
+      if (entradaMessage) {
+        return `Entrada: ${entradaMessage}`;
+      }
+      return 'Entrada: Consulta tu horario asignado';
+    }
+    
     // Dacă nu s-a completat tura, verifică restricțiile
     if (hasEntradaToday) {
+      // Doar Entrada făcută - arată mesajul pentru Salida
       if (!isSalidaAllowed) {
         return `Salida: ${getTimeRestrictionMessage('Salida') || 'No permitida en este momento'}`;
       }
     } else {
+      // Nu s-a făcut încă Entrada - arată mesajul pentru Entrada
       if (!isEntradaAllowed && !isSalidaAllowed) {
         return `${getTimeRestrictionMessage('Entrada') || 'Consulta tu horario asignado'}`;
       } else if (!isEntradaAllowed) {
@@ -2097,7 +2190,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
     
     return null;
-  }, [logs, cuadranteAsignado, horarioAsignado, isEntradaAllowed, isSalidaAllowed, getTimeRestrictionMessage]);
+  }, [logs, cuadranteAsignado, horarioAsignado, isEntradaAllowed, isSalidaAllowed, isShiftComplete, getTimeRestrictionMessage]);
 
   // Dacă utilizatorul nu este autentificat, afișează un mesaj
   return (
@@ -2675,7 +2768,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       name="registros-month"
                       value={selectedMonth}
                       onChange={(e) => {
-                        console.log('🔍 Month changed from', selectedMonth, 'to', e.target.value);
+                        loggerDebug('Month changed from', selectedMonth, 'to', e.target.value);
                         setSelectedMonth(e.target.value);
                       }}
                       disabled={changingMonth}
@@ -2941,7 +3034,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               )) : activeTab === 'horas-trabajadas' ? (
                 // Componenta HorasTrabajadas pentru angajatul curent
                 <div className="mt-4">
-                  {console.log('🔍 HorasTrabajadas props:', { empleadoId: authUser?.CODIGO, soloEmpleado: true, authUser })}
+                  {loggerDebug('HorasTrabajadas props:', { empleadoId: authUser?.CODIGO, soloEmpleado: true, authUser })}
                   {authUser && authUser.CODIGO ? (
                     <HorasTrabajadas 
                       empleadoId={authUser.CODIGO} 
@@ -3218,12 +3311,12 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                 
                 if (empleadoPorCodigo) {
                   nombreEmpleado = empleadoPorCodigo.nombre || empleadoPorCodigo['NOMBRE / APELLIDOS'] || 'Sin nombre';
-                  console.log('✅ Empleado encontrado por código (sin email):', nombreEmpleado);
+                  success('Empleado encontrado por código (sin email):', nombreEmpleado);
                 } else {
-                  console.log('❌ No se encontró empleado por código:', codigoRegistro);
+                  warn('No se encontró empleado por código:', codigoRegistro);
                 }
               } else {
-                console.log('❌ No email ni código found in registro:', item);
+                warn('No email ni código found in registro:', item);
               }
             }
         
@@ -3265,7 +3358,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchEmpleados in Fichaje');
+      demo('Skipping fetchEmpleados in Fichaje');
       setLoadingEmpleados(false);
       return;
     }
@@ -3278,7 +3371,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         const data = Array.isArray(result.data) ? result.data : [result.data];
         
         // Debug: afișează structura datelor primite
-        console.log('🔍 Empleados completos raw data:', data);
+        loggerDebug('Empleados completos raw data:', data);
         
         // Mapează direct angajații din endpoint-ul existent
         const mappedEmpleados = data.map(empleado => ({
@@ -3289,21 +3382,21 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         }));
         
         // Debug: afișează angajații mappați
-        console.log('🔍 Empleados completos mapeados:', mappedEmpleados);
+        loggerDebug('Empleados completos mapeados:', mappedEmpleados);
         
         setEmpleados(mappedEmpleados);
       } else {
-        console.error('Error fetching empleados:', result.error);
+        logError('Error fetching empleados:', result.error);
         // Afișează eroarea specifică pentru CORS în producție
         if (result.error && result.error.includes('CORS')) {
-          console.error('❌ CORS Error: Lista de angajați nu poate fi încărcată în producție. Verifică configurația CORS în n8n.');
+          logError('CORS Error: Lista de angajați nu poate fi încărcată în producție. Verifică configurația CORS în n8n.');
         }
       }
     } catch (error) {
-      console.error('Error fetching empleados:', error);
+      logError('Error fetching empleados:', error);
       // Verifică dacă este o eroare de CORS
       if (error.message && (error.message.includes('CORS') || error.message.includes('blocked'))) {
-        console.error('❌ CORS Error: Lista de angajați nu poate fi încărcată în producție. Verifică configurația CORS în n8n.');
+        logError('CORS Error: Lista de angajați nu poate fi încărcată în producție. Verifică configurația CORS în n8n.');
       }
     }
     setLoadingEmpleados(false);
@@ -3317,14 +3410,14 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchRegistros');
+      demo('Skipping fetchRegistros');
       setLoadingRegistros(false);
       return;
     }
     
     try {
       // Para manager/supervisor - retorna todos los registros con filtro de mes
-      console.log('🔍 Fetching registros for month:', month);
+      loggerDebug('Fetching registros for month:', month);
       
       // Verifică dacă month este string înainte de a face split
       let monthNumber, year;
@@ -3338,16 +3431,16 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         monthNumber = String(currentDate.getMonth() + 1).padStart(2, '0');
         year = currentDate.getFullYear().toString();
         month = `${year}-${monthNumber}`;
-        console.log('⚠️ Month parameter invalid, using current month:', month);
+        warn('Month parameter invalid, using current month:', month);
       }
       
-      console.log('🔍 Month number:', monthNumber, 'Year:', year);
-      console.log('🔍 Month parameter:', month);
+      loggerDebug('Month number:', monthNumber, 'Year:', year);
+      loggerDebug('Month parameter:', month);
       
       // Folosim REGISTROS_EMPLEADOS pentru a obține toate registrele pentru luna selectată
       // Trimitem doar luna în format YYYY-MM
       const url = `${API_ENDPOINTS.REGISTROS_EMPLEADOS}?mes=${encodeURIComponent(month)}`;
-      console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistrosEmpleados):', url);
+      info('[Fichaje] Folosind backend-ul nou (getRegistrosEmpleados):', url);
       
       const token = localStorage.getItem('auth_token');
       const headers = {};
@@ -3361,7 +3454,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       if (result.success) {
         // Verifică dacă răspunsul este "not-modified" - nu șterge datele existente
         if (result.data && typeof result.data === 'object' && result.data.status === 'not-modified') {
-          console.log('✅ Registros not-modified - păstrăm datele existente');
+          success('Registros not-modified - păstrăm datele existente');
           // Nu facem nimic, păstrăm datele existente
           return;
         }
@@ -3369,9 +3462,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         const data = Array.isArray(result.data) ? result.data : [result.data];
         
         // Debug: afișează structura datelor primite
-        console.log('🔍 Registros raw data:', data);
-        console.log('🔍 Primer registro sample:', data[0]);
-        console.log('🔍 Total registros received:', data.length);
+        loggerDebug('Registros raw data:', data);
+        loggerDebug('Primer registro sample:', data[0]);
+        loggerDebug('Total registros received:', data.length);
         
         // Filtrare pentru elemente goale și pentru răspunsuri "not-modified"
         const validData = data.filter(item => {
@@ -3387,11 +3480,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         
         // Dacă nu există date valide după filtrare, păstrăm datele existente
         if (validData.length === 0) {
-          console.log('✅ No valid registros after filtering - păstrăm datele existente');
+          success('No valid registros after filtering - păstrăm datele existente');
           return;
         }
         
-        console.log('🔍 Valid registros after filtering:', validData.length);
+        loggerDebug('Valid registros after filtering:', validData.length);
         
         // Mapeo a la estructura UI
         const mapped = validData.map(item => {
@@ -3421,7 +3514,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           return registroMonth === month;
         });
 
-        console.log('🔍 Filtered registros for month', month, ':', filteredData.length);
+        loggerDebug('Filtered registros for month', month, ':', filteredData.length);
 
         // Ordenación correcta: combina fecha y hora para una ordenación cronológica precisa (más reciente primero)
         const sortedRegistros = [...filteredData].sort((a, b) => {
@@ -3437,7 +3530,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           return dateTimeB - dateTimeA; // Más reciente primero (descending)
         });
 
-        console.log('🔍 Sorted registros for month', month, ':', sortedRegistros.length);
+        loggerDebug('Sorted registros for month', month, ':', sortedRegistros.length);
         
         // Registros fetched successfully
         
@@ -3448,18 +3541,18 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           // Salvează datele mapate și sortate
           setRegistrosBrutos(sortedRegistros);
         } else {
-          console.log('⚠️ No registros found for month', month, '- păstrăm datele existente (nu ștergem)');
+          warn('No registros found for month', month, '- păstrăm datele existente (nu ștergem)');
           // Nu ștergem datele existente - poate fi o problemă temporară sau o lună fără registros
         }
       } else {
-        console.error('[DEBUG] fetchRegistros failed:', result.error);
+        logError('[DEBUG] fetchRegistros failed:', result.error);
         // Reset și la eroare
         setRegistrosBrutos([]);
         setRegistros([]);
         setFiltered([]);
       }
     } catch (error) {
-      console.error('Error fetching registros:', error);
+      logError('Error fetching registros:', error);
       // Reset și la catch
       setRegistrosBrutos([]);
       setRegistros([]);
@@ -3534,7 +3627,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         }
       }
       
-      console.log('✅ [Fichaje] Folosind backend-ul nou (getRegistrosPeriodo):', url);
+      info('[Fichaje] Folosind backend-ul nou (getRegistrosPeriodo):', url);
       
       const token = localStorage.getItem('auth_token');
       const headers = {
@@ -3555,24 +3648,24 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       }
 
       const result = await response.json();
-      console.log('🔍 Response from period endpoint:', result);
-      console.log('🔍 Response type:', typeof result);
-      console.log('🔍 Response is array:', Array.isArray(result));
+      loggerDebug('Response from period endpoint:', result);
+      loggerDebug('Response type:', typeof result);
+      loggerDebug('Response is array:', Array.isArray(result));
       
       // Verifică dacă răspunsul conține datele așteptate
       let periodData = [];
       if (result && Array.isArray(result)) {
         periodData = result;
-        console.log('✅ Using result directly as array, length:', periodData.length);
+        success('Using result directly as array, length:', periodData.length);
       } else if (result && result.data && Array.isArray(result.data)) {
         periodData = result.data;
-        console.log('✅ Using result.data as array, length:', periodData.length);
+        success('Using result.data as array, length:', periodData.length);
       } else if (result && result.registros && Array.isArray(result.registros)) {
         periodData = result.registros;
-        console.log('✅ Using result.registros as array, length:', periodData.length);
+        success('Using result.registros as array, length:', periodData.length);
       } else {
-        console.warn('❌ Unexpected response format:', result);
-        console.log('❌ Available keys:', result ? Object.keys(result) : 'result is null/undefined');
+        warn('Unexpected response format:', result);
+        loggerDebug('Available keys:', result ? Object.keys(result) : 'result is null/undefined');
         periodData = [];
       }
       
@@ -3605,10 +3698,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         return dateTimeB - dateTimeA; // Cele mai noi primele (descending)
       });
       
-      console.log('🔄 Mapped data:', sortedMappedData);
-      console.log('🔄 Mapped data length:', sortedMappedData.length);
-      console.log('🔄 First mapped item:', sortedMappedData[0]);
-      console.log('🔄 ID check - First item has ID:', !!sortedMappedData[0]?.id, 'ID value:', sortedMappedData[0]?.id);
+      loggerDebug('Mapped data:', sortedMappedData);
+      loggerDebug('Mapped data length:', sortedMappedData.length);
+      loggerDebug('First mapped item:', sortedMappedData[0]);
+      loggerDebug('ID check - First item has ID:', !!sortedMappedData[0]?.id, 'ID value:', sortedMappedData[0]?.id);
       
       setRegistros(sortedMappedData);
       setFiltered(sortedMappedData);
@@ -3620,7 +3713,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         message: `Mostrando ${mappedData.length} registros del ${periodStart} al ${periodEnd}`
       });
     } catch (error) {
-      console.error('Error fetching period data:', error);
+      logError('Error fetching period data:', error);
       setNotification({
         type: 'error',
         title: 'Error de Conexión',
@@ -3649,7 +3742,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       try {
         await fetchRegistros(selectedMonth);
       } catch (error) {
-        console.warn('[Fichaje] No se pudieron recargar los registros actuales:', error);
+        warn('[Fichaje] No se pudieron recargar los registros actuales:', error);
       }
     })();
   }, [authUser, fetchRegistros, selectedMonth]);
@@ -3657,8 +3750,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   // Debug: afișează form-ul când se deschide modalul
   useEffect(() => {
     if (modalVisible) {
-      console.log('🔍 Modal opened, form content:', form);
-      console.log('🔍 editIdx:', editIdx);
+      loggerDebug('Modal opened, form content:', form);
+      loggerDebug('editIdx:', editIdx);
     }
   }, [editIdx, form, modalVisible]);
 
@@ -3810,7 +3903,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       await activityLogger.logDataExport('fichajes_pdf', { count: dataToExport.length, empleado: selectedEmpleado || undefined }, authUser);
       
     } catch (error) {
-      console.error('Error exporting PDF:', error);
+      logError('Error exporting PDF:', error);
       setNotification({
         type: 'error',
         title: 'Error de Exportación',
@@ -3886,7 +3979,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     await activityLogger.logDataExport('fichajes_excel', { count: dataToExport.length, empleado: selectedEmpleado || undefined }, authUser);
       
     } catch (error) {
-      console.error('Error exporting to Excel:', error);
+      logError('Error exporting to Excel:', error);
       setNotification({
         type: 'error',
         title: 'Error de Exportación',
@@ -3910,16 +4003,16 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     let currentAddress = null;
     
     try {
-        console.log('🔍 Intentando obtener ubicación...');
+        loggerDebug('Intentando obtener ubicación...');
       const coords = await locationContext.getCurrentLocation();
-      console.log('✅ Ubicación obtenida:', coords);
+      success('Ubicación obtenida:', coords);
         
       // Obține adresa prin reverse geocoding folosind funcția din context
         try {
-          console.log('🔍 Obteniendo dirección...');
+          loggerDebug('Obteniendo dirección...');
         currentAddress = await locationContext.getAddressFromCoords(coords.latitude, coords.longitude);
         if (currentAddress) {
-            console.log('✅ Dirección obtenida:', currentAddress);
+            success('Dirección obtenida:', currentAddress);
             // Actualizează form-ul cu noua adresă
             setForm(prev => ({ 
               ...prev, 
@@ -3929,7 +4022,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             throw new Error('No se encontró dirección en la respuesta');
           }
         } catch (error) {
-          console.log('⚠️ No se pudo obtener la dirección, usando coordenadas');
+          warn('No se pudo obtener la dirección, usando coordenadas');
         currentAddress = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
           setForm(prev => ({ 
             ...prev, 
@@ -3937,7 +4030,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           }));
       }
     } catch (error) {
-      console.error('❌ Error obteniendo ubicación:', error);
+      logError('Error obteniendo ubicación:', error);
       
       // Mesaje specifice pentru diferite tipuri de erori
       let errorMessage = 'Ubicación no disponible';
@@ -3961,27 +4054,27 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     
   const openEdit = async (idx) => {
     // Debug: afișează datele registrului
-    console.log('🔍 openEdit called with idx:', idx);
+    loggerDebug('openEdit called with idx:', idx);
     
     // IMPORTANT: Folosește 'filtered' în loc de 'registros' pentru a obține datele corecte din lista afișată
     const displayedRegistros = selectedEmpleado 
       ? filtered.filter(item => item.empleado === selectedEmpleado)
       : filtered;
     
-    console.log('🔍 displayedRegistros[idx]:', displayedRegistros[idx]);
-    console.log('🔍 selectedEmpleado:', selectedEmpleado);
-    console.log('🔍 form.empleado before set:', displayedRegistros[idx]?.empleado);
+    loggerDebug('displayedRegistros[idx]:', displayedRegistros[idx]);
+    loggerDebug('selectedEmpleado:', selectedEmpleado);
+    loggerDebug('form.empleado before set:', displayedRegistros[idx]?.empleado);
     
     // Deschide modalul imediat cu datele existente
     const registroData = displayedRegistros[idx];
     
     // Debug: verifică dacă există angajat în form
     if (!registroData) {
-      console.error('❌ No data found at index:', idx);
+      logError('No data found at index:', idx);
       return;
     }
     
-    console.log('🔍 Setting form with:', {
+    loggerDebug('Setting form with:', {
       empleado: registroData.empleado,
       tipo: registroData.tipo,
       hora: registroData.hora,
@@ -4015,7 +4108,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             }));
           }
         } catch (error) {
-          console.log('No se pudo obtener la dirección, usando coordenadas');
+          warn('No se pudo obtener la dirección, usando coordenadas');
         currentAddress = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
           setForm(prev => ({ 
             ...prev, 
@@ -4023,7 +4116,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           }));
       }
     } catch (error) {
-      console.error('❌ Error obteniendo ubicación para edición:', error);
+      logError('Error obteniendo ubicación para edición:', error);
       
       // Mesaje specifice pentru diferite tipuri de erori
       let errorMessage = 'Ubicación no disponible';
@@ -4089,7 +4182,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         registroId = form.id || registros[editIdx]?.id || null;
         
         // Debug: verifică dacă ID-ul este inclus
-        console.log('🔍 Edit mode - ID check:', {
+        loggerDebug('Edit mode - ID check:', {
           formId: form.id,
           registroId: registros[editIdx]?.id,
           finalId: registroId,
@@ -4099,7 +4192,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         
         // Dacă ID-ul lipsește complet, nu putem continua
         if (!registroId) {
-          console.error('⚠️ CRITICAL: ID lipsește complet pentru registrul de editat!');
+          logError('CRITICAL: ID lipsește complet pentru registrul de editat!');
           setNotification({
             type: 'error',
             title: 'Error de Identificación',
@@ -4139,7 +4232,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         // Dacă era "Salida" și acum e "Entrada", șterge durata
         if (tipoOriginal === 'Salida' && newReg.tipo === 'Entrada') {
           delete newReg.duration;
-          console.log('⏱️ Eliminada duración (Salida → Entrada)');
+          info('Eliminada duración (Salida → Entrada)');
         }
         
         // Duration is now calculated by database triggers - no need for frontend calculation
@@ -4148,7 +4241,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       }
       
       // Debug: afișează datele care se trimit
-      console.log('📝 Saving registro:', {
+      loggerDebug('Saving registro:', {
         isEdit: editIdx !== null,
         endpoint: editIdx !== null ? 'UPDATE' : 'ADD',
         data: newReg,
@@ -4165,10 +4258,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       const endpoint = editIdx !== null ? API_ENDPOINTS.FICHAJE_UPDATE : API_ENDPOINTS.FICHAJE_ADD;
       const method = editIdx !== null ? 'PUT' : 'POST'; // PUT pentru update, POST pentru add
       
-      console.log(`✅ [Fichaje] Folosind backend-ul nou (${editIdx !== null ? 'updateFichaje' : 'addFichaje'}):`, endpoint);
-      console.log('📤 Sending request to:', endpoint, 'Method:', method);
-      console.log('📤 Request body:', JSON.stringify(newReg, null, 2));
-      console.log('📤 ID in request:', newReg.id);
+      info(`[Fichaje] Folosind backend-ul nou (${editIdx !== null ? 'updateFichaje' : 'addFichaje'}):`, endpoint);
+      loggerDebug('Sending request to:', endpoint, 'Method:', method);
+      loggerDebug('Request body:', JSON.stringify(newReg, null, 2));
+      loggerDebug('ID in request:', newReg.id);
       
       const token = localStorage.getItem('auth_token');
       const headers = {
@@ -4186,8 +4279,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       });
 
       // Debug: verifică răspunsul
-      console.log('📥 Response received:', result);
-      console.log('📥 Response ID:', result?.data?.id || result?.id);
+      loggerDebug('Response received:', result);
+      loggerDebug('Response ID:', result?.data?.id || result?.id);
 
       if (result.success) {
         // Log crear/actualizar el registro
@@ -4196,9 +4289,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           
           // Debug: verifică dacă ID-ul din răspuns este diferit
           if (result?.data?.id && result.data.id !== '[Execute previous nodes for preview]') {
-            console.log('✅ Update successful, ID from response:', result.data.id);
+            success('Update successful, ID from response:', result.data.id);
           } else {
-            console.warn('⚠️ Response ID invalid, using original ID:', newReg.id);
+            warn('Response ID invalid, using original ID:', newReg.id);
           }
         } else {
           await activityLogger.logFichajeCreated(newReg, authUser);
@@ -4248,7 +4341,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         });
       }
     } catch (error) {
-      console.error('Error saving registro:', error);
+      logError('Error saving registro:', error);
       
       // Detectăm eroarea specifică despre fichajes consecutive
       let errorTitle = t('error.saveError');
@@ -4280,7 +4373,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const handleDelete = async (idx) => {
     // Verificăm dacă registro-ul există
     if (idx < 0 || idx >= registros.length) {
-      console.error('Invalid registro index:', idx);
+      logError('Invalid registro index:', idx);
       return;
     }
     
@@ -4317,7 +4410,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             // Actualizează cu luna curentă, nu cu luna selectată
             const currentDate = new Date();
             const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-            console.log('🔄 Actualizando con luna actual:', currentMonth);
+            loggerDebug('Actualizando con luna actual:', currentMonth);
             fetchRegistros(currentMonth);
             // Actualizează și selectorul de lună la luna curentă
             setSelectedMonth(currentMonth);
@@ -5083,7 +5176,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                           <div
                             key={index}
                             onClick={() => {
-                              console.log('🔍 Setting empleado from dropdown:', empleado.nombre);
+                              loggerDebug('Setting empleado from dropdown:', empleado.nombre);
                               setForm(f => ({ ...f, empleado: empleado.nombre }));
                               setShowEmpleadosDropdown(false);
                               setSearchEmpleadoDropdown('');
@@ -5548,6 +5641,15 @@ export default function FichajePage() {
   
   // Ref pentru a preveni re-apelurile inutile ale fetchCuadranteAsignado
   const lastCuadranteFetchRef = useRef({ codigo: null, month: null });
+  
+  // Folosim locația globală din LocationContext pentru funcțiile handleOpenIncidenciaModal și handleFicharIncidencia
+  const locationContext = useLocation();
+  const locationContextRef = useRef(locationContext);
+  
+  // Actualizează ref-ul când locationContext se schimbă
+  useEffect(() => {
+    locationContextRef.current = locationContext;
+  }, [locationContext]);
 
   // Funcție pentru încărcarea datelor complete ale utilizatorului
   const fetchUserData = useCallback(async () => {
@@ -5557,7 +5659,7 @@ export default function FichajePage() {
 
       // Skip real data fetch in DEMO mode
       if (authUser?.isDemo) {
-        console.log('🎭 DEMO mode: Using demo user data instead of fetching from backend');
+        demo('Using demo user data instead of fetching from backend');
         setUserData(authUser);
         return;
       }
@@ -5572,7 +5674,7 @@ export default function FichajePage() {
       });
       const data = await res.json();
       const users = Array.isArray(data) ? data : [data];
-      console.log('FichajePage raw data from backend:', users);
+      loggerDebug('FichajePage raw data from backend:', users);
       
       // Normalizo el email a lowercase y sin espacios
       const normEmail = (email || '').trim().toLowerCase();
@@ -5594,13 +5696,13 @@ export default function FichajePage() {
           'Fecha Antigüedad': found['Fecha Antigüedad'] || found.fecha_antiguedad || found.fechaAntiguedad || '',
           'Antigüedad': found['Antigüedad'] || found.antiguedad || '',
         };
-        console.log('FichajePage mapped user:', mappedUser);
+        loggerDebug('FichajePage mapped user:', mappedUser);
         setUserData(mappedUser);
       } else {
         setUserData(found);
       }
     } catch (e) {
-      console.error('Error fetching user data:', e);
+      logError('Error fetching user data:', e);
     }
   }, [authUser]);
 
@@ -5608,7 +5710,7 @@ export default function FichajePage() {
   const fetchCuadranteAsignado = useCallback(async () => {
     const codigoEmpleado = authUser?.CODIGO || authUser?.codigo || '';
     if (!codigoEmpleado) {
-      console.log('🔍 DEBUG - Nu există codigo pentru cuadrante');
+      loggerDebug('Nu există codigo pentru cuadrante');
       setCuadranteAsignado(null);
       return;
     }
@@ -5646,13 +5748,13 @@ export default function FichajePage() {
       const data = await res.json();
       const lista = Array.isArray(data) ? data : [data];
       
-      console.log('🔍 DEBUG - Cuadrantes primite din backend:', lista);
-      console.log('🔍 DEBUG - Primul cuadrante (exemplu):', lista[0]);
-      console.log('🔍 DEBUG - Toate câmpurile primului cuadrante:', lista[0] ? Object.keys(lista[0]) : 'Nu există cuadrante');
+      loggerDebug('Cuadrantes primite din backend:', lista);
+      loggerDebug('Primul cuadrante (exemplu):', lista[0]);
+      loggerDebug('Toate câmpurile primului cuadrante:', lista[0] ? Object.keys(lista[0]) : 'Nu există cuadrante');
       
       if (lista.length > 0) {
-        console.log('🔍 DEBUG - Căutare cuadrante pentru luna:', currentMonthFormatted);
-        console.log('🔍 DEBUG - Toate lunile din cuadrantes:', lista.map(c => ({ 
+        loggerDebug('Căutare cuadrante pentru luna:', currentMonthFormatted);
+        loggerDebug('Toate lunile din cuadrantes:', lista.map(c => ({ 
           luna: c.LUNA || c.luna, 
           nombre: c.NOMBRE || c.nombre,
           codigo: c.CODIGO || c.codigo
@@ -5671,18 +5773,18 @@ export default function FichajePage() {
         });
         
         if (cuadranteMatch) {
-          console.log('✅ Cuadrante găsit pentru luna curentă:', cuadranteMatch);
+          success('Cuadrante găsit pentru luna curentă:', cuadranteMatch);
           setCuadranteAsignado(cuadranteMatch);
         } else {
-          console.log('❌ Nu s-a găsit cuadrante pentru luna curentă');
+          warn('Nu s-a găsit cuadrante pentru luna curentă');
           setCuadranteAsignado(null);
         }
       } else {
-        console.log('❌ Nu există cuadrantes pentru acest angajat');
+        warn('Nu există cuadrantes pentru acest angajat');
         setCuadranteAsignado(null);
       }
     } catch (error) {
-      console.error('❌ Eroare la încărcarea cuadrantului asignat:', error);
+      logError('Eroare la încărcarea cuadrantului asignat:', error);
       setCuadranteAsignado(null);
     } finally {
       setLoadingCuadrante(false);
@@ -5715,13 +5817,13 @@ export default function FichajePage() {
       
       if (response.success && Array.isArray(response.data)) {
         // LOG COMPLET pentru a vedea ce primești din backend
-        console.log('🔍 DEBUG - Răspuns complet din backend:', response);
-        console.log('🔍 DEBUG - Toate orarele din backend (complet):', response.data);
-        console.log('🔍 DEBUG - Primul orar din backend (exemplu):', response.data[0]);
+        loggerDebug('Răspuns complet din backend:', response);
+        loggerDebug('Toate orarele din backend (complet):', response.data);
+        loggerDebug('Primul orar din backend (exemplu):', response.data[0]);
         
-        console.log('🔍 DEBUG - Utilizator:', { centroUsuario, grupoUsuario });
-        console.log('🔍 DEBUG - Toate câmpurile utilizatorului:', userData || authUser);
-        console.log('🔍 DEBUG - Orare din backend (simplificat):', response.data.map(h => ({ 
+        loggerDebug('Utilizator:', { centroUsuario, grupoUsuario });
+        loggerDebug('Toate câmpurile utilizatorului:', userData || authUser);
+        loggerDebug('Orare din backend (simplificat):', response.data.map(h => ({ 
           nombre: h.nombre, 
           centroNombre: h.centroNombre, 
           grupoNombre: h.grupoNombre,
@@ -5735,14 +5837,14 @@ export default function FichajePage() {
         );
         
         if (horarioMatch) {
-          console.log('✅ Orar găsit (COMPLET):', horarioMatch);
-          console.log('✅ Orar găsit - days:', horarioMatch.days);
-          console.log('✅ Orar găsit - Luni:', horarioMatch.days?.L);
-          console.log('✅ Orar găsit - Martes:', horarioMatch.days?.M);
+          success('Orar găsit (COMPLET):', horarioMatch);
+          loggerDebug('Orar găsit - days:', horarioMatch.days);
+          loggerDebug('Orar găsit - Luni:', horarioMatch.days?.L);
+          loggerDebug('Orar găsit - Martes:', horarioMatch.days?.M);
           setHorarioAsignado(horarioMatch);
         } else {
-          console.log('❌ Nu s-a găsit orar pentru:', { centroUsuario, grupoUsuario });
-          console.log('❌ Toate orarele disponibile:', response.data.map(h => ({
+          warn('Nu s-a găsit orar pentru:', { centroUsuario, grupoUsuario });
+          loggerDebug('Toate orarele disponibile:', response.data.map(h => ({
             nombre: h.nombre,
             centroNombre: h.centroNombre,
             grupoNombre: h.grupoNombre
@@ -5751,7 +5853,7 @@ export default function FichajePage() {
         }
       }
     } catch (error) {
-      console.error('❌ Eroare la încărcarea orarului asignat:', error);
+      logError('Eroare la încărcarea orarului asignat:', error);
       setHorarioAsignado(null);
     } finally {
       setLoadingHorario(false);
@@ -5779,20 +5881,18 @@ export default function FichajePage() {
     if (authUser && !authUser?.isDemo) {
       fetchCuadranteAsignado();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser]); // Eliminat fetchCuadranteAsignado din dependențe pentru a evita re-render-uri infinite
+  }, [authUser, fetchCuadranteAsignado]); // fetchCuadranteAsignado este memoizat cu useCallback
 
   // Încarcă orarul când se încarcă utilizatorul sau când se schimbă userData
   useEffect(() => {
     if (authUser && !authUser?.isDemo && userData) {
       fetchHorarioAsignado();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser, userData]); // Eliminat fetchHorarioAsignado din dependențe pentru a evita re-render-uri infinite
+  }, [authUser, userData, fetchHorarioAsignado]); // fetchHorarioAsignado este memoizat cu useCallback
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru cuadrante
   // Memoizată pentru a evita recalculări inutile
-  const isTimeWithinCuadrante = useCallback((tipo) => {
+  const isTimeWithinCuadrante = useCallback((tipo, isShiftComplete = false) => {
     if (!cuadranteAsignado) {
       return true;
     }
@@ -5809,14 +5909,16 @@ export default function FichajePage() {
     const dayKey = `ZI_${currentDay}`;
     daySchedule = cuadranteAsignado[dayKey];
     
-    // Dacă ziua nu este definită în cuadrante (nu există cheia), permite fichar
-    // Dacă ziua este explicit marcată ca "LIBRE" sau goală, NU permite fichar
+    // Dacă ziua nu este definită în cuadrante (nu există cheia), NU permite fichar
+    // Pentru că dacă există cuadranteAsignado, înseamnă că utilizatorul ARE program,
+    // și dacă ziua nu e definită, înseamnă că nu trebuie să muncească
     if (daySchedule === undefined || daySchedule === null) {
-      return true; // Ziua nu este în cuadrante, permite fichar (nu este restricționată)
+      return false; // Ziua nu este în cuadrante, NU permite fichar
     }
     
-    if (daySchedule === 'LIBRE' || daySchedule === '') {
-      return false; // Zi liberă explicită, NU permite fichar
+    // Dacă ziua este goală sau LIBRE, nu permite fichar
+    if (daySchedule === 'LIBRE' || daySchedule === '' || daySchedule.trim() === '') {
+      return false; // Zi liberă explicită sau goală, NU permite fichar
     }
 
     // Parsează orarul din cuadrante (format: "T1 09:00-17:00" sau "09:00-12:00,14:00-18:00")
@@ -5870,8 +5972,10 @@ export default function FichajePage() {
       }
     }
 
+    // Dacă nu s-au găsit intervale valide după parsare, nu permite fichar
+    // (ziua există în cuadrante dar formatul e invalid sau nu are intervale)
     if (intervals.length === 0) {
-      return true;
+      return false;
     }
 
     // Verifică fiecare interval - permite Entrada și Salida în orice interval
@@ -5883,26 +5987,57 @@ export default function FichajePage() {
       const isOvernightShift = endTime < startTime;
       
       if (tipo === 'Entrada') {
-        // Pentru Entrada: permite TĂRZIU (după timpul inițial) sau 10 minute înainte
+        // Pentru Entrada: permite 10 minute înainte sau târziu
         const marginBefore = 10; // 10 minute înainte
+        const marginAfter = 120; // 2 ore după pentru a permite Entrada târziu
         let allowedStart = startTime - marginBefore;
-        let allowedEnd = startTime; // Ultima dată permisă este la timpul inițial (sau după)
+        let allowedEnd = startTime + marginAfter;
         
-        // Pentru ture nocturne, normalează range-ul pentru Entrada (se face în ziua curentă)
-        if (isOvernightShift && allowedStart < 0) {
-          allowedStart = 0;
-        }
-        if (isOvernightShift && allowedEnd >= 24 * 60) {
-          allowedEnd = 24 * 60 - 1;
-        }
-        
-        // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
-        if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          return true;
-        }
-        // Dacă este după timpul permis, permite pentru a putea ficha târziu
-        if (currentTime > allowedEnd) {
-          return true;
+        if (isOvernightShift) {
+          // Pentru ture nocturne (ex: 19:30-07:30), Entrada se face seara
+          // Normalizează pentru cazul când allowedStart este negativ
+          if (allowedStart < 0) {
+            allowedStart = 0;
+          }
+          // Pentru ture nocturne, limitează la miezul nopții + câteva ore
+          if (allowedEnd >= 24 * 60) {
+            allowedEnd = 4 * 60; // Max 04:00 dimineața
+          }
+          
+          // Dacă tura este completă (Entrada + Salida făcute), verifică doar intervalul corect
+          if (isShiftComplete) {
+            // Pentru ture nocturne, Entrada se face seara (19:30)
+            // Permite doar în intervalul permis: de la 19:20 (allowedStart) până la 04:00 (allowedEnd)
+            // Dacă este dimineața sau după-amiază (înainte de 19:20), NU permite
+            if (currentTime >= allowedStart) {
+              // După 19:20 seara - permite
+              return true;
+            } else {
+              // Înainte de 19:20 (dimineața sau după-amiază) - NU permite
+              return false;
+            }
+          } else {
+            // Dacă tura NU este completă (nu s-a făcut încă Entrada sau Salida), permite oricând
+            // pentru a nu bloca utilizatorul dacă uită să ficheze
+            return true;
+          }
+        } else {
+          // Tură normală în aceeași zi
+          if (allowedStart < 0) {
+            allowedStart = 0;
+          }
+          if (allowedEnd >= 24 * 60) {
+            allowedEnd = 24 * 60 - 1;
+          }
+          
+          // Dacă tura este completă, verifică doar intervalul corect
+          if (isShiftComplete) {
+            // Permite doar în intervalul permis (în jurul orei de start)
+            return currentTime >= allowedStart && currentTime <= allowedEnd;
+          } else {
+            // Dacă tura NU este completă, permite oricând
+            return true;
+          }
         }
       } else if (tipo === 'Salida') {
         // Pentru Salida: permite TĂRZIU (după timpul final) sau 10 minute înainte
@@ -5935,18 +6070,70 @@ export default function FichajePage() {
     }
     
     return false;
-  }, [cuadranteAsignado]);
+  }, [cuadranteAsignado]); // logs nu este folosit direct în funcție, isShiftComplete este parametru
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru orar
   // Memoizată pentru a evita recalculări inutile
   const isTimeWithinSchedule = useCallback((tipo) => {
     // PRIORITATE: Cuadrante > Horario
     if (cuadranteAsignado) {
-      return isTimeWithinCuadrante(tipo);
+      // Folosește isShiftComplete calculat anterior (verifică corect și pentru ture nocturne)
+      // Trebuie să-l calculez aici pentru că useCallback nu poate accesa useMemo direct
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      
+      const hasEntradaToday = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+      });
+      const hasSalidaToday = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
+      });
+      const hasEntradaYesterday = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        return logDate && logDate.startsWith(yesterdayStr) && (log.tipo || log.TIPO) === 'Entrada';
+      });
+      
+      // Verifică dacă este tură nocturnă
+      let isOvernightShiftToday = false;
+      const currentDay = new Date().getDate();
+      const dayKey = `ZI_${currentDay}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        let intervals = [];
+        if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
+          const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+          if (match) {
+            intervals = [{ start: match[1], end: match[2] }];
+          }
+        } else {
+          intervals = daySchedule.split(',').map(interval => {
+            const [start, end] = interval.trim().split('-');
+            return { start: start?.trim(), end: end?.trim() };
+          }).filter(interval => interval.start && interval.end);
+        }
+        
+        if (intervals.length > 0) {
+          const firstInterval = intervals[0];
+          const startTime = (parseInt(firstInterval.start.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.start.split(':')[1]) || 0);
+          const endTime = (parseInt(firstInterval.end.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.end.split(':')[1]) || 0);
+          isOvernightShiftToday = endTime < startTime;
+        }
+      }
+      
+      const isShiftCompleteLocal = (hasEntradaToday && hasSalidaToday) || 
+                                   (hasSalidaToday && hasEntradaYesterday && isOvernightShiftToday);
+      
+      return isTimeWithinCuadrante(tipo, isShiftCompleteLocal);
     }
     
+    // Dacă nu există nici cuadrante, nici horario, NU permite fichar (utilizatorul nu are program)
     if (!horarioAsignado) {
-      return true; // Dacă nu există orar sau cuadrante, permite orice timp
+      return false; // Nu permite fichar fără orar/cuadrante
     }
     
     const now = new Date();
@@ -5957,7 +6144,7 @@ export default function FichajePage() {
     // Verifică dacă există orar pentru această zi
     const daySchedule = horarioAsignado.days?.[dayKey];
     if (!daySchedule) {
-      return true; // Dacă nu există orar pentru această zi, permite
+      return false; // Dacă nu există orar pentru această zi, NU permite fichar
     }
     
     // Extrage toate intervalele din orar
@@ -5972,8 +6159,10 @@ export default function FichajePage() {
       intervals.push({in: daySchedule.in3, out: daySchedule.out3});
     }
     
+    // Dacă există daySchedule dar nu are intervale valide (toate sunt null),
+    // înseamnă că ziua nu este în program - dezactivează butoanele
     if (intervals.length === 0) {
-      return true; // Dacă nu există intervale, permite
+      return false; // Nu permite fichar dacă nu există intervale valide pentru ziua curentă
     }
     
     // Verifică fiecare interval - permite Entrada și Salida în orice interval
@@ -6013,7 +6202,7 @@ export default function FichajePage() {
     }
     
     return false;
-  }, [cuadranteAsignado, horarioAsignado, isTimeWithinCuadrante]);
+  }, [cuadranteAsignado, horarioAsignado, isTimeWithinCuadrante, logs]);
 
   // Funcție pentru a converti timpul (HH:MM) în minute
   const parseTimeToMinutes = (timeStr) => {
@@ -6024,6 +6213,92 @@ export default function FichajePage() {
 
   // Funcție pentru a obține mesajul de restricție
   const getTimeRestrictionMessage = (tipo) => {
+    // PRIORITATE: Cuadrante > Horario
+    if (cuadranteAsignado) {
+      const now = new Date();
+      const currentDay = now.getDate();
+      const dayKey = `ZI_${currentDay}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      
+      if (!daySchedule || daySchedule === 'LIBRE' || daySchedule.trim() === '') {
+        return null;
+      }
+      
+      let intervals = [];
+      
+      // Parsează orarul din cuadrante (format: "T1 09:00-17:00" sau "09:00-12:00,14:00-18:00" sau "19:30-07:30")
+      if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
+        // Format cuadrante: "T1 09:00-17:00"
+        const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+        if (match) {
+          intervals = [{ start: match[1], end: match[2] }];
+        }
+      } else {
+        // Format clasic: "08:00-12:00,14:00-18:00" sau "19:30-07:30"
+        intervals = daySchedule.split(',').map(interval => {
+          const [start, end] = interval.trim().split('-');
+          return { start: start?.trim(), end: end?.trim() };
+        }).filter(interval => interval.start && interval.end);
+      }
+      
+      if (intervals.length === 0) return null;
+      
+      // Pentru Salida în ture nocturne, verifică și ziua de ieri
+      if (tipo === 'Salida' && intervals.length > 0) {
+        const lastInterval = intervals[intervals.length - 1];
+        const startTime = parseTimeToMinutes(lastInterval.start);
+        const endTime = parseTimeToMinutes(lastInterval.end);
+        
+        // Dacă detectează tură nocturnă (19:30-07:30), verifică și ziua de ieri
+        if (endTime < startTime) {
+          const yesterdayDay = currentDay - 1;
+          const yesterdayKey = `ZI_${yesterdayDay}`;
+          const yesterdaySchedule = cuadranteAsignado[yesterdayKey];
+          
+          if (yesterdaySchedule && yesterdaySchedule !== 'LIBRE' && yesterdaySchedule.trim() !== '') {
+            let yesterdayIntervals = [];
+            if (yesterdaySchedule.includes('T1') || yesterdaySchedule.includes('T2') || yesterdaySchedule.includes('T3')) {
+              const match = yesterdaySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+              if (match) {
+                yesterdayIntervals = [{ start: match[1], end: match[2] }];
+              }
+            }
+            
+            if (yesterdayIntervals.length > 0) {
+              const yesterStartTime = parseTimeToMinutes(yesterdayIntervals[0].start);
+              const yesterEndTime = parseTimeToMinutes(yesterdayIntervals[0].end);
+              
+              if (yesterEndTime < yesterStartTime) {
+                intervals = yesterdayIntervals;
+              }
+            }
+          }
+        }
+      }
+      
+      // Găsește primul interval relevant
+      const relevantInterval = intervals[0];
+      if (!relevantInterval) return null;
+      
+      const startTime = parseTimeToMinutes(relevantInterval.start);
+      const endTime = parseTimeToMinutes(relevantInterval.end);
+      const isOvernightShift = endTime < startTime;
+      
+      if (tipo === 'Entrada') {
+        // Pentru Entrada, folosește START TIME (19:30 pentru tură nocturnă)
+        return `Entrada permitida: ${relevantInterval.start} (±10 min)`;
+      } else if (tipo === 'Salida') {
+        // Pentru Salida, folosește END TIME (07:30 pentru tură nocturnă)
+        if (isOvernightShift) {
+          return `Salida permitida: ${relevantInterval.end} (±10 min) - día siguiente`;
+        }
+        return `Salida permitida: ${relevantInterval.end} (±10 min)`;
+      }
+      
+      return null;
+    }
+    
+    // Fallback la horarioAsignado
     if (!horarioAsignado) return null;
     
     const now = new Date();
@@ -6139,7 +6414,6 @@ export default function FichajePage() {
       // Get location for modal only folosind contextul global
       setLoadingModalLocation(true);
       (async () => {
-        // eslint-disable-next-line no-undef
         const ctx = locationContextRef.current;
         try {
           const coords = await ctx.getCurrentLocation();
@@ -6202,7 +6476,7 @@ export default function FichajePage() {
       
       setDeleteConfirmDialog({ isOpen: false, registroIndex: null });
     } catch (error) {
-      console.error('Error deleting registro:', error);
+      logError('Error deleting registro:', error);
       setNotification({
         type: 'error',
         title: 'Error de Eliminación',
@@ -6215,8 +6489,8 @@ export default function FichajePage() {
   const handleFicharIncidencia = async () => {
     
     // Setează automat tipul de incidență în funcție de ultimul marcaj
-    console.log('handleFicharIncidencia - logs din componenta principala:', logs);
-    console.log('handleFicharIncidencia - logs[0]:', logs[0]);
+    loggerDebug('handleFicharIncidencia - logs din componenta principala:', logs);
+    loggerDebug('handleFicharIncidencia - logs[0]:', logs[0]);
     
     const ultimoMarcaje = logs[0]; // El primero de la lista es el más reciente
     let tipoIncidencia = 'Entrada'; // Default
@@ -6225,10 +6499,10 @@ export default function FichajePage() {
       // Dacă ultimul marcaj este 'Entrada', atunci incidența va fi 'Salida'
       // Dacă ultimul marcaje este 'Salida', atunci incidența va fi 'Entrada'
       tipoIncidencia = ultimoMarcaje.tipo === 'Entrada' ? 'Salida' : 'Entrada';
-      console.log('handleFicharIncidencia - ultimoMarcaje.tipo:', ultimoMarcaje.tipo);
-      console.log('handleFicharIncidencia - tipoIncidencia setat:', tipoIncidencia);
+      loggerDebug('handleFicharIncidencia - ultimoMarcaje.tipo:', ultimoMarcaje.tipo);
+      loggerDebug('handleFicharIncidencia - tipoIncidencia setat:', tipoIncidencia);
     } else {
-      console.log('handleFicharIncidencia - nu sunt marcaje, folosesc default:', tipoIncidencia);
+      loggerDebug('handleFicharIncidencia - nu sunt marcaje, folosesc default:', tipoIncidencia);
     }
     
     setIncidenciaForm(f => ({
@@ -6238,7 +6512,7 @@ export default function FichajePage() {
       permisoFechaFin: ''
     }));
     
-    console.log('handleFicharIncidencia - incidenciaForm actualizat:', { tipo: tipoIncidencia });
+    loggerDebug('handleFicharIncidencia - incidenciaForm actualizat:', { tipo: tipoIncidencia });
     
     setShowIncidenciaModal(true);
   };
@@ -6254,7 +6528,7 @@ export default function FichajePage() {
       const userCode = authUser?.['CODIGO'] || authUser?.codigo;
       
       if (!userEmail || !userName || !userCode) {
-        console.error('Missing user data:', {
+        logError('Missing user data:', {
           email: userEmail,
           nombre: userName,
           codigo: userCode
@@ -6295,7 +6569,6 @@ export default function FichajePage() {
       let loc = null;
       let address = null;
       
-      // eslint-disable-next-line no-undef
       const ctx = locationContextRef.current;
       try {
         loc = await ctx.getCurrentLocation();
@@ -6305,11 +6578,11 @@ export default function FichajePage() {
           address = await ctx.getAddressFromCoords(loc.latitude, loc.longitude);
           } catch (e) {
           // No se pudo obtener la dirección, continuamos sin ella
-          console.warn('No se pudo obtener la dirección:', e);
+          warn('No se pudo obtener la dirección:', e);
         }
       } catch (error) {
         // Error al obtener la ubicación, continuamos sin ella
-        console.warn('Error al obtener la ubicación:', error);
+        warn('Error al obtener la ubicación:', error);
       }
 
       // Determina el motivo final
@@ -6463,7 +6736,7 @@ export default function FichajePage() {
         ausenciaPayload.permiso_fecha_fin = incidenciaForm.permisoFechaFin;
       }
 
-      console.log('✅ [Fichaje] Folosind backend-ul nou (addAusencia):', ausenciaEndpoint);
+      info('[Fichaje] Folosind backend-ul nou (addAusencia):', ausenciaEndpoint);
       
       const token = localStorage.getItem('auth_token');
       const headers = {
@@ -6520,7 +6793,7 @@ export default function FichajePage() {
         });
       } catch (apiError) {
         clearTimeout(timeoutId);
-        console.error('Error submitting incidencia:', apiError);
+        logError('Error submitting incidencia:', apiError);
         const errorMessage = apiError instanceof Error && apiError.message.includes('Timeout')
           ? '⏱️ La solicitud tardó demasiado. Por favor, inténtalo de nuevo.'
           : apiError instanceof Error && apiError.message
@@ -6532,7 +6805,7 @@ export default function FichajePage() {
       }
     } catch (outerError) {
       // Handle any errors that occur before the API call
-      console.error('Error in handleSubmitIncidencia:', outerError);
+      logError('Error in handleSubmitIncidencia:', outerError);
       setIsSubmittingIncidencia(false);
     }
   };
@@ -6579,7 +6852,7 @@ export default function FichajePage() {
             isTimeWithinSchedule={isTimeWithinSchedule}
             getTimeRestrictionMessage={getTimeRestrictionMessage}
             onLogsUpdate={(logs) => {
-              console.log('onLogsUpdate - logs primit:', logs);
+              loggerDebug('onLogsUpdate - logs primit:', logs);
               setLogs(logs);
             }}
           />
@@ -6735,7 +7008,7 @@ export default function FichajePage() {
               isTimeWithinSchedule={isTimeWithinSchedule}
               getTimeRestrictionMessage={getTimeRestrictionMessage}
               onLogsUpdate={(logs) => {
-                console.log('onLogsUpdate - logs primit:', logs);
+                loggerDebug('onLogsUpdate - logs primit:', logs);
                 setLogs(logs);
               }}
             />

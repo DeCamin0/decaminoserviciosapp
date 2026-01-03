@@ -103,12 +103,17 @@ export class AuthService {
         ...found,
       };
 
+      // Calculează un hash simplu al parolei pentru a invalida token-urile când se schimbă parola
+      // Folosim primul caracter, ultimul caracter și lungimea pentru a crea un hash unic
+      const passwordHash = this.getPasswordHash(contraseñaPassword || dniPassword);
+
       // Generate JWT token
       const payload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
         role,
         grupo,
+        passwordHash, // Hash pentru a invalida token-urile când se schimbă parola
       };
       const accessToken = this.jwtService.sign(payload);
 
@@ -151,5 +156,18 @@ export class AuthService {
       );
       return null;
     }
+  }
+
+  /**
+   * Calculează un hash simplu al parolei pentru a invalida token-urile când se schimbă parola
+   * Folosim primul caracter, ultimul caracter și lungimea
+   */
+  private getPasswordHash(password: string): string {
+    if (!password || password.length === 0) return '';
+    const firstChar = password[0] || '';
+    const lastChar = password[password.length - 1] || '';
+    const length = password.length;
+    // Creează un hash simplu dar unic
+    return `${firstChar}${lastChar}${length}`.substring(0, 10);
   }
 }

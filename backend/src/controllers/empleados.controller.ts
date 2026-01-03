@@ -938,6 +938,75 @@ export class EmpleadosController {
     }
   }
 
+  private async sendResetPasswordEmail(empleado: any, newPassword: string) {
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn(
+        '⚠️ SMTP nu este configurat. Email-ul de resetare parolă nu va fi trimis.',
+      );
+      return;
+    }
+
+    const email =
+      empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
+    const nombre =
+      this.empleadosService.getFormattedNombre(empleado) || 'Empleado';
+
+    if (!email || !email.trim()) {
+      this.logger.warn(
+        `⚠️ Angajatul ${empleado.CODIGO} nu are email configurat pentru email de resetare parolă`,
+      );
+      return;
+    }
+
+    const subject = 'Contraseña restablecida - De Camino Servicios';
+
+    const html = `
+      <html>
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <p>Hola <strong>${nombre}</strong>,</p>
+          
+          <p>Se ha restablecido la contraseña de tu cuenta en la aplicación De Camino.</p>
+          
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>🔐 Nueva contraseña temporal</strong></p>
+            <p style="margin: 5px 0;"><strong>Usuario:</strong> ${email}</p>
+            <p style="margin: 5px 0;"><strong>Contraseña:</strong> <code style="background-color: #fff; padding: 6px 12px; border-radius: 4px; font-family: monospace; font-size: 16px; font-weight: bold; color: #0066CC; letter-spacing: 1px;">${newPassword}</code></p>
+          </div>
+          
+          <div style="background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 5px 0; color: #856404; font-weight: bold;">⚠️ IMPORTANTE:</p>
+            <p style="margin: 5px 0; color: #856404;">Esta es una contraseña temporal generada por seguridad.</p>
+            <p style="margin: 5px 0; color: #856404;">Te recomendamos <strong>cambiarla lo antes posible</strong> desde la sección "Datos Personales" después de iniciar sesión.</p>
+          </div>
+          
+          <p style="margin-top: 20px;">Para acceder a la aplicación, utiliza el siguiente enlace:</p>
+          <p style="margin: 10px 0; text-align: center;">
+            <a href="https://app.decaminoservicios.com" style="color: #0066CC; font-weight: bold; font-size: 16px;">https://app.decaminoservicios.com</a>
+          </p>
+          
+          <p style="margin-top: 20px;">Si no has solicitado este restablecimiento, por favor contacta con RRHH inmediatamente.</p>
+          
+          <p style="margin-top: 20px;">Saludos,<br>
+          <strong>RRHH</strong><br>
+          <strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+        </body>
+      </html>
+    `;
+
+    try {
+      await this.emailService.sendEmail(email, subject, html);
+
+      this.logger.log(
+        `✅ Email de resetare parolă trimis către: ${email}`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error sending reset password email: ${error.message}`,
+      );
+      // Nu aruncăm eroarea pentru a nu bloca resetarea parolei dacă email-ul eșuează
+    }
+  }
+
   @Put()
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
@@ -2218,7 +2287,13 @@ export class EmpleadosController {
         }
       }
 
-      return result;
+      // Dacă utilizatorul și-a schimbat propria parolă, trebuie să se reconecteze
+      const requiresLogout = body.codigo === userCodigo;
+
+      return {
+        ...result,
+        requiresLogout, // Flag pentru frontend să facă logout automat
+      };
     } catch (error: any) {
       this.logger.error('❌ Error changing password:', error);
       throw error;
@@ -2237,12 +2312,13 @@ export class EmpleadosController {
         throw new BadRequestException('CODIGO es obligatorio');
       }
 
-      // Verifică că utilizatorul este manager/admin
+      // Verifică că utilizatorul este manager/admin/developer
       const isManager = user?.isManager || false;
+      const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
       const userCodigo = user?.userId || user?.CODIGO;
 
-      // Doar managerii pot vedea parola altor utilizatori
-      if (codigo !== userCodigo && !isManager) {
+      // Doar managerii, adminii și developerii pot vedea parola altor utilizatori
+      if (codigo !== userCodigo && !isManager && !isDeveloper) {
         throw new BadRequestException(
           'No tienes permiso para ver la contraseña de otro usuario',
         );
@@ -2256,6 +2332,57 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error getting password:', error);
+      throw error;
+    }
+  }
+
+  @Post('reset-password/:codigo')
+  @UseGuards(JwtAuthGuard)
+  async resetPassword(@CurrentUser() user: any, @Param('codigo') codigo: string) {
+    try {
+      this.logger.log(
+        `🔐 Reset password request - CODIGO: ${codigo || 'missing'}`,
+      );
+
+      if (!codigo) {
+        throw new BadRequestException('CODIGO es obligatorio');
+      }
+
+      // Verifică că utilizatorul este manager/admin/developer
+      const isManager = user?.isManager || false;
+      const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
+      const userCodigo = user?.userId || user?.CODIGO;
+
+      // Doar managerii, adminii și developerii pot reseta parola altor utilizatori
+      if (codigo !== userCodigo && !isManager && !isDeveloper) {
+        throw new BadRequestException(
+          'No tienes permiso para resetear la contraseña de otro usuario',
+        );
+      }
+
+      // Resetare parolă și generare nouă parolă
+      const result = await this.empleadosService.resetPasswordAndSendEmail(codigo);
+
+      // Obține datele angajatului pentru email
+      const empleado = await this.empleadosService.getEmpleadoByCodigo(codigo);
+      if (!empleado) {
+        throw new BadRequestException('Empleado no encontrado');
+      }
+
+      // Trimite email cu noua parolă
+      await this.sendResetPasswordEmail(empleado, result.temporaryPassword);
+
+      // Dacă parola resetată este pentru utilizatorul curent, trebuie să se reconecteze
+      const requiresLogout = codigo === userCodigo;
+
+      return {
+        success: true,
+        message: 'Contraseña reseteada y enviada por email exitosamente',
+        temporaryPassword: result.temporaryPassword,
+        requiresLogout, // Flag pentru frontend să facă logout automat
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error resetting password:', error);
       throw error;
     }
   }

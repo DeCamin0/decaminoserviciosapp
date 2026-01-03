@@ -20,23 +20,9 @@ export const API_ENDPOINTS = {
   APPROVE_CAMBIO: routes.approveCambio,
   REJECT_CAMBIO: routes.rejectCambio,
   
-  // ⚠️ DEAD CODE ELIMINAT - IncidenciasPage.jsx mutată în old/
-  // GET_INCIDENCIAS: routes.getIncidencias, // NU E FOLOSIT
-  // ADD_INCIDENCIA: routes.addIncidencia, // NU E FOLOSIT
-  // UPDATE_INCIDENCIA: routes.updateIncidencia, // NU E FOLOSIT
-  // REJECT_INCIDENCIA: routes.rejectIncidencia, // NU E FOLOSIT
-  
-  // ⚠️ DEAD CODE ELIMINAT - ControlCorreoPage.jsx mutată în old/
-  // GET_PAQUETES: routes.getPaquetes, // NU E FOLOSIT
-  // ADD_PAQUETE: routes.addPaquete, // NU E FOLOSIT
-  // UPDATE_PAQUETE: routes.updatePaquete, // NU E FOLOSIT
-  
   // Inspecciones
   GET_INSPECCIONES: routes.getInspecciones,
   ADD_INSPECCION: routes.addInspeccion,
-  // ⚠️ DEAD CODE ELIMINAT:
-  // UPDATE_INSPECCION: routes.updateInspeccion, // NU E FOLOSIT
-  // DELETE_INSPECCION: routes.deleteInspeccion, // NU E FOLOSIT
   GET_INSPECTION_PDF: routes.getInspectionPDF,
   DOWNLOAD_INSPECTION_DOCUMENT: routes.downloadInspectionDocument,
 };

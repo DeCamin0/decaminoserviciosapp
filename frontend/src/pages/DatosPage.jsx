@@ -74,7 +74,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 };
 
 export default function DatosPage() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, logout } = useAuth();
   const { callApi } = useApi();
   const [user, setUser] = useState(null);
   const [uiReady, setUiReady] = useState(false); // decuplează percepția UI de fetch
@@ -635,11 +635,19 @@ const [editLoading, setEditLoading] = useState(false);
         setNotification({
           type: 'success',
           title: 'Contraseña Cambiada',
-          message: 'Tu contraseña ha sido cambiada exitosamente',
+          message: 'Tu contraseña ha sido cambiada exitosamente. Serás redirigido para iniciar sesión con tu nueva contraseña.',
         });
         setShowChangePasswordModal(false);
         setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
         setPasswordError('');
+        
+        // Dacă backend-ul indică că trebuie logout, facem logout automat
+        if (result.requiresLogout) {
+          // Așteptăm puțin pentru ca utilizatorul să vadă notificarea
+          setTimeout(() => {
+            logout();
+          }, 2000);
+        }
       } else {
         setPasswordError(result.error || 'Error al cambiar la contraseña. Inténtalo de nuevo.');
       }

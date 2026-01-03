@@ -260,22 +260,3 @@ export const exportGastosToExcel = async (items: ExcelDataItem[], totals: ExcelT
   await exportToExcelWithHeader(items, columns, 'REPORTE DE GASTOS', 'gastos', totals);
 };
 
-/**
- * Export facturas to Excel (specific implementation)
- */
-export const exportFacturasToExcel = async (items: ExcelDataItem[], totals: ExcelTotals) => {
-  const columns = [
-    { key: 'id', label: 'ID', width: 8 },
-    { key: 'numero', label: 'Número', width: 15 },
-    { key: 'fecha', label: 'Fecha', width: 12 },
-    { key: 'cliente', label: 'Cliente', width: 25 },
-    { key: 'concepto', label: 'Concepto', width: 40 },
-    { key: 'base_imponible', label: 'Base Imponible', width: 15, type: 'number' },
-    { key: 'iva', label: 'IVA', width: 12, type: 'number' },
-    { key: 'total', label: 'Total', width: 15, type: 'number' },
-    { key: 'estado', label: 'Estado', width: 12 },
-    { key: 'fecha_vencimiento', label: 'Vencimiento', width: 12 }
-  ];
-
-  await exportToExcelWithHeader(items, columns, 'REPORTE DE FACTURAS', 'facturas', totals);
-};

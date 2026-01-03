@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button, Input, Card, Modal } from '../components/ui';
+import Notification from '../components/ui/Notification';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { 
   TableLoading
@@ -86,7 +87,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 };
 
 export default function EmpleadosPage() {
-  const { user: authUser, authToken } = useAuth();
+  const { user: authUser, authToken, logout } = useAuth();
   const { callApi } = useApi();
   
   // State pentru estadísticas
@@ -194,7 +195,12 @@ export default function EmpleadosPage() {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error('Error al exportar Excel:', err);
-      alert('Error al exportar Excel: ' + err.message);
+      setNotification({
+        type: 'error',
+        title: 'Error al Exportar',
+        message: 'Error al exportar Excel: ' + err.message,
+        show: true
+      });
     }
   };
 
@@ -226,7 +232,12 @@ export default function EmpleadosPage() {
       window.URL.revokeObjectURL(downloadUrl);
     } catch (err) {
       console.error('Error al exportar PDF:', err);
-      alert('Error al exportar PDF: ' + err.message);
+      setNotification({
+        type: 'error',
+        title: 'Error al Exportar',
+        message: 'Error al exportar PDF: ' + err.message,
+        show: true
+      });
     }
   };
 
@@ -341,7 +352,12 @@ export default function EmpleadosPage() {
       setEditingValue('');
     } catch (error) {
       console.error('Error saving cell:', error);
-      alert(`Error al guardar: ${error.message}`);
+      setNotification({
+        type: 'error',
+        title: 'Error al Guardar',
+        message: `Error al guardar: ${error.message}`,
+        show: true
+      });
     } finally {
       setSavingCell(null);
     }
@@ -601,6 +617,7 @@ export default function EmpleadosPage() {
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
+  const [notification, setNotification] = useState(null); // State pentru notificări moderne
   const [enviarAGestoria, setEnviarAGestoria] = useState(false);
   const [enviarAGestoriaEdit, setEnviarAGestoriaEdit] = useState(false); // Pentru modalul de editare
   const [retrimiteFichaEdit, setRetrimiteFichaEdit] = useState(false); // Checkbox pentru retrimitere ficha în editare
@@ -1664,7 +1681,12 @@ export default function EmpleadosPage() {
       const dataToExport = searchTerm ? getFilteredUsers : users;
       
       if (!dataToExport || dataToExport.length === 0) {
-        alert('No hay datos para exportar');
+        setNotification({
+          type: 'warning',
+          title: 'Sin Datos',
+          message: 'No hay datos para exportar',
+          show: true
+        });
         return;
       }
 
@@ -1728,7 +1750,12 @@ export default function EmpleadosPage() {
       
     } catch (error) {
       console.error('Error exporting to Excel:', error);
-      alert('Error al exportar a Excel. Por favor, inténtalo de nuevo.');
+      setNotification({
+        type: 'error',
+        title: 'Error al Exportar',
+        message: 'Error al exportar a Excel. Por favor, inténtalo de nuevo.',
+        show: true
+      });
     }
   };
 
@@ -1755,7 +1782,12 @@ export default function EmpleadosPage() {
       const dataToExport = searchTerm ? getFilteredUsers : users;
       
       if (!dataToExport || dataToExport.length === 0) {
-        alert('No hay datos para exportar');
+        setNotification({
+          type: 'warning',
+          title: 'Sin Datos',
+          message: 'No hay datos para exportar',
+          show: true
+        });
         return;
       }
 
@@ -1897,7 +1929,12 @@ export default function EmpleadosPage() {
       
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      alert('Error al exportar PDF. Por favor, inténtalo de nuevo.');
+      setNotification({
+        type: 'error',
+        title: 'Error al Exportar',
+        message: 'Error al exportar PDF. Por favor, inténtalo de nuevo.',
+        show: true
+      });
     }
   };
 
@@ -1951,6 +1988,77 @@ export default function EmpleadosPage() {
   }, [socket]);
 
   // Funcții pentru email
+  const [confirmResetPassword, setConfirmResetPassword] = useState(null); // { user: {...}, show: true }
+
+  const handleResetPassword = async (user) => {
+    if (!user?.CODIGO) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'No se encontró el código del empleado',
+        show: true
+      });
+      return;
+    }
+
+    // Afișează dialogul de confirmare
+    setConfirmResetPassword({ user, show: true });
+  };
+
+  const executeResetPassword = async () => {
+    if (!confirmResetPassword?.user) return;
+    
+    const user = confirmResetPassword.user;
+
+    try {
+      setLoadingPassword(true);
+      const result = await callApi(routes.resetPassword(user.CODIGO), {
+        method: 'POST'
+      });
+
+      if (result.success) {
+        const emailDestinatario = user['CORREO ELECTRONICO'] || user.CODIGO;
+        const isCurrentUser = user.CODIGO === authUser?.CODIGO;
+        const message = isCurrentUser
+          ? `La nueva contraseña ha sido generada y enviada por email a ${emailDestinatario}. Todas tus sesiones han sido cerradas por seguridad. Serás redirigido para iniciar sesión con tu nueva contraseña.`
+          : `La nueva contraseña ha sido generada y enviada por email a ${emailDestinatario}. Todas las sesiones del usuario han sido cerradas por seguridad.`;
+        
+        setNotification({
+          type: 'success',
+          title: 'Contraseña Reseteada',
+          message: message,
+          show: true
+        });
+        
+        // Dacă parola resetată este pentru utilizatorul curent, facem logout automat
+        // (toate sesiunile sunt deja invalidate în backend)
+        if (isCurrentUser && logout) {
+          setTimeout(() => {
+            logout();
+          }, 2000);
+        }
+      } else {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: result.error || 'Error al resetear la contraseña',
+          show: true
+        });
+      }
+    } catch (error) {
+      console.error('Error reseteando contraseña:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'Error al resetear la contraseña',
+        show: true
+      });
+    } finally {
+      setLoadingPassword(false);
+      setConfirmResetPassword(null);
+    }
+  };
+
   const openEmailModal = (user) => {
     console.log('Deschid modal email pentru:', user);
     setSelectedUserForEmail(user);
@@ -2654,6 +2762,18 @@ export default function EmpleadosPage() {
                                 <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
                                   filter: 'drop-shadow(0 2px 4px rgba(16, 185, 129, 0.4))',
                                 }}>📧</span>
+                              </button>
+                              
+                              {/* Icon Reset Password */}
+                              <button
+                                onClick={() => handleResetPassword(user)}
+                                disabled={loadingPassword}
+                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Resetear contraseña y enviar por email"
+                              >
+                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
+                                  filter: 'drop-shadow(0 2px 4px rgba(139, 92, 246, 0.4))',
+                                }}>🔑</span>
                               </button>
                             </div>
                           </div>
@@ -4166,7 +4286,12 @@ export default function EmpleadosPage() {
                             try {
                               const codigo = editForm.CODIGO;
                               if (!codigo) {
-                                alert('Error: No se encontró el código del empleado');
+                                setNotification({
+                                  type: 'error',
+                                  title: 'Error',
+                                  message: 'No se encontró el código del empleado',
+                                  show: true
+                                });
                                 return;
                               }
                               const result = await callApi(routes.getPassword(codigo));
@@ -4174,11 +4299,21 @@ export default function EmpleadosPage() {
                                 setEditForm(prev => ({ ...prev, [field]: result.data.password || '' }));
                                 setMostrarContraseña(true);
                               } else {
-                                alert(result.error || 'Error al obtener la contraseña');
+                                setNotification({
+                                  type: 'error',
+                                  title: 'Error de Permisos',
+                                  message: result.error || 'Error al obtener la contraseña',
+                                  show: true
+                                });
                               }
                             } catch (error) {
                               console.error('Error obteniendo contraseña:', error);
-                              alert('Error al obtener la contraseña');
+                              setNotification({
+                                type: 'error',
+                                title: 'Error',
+                                message: error.message || 'Error al obtener la contraseña',
+                                show: true
+                              });
                             } finally {
                               setLoadingPassword(false);
                             }
@@ -4782,6 +4917,34 @@ export default function EmpleadosPage() {
         showModal={showPDFModal}
         setShowModal={setShowPDFModal}
       />
+
+      {/* Notificări moderne */}
+      {notification && (
+        <Notification
+          type={notification.type}
+          title={notification.title}
+          message={notification.message}
+          show={notification.show}
+          onClose={() => setNotification(null)}
+        />
+      )}
+
+      {/* Dialog de confirmare pentru resetare parolă */}
+      {confirmResetPassword && confirmResetPassword.show && (
+        <Notification
+          type="warning"
+          title="Resetear Contraseña"
+          message={`¿Estás seguro de que deseas resetear la contraseña de ${confirmResetPassword.user['NOMBRE / APELLIDOS'] || confirmResetPassword.user.CODIGO}?\n\nSe generará una nueva contraseña temporal y se enviará por email.`}
+          show={true}
+          isConfirmDialog={true}
+          confirmText="Sí, Resetear"
+          cancelText="Cancelar"
+          onConfirm={() => {
+            executeResetPassword();
+          }}
+          onCancel={() => setConfirmResetPassword(null)}
+        />
+      )}
     </div>
   );
 } 
