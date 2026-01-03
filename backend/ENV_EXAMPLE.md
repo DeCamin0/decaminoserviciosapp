@@ -40,6 +40,14 @@ SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
 TELEGRAM_CHAT_ID=-4990173907
 
+# Monitoring (pentru alerting automat pe Telegram)
+# IMPORTANT: Setează MONITORING_ENABLED=true pentru a activa monitoring-ul
+# Monitoring-ul trimite alerte automat când:
+# - Baza de date este down (după 2 eșecuri consecutive)
+# - Latența DB este prea mare (> 1 secundă)
+# - Erori critice în backend
+MONITORING_ENABLED=false
+
 # Push Notifications (VAPID keys - opțional)
 # VAPID_PUBLIC_KEY=your-vapid-public-key
 # VAPID_PRIVATE_KEY=your-vapid-private-key

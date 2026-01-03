@@ -17,16 +17,14 @@ export class MonitoringService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.logger.log('✅ Monitoring service initialized');
-    
     // Verifică dacă monitoring-ul este activat
     const monitoringEnabled =
       this.configService.get<string>('MONITORING_ENABLED') === 'true';
     
-    if (!monitoringEnabled) {
-      this.logger.warn(
-        '⚠️ Monitoring is disabled. Set MONITORING_ENABLED=true to enable.',
-      );
+    if (monitoringEnabled) {
+      this.logger.log('✅ Monitoring service initialized and enabled');
+    } else {
+      this.logger.debug('Monitoring service initialized (disabled by default)');
     }
   }
 
