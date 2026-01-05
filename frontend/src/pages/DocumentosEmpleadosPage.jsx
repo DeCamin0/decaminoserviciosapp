@@ -845,17 +845,27 @@ export default function DocumentosEmpleadosPage() {
 
       
 
-      const data = await response.json();
+      const responseData = await response.json();
 
-
-
+      console.log('📦 [DocumentosEmpleados] Respuesta del backend:', responseData);
+      console.log('📦 [DocumentosEmpleados] Tipo de respuesta:', Array.isArray(responseData) ? 'Array' : typeof responseData);
       
+      // Backend retorna {success: true, data: Array} sau direct Array
+      const data = responseData?.data || responseData;
+      console.log('📦 [DocumentosEmpleados] Data extraída:', data);
+      console.log('📦 [DocumentosEmpleados] Tipo de data extraída:', Array.isArray(data) ? 'Array' : typeof data);
+      console.log('📦 [DocumentosEmpleados] Cantidad de documentos recibidos:', Array.isArray(data) ? data.length : 'N/A');
 
       // Procesar los documentos recibidos
 
       const documentosProcesados = Array.isArray(data) ? data : [];
 
+      console.log('📦 [DocumentosEmpleados] Documentos procesados (antes de filter):', documentosProcesados.length);
       
+      if (documentosProcesados.length > 0) {
+        console.log('📦 [DocumentosEmpleados] Ejemplo de documento recibido:', documentosProcesados[0]);
+        console.log('📦 [DocumentosEmpleados] Campos del primer documento:', Object.keys(documentosProcesados[0]));
+      }
 
       // Mapear los campos del backend a nuestro formato local
 
@@ -864,10 +874,16 @@ export default function DocumentosEmpleadosPage() {
         .filter(doc => {
 
           // Solo incluir documentos que tengan un ID real del backend y al menos un nombre de archivo
-
-          const hasRealId = doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId;
-
+          // Backend retorna doc_id, id, etc.
+          const hasRealId = doc.doc_id || doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId;
           const hasFileName = doc.fileName || doc.nombre_archivo || doc.archivo || doc.nombre || doc.nombreArchivo || doc.file_name || doc.filename || doc.nombre_documento;
+
+          if (!hasRealId) {
+            console.warn('⚠️ [DocumentosEmpleados] Documento filtrado (sin ID):', doc);
+          }
+          if (!hasFileName) {
+            console.warn('⚠️ [DocumentosEmpleados] Documento filtrado (sin nombre archivo):', doc);
+          }
 
           return hasRealId && hasFileName;
 
@@ -875,7 +891,8 @@ export default function DocumentosEmpleadosPage() {
 
         .map(doc => ({
 
-          id: doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId,
+          // Priorizar doc_id (câmpul returnat de backend)
+          id: doc.doc_id || doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId,
 
           fileName: doc.fileName || doc.nombre_archivo || doc.archivo || doc.nombre || doc.nombreArchivo || doc.file_name || doc.filename || doc.nombre_documento,
 
@@ -887,19 +904,20 @@ export default function DocumentosEmpleadosPage() {
 
           tipo: doc.tipo || doc.tipo_documento || doc.categoria || doc.tipoDocumento || doc.categoria_documento || doc.document_type || doc.type || doc.category,
 
-          backendId: doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId || null,
+          // Priorizar doc_id pentru backendId
+          backendId: doc.doc_id || doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId || null,
 
-          empleadoId: doc.empleado_id || doc.empleadoId || doc.employee_id || empleadoId,
+          empleadoId: doc.empleado_id || doc.empleadoId || doc.employee_id || doc.id || empleadoId,
 
-          empleadoEmail: doc.empleado_email || doc.empleadoEmail || doc.email || empleadoEmail,
+          empleadoEmail: doc.empleado_email || doc.empleadoEmail || doc.email || doc.correo_electronico || empleadoEmail,
 
           uploadedBy: doc.uploaded_by || doc.subido_por || doc.uploadedBy || doc.subidoPor || doc.user || doc.usuario || doc.autor || doc.creador,
 
           uploadedDate: doc.uploaded_date || doc.fecha_subida || doc.created_at || doc.fecha_creacion || doc.creation_date || doc.fecha_autor,
-          // Adăugăm câmpurile pentru ID-uri separate
+          // Adăugăm câmpurile pentru ID-uri separate - priorizar doc_id
           doc_id: doc.doc_id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId,
           // Păstrăm și câmpul original id pentru compatibilitate
-          originalId: doc.id
+          originalId: doc.id || doc.doc_id
 
         }));
 
@@ -919,11 +937,18 @@ export default function DocumentosEmpleadosPage() {
 
       
 
+      console.log('✅ [DocumentosEmpleados] Documentos mapeados (después de filter y map):', documentosMapeados.length);
+      console.log('✅ [DocumentosEmpleados] Documentos ordenados:', documentosOrdenados.length);
+      
+      if (documentosOrdenados.length > 0) {
+        console.log('✅ [DocumentosEmpleados] Ejemplo de documento mapeado:', documentosOrdenados[0]);
+      }
+
       // ASIGNAR LISTA NUEVA DIRECTAMENTE
 
       setEmpleadoDocumentos(documentosOrdenados);
 
-      
+      console.log('✅ [DocumentosEmpleados] Estado actualizado con', documentosOrdenados.length, 'documentos');
 
       // Log de la acción
 
@@ -1719,7 +1744,22 @@ export default function DocumentosEmpleadosPage() {
 
     setPreviewError(null);
 
-    
+      // Funcție pentru headers de autentificare (similar cu DocumentosPage.jsx)
+      // Definită la început pentru a fi accesibilă pentru toate fetch-urile
+      const getAuthHeaders = () => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Accept': 'application/pdf, application/json, image/*, */*',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+          console.log('✅ Token JWT adăugat în headers (length:', token.length, ')');
+        } else {
+          console.error('❌ Token JWT NU este prezent în localStorage!');
+        }
+        console.log('🔍 Headers complete:', headers);
+        return headers;
+      };
 
     try {
 
@@ -1740,20 +1780,17 @@ export default function DocumentosEmpleadosPage() {
 
         // Usar endpoint de nóminas
 
-        previewUrl = `${routes.downloadNomina}?id=${documento.doc_id || documento.id}&nombre=${encodeURIComponent(selectedEmpleado['NOMBRE / APELLIDOS'] || '')}`;
+        previewUrl = `${routes.downloadNomina}?id=${documento.doc_id || documento.id}&nombre=${encodeURIComponent(selectedEmpleado['NOMBRE / APELLIDOS'] || '')}&preview=true`;
 
         console.log('📄 Preview nómina (empleados):', previewUrl);
 
         // Para nóminas, no confiamos en el nombre del archivo (no tiene extensión)
         // Detectamos por Content-Type del endpoint y generamos preview acorde
         try {
-          // Add JWT token for backend API calls
-          const token = localStorage.getItem('auth_token');
-          const fetchHeaders = { 'cache': 'no-store' };
-          if (token) {
-            fetchHeaders['Authorization'] = `Bearer ${token}`;
-          }
-          const resp = await fetch(previewUrl, { headers: fetchHeaders });
+          const headers = getAuthHeaders();
+          console.log('🔍 Headers para nómina:', headers);
+          console.log('🔍 Token presente:', !!headers['Authorization']);
+          const resp = await fetch(previewUrl, { headers });
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           const contentType = resp.headers.get('content-type') || '';
           console.log('🔍 Nómina Content-Type:', contentType);
@@ -1773,7 +1810,9 @@ export default function DocumentosEmpleadosPage() {
           } else if (contentType.includes('application/json')) {
             // Intentar segundo fetch forzando Accept según PDF primero y luego imagen
             try {
-              const secondPdf = await fetch(previewUrl, { headers: { 'Accept': 'application/pdf' }, cache: 'no-store' });
+              const secondPdfHeaders = getAuthHeaders();
+              secondPdfHeaders['Accept'] = 'application/pdf';
+              const secondPdf = await fetch(previewUrl, { headers: secondPdfHeaders });
               if (secondPdf.ok) {
                 const b2 = await secondPdf.blob();
                 if (b2.size > 0) {
@@ -1785,7 +1824,9 @@ export default function DocumentosEmpleadosPage() {
                   throw new Error('Blob vacío tras segundo fetch PDF');
                 }
               } else {
-                const secondImg = await fetch(previewUrl, { headers: { 'Accept': 'image/*' }, cache: 'no-store' });
+                const secondImgHeaders = getAuthHeaders();
+                secondImgHeaders['Accept'] = 'image/*';
+                const secondImg = await fetch(previewUrl, { headers: secondImgHeaders });
                 if (secondImg.ok) {
                   const b3 = await secondImg.blob();
                   if (b3.size > 0) {
@@ -1800,7 +1841,8 @@ export default function DocumentosEmpleadosPage() {
               }
             } catch (secErr) {
               console.error('❌ Error preparando nómina desde JSON:', secErr);
-              setPreviewDocument({ ...documento, previewUrl });
+              setPreviewError(`Error al preparar la nómina: ${secErr.message}`);
+              setPreviewDocument({ ...documento, previewUrl: null });
             }
           } else {
             // Fallback genérico: mostrar blob como objeto
@@ -1812,7 +1854,8 @@ export default function DocumentosEmpleadosPage() {
           return;
         } catch (errNomina) {
           console.error('❌ Error preparando preview de nómina:', errNomina);
-          setPreviewDocument({ ...documento, previewUrl });
+          setPreviewError(`Error al preparar la nómina: ${errNomina.message}`);
+          setPreviewDocument({ ...documento, previewUrl: null });
           setPreviewLoading(false);
           return;
         }
@@ -1821,7 +1864,9 @@ export default function DocumentosEmpleadosPage() {
 
         // Usar endpoint de documentos oficiales
 
-        previewUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+        // IMPORTANT: id trebuie să fie empleado_id (CODIGO), nu doc_id
+        const empleadoIdOficial = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id;
+        previewUrl = `${routes.downloadDocumentoOficial}?id=${empleadoIdOficial}&documentId=${documento.doc_id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&preview=true`;
 
         console.log('🔍 Construyendo URL para documento oficial:');
 
@@ -1837,11 +1882,12 @@ export default function DocumentosEmpleadosPage() {
       } else {
 
         // Pentru documente normale folosim endpoint-ul standard de descărcare
-
-        previewUrl = `${routes.downloadDocumento}?id=${documento.id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}`;
+        // IMPORTANT: id trebuie să fie empleado_id (CODIGO), nu doc_id
+        const empleadoId = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id;
+        previewUrl = `${routes.downloadDocumento}?id=${empleadoId}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}&preview=true`;
 
         console.log('📄 Preview para documento normal (empleados):', previewUrl);
-        console.log('  - ID (empleado_id):', documento.id);
+        console.log('  - ID (empleado_id):', empleadoId);
         console.log('  - Doc ID (document_id):', documento.doc_id);
         console.log('  - Email:', selectedEmpleado['CORREO ELECTRONICO']);
         console.log('  - FileName:', documento.fileName);
@@ -1860,8 +1906,6 @@ export default function DocumentosEmpleadosPage() {
 
       console.log('🔍 Documento completo:', documento);
 
-      
-
       // Guardar el previewUrl en el documento para que el modal lo use
       // NOTA: pentru PDF amânăm setarea până după validare (evităm iframe pe URL greșit)
       const isPdfFile = documento.fileName?.toLowerCase().endsWith('.pdf');
@@ -1874,14 +1918,9 @@ export default function DocumentosEmpleadosPage() {
         try {
           console.log('📄 PDF detectado: descargando como blob para preview (mismo flujo que DocumentosPage)...');
           
-          // Add JWT token for backend API calls
-          const token = localStorage.getItem('auth_token');
-          const fetchHeaders = { 'cache': 'no-store' };
-          if (token) {
-            fetchHeaders['Authorization'] = `Bearer ${token}`;
-          }
+          const headers = getAuthHeaders();
           
-          const resp = await fetch(previewUrl, { headers: fetchHeaders });
+          const resp = await fetch(previewUrl, { headers });
           if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}`);
           }
@@ -1917,8 +1956,10 @@ export default function DocumentosEmpleadosPage() {
                       : URL.createObjectURL(blob);
                     setPreviewDocument(prev => ({ ...(prev || documento), previewUrl: url }));
                   } else {
-                    // Ultim fallback: al doilea fetch cu Accept: application/pdf
-                    const second = await fetch(previewUrl, { headers: { 'Accept': 'application/pdf' }, cache: 'no-store' });
+                    // Ultim fallback: al doilea fetch cu headers de autentificare
+                    const secondHeaders = getAuthHeaders();
+                    secondHeaders['Accept'] = 'application/pdf';
+                    const second = await fetch(previewUrl, { headers: secondHeaders });
                     if (second.ok) {
                       const b2 = await second.blob();
                       if (b2.size > 0) {
@@ -1943,7 +1984,10 @@ export default function DocumentosEmpleadosPage() {
                     : URL.createObjectURL(blob);
                   setPreviewDocument(prev => ({ ...(prev || documento), previewUrl: url }));
                 } else {
-                  const second = await fetch(previewUrl, { headers: { 'Accept': 'application/pdf' }, cache: 'no-store' });
+                  // Al doilea fetch cu headers de autentificare
+                  const secondHeaders = getAuthHeaders();
+                  secondHeaders['Accept'] = 'application/pdf';
+                  const second = await fetch(previewUrl, { headers: secondHeaders });
                   if (second.ok) {
                     const b2 = await second.blob();
                     if (b2.size > 0) {
@@ -1961,7 +2005,8 @@ export default function DocumentosEmpleadosPage() {
               }
             } catch (je) {
               console.error('❌ Error procesando JSON/segundo fetch:', je);
-              setPreviewDocument(prev => ({ ...(prev || documento), previewUrl }));
+              setPreviewError(`Error al procesar el documento: ${je.message}`);
+              setPreviewDocument(prev => ({ ...(prev || documento), previewUrl: null }));
             }
           } else {
             // Fallback como en DocumentosPage
@@ -1981,10 +2026,11 @@ export default function DocumentosEmpleadosPage() {
           return;
         } catch (e) {
           console.error('Error al descargar PDF como blob:', e);
-          // Fallback: abrir URL directo por si el navegador lo maneja
-          setPreviewDocument(prev => ({ ...(prev || documento), previewUrl }));
+          // Nu setăm previewUrl la URL HTTP direct pentru PDF-uri (cauzează 401)
+          // În schimb, setăm previewUrl la null și afișăm eroarea
+          setPreviewDocument(prev => ({ ...(prev || documento), previewUrl: null }));
           setPreviewLoading(false);
-          setPreviewError(null);
+          setPreviewError(`Error al cargar el PDF: ${e.message || 'No se pudo descargar el PDF'}`);
           return;
         }
       }
@@ -1995,7 +2041,7 @@ export default function DocumentosEmpleadosPage() {
 
       if (documento.fileName?.toLowerCase().endsWith('.txt')) {
 
-        const response = await fetch(previewUrl);
+        const response = await fetch(previewUrl, { headers: getAuthHeaders() });
 
         if (response.ok) {
 
@@ -2013,14 +2059,69 @@ export default function DocumentosEmpleadosPage() {
 
       
 
-      // Para archivos de imagen, verificar que se puedan cargar
-
+      // Para archivos de imagen, hacer fetch con headers de autentificare y convertir a blob/data URL
+      // (igual que en DocumentosPage.jsx)
       if (documento.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-
-        // Las imágenes se cargan directamente en el img tag
-
-        console.log('🖼️ Archivo de imagen detectado, se cargará en preview');
-
+        console.log('🖼️ Archivo de imagen detectado, creando blob URL local...');
+        try {
+          const headers = getAuthHeaders();
+          console.log('🔍 Headers para imagen:', headers);
+          console.log('🔍 Token presente:', !!headers['Authorization']);
+          const response = await fetch(previewUrl, { headers });
+          console.log('🔍 Respuesta para imagen:', response.status, response.ok);
+          
+          if (response.ok) {
+            const contentType = response.headers.get('content-type');
+            console.log('🔍 Content-Type:', contentType);
+            
+            // Si retorna la imagen directamente como blob
+            const blob = await response.blob();
+            console.log('🔍 Imagen blob size:', blob.size, 'type:', blob.type);
+            
+            if (blob.size > 0) {
+              // Convertir blob a base64 pentru evitar problemas CORB/CORS
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const base64String = reader.result;
+                if (base64String && typeof base64String === 'string') {
+                  const dataUrl = base64String;
+                  console.log('✅ Data URL creado para imagen (base64)');
+                  console.log('🔍 Data URL length:', dataUrl.length);
+                  setPreviewDocument({ ...documento, previewUrl: dataUrl });
+                  console.log('🔍 previewDocument actualizado con previewUrl');
+                } else {
+                  // Fallback a blob URL si base64 falla
+                  const blobUrl = URL.createObjectURL(blob);
+                  console.log('✅ Blob URL creado para imagen (fallback):', blobUrl);
+                  setPreviewDocument({ ...documento, previewUrl: blobUrl });
+                }
+                setPreviewLoading(false);
+              };
+              reader.onerror = () => {
+                console.error('❌ Error al leer blob como base64');
+                // Fallback a blob URL
+                const blobUrl = URL.createObjectURL(blob);
+                setPreviewDocument({ ...documento, previewUrl: blobUrl });
+                setPreviewLoading(false);
+              };
+              reader.readAsDataURL(blob);
+            } else {
+              setPreviewError('El archivo de imagen está vacío o no se pudo cargar');
+              setPreviewDocument({ ...documento, previewUrl: null });
+              setPreviewLoading(false);
+            }
+          } else {
+            setPreviewError(`Error al cargar la imagen: ${response.status}`);
+            setPreviewDocument({ ...documento, previewUrl: null });
+            setPreviewLoading(false);
+          }
+        } catch (imgError) {
+          console.error('❌ Error al cargar imagen:', imgError);
+          setPreviewError(`Error al cargar la imagen: ${imgError.message}`);
+          setPreviewDocument({ ...documento, previewUrl: null });
+          setPreviewLoading(false);
+        }
+        return;
       }
 
       
@@ -2037,7 +2138,7 @@ export default function DocumentosEmpleadosPage() {
 
         try {
 
-          const response = await fetch(previewUrl);
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
 
           console.log('🔍 Răspuns de la endpoint PDF:', response);
 
@@ -2116,12 +2217,12 @@ export default function DocumentosEmpleadosPage() {
             }
             
             // Dacă am ajuns aici, înseamnă că niciuna din metodele de mai sus nu a funcționat
-            console.warn('⚠️ No se pudo crear blob ni parsear JSON. Intentando cargar URL directo en iframe...');
-            // Ultimul fallback: setează direct URL-ul construit ca previewUrl în obiectul documentului
-            // (același comportament ca în DocumentosPage.jsx)
-            setPreviewDocument(prev => ({ ...(prev || documento), previewUrl }));
+            console.warn('⚠️ No se pudo crear blob ni parsear JSON para PDF.');
+            // Nu setăm previewUrl la URL HTTP direct pentru PDF-uri (cauzează 401)
+            // În schimb, setăm previewUrl la null și afișăm eroarea
+            setPreviewDocument(prev => ({ ...(prev || documento), previewUrl: null }));
             setPreviewLoading(false);
-            setPreviewError(null);
+            setPreviewError('No se pudo cargar el PDF. Por favor, intenta descargarlo directamente.');
             return;
 
           } else {
@@ -3379,11 +3480,13 @@ export default function DocumentosEmpleadosPage() {
     console.log('⬇️ Descargando documento:', documento);
 
     try {
-      const downloadUrl = `${routes.downloadDocumento}?id=${documento.id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}`;
+      // IMPORTANT: id trebuie să fie empleado_id (CODIGO), nu doc_id
+      const empleadoIdDownload = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id;
+      const downloadUrl = `${routes.downloadDocumento}?id=${empleadoIdDownload}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}`;
 
       console.log('🔗 URL de descarga:', downloadUrl);
       console.log('📋 Datele trimise:', {
-        id: documento.id,
+        id: empleadoIdDownload,
         email: selectedEmpleado['CORREO ELECTRONICO'],
         fileName: documento.fileName,
         documentId: documento.doc_id
@@ -3449,8 +3552,9 @@ export default function DocumentosEmpleadosPage() {
       
 
       // Construir URL para descarga
-
-              const downloadUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+      // IMPORTANT: id trebuie să fie empleado_id (CODIGO), nu doc_id
+      const empleadoIdOficialDownload = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id;
+      const downloadUrl = `${routes.downloadDocumentoOficial}?id=${empleadoIdOficialDownload}&documentId=${documento.doc_id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}`;
 
       
 
@@ -4579,11 +4683,12 @@ export default function DocumentosEmpleadosPage() {
               {/* Estadísticas para documentos normales */}
               {(() => {
                 // Filtrar solo documentos normales (no nóminas ni justificantes)
-                const documentosNormales = empleadoDocumentos.filter(doc => 
-                  doc.tipo && 
-                  doc.tipo !== 'Nómina' && 
-                  !doc.tipo.includes('justificantes')
-                );
+                // Incluir documentos que no tengan tipo o que no sean nóminas/justificantes
+                const documentosNormales = empleadoDocumentos.filter(doc => {
+                  const tipo = doc.tipo || doc.tipo_documento || '';
+                  // Incluir si no tiene tipo o si tiene tipo pero no es Nómina ni justificantes
+                  return !tipo || (tipo !== 'Nómina' && !tipo.toLowerCase().includes('justificantes'));
+                });
 
                 return (
                   <div className="flex justify-center mb-6">
@@ -4614,11 +4719,19 @@ export default function DocumentosEmpleadosPage() {
               {/* Lista de documentos normales */}
               {(() => {
                 // Filtrar solo documentos normales para la lista
-                const documentosNormales = empleadoDocumentos.filter(doc => 
-                  doc.tipo && 
-                  doc.tipo !== 'Nómina' && 
-                  !doc.tipo.includes('justificantes')
-                );
+                // Incluir documentos que no tengan tipo o que no sean nóminas/justificantes
+                const documentosNormales = empleadoDocumentos.filter(doc => {
+                  const tipo = doc.tipo || doc.tipo_documento || '';
+                  // Incluir si no tiene tipo o si tiene tipo pero no es Nómina ni justificantes
+                  return !tipo || (tipo !== 'Nómina' && !tipo.toLowerCase().includes('justificantes'));
+                });
+                
+                console.log('🔍 [DocumentosEmpleados] Documentos totales:', empleadoDocumentos.length);
+                console.log('🔍 [DocumentosEmpleados] Documentos normales (después de filter):', documentosNormales.length);
+                if (empleadoDocumentos.length > 0) {
+                  console.log('🔍 [DocumentosEmpleados] Ejemplo de documento en empleadoDocumentos:', empleadoDocumentos[0]);
+                  console.log('🔍 [DocumentosEmpleados] Tipo del primer documento:', empleadoDocumentos[0]?.tipo || empleadoDocumentos[0]?.tipo_documento || 'N/A');
+                }
 
                 return documentosNormales.length === 0 ? (
 

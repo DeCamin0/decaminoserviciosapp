@@ -828,7 +828,7 @@ export default function DocumentosPage() {
         )
       ) {
         // Para documentos oficiales, usar el endpoint específico
-        previewUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+        previewUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}&preview=true`;
         console.log('📄 Preview para documento oficial:', previewUrl);
         console.log('🔍 Endpoint usado:', routes.downloadDocumentoOficial);
         console.log('🔍 ID documento oficial (id del backend):', documento.id);
@@ -837,7 +837,7 @@ export default function DocumentosPage() {
         console.log('🔍 FileName:', documento.fileName);
       } else {
         // Para documentos normales, usar el endpoint estándar
-        previewUrl = `${routes.downloadDocumento}?id=${documento.id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}`;
+        previewUrl = `${routes.downloadDocumento}?id=${documento.id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}&preview=true`;
         console.log('📄 Preview para documento normal:', previewUrl);
         console.log('🔍 DEBUG DOWNLOAD - Valores enviados:');
         console.log('  documento.id (empleado_id):', documento.id);
@@ -863,13 +863,10 @@ export default function DocumentosPage() {
       };
       
       // Pentru PDF-uri pe mobil, procesăm imediat ca blob/base64 (nu setăm URL direct)
-      // Pentru imagini și alte tipuri, setăm URL direct și procesăm mai jos
+      // Pentru imagini, nu setăm URL direct - vor fi procesate mai jos ca blob/base64
       const isPdfFile = documento.fileName?.toLowerCase().endsWith('.pdf');
       
-      if (!isPdfFile) {
-        // Pentru non-PDF, setăm URL direct (va fi procesat mai jos pentru imagini)
-        setPreviewDocument({ ...documento, previewUrl });
-      }
+      // Nu setăm previewUrl direct pentru non-PDF - vor fi procesate mai jos
       
       // Si es PDF y estamos en móvil (iOS/Android), cargar como data URL base64 pentru iOS sau blob URL pentru Android
       if (
@@ -922,7 +919,10 @@ export default function DocumentosPage() {
       if (documento.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
         console.log('🖼️ Archivo de imagen detectado, creando blob URL local...');
         try {
-          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
+          const headers = getAuthHeaders();
+          console.log('🔍 Headers para imagen:', headers);
+          console.log('🔍 Token presente:', !!headers['Authorization']);
+          const response = await fetch(previewUrl, { headers });
           console.log('🔍 Respuesta para imagen:', response.status, response.ok);
           
           if (response.ok) {
@@ -966,16 +966,19 @@ export default function DocumentosPage() {
                           console.log('✅ Blob URL creado para imagen tras segundo fetch:', blobUrl);
                           setPreviewDocument({ ...documento, previewUrl: blobUrl });
                         } else {
-                          console.warn('⚠️ Blob vacío tras segundo fetch. Usando URL directa');
-                          setPreviewDocument({ ...documento, previewUrl });
+                          console.warn('⚠️ Blob vacío tras segundo fetch');
+                          setPreviewError('El archivo de imagen está vacío');
+                          setPreviewDocument({ ...documento, previewUrl: null });
                         }
                       } else {
                         console.warn('⚠️ Segundo fetch no OK:', imgResponse.status);
-                        setPreviewDocument({ ...documento, previewUrl });
+                        setPreviewError(`Error al cargar la imagen: ${imgResponse.status}`);
+                        setPreviewDocument({ ...documento, previewUrl: null });
                       }
                     } catch (secondErr) {
                       console.error('❌ Error en segundo fetch de imagen:', secondErr);
-                      setPreviewDocument({ ...documento, previewUrl });
+                      setPreviewError(`Error al cargar la imagen: ${secondErr.message}`);
+                      setPreviewDocument({ ...documento, previewUrl: null });
                     }
                   }
                 } else {
@@ -993,16 +996,19 @@ export default function DocumentosPage() {
                         console.log('✅ Blob URL creado para imagen tras segundo fetch:', blobUrl);
                         setPreviewDocument({ ...documento, previewUrl: blobUrl });
                       } else {
-                        console.warn('⚠️ Blob vacío tras segundo fetch. Usando URL directa');
-                        setPreviewDocument({ ...documento, previewUrl });
+                        console.warn('⚠️ Blob vacío tras segundo fetch');
+                        setPreviewError('El archivo de imagen está vacío');
+                        setPreviewDocument({ ...documento, previewUrl: null });
                       }
                     } else {
                       console.warn('⚠️ Segundo fetch no OK:', imgResponse.status);
-                      setPreviewDocument({ ...documento, previewUrl });
+                      setPreviewError(`Error al cargar la imagen: ${imgResponse.status}`);
+                      setPreviewDocument({ ...documento, previewUrl: null });
                     }
                   } catch (secondErr) {
                     console.error('❌ Error en segundo fetch de imagen:', secondErr);
-                    setPreviewDocument({ ...documento, previewUrl });
+                    setPreviewError(`Error al cargar la imagen: ${secondErr.message}`);
+                    setPreviewDocument({ ...documento, previewUrl: null });
                   }
                 }
               } catch (parseError) {
@@ -1020,16 +1026,19 @@ export default function DocumentosPage() {
                       console.log('✅ Blob URL creado para imagen tras segundo fetch:', blobUrl);
                       setPreviewDocument({ ...documento, previewUrl: blobUrl });
                     } else {
-                      console.warn('⚠️ Blob vacío tras segundo fetch. Usando URL directa');
-                      setPreviewDocument({ ...documento, previewUrl });
+                      console.warn('⚠️ Blob vacío tras segundo fetch');
+                      setPreviewError('El archivo de imagen está vacío');
+                      setPreviewDocument({ ...documento, previewUrl: null });
                     }
                   } else {
                     console.warn('⚠️ Segundo fetch no OK:', imgResponse.status);
-                    setPreviewDocument({ ...documento, previewUrl });
+                    setPreviewError(`Error al cargar la imagen: ${imgResponse.status}`);
+                    setPreviewDocument({ ...documento, previewUrl: null });
                   }
                 } catch (secondErr) {
                   console.error('❌ Error en segundo fetch de imagen:', secondErr);
-                  setPreviewDocument({ ...documento, previewUrl });
+                  setPreviewError(`Error al cargar la imagen: ${secondErr.message}`);
+                  setPreviewDocument({ ...documento, previewUrl: null });
                 }
               }
             } else {
@@ -1045,7 +1054,10 @@ export default function DocumentosPage() {
                   if (base64String && typeof base64String === 'string') {
                     const dataUrl = base64String;
                     console.log('✅ Data URL creado para imagen (base64)');
+                    console.log('🔍 Data URL length:', dataUrl.length);
+                    console.log('🔍 Data URL preview (first 100 chars):', dataUrl.substring(0, 100));
                     setPreviewDocument({ ...documento, previewUrl: dataUrl });
+                    console.log('🔍 previewDocument actualizado con previewUrl');
                   } else {
                     // Fallback a blob URL si base64 falla
                     const blobUrl = URL.createObjectURL(blob);
@@ -1063,8 +1075,9 @@ export default function DocumentosPage() {
                 reader.readAsDataURL(blob);
                 return; // Salir aquí, el callback se encargará de setPreviewLoading
               } else {
-                console.warn('⚠️ El blob de imagen está vacío! Usando URL directa');
-                setPreviewDocument({ ...documento, previewUrl });
+                console.warn('⚠️ El blob de imagen está vacío! Mostrando error');
+                setPreviewError('El archivo de imagen está vacío o no se pudo cargar');
+                setPreviewDocument({ ...documento, previewUrl: null });
               }
             }
             
@@ -1072,15 +1085,15 @@ export default function DocumentosPage() {
             return; // Salir aquí
           } else {
             console.error('❌ Error al cargar imagen:', response.status);
-            // Intentar con URL directa como fallback
-            setPreviewDocument({ ...documento, previewUrl });
+            setPreviewError(`Error al cargar la imagen: ${response.status} ${response.statusText}`);
+            setPreviewDocument({ ...documento, previewUrl: null });
             setPreviewLoading(false);
             return;
           }
         } catch (error) {
           console.error('❌ Error al procesar imagen:', error);
-          // Intentar con URL directa como fallback
-          setPreviewDocument({ ...documento, previewUrl });
+          setPreviewError(`Error al procesar la imagen: ${error.message}`);
+          setPreviewDocument({ ...documento, previewUrl: null });
           setPreviewLoading(false);
           return;
         }
@@ -1945,6 +1958,19 @@ export default function DocumentosPage() {
       // Genera un ID único para el documento
       const documentId = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
+      // Si tip es vacío, intentamos obtenerlo de las solicitudes pendientes
+      let tipoFinal = tip || '';
+      if (!tipoFinal || tipoFinal.trim() === '') {
+        // Buscar en documentos solicitados pendientes
+        const solicitudPendiente = Array.isArray(documentosSolicitados) && documentosSolicitados.length > 0
+          ? documentosSolicitados.find(s => s.estado === 'pendiente' || !s.estado)
+          : null;
+        if (solicitudPendiente && solicitudPendiente.tipo_documento) {
+          tipoFinal = solicitudPendiente.tipo_documento;
+          console.log('🔍 [Upload] Tip gol, folosim tip din solicitare:', tipoFinal);
+        }
+      }
+      
       // Crear FormData con el mismo formato que usa el supervisor
       const formData = new FormData();
       
@@ -1955,7 +1981,10 @@ export default function DocumentosPage() {
       formData.append('empleado_id', authUser?.CODIGO || authUser?.id || 'N/A');
       formData.append('empleado_nombre', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || 'Sin nombre');
       formData.append('empleado_email', authUser?.['CORREO ELECTRONICO'] || authUser?.email || '');
-      formData.append('tipo_documento', tip); // Usar el tipo recibido como parámetro
+      // Trimitem tipo_documento cu index pentru primul fișier (archivo_0)
+      formData.append('tipo_documento_0', tipoFinal); // Usar el tipo final (con fallback a solicitud si es necesario)
+      // Trimitem și fără index pentru compatibilitate
+      formData.append('tipo_documento', tipoFinal);
       formData.append('fecha_upload', new Date().toLocaleString('es-ES', {
         year: 'numeric',
         month: '2-digit',
@@ -2027,7 +2056,7 @@ export default function DocumentosPage() {
           // Log cargar el documento
           await activityLogger.logDocumentoUploaded({
             id: documentId,
-            tip: tip,
+            tip: tipoFinal,
             fileName: file.name,
             fileSize: file.size,
             email: email
@@ -2035,7 +2064,7 @@ export default function DocumentosPage() {
           
           // Verificăm dacă tipul documentului este unul dintre cele solicitate
           // și reîncărcăm lista de cereri pentru a actualiza UI-ul
-          const tipoDocLower = (tip || '').toLowerCase().trim();
+          const tipoDocLower = (tipoFinal || '').toLowerCase().trim();
           const tiposSolicitados = ['dni', 'certificado de titularidad', 'certificado de titularidad'];
           const esTipoSolicitado = tiposSolicitados.some(tipo => 
             tipoDocLower === tipo || tipoDocLower.includes(tipo) || tipo.includes(tipoDocLower)
@@ -3632,9 +3661,10 @@ export default function DocumentosPage() {
         </div>
                 ) : previewDocument?.fileName?.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
                   <div className="p-4 bg-gray-50 max-h-[75vh] overflow-y-auto">
-                    <img 
-                      src={previewDocument?.previewUrl || ''}
-                      alt={previewDocument.fileName}
+                    {previewDocument?.previewUrl ? (
+                      <img 
+                        src={previewDocument.previewUrl}
+                        alt={previewDocument.fileName}
                       className={`max-w-full h-auto mx-auto ${
                         isIOS ? 'brightness-100 contrast-100' : ''
                       }`}
@@ -3647,10 +3677,22 @@ export default function DocumentosPage() {
                         })
                       }}
                       onError={(e) => {
+                        console.error('❌ Error loading image in modal:', e.target.src);
                         e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'block';
+                        if (e.target.nextSibling && e.target.nextSibling.style) {
+                          e.target.nextSibling.style.display = 'block';
+                        }
+                      }}
+                      onLoad={() => {
+                        console.log('✅ Image loaded successfully in modal:', previewDocument?.previewUrl?.substring(0, 50));
                       }}
                     />
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-600 mb-4">🖼️ Cargando imagen...</p>
+                        <p className="text-sm text-gray-500">Por favor espera mientras se carga la imagen</p>
+                      </div>
+                    )}
                     <div className="hidden text-center">
                       <p className="text-gray-600 mb-4">🖼️ Error al cargar la imagen</p>
                       <p className="text-sm text-gray-500">La imagen no se pudo cargar, usa el botón de descarga</p>

@@ -239,6 +239,74 @@ export class DocumentosSolicitadosService {
   }
 
   /**
+   * Marchează ca completată orice solicitare pendiente pentru un angajat,
+   * folosind matching flexibil pe tipo_documento
+   */
+  async marcarCompletadoFlexible(
+    empleadoId: string,
+    tipoDocumento: string,
+  ): Promise<{ success: true; updated: number }> {
+    try {
+      // Normalizăm tipul documentului pentru matching
+      const tipoDocNormalized = tipoDocumento.toLowerCase().trim();
+      
+      // Căutăm solicitări pendiente pentru acest angajat
+      const solicitudesQuery = `
+        SELECT id, tipo_documento
+        FROM \`documentos_solicitados\`
+        WHERE \`empleado_id\` = ${this.escapeSql(empleadoId)}
+          AND \`estado\` = 'pendiente'
+      `;
+      
+      const solicitudes = await this.prisma.$queryRawUnsafe<
+        Array<{ id: bigint | number; tipo_documento: string }>
+      >(solicitudesQuery);
+
+      let updated = 0;
+
+      // Verificăm fiecare solicitare pentru matching flexibil
+      for (const solicitud of solicitudes) {
+        const tipoSolicitudNormalized = solicitud.tipo_documento.toLowerCase().trim();
+        
+        // Matching exact sau dacă unul conține pe celălalt
+        const matches = 
+          tipoDocNormalized === tipoSolicitudNormalized ||
+          tipoDocNormalized.includes(tipoSolicitudNormalized) ||
+          tipoSolicitudNormalized.includes(tipoDocNormalized);
+
+        if (matches) {
+          // Marchem ca completată folosind tipul exact din solicitare
+          const updateQuery = `
+            UPDATE \`documentos_solicitados\`
+            SET 
+              \`estado\` = 'completado',
+              \`fecha_completado\` = CURRENT_TIMESTAMP
+            WHERE \`id\` = ${Number(solicitud.id)}
+              AND \`estado\` = 'pendiente'
+          `;
+
+          const result = await this.prisma.$executeRawUnsafe(updateQuery);
+          const affectedRows = (result as any).affectedRows || 0;
+          updated += affectedRows;
+
+          if (affectedRows > 0) {
+            this.logger.log(
+              `✅ Solicitud marcada como completada (matching flexibil): empleado ${empleadoId}, tipo ${tipoDocumento} -> ${solicitud.tipo_documento}`,
+            );
+          }
+        }
+      }
+
+      return { success: true, updated };
+    } catch (error: any) {
+      this.logger.error('❌ Error marcando solicitud como completada (flexible):', error);
+      throw new BadRequestException(
+        `Error al marcar solicitud como completada: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Aplică automat cererile cu aplicar_a_nuevos = true la un angajat nou activ
    */
   async aplicarReglasANuevoEmpleado(

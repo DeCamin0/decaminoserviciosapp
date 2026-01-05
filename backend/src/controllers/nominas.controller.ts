@@ -53,6 +53,7 @@ export class NominasController {
     @Res() res: Response,
     @CurrentUser() user: any,
     @Req() req: Request,
+    @Query('preview') preview?: string,
   ) {
     try {
       const idNumber = parseInt(id, 10);
@@ -61,8 +62,10 @@ export class NominasController {
         throw new BadRequestException(`Parámetro "id" inválido: ${id}`);
       }
 
+      const isPreview = preview === 'true' || preview === '1';
+
       this.logger.log(
-        `📥 Download nomina request - id: ${idNumber}, nombre: ${nombre || 'N/A'}`,
+        `📥 Download nomina request - id: ${idNumber}, nombre: ${nombre || 'N/A'}, preview: ${isPreview}`,
       );
 
       const { archivo, tipo_mime, nombre_archivo } =
@@ -93,11 +96,15 @@ export class NominasController {
           });
       }
 
-      // Setează headers pentru download
+      // Setează headers pentru download sau preview
       res.setHeader('Content-Type', tipo_mime);
+      // Pentru preview, folosește 'inline' pentru a evita problemele CORB
+      // Pentru download, folosește 'attachment'
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${nombre_archivo}"`,
+        isPreview
+          ? `inline; filename="${nombre_archivo}"`
+          : `attachment; filename="${nombre_archivo}"`,
       );
       res.setHeader('Content-Length', archivo.length.toString());
 

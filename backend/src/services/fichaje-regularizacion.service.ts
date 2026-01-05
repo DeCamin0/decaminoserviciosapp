@@ -619,7 +619,7 @@ export class FichajeRegularizacionService {
       const fechaStr = fecha; // fecha vine deja în format YYYY-MM-DD
 
       const fichajeQuery = `
-        SELECT DURACION
+        SELECT DURACION, HORA
         FROM Fichaje
         WHERE CODIGO = ${this.escapeSql(employee_codigo)}
           AND FECHA = ${this.escapeSql(fechaStr)}
@@ -637,7 +637,7 @@ export class FichajeRegularizacionService {
       );
       if (fichajes && fichajes.length > 0) {
         this.logger.debug(
-          `🔍 DURACION query result: ${JSON.stringify(fichajes.map((f) => ({ DURACION: f.DURACION })))}`,
+          `🔍 DURACION query result: ${JSON.stringify(fichajes.map((f) => ({ DURACION: f.DURACION, HORA: f.HORA })))}`,
         );
       }
       const hasDirectDuration =
@@ -646,12 +646,65 @@ export class FichajeRegularizacionService {
       if (hasDirectDuration) {
         // Prioritate: folosește DURACION direct din Salida pentru data specificată
         const durationStr = fichajes[0].DURACION;
+        const horaStr = fichajes[0].HORA;
         punched_minutes = this.parseDurationToMinutes(durationStr);
         this.logger.debug(
           `✅ Using DURACION directly: ${durationStr} = ${punched_minutes} minutes for ${employee_codigo} on ${fechaStr}`,
         );
-        // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
-        workday_date = new Date(fechaStr + 'T00:00:00');
+        
+        // Detectează dacă este tură nocturnă:
+        // - Salida este înainte de 12:00 (dimineața)
+        // - Există Entrada în ziua anterioară după 17:00
+        const horaTime = horaStr instanceof Date 
+          ? horaStr.toTimeString().slice(0, 8) 
+          : horaStr;
+        const [salidaHours] = horaTime.split(':').map(Number);
+        const isMorningSalida = salidaHours < 12; // Salida înainte de 12:00 = dimineața
+        
+        if (isMorningSalida) {
+          // Verifică dacă există Entrada în ziua anterioară după 17:00
+          const fechaAnterior = new Date(fechaStr + 'T00:00:00');
+          fechaAnterior.setDate(fechaAnterior.getDate() - 1);
+          const fechaAnteriorStr = fechaAnterior.toISOString().split('T')[0];
+          
+          const entradaQuery = `
+            SELECT HORA
+            FROM Fichaje
+            WHERE CODIGO = ${this.escapeSql(employee_codigo)}
+              AND FECHA = ${this.escapeSql(fechaAnteriorStr)}
+              AND TIPO = 'Entrada'
+            ORDER BY HORA DESC
+            LIMIT 1
+          `;
+          
+          const entradas = await this.prisma.$queryRawUnsafe<any[]>(entradaQuery);
+          
+          if (entradas && entradas.length > 0) {
+            const entradaHoraStr = entradas[0].HORA instanceof Date
+              ? entradas[0].HORA.toTimeString().slice(0, 8)
+              : entradas[0].HORA;
+            const [entradaHours] = entradaHoraStr.split(':').map(Number);
+            
+            if (entradaHours >= 17) {
+              // Este tură nocturnă: Entrada în ziua anterioară după 17:00, Salida în ziua următoare dimineața
+              // workday_date = ziua de început (ziua Entrada-ului)
+              workday_date = fechaAnterior;
+              this.logger.debug(
+                `🌙 Detected night shift: Entrada on ${fechaAnteriorStr} at ${entradaHoraStr}, Salida on ${fechaStr} at ${horaTime}. Setting workday_date to ${fechaAnteriorStr}`,
+              );
+            } else {
+              // Nu este tură nocturnă, folosește data Salida-ului
+              workday_date = new Date(fechaStr + 'T00:00:00');
+            }
+          } else {
+            // Nu există Entrada în ziua anterioară, folosește data Salida-ului
+            workday_date = new Date(fechaStr + 'T00:00:00');
+          }
+        } else {
+          // Salida nu este dimineața, nu este tură nocturnă
+          // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
+          workday_date = new Date(fechaStr + 'T00:00:00');
+        }
       } else if (workday) {
         // Caz normal: există workday valid și nu există DURACION direct
         punched_minutes = await this.calculatePunchedMinutes(

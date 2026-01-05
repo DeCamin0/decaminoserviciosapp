@@ -104,6 +104,7 @@ export class DocumentosOficialesController {
     @Query('id') id?: string,
     @Query('email') email?: string,
     @Query('fileName') fileName?: string,
+    @Query('preview') preview?: string,
   ) {
     try {
       const documentIdNumber = parseInt(documentId, 10);
@@ -114,8 +115,10 @@ export class DocumentosOficialesController {
         );
       }
 
+      const isPreview = preview === 'true' || preview === '1';
+
       this.logger.log(
-        `📥 Download documento oficial request - documentId: ${documentIdNumber}, id: ${id || 'N/A'}, email: ${email || 'N/A'}, fileName: ${fileName || 'N/A'}`,
+        `📥 Download documento oficial request - documentId: ${documentIdNumber}, id: ${id || 'N/A'}, email: ${email || 'N/A'}, fileName: ${fileName || 'N/A'}, preview: ${isPreview}`,
       );
 
       const { archivo, tipo_mime, nombre_archivo } =
@@ -126,11 +129,15 @@ export class DocumentosOficialesController {
           fileName,
         );
 
-      // Setează headers pentru download
+      // Setează headers pentru download sau preview
       res.setHeader('Content-Type', tipo_mime);
+      // Pentru preview, folosește 'inline' pentru a evita problemele CORB
+      // Pentru download, folosește 'attachment'
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${nombre_archivo}"`,
+        isPreview
+          ? `inline; filename="${nombre_archivo}"`
+          : `attachment; filename="${nombre_archivo}"`,
       );
       res.setHeader('Content-Length', archivo.length.toString());
 

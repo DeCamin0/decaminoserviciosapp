@@ -310,6 +310,22 @@ export class DocumentosService {
       const fecha = parseFechaToSql(body.fecha_upload);
 
       // Helper to read indexed field with fallback (matches n8n logic)
+      // Log body keys pentru debugging
+      if (files.length > 0) {
+        this.logger.log(
+          `🔍 [Upload] Body keys available: ${Object.keys(body).join(', ')}`,
+        );
+        // Log specific pentru tipo_documento
+        const tipoKeys = Object.keys(body).filter((k) =>
+          k.toLowerCase().includes('tipo'),
+        );
+        if (tipoKeys.length > 0) {
+          this.logger.log(
+            `🔍 [Upload] Tipo-related keys: ${tipoKeys.map((k) => `${k}=${body[k]}`).join(', ')}`,
+          );
+        }
+      }
+
       const readBodyFieldForIndex = (
         baseName: string,
         idx: number,
@@ -337,11 +353,23 @@ export class DocumentosService {
         const file = files[index];
 
         // Get tipo_documento for this file
-        const tipoDoc =
+        let tipoDoc =
           readBodyFieldForIndex('tipo_documento', index, null) ||
           readBodyFieldForIndex('documento_tipo', index, null) ||
           readBodyFieldForIndex('tipo', index, null) ||
           null;
+        
+        // Tratăm string-urile goale ca null
+        if (tipoDoc && typeof tipoDoc === 'string' && tipoDoc.trim() === '') {
+          tipoDoc = null;
+        }
+        
+        // Log pentru debugging
+        if (index === 0) {
+          this.logger.log(
+            `🔍 [Upload] File ${index + 1}: tipo_documento = ${tipoDoc || 'NULL'} (checked: tipo_documento_${index}, documento_tipo_${index}, tipo_${index})`,
+          );
+        }
 
         // Get nombre_archivo (try archivo_nombre_0, then archivo_0_nombre from body, then file.originalname)
         let nombreArchivo = readBodyFieldForIndex(
@@ -357,6 +385,23 @@ export class DocumentosService {
           }
         }
         nombreArchivo = nombreArchivo || file.originalname || 'sin-nombre.pdf';
+
+        // Validăm că fișierul are buffer valid
+        if (!file.buffer || file.buffer.length === 0) {
+          this.logger.error(
+            `❌ Fișierul ${nombreArchivo} nu are buffer valid. file.size: ${file.size}, file.mimetype: ${file.mimetype || 'N/A'}`,
+          );
+          throw new BadRequestException(
+            `Fișierul ${nombreArchivo} este gol sau nu a fost încărcat corect`,
+          );
+        }
+
+        // Validăm dimensiunea buffer-ului
+        if (file.buffer.length > 50 * 1024 * 1024) {
+          throw new BadRequestException(
+            `Fișierul ${nombreArchivo} depășește limita de 50MB (${Math.round(file.buffer.length / 1024 / 1024)}MB)`,
+          );
+        }
 
         // Insert into CarpetasDocumentos table
         const query = `
@@ -375,7 +420,7 @@ export class DocumentosService {
             ${this.escapeSql(nombreArchivo)},
             ${this.escapeSql(nombreEmpleado)},
             ${fecha ? this.escapeSql(fecha) : 'CURRENT_TIMESTAMP'},
-            ${file.buffer ? `0x${file.buffer.toString('hex')}` : 'NULL'}
+            ${file.buffer && file.buffer.length > 0 ? `0x${file.buffer.toString('hex')}` : 'NULL'}
           )
         `;
 
@@ -384,50 +429,79 @@ export class DocumentosService {
           inserted++;
           processed++;
           this.logger.log(
-            `✅ Documento ${index + 1}/${files.length} insertado: ${nombreArchivo} (${file.size} bytes)`,
+            `✅ Documento ${index + 1}/${files.length} insertado: ${nombreArchivo} (${file.size} bytes, buffer: ${file.buffer.length} bytes, mimetype: ${file.mimetype || 'N/A'})`,
           );
 
-          // Verificare automată: dacă tipul documentului este DNI, Certificado de titularidad sau Justificantes de banco,
-          // marchează cererea ca completată (dacă există)
+          // Verificare automată: dacă există o solicitare pentru acest tip de document,
+          // marchează cererea ca completată
+          this.logger.log(
+            `🔍 [Upload] Verificando solicitud para empleado ${id}, tipo ${tipoDoc || 'NULL'}, servicio disponible: ${!!this.documentosSolicitadosService}`,
+          );
+          
           if (tipoDoc && this.documentosSolicitadosService) {
-            const tipoDocNormalized = tipoDoc.toLowerCase().trim();
-            // Normalizăm tipurile pentru matching flexibil
-            const tiposSolicitados = [
-              'dni',
-              'certificado de titularidad',
-              'certificado titularidad',
-              'titularidad',
-              'justificantes de banco',
-              'justificante de banco',
-              'justificantes banco',
-              'justificante banco',
-            ];
-
-            // Verificăm dacă tipul documentului se potrivește cu unul dintre tipurile solicitate
-            const matchesTipo = tiposSolicitados.some((tipo) => {
-              // Matching exact sau dacă tipul documentului conține tipul solicitat
-              return (
-                tipoDocNormalized === tipo ||
-                tipoDocNormalized.includes(tipo) ||
-                tipo.includes(tipoDocNormalized)
+            try {
+              this.logger.log(
+                `🔍 [Upload] Intentando marcar solicitud como completada: empleado ${id}, tipo ${tipoDoc}`,
               );
-            });
-
-            if (matchesTipo) {
-              try {
-                await this.documentosSolicitadosService.marcarCompletado(
-                  id,
-                  tipoDoc, // Folosim tipul exact trimis, nu cel normalizat
-                );
+              
+              // Încercăm mai întâi cu tipul exact
+              const result = await this.documentosSolicitadosService.marcarCompletado(
+                id,
+                tipoDoc,
+              );
+              
+              this.logger.log(
+                `🔍 [Upload] Resultado marcarCompletado: updated=${result.updated}`,
+              );
+              
+              if (result.updated > 0) {
                 this.logger.log(
                   `✅ Solicitud marcada como completada automáticamente: empleado ${id}, tipo ${tipoDoc}`,
                 );
-              } catch (solicitudError: any) {
-                // Nu aruncăm eroare dacă verificarea eșuează, doar logăm
-                this.logger.warn(
-                  `⚠️ No se pudo marcar solicitud como completada: ${solicitudError.message}`,
+              } else {
+                // Dacă nu s-a găsit cu tipul exact, încercăm matching flexibil
+                this.logger.log(
+                  `🔍 [Upload] No se encontró con tipo exacto, intentando matching flexibil...`,
                 );
+                
+                const resultFlexible = await this.documentosSolicitadosService.marcarCompletadoFlexible(
+                  id,
+                  tipoDoc,
+                );
+                
+                this.logger.log(
+                  `🔍 [Upload] Resultado marcarCompletadoFlexible: updated=${resultFlexible.updated}`,
+                );
+                
+                if (resultFlexible.updated > 0) {
+                  this.logger.log(
+                    `✅ Solicitud marcada como completada automáticamente (matching flexibil): empleado ${id}, tipo ${tipoDoc}`,
+                  );
+                } else {
+                  this.logger.warn(
+                    `⚠️ No se encontró ninguna solicitud pendiente para empleado ${id}, tipo ${tipoDoc}`,
+                  );
+                }
               }
+            } catch (solicitudError: any) {
+              // Nu aruncăm eroare dacă verificarea eșuează, doar logăm
+              this.logger.warn(
+                `⚠️ No se pudo marcar solicitud como completada: ${solicitudError.message}`,
+              );
+              this.logger.warn(
+                `⚠️ Stack trace: ${solicitudError.stack}`,
+              );
+            }
+          } else {
+            if (!tipoDoc) {
+              this.logger.warn(
+                `⚠️ No se puede marcar solicitud: tipoDoc es null o undefined`,
+              );
+            }
+            if (!this.documentosSolicitadosService) {
+              this.logger.warn(
+                `⚠️ No se puede marcar solicitud: documentosSolicitadosService no está disponible`,
+              );
             }
           }
         } catch (insertError: any) {

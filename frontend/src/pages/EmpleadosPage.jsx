@@ -1838,7 +1838,8 @@ export default function EmpleadosPage() {
 
       await ensurePdfMake();
 
-      const dataToExport = searchTerm ? getFilteredUsers : users;
+      // Folosește întotdeauna getFilteredUsers pentru a respecta toate filtrele (searchTerm, searchBy, statusFilter)
+      const dataToExport = getFilteredUsers;
       
       if (!dataToExport || dataToExport.length === 0) {
         setNotification({
@@ -1868,8 +1869,10 @@ export default function EmpleadosPage() {
           const avatarBase64 = employeeAvatars[emp.CODIGO];
           
           return [
-            // Avatar - imagen o emoji
-            avatarBase64 && avatarBase64.startsWith('data:image')
+            // Avatar - imagen o emoji (exclude SVG-uri care nu sunt suportate de pdfMake)
+            avatarBase64 && 
+            avatarBase64.startsWith('data:image') && 
+            !avatarBase64.startsWith('data:image/svg+xml')
               ? { 
                   image: avatarBase64, 
                   width: 30, 
@@ -1892,10 +1895,30 @@ export default function EmpleadosPage() {
         })
       ];
 
-      // Construye el título del reporte
-      const reportTitle = searchTerm 
-        ? `LISTA DE EMPLEADOS - Búsqueda: "${searchTerm}"`
-        : 'LISTA DE EMPLEADOS';
+      // Construye el título del reporte (incluye todos los filtros aplicados)
+      let reportTitle = 'LISTA DE EMPLEADOS';
+      const filters = [];
+      
+      if (searchTerm) {
+        const searchByLabel = searchBy === 'nombre' ? 'Nombre' :
+                              searchBy === 'codigo' ? 'Código' :
+                              searchBy === 'email' ? 'Email' :
+                              searchBy === 'grupo' ? 'Grupo' :
+                              searchBy === 'estado' ? 'Estado' :
+                              searchBy === 'centro' ? 'Centro' :
+                              searchBy === 'fecha_alta' ? 'Fecha Alta' :
+                              searchBy === 'sin_fecha_alta' ? 'Sin Fecha Alta' :
+                              'Todos';
+        filters.push(`${searchByLabel}: "${searchTerm}"`);
+      }
+      
+      if (statusFilter && statusFilter !== 'ALL') {
+        filters.push(`Estado: ${statusFilter}`);
+      }
+      
+      if (filters.length > 0) {
+        reportTitle = `LISTA DE EMPLEADOS - ${filters.join(' | ')}`;
+      }
 
       const docDefinition = {
         pageOrientation: 'landscape',
@@ -2156,10 +2179,23 @@ export default function EmpleadosPage() {
       return;
     }
 
+    // Verifică dacă e "Otro" și are tip personalizat completat
+    if (documentoSolicitudForm.tipo_documento === 'otro') {
+      if (!documentoSolicitudForm.tipo_personalizado || !documentoSolicitudForm.tipo_personalizado.trim()) {
+        setDocumentoSolicitudError('Por favor, especifica el tipo de documento personalizado.');
+        return;
+      }
+    }
+
     setDocumentoSolicitudLoading(true);
     setDocumentoSolicitudError(null);
 
     try {
+      // Folosește tipo_personalizado dacă este "otro", altfel folosește tipo_documento
+      const tipoDocumentoFinal = documentoSolicitudForm.tipo_documento === 'otro' 
+        ? documentoSolicitudForm.tipo_personalizado.trim()
+        : documentoSolicitudForm.tipo_documento;
+
       const result = await callApi(routes.createDocumentoSolicitado, {
         method: 'POST',
         headers: {
@@ -2167,7 +2203,7 @@ export default function EmpleadosPage() {
         },
         body: JSON.stringify({
           empleado_id: selectedUserForDocumento.CODIGO,
-          tipo_documento: documentoSolicitudForm.tipo_documento,
+          tipo_documento: tipoDocumentoFinal,
           notas: documentoSolicitudForm.notas || undefined,
         }),
       });
@@ -2176,11 +2212,11 @@ export default function EmpleadosPage() {
         setNotification({
           type: 'success',
           title: 'Solicitud Creada',
-          message: `Se ha creado la solicitud de ${documentoSolicitudForm.tipo_documento} para ${getFormattedNombre(selectedUserForDocumento)}.`,
+          message: `Se ha creado la solicitud de ${tipoDocumentoFinal} para ${getFormattedNombre(selectedUserForDocumento)}.`,
           show: true
         });
         setShowSolicitarDocumentoModal(false);
-        setDocumentoSolicitudForm({ tipo_documento: '', notas: '' });
+        setDocumentoSolicitudForm({ tipo_documento: '', tipo_personalizado: '', notas: '' });
         setSelectedUserForDocumento(null);
       } else {
         setDocumentoSolicitudError(result.error || 'Error al crear la solicitud');

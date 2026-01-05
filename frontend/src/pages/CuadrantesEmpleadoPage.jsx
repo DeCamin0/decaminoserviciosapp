@@ -391,6 +391,8 @@ export default function CuadrantesEmpleadoPage() {
 
   // State pentru regularizări confirmate (din MonthlyAlerts)
   const [regularizacionesConfirmadas, setRegularizacionesConfirmadas] = useState(new Map());
+  const [planFuenteMap, setPlanFuenteMap] = useState(new Map()); // Map pentru plan_fuente (fiesta, etc.)
+  const [detaliiZilnice, setDetaliiZilnice] = useState([]); // Stocăm detalii_zilnice pentru a le folosi direct în calendarCells
 
   
 
@@ -1088,16 +1090,29 @@ export default function CuadrantesEmpleadoPage() {
 
         // Creează un Map cu zilele care au regularizare confirmată
         const regularizacionesMap = new Map();
+        // Creează un Map cu plan_fuente pentru fiecare zi (pentru fiesta, etc.)
+        const planFuenteMapLocal = new Map();
         detalii.forEach(d => {
-          if (d?.fecha && (d?.has_regularizacion_confirmada === 1 || 
-                           d?.has_regularizacion_confirmada === true || 
-                           d?.has_regularizacion_confirmada === '1')) {
+          if (d?.fecha) {
             const fechaStr = typeof d.fecha === 'string' ? d.fecha.split('T')[0] : d.fecha;
-            regularizacionesMap.set(fechaStr, true);
+            
+            // Verifică regularizare confirmată
+            if (d?.has_regularizacion_confirmada === 1 || 
+                d?.has_regularizacion_confirmada === true || 
+                d?.has_regularizacion_confirmada === '1') {
+              regularizacionesMap.set(fechaStr, true);
+            }
+            
+            // Extrage plan_fuente (fiesta, cuadrante, horario, etc.)
+            if (d?.plan_fuente) {
+              planFuenteMapLocal.set(fechaStr, d.plan_fuente);
+            }
           }
         });
 
         setRegularizacionesConfirmadas(regularizacionesMap);
+        setPlanFuenteMap(planFuenteMapLocal);
+        setDetaliiZilnice(detalii); // Stocăm detalii_zilnice pentru a le folosi direct în calendarCells
       } catch (e) {
         setRegularizacionesConfirmadas(new Map());
       } finally {
@@ -1920,6 +1935,33 @@ const getFirstValue = (record, keys) => {
       
 
       // Determină tipul zilei
+      // Verifică plan_fuente din backend pentru fiesta (prioritate după bajaCalendar și ausenciaZi)
+      // Folosim detaliiZilnice direct dacă planFuenteMap este încă gol (pentru a evita flickering)
+      let planFuente = planFuenteMap.get(dataZi);
+      if (!planFuente && Array.isArray(detaliiZilnice) && detaliiZilnice.length > 0) {
+        const detalleZi = detaliiZilnice.find(d => {
+          const fechaStr = typeof d?.fecha === 'string' ? d.fecha.split('T')[0] : d?.fecha;
+          return fechaStr === dataZi;
+        });
+        if (detalleZi?.plan_fuente) {
+          planFuente = detalleZi.plan_fuente;
+        }
+      }
+      
+      // LOG pentru ziua 1
+      if (day === 1) {
+        console.log('🔍 [DAY 1] Calcul calendarCells:', {
+          dataZi,
+          planFuenteFromMap: planFuenteMap.get(dataZi),
+          planFuente,
+          detaliiZilniceLength: detaliiZilnice?.length || 0,
+          loadingRegularizaciones,
+          hasDetalleZi: Array.isArray(detaliiZilnice) && detaliiZilnice.length > 0 ? detaliiZilnice.find(d => {
+            const fechaStr = typeof d?.fecha === 'string' ? d.fecha.split('T')[0] : d?.fecha;
+            return fechaStr === dataZi;
+          }) : null
+        });
+      }
 
       if (bajaCalendar) {
 
@@ -1935,6 +1977,31 @@ const getFirstValue = (record, keys) => {
         // Încearcă mai întâi MOTIVO, apoi motivo
         motivoAusencia = ausenciaZi.MOTIVO || ausenciaZi.motivo || '';
 
+      } else if (planFuente === 'fiesta') {
+        // Dacă plan_fuente este 'fiesta', setăm tip = 'Fiesta' (prioritate după bajaCalendar și ausenciaZi)
+        // Asta previne flickering-ul când datele se încarcă
+        tip = 'Fiesta';
+        orar = '';
+        
+        // LOG pentru ziua 1
+        if (day === 1) {
+          console.log('✅ [DAY 1] Setat tip = Fiesta (din planFuente === fiesta)');
+        }
+        
+        // Continuăm cu push-ul celulei, fără să mai verificăm cuadrant/horario
+        cells.push({
+          day,
+          tip,
+          orar,
+          alertaFichaj: false, // Fiesta nu are alertaFichaj
+          durataMunca: '', // Fiesta nu are durataMunca
+          motivoAusencia,
+          ausenciaZi,
+          bajaCalendar,
+          planFuente // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
+        });
+        day++;
+        continue; // Sărim peste restul logicii pentru această zi
       } else if (cuadrant) {
 
         // Folosește cuadrante dacă nu există absențe
@@ -1956,25 +2023,56 @@ const getFirstValue = (record, keys) => {
           }
           // Verifică formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
           else if (tipZiStr.startsWith('T1') || tipZiStr.startsWith('T2') || tipZiStr.startsWith('T3')) {
-            // Extrage tipul (T1, T2, T3)
-            const turnMatch = tipZiStr.match(/^(T[123])\s*(.*)$/);
-            if (turnMatch) {
-              tip = turnMatch[1]; // T1, T2 sau T3
-              orar = turnMatch[2] || ''; // Orarul fără prefix
+            // Verifică din nou plan_fuente înainte de a seta tip = 'T1'/'T2'/'T3'
+            // Dacă datele se încarcă încă și nu știm încă plan_fuente, nu setăm tip definitiv
+            if (planFuente === 'fiesta') {
+              tip = 'Fiesta';
+              orar = '';
+              if (day === 1) {
+                console.log('✅ [DAY 1] Setat tip = Fiesta (din cuadrant, planFuente === fiesta)');
+              }
+            } else if (loadingRegularizaciones && !planFuente) {
+              // Dacă datele se încarcă încă, rămâne LIBRE până când datele se încarcă
+              tip = 'LIBRE';
+              orar = '';
+              if (day === 1) {
+                console.log('⏳ [DAY 1] Setat tip = LIBRE (loadingRegularizaciones && !planFuente)');
+              }
             } else {
-              tip = tipZiStr.startsWith('T1') ? 'T1' : tipZiStr.startsWith('T2') ? 'T2' : 'T3';
-              orar = tipZiStr.replace(/^T[123]\s*/, '');
+              // Extrage tipul (T1, T2, T3)
+              const turnMatch = tipZiStr.match(/^(T[123])\s*(.*)$/);
+              if (turnMatch) {
+                tip = turnMatch[1]; // T1, T2 sau T3
+                orar = turnMatch[2] || ''; // Orarul fără prefix
+              } else {
+                tip = tipZiStr.startsWith('T1') ? 'T1' : tipZiStr.startsWith('T2') ? 'T2' : 'T3';
+                orar = tipZiStr.replace(/^T[123]\s*/, '');
+              }
+              if (day === 1) {
+                console.log('⚠️ [DAY 1] Setat tip =', tip, '(din cuadrant, fără planFuente)');
+              }
             }
           }
           // Verifică dacă este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
           else if (tipZiStr.match(/^\d{1,2}:\d{2}/)) {
-            tip = 'T1';
-            orar = tipZiStr;
+            // Verifică din nou plan_fuente înainte de a seta tip = 'T1'
+            if (planFuente === 'fiesta') {
+              tip = 'Fiesta';
+              orar = '';
+            } else {
+              tip = 'T1';
+              orar = tipZiStr;
+            }
           }
-          // Altfel, setează ca LIBRE
+          // Altfel, setează ca LIBRE sau Fiesta
           else {
-            tip = 'LIBRE';
-            orar = '';
+            if (planFuente === 'fiesta') {
+              tip = 'Fiesta';
+              orar = '';
+            } else {
+              tip = 'LIBRE';
+              orar = '';
+            }
           }
         } else {
           // Dacă nu există valoare pentru această zi, rămâne LIBRE (valoarea default)
@@ -2012,17 +2110,30 @@ const getFirstValue = (record, keys) => {
             }
             
             if (intervals.length > 0) {
-              tip = 'T1';
-              // Construiește orarul din intervalele complete
-              orar = intervals.map(interval => 
-                `${interval.in}-${interval.out}`
-              ).join(', ');
+              // Verifică din nou plan_fuente înainte de a seta tip = 'T1'
+              // Dacă plan_fuente este 'fiesta', nu setăm tip = 'T1'
+              if (planFuente !== 'fiesta') {
+                tip = 'T1';
+                // Construiește orarul din intervalele complete
+                orar = intervals.map(interval => 
+                  `${interval.in}-${interval.out}`
+                ).join(', ');
+              } else {
+                tip = 'Fiesta';
+                orar = '';
+              }
             } else {
               tip = 'LIBRE';
             }
           } else {
             // Nu există interval pentru această zi
-            tip = 'LIBRE';
+            // Verifică din nou plan_fuente înainte de a seta tip = 'LIBRE'
+            if (planFuente === 'fiesta') {
+              tip = 'Fiesta';
+              orar = '';
+            } else {
+              tip = 'LIBRE';
+            }
           }
           
           // Debug pentru orarul asignat (doar pentru debugging)
@@ -2031,13 +2142,19 @@ const getFirstValue = (record, keys) => {
           }
         } else {
           // Default pentru lunile fără cuadrante: Luni-Vineri = T1, Sâmbătă-Duminică = LIBRE
-          const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = Duminică, 1 = Luni, etc.
-          
-          if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Luni până Vineri
-            tip = 'T1';
-            orar = '08:00-17:00'; // Program standard
-          } else { // Sâmbătă și Duminică
-            tip = 'LIBRE';
+          // Verifică din nou plan_fuente înainte de a seta tip
+          if (planFuente === 'fiesta') {
+            tip = 'Fiesta';
+            orar = '';
+          } else {
+            const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = Duminică, 1 = Luni, etc.
+            
+            if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Luni până Vineri
+              tip = 'T1';
+              orar = '08:00-17:00'; // Program standard
+            } else { // Sâmbătă și Duminică
+              tip = 'LIBRE';
+            }
           }
           
           // Debug pentru default
@@ -2048,6 +2165,17 @@ const getFirstValue = (record, keys) => {
       
 
       // Logica pentru alertaFichaj și durataMunca s-a mutat în CalendarDayCell
+
+      // LOG pentru ziua 1 - final
+      if (day === 1) {
+        console.log('📝 [DAY 1] Final push cell:', {
+          day,
+          tip,
+          orar,
+          planFuente,
+          loadingRegularizaciones
+        });
+      }
 
       cells.push({
 
@@ -2065,7 +2193,9 @@ const getFirstValue = (record, keys) => {
 
         ausenciaZi,
 
-        bajaCalendar
+        bajaCalendar,
+
+        planFuente // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
 
       });
 
@@ -2084,7 +2214,9 @@ const getFirstValue = (record, keys) => {
     loadingRegularizaciones,
     ausencias,
     bajasCalendar,
-    horarioAsignado
+    horarioAsignado,
+    planFuenteMap,
+    detaliiZilnice
   ]);
 
 

@@ -13,7 +13,9 @@ import {
   UploadedFiles,
   Body,
   Param,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -64,6 +66,7 @@ export class DocumentosController {
     @Query('id') id?: string,
     @Query('email') email?: string,
     @Query('fileName') fileName?: string,
+    @Query('preview') preview?: string,
   ) {
     try {
       const documentIdNumber = parseInt(documentId, 10);
@@ -74,8 +77,10 @@ export class DocumentosController {
         );
       }
 
+      const isPreview = preview === 'true' || preview === '1';
+
       this.logger.log(
-        `📥 Download documento request - documentId: ${documentIdNumber}, id: ${id || 'N/A'}, email: ${email || 'N/A'}, fileName: ${fileName || 'N/A'}`,
+        `📥 Download documento request - documentId: ${documentIdNumber}, id: ${id || 'N/A'}, email: ${email || 'N/A'}, fileName: ${fileName || 'N/A'}, preview: ${isPreview}`,
       );
 
       const { archivo, tipo_mime, nombre_archivo } =
@@ -86,11 +91,15 @@ export class DocumentosController {
           fileName,
         );
 
-      // Setează headers pentru download
+      // Setează headers pentru download sau preview
       res.setHeader('Content-Type', tipo_mime);
+      // Pentru preview, folosește 'inline' pentru a evita problemele CORB
+      // Pentru download, folosește 'attachment'
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${nombre_archivo}"`,
+        isPreview
+          ? `inline; filename="${nombre_archivo}"`
+          : `attachment; filename="${nombre_archivo}"`,
       );
       res.setHeader('Content-Length', archivo.length.toString());
 
@@ -137,6 +146,18 @@ export class DocumentosController {
       ],
       {
         limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max per file
+        fileFilter: (req, file, cb) => {
+          // Acceptăm toate tipurile de fișiere, dar validăm dimensiunea
+          if (file.size && file.size > 50 * 1024 * 1024) {
+            return cb(
+              new BadRequestException(
+                `Fișierul ${file.originalname} depășește limita de 50MB`,
+              ),
+              false,
+            );
+          }
+          cb(null, true);
+        },
       },
     ),
   )
@@ -155,6 +176,7 @@ export class DocumentosController {
       archivo_9?: Express.Multer.File[];
       archivo?: Express.Multer.File[]; // Fallback
     },
+    @Req() req: Request,
     @Body() body: any,
   ) {
     try {
@@ -180,13 +202,20 @@ export class DocumentosController {
         );
       }
 
+      // Pentru FormData, câmpurile sunt în req.body (parsate de multer)
+      // Dacă body este gol, încercăm să folosim req.body direct
+      const formDataBody = Object.keys(body).length > 0 ? body : req.body || {};
+
       this.logger.log(
-        `📤 Upload documentos request - ${allFiles.length} archivo(s), empleado_id: ${body.empleado_id || 'N/A'}`,
+        `📤 Upload documentos request - ${allFiles.length} archivo(s), empleado_id: ${formDataBody.empleado_id || 'N/A'}`,
+      );
+      this.logger.log(
+        `🔍 [Controller] Body keys: ${Object.keys(formDataBody).join(', ')}`,
       );
 
       const result = await this.documentosService.uploadDocumento(
         allFiles,
-        body,
+        formDataBody,
       );
 
       return {

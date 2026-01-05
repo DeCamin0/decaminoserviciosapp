@@ -47,11 +47,25 @@ const CalendarDayCell = memo(({
     let alertaFichaj = false;
     let durataMunca = '';
     
+    // LOG pentru ziua 1
+    if (cell.day === 1) {
+      console.log('🔍 [CELL DAY 1] CalendarDayCell useMemo start:', {
+        cellTip: cell.tip,
+        dataZi,
+        hasRegularizacion: regularizacionesConfirmadas?.get(dataZi),
+        loadingRegularizaciones
+      });
+    }
+    
     // Verifică dacă ziua are regularizare confirmată
     const hasRegularizacion = regularizacionesConfirmadas?.get(dataZi) === true;
     
     // Verifică pentru toate tipurile de ture (T1, T2, T3)
+    // Dacă nu este tură (T1, T2, T3), nu setăm alertaFichaj (ex: Fiesta, LIBRE, Vacaciones, etc.)
     if (cell.tip !== 'T1' && cell.tip !== 'T2' && cell.tip !== 'T3') {
+      if (cell.day === 1) {
+        console.log('✅ [CELL DAY 1] Nu este tură, return early (tip:', cell.tip, ')');
+      }
       return { alertaFichaj, durataMunca, hasRegularizacion };
     }
     
@@ -98,7 +112,10 @@ const CalendarDayCell = memo(({
     // Dacă regularizările se încarcă mai târziu:
     //   - Dacă există regularizare → hasRegularizacionFinal devine true, alertaFichaj devine false
     //   - Dacă NU există regularizare → hasRegularizacionFinal rămâne false, alertaFichaj rămâne true
-    if (isPastDay && 
+    // IMPORTANT: Nu setăm alertaFichaj dacă cell.tip este 'Fiesta' SAU cell.planFuente este 'fiesta' (sărbătoare)
+    const isFiesta = cell.tip === 'Fiesta' || cell.planFuente === 'fiesta';
+    if (!isFiesta && 
+        isPastDay && 
         !hasDuracionZiUrmatoare &&
         (entradas.length === 0 || (salidas.length === 0 && !hasDuracionZiUrmatoare))) {
       
@@ -106,9 +123,28 @@ const CalendarDayCell = memo(({
       // Nu așteptăm loadingRegularizaciones să devină false
       if (!hasRegularizacionFinal) {
         alertaFichaj = true;
+        if (cell.day === 1) {
+          console.log('⚠️ [CELL DAY 1] Setat alertaFichaj = true (nu este Fiesta, isPastDay, fără regularizare)');
+        }
+      } else {
+        if (cell.day === 1) {
+          console.log('✅ [CELL DAY 1] Nu setat alertaFichaj (hasRegularizacionFinal = true)');
+        }
       }
       // Dacă hasRegularizacionFinal este true (există regularizare în Map),
       // alertaFichaj rămâne false și durata se calculează din regularizare
+    } else {
+      if (cell.day === 1) {
+        console.log('ℹ️ [CELL DAY 1] Nu setat alertaFichaj (condiții:', {
+          isFiesta: isFiesta,
+          cellTip: cell.tip,
+          cellPlanFuente: cell.planFuente,
+          isPastDay,
+          hasDuracionZiUrmatoare,
+          entradasLength: entradas.length,
+          salidasLength: salidas.length
+        }, ')');
+      }
     }
     
     // Calculăm durata ÎNTOTDEAUNA, indiferent de alertaFichaj
@@ -325,6 +361,13 @@ const CalendarDayCell = memo(({
     textColor = '#9d174d';
     shadowColor = 'rgba(219, 39, 119, 0.25)';
     glowColor = '#f472b6';
+  } else if (cell.tip === 'Fiesta') {
+    // Fiesta are prioritate peste "sin fichar"
+    bgGradient = 'linear-gradient(135deg, rgba(251, 191, 36, 0.3) 0%, rgba(245, 158, 11, 0.3) 100%)';
+    borderColor = 'rgba(245, 158, 11, 0.5)';
+    textColor = '#92400e';
+    shadowColor = 'rgba(245, 158, 11, 0.25)';
+    glowColor = '#f59e0b';
   } else if (alertaFichajReal) {
     bgGradient = 'linear-gradient(135deg, rgba(254, 240, 138, 0.3) 0%, rgba(253, 224, 71, 0.3) 100%)';
     borderColor = 'rgba(251, 191, 36, 0.5)';
