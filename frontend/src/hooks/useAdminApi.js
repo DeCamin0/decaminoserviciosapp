@@ -266,13 +266,16 @@ export const useAdminApi = () => {
           if (Object.keys(permissions).length > 0) {
             return permissions;
           }
+          // Dacă backend-ul returnează un array gol (nu există permisiuni customizate în DB),
+          // e normal să folosim default-ul - nu e o eroare
+          return getDefaultPermissions();
         }
       } else {
         console.warn('[Permissions] Backend response not OK:', backendRes.status);
       }
 
-      // Dacă backend-ul nu returnează date valide, folosim permisiuni default
-      console.warn('[Permissions] No valid permissions from backend, using defaults');
+      // Dacă backend-ul nu returnează date valide (eroare de server sau format invalid), folosim permisiuni default
+      // Nu afișăm warning pentru că e normal să folosim default-ul când nu există permisiuni customizate
       return getDefaultPermissions();
     } catch (error) {
       console.error('Error fetching permissions:', error);

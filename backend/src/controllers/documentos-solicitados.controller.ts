@@ -84,23 +84,32 @@ export class DocumentosSolicitadosController {
       const grupo = currentUser?.GRUPO || currentUser?.grupo || '';
       const accessLevel = this.rbacService.getAccessLevel(grupo);
 
-      // Doar admin/manager/supervisor pot crea cereri
-      if (accessLevel === AccessLevel.OWN_DATA_ONLY) {
-        throw new BadRequestException(
-          'No tienes permisos para crear solicitudes de documentos',
-        );
-      }
-
       const solicitadoPor =
         currentUser?.CODIGO ||
         currentUser?.userId ||
         currentUser?.empleadoId ||
         'system';
 
+      const currentUserEmpleadoId =
+        currentUser?.CODIGO ||
+        currentUser?.userId ||
+        currentUser?.empleadoId ||
+        '';
+
       if (!body.empleado_id || !body.tipo_documento) {
         throw new BadRequestException(
           'Se requieren empleado_id y tipo_documento',
         );
+      }
+
+      // Permitem angajatului să creeze cereri doar pentru el însuși
+      if (accessLevel === AccessLevel.OWN_DATA_ONLY) {
+        if (body.empleado_id !== currentUserEmpleadoId) {
+          throw new BadRequestException(
+            'No tienes permisos para crear solicitudes de documentos para otros empleados',
+          );
+        }
+        // Angajatul poate crea cereri pentru el însuși
       }
 
       const result = await this.documentosSolicitadosService.crearSolicitud({

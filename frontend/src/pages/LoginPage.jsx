@@ -447,6 +447,11 @@ export default function LoginPage() {
                   <div className="absolute inset-0 -top-[50%] -left-[50%] w-[200%] h-[200%] bg-gradient-to-r from-transparent via-white/20 to-transparent rotate-45 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 animate-shimmer"></div>
                 </button>
 
+                {/* Mini-texto sobre ubicación */}
+                <p className="mt-3 text-xs text-white/60 text-center">
+                  📍 La ubicación se solicita al iniciar sesión y solo se utiliza al fichar.
+                </p>
+
                 {/* DEMO Button */}
                 {!isDemoMode() && (
                   <div className="mt-4">

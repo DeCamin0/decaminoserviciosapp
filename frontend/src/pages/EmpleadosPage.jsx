@@ -383,14 +383,21 @@ export default function EmpleadosPage() {
     }
     
     const secuencia = parseInt(numeroLimpio.substring(2, 4));
-    if (secuencia < 1 || secuencia > 99) {
+    // Secuencia poate fi 00-99 (inclusiv 00 pentru unele cazuri speciale)
+    if (isNaN(secuencia) || secuencia < 0 || secuencia > 99) {
       return false;
     }
     
     // Para la fecha, solo verificamos que sea un número de 4 dígitos
     // No validamos el año porque puede ser año de nacimiento o alta
-    const fecha = parseInt(numeroLimpio.substring(4, 8));
-    if (fecha < 1000 || fecha > 9999) {
+    // IMPORTANTE: parseInt("0360") = 360, deci verificăm string-ul direct
+    const fechaStr = numeroLimpio.substring(4, 8);
+    if (!/^\d{4}$/.test(fechaStr)) {
+      return false;
+    }
+    const fecha = parseInt(fechaStr);
+    // Permitem și valori < 1000 (ex: 0360, 0123) pentru că parseInt le convertește corect
+    if (isNaN(fecha) || fecha < 0 || fecha > 9999) {
       return false;
     }
     
@@ -4220,7 +4227,11 @@ export default function EmpleadosPage() {
                         ) : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
                       }`}
                       value={editForm[field] || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      onChange={(e) => {
+                        // Elimină spații și liniuțe în timpul input-ului
+                        const cleaned = e.target.value.replace(/[\s-]/g, '');
+                        setEditForm(prev => ({ ...prev, [field]: cleaned }));
+                      }}
                       placeholder="123456789012 (12 cifras)"
                       maxLength="12"
                     />

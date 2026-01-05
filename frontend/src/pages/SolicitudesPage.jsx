@@ -214,7 +214,19 @@ export default function SolicitudesPage() {
   });
   const [justificanteLoading, setJustificanteLoading] = useState(false);
   const [justificanteError, setJustificanteError] = useState(null);
+  
+  // States pentru upload justificante (cargar justificante)
+  const [showUploadJustificanteModal, setShowUploadJustificanteModal] = useState(false);
+  const [selectedAusenciaForUpload, setSelectedAusenciaForUpload] = useState(null);
+  const [uploadJustificanteFile, setUploadJustificanteFile] = useState(null);
+  const [uploadJustificanteLoading, setUploadJustificanteLoading] = useState(false);
+  const [uploadJustificanteError, setUploadJustificanteError] = useState(null);
   const [documentosSolicitadosMap, setDocumentosSolicitadosMap] = useState(new Map()); // Map<codigo_tipo, {estado, fecha_solicitud, fecha_completado}>
+  
+  // Map pentru asocierea justificantelor cu ausencias (pentru angajați)
+  // Key: `${tipo}_${fecha}` (ex: "Salida Sin Regreso_2026-01-05")
+  // Value: { estado, fecha_solicitud, fecha_completado, tipo_documento, notas, id }
+  const [justificantesPorAusencia, setJustificantesPorAusencia] = useState(new Map());
 
   const email = authUser?.email || authUser?.['CORREO ELECTRONICO'] || '';
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
@@ -1213,12 +1225,6 @@ export default function SolicitudesPage() {
       // Astfel vedem toate absențele (vacaciones, asuntos propios, ausencias injustificadas, etc.)
       // Indiferent dacă e manager sau angajat, în "Mis Solicitudes" vedem toate ausencias-urile lui
       if (activeTab === 'lista') {
-        console.log('🔍 [SolicitudesPage] Mis Solicitudes - încărcare din ausencias:', {
-          userCode,
-          endpoint: routes.getAusencias,
-          isManager
-        });
-        
         const ausenciasUrl = `${routes.getAusencias}?codigo=${encodeURIComponent(userCode)}`;
         const result = await callApi(ausenciasUrl);
         
@@ -1247,6 +1253,29 @@ export default function SolicitudesPage() {
             fuente: 'ausencias', // Marchează că vine din ausencias
             raw: ausencia
           }));
+          
+          // Sortare după fecha_solicitud (data solicitării) - cea mai nouă primul
+          transformedData.sort((a, b) => {
+            // Prioritizăm fecha_solicitud (data solicitării) pentru sortare
+            const fechaA = a.fecha_solicitud || a.created_at || a.FECHA || a.fecha_inicio || a.FECHA_INICIO || '';
+            const fechaB = b.fecha_solicitud || b.created_at || b.FECHA || b.fecha_inicio || b.FECHA_INICIO || '';
+            
+            // Compară ca string (YYYY-MM-DD) sau ca Date
+            if (fechaA && fechaB) {
+              // Încearcă să compare ca date
+              const dateA = new Date(fechaA);
+              const dateB = new Date(fechaB);
+              if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
+                return dateB.getTime() - dateA.getTime(); // Descendent - cea mai nouă primul
+              }
+              // Fallback: compară ca string
+              return fechaB.localeCompare(fechaA);
+            }
+            // Dacă una lipsește, o punem la sfârșit
+            if (fechaA && !fechaB) return -1;
+            if (!fechaA && fechaB) return 1;
+            return 0;
+          });
           
           setSolicitudes(transformedData);
           
@@ -1285,14 +1314,6 @@ export default function SolicitudesPage() {
       } else {
         // Pentru alte taburi (ex: "Todas las Solicitudes"): păstrăm comportamentul vechi (din solicitudes)
         const url = `${ENDPOINT}?email=${encodeURIComponent(email)}&codigo=${encodeURIComponent(userCode)}`;
-        console.log('🔍 [SolicitudesPage] Alte taburi - încărcare din solicitudes:', {
-          url,
-          endpoint: ENDPOINT,
-          email,
-          userCode,
-          activeTab,
-          hasAuthUser: !!authUser
-        });
         const result = await callApi(url);
         if (result.success) {
           const data = Array.isArray(result.data) ? result.data : [result.data];
@@ -1326,7 +1347,7 @@ export default function SolicitudesPage() {
       console.error('Error fetching solicitudes/ausencias:', error);
     }
     setOperationLoading('solicitudes', false);
-  }, [authUser, email, callApi, setOperationLoading, activeTab, isManager]);
+  }, [authUser, email, callApi, setOperationLoading, activeTab]);
 
   const fetchAllSolicitudes = useCallback(async () => {
     setOperationLoading('allSolicitudes', true);
@@ -1762,6 +1783,249 @@ export default function SolicitudesPage() {
     setShowSolicitarJustificanteModal(true);
   };
 
+  // Funcții pentru upload justificante (cargar justificante)
+  const openUploadJustificanteModal = (ausencia) => {
+    setSelectedAusenciaForUpload(ausencia);
+    setUploadJustificanteFile(null);
+    setUploadJustificanteError(null);
+    setShowUploadJustificanteModal(true);
+  };
+
+  const handleUploadJustificante = async () => {
+    if (!selectedAusenciaForUpload || !uploadJustificanteFile) {
+      setUploadJustificanteError('Por favor, selecciona un archivo');
+      return;
+    }
+
+    setUploadJustificanteLoading(true);
+    setUploadJustificanteError(null);
+
+    try {
+      const codigoEmpleado = authUser?.['CODIGO'] || authUser?.codigo || '';
+      if (!codigoEmpleado) {
+        throw new Error('No se ha identificado el empleado');
+      }
+
+      const tipoAusencia = selectedAusenciaForUpload.tipo || selectedAusenciaForUpload.TIPO || 'Ausencia';
+      let fechaAusencia = selectedAusenciaForUpload.FECHA || selectedAusenciaForUpload.fecha || selectedAusenciaForUpload.fecha_inicio || '';
+      
+      // Dacă FECHA conține un interval, luăm prima dată
+      if (fechaAusencia && typeof fechaAusencia === 'string' && fechaAusencia.includes(' - ')) {
+        fechaAusencia = fechaAusencia.split(' - ')[0].trim();
+      }
+
+      // Normalizează data pentru notas
+      let fechaNormalizada = '';
+      if (fechaAusencia) {
+        try {
+          if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
+            fechaNormalizada = fechaAusencia.substring(0, 10);
+          } else {
+            const fecha = new Date(fechaAusencia);
+            if (!isNaN(fecha.getTime())) {
+              fechaNormalizada = fecha.toISOString().split('T')[0];
+            }
+          }
+        } catch (e) {
+          fechaNormalizada = fechaAusencia;
+        }
+      }
+
+      const notas = `Justificante para ausencia: ${tipoAusencia} - ${fechaNormalizada}`;
+      const tipoDocumento = 'Justificante';
+
+      // 1. Creează cererea în documentos_solicitados
+      const token = localStorage.getItem('auth_token');
+      
+      // Creăm cererea direct cu status "completado" (pentru că angajatul încarcă direct justificantele)
+      // Folosim endpoint-ul de creare, apoi îl marchem ca completat
+      const createResponse = await fetch(routes.createDocumentoSolicitado, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify({
+          empleado_id: codigoEmpleado,
+          tipo_documento: tipoDocumento,
+          notas: notas,
+        }),
+      });
+
+      let solicitudId = null;
+      if (createResponse.ok) {
+        const createData = await createResponse.json();
+        solicitudId = createData.id;
+      } else {
+        // Dacă nu poate crea cererea (permisiuni), continuăm cu upload-ul direct
+        // Backend-ul poate marca automat cererea ca completată dacă există
+        console.warn('No se pudo crear la solicitud, continuando con el upload');
+      }
+
+      // 2. Încarcă fișierul
+      const formData = new FormData();
+      formData.append('archivo_0', uploadJustificanteFile);
+      formData.append('empleado_id', codigoEmpleado);
+      formData.append('empleado_nombre', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || 'Sin nombre');
+      formData.append('empleado_email', authUser?.['CORREO ELECTRONICO'] || authUser?.email || '');
+      formData.append('tipo_documento', tipoDocumento);
+      formData.append('fecha_upload', new Date().toLocaleString('es-ES', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'Europe/Madrid'
+      }));
+      formData.append('archivo_0_nombre', uploadJustificanteFile.name);
+      formData.append('archivo_0_tamaño', uploadJustificanteFile.size.toString());
+      formData.append('archivo_0_tipo', uploadJustificanteFile.type);
+
+      const uploadResponse = await fetch(routes.uploadDocumento, {
+        method: 'POST',
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json().catch(() => ({ error: 'Error al subir el archivo' }));
+        throw new Error(errorData.error || 'Error al subir el archivo');
+      }
+
+      // 3. Marchează cererea ca completată (dacă s-a creat)
+      if (solicitudId) {
+        try {
+          await fetch(routes.marcarDocumentoSolicitadoCompletado, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+            body: JSON.stringify({
+              empleado_id: codigoEmpleado,
+              tipo_documento: tipoDocumento,
+            }),
+          });
+        } catch (e) {
+          console.warn('No se pudo marcar la solicitud como completada:', e);
+        }
+      }
+
+      setSuccessMsg(`Justificante cargado correctamente para ${tipoAusencia}`);
+      setShowUploadJustificanteModal(false);
+      setUploadJustificanteFile(null);
+      setSelectedAusenciaForUpload(null);
+
+      // Reîncarcă justificantele
+      setTimeout(() => {
+        const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
+        if (userCode) {
+          // Reîncarcă justificantele
+          const fetchJustificantes = async () => {
+            try {
+              const token = localStorage.getItem('auth_token');
+              const url = routes.getDocumentosSolicitados(userCode);
+              const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token && { Authorization: `Bearer ${token}` }),
+                },
+              });
+              if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.data && Array.isArray(data.data)) {
+                  // Re-procesează justificantele (similar cu useEffect-ul existent)
+                  const justificantes = data.data.filter(doc => {
+                    const tipo = (doc.tipo_documento || '').toLowerCase().trim();
+                    return tipo.includes('justificante') || 
+                           tipo.includes('certificado médico') || 
+                           tipo.includes('certificado medico');
+                  });
+                  
+                  const justificantesMapPorFecha = new Map();
+                  const justificantesMapPorTipoYFecha = new Map();
+                  
+                  justificantes.forEach(doc => {
+                    const notas = doc.notas || '';
+                    let match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
+                    if (!match) {
+                      match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+                      if (match) {
+                        const fechaParts = match[2].trim().split('/');
+                        if (fechaParts.length === 3) {
+                          const fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                          match = [match[0], match[1], fechaNormalizada];
+                        }
+                      }
+                    }
+                    
+                    if (match) {
+                      const tipoAusencia = match[1].trim();
+                      const fechaAusencia = match[2].trim();
+                      
+                      if (!justificantesMapPorFecha.has(fechaAusencia)) {
+                        justificantesMapPorFecha.set(fechaAusencia, []);
+                      }
+                      const justificanteData = {
+                        estado: doc.estado,
+                        fecha_solicitud: doc.fecha_solicitud,
+                        fecha_completado: doc.fecha_completado,
+                        tipo_documento: doc.tipo_documento,
+                        notas: doc.notas,
+                        id: doc.id,
+                        tipoAusencia: tipoAusencia
+                      };
+                      justificantesMapPorFecha.get(fechaAusencia).push(justificanteData);
+                      
+                      const key = `${tipoAusencia}_${fechaAusencia}`;
+                      justificantesMapPorTipoYFecha.set(key, justificanteData);
+                      
+                      const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}`;
+                      if (keySinEspacios !== key) {
+                        justificantesMapPorTipoYFecha.set(keySinEspacios, justificanteData);
+                      }
+                    }
+                  });
+                  
+                  const justificantesMap = new Map();
+                  justificantesMapPorTipoYFecha.forEach((value, key) => {
+                    justificantesMap.set(key, value);
+                  });
+                  justificantesMapPorFecha.forEach((justificantes, fecha) => {
+                    if (justificantes.length === 1) {
+                      justificantesMap.set(`_${fecha}`, justificantes[0]);
+                    }
+                  });
+                  justificantesMapPorFecha.forEach((justificantesArray, fecha) => {
+                    if (justificantesArray.length > 0) {
+                      justificantesMap.set(`_${fecha}`, justificantesArray[0]);
+                    }
+                  });
+                  
+                  setJustificantesPorAusencia(justificantesMap);
+                }
+              }
+            } catch (error) {
+              console.warn('Error recargando justificantes:', error);
+            }
+          };
+          fetchJustificantes();
+        }
+      }, 500);
+
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (error) {
+      console.error('Error cargando justificante:', error);
+      setUploadJustificanteError(error.message || 'Error al cargar el justificante');
+    } finally {
+      setUploadJustificanteLoading(false);
+    }
+  };
+
   // Fetch documentos solicitados pentru ausencias (pentru a afișa statusul)
   const fetchDocumentosSolicitadosForAusencias = useCallback(async () => {
     if (authUser?.isDemo || selectedTab !== 'ausencias') {
@@ -1841,6 +2105,159 @@ export default function SolicitudesPage() {
       fetchDocumentosSolicitadosForAusencias();
     }
   }, [selectedTab, selectedUser, allAusencias, isManager, fetchDocumentosSolicitadosForAusencias]);
+
+  // Fetch justificantele pentru utilizatorul curent (angajat sau manager) - pentru "Mis Solicitudes"
+  useEffect(() => {
+    const fetchJustificantesPendientes = async () => {
+      // Permitem fetch-ul și pentru manageri pentru a vedea justificantele în "Mis Solicitudes"
+      const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
+      
+      if (!userCode || authUser?.isDemo) {
+        setJustificantesPorAusencia(new Map());
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        const empleadoId = userCode;
+        const url = routes.getDocumentosSolicitados(empleadoId);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        // Dacă endpoint-ul nu există sau dacă e eroare 404/500, nu aruncăm eroare
+        if (response.status === 404 || response.status === 500) {
+          setJustificantesPorAusencia(new Map());
+          return;
+        }
+
+        if (!response.ok) {
+          console.warn(`Warning: Error HTTP ${response.status} al obtener justificantes pendientes`);
+          setJustificantesPorAusencia(new Map());
+          return;
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.data && Array.isArray(data.data)) {
+          // Filtrează justificantele (pendiente și completadas) - similar cu tab-ul ausencias pentru manageri
+          // Verificăm doar tipul, nu și estado-ul (pentru a include și completadas)
+          const justificantes = data.data.filter(doc => {
+            const tipo = (doc.tipo_documento || '').toLowerCase().trim();
+            
+            // Verificăm dacă este un tip de justificante
+            const esJustificante = tipo.includes('justificante') || 
+                                  tipo.includes('certificado médico') || 
+                                  tipo.includes('certificado medico') ||
+                                  tipo.includes('justificante médico') ||
+                                  tipo.includes('justificante medico') ||
+                                  tipo.includes('justificante de ausencia');
+            
+            return esJustificante;
+          });
+          
+          // Creează un map pentru asocierea justificantelor cu ausencias
+          // SOLUȚIE GENERICĂ: Map-ul principal folosește doar data ca key (YYYY-MM-DD)
+          // Astfel, orice justificante pentru aceeași dată vor fi asociate cu orice ausencia din acea dată
+          const justificantesMapPorFecha = new Map(); // Map<fecha, justificante[]>
+          const justificantesMapPorTipoYFecha = new Map(); // Map<tipo_fecha, justificante> - pentru matching exact
+          
+          justificantes.forEach(doc => {
+            const notas = doc.notas || '';
+            
+            // Extrage tipul și data din notas: "Justificante para ausencia: Salida Sin Regreso - 2026-01-05"
+            // Pattern mai flexibil: permite și alte formate de dată
+            let match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
+            
+            // Dacă nu găsește cu pattern-ul exact, încearcă pattern-uri alternative
+            if (!match) {
+              // Pattern alternativ: "Justificante para ausencia: TIPO - DD/MM/YYYY"
+              match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+              if (match) {
+                // Convertim data din DD/MM/YYYY în YYYY-MM-DD
+                const fechaParts = match[2].trim().split('/');
+                if (fechaParts.length === 3) {
+                  const fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                  match = [match[0], match[1], fechaNormalizada];
+                }
+              }
+            }
+            
+            if (match) {
+              const tipoAusencia = match[1].trim();
+              const fechaAusencia = match[2].trim();
+              
+              // Adăugăm în map-ul generic (doar pe dată) - SOLUȚIE GENERICĂ
+              if (!justificantesMapPorFecha.has(fechaAusencia)) {
+                justificantesMapPorFecha.set(fechaAusencia, []);
+              }
+              const justificanteData = {
+                estado: doc.estado,
+                fecha_solicitud: doc.fecha_solicitud,
+                fecha_completado: doc.fecha_completado,
+                tipo_documento: doc.tipo_documento,
+                notas: doc.notas,
+                id: doc.id,
+                tipoAusencia: tipoAusencia // Păstrăm tipul pentru referință
+              };
+              justificantesMapPorFecha.get(fechaAusencia).push(justificanteData);
+              
+              // Adăugăm și în map-ul exact (tipo_fecha) pentru matching precis
+              const key = `${tipoAusencia}_${fechaAusencia}`;
+              justificantesMapPorTipoYFecha.set(key, justificanteData);
+              
+              // Key fără spații (pentru matching mai flexibil)
+              const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}`;
+              if (keySinEspacios !== key) {
+                justificantesMapPorTipoYFecha.set(keySinEspacios, justificanteData);
+              }
+            }
+          });
+          
+          // Combinăm ambele map-uri într-un singur obiect pentru a păstra compatibilitatea
+          const justificantesMap = new Map();
+          // Adăugăm toate key-urile din map-ul exact
+          justificantesMapPorTipoYFecha.forEach((value, key) => {
+            justificantesMap.set(key, value);
+          });
+          // Adăugăm și key-urile pe dată (pentru matching generic)
+          justificantesMapPorFecha.forEach((justificantes, fecha) => {
+            // Dacă există doar un justificante pentru această dată, îl adăugăm cu key-ul generic
+            if (justificantes.length === 1) {
+              justificantesMap.set(`_${fecha}`, justificantes[0]); // Key generic: "_YYYY-MM-DD"
+            }
+          });
+          
+          // Adăugăm key-uri generice pe dată pentru matching flexibil (SOLUȚIE GENERICĂ)
+          justificantesMapPorFecha.forEach((justificantesArray, fecha) => {
+            // Key generic pentru matching pe dată: "_YYYY-MM-DD" - funcționează pentru orice tip
+            if (justificantesArray.length > 0) {
+              justificantesMap.set(`_${fecha}`, justificantesArray[0]); // Luăm primul justificante pentru această dată
+            }
+          });
+          
+          setJustificantesPorAusencia(justificantesMap);
+        } else {
+          setJustificantesPorAusencia(new Map());
+        }
+      } catch (error) {
+        console.warn('Warning: Error obteniendo justificantes pendientes:', error);
+        setJustificantesPorAusencia(new Map());
+      }
+    };
+
+    fetchJustificantesPendientes();
+    
+    // Reîncarcă la fiecare 30 de secunde pentru a actualiza
+    const interval = setInterval(fetchJustificantesPendientes, 30000);
+    
+    return () => clearInterval(interval);
+  }, [authUser]);
 
   const handleSolicitarJustificante = async () => {
     if (!selectedAusenciaForJustificante) {
@@ -3067,17 +3484,33 @@ export default function SolicitudesPage() {
       });
     }
     
-    // Sortare după created_at (cele mai recente sus)
+    // Sortare după fecha_solicitud (data solicitării) - cele mai recente sus
     const sorted = filtered.sort((a, b) => {
       let createdA, createdB;
       if (selectedTab === 'ausencias') {
-        createdA = a.created_at || a.FECHA || a.fecha || '';
-        createdB = b.created_at || b.FECHA || b.fecha || '';
+        // Pentru ausencias, prioritizăm fecha_solicitud sau created_at
+        createdA = a.fecha_solicitud || a.created_at || a.FECHA || a.fecha || '';
+        createdB = b.fecha_solicitud || b.created_at || b.FECHA || b.fecha || '';
       } else {
-        createdA = a.created_at || a.fecha_solicitud || a.fecha || '';
-        createdB = b.created_at || b.fecha_solicitud || b.fecha || '';
+        // Pentru alte taburi, prioritizăm fecha_solicitud
+        createdA = a.fecha_solicitud || a.created_at || a.fecha || '';
+        createdB = b.fecha_solicitud || b.created_at || b.fecha || '';
       }
-      return createdB.localeCompare(createdA); // Descendent - cele mai noi prima
+      
+      // Compară ca Date dacă e posibil, altfel ca string
+      if (createdA && createdB) {
+        const dateA = new Date(createdA);
+        const dateB = new Date(createdB);
+        if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
+          return dateB.getTime() - dateA.getTime(); // Descendent - cea mai nouă primul
+        }
+        // Fallback: compară ca string
+        return createdB.localeCompare(createdA);
+      }
+      // Dacă una lipsește, o punem la sfârșit
+      if (createdA && !createdB) return -1;
+      if (!createdA && createdB) return 1;
+      return 0;
     });
     return sorted;
   }, [selectedTab, selectedUser, selectedMonth, allAusencias, allSolicitudes, allBajasMedicas, allUsers, bajaFilter]);
@@ -3207,6 +3640,7 @@ export default function SolicitudesPage() {
           Reportar error
         </button>
       </div>
+
 
       {/* Tabs */}
       <Card>
@@ -3431,6 +3865,162 @@ export default function SolicitudesPage() {
                       </div>
                     </div>
                     
+                    {/* Afișare justificante asociate cu ausencia - pentru angajați și manageri */}
+                    {(() => {
+                      // Verificăm dacă este o ausencia (nu Vacaciones sau Asunto Propio)
+                      const tipoNormalized = (solicitud.tipo || '').toLowerCase();
+                      const isVacaciones = tipoNormalized.includes('vacacion');
+                      const isAsuntoPropio = tipoNormalized.includes('asunto') && tipoNormalized.includes('propio');
+                      
+                      // SOLUȚIE GENERICĂ: Include toate tipurile care NU sunt Vacaciones sau Asunto Propio
+                      // (Permiso Retribuido, Salida Sin Regreso, etc. - toate pot avea justificante)
+                      const esAusencia = !isVacaciones && !isAsuntoPropio && 
+                                        (solicitud.FECHA || solicitud.fecha || solicitud.fecha_inicio || solicitud.fecha_solicitud);
+                      
+                      if (esAusencia) {
+                        const tipoAusencia = solicitud.tipo || '';
+                        // Pentru data, folosim FECHA sau prima dată disponibilă
+                        // IMPORTANT: Pentru matching cu justificante, folosim prima dată din interval
+                        let fechaAusencia = solicitud.FECHA || solicitud.fecha || solicitud.fecha_inicio || solicitud['fecha inicio'] || '';
+                        
+                        // Dacă FECHA conține un interval (ex: "2025-11-24 - 2025-11-28"), luăm prima dată
+                        if (fechaAusencia && typeof fechaAusencia === 'string' && fechaAusencia.includes(' - ')) {
+                          fechaAusencia = fechaAusencia.split(' - ')[0].trim();
+                        }
+                        
+                        // Dacă tot nu avem dată, încercăm cu fecha_solicitud (poate fi util pentru matching)
+                        if (!fechaAusencia) {
+                          fechaAusencia = solicitud.fecha_solicitud || '';
+                        }
+                        
+                        // Normalizează data pentru matching (format YYYY-MM-DD)
+                        let fechaNormalizada = '';
+                        if (fechaAusencia) {
+                          try {
+                            // Încearcă să parseze data
+                            let fecha = null;
+                            if (typeof fechaAusencia === 'string') {
+                              // Dacă este deja în format YYYY-MM-DD
+                              if (fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
+                                fechaNormalizada = fechaAusencia.substring(0, 10);
+                              } else {
+                                // Încearcă să parseze ca Date
+                                fecha = new Date(fechaAusencia);
+                                if (!isNaN(fecha.getTime())) {
+                                  fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
+                                }
+                              }
+                            } else {
+                              fecha = new Date(fechaAusencia);
+                              if (!isNaN(fecha.getTime())) {
+                                fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
+                              }
+                            }
+                          } catch (e) {
+                            console.warn('Error normalizando fecha:', fechaAusencia, e);
+                          }
+                        }
+                        
+                        if (!fechaNormalizada) {
+                          // console.log('⚠️ No se pudo normalizar fecha');
+                          return null;
+                        }
+                        
+                        const key = `${tipoAusencia}_${fechaNormalizada}`;
+                        // Key alternativ fără spații (pentru matching mai flexibil)
+                        const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
+                        
+                        // console.log('🔍 Buscando justificante para ausencia en lista');
+                        
+                        // SOLUȚIE GENERICĂ: Încearcă mai întâi matching exact, apoi generic pe dată
+                        let justificante = justificantesPorAusencia.get(key);
+                        if (!justificante) {
+                          justificante = justificantesPorAusencia.get(keySinEspacios);
+                        }
+                        
+                        // Dacă tot nu găsește, folosește matching generic pe dată (SOLUȚIE GENERICĂ)
+                        if (!justificante && fechaNormalizada) {
+                          // Key generic: "_YYYY-MM-DD" - funcționează pentru orice tip de ausencia
+                          const keyGenerico = `_${fechaNormalizada}`;
+                          justificante = justificantesPorAusencia.get(keyGenerico);
+                          if (!justificante) {
+                            // Fallback: caută orice key care se termină cu data
+                            const keysEnMap = Array.from(justificantesPorAusencia.keys());
+                            const keyConFecha = keysEnMap.find(k => k.endsWith(`_${fechaNormalizada}`));
+                            if (keyConFecha) {
+                              justificante = justificantesPorAusencia.get(keyConFecha);
+                            }
+                          }
+                        }
+                        
+                        // console.log('📄 Justificante encontrada en lista:', justificante ? 'found' : 'not found');
+                        
+                        if (justificante) {
+                          const esPendiente = justificante.estado === 'pendiente';
+                          const esCompletado = justificante.estado === 'completado';
+                          
+                          return (
+                            <div className="mt-4 p-4 rounded-lg border-2 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xl">📋</span>
+                                    <h4 className="font-bold text-gray-900">{justificante.tipo_documento}</h4>
+                                    {esPendiente && (
+                                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
+                                        Pendiente
+                                      </span>
+                                    )}
+                                    {esCompletado && (
+                                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+                                        ✅ Completado
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 space-y-1">
+                                    <p>Solicitado el {formatDate(justificante.fecha_solicitud)}</p>
+                                    {esCompletado && justificante.fecha_completado && (
+                                      <p>Completado el {formatDate(justificante.fecha_completado)}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                {esPendiente && (
+                                  <button
+                                    onClick={() => {
+                                      window.location.href = '/documentos';
+                                    }}
+                                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm"
+                                  >
+                                    📤 Subir
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          // Dacă nu există justificante, afișăm butonul "Cargar Justificante"
+                          return (
+                            <div className="mt-4 p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1">
+                                  <p className="text-sm text-gray-600 mb-2">
+                                    No hay justificante cargado para esta ausencia.
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => openUploadJustificanteModal(solicitud)}
+                                  className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm"
+                                >
+                                  📤 Cargar Justificante
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                      }
+                      return null;
+                    })()}
+
                     {/* Motivo: clamp pe mobil, complet pe >= sm */}
                     {solicitud.motivo && (
                       <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 relative">
@@ -4278,6 +4868,95 @@ export default function SolicitudesPage() {
                           <p className="text-sm text-blue-800">{item.MOTIVO || item.motivo}</p>
                         </div>
                       )}
+
+                      {/* Afișare justificante asociate cu ausencia - pentru angajați în tab-ul "ausencias" */}
+                      {!isManager && selectedTab === 'ausencias' && (() => {
+                        const tipoAusencia = item.tipo || item.TIPO || '';
+                        const fechaAusencia = item.FECHA || item.fecha || item.fecha_inicio || item['fecha inicio'] || '';
+                        // Normalizează data pentru matching (format YYYY-MM-DD)
+                        let fechaNormalizada = '';
+                        if (fechaAusencia) {
+                          try {
+                            const fecha = new Date(fechaAusencia);
+                            if (!isNaN(fecha.getTime())) {
+                              fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
+                            } else if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
+                              fechaNormalizada = fechaAusencia.substring(0, 10);
+                            }
+                          } catch (e) {
+                            // Ignoră erorile
+                          }
+                        }
+                        
+                        const key = `${tipoAusencia}_${fechaNormalizada}`;
+                        // Key alternativ fără spații (pentru matching mai flexibil)
+                        const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
+                        
+                        // console.log('🔍 Buscando justificante para ausencia (tab ausencias)');
+                        
+                        // Încearcă mai întâi cu key-ul exact, apoi cu key-ul fără spații
+                        let justificante = justificantesPorAusencia.get(key);
+                        if (!justificante) {
+                          justificante = justificantesPorAusencia.get(keySinEspacios);
+                        }
+                        
+                        // Dacă tot nu găsește, încearcă să găsească orice justificante pentru această dată
+                        if (!justificante && fechaNormalizada) {
+                          const keysEnMap = Array.from(justificantesPorAusencia.keys());
+                          const keyConFecha = keysEnMap.find(k => k.endsWith(`_${fechaNormalizada}`));
+                          if (keyConFecha) {
+                            justificante = justificantesPorAusencia.get(keyConFecha);
+                            console.log('📄 Justificante encontrada por fecha (tab ausencias):', { keyConFecha: String(keyConFecha), justificante: justificante ? 'found' : 'not found' });
+                          }
+                        }
+                        
+                        // console.log('📄 Justificante encontrada (tab ausencias):', justificante ? 'found' : 'not found');
+                        
+                        if (justificante) {
+                          const esPendiente = justificante.estado === 'pendiente';
+                          const esCompletado = justificante.estado === 'completado';
+                          
+                          return (
+                            <div className="mt-4 p-4 rounded-lg border-2 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xl">📋</span>
+                                    <h4 className="font-bold text-gray-900">{justificante.tipo_documento}</h4>
+                                    {esPendiente && (
+                                      <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
+                                        Pendiente
+                                      </span>
+                                    )}
+                                    {esCompletado && (
+                                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+                                        ✅ Completado
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 space-y-1">
+                                    <p>Solicitado el {formatDate(justificante.fecha_solicitud)}</p>
+                                    {esCompletado && justificante.fecha_completado && (
+                                      <p>Completado el {formatDate(justificante.fecha_completado)}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                {esPendiente && (
+                                  <button
+                                    onClick={() => {
+                                      window.location.href = '/documentos';
+                                    }}
+                                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm"
+                                  >
+                                    📤 Subir
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Buton pentru solicitare justificante - doar pentru tipuri care NU sunt Vacaciones sau Asunto Propio */}
                       {selectedTab === 'ausencias' && (() => {
@@ -5908,6 +6587,138 @@ export default function SolicitudesPage() {
                   <>
                     <span className="mr-2">📄</span>
                     Solicitar Justificante
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal pentru Upload Justificante */}
+      <Modal
+        isOpen={showUploadJustificanteModal}
+        onClose={() => {
+          setShowUploadJustificanteModal(false);
+          setSelectedAusenciaForUpload(null);
+          setUploadJustificanteFile(null);
+          setUploadJustificanteError(null);
+        }}
+        title="Cargar Justificante"
+        size="md"
+      >
+        {selectedAusenciaForUpload && (
+          <div className="space-y-6">
+            {/* Info ausencia */}
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg">
+                  <span className="text-white text-xl">📄</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">
+                    {selectedAusenciaForUpload.tipo || selectedAusenciaForUpload.TIPO || 'Ausencia'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Fecha: {selectedAusenciaForUpload.FECHA || selectedAusenciaForUpload.fecha || selectedAusenciaForUpload.fecha_inicio || '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* File input */}
+            <div>
+              <label htmlFor="justificante-file-input" className="block text-sm font-semibold text-gray-700 mb-3">
+                Selecciona el archivo del justificante <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="justificante-file-input"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    // Verifică dimensiunea (max 10MB)
+                    if (file.size > 10 * 1024 * 1024) {
+                      setUploadJustificanteError('El archivo es demasiado grande. Máximo 10MB.');
+                      return;
+                    }
+                    setUploadJustificanteFile(file);
+                    setUploadJustificanteError(null);
+                  }
+                }}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white"
+              />
+              {uploadJustificanteFile && (
+                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-600">📎</span>
+                    <span className="text-sm text-gray-700 font-medium">{uploadJustificanteFile.name}</span>
+                    <span className="text-xs text-gray-500">
+                      ({(uploadJustificanteFile.size / 1024 / 1024).toFixed(2)} MB)
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Informare clară */}
+            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg p-4">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <span className="text-green-600 text-xl">ℹ️</span>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-green-800 font-medium">
+                    Al cargar el justificante, se creará automáticamente una solicitud completa y se marcará como completada.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Error message */}
+            {uploadJustificanteError && (
+              <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                    <span className="text-red-600 text-lg">⚠️</span>
+                  </div>
+                  <div>
+                    <p className="text-red-800 font-medium">Error</p>
+                    <p className="text-red-600 text-sm">{uploadJustificanteError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Butoane */}
+            <div className="flex gap-4 justify-center mt-8">
+              <button
+                onClick={() => {
+                  setShowUploadJustificanteModal(false);
+                  setSelectedAusenciaForUpload(null);
+                  setUploadJustificanteFile(null);
+                  setUploadJustificanteError(null);
+                }}
+                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200"
+              >
+                <span className="mr-2">✖️</span>
+                Cancelar
+              </button>
+              <button
+                onClick={handleUploadJustificante}
+                disabled={uploadJustificanteLoading || !uploadJustificanteFile}
+                className="px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-semibold shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {uploadJustificanteLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    Cargando...
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-2">📤</span>
+                    Cargar Justificante
                   </>
                 )}
               </button>

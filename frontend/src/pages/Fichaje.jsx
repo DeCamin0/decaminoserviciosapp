@@ -5941,7 +5941,20 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               <span className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center mr-3">
                 📍
               </span>
-              Ubicación del Registro
+              <span className="flex items-center gap-2">
+                Ubicación del Registro
+                <div className="group relative">
+                  <svg className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+                    <div className="text-center">
+                      Este permiso es obligatorio para fichar. La ubicación solo se usa al registrar la jornada.
+                    </div>
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                  </div>
+                </div>
+              </span>
             </h4>
             <div className={`px-4 py-3 border-2 border-gray-200 rounded-xl transition-all duration-200 ${
               form.address === 'Obteniendo ubicación...' || form.address === 'Ubicación no disponible' || 
