@@ -4,46 +4,123 @@
     "es2021": true,
     "node": true
   },
-  "extends": [
-    "eslint:recommended",
-    "plugin:react/recommended",
-    "plugin:react-hooks/recommended",
-    "plugin:react/jsx-runtime"
-  ],
+  "extends": ["eslint:recommended"],
   "parserOptions": {
-    "ecmaFeatures": {
-      "jsx": true
-    },
     "ecmaVersion": "latest",
     "sourceType": "module"
   },
-  "plugins": [
-    "react",
-    "react-hooks",
-    "react-refresh"
-  ],
   "rules": {
-    "react-refresh/only-export-components": "warn",
-    "react/prop-types": "off",
-    "react/react-in-jsx-scope": "off",
     "no-unused-vars": "warn",
     "no-console": "off"
   },
-  "settings": {
-    "react": {
-      "version": "detect"
-    }
-  },
   "ignorePatterns": [
-    "dist/**/*",
-    "node_modules/**/*",
-    "old/**/*",
+    "dist/**",
+    "node_modules/**",
+    "old/**",
+    "archive/**",
+    "decamino-web/**",
+    "dev-dist/**",
+    "build/**",
+    ".vite/**",
+    "android/**",
+    "ios/**",
     "*.config.js",
     "*.config.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "vite.config.js",
+    "tailwind.config.js",
+    "postcss.config.js",
+    "tsconfig*.json",
+    "test-*.js",
+    "test-*.jsx",
+    "update-version.js",
+    "proxy-server.js",
+    "fix-syntax.js",
+    "scripts/**",
+    "docs/**",
+    "*.md",
+    "CHANGELOG.md",
+    "README*.md",
+    "RELEASE*.md",
+    "REVIEWER*.md",
+    "SECURITY*.md",
+    "DEMO*.md",
+    "DATA_SAFETY*.md",
+    "capacitor.config.ts",
+    ".env*",
+    "env.*.config",
+    "package-proxy.json",
     "**/autoscript.js",
     "public/autoscript.js",
-    "public/vendor/autoscript.js"
+    "public/vendor/**",
+    ".eslintcache",
+    ".eslintignore"
+  ],
+  "overrides": [
+    {
+      "files": ["src/pages/CuadrantesEmpleadoPage.jsx"],
+      "extends": ["eslint:recommended"],
+      "parserOptions": {
+        "ecmaFeatures": { "jsx": true },
+        "ecmaVersion": "latest",
+        "sourceType": "module"
+      },
+      "rules": {
+        "no-unused-vars": ["warn", { "varsIgnorePattern": "^[A-Z]" }]
+      }
+    },
+    {
+      "files": ["**/*.js", "**/*.jsx"],
+      "excludedFiles": ["src/pages/CuadrantesEmpleadoPage.jsx"],
+      "extends": [
+        "eslint:recommended",
+        "plugin:react/recommended",
+        "plugin:react-hooks/recommended",
+        "plugin:react/jsx-runtime"
+      ],
+      "plugins": ["react", "react-hooks", "react-refresh"],
+      "parserOptions": {
+        "ecmaFeatures": { "jsx": true },
+        "ecmaVersion": "latest",
+        "sourceType": "module"
+      },
+      "rules": {
+        "react-refresh/only-export-components": "warn",
+        "react/prop-types": "off",
+        "react/react-in-jsx-scope": "off",
+        "no-unused-vars": "warn",
+        "no-console": "off"
+      },
+      "settings": {
+        "react": {
+          "version": "detect"
+        }
+      }
+    },
+    {
+      "files": ["**/*.ts", "**/*.tsx"],
+      "parser": "@typescript-eslint/parser",
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended",
+        "plugin:react/recommended",
+        "plugin:react-hooks/recommended"
+      ],
+      "plugins": ["@typescript-eslint"],
+      "parserOptions": {
+        "ecmaFeatures": { "jsx": true },
+        "ecmaVersion": "latest",
+        "sourceType": "module"
+      },
+      "rules": {
+        "@typescript-eslint/no-unused-vars": "warn",
+        "@typescript-eslint/no-explicit-any": "error",
+        "no-unused-vars": "off"
+      },
+      "settings": {
+        "react": {
+          "version": "detect"
+        }
+      }
+    }
   ]
-} 
+}

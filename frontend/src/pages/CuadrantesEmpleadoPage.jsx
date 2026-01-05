@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 
 import { useAuth } from '../contexts/AuthContextBase';
 import { useLocation } from '../contexts/LocationContextBase';
@@ -6,6 +6,10 @@ import { useLocation } from '../contexts/LocationContextBase';
 import { Button, Modal, Input } from '../components/ui';
 
 import Back3DButton from '../components/Back3DButton.jsx';
+
+import CalendarDayCell from '../components/CalendarDayCell.jsx';
+
+import DeclararNoPunchModal from '../components/DeclararNoPunchModal.jsx';
 
 import { routes } from '../utils/routes.js';
 
@@ -185,19 +189,6 @@ function parseFlexibleDate(value) {
 }
 
 
-function formatDateForDebug(date) {
-
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-
-    return 'invalid-date';
-
-  }
-
-  return date.toISOString().split('T')[0];
-
-}
-
-
 function toDateObject(dateStr) {
 
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -269,12 +260,18 @@ export default function CuadrantesEmpleadoPage() {
   const [userData, setUserData] = useState(null);
   const lastBajasRequestKey = useRef('');
 
-  const empleadoCodigo = String(userData?.['CODIGO'] || codigoEmpleado || '').trim();
-  const empleadoNombre = String(
-    userData?.['NOMBRE / APELLIDOS'] ||
-    nombreEmpleado ||
-    ''
-  ).trim();
+  const empleadoCodigo = useMemo(() => 
+    String(userData?.['CODIGO'] || codigoEmpleado || '').trim(),
+    [userData?.['CODIGO'], codigoEmpleado]
+  );
+  const empleadoNombre = useMemo(() => 
+    String(
+      userData?.['NOMBRE / APELLIDOS'] ||
+      nombreEmpleado ||
+      ''
+    ).trim(),
+    [userData?.['NOMBRE / APELLIDOS'], nombreEmpleado]
+  );
 
   // Funcție pentru încărcarea datelor complete ale utilizatorului
   const fetchUserData = useCallback(async () => {
@@ -284,7 +281,6 @@ export default function CuadrantesEmpleadoPage() {
 
       // Skip real data fetch in DEMO mode
       if (authUser?.isDemo) {
-        console.log('🎭 DEMO mode: Using demo user data instead of fetching from backend');
         setUserData(authUser);
         return;
       }
@@ -299,7 +295,6 @@ export default function CuadrantesEmpleadoPage() {
       });
       const data = await res.json();
       const users = Array.isArray(data) ? data : [data];
-      console.log('CuadrantesEmpleadoPage raw data from backend:', users);
       
       // Normalizo el email a lowercase y sin espacios
       const normEmail = (email || '').trim().toLowerCase();
@@ -333,13 +328,12 @@ export default function CuadrantesEmpleadoPage() {
           'Fecha Antigüedad': found['Fecha Antigüedad'] || found.fecha_antiguedad || found.fechaAntiguedad || '',
           'Antigüedad': found['Antigüedad'] || found.antiguedad || '',
         };
-        console.log('CuadrantesEmpleadoPage mapped user:', mappedUser);
         setUserData(mappedUser);
       } else {
         setUserData(found);
       }
     } catch (e) {
-      console.error('Error fetching user data:', e);
+      // Error fetching user data
     }
   }, [authUser]);
 
@@ -360,6 +354,10 @@ export default function CuadrantesEmpleadoPage() {
   const [error, setError] = useState('');
 
   const [fichajes, setFichajes] = useState([]);
+
+  const [loadingFichajes, setLoadingFichajes] = useState(true);
+
+  const [loadingRegularizaciones, setLoadingRegularizaciones] = useState(true);
 
   const [ausencias, setAusencias] = useState([]);
 
@@ -387,7 +385,14 @@ export default function CuadrantesEmpleadoPage() {
 
   const [pendingFichajes, setPendingFichajes] = useState([]);
 
+  // State pentru modal "Indicar motivo"
+  const [showNoPunchModal, setShowNoPunchModal] = useState(false);
+  const [selectedDayForNoPunch, setSelectedDayForNoPunch] = useState(null);
 
+  // State pentru regularizări confirmate (din MonthlyAlerts)
+  const [regularizacionesConfirmadas, setRegularizacionesConfirmadas] = useState(new Map());
+
+  
 
   // Demo data for CuadrantesEmpleadoPage
 
@@ -691,8 +696,6 @@ export default function CuadrantesEmpleadoPage() {
 
     if (authUser?.isDemo) {
 
-      console.log('🎭 DEMO mode: Using demo data instead of fetching from backend');
-
       setDemoCuadrantes();
 
       setDemoAusencias();
@@ -875,13 +878,6 @@ export default function CuadrantesEmpleadoPage() {
         const centroUsuario = userData?.['CENTRO TRABAJO'] || authUser?.['CENTRO TRABAJO'] || authUser?.centroTrabajo || authUser?.['CENTRO'] || authUser?.centro || authUser?.role || '';
         const grupoUsuario = userData?.['GRUPO'] || authUser?.['GRUPO'] || authUser?.grupo || '';
         
-        console.log('🔍 DEBUG - Utilizator:', { centroUsuario, grupoUsuario });
-        console.log('🔍 DEBUG - Toate câmpurile utilizatorului:', userData || authUser);
-        console.log('🔍 DEBUG - Orare din backend:', response.data.map(h => ({ 
-          nombre: h.nombre, 
-          centroNombre: h.centroNombre, 
-          grupoNombre: h.grupoNombre 
-        })));
         
         const horarioMatch = response.data.find(horario => 
           horario.centroNombre === centroUsuario && 
@@ -889,14 +885,11 @@ export default function CuadrantesEmpleadoPage() {
         );
         
         if (horarioMatch) {
-          console.log('✅ Orar găsit:', horarioMatch);
           setHorarioAsignado(horarioMatch);
-        } else {
-          console.log('❌ Nu s-a găsit orar pentru:', { centroUsuario, grupoUsuario });
         }
       }
     } catch (error) {
-      console.error('❌ Eroare la încărcarea orarului asignat:', error);
+      // Error loading assigned schedule
     }
   }, [authUser, userData]);
 
@@ -914,9 +907,9 @@ export default function CuadrantesEmpleadoPage() {
 
     if (authUser?.isDemo) {
 
-      console.log('🎭 DEMO mode: Using demo fichajes data instead of fetching from backend');
-
       setDemoFichajes();
+
+      setLoadingFichajes(false);
 
       return;
 
@@ -928,13 +921,10 @@ export default function CuadrantesEmpleadoPage() {
 
       if (!codigoEmpleado || !selectedLuna) return;
 
+      setLoadingFichajes(true);
+
       try {
 
-        console.log('DEBUG FETCH FICHAJES:');
-
-        console.log('codigoEmpleado:', codigoEmpleado);
-
-        console.log('selectedLuna:', selectedLuna);
 
         
 
@@ -960,9 +950,6 @@ export default function CuadrantesEmpleadoPage() {
 
         }
 
-        
-
-        console.log('selectedLunaNorm normalized:', selectedLunaNorm);
 
         
 
@@ -984,36 +971,20 @@ export default function CuadrantesEmpleadoPage() {
 
         const data = await res.json();
 
-        
-
-        console.log('Raw data from fichajes API (filtered by month):', data);
-
         // Asigură că data este întotdeauna un array
         const fichajesUser = Array.isArray(data) ? data : (data ? [data] : []);
-        
-        if (fichajesUser.length > 0) {
-          console.log('First fichaje complete:', JSON.stringify(fichajesUser[0], null, 2));
-        }
-
-        
 
         // Nu mai trebuie să filtrăm în frontend, backend-ul returnează deja doar luna selectată
-
-        console.log('Fichajes filtered for month:', fichajesUser);
-
-        if (fichajesUser.length > 0) {
-          console.log('Sample fichaje:', fichajesUser[0]);
-        }
-
-        
 
         setFichajes(fichajesUser);
 
       } catch (e) {
 
-        console.error('Error fetching fichajes:', e);
-
         setFichajes([]);
+
+      } finally {
+
+        setLoadingFichajes(false);
 
       }
 
@@ -1023,6 +994,99 @@ export default function CuadrantesEmpleadoPage() {
 
     fetchFichajes();
 
+  }, [codigoEmpleado, selectedLuna, authUser?.isDemo]);
+
+
+
+  // Fetch regularizări confirmate pentru a verifica dacă zilele au regularizare
+  useEffect(() => {
+    if (authUser?.isDemo) {
+      return;
+    }
+
+    async function fetchRegularizacionesConfirmadas() {
+      if (!codigoEmpleado || !selectedLuna) return;
+
+      setLoadingRegularizaciones(true);
+      // Fetch regularizaciones
+
+      // Normalizez luna selectată (la fel ca în codul principal)
+      let selectedLunaNorm = selectedLuna;
+      if (typeof selectedLuna === 'number') {
+        selectedLunaNorm = excelDateToYYYYMM(selectedLuna);
+      } else if (typeof selectedLuna === 'string') {
+        const [year, month] = selectedLuna.split('-');
+        if (year && month) {
+          selectedLunaNorm = `${year}-${month.padStart(2, '0')}`;
+        }
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const url = `${routes.getMonthlyAlertsResumen}?tipo=mensual&lunaselectata=${selectedLunaNorm}&t=${Date.now()}`;
+        const response = await fetch(url, { headers });
+
+        if (!response.ok) {
+          setRegularizacionesConfirmadas(new Map());
+          return;
+        }
+
+        const data = await response.json();
+        if (!Array.isArray(data)) {
+          setRegularizacionesConfirmadas(new Map());
+          return;
+        }
+
+        // Găsim empleado-ul curent
+        const empleado = data.find(emp => {
+          const codigo = emp.CODIGO || emp.codigo || emp.empleadoId || emp.id;
+          return `${codigo}` === `${codigoEmpleado}`;
+        });
+
+        if (!empleado) {
+          setRegularizacionesConfirmadas(new Map());
+          return;
+        }
+
+        // Extragem detalii_zilnice
+        let detalii = empleado.detalii_zilnice || empleado.detaliiZilnice || [];
+        if (typeof detalii === 'string') {
+          try {
+            detalii = JSON.parse(detalii);
+          } catch (e) {
+            detalii = [];
+          }
+        }
+
+        if (!Array.isArray(detalii)) {
+          detalii = [];
+        }
+
+        // Creează un Map cu zilele care au regularizare confirmată
+        const regularizacionesMap = new Map();
+        detalii.forEach(d => {
+          if (d?.fecha && (d?.has_regularizacion_confirmada === 1 || 
+                           d?.has_regularizacion_confirmada === true || 
+                           d?.has_regularizacion_confirmada === '1')) {
+            const fechaStr = typeof d.fecha === 'string' ? d.fecha.split('T')[0] : d.fecha;
+            regularizacionesMap.set(fechaStr, true);
+          }
+        });
+
+        setRegularizacionesConfirmadas(regularizacionesMap);
+      } catch (e) {
+        setRegularizacionesConfirmadas(new Map());
+      } finally {
+        setLoadingRegularizaciones(false);
+      }
+    }
+
+    fetchRegularizacionesConfirmadas();
   }, [codigoEmpleado, selectedLuna, authUser?.isDemo]);
 
 
@@ -1052,8 +1116,6 @@ export default function CuadrantesEmpleadoPage() {
 
         if (!userCode) {
 
-          console.error('No user code available for fetching ausencias');
-
           return;
 
         }
@@ -1065,7 +1127,6 @@ export default function CuadrantesEmpleadoPage() {
         const ausenciasSeparator = baseAusenciasUrl.includes('?') ? '&' : '?';
         const url = `${baseAusenciasUrl}${ausenciasSeparator}codigo=${encodeURIComponent(userCode)}`;
 
-        console.log('🔍 Fetching ausencias, URL:', url);
 
         const token = localStorage.getItem('auth_token');
         const fetchHeaders = {};
@@ -1083,45 +1144,13 @@ export default function CuadrantesEmpleadoPage() {
 
         }
 
-        
-
         const result = await response.json();
 
-        console.log('Ausencias data received:', result);
-
-        
-
         const ausenciasData = Array.isArray(result) ? result : [result];
-
-        console.log('🔍 AUSENCIAS structure:', ausenciasData.map(a => ({
-
-          id: a.id,
-
-          tipo: a.tipo,
-
-          FECHA: a.FECHA,
-
-          fecha_inicio: a.fecha_inicio,
-
-          fecha_fin: a.fecha_fin,
-
-          FECHA_INICIO: a.FECHA_INICIO,
-
-          FECHA_FIN: a.FECHA_FIN,
-
-          motivo: a.motivo,
-
-          allKeys: Object.keys(a)
-
-        })));
-
-        console.log('🔍 DEBUG - Raw ausencias data:', ausenciasData);
 
         setAusencias(ausenciasData);
 
       } catch (error) {
-
-        console.error('Error fetching ausencias:', error);
 
         setAusencias([]);
 
@@ -1133,7 +1162,7 @@ export default function CuadrantesEmpleadoPage() {
 
     fetchAusencias();
 
-  }, [authUser, userData]);
+  }, [authUser?.isDemo, userData?.['CODIGO'], authUser?.['CODIGO'], authUser?.codigo]);
 
 
 
@@ -1289,8 +1318,6 @@ export default function CuadrantesEmpleadoPage() {
 
         if (error?.name === 'AbortError') return;
 
-        console.error('Error fetching bajas médicas para calendario:', error);
-
         setBajasMedicas([]);
 
       }
@@ -1349,17 +1376,7 @@ export default function CuadrantesEmpleadoPage() {
     const codigoMatch = (c.CODIGO || '').trim() === codigoEmpleado.trim();
     const nombreMatch = (c.NOMBRE || '').trim() === nombreEmpleado.trim();
     
-    console.log(`🔍 Verificare cuadrant pentru ${emailLogat}:`, {
-      cuadrant: c,
-      lunaMatch,
-      emailMatch,
-      codigoMatch,
-      nombreMatch,
-      selectedLunaNorm,
-      emailLogat,
-      codigoEmpleado,
-      nombreEmpleado
-    });
+    // Verificare cuadrant
     
     return lunaMatch && (emailMatch || codigoMatch || nombreMatch);
 
@@ -1704,6 +1721,7 @@ const getFirstValue = (record, keys) => {
 
   // Generez celulele pentru calendar
 
+  // Recalculare calendarCells
   const calendarCells = [];
 
   if (isLunaValida) {
@@ -1741,6 +1759,10 @@ const getFirstValue = (record, keys) => {
       const dataZi = formatDateYMD(year, month, day);
 
       const fichajesZi = Array.isArray(fichajes) ? fichajes.filter(f => (f["FECHA"] || '').startsWith(dataZi)) : [];
+
+      if (day === 3) {
+        // Calculare celulă pentru day 3
+      }
 
       const fechaZi = new Date(year, month - 1, day);
 
@@ -1810,21 +1832,7 @@ const getFirstValue = (record, keys) => {
         // Debug pentru prima zi din interval
 
         if (day === 9 || day === 11) {
-
-          console.log(`🔍 DEBUG Day ${day} (${dataZi}):`, {
-
-            ausencia: a,
-
-            ausenciaFecha,
-
-            fechaInicio,
-
-            fechaFin,
-
-            fechaZi: formatDateForDebug(fechaZi)
-
-          });
-
+          // DEBUG Day
         }
 
         
@@ -1833,7 +1841,6 @@ const getFirstValue = (record, keys) => {
 
         if (ausenciaFecha && ausenciaFecha.startsWith(dataZi)) {
 
-          console.log(`✅ Found exact match for day ${day}:`, a);
 
           return true;
 
@@ -1867,30 +1874,13 @@ const getFirstValue = (record, keys) => {
           
 
           if (day === 9 || day === 11) {
-
-            console.log(`🔍 Range check for day ${day}:`, {
-
-              fechaInicio,
-
-              fechaFin,
-
-              inicio: formatDateForDebug(inicio),
-
-              fin: formatDateForDebug(fin),
-
-              fechaZi: formatDateForDebug(fechaZi),
-
-              isInRange
-
-            });
-
+            // Range check
           }
 
           
 
           if (isInRange) {
 
-            console.log(`✅ Found range match for day ${day}:`, a);
 
             return true;
 
@@ -1926,37 +1916,10 @@ const getFirstValue = (record, keys) => {
         // Încearcă mai întâi MOTIVO, apoi motivo
         motivoAusencia = ausenciaZi.MOTIVO || ausenciaZi.motivo || '';
 
-        
-
-        // Debug pentru tipul determinat
-
-        if (day === 9 || day === 11) {
-
-          console.log(`🎯 Day ${day} - Tip determinat:`, {
-
-            ausenciaZi,
-
-            TIPO: ausenciaZi.TIPO,
-
-            tipo: ausenciaZi.tipo,
-
-            finalTip: tip,
-
-            MOTIVO: ausenciaZi.MOTIVO,
-
-            motivo: ausenciaZi.motivo,
-
-            finalMotivo: motivoAusencia
-
-          });
-
-        }
-
       } else if (cuadrant) {
 
         // Folosește cuadrante dacă nu există absențe
 
-        console.log(`🔍 Day ${day} - FOLOSESTE cuadrantul din backend`);
 
         const ziKey = `ZI_${day}`;
 
@@ -2003,7 +1966,6 @@ const getFirstValue = (record, keys) => {
       } else {
 
         // Folosește orarul asignat dacă există, altfel default
-        console.log(`🔍 Day ${day} - FOLOSESTE orarul asignat (nu există cuadrant)`);
         if (horarioAsignado) {
           const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = Duminică, 1 = Luni, etc.
           const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][dayOfWeek]; // Duminică = D, Luni = L, etc.
@@ -2046,13 +2008,7 @@ const getFirstValue = (record, keys) => {
           
           // Debug pentru orarul asignat (doar pentru debugging)
           if (day === 10) {
-            console.log(`📅 DEBUG Ziua ${day}:`, {
-              dayKey,
-              daySchedule,
-              hasCompleteInterval: daySchedule?.intervals?.some(i => i.in && i.out),
-              tip,
-              orar
-            });
+            // DEBUG Ziua
           }
         } else {
           // Default pentru lunile fără cuadrante: Luni-Vineri = T1, Sâmbătă-Duminică = LIBRE
@@ -2066,13 +2022,6 @@ const getFirstValue = (record, keys) => {
           }
           
           // Debug pentru default
-          if (day <= 7) {
-            console.log(`📅 Default pentru ziua ${day} (${weekDays[dayOfWeek === 0 ? 6 : dayOfWeek - 1]}):`, {
-              dayOfWeek,
-              tip,
-              orar
-            });
-          }
         }
 
       }
@@ -2104,67 +2053,107 @@ const getFirstValue = (record, keys) => {
                          (year === currentYear && month < currentMonth) || 
                          (year === currentYear && month === currentMonth && day < currentDay);
 
-        if ((entradas.length === 0 || salidas.length === 0) && isPastDay) {
+        // Verifică dacă ziua are regularizare confirmată (dataZi este deja definită mai sus)
+        const hasRegularizacion = regularizacionesConfirmadas.get(dataZi) === true;
 
+        // IMPORTANT: Nu setăm alertaFichaj dacă fichajes sau regularizările sunt încă în proces de încărcare
+        if ((entradas.length === 0 || salidas.length === 0) && isPastDay && !hasRegularizacion && !loadingFichajes && !loadingRegularizaciones) {
           alertaFichaj = true;
 
         } else {
 
-          // Calculez durata muncii
-
-          const entradasSorted = entradas.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-
-          const salidasSorted = salidas.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-
+          // Verifică dacă există durată regularizată (effective_minutes sau effective_duration)
+          let durataRegularizata = null;
           
+          // Caut primul fichaje de tip Salida pentru această zi care are effective_minutes sau effective_duration
+          const salidaConRegularizacion = fichajesZi.find(f => 
+            f["TIPO"] === 'Salida' && 
+            ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
+             (f["effective_duration"] && f["effective_duration"].trim() !== ''))
+          );
 
-          const perioade = Math.min(entradas.length, salidas.length);
-
-          let durataTotala = 0;
-
-          
-
-          for (let j = 0; j < perioade; j++) {
-
-            const entrada = entradasSorted[j]["HORA"];
-
-            const salida = salidasSorted[j]["HORA"];
-
-            
-
-            const [h1, m1] = entrada.split(':').map(Number);
-
-            const [h2, m2] = salida.split(':').map(Number);
-
-            
-
-            let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
-
-            if (durataMinute < 0) durataMinute += 24 * 60;
-
-            
-
-            durataTotala += durataMinute;
-
+          if (salidaConRegularizacion) {
+            // Prioritate: effective_minutes (minute), apoi effective_duration (HH:MM:SS)
+            if (salidaConRegularizacion["effective_minutes"] !== null && 
+                salidaConRegularizacion["effective_minutes"] !== undefined) {
+              const effectiveMinutes = Number(salidaConRegularizacion["effective_minutes"]);
+              if (!isNaN(effectiveMinutes) && effectiveMinutes > 0) {
+                const ore = Math.floor(effectiveMinutes / 60);
+                const minute = effectiveMinutes % 60;
+                durataRegularizata = `${ore}h ${minute}m`;
+              }
+            } else if (salidaConRegularizacion["effective_duration"] && 
+                      salidaConRegularizacion["effective_duration"].trim() !== '') {
+              // Parsează effective_duration (format: HH:MM:SS sau HH:MM)
+              const durationStr = salidaConRegularizacion["effective_duration"].trim();
+              const parts = durationStr.split(':').map(Number);
+              if (parts.length >= 2) {
+                const ore = parts[0] || 0;
+                const minute = parts[1] || 0;
+                if (ore > 0 || minute > 0) {
+                  durataRegularizata = `${ore}h ${minute}m`;
+                }
+              }
+            }
           }
 
-          
+          if (durataRegularizata) {
+            // Folosește durata regularizată
+            durataMunca = durataRegularizata;
+          } else {
+            // Calculează durata manual din Entrada/Salida (fallback)
+            const entradasSorted = entradas.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
 
-          if (durataTotala > 0) {
+            const salidasSorted = salidas.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
 
-            const ore = Math.floor(durataTotala / 60);
+            
 
-            const minute = durataTotala % 60;
+            const perioade = Math.min(entradas.length, salidas.length);
 
-            durataMunca = `${ore}h ${minute}m`;
+            let durataTotala = 0;
 
+            
+
+            for (let j = 0; j < perioade; j++) {
+
+              const entrada = entradasSorted[j]["HORA"];
+
+              const salida = salidasSorted[j]["HORA"];
+
+              
+
+              const [h1, m1] = entrada.split(':').map(Number);
+
+              const [h2, m2] = salida.split(':').map(Number);
+
+              
+
+              let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
+
+              if (durataMinute < 0) durataMinute += 24 * 60;
+
+              
+
+              durataTotala += durataMinute;
+
+            }
+
+            
+
+            if (durataTotala > 0) {
+
+              const ore = Math.floor(durataTotala / 60);
+
+              const minute = durataTotala % 60;
+
+              durataMunca = `${ore}h ${minute}m`;
+
+            }
           }
 
         }
 
       }
-
-      
 
       calendarCells.push({
 
@@ -2202,19 +2191,8 @@ const getFirstValue = (record, keys) => {
     // Este suficient să avem fișaje (fichajes) pentru luna selectată.
     if (!fichajes || !fichajes.length || !selectedLunaNorm) return;
 
-    console.log('DEBUG CALCUL ORE:');
-    console.log('cuadrant:', cuadrant);
-    console.log('fichajes:', fichajes);
-    console.log('selectedLunaNorm:', selectedLunaNorm);
 
     const [year, month] = selectedLunaNorm.split('-').map(Number);
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentDay = currentDate.getDate();
-
-    console.log('year:', year, 'month:', month);
-    console.log('currentYear:', currentYear, 'currentMonth:', currentMonth, 'currentDay:', currentDay);
 
     let totalMinute = 0;
     let totalSeconds = 0;
@@ -2227,9 +2205,8 @@ const getFirstValue = (record, keys) => {
       return fecha.startsWith(fechaPrefix);
     });
 
-    console.log('Fichajes pentru luna selectată:', fichajesLunaSelectata.length, 'din total:', fichajes.length);
-
-    // Prefer suma directă a câmpului DURACION (HH:MM:SS) din backend, doar pentru înregistrările de tip Salida
+    // Calculez doar orele reglementate (effective_minutes sau effective_duration)
+    // Doar pentru fichajes de tip Salida care au regularizare
     const parseHHMMSS = (s) => {
       if (!s || typeof s !== 'string') return 0;
       const parts = s.split(':').map(Number);
@@ -2244,71 +2221,32 @@ const getFirstValue = (record, keys) => {
       return 0;
     };
 
-    const totalSecFromDuraciones = fichajesLunaSelectata
-      .filter(f => f["TIPO"] === 'Salida' && typeof f["DURACION"] === 'string')
-      .reduce((acc, f) => acc + parseHHMMSS(f["DURACION"]), 0);
-
-    if (totalSecFromDuraciones > 0) {
-      totalSeconds = totalSecFromDuraciones;
-      totalMinute = Math.floor(totalSecFromDuraciones / 60);
-    } else {
-      // Fallback: calculez din perechi Entrada/Salida dacă lipsesc duraciones
-      const daysInMonth = new Date(year, month, 0).getDate();
-      const maxDay = daysInMonth;
-
-      console.log('daysInMonth:', daysInMonth, 'maxDay:', maxDay);
-
-      for (let day = 1; day <= maxDay; day++) {
-        const dataZi = formatDateYMD(year, month, day);
-        const fichajesZi = fichajesLunaSelectata.filter(f => (f["FECHA"] || '').startsWith(dataZi));
-
-        console.log(`Day ${day}, dataZi: ${dataZi}, fichajesZi:`, fichajesZi);
-
-        if (fichajesZi.length > 0) {
-          const entradas = fichajesZi.filter(f => f["TIPO"] === 'Entrada');
-          const salidas = fichajesZi.filter(f => f["TIPO"] === 'Salida');
-
-          console.log(`  Entradas:`, entradas);
-          console.log(`  Salidas:`, salidas);
-
-          if (entradas.length > 0 && salidas.length > 0) {
-            const entradasSorted = [...entradas].sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-            const salidasSorted = [...salidas].sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-
-            // Pair each entrada with the next salida after it (skips unmatched/out-of-order items)
-            let idxE = 0;
-            let idxS = 0;
-            let pairIndex = 1;
-
-            while (idxE < entradasSorted.length && idxS < salidasSorted.length) {
-              const entradaStr = entradasSorted[idxE]["HORA"];
-              const salidaStr = salidasSorted[idxS]["HORA"];
-
-              // advance salida until it is after entrada
-              if (salidaStr.localeCompare(entradaStr) <= 0) { idxS++; continue; }
-
-              const [h1, m1] = entradaStr.split(':').map(Number);
-              const [h2, m2] = salidaStr.split(':').map(Number);
-              let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
-              if (durataMinute < 0) durataMinute += 24 * 60;
-
-              console.log(`    Perioada ${pairIndex}: ${entradaStr} - ${salidaStr} = ${durataMinute} minute`);
-              totalMinute += durataMinute;
-              totalSeconds += durataMinute * 60;
-              pairIndex++;
-
-              idxE++;
-              idxS++;
-            }
+    // Suma orele reglementate din effective_minutes sau effective_duration
+    fichajesLunaSelectata
+      .filter(f => f["TIPO"] === 'Salida' && 
+                   ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
+                    (f["effective_duration"] && f["effective_duration"].trim() !== '')))
+      .forEach(f => {
+        // Prioritate: effective_minutes (minute), apoi effective_duration (HH:MM:SS)
+        if (f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) {
+          const effectiveMinutes = Number(f["effective_minutes"]);
+          if (!isNaN(effectiveMinutes) && effectiveMinutes > 0) {
+            totalMinute += effectiveMinutes;
+            totalSeconds += effectiveMinutes * 60;
+          }
+        } else if (f["effective_duration"] && f["effective_duration"].trim() !== '') {
+          // Parsează effective_duration (format: HH:MM:SS sau HH:MM)
+          const durationStr = f["effective_duration"].trim();
+          const secFromDuration = parseHHMMSS(durationStr);
+          if (secFromDuration > 0) {
+            totalSeconds += secFromDuration;
+            totalMinute += Math.floor(secFromDuration / 60);
           }
         }
-      }
-    }
+      });
 
-    console.log('Total minute calculate:', totalMinute);
-
-    // Dacă am folosit DURACION, bazez formatul pe totalSeconds; altfel deriv din totalMinute
-    if (totalSeconds === 0) {
+    // Calculez totalul final din orele reglementate (effective_minutes sau effective_duration)
+    if (totalSeconds === 0 && totalMinute > 0) {
       totalSeconds = totalMinute * 60;
     }
     const hh = Math.floor(totalSeconds / 3600);
@@ -2317,7 +2255,6 @@ const getFirstValue = (record, keys) => {
     const ss = rem % 60;
     const totalText = `Total horas trabajadas (${month}/${year}): ${hh}h ${mm}m ${ss}s`;
 
-    console.log('Total text:', totalText);
     setTotalOreMunca(totalText);
 
   }, [cuadrant, fichajes, selectedLunaNorm]);
@@ -2344,16 +2281,14 @@ const getFirstValue = (record, keys) => {
 
   const erori = [];
 
-  if (!loading && cuadrant) {
+  // IMPORTANT: Nu afișăm alerta dacă fichajes sau regularizările sunt încă în proces de încărcare
+  if (!loading && !loadingFichajes && !loadingRegularizaciones && cuadrant) {
 
     const zileCuAlerta = calendarCells.filter(cell => cell && cell.tip === 'T1' && cell.alertaFichaj);
 
     if (zileCuAlerta.length > 0) {
-
       erori.push(`Tienes ${zileCuAlerta.length} día${zileCuAlerta.length === 1 ? '' : 's'} laborable${zileCuAlerta.length === 1 ? '' : 's'} con turnos incompletos (falta Entrada o Salida) en el mes seleccionado!`);
-
     }
-
   }
 
 
@@ -2428,6 +2363,24 @@ const getFirstValue = (record, keys) => {
 
     }
 
+  };
+
+
+
+  // Funcție pentru "Indicar motivo" (zile trecute fără fichajes)
+  const handleIndicarMotivo = (cell) => {
+    const [year, month] = selectedLunaNorm.split('-').map(Number);
+    const dataZi = formatDateYMD(year, month, cell.day);
+    
+    // Obține orarul planificat din cell (dacă există)
+    const scheduled_hours = cell.orar || null;
+    
+    setSelectedDayForNoPunch({
+      workday_date: dataZi,
+      scheduled_hours: scheduled_hours,
+      employee_codigo: empleadoCodigo || undefined
+    });
+    setShowNoPunchModal(true);
   };
 
 
@@ -2521,8 +2474,6 @@ const getFirstValue = (record, keys) => {
 
     } catch (error) {
 
-      console.error('Error saving fichaje:', error);
-
       alert('¡Error al guardar el fichaje!');
 
     } finally {
@@ -2571,8 +2522,6 @@ const getFirstValue = (record, keys) => {
       }
 
     } catch (error) {
-
-      console.error('Error getting location:', error);
 
       if (error.code === 1) {
 
@@ -3139,6 +3088,8 @@ const getFirstValue = (record, keys) => {
 
               <select
 
+                id="selected-luna"
+                name="selected-luna"
                 value={selectedLunaNorm}
 
                 onChange={(e) => setSelectedLuna(e.target.value)}
@@ -3733,437 +3684,27 @@ const getFirstValue = (record, keys) => {
 
                 
 
-                // Verifică dacă este ziua curentă
-
-                const currentDate = new Date();
-
-                const currentYear = currentDate.getFullYear();
-
-                const currentMonth = currentDate.getMonth() + 1;
-
-                const currentDay = currentDate.getDate();
-
-                
-
-                const [selectedYear, selectedMonth] = selectedLunaNorm.split('-').map(Number);
-
-                const isCurrentDay = selectedYear === currentYear && 
-
-                                    selectedMonth === currentMonth && 
-
-                                    cell.day === currentDay;
-
-                
-
-                const canModify = isCurrentDay && cell.alertaFichaj;
-
-                
-
-                // Determină tipul și culorile
-
-                let bgGradient, borderColor, textColor, shadowColor, glowColor;
-
-                
-
-                // Determină culorile pe baza tipului zilei
-
-                if (isCurrentDay) {
-
-                  // Ziua curentă - prioritate maximă
-
-                  if (cell.tip === 'Vacaciones') {
-
-                    bgGradient = 'linear-gradient(135deg, rgba(59, 130, 246, 0.4) 0%, rgba(37, 99, 235, 0.4) 100%)';
-
-                    borderColor = 'rgba(59, 130, 246, 0.7)';
-
-                    textColor = '#1e40af';
-
-                    shadowColor = 'rgba(59, 130, 246, 0.3)';
-
-                    glowColor = '#3b82f6';
-
-                  } else if (cell.tip === 'Asunto Propio') {
-
-                    bgGradient = 'linear-gradient(135deg, rgba(168, 85, 247, 0.4) 0%, rgba(147, 51, 234, 0.4) 100%)';
-
-                    borderColor = 'rgba(168, 85, 247, 0.7)';
-
-                    textColor = '#7c3aed';
-
-                    shadowColor = 'rgba(168, 85, 247, 0.3)';
-
-                    glowColor = '#a855f7';
-
-                  } else if (cell.tip === 'Baja Médica') {
-
-                    bgGradient = 'linear-gradient(135deg, rgba(232, 121, 249, 0.45) 0%, rgba(217, 70, 239, 0.45) 100%)';
-
-                    borderColor = 'rgba(192, 38, 211, 0.8)';
-
-                    textColor = '#86198f';
-
-                    shadowColor = 'rgba(192, 38, 211, 0.35)';
-
-                    glowColor = '#e879f9';
-
-                  } else {
-
-                    bgGradient = 'linear-gradient(135deg, rgba(59, 130, 246, 0.4) 0%, rgba(37, 99, 235, 0.4) 100%)';
-
-                    borderColor = 'rgba(59, 130, 246, 0.7)';
-
-                    textColor = '#1e40af';
-
-                    shadowColor = 'rgba(59, 130, 246, 0.3)';
-
-                    glowColor = '#3b82f6';
-
-                  }
-
-                } else if (cell.tip === 'Vacaciones') {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(56, 189, 248, 0.3) 0%, rgba(14, 165, 233, 0.3) 100%)';
-
-                  borderColor = 'rgba(14, 165, 233, 0.5)';
-
-                  textColor = '#075985';
-
-                  shadowColor = 'rgba(14, 165, 233, 0.2)';
-
-                  glowColor = '#0ea5e9';
-
-                } else if (cell.tip === 'Asunto Propio') {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(168, 85, 247, 0.3) 0%, rgba(147, 51, 234, 0.3) 100%)';
-
-                  borderColor = 'rgba(168, 85, 247, 0.5)';
-
-                  textColor = '#7c3aed';
-
-                  shadowColor = 'rgba(168, 85, 247, 0.2)';
-
-                  glowColor = '#a855f7';
-
-                } else if (cell.tip === 'Baja Médica') {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(244, 114, 182, 0.3) 0%, rgba(236, 72, 153, 0.3) 100%)';
-
-                  borderColor = 'rgba(219, 39, 119, 0.6)';
-
-                  textColor = '#9d174d';
-
-                  shadowColor = 'rgba(219, 39, 119, 0.25)';
-
-                  glowColor = '#f472b6';
-
-                } else if (cell.alertaFichaj) {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(254, 240, 138, 0.3) 0%, rgba(253, 224, 71, 0.3) 100%)';
-
-                  borderColor = 'rgba(251, 191, 36, 0.5)';
-
-                  textColor = '#92400e';
-
-                  shadowColor = 'rgba(251, 191, 36, 0.25)';
-
-                  glowColor = '#fbbf24';
-
-                } else if (cell.tip === 'T1') {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(134, 239, 172, 0.2) 0%, rgba(74, 222, 128, 0.2) 100%)';
-
-                  borderColor = 'rgba(34, 197, 94, 0.4)';
-
-                  textColor = '#15803d';
-
-                  shadowColor = 'rgba(34, 197, 94, 0.15)';
-
-                  glowColor = '#22c55e';
-
-                } else if (cell.tip === 'LIBRE') {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(254, 202, 202, 0.2) 0%, rgba(252, 165, 165, 0.2) 100%)';
-
-                  borderColor = 'rgba(239, 68, 68, 0.4)';
-
-                  textColor = '#991b1b';
-
-                  shadowColor = 'rgba(239, 68, 68, 0.15)';
-
-                  glowColor = '#ef4444';
-
-                } else {
-
-                  bgGradient = 'linear-gradient(135deg, rgba(243, 244, 246, 0.5) 0%, rgba(229, 231, 235, 0.5) 100%)';
-
-                  borderColor = 'rgba(156, 163, 175, 0.3)';
-
-                  textColor = '#4b5563';
-
-                  shadowColor = 'rgba(0, 0, 0, 0.05)';
-
-                  glowColor = '#9ca3af';
-
-                }
-
-                
-
                 return (
 
-                  <div
+                  <CalendarDayCell
 
                     key={idx}
 
-                    onClick={() => handleResolveAlert(cell)}
+                    cell={cell}
 
-                    className={`group/cell relative overflow-hidden min-h-[100px] transition-all duration-300 ${
+                    selectedLunaNorm={selectedLunaNorm}
 
-                      canModify ? 'cursor-pointer' : 'cursor-default'
+                    ziSelectata={ziSelectata}
 
-                    } ${!canModify && cell.alertaFichaj ? 'opacity-60' : ''}`}
+                    handleResolveAlert={handleResolveAlert}
 
-                    style={{
+                    handleIndicarMotivo={handleIndicarMotivo}
 
-                      background: bgGradient,
+                    regularizacionesConfirmadas={regularizacionesConfirmadas}
 
-                      backdropFilter: 'blur(8px)',
+                    loadingFichajes={loadingFichajes}
 
-                      borderRadius: '0.75rem',
-
-                      border: `2px solid ${borderColor}`,
-
-                      boxShadow: `0 4px 12px ${shadowColor}${
-
-                        isCurrentDay ? `, 0 0 0 3px rgba(59, 130, 246, 0.4)` : ''
-
-                      }`,
-
-                      transform: ziSelectata && ziSelectata.day === cell.day ? 'scale(1.02)' : 'scale(1)',
-
-                      padding: '0.75rem'
-
-                    }}
-
-                    onMouseEnter={(e) => {
-
-                      if (canModify || !cell.alertaFichaj || isCurrentDay) {
-
-                        e.currentTarget.style.transform = 'scale(1.05) translateY(-2px)';
-
-                        e.currentTarget.style.boxShadow = `0 8px 20px ${shadowColor.replace('0.15', '0.25').replace('0.25', '0.35')}${
-
-                          isCurrentDay ? `, 0 0 0 4px rgba(59, 130, 246, 0.6)` : ''
-
-                        }`;
-
-                      }
-
-                    }}
-
-                    onMouseLeave={(e) => {
-
-                      if (ziSelectata && ziSelectata.day === cell.day) {
-
-                        e.currentTarget.style.transform = 'scale(1.02)';
-
-                      } else {
-
-                        e.currentTarget.style.transform = 'scale(1)';
-
-                      }
-
-                      e.currentTarget.style.boxShadow = `0 4px 12px ${shadowColor}${
-
-                        isCurrentDay ? `, 0 0 0 3px rgba(59, 130, 246, 0.4)` : ''
-
-                      }`;
-
-                    }}
-
-                    title={canModify ? '✅ Click para resolver alerta' : 
-
-                           cell.alertaFichaj ? '⚠️ Solo puedes modificar el día actual' : ''}
-
-                  >
-
-                    {/* Glow animado para alertas și ziua curentă */}
-
-                    {(cell.alertaFichaj || isCurrentDay) && (
-
-                      <div 
-
-                        className="absolute inset-0 rounded-xl animate-pulse"
-
-                        style={{
-
-                          background: `radial-gradient(circle at center, ${glowColor}20 0%, transparent 70%)`,
-
-                          opacity: isCurrentDay ? 0.7 : 0.5
-
-                        }}
-
-                      ></div>
-
-                    )}
-
-                    
-
-                    {/* Shimmer effect en hover */}
-
-                    {(canModify || isCurrentDay) && (
-
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover/cell:translate-x-[200%] transition-transform duration-1000"></div>
-
-                    )}
-
-                    
-
-                    {/* Contenido */}
-
-                    <div className="relative text-center h-full flex flex-col justify-between">
-
-                      {/* Día */}
-
-                      <div 
-
-                        className="font-black text-2xl mb-2"
-
-                        style={{ color: textColor }}
-
-                      >
-
-                        {cell.day}
-
-                        {isCurrentDay && (
-
-                          <span className="ml-2 text-blue-600 text-lg animate-bounce">📍</span>
-
-                        )}
-
-                      </div>
-
-                      
-
-                      {/* Tipo */}
-
-                      <div 
-
-                        className="font-bold text-xs mb-1 px-2 py-1 rounded-lg"
-
-                        style={{
-
-                          background: `${glowColor}30`,
-
-                          color: textColor
-
-                        }}
-
-                      >
-
-                        {cell.tip}
-
-                      </div>
-
-                      
-
-                      {/* Horario */}
-
-                      {cell.orar && (
-
-                        <div 
-
-                          className="text-xs font-semibold rounded px-2 py-1 mb-1"
-
-                          style={{
-
-                            background: 'rgba(255, 255, 255, 0.7)',
-
-                            color: textColor
-
-                          }}
-
-                        >
-
-                          ⏰ {cell.orar}
-
-                        </div>
-
-                      )}
-
-                      
-
-                      {/* Alerta */}
-
-                      {cell.alertaFichaj && (
-
-                        <div className="text-2xl animate-bounce mb-1">⚠️</div>
-
-                      )}
-
-                      
-
-                      {/* Duración */}
-
-                      {cell.durataMunca && (
-
-                        <div 
-
-                          className="text-xs font-bold rounded px-2 py-1"
-
-                          style={{
-
-                            background: 'rgba(255, 255, 255, 0.8)',
-
-                            color: textColor
-
-                          }}
-
-                        >
-
-                          ⏱️ {cell.durataMunca}
-
-                        </div>
-
-                      )}
-
-                      
-
-                      {/* Motivo de ausencia */}
-
-                      {cell.motivoAusencia && (
-
-                        <div 
-
-                          className="text-xs font-medium rounded px-2 py-1 mt-1"
-
-                          style={{
-
-                            background: 'rgba(255, 255, 255, 0.9)',
-
-                            color: textColor,
-
-                            border: `1px solid ${glowColor}40`
-
-                          }}
-
-                          title={cell.motivoAusencia}
-
-                        >
-
-                          📝 {cell.motivoAusencia.length > 15 ? 
-
-                            cell.motivoAusencia.substring(0, 15) + '...' : 
-
-                            cell.motivoAusencia}
-
-                        </div>
-
-                      )}
-
-                    </div>
-
-                  </div>
+                  />
 
                 );
 
@@ -4541,6 +4082,8 @@ const getFirstValue = (record, keys) => {
 
             <Input
 
+              id="fichaje-time"
+              name="fichaje-time"
               type="time"
 
               value={fichajeTime}
@@ -4569,6 +4112,8 @@ const getFirstValue = (record, keys) => {
 
               <Input
 
+                id="fichaje-address"
+                name="fichaje-address"
                 type="text"
 
                 value={fichajeAddress}
@@ -4668,6 +4213,22 @@ const getFirstValue = (record, keys) => {
         </div>
 
       </Modal>
+
+      {/* Modal pentru "Indicar motivo" (zile trecute fără fichajes) */}
+      <DeclararNoPunchModal
+        isOpen={showNoPunchModal}
+        onClose={() => {
+          setShowNoPunchModal(false);
+          setSelectedDayForNoPunch(null);
+        }}
+        onConfirm={async () => {
+          setShowNoPunchModal(false);
+          setSelectedDayForNoPunch(null);
+          // Reîncarcă fichajes pentru a actualiza UI-ul
+          // Poți adăuga un callback onRefresh dacă este necesar
+        }}
+        data={selectedDayForNoPunch || {}}
+      />
 
     </div>
 
