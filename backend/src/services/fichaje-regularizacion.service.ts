@@ -702,8 +702,8 @@ export class FichajeRegularizacionService {
           }
         } else {
           // Salida nu este dimineața, nu este tură nocturnă
-          // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
-          workday_date = new Date(fechaStr + 'T00:00:00');
+        // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
+        workday_date = new Date(fechaStr + 'T00:00:00');
         }
       } else if (workday) {
         // Caz normal: există workday valid și nu există DURACION direct
@@ -1173,11 +1173,21 @@ export class FichajeRegularizacionService {
         throw new BadRequestException('Regularizacion not found');
       }
 
+      // Dacă punched_minutes = 0 dar există scheduled_minutes > 0 (ex: "Olvidó fichar"),
+      // folosește scheduled_minutes în loc de punched_minutes
+      let effective_minutes = regularizacion.punched_minutes;
+      if (regularizacion.punched_minutes === 0 && regularizacion.scheduled_minutes > 0) {
+        effective_minutes = regularizacion.scheduled_minutes;
+        this.logger.log(
+          `📝 Approve regularizacion: punched_minutes=0, using scheduled_minutes=${regularizacion.scheduled_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
+        );
+      }
+
       const updated = await this.prisma.fichajeRegularizacion.update({
         where: { id },
         data: {
           status: FichajeRegularizacionStatus.CONFIRMED,
-          effective_minutes: regularizacion.punched_minutes, // Aprobă orele fichadas
+          effective_minutes: effective_minutes, // Folosește scheduled_minutes dacă punched_minutes = 0
           reviewed_at: new Date(),
           reviewed_by,
         },

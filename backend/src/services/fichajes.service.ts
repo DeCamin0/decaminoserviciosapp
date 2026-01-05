@@ -124,7 +124,52 @@ export class FichajesService {
         ORDER BY f.FECHA DESC, f.HORA DESC
       `;
 
-      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+      // Adăugăm și regularizările NO_PUNCH (fără fichajes) care sunt CONFIRMED
+      // Acestea nu apar în query-ul principal pentru că nu există recorduri în Fichaje
+      const noPunchRegularizacionesQuery = `
+        SELECT 
+          NULL AS ID,
+          fr.employee_codigo AS CODIGO,
+          NULL AS nombre,
+          NULL AS email,
+          'Salida' AS TIPO,
+          '00:00:00' AS HORA,
+          DATE_FORMAT(fr.workday_date, '%Y-%m-%d') AS FECHA,
+          NULL AS address,
+          NULL AS modificatDe,
+          NULL AS data,
+          NULL AS motivo,
+          NULL AS DURACION,
+          fr.effective_minutes,
+          CONCAT(
+            LPAD(FLOOR(fr.effective_minutes / 60), 2, '0'), ':',
+            LPAD(fr.effective_minutes % 60, 2, '0'), ':00'
+          ) AS effective_duration,
+          1 AS has_regularizacion
+        FROM FichajeRegularizacion fr
+        WHERE fr.employee_codigo = ${this.escapeSql(codigoClean)}
+          AND fr.workday_date >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
+          AND fr.workday_date < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+          AND fr.status = 'CONFIRMED'
+          AND fr.effective_minutes IS NOT NULL
+          AND (
+            -- Include doar regularizările NO_PUNCH (fără fichajes)
+            (fr.fichaje_ids IS NULL OR fr.fichaje_ids = '[]' OR fr.fichaje_ids = '')
+            AND fr.regularization_type = 'NO_PUNCH'
+          )
+          -- Exclude zilele care au deja fichajes (pentru a evita duplicate)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM Fichaje f
+            WHERE f.CODIGO = fr.employee_codigo
+              AND DATE(f.FECHA) = fr.workday_date
+          )
+      `;
+
+      const noPunchRows = await this.prisma.$queryRawUnsafe<any[]>(noPunchRegularizacionesQuery);
+      
+      // Combinăm rezultatele
+      const rows = [...(await this.prisma.$queryRawUnsafe<any[]>(query)), ...noPunchRows];
 
       // Debug: verifică dacă există effective_duration în răspuns
       const rowsWithEffective = rows.filter(
