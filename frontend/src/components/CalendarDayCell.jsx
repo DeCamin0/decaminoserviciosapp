@@ -72,6 +72,61 @@ const CalendarDayCell = memo(({
     const entradas = fichajesZi.filter(f => f["TIPO"] === 'Entrada');
     const salidas = fichajesZi.filter(f => f["TIPO"] === 'Salida');
     
+    // LOG pentru ziua 25
+    if (cell.day === 25) {
+      console.log('🔍 [CELL DAY 25] Fichajes pentru ziua 25:', {
+        dataZi,
+        fichajesZi: fichajesZi.map(f => ({
+          TIPO: f["TIPO"],
+          FECHA: f["FECHA"],
+          HORA: f["HORA"],
+          DURACION: f["DURACION"],
+          effective_minutes: f["effective_minutes"]
+        })),
+        entradas: entradas.map(f => ({
+          FECHA: f["FECHA"],
+          HORA: f["HORA"],
+          DURACION: f["DURACION"]
+        })),
+        salidas: salidas.map(f => ({
+          FECHA: f["FECHA"],
+          HORA: f["HORA"],
+          DURACION: f["DURACION"],
+          effective_minutes: f["effective_minutes"]
+        }))
+      });
+    }
+    
+    // Pentru turele nocturne (T2, T3), verificăm și Entrada de pe ziua anterioară
+    let entradasZiAnterioara = [];
+    if (cell.tip === 'T2' || cell.tip === 'T3') {
+      if (cell.day > 1) {
+        const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth, cell.day - 1);
+        entradasZiAnterioara = Array.isArray(fichajes) ? fichajes.filter(f => 
+          f["TIPO"] === 'Entrada' && (f["FECHA"] || '').startsWith(dataZiAnterioara)
+        ) : [];
+        
+        // LOG pentru ziua 25
+        if (cell.day === 25) {
+          console.log('🔍 [CELL DAY 25] Entradas ziua anterioară (24):', {
+            dataZiAnterioara,
+            entradasZiAnterioara: entradasZiAnterioara.map(f => ({
+              FECHA: f["FECHA"],
+              HORA: f["HORA"],
+              DURACION: f["DURACION"]
+            }))
+          });
+        }
+      } else if (selectedMonth > 1) {
+        // Dacă suntem pe prima zi a lunii, verificăm ultima zi a lunii anterioare
+        const lastDayPrevMonth = new Date(selectedYear, selectedMonth - 1, 0).getDate();
+        const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth - 1, lastDayPrevMonth);
+        entradasZiAnterioara = Array.isArray(fichajes) ? fichajes.filter(f => 
+          f["TIPO"] === 'Entrada' && (f["FECHA"] || '').startsWith(dataZiAnterioara)
+        ) : [];
+      }
+    }
+    
     // Verifică dacă ziua este trecută
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
@@ -97,14 +152,101 @@ const CalendarDayCell = memo(({
     
     const hasRegularizacionFinal = hasRegularizacion || hasRegularizacionAnterioara;
     
-    // Pentru turele nocturne (T2, T3), verificăm dacă există DURACION în ziua următoare
+    // Pentru turele nocturne (T2, T3), verificăm dacă există DURACION în ziua următoare SAU pe ziua curentă
+    // IMPORTANT: Excludem regularizările NO_PUNCH (HORA = 00:00:00) - acestea nu sunt fichajes reale
     let hasDuracionZiUrmatoare = false;
-    if ((cell.tip === 'T2' || cell.tip === 'T3') && salidasZiUrmatoare.length > 0) {
-      hasDuracionZiUrmatoare = salidasZiUrmatoare.some(f => 
-        f["DURACION"] && 
-        f["DURACION"].trim() !== '' && 
-        f["DURACION"] !== '00:00:00'
-      );
+    let hasDuracionZiCurenta = false;
+    if (cell.tip === 'T2' || cell.tip === 'T3') {
+      // Verifică DURACION în Salida de pe ziua următoare (exclude NO_PUNCH)
+      if (salidasZiUrmatoare.length > 0) {
+        hasDuracionZiUrmatoare = salidasZiUrmatoare.some(f => 
+          f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH regularizations
+          f["DURACION"] && 
+          f["DURACION"].trim() !== '' && 
+          f["DURACION"] !== '00:00:00'
+        );
+      }
+      // Verifică DURACION în Salida de pe ziua curentă (exclude NO_PUNCH)
+      if (salidas.length > 0) {
+        hasDuracionZiCurenta = salidas.some(f => 
+          f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH regularizations
+          f["DURACION"] && 
+          f["DURACION"].trim() !== '' && 
+          f["DURACION"] !== '00:00:00'
+        );
+      }
+    } else {
+      // Pentru turele normale (T1), verifică DURACION în Salida de pe ziua curentă (exclude NO_PUNCH)
+      if (salidas.length > 0) {
+        hasDuracionZiCurenta = salidas.some(f => 
+          f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH regularizations
+          f["DURACION"] && 
+          f["DURACION"].trim() !== '' && 
+          f["DURACION"] !== '00:00:00'
+        );
+      }
+    }
+    
+    // Pentru turele nocturne, considerăm că există fichajes complete dacă:
+    // - Există Entrada pe ziua curentă (exclude NO_PUNCH) - pentru turele nocturne, Entrada trebuie să fie pe ziua curentă
+    //   SAU există Entrada pe ziua anterioară ȘI Salida cu DURACION pe ziua curentă (tura nocturnă care se termină în ziua curentă)
+    // IMPORTANT: Dacă există doar Salida pe ziua curentă (fără Entrada pe ziua curentă), 
+    // aceasta este partea finală a unei ture de pe ziua anterioară, NU este fichaje pentru ziua curentă
+    // - ȘI există Salida cu DURACION pe ziua curentă SAU pe ziua următoare (exclude NO_PUNCH)
+    // Regularizările NO_PUNCH (HORA = 00:00:00) nu sunt considerate fichajes complete
+    let hasEntradaCompleta = false;
+    if (cell.tip === 'T2' || cell.tip === 'T3') {
+      // Pentru turele nocturne:
+      // - Dacă există Entrada pe ziua curentă → completă
+      // - SAU dacă există Entrada pe ziua anterioară ȘI Salida cu DURACION pe ziua curentă → completă (tura nocturnă care se termină în ziua curentă)
+      // IMPORTANT: Dacă NU există Entrada pe ziua curentă, Salida de pe ziua curentă este partea finală a turei de pe ziua anterioară,
+      // deci ziua curentă NU are fichajes proprii și trebuie să fie galbenă
+      const hasEntradaCurenta = entradas.filter(f => f["HORA"] !== '00:00:00').length > 0;
+      const hasEntradaAnterioara = entradasZiAnterioara.filter(f => f["HORA"] !== '00:00:00').length > 0;
+      const hasSalidaCurenta = hasDuracionZiCurenta;
+      
+      // LOG pentru ziua 25
+      if (cell.day === 25) {
+        console.log('🔍 [CELL DAY 25] Verificare fichajes complete:', {
+          hasEntradaCurenta,
+          hasEntradaAnterioara,
+          hasSalidaCurenta,
+          hasDuracionZiCurenta,
+          hasDuracionZiUrmatoare,
+          entradasCount: entradas.length,
+          entradasZiAnterioaraCount: entradasZiAnterioara.length,
+          salidasCount: salidas.length,
+          salidasDetails: salidas.map(f => ({
+            FECHA: f["FECHA"],
+            HORA: f["HORA"],
+            DURACION: f["DURACION"]
+          }))
+        });
+      }
+      
+      // Pentru turele nocturne, ziua curentă are fichajes complete DOAR dacă:
+      // - Există Entrada pe ziua curentă (tura începe în ziua curentă)
+      // NU considerăm că ziua curentă este completă dacă are doar Salida (care este partea finală a turei de pe ziua anterioară)
+      hasEntradaCompleta = hasEntradaCurenta;
+    } else {
+      // Pentru turele normale (T1), Entrada trebuie să fie pe ziua curentă
+      hasEntradaCompleta = entradas.filter(f => f["HORA"] !== '00:00:00').length > 0;
+    }
+    const hasSalidaCompleta = hasDuracionZiCurenta || hasDuracionZiUrmatoare;
+    
+    // IMPORTANT: Nu setăm alertaFichaj dacă cell.tip este 'Fiesta' SAU cell.planFuente este 'fiesta' (sărbătoare)
+    const isFiesta = cell.tip === 'Fiesta' || cell.planFuente === 'fiesta';
+    
+    // LOG pentru ziua 25
+    if (cell.day === 25) {
+      console.log('🔍 [CELL DAY 25] Rezultat verificare:', {
+        hasEntradaCompleta,
+        hasSalidaCompleta,
+        hasRegularizacionFinal,
+        isPastDay,
+        isFiesta,
+        alertaFichaj: !isFiesta && isPastDay && !hasRegularizacionFinal && (!hasEntradaCompleta || !hasSalidaCompleta)
+      });
     }
     
     // Setăm alertaFichaj dacă este necesar
@@ -112,12 +254,10 @@ const CalendarDayCell = memo(({
     // Dacă regularizările se încarcă mai târziu:
     //   - Dacă există regularizare → hasRegularizacionFinal devine true, alertaFichaj devine false
     //   - Dacă NU există regularizare → hasRegularizacionFinal rămâne false, alertaFichaj rămâne true
-    // IMPORTANT: Nu setăm alertaFichaj dacă cell.tip este 'Fiesta' SAU cell.planFuente este 'fiesta' (sărbătoare)
-    const isFiesta = cell.tip === 'Fiesta' || cell.planFuente === 'fiesta';
     if (!isFiesta && 
         isPastDay && 
-        !hasDuracionZiUrmatoare &&
-        (entradas.length === 0 || (salidas.length === 0 && !hasDuracionZiUrmatoare))) {
+        !hasRegularizacionFinal &&
+        (!hasEntradaCompleta || !hasSalidaCompleta)) {
       
       // Dacă NU există regularizare în Map → setăm alertaFichaj IMEDIAT
       // Nu așteptăm loadingRegularizaciones să devină false
@@ -152,23 +292,30 @@ const CalendarDayCell = memo(({
     let durataRegularizata = null;
     
     // Pentru turele nocturne (T2, T3), regularizarea poate fi în Salida de pe ziua următoare
+    // IMPORTANT: Regularizările NO_PUNCH (cu FECHA = workday_date și HORA = 00:00:00) 
+    // trebuie atribuite doar zilei corespunzătoare workday_date, nu zilei anterioare
     let salidaConRegularizacion = null;
     
     if (cell.tip === 'T2' || cell.tip === 'T3') {
       // Căutăm regularizarea în Salida de pe ziua următoare (pentru turele nocturne)
+      // EXCLUDE regularizările NO_PUNCH (HORA = 00:00:00) - acestea sunt pentru ziua următoare, nu pentru ziua curentă
       salidaConRegularizacion = salidasZiUrmatoare.find(f => 
         f["TIPO"] === 'Salida' && 
+        f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH regularizations
         ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
          (f["effective_duration"] && f["effective_duration"].trim() !== ''))
       );
     }
     
     // Dacă nu am găsit în ziua următoare (sau e T1), căutăm în ziua curentă
+    // Pentru regularizările NO_PUNCH, verificăm că FECHA corespunde exact cu ziua curentă
     if (!salidaConRegularizacion) {
       salidaConRegularizacion = fichajesZi.find(f => 
         f["TIPO"] === 'Salida' && 
         ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
-         (f["effective_duration"] && f["effective_duration"].trim() !== ''))
+         (f["effective_duration"] && f["effective_duration"].trim() !== '')) &&
+        // Pentru NO_PUNCH (HORA = 00:00:00), verificăm că FECHA corespunde exact cu ziua curentă
+        (f["HORA"] !== '00:00:00' || (f["FECHA"] || '').startsWith(dataZi))
       );
     }
     
@@ -203,24 +350,46 @@ const CalendarDayCell = memo(({
     } else {
       // Când nu există regularizare, folosim DURACION din Salida (dacă există)
       // Pentru turele nocturne (T2, T3), DURACION este în Salida de pe ziua următoare
+      // IMPORTANT: Pentru turele nocturne, dacă nu există Entrada pe ziua curentă,
+      // Salida de pe ziua curentă este partea finală a turei de pe ziua anterioară,
+      // deci NU afișăm timpul pentru ziua curentă
       let salidaConDuracion = null;
       
       if (cell.tip === 'T2' || cell.tip === 'T3') {
         // Pentru turele nocturne, căutăm DURACION în Salida de pe ziua următoare
-        salidaConDuracion = salidasZiUrmatoare.find(f => 
-          f["DURACION"] && 
-          f["DURACION"].trim() !== '' && 
-          f["DURACION"] !== '00:00:00'
-        );
+        // DOAR dacă există Entrada pe ziua curentă (tura începe în ziua curentă)
+        if (hasEntradaCompleta) {
+          salidaConDuracion = salidasZiUrmatoare.find(f => 
+            f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH
+            f["DURACION"] && 
+            f["DURACION"].trim() !== '' && 
+            f["DURACION"] !== '00:00:00'
+          );
+        }
       }
       
       // Dacă nu am găsit în ziua următoare (sau e T1), căutăm în ziua curentă
+      // Pentru turele nocturne, DOAR dacă există Entrada pe ziua curentă
       if (!salidaConDuracion) {
-        salidaConDuracion = salidas.find(f => 
-          f["DURACION"] && 
-          f["DURACION"].trim() !== '' && 
-          f["DURACION"] !== '00:00:00'
-        );
+        if (cell.tip === 'T2' || cell.tip === 'T3') {
+          // Pentru turele nocturne, folosim DURACION din ziua curentă DOAR dacă există Entrada pe ziua curentă
+          if (hasEntradaCompleta) {
+            salidaConDuracion = salidas.find(f => 
+              f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH
+              f["DURACION"] && 
+              f["DURACION"].trim() !== '' && 
+              f["DURACION"] !== '00:00:00'
+            );
+          }
+        } else {
+          // Pentru turele normale (T1), căutăm DURACION în ziua curentă
+          salidaConDuracion = salidas.find(f => 
+            f["HORA"] !== '00:00:00' && // Exclude NO_PUNCH
+            f["DURACION"] && 
+            f["DURACION"].trim() !== '' && 
+            f["DURACION"] !== '00:00:00'
+          );
+        }
       }
       
       if (salidaConDuracion && salidaConDuracion["DURACION"]) {
@@ -237,39 +406,48 @@ const CalendarDayCell = memo(({
       } else {
         // Fallback: Calculează durata manual din Entrada/Salida (doar dacă nu există DURACION)
         // Pentru turele nocturne (T2, T3), combinăm Entrada de pe ziua curentă cu Salida de pe ziua următoare
+        // IMPORTANT: Pentru turele nocturne, calculăm durata DOAR dacă există Entrada pe ziua curentă
+        // Dacă nu există Entrada pe ziua curentă, Salida de pe ziua curentă este partea finală a turei de pe ziua anterioară
         let entradasToUse = [...entradas];
         let salidasToUse = [...salidas];
         
-        // Pentru turele nocturne, adăugăm Salida de pe ziua următoare
-        if ((cell.tip === 'T2' || cell.tip === 'T3') && salidasZiUrmatoare.length > 0) {
+        // Pentru turele nocturne, adăugăm Salida de pe ziua următoare DOAR dacă există Entrada pe ziua curentă
+        if ((cell.tip === 'T2' || cell.tip === 'T3') && hasEntradaCompleta && salidasZiUrmatoare.length > 0) {
           salidasToUse = [...salidas, ...salidasZiUrmatoare];
         }
         
-        const entradasSorted = entradasToUse.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-        const salidasSorted = salidasToUse.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-        
-        const perioade = Math.min(entradasSorted.length, salidasSorted.length);
-        
-        let durataTotala = 0;
-        
-        for (let j = 0; j < perioade; j++) {
-          const entrada = entradasSorted[j]["HORA"];
-          const salida = salidasSorted[j]["HORA"];
+        // Pentru turele nocturne, dacă nu există Entrada pe ziua curentă, nu calculăm durata
+        if ((cell.tip === 'T2' || cell.tip === 'T3') && !hasEntradaCompleta) {
+          // Nu calculăm durata pentru ziua curentă dacă nu există Entrada pe ziua curentă
+          // Salida de pe ziua curentă este partea finală a turei de pe ziua anterioară
+          durataMunca = '';
+        } else if (entradasToUse.length > 0 && salidasToUse.length > 0) {
+          const entradasSorted = entradasToUse.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
+          const salidasSorted = salidasToUse.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
           
-          const [h1, m1] = entrada.split(':').map(Number);
-          const [h2, m2] = salida.split(':').map(Number);
+          const perioade = Math.min(entradasSorted.length, salidasSorted.length);
           
-          let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
-          // Pentru turele nocturne, durata poate fi negativă (ex: 19:30 -> 07:30 = -12h = +12h)
-          if (durataMinute < 0) durataMinute += 24 * 60;
+          let durataTotala = 0;
           
-          durataTotala += durataMinute;
-        }
-        
-        if (durataTotala > 0) {
-          const ore = Math.floor(durataTotala / 60);
-          const minute = durataTotala % 60;
-          durataMunca = `${ore}h ${minute}m`;
+          for (let j = 0; j < perioade; j++) {
+            const entrada = entradasSorted[j]["HORA"];
+            const salida = salidasSorted[j]["HORA"];
+            
+            const [h1, m1] = entrada.split(':').map(Number);
+            const [h2, m2] = salida.split(':').map(Number);
+            
+            let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
+            // Pentru turele nocturne, durata poate fi negativă (ex: 19:30 -> 07:30 = -12h = +12h)
+            if (durataMinute < 0) durataMinute += 24 * 60;
+            
+            durataTotala += durataMinute;
+          }
+          
+          if (durataTotala > 0) {
+            const ore = Math.floor(durataTotala / 60);
+            const minute = durataTotala % 60;
+            durataMunca = `${ore}h ${minute}m`;
+          }
         }
       }
     }
@@ -281,6 +459,7 @@ const CalendarDayCell = memo(({
     selectedYear,
     selectedMonth,
     fichajesZi,
+    fichajes,
     salidasZiUrmatoare,
     regularizacionesConfirmadas?.get(dataZi),
     loadingRegularizaciones

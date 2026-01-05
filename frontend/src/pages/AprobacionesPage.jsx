@@ -1578,16 +1578,25 @@ export default function AprobacionesPage() {
         title="Confirmar aprobación de regularización"
         size="lg"
       >
-        {regularizacionToApprove && (
-          <div className="space-y-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <p className="text-sm text-yellow-800 font-medium mb-2">
-                ⚠️ ¿Estás seguro que deseas aprobar esta regularización?
-              </p>
-              <p className="text-sm text-yellow-700">
-                Se aprobarán las horas fichadas ({formatMinutesToHoursMinutes(regularizacionToApprove.punched_minutes)}) como horas efectivas trabajadas.
-              </p>
-            </div>
+        {regularizacionToApprove && (() => {
+          // Dacă punched_minutes = 0 dar există scheduled_minutes > 0 (ex: "Olvidó fichar"),
+          // folosește scheduled_minutes în loc de punched_minutes
+          const effectiveMinutes = regularizacionToApprove.punched_minutes === 0 && regularizacionToApprove.scheduled_minutes > 0
+            ? regularizacionToApprove.scheduled_minutes
+            : regularizacionToApprove.punched_minutes;
+          
+          return (
+            <div className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-sm text-yellow-800 font-medium mb-2">
+                  ⚠️ ¿Estás seguro que deseas aprobar esta regularización?
+                </p>
+                <p className="text-sm text-yellow-700">
+                  Se aprobarán {effectiveMinutes === regularizacionToApprove.scheduled_minutes 
+                    ? `las horas previstas (${formatMinutesToHoursMinutes(effectiveMinutes)})` 
+                    : `las horas fichadas (${formatMinutesToHoursMinutes(effectiveMinutes)})`} como horas efectivas trabajadas.
+                </p>
+              </div>
             
             <div className="space-y-3">
               <div>
@@ -1647,7 +1656,8 @@ export default function AprobacionesPage() {
               </Button>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
 
       {/* Modal para motivo de rechazo de regularizacion */}
