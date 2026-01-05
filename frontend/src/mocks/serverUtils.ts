@@ -14,7 +14,7 @@ export const randDelay = (min = 100, max = 400) =>
 /**
  * Create success response
  */
-export function ok(data: any, status = 200) {
+export function ok<T = unknown>(data: T, status = 200) {
   return new Response(JSON.stringify(data), { 
     status, 
     headers: { 'Content-Type': 'application/json' } 

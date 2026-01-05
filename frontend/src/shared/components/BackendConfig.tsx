@@ -22,7 +22,7 @@ export const BackendConfig: React.FC = () => {
       if (!isConnected) {
         setError('Conexiune eșuată');
       }
-    } catch (err) {
+    } catch {
       setIsConnected(false);
       setError('Eroare la testarea conexiunii');
     } finally {

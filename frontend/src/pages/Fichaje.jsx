@@ -19,6 +19,7 @@ import HorasTrabajadas from '../components/HorasTrabajadas';
 import HorasPermitidas from '../components/HorasPermitidas';
 import { calculateCuadranteHours, calculateHorarioHours } from '../utils/cuadrante-hours-helper';
 import { debug as loggerDebug, warn, error as logError, success, demo, info } from '../utils/logger';
+import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 
 
 // Agrego función para normalizar hora
@@ -289,35 +290,10 @@ function useMadridClock(resyncIntervalMs = 60000, authUser = null) {
       
       // Folosim ora locală convertită la timezone-ul Europe/Madrid (fără request extern)
       // JavaScript nativ poate calcula ora în orice timezone fără API extern
-      try {
-        // Încearcă să obțină ora din API (opțional, pentru sincronizare mai precisă)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // Timeout scurt de 3 secunde
-        
-        const resp = await fetch('https://worldtimeapi.org/api/timezone/Europe/Madrid', {
-          signal: controller.signal,
-        }).catch(() => null); // Nu aruncă eroare, doar returnează null
-        
-        clearTimeout(timeoutId);
-        
-        if (resp && resp.ok) {
-          const data = await resp.json();
-          baseEpoch = new Date(data.datetime).getTime();
-          basePerf = performance.now();
-          update();
-        } else {
-          // Fallback: folosim ora locală convertită la timezone-ul Europe/Madrid
-          // JavaScript poate calcula ora în orice timezone fără API extern
-          baseEpoch = Date.now();
-          basePerf = performance.now();
-          update();
-        }
-      } catch (error) {
-        // Fallback: folosim ora locală (JavaScript va formata corect pentru timezone-ul Europe/Madrid)
-        baseEpoch = Date.now();
-        basePerf = performance.now();
-        update();
-      }
+      // Eliminăm request-ul către worldtimeapi.org pentru a evita erorile de conexiune
+      baseEpoch = Date.now();
+      basePerf = performance.now();
+      update();
       setSyncing(false);
     };
 
@@ -354,6 +330,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const { t } = useTranslation();
   const { user: authUser, isAuthenticated } = useAuth();
   const { callApi } = useApi();
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = authUser?.isManager || false;
   const [logs, setLogs] = useState([]);
   const [now, setNow] = useState(new Date());
   // Hora oficial Madrid pentru ceasul principal (cu resync periodic)
@@ -449,6 +427,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [showFichajeConfirmModal, setShowFichajeConfirmModal] = useState(false);
   const [fichajeTipo, setFichajeTipo] = useState('');
   const [fichajeCustomMotivo, setFichajeCustomMotivo] = useState('');
+  const [showConfirmarJornadaModal, setShowConfirmarJornadaModal] = useState(false);
+  const [confirmarJornadaData, setConfirmarJornadaData] = useState(null);
+  // State pentru a stoca dacă fiecare fichaje necesită regularizare (pentru a ascunde butonul când nu este necesar)
+  const [needsRegularizationMap, setNeedsRegularizationMap] = useState({});
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -1237,18 +1219,44 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         }
         
         // Mapeo a la estructura UI
-        const mapped = allLogs.map(item => ({
-          tipo: item.TIPO || item.tipo,
-          hora: item.HORA || item.hora,
-          address: item.DIRECCION || item.address,
-          modificatDe: item.MODIFICADO_POR || item.modificatDe,
-          codigo: item.CODIGO || item.codigo,
-          duration: item.DURACION || item.duration,
-          data: item.FECHA || item.data,
-        }));
+        const mapped = allLogs.map(item => {
+          // Debug: verifică dacă există effective_duration în item
+          if (item.effective_duration || item.EFFECTIVE_DURATION || item.effective_minutes || item.EFFECTIVE_MINUTES) {
+            loggerDebug('🔍 Item with effective_duration:', {
+              FECHA: item.FECHA,
+              TIPO: item.TIPO,
+              effective_duration: item.effective_duration || item.EFFECTIVE_DURATION,
+              effective_minutes: item.effective_minutes || item.EFFECTIVE_MINUTES,
+            });
+          }
+          
+          return {
+            tipo: item.TIPO || item.tipo,
+            hora: item.HORA || item.hora,
+            address: item.DIRECCION || item.address,
+            modificatDe: item.MODIFICADO_POR || item.modificatDe,
+            codigo: item.CODIGO || item.codigo,
+            duration: item.DURACION || item.duration, // Ora originală
+            effective_duration: item.effective_duration || item.EFFECTIVE_DURATION || null, // Ora regularizată
+            effective_minutes: item.effective_minutes || item.EFFECTIVE_MINUTES || null, // Minute efective (pentru calcul)
+            has_regularizacion: item.has_regularizacion || item.HAS_REGULARIZACION || 0, // 1 dacă există regularizare, 0 altfel
+            data: item.FECHA || item.data,
+          };
+        });
 
+        // Deduplicare: elimină duplicatele după o combinație unică de CODIGO + FECHA + TIPO + HORA
+        const uniqueLogs = [];
+        const seenKeys = new Set();
+        for (const item of mapped) {
+          const key = `${item.codigo || item.CODIGO || ''}_${item.data || item.FECHA || ''}_${item.tipo || item.TIPO || ''}_${item.hora || item.HORA || ''}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueLogs.push(item);
+          }
+        }
+        
         // Ordenación correcta: combina fecha y hora para una ordenación cronológica precisa
-        const sortedLogs = [...mapped].sort((a, b) => {
+        const sortedLogs = [...uniqueLogs].sort((a, b) => {
           const dataA = a.data || a.fecha || '';
           const dataB = b.data || b.fecha || '';
           const horaA = padTime(a.hora || '');
@@ -1262,30 +1270,119 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         });
 
         // Calculează durata totală pentru fichajes
-        let totalSeconds = 0;
+        // Calculăm separat: total original (raw DURACION) și total regularizat (effective_minutes)
+        let totalOriginalSeconds = 0;
+        let totalRegularizedSeconds = 0;
+        const effectiveMinutesByDate = {}; // Agregă effective_minutes pe zi (workday_date)
+        const rawDurationByDate = {}; // Agregă raw DURACION pe zi (pentru fallback)
+        
+        // Prima trecere: colectează effective_minutes și raw duration pe zi
         sortedLogs.forEach(item => {
-          if (item.duration && item.duration !== null && item.duration !== '') {
-            // Parsează durata în format HH:MM:SS
+          const fecha = item.data || item.fecha;
+          if (!fecha) return;
+          
+          // Dacă există effective_minutes, salvează pentru acea zi (workday_date = data)
+          if (item.effective_minutes !== null && item.effective_minutes !== undefined) {
+            if (!effectiveMinutesByDate[fecha]) {
+              effectiveMinutesByDate[fecha] = item.effective_minutes;
+            }
+          }
+          
+          // Colectează raw duration pentru fiecare Salida (pentru total original)
+          if (item.tipo === 'Salida' && item.duration && item.duration !== null && item.duration !== '') {
             const timeParts = item.duration.split(':');
             if (timeParts.length === 3) {
               const hours = parseInt(timeParts[0]) || 0;
               const minutes = parseInt(timeParts[1]) || 0;
               const seconds = parseInt(timeParts[2]) || 0;
-              totalSeconds += hours * 3600 + minutes * 60 + seconds;
+              const itemSeconds = hours * 3600 + minutes * 60 + seconds;
+              
+              if (!rawDurationByDate[fecha]) {
+                rawDurationByDate[fecha] = 0;
+              }
+              rawDurationByDate[fecha] += itemSeconds;
             }
           }
         });
         
-        // Convertește înapoi în format HH:MM:SS
-        const totalHours = Math.floor(totalSeconds / 3600);
-        const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
-        const totalSecs = totalSeconds % 60;
-        const totalDuration = `${totalHours.toString().padStart(2, '0')}:${totalMinutes.toString().padStart(2, '0')}:${totalSecs.toString().padStart(2, '0')}`;
+        // Calculează total original (suma tuturor raw DURACION)
+        Object.keys(rawDurationByDate).forEach(fecha => {
+          totalOriginalSeconds += rawDurationByDate[fecha];
+        });
         
-        loggerDebug('Total fichaje duration:', totalDuration, 'seconds:', totalSeconds);
-        setTotalFichajeDuration(totalDuration);
+        // Calculează total regularizat (effective_minutes când există, altfel raw duration)
+        Object.keys(effectiveMinutesByDate).forEach(fecha => {
+          // Folosește effective_minutes (regularizat)
+          totalRegularizedSeconds += effectiveMinutesByDate[fecha] * 60;
+        });
+        
+        // Pentru zilele fără regularizare, folosește raw duration în total regularizat
+        Object.keys(rawDurationByDate).forEach(fecha => {
+          if (!effectiveMinutesByDate[fecha]) {
+            // Nu există regularizare pentru această zi, folosește raw duration
+            totalRegularizedSeconds += rawDurationByDate[fecha];
+          }
+        });
+        
+        // Convertește înapoi în format HH:MM:SS
+        const formatSecondsToHHMMSS = (seconds) => {
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          const secs = seconds % 60;
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
+        
+        const totalOriginalDuration = formatSecondsToHHMMSS(totalOriginalSeconds);
+        const totalRegularizedDuration = formatSecondsToHHMMSS(totalRegularizedSeconds);
+        
+        loggerDebug('Total original:', totalOriginalDuration, 'seconds:', totalOriginalSeconds);
+        loggerDebug('Total regularizat:', totalRegularizedDuration, 'seconds:', totalRegularizedSeconds);
+        
+        // Setăm ambele totaluri (folosim un obiect pentru a păstra ambele)
+        setTotalFichajeDuration({
+          original: totalOriginalDuration,
+          regularized: totalRegularizedDuration,
+          hasRegularization: Object.keys(effectiveMinutesByDate).length > 0
+        });
 
         setLogs(sortedLogs);
+        
+        // Verifică asincron pentru fiecare fichaje dacă necesită regularizare (doar pentru Salida fără effective_duration)
+        // IMPORTANT: Nu așteptăm toate request-urile - actualizăm map-ul incremental pentru a nu bloca UI-ul
+        const itemsToCheck = sortedLogs.filter(item => 
+          item.tipo === 'Salida' && 
+          item.duration && 
+          !(item.effective_duration && item.effective_duration.trim() !== '') && 
+          !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
+        );
+        
+        // Procesează în batch-uri de 10 pentru a nu suprasolicita serverul
+        const BATCH_SIZE = 10;
+        (async () => {
+          for (let i = 0; i < itemsToCheck.length; i += BATCH_SIZE) {
+            const batch = itemsToCheck.slice(i, i + BATCH_SIZE);
+            // Nu așteptăm batch-ul să se termine - procesăm în paralel și actualizăm incremental
+            batch.forEach(async (item) => {
+              const key = `${item.codigo || item.CODIGO || authUser?.CODIGO || authUser?.codigo}_${item.data}_${item.tipo}`;
+              try {
+                const checkResult = await callApi(routes.checkConfirmation(item.codigo || authUser?.CODIGO || authUser?.codigo, item.data));
+                const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+                setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
+              } catch (err) {
+                // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+                setNeedsRegularizationMap(prev => ({ ...prev, [key]: true }));
+              }
+            });
+            // Mic delay între batch-uri pentru a nu suprasolicita serverul (doar dacă sunt multe batch-uri)
+            if (i + BATCH_SIZE < itemsToCheck.length && itemsToCheck.length > BATCH_SIZE * 2) {
+              await new Promise(resolve => setTimeout(resolve, 50)); // Delay redus la 50ms
+            }
+          }
+        })().catch(err => {
+          loggerDebug('Error checking needs regularization:', err);
+        });
+        
+        // IMPORTANT: Resetăm loading-ul imediat după ce datele sunt procesate, nu după verificare
         setLoadingLogs(false);
         setChangingMonth(false);
         return sortedLogs;
@@ -1582,6 +1679,27 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         activityLogger.logFichajeCreated(fichajeData, authUser).catch(error => {
           warn('Error logging activity (non-blocking):', error);
         });
+        
+        // Verifică dacă trebuie confirmare (doar pentru Salida)
+        if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data) {
+          setConfirmarJornadaData({
+            ...result.data.confirmation_data,
+            fecha: fechaMadrid,
+            employee_codigo: userCode,
+          });
+          setShowConfirmarJornadaModal(true);
+        }
+
+        // Verifică warning pentru Entrada tardía
+        if (tipo === 'Entrada' && result.data?.entrada_warning) {
+          const warning = result.data.entrada_warning;
+          setNotification({
+            type: 'warning',
+            title: 'Entrada tardía',
+            message: `${warning.message} ${warning.suggestion}`,
+            duration: 8000, // 8 secunde pentru a avea timp să citească
+          });
+        }
         
         // Actualizează UI-ul instant fără să reîncarcă toate marcajele
         const newFichaje = {
@@ -2208,7 +2326,39 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           <div>
             <h3 className="text-lg font-semibold text-yellow-800">Alertas mensuales detectadas</h3>
             <p className="text-sm text-yellow-700">
-              Tienes {monthlyAlerts.total} días con alertas este mes: <span className="font-semibold text-red-600">+{monthlyAlerts.positivos}</span> con exceso y <span className="font-semibold text-yellow-600">-{monthlyAlerts.negativos}</span> con déficit. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+              {(() => {
+                const parts = [];
+                if (monthlyAlerts.positivos > 0) {
+                  parts.push(
+                    <span key="exceso">
+                      <span className="font-semibold text-red-600">{monthlyAlerts.positivos} día{monthlyAlerts.positivos > 1 ? 's' : ''}</span> con exceso (has trabajado más horas de las previstas)
+                    </span>
+                  );
+                }
+                if (monthlyAlerts.negativos > 0) {
+                  parts.push(
+                    <span key="deficit">
+                      <span className="font-semibold text-yellow-600">{monthlyAlerts.negativos} día{monthlyAlerts.negativos > 1 ? 's' : ''}</span> con déficit (no has fichado o has trabajado menos horas de las previstas)
+                    </span>
+                  );
+                }
+                if (parts.length === 0) {
+                  return (
+                    <>
+                      Tienes {monthlyAlerts.total} días con alertas este mes. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    Tienes {monthlyAlerts.total} día{monthlyAlerts.total > 1 ? 's' : ''} con alertas este mes: {parts.length > 1 ? (
+                      <>
+                        {parts[0]} y {parts[1]}
+                      </>
+                    ) : parts[0]}. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+                  </>
+                );
+              })()}
             </p>
           </div>
         </div>
@@ -2685,15 +2835,33 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       : 'Horas Trabajadas'
                     }
                   </h2>
-                  <p className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-600">
                     {changingMonth ? 'Cargando...' : 
                      activeTab === 'registros' ? 'Historial de fichajes del mes seleccionado' : 
                      activeTab === 'ausencias' ? 'Registros de ausencias de todo el año' :
                      'Resumen mensual y anual de tus horas trabajadas'}
                     {activeTab === 'registros' && totalFichajeDuration && (
-                      <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-200">
-                        ⏱️ Total: {totalFichajeDuration}
-                      </span>
+                      <div className="ml-2 inline-flex items-center gap-2 flex-wrap">
+                        {typeof totalFichajeDuration === 'object' && totalFichajeDuration.original ? (
+                          <>
+                            <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 border border-gray-300">
+                              ⏱ Registrado: {totalFichajeDuration.original}
+                            </span>
+                            {totalFichajeDuration.hasRegularization && (
+                              <span 
+                                className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-300 cursor-help"
+                                title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
+                              >
+                                ✅ Tiempo efectivo: {totalFichajeDuration.regularized}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-200">
+                            ⏱️ Total: {totalFichajeDuration}
+                          </span>
+                        )}
+                      </div>
                     )}
                     {activeTab === 'ausencias' && totalAusenciaDuration && (
                       <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 border border-blue-200">
@@ -2714,7 +2882,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                         🏖️ Vacaciones: {totalVacacionesDays} días
                       </span>
                     )}
-                  </p>
+                  </div>
                 </div>
               </div>
               
@@ -2912,15 +3080,111 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                         </h3>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <span className="text-gray-600 font-medium text-sm sm:text-base">{item.hora}</span>
-                          {item.duration && item.tipo === 'Salida' && (
-                            <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                              ⏱️ {item.duration}
-                            </span>
-                          )}
-                          {!item.duration && item.tipo === 'Salida' && (
-                            <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 border border-red-200">
-                              ⚠️ Sin duración
-                            </span>
+                          {item.tipo === 'Salida' && (
+                            <>
+                              {item.duration && (
+                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 border border-gray-300">
+                                  ⏱ Registrado: {item.duration}
+                                </span>
+                              )}
+                              {item.effective_duration && item.effective_duration.trim() !== '' && (
+                                <span 
+                                  className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-300 cursor-help"
+                                  title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
+                                >
+                                  ✅ Tiempo efectivo: {item.effective_duration}
+                                </span>
+                              )}
+                              {!item.duration && (!item.effective_duration || item.effective_duration.trim() === '') && (
+                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 border border-red-200">
+                                  ⚠️ Sin duración
+                                </span>
+                              )}
+                              {/* Buton Regularizar - apare dacă are duration dar nu există regularizare și necesită regularizare */}
+                              {(() => {
+                                const key = `${item.codigo || item.CODIGO || authUser?.CODIGO || authUser?.codigo}_${item.data}_${item.tipo}`;
+                                const needsRegularization = needsRegularizationMap[key]; // true dacă necesită, false dacă nu, undefined dacă nu a fost verificat încă
+                                // Afișăm butonul dacă verificarea nu s-a terminat (undefined) sau dacă returnează true
+                                // Ascundem doar dacă verificarea returnează explicit false
+                                return item.duration && 
+                                  !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                                  !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') &&
+                                  needsRegularization !== false; // Afișăm dacă nu este explicit false
+                              })() && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      // Verifică dacă managerul încearcă să-și regularizeze propriul registru
+                                      const employeeCodigo = item.codigo || item.CODIGO;
+                                      const userCodigo = authUser?.CODIGO || authUser?.codigo;
+                                      const isOwnRecord = employeeCodigo && userCodigo && employeeCodigo.toString() === userCodigo.toString();
+                                      
+                                      if (isManager && !isOwnRecord) {
+                                        // Supervisor: solicită regularizare pentru alt angajat (creează NEEDS_REVIEW)
+                                        const result = await callApi(routes.requestRegularizacion, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+                                            fecha: item.data,
+                                          }),
+                                        });
+                                        if (result.success) {
+                                          setNotification({
+                                            type: 'success',
+                                            title: 'Regularización solicitada',
+                                            message: 'El empleado recibirá una notificación para confirmar.',
+                                          });
+                                          // Reîncarcă logs
+                                          fetchLogs(selectedMonth).catch(err => {
+                                            console.error('Error reloading logs:', err);
+                                          });
+                                        }
+                                      } else {
+                                        // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare direct
+                                        const checkResult = await callApi(routes.checkConfirmation(item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data));
+                                        const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }, dar poate fi și direct obiectul
+                                        console.log('🔍 DEBUG checkResult pentru Regularizar:', {
+                                          success: checkResult.success,
+                                          needs_confirmation: resultData.needs_confirmation,
+                                          needs_confirmation_type: typeof resultData.needs_confirmation,
+                                          delta_minutes: resultData.delta_minutes,
+                                          punched_minutes: resultData.punched_minutes,
+                                          scheduled_minutes: resultData.scheduled_minutes,
+                                          full_result: checkResult,
+                                          resultData: resultData
+                                        });
+                                        if (checkResult.success && resultData.needs_confirmation) {
+                                          setConfirmarJornadaData({
+                                            ...resultData,
+                                            fecha: item.data,
+                                            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+                                          });
+                                          setShowConfirmarJornadaModal(true);
+                                        } else {
+                                          console.log('⚠️ DEBUG: Nu se deschide modalul - success:', checkResult.success, 'needs_confirmation:', resultData.needs_confirmation);
+                                          setNotification({
+                                            type: 'info',
+                                            title: 'Sin diferencia',
+                                            message: 'No hay diferencia significativa para regularizar.',
+                                          });
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.error('Error regularizando:', err);
+                                      setNotification({
+                                        type: 'error',
+                                        title: 'Error',
+                                        message: 'Error al solicitar regularización. Intenta de nuevo.',
+                                      });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors"
+                                >
+                                  🔄 Regularizar
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -3108,6 +3372,22 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           </div>
         </div>
       )}
+
+      {/* Modal Confirmar Jornada */}
+      <ConfirmarJornadaModal
+        isOpen={showConfirmarJornadaModal}
+        onClose={() => {
+          setShowConfirmarJornadaModal(false);
+          setConfirmarJornadaData(null);
+        }}
+        onConfirm={() => {
+          // Reîncarcă logs după confirmare
+          fetchLogs(selectedMonth).catch(err => {
+            warn('Error reloading logs after confirmation:', err);
+          });
+        }}
+        data={confirmarJornadaData}
+      />
     </div>
   );
 }
@@ -3117,11 +3397,18 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const { user: authUser } = useAuth();
   const { loading: apiLoading, callApi } = useApi();
   const locationContext = useLocation();
+  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
+  const isManager = authUser?.isManager || false;
   
   const [empleados, setEmpleados] = useState([]);
   const [loadingEmpleados, setLoadingEmpleados] = useState(true);
   const [registros, setRegistros] = useState([]);
   const [registrosBrutos, setRegistrosBrutos] = useState([]);
+  // State pentru a stoca dacă fiecare fichaje necesită regularizare (pentru a ascunde butonul când nu este necesar)
+  const [needsRegularizationMap, setNeedsRegularizationMap] = useState({});
+  // State pentru modal-ul de confirmare jornada
+  const [showConfirmarJornadaModal, setShowConfirmarJornadaModal] = useState(false);
+  const [confirmarJornadaData, setConfirmarJornadaData] = useState(null);
   
   // State pentru selectorul de lună
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -3330,6 +3617,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           data: item.FECHA || item.data || '',
           codigo: item.CODIGO || item.codigo || '',
           duration: item.DURACION || item.duration || '',
+          effective_duration: item.effective_duration || item.EFFECTIVE_DURATION || null, // Ora regularizată
+          effective_minutes: item.effective_minutes || item.EFFECTIVE_MINUTES || null, // Minute efective (pentru calcul)
+          has_regularizacion: item.has_regularizacion || item.HAS_REGULARIZACION || 0, // 1 dacă există regularizare, 0 altfel
           email: item['CORREO ELECTRONIC'] || item.EMAIL || item.email || item['CORREO ELECTRONICO'] || '' // Păstrează email-ul
         };
       });
@@ -3466,6 +3756,33 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         loggerDebug('Primer registro sample:', data[0]);
         loggerDebug('Total registros received:', data.length);
         
+        // Debug: verifică dacă există effective_duration în datele primite
+        const withEffective = data.filter(item => item.effective_duration || item.EFFECTIVE_DURATION || item.effective_minutes || item.EFFECTIVE_MINUTES);
+        if (withEffective.length > 0) {
+          loggerDebug(`🔍 Found ${withEffective.length} registros with effective_duration in raw data`);
+          loggerDebug('Sample registro with effective_duration:', withEffective[0]);
+          
+          // Debug specific pentru registrul problematic (fichaje_pk: 2274 sau ID: FIC_1767527804648_b00jks0t0)
+          const problematicReg = data.find(item => item.fichaje_pk === 2274 || item.ID === 'FIC_1767527804648_b00jks0t0');
+          if (problematicReg) {
+            loggerDebug(`🔍 DEBUG SPECIFIC pentru registrul problematic în raw data:`, {
+              fichaje_pk: problematicReg.fichaje_pk,
+              ID: problematicReg.ID,
+              CODIGO: problematicReg.CODIGO,
+              FECHA: problematicReg.FECHA,
+              TIPO: problematicReg.TIPO,
+              DURACION: problematicReg.DURACION,
+              effective_duration: problematicReg.effective_duration,
+              EFFECTIVE_DURATION: problematicReg.EFFECTIVE_DURATION,
+              effective_minutes: problematicReg.effective_minutes,
+              EFFECTIVE_MINUTES: problematicReg.EFFECTIVE_MINUTES,
+              all_keys: Object.keys(problematicReg)
+            });
+          }
+        } else {
+          loggerDebug('⚠️ No registros with effective_duration found in raw data');
+        }
+        
         // Filtrare pentru elemente goale și pentru răspunsuri "not-modified"
         const validData = data.filter(item => {
           if (!item || typeof item !== 'object') return false;
@@ -3488,10 +3805,19 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         
         // Mapeo a la estructura UI
         const mapped = validData.map(item => {
-          // Debug: verifica ce câmpuri există în item (comentat pentru a reduce logurile)
-          // console.log('🔍 Mapping item:', item);
+          // Debug pentru înregistrarea problematică
+          if (item.CODIGO === '10000001' && item.FECHA === '2026-01-04' && item.TIPO === 'Salida') {
+            console.log('🔍 DEBUG Mapping item pentru 10000001:', {
+              item_keys: Object.keys(item),
+              effective_duration: item.effective_duration,
+              EFFECTIVE_DURATION: item.EFFECTIVE_DURATION,
+              has_regularizacion: item.has_regularizacion,
+              HAS_REGULARIZACION: item.HAS_REGULARIZACION,
+              full_item: item
+            });
+          }
           
-          return {
+          const mappedItem = {
             id: item.ID || item.id || item._id || null,
             // Prioriză NOMBRE / APELLIDOS care vine direct din backend
             empleado: item['NOMBRE / APELLIDOS'] || item['NOMBRE'] || item.NOMBRE || item.empleado || item.nombre || 'Sin nombre',
@@ -3500,10 +3826,65 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             address: item.DIRECCION || item.address,
             modificatDe: item.MODIFICADO_POR || item.modificatDe,
             codigo: item.CODIGO || item.codigo,
-            duration: item.DURACION || item.duration,
+            duration: item.DURACION || item.duration, // Ora originală
+            effective_duration: item.effective_duration || item.EFFECTIVE_DURATION || null, // Ora regularizată
+            effective_minutes: item.effective_minutes || item.EFFECTIVE_MINUTES || null, // Minute efective (pentru calcul)
+            has_regularizacion: item.has_regularizacion || item.HAS_REGULARIZACION || 0, // 1 dacă există regularizare, 0 altfel
             data: item.FECHA || item.data,
             email: item['CORREO ELECTRONIC'] || item.EMAIL || item.email || item['CORREO ELECTRONICO'] || ''
           };
+          
+          // Debug pentru înregistrarea problematică - după mapping
+          if (mappedItem.codigo === '10000001' && mappedItem.data === '2026-01-04' && mappedItem.tipo === 'Salida') {
+            console.log('🔍 DEBUG Mapped item pentru 10000001:', {
+              effective_duration: mappedItem.effective_duration,
+              has_regularizacion: mappedItem.has_regularizacion,
+              mapped_item: mappedItem
+            });
+          }
+          
+          // Debug pentru registre cu duration dar fără effective_duration (pentru a identifica probleme)
+          if (mappedItem.duration && !mappedItem.effective_duration && mappedItem.tipo === 'Salida') {
+            loggerDebug(`⚠️ Registro cu duration dar fără effective_duration:`, {
+              id: mappedItem.id,
+              codigo: mappedItem.codigo,
+              fecha: mappedItem.data,
+              duration: mappedItem.duration,
+              effective_duration: mappedItem.effective_duration,
+              raw_item: item,
+              raw_effective_duration: item.effective_duration,
+              raw_EFFECTIVE_DURATION: item.EFFECTIVE_DURATION,
+              raw_effective_minutes: item.effective_minutes,
+              raw_EFFECTIVE_MINUTES: item.EFFECTIVE_MINUTES,
+              all_keys: Object.keys(item)
+            });
+          }
+          
+          // Debug pentru registre cu effective_duration (pentru a verifica că se mapează corect)
+          if (mappedItem.effective_duration && mappedItem.tipo === 'Salida') {
+            loggerDebug(`✅ Registro cu effective_duration mapeado corect:`, {
+              id: mappedItem.id,
+              codigo: mappedItem.codigo,
+              fecha: mappedItem.data,
+              duration: mappedItem.duration,
+              effective_duration: mappedItem.effective_duration,
+              effective_minutes: mappedItem.effective_minutes
+            });
+          }
+          
+          // Debug specific pentru registrul problematic (fichaje_pk: 2274 sau ID: FIC_1767527804648_b00jks0t0)
+          if ((item.fichaje_pk === 2274 || item.ID === 'FIC_1767527804648_b00jks0t0' || mappedItem.id === 'FIC_1767527804648_b00jks0t0') && mappedItem.tipo === 'Salida') {
+            loggerDebug(`🔍 DEBUG SPECIFIC pentru registrul problematic:`, {
+              mappedItem: mappedItem,
+              raw_item: item,
+              has_effective_duration: !!mappedItem.effective_duration,
+              effective_duration_value: mappedItem.effective_duration,
+              raw_effective_duration: item.effective_duration,
+              raw_EFFECTIVE_DURATION: item.EFFECTIVE_DURATION
+            });
+          }
+          
+          return mappedItem;
         });
 
         // Filtrare pe lună (dacă API-ul nu filtrează corect)
@@ -3516,8 +3897,21 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
 
         loggerDebug('Filtered registros for month', month, ':', filteredData.length);
 
+        // Deduplicare: elimină duplicatele după o combinație unică de CODIGO + FECHA + TIPO + HORA
+        const uniqueRegistros = [];
+        const seenRegistroKeys = new Set();
+        for (const item of filteredData) {
+          const key = `${item.codigo || item.CODIGO || ''}_${item.data || item.FECHA || ''}_${item.tipo || item.TIPO || ''}_${item.hora || item.HORA || ''}_${item.id || item.ID || ''}`;
+          if (!seenRegistroKeys.has(key)) {
+            seenRegistroKeys.add(key);
+            uniqueRegistros.push(item);
+          }
+        }
+        
+        loggerDebug('Unique registros after deduplication:', uniqueRegistros.length, 'from', filteredData.length);
+
         // Ordenación correcta: combina fecha y hora para una ordenación cronológica precisa (más reciente primero)
-        const sortedRegistros = [...filteredData].sort((a, b) => {
+        const sortedRegistros = [...uniqueRegistros].sort((a, b) => {
           const dataA = a.data || a.fecha || '';
           const dataB = b.data || b.fecha || '';
           const horaA = padTime(a.hora || '');
@@ -3540,6 +3934,41 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         if (sortedRegistros.length > 0) {
           // Salvează datele mapate și sortate
           setRegistrosBrutos(sortedRegistros);
+          
+          // Verifică asincron pentru fiecare fichaje dacă necesită regularizare (doar pentru Salida fără effective_duration)
+          // IMPORTANT: Nu așteptăm toate request-urile - actualizăm map-ul incremental pentru a nu bloca UI-ul
+          const itemsToCheck = sortedRegistros.filter(item => 
+            item.tipo === 'Salida' && 
+            item.duration && 
+            !(item.effective_duration && item.effective_duration.trim() !== '') && 
+            !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
+          );
+          
+          // Procesează în batch-uri de 10 pentru a nu suprasolicita serverul
+          const BATCH_SIZE = 10;
+          (async () => {
+            for (let i = 0; i < itemsToCheck.length; i += BATCH_SIZE) {
+              const batch = itemsToCheck.slice(i, i + BATCH_SIZE);
+              // Nu așteptăm batch-ul să se termine - procesăm în paralel și actualizăm incremental
+              batch.forEach(async (item) => {
+                const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
+                try {
+                  const checkResult = await callApi(routes.checkConfirmation(item.codigo, item.data));
+                  const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+                  setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
+                } catch (err) {
+                  // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+                  setNeedsRegularizationMap(prev => ({ ...prev, [key]: true }));
+                }
+              });
+              // Mic delay între batch-uri pentru a nu suprasolicita serverul (doar dacă sunt multe batch-uri)
+              if (i + BATCH_SIZE < itemsToCheck.length && itemsToCheck.length > BATCH_SIZE * 2) {
+                await new Promise(resolve => setTimeout(resolve, 50)); // Delay redus la 50ms
+              }
+            }
+          })().catch(err => {
+            loggerDebug('Error checking needs regularization:', err);
+          });
         } else {
           warn('No registros found for month', month, '- păstrăm datele existente (nu ștergem)');
           // Nu ștergem datele existente - poate fi o problemă temporară sau o lună fără registros
@@ -3676,7 +4105,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         data: item.FECHA || item.DATA || item.data || item.fecha || item.date || '',
         tipo: item.TIPO || item.tipo || item.type || '',
         hora: item.HORA || item.hora || item.time || '',
-        duration: item.DURACION || item.duration || item.duracion || '',
+        duration: item.DURACION || item.duration || item.duracion || '', // Ora originală
+        effective_duration: item.effective_duration || item.EFFECTIVE_DURATION || null, // Ora regularizată
+        effective_minutes: item.effective_minutes || item.EFFECTIVE_MINUTES || null, // Minute efective (pentru calcul)
+        has_regularizacion: item.has_regularizacion || item.HAS_REGULARIZACION || 0, // 1 dacă există regularizare, 0 altfel
         address: item.DIRECCION || item.address || item.direccion || item.location || '',
         modificatDe: item.MODIFICADO_POR || item.modificatDe || item.modified_by || item.manager || '',
         codigo: item.CODIGO || item.codigo || '',
@@ -4809,6 +5241,9 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                         Duración
                       </th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">
+                        Duración regularizada
+                      </th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">
                         Dirección
                       </th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">
@@ -4840,14 +5275,134 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                         </td>
                         <td className="py-3 px-4 text-gray-600">{item.hora}</td>
                         <td className="py-3 px-4 whitespace-nowrap">
-                        {item.duration && item.tipo === 'Salida' ? (
-                          <span className="inline-flex items-center gap-1 text-blue-600 font-medium bg-blue-100 px-2 py-1 rounded text-sm whitespace-nowrap">
-                            ⏱️ {item.duration}
-                          </span>
-                        ) : item.tipo === 'Salida' && !item.duration ? (
-                          <span className="inline-flex items-center gap-1 text-red-600 font-medium bg-red-100 px-2 py-1 rounded text-sm whitespace-nowrap">
-                            ⚠️ No duration
-                          </span>
+                        {item.tipo === 'Salida' ? (
+                          item.duration ? (
+                            <span className="inline-flex items-center gap-1 text-gray-600 font-medium bg-gray-100 px-2 py-1 rounded text-xs whitespace-nowrap">
+                              ⏱ {item.duration}
+                            </span>
+                          ) : (
+                            <span className="text-red-600 text-xs">⚠️ Sin duración</span>
+                          )
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {item.tipo === 'Salida' ? (
+                          <div className="flex flex-col gap-1">
+                            {(() => {
+                              // Debug pentru a vedea exact ce valoare are effective_duration în UI
+                              if (item.id === 'FIC_1767527804648_b00jks0t0' || item.codigo === '10000001' && item.data === '2026-01-04' && item.tipo === 'Salida') {
+                                console.log('🔍 UI DEBUG pentru registrul problematic:', {
+                                  id: item.id,
+                                  codigo: item.codigo,
+                                  fecha: item.data,
+                                  tipo: item.tipo,
+                                  duration: item.duration,
+                                  effective_duration: item.effective_duration,
+                                  effective_duration_type: typeof item.effective_duration,
+                                  effective_duration_truthy: !!item.effective_duration,
+                                  effective_duration_trimmed: item.effective_duration ? item.effective_duration.trim() : 'N/A'
+                                });
+                              }
+                              return null;
+                            })()}
+                            {item.effective_duration && item.effective_duration.trim() !== '' ? (
+                              <span 
+                                className="inline-flex items-center gap-1 text-green-700 font-bold bg-green-100 px-2 py-1 rounded text-xs whitespace-nowrap cursor-help"
+                                title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
+                              >
+                                ✅ {item.effective_duration}
+                              </span>
+                            ) : (
+                              <>
+                                <span className="text-gray-400 text-xs">-</span>
+                                {/* Buton Regularizar pentru managers - apare dacă are duration dar nu există regularizare și necesită regularizare */}
+                                {(() => {
+                                  const key = `${item.codigo}_${item.data}_${item.tipo}`;
+                                  const needsRegularization = needsRegularizationMap[key]; // true dacă necesită, false dacă nu, undefined dacă nu a fost verificat încă
+                                  // Afișăm butonul dacă verificarea nu s-a terminat (undefined) sau dacă returnează true
+                                  // Ascundem doar dacă verificarea returnează explicit false
+                                  return item.duration && 
+                                    !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                                    !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') &&
+                                    needsRegularization !== false; // Afișăm dacă nu este explicit false
+                                })() && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        // Verifică dacă managerul încearcă să-și regularizeze propriul registru
+                                        const employeeCodigo = item.codigo || item.CODIGO;
+                                        const userCodigo = authUser?.CODIGO || authUser?.codigo;
+                                        const isOwnRecord = employeeCodigo && userCodigo && employeeCodigo.toString() === userCodigo.toString();
+                                        
+                                        if (isManager && !isOwnRecord) {
+                                          // Supervisor: solicită regularizare pentru alt angajat (creează NEEDS_REVIEW)
+                                          const result = await callApi(routes.requestRegularizacion, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+                                              fecha: item.data,
+                                            }),
+                                          });
+                                          if (result.success) {
+                                            setNotification({
+                                              type: 'success',
+                                              title: 'Regularización solicitada',
+                                              message: 'El empleado recibirá una notificación para confirmar.',
+                                            });
+                                            fetchRegistros(selectedMonth).catch(err => {
+                                              console.error('Error reloading registros:', err);
+                                            });
+                                          }
+                                        } else {
+                                          // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare direct
+                                          const checkResult = await callApi(routes.checkConfirmation(item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data));
+                                          const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+                                          console.log('🔍 DEBUG checkResult pentru Regularizar (admin tab):', {
+                                            success: checkResult.success,
+                                            needs_confirmation: resultData.needs_confirmation,
+                                            needs_confirmation_type: typeof resultData.needs_confirmation,
+                                            delta_minutes: resultData.delta_minutes,
+                                            punched_minutes: resultData.punched_minutes,
+                                            scheduled_minutes: resultData.scheduled_minutes,
+                                            full_result: checkResult,
+                                            resultData: resultData
+                                          });
+                                          if (checkResult.success && resultData.needs_confirmation) {
+                                            setConfirmarJornadaData({
+                                              ...resultData,
+                                              fecha: item.data,
+                                              employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+                                            });
+                                            setShowConfirmarJornadaModal(true);
+                                          } else {
+                                            console.log('⚠️ DEBUG: Nu se deschide modalul - success:', checkResult.success, 'needs_confirmation:', resultData.needs_confirmation);
+                                            setNotification({
+                                              type: 'info',
+                                              title: 'Sin diferencia',
+                                              message: 'No hay diferencia significativa para regularizar.',
+                                            });
+                                          }
+                                        }
+                                      } catch (err) {
+                                        console.error('Error regularizando:', err);
+                                        setNotification({
+                                          type: 'error',
+                                          title: 'Error',
+                                          message: 'Error al solicitar regularización. Intenta de nuevo.',
+                                        });
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors whitespace-nowrap"
+                                  >
+                                    🔄 Regularizar
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
@@ -5013,16 +5568,88 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div className="bg-gray-50 p-2 rounded">
                       <div className="block text-xs font-medium text-gray-600 mb-1">Duración</div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {item.duration && item.tipo === 'Salida' ? (
-                          <span className="text-blue-600">⏱️ {item.duration}</span>
-                        ) : item.tipo === 'Salida' && !item.duration ? (
-                          <span className="text-red-600">⚠️ Sin duración</span>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {item.tipo === 'Salida' ? (
+                          item.duration ? (
+                            <span className="text-gray-700">⏱ {item.duration}</span>
+                          ) : (
+                            <span className="text-red-600 text-xs">⚠️ Sin duración</span>
+                          )
                         ) : (
                           <span className="text-gray-400">-</span>
                         )}
-                      </p>
+                      </div>
                     </div>
+                    <div className="bg-gray-50 p-2 rounded">
+                      <div className="block text-xs font-medium text-gray-600 mb-1">Duración regularizada</div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {item.tipo === 'Salida' ? (
+                          item.effective_duration && item.effective_duration.trim() !== '' ? (
+                            <span 
+                              className="inline-flex items-center gap-1 text-green-700 font-bold cursor-help"
+                              title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
+                            >
+                              ✅ {item.effective_duration}
+                            </span>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-gray-400 text-xs">-</span>
+                              {/* Buton Regularizar pentru managers - apare dacă are duration dar nu există regularizare și necesită regularizare */}
+                              {(() => {
+                                const key = `${item.codigo}_${item.data}_${item.tipo}`;
+                                const needsRegularization = needsRegularizationMap[key]; // true dacă necesită, false dacă nu, undefined dacă nu a fost verificat încă
+                                // Afișăm butonul dacă verificarea nu s-a terminat (undefined) sau dacă returnează true
+                                // Ascundem doar dacă verificarea returnează explicit false
+                                return item.duration && 
+                                  !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                                  !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') &&
+                                  needsRegularization !== false; // Afișăm dacă nu este explicit false
+                              })() && (
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const result = await callApi(routes.requestRegularizacion, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          employee_codigo: item.empleado || item.codigo,
+                                          fecha: item.data,
+                                        }),
+                                      });
+                                      if (result.success) {
+                                        setNotification({
+                                          type: 'success',
+                                          title: 'Regularización solicitada',
+                                          message: 'El empleado recibirá una notificación para confirmar.',
+                                        });
+                                        // Reîncarcă registros
+                                        fetchRegistros(selectedMonth).catch(err => {
+                                          console.error('Error reloading registros:', err);
+                                        });
+                                      }
+                                    } catch (err) {
+                                      console.error('Error regularizando:', err);
+                                      setNotification({
+                                        type: 'error',
+                                        title: 'Error',
+                                        message: 'Error al solicitar regularización. Intenta de nuevo.',
+                                      });
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors"
+                                >
+                                  🔄 Regularizar
+                                </button>
+                              )}
+                            </div>
+                          )
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 mb-3">
                     <div className="bg-gray-50 p-2 rounded">
                       <div className="block text-xs font-medium text-gray-600 mb-1">Modificado por</div>
                       <p className="text-sm font-semibold text-gray-900 truncate">{item.modificatDe || '-'}</p>
@@ -5587,6 +6214,22 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           </div>
         </Modal>
       )}
+
+      {/* Modal Confirmar Jornada */}
+      <ConfirmarJornadaModal
+        isOpen={showConfirmarJornadaModal}
+        onClose={() => {
+          setShowConfirmarJornadaModal(false);
+          setConfirmarJornadaData(null);
+        }}
+        onConfirm={() => {
+          // Reîncarcă registros după confirmare
+          fetchRegistros(selectedMonth).catch(err => {
+            warn('Error reloading registros after confirmation:', err);
+          });
+        }}
+        data={confirmarJornadaData}
+      />
     </div>
   );
 }
@@ -5843,12 +6486,18 @@ export default function FichajePage() {
           loggerDebug('Orar găsit - Martes:', horarioMatch.days?.M);
           setHorarioAsignado(horarioMatch);
         } else {
-          warn('Nu s-a găsit orar pentru:', { centroUsuario, grupoUsuario });
-          loggerDebug('Toate orarele disponibile:', response.data.map(h => ({
-            nombre: h.nombre,
-            centroNombre: h.centroNombre,
-            grupoNombre: h.grupoNombre
-          })));
+          // Afișează avertismentul doar dacă NU există cuadrante
+          // Dacă există cuadrante, nu este o problemă că nu există orar
+          if (!cuadranteAsignado) {
+            warn('Nu s-a găsit orar pentru:', { centroUsuario, grupoUsuario });
+            loggerDebug('Toate orarele disponibile:', response.data.map(h => ({
+              nombre: h.nombre,
+              centroNombre: h.centroNombre,
+              grupoNombre: h.grupoNombre
+            })));
+          } else {
+            loggerDebug('Orar nu găsit, dar există cuadrante - nu este o problemă');
+          }
           setHorarioAsignado(null);
         }
       }
@@ -5858,7 +6507,7 @@ export default function FichajePage() {
     } finally {
       setLoadingHorario(false);
     }
-  }, [authUser, userData, loadingHorario]);
+  }, [authUser, userData, loadingHorario, cuadranteAsignado]);
   
   // State pentru dialog de confirmare
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({
@@ -6371,38 +7020,12 @@ export default function FichajePage() {
 
   useEffect(() => {
     if (showIncidenciaModal) {
-      // Initialize Madrid time from an authoritative API, not device clock
-      (async () => {
-        try {
-          // Încearcă să obțină ora din API (opțional, pentru sincronizare mai precisă)
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 3000); // Timeout scurt de 3 secunde
-          
-          const resp = await fetch('https://worldtimeapi.org/api/timezone/Europe/Madrid', {
-            signal: controller.signal,
-          }).catch(() => null); // Nu aruncă eroare, doar returnează null
-          
-          clearTimeout(timeoutId);
-          
-          if (resp && resp.ok) {
-            const data = await resp.json();
-            // data.datetime example: 2025-10-02T14:21:06.123456+02:00
-            const base = new Date(data.datetime).getTime();
-            setMadridNowMs(base);
-            updateMadridTimeFromMs(base);
-          } else {
-            // Fallback: folosim ora locală (JavaScript va formata corect pentru timezone-ul Europe/Madrid)
-            const base = Date.now();
-            setMadridNowMs(base);
-            updateMadridTimeFromMs(base);
-          }
-        } catch (_) {
-          // Fallback: folosim ora locală (JavaScript va formata corect pentru timezone-ul Europe/Madrid)
-          const base = Date.now();
-          setMadridNowMs(base);
-          updateMadridTimeFromMs(base);
-        }
-      })();
+      // Initialize Madrid time from local time converted to Europe/Madrid timezone
+      // JavaScript nativ poate calcula ora în orice timezone fără API extern
+      // Eliminăm request-ul către worldtimeapi.org pentru a evita erorile de conexiune
+      const base = Date.now();
+      setMadridNowMs(base);
+      updateMadridTimeFromMs(base);
       // Start ticking forward locally each second from base ms
       madridTimerRef.current = setInterval(() => {
         setMadridNowMs(prev => {

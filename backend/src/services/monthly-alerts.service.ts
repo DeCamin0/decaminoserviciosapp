@@ -385,8 +385,26 @@ export class MonthlyAlertsService {
       fichaje_base AS (
         SELECT
           CAST(f.CODIGO AS CHAR) AS empleadoId,
-          DATE(f.FECHA)          AS fecha,
-          f.DURACION             AS duracion
+          -- Pentru turele de noapte: dacă Salida are DURACION și există Entrada în ziua anterioară după ora 17:00,
+          -- atribuim DURACION-ul la data de Entrada (workday_date), nu la data de Salida
+          CASE
+            WHEN f.TIPO = 'Salida' 
+              AND f.DURACION IS NOT NULL 
+              AND TRIM(f.DURACION) != '' 
+              AND f.DURACION != '00:00:00'
+              AND CAST(TIME(f.HORA) AS TIME) < TIME('12:00:00') -- Salida înainte de 12:00 (dimineața) = tură de noapte
+              AND EXISTS (
+                SELECT 1
+                FROM Fichaje f_entrada
+                WHERE f_entrada.CODIGO = f.CODIGO
+                  AND f_entrada.TIPO = 'Entrada'
+                  AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+                  AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00') -- Entrada după 17:00 = tură de noapte
+              )
+            THEN DATE_SUB(f.FECHA, INTERVAL 1 DAY) -- Tură de noapte: atribuie la data de început (workday_date)
+            ELSE DATE(f.FECHA) -- Tură normală: folosește data fichaje-ului
+          END AS fecha,
+          f.DURACION AS duracion
         FROM Fichaje f
         WHERE f.FECHA >= @d_first AND f.FECHA < DATE_ADD(@d_last, INTERVAL 1 DAY)
       ),
@@ -405,7 +423,10 @@ export class MonthlyAlertsService {
           he.empleadoId,
           he.fecha,
           ROUND(COALESCE(SUM(fd.dur_secs),0)/3600,2) AS horas_fichadas,
-          CASE WHEN he.cnt_events > 0 AND COALESCE(SUM(fd.dur_secs),0) = 0 THEN 1 ELSE 0 END AS fichaje_incompleto
+          CASE 
+            WHEN he.cnt_events > 0 AND COALESCE(SUM(fd.dur_secs),0) = 0 THEN 1 
+            ELSE 0 
+          END AS fichaje_incompleto
         FROM fichaje_has_events he
         LEFT JOIN fichaje_with_duration fd
           ON fd.empleadoId = he.empleadoId AND fd.fecha = he.fecha
@@ -415,6 +436,18 @@ export class MonthlyAlertsService {
         SELECT empleadoId, ROUND(SUM(horas_fichadas),2) AS horas_fichadas_mes
         FROM fichaje_dia
         GROUP BY empleadoId
+      ),
+      regularizaciones_confirmadas AS (
+        SELECT
+          CAST(fr.employee_codigo AS CHAR) AS empleadoId,
+          DATE_FORMAT(fr.workday_date, '%Y-%m-%d') AS fecha,
+          1 AS has_regularizacion_confirmada
+        FROM FichajeRegularizacion fr
+        WHERE fr.status IN ('CONFIRMED', 'REJECTED')
+          AND fr.effective_minutes IS NOT NULL
+          AND DATE(fr.workday_date) >= DATE(@d_first)
+          AND DATE(fr.workday_date) <= DATE(@d_last)
+        GROUP BY fr.employee_codigo, DATE(fr.workday_date)
       ),
       combined_json AS (
         SELECT
@@ -429,6 +462,7 @@ export class MonthlyAlertsService {
                 ',"fichado":', CAST(ROUND(COALESCE(fd.horas_fichadas,0),2) AS CHAR),
                 ',"delta":',   CAST(ROUND(COALESCE(fd.horas_fichadas,0) - dp.horas_plan,2) AS CHAR),
                 ',"incompleto":', COALESCE(fd.fichaje_incompleto,0),
+                ',"has_regularizacion_confirmada":', COALESCE(rc.has_regularizacion_confirmada,0),
                 '}'
               )
               ORDER BY dp.fecha
@@ -439,6 +473,8 @@ export class MonthlyAlertsService {
         FROM daily_plan dp
         LEFT JOIN fichaje_dia fd
           ON fd.empleadoId = dp.empleadoId AND fd.fecha = dp.fecha
+        LEFT JOIN regularizaciones_confirmadas rc
+          ON rc.empleadoId = dp.empleadoId AND rc.fecha = DATE_FORMAT(dp.fecha, '%Y-%m-%d')
         GROUP BY dp.empleadoId
       ),
       sumar_flags_zile AS (
@@ -675,12 +711,28 @@ export class MonthlyAlertsService {
         // Parse detalii_zilnice JSON string for each employee
         const parsedResult = dataRows.map((emp) => {
           try {
+            const parsedDetalii =
+              typeof emp.detalii_zilnice === 'string'
+                ? JSON.parse(emp.detalii_zilnice || '[]')
+                : emp.detalii_zilnice || [];
+
+            // Debug: verifică dacă există zile cu regularizări confirmate
+            const zileCuRegularizare = parsedDetalii.filter(
+              (d: any) =>
+                d?.has_regularizacion_confirmada === 1 ||
+                d?.has_regularizacion_confirmada === true ||
+                d?.has_regularizacion_confirmada === '1',
+            );
+            if (zileCuRegularizare.length > 0) {
+              this.logger.debug(
+                `✅ [MonthlyAlerts] Empleado ${emp.empleadoId}: Found ${zileCuRegularizare.length} zile cu regularizări confirmate:`,
+                zileCuRegularizare.map((d: any) => d.fecha),
+              );
+            }
+
             return {
               ...emp,
-              detalii_zilnice:
-                typeof emp.detalii_zilnice === 'string'
-                  ? JSON.parse(emp.detalii_zilnice || '[]')
-                  : emp.detalii_zilnice || [],
+              detalii_zilnice: parsedDetalii,
             };
           } catch (e) {
             this.logger.warn(

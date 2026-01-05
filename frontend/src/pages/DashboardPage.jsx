@@ -50,6 +50,7 @@ const InicioPage = () => {
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
+  const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -321,6 +322,65 @@ const InicioPage = () => {
     loadPermissions();
   }, [userGrupo, user?.isDemo, getPermissions]);
 
+  // Obține numărul de solicitări de documente
+  useEffect(() => {
+    const fetchDocumentosSolicitadosCount = async () => {
+      if (!user?.CODIGO || user?.isDemo) {
+        setDocumentosSolicitadosCount(0);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        const empleadoId = user.CODIGO;
+        const url = routes.getDocumentosSolicitados(empleadoId);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        // Dacă endpoint-ul nu există sau dacă e eroare 404/500, nu aruncăm eroare
+        if (response.status === 404 || response.status === 500) {
+          // Endpoint nu există încă sau eroare de server - nu afișăm badge
+          setDocumentosSolicitadosCount(0);
+          return;
+        }
+
+        if (!response.ok) {
+          // Pentru alte erori, logăm dar nu aruncăm
+          console.warn(`Warning: Error HTTP ${response.status} al obtener documentos solicitados`);
+          setDocumentosSolicitadosCount(0);
+          return;
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.data && Array.isArray(data.data)) {
+          // Filtrează doar cererile pendiente
+          const pendientes = data.data.filter((s) => s.estado === 'pendiente');
+          setDocumentosSolicitadosCount(pendientes.length);
+        } else {
+          setDocumentosSolicitadosCount(0);
+        }
+      } catch (error) {
+        // Nu logăm ca eroare critică - doar ca warning
+        console.warn('Warning: Error obteniendo documentos solicitados:', error);
+        setDocumentosSolicitadosCount(0);
+      }
+    };
+
+    fetchDocumentosSolicitadosCount();
+    
+    // Reîncarcă la fiecare 30 de secunde pentru a actualiza badge-ul
+    const interval = setInterval(fetchDocumentosSolicitadosCount, 30000);
+    
+    return () => clearInterval(interval);
+  }, [user?.CODIGO, user?.isDemo]);
+
   const quickAccessItems = useMemo(() => {
     // Dacă permisiunile nu sunt încă încărcate, folosim verificările hardcodate ca fallback
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
@@ -394,6 +454,7 @@ const InicioPage = () => {
         icon: <FileText className="h-6 w-6 text-white" />,
         gradient: 'from-orange-500 via-amber-500 to-yellow-500',
         href: '/documentos',
+        notificationCount: documentosSolicitadosCount > 0 ? documentosSolicitadosCount : undefined,
       });
     }
 
@@ -585,6 +646,7 @@ const InicioPage = () => {
     hasPermission,
     findGrupoKey,
     comunicadosUnreadCount,
+    documentosSolicitadosCount,
   ]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)
@@ -1040,7 +1102,39 @@ const InicioPage = () => {
           <div>
             <h3 className="text-lg font-semibold text-yellow-800">Alertas mensuales detectadas</h3>
             <p className="text-sm text-yellow-700">
-              Tienes {monthlyAlerts.total} días con alertas este mes: <span className="font-semibold text-red-600">+{monthlyAlerts.positivos}</span> con exceso y <span className="font-semibold text-yellow-600">-{monthlyAlerts.negativos}</span> con déficit. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+              {(() => {
+                const parts = [];
+                if (monthlyAlerts.positivos > 0) {
+                  parts.push(
+                    <span key="exceso">
+                      <span className="font-semibold text-red-600">{monthlyAlerts.positivos} día{monthlyAlerts.positivos > 1 ? 's' : ''}</span> con exceso (has trabajado más horas de las previstas)
+                    </span>
+                  );
+                }
+                if (monthlyAlerts.negativos > 0) {
+                  parts.push(
+                    <span key="deficit">
+                      <span className="font-semibold text-yellow-600">{monthlyAlerts.negativos} día{monthlyAlerts.negativos > 1 ? 's' : ''}</span> con déficit (no has fichado o has trabajado menos horas de las previstas)
+                    </span>
+                  );
+                }
+                if (parts.length === 0) {
+                  return (
+                    <>
+                      Tienes {monthlyAlerts.total} días con alertas este mes. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    Tienes {monthlyAlerts.total} día{monthlyAlerts.total > 1 ? 's' : ''} con alertas este mes: {parts.length > 1 ? (
+                      <>
+                        {parts[0]} y {parts[1]}
+                      </>
+                    ) : parts[0]}. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+                  </>
+                );
+              })()}
             </p>
           </div>
         </div>

@@ -86,8 +86,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     try {
       // Limitează stack trace la primele 500 caractere
       const stackPreview =
-        errorInfo.stack?.substring(0, 500) ||
-        'No stack trace available';
+        errorInfo.stack?.substring(0, 500) || 'No stack trace available';
 
       const message = `
 🚨 *Error crítico en backend*
@@ -108,10 +107,7 @@ ${stackPreview}
       this.logger.log('✅ Critical error alert sent to Telegram');
     } catch (error: any) {
       // Nu aruncăm eroarea pentru a nu bloca flow-ul
-      this.logger.error(
-        `❌ Error sending Telegram alert: ${error.message}`,
-      );
+      this.logger.error(`❌ Error sending Telegram alert: ${error.message}`);
     }
   }
 }
-

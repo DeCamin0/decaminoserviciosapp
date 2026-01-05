@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { BASE_URL } from '../../utils/routes';
 
@@ -41,9 +41,9 @@ export default function PushSubscribersList() {
         const data = await res.json();
 
         setSubscribers(Array.isArray(data.items) ? data.items : []);
-      } catch (err: any) {
+      } catch (err) {
         console.error('[PushSubscribersList] Error fetching subscribers:', err);
-        setError(err.message || 'Error desconocido al cargar suscriptores');
+        setError(err instanceof Error ? err.message : 'Error desconocido al cargar suscriptores');
       } finally {
         setLoading(false);
       }

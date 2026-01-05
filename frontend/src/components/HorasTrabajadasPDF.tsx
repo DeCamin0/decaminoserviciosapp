@@ -206,6 +206,55 @@ const styles = StyleSheet.create({
 // Logo-ul se importă direct din assets
 
 
+// Helper pentru a calcula orele zilnice din contract ca fallback
+const getDailyContractHours = (fecha: string, detalle: DetalleEmpleado): number => {
+  const parseHours = (value: string | number | undefined | null): number => {
+    if (value === undefined || value === null) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+  
+  // Prioritate 1: folosește horasContratoSemanal dacă există (ore săptămânale / 5 zile lucrătoare)
+  if (detalle.horasContratoSemanal && detalle.horasContratoSemanal > 0) {
+    return Number((detalle.horasContratoSemanal / 5).toFixed(2));
+  }
+  
+  // Prioritate 2: folosește horasContrato (ore săptămânale din detaliile angajatului) / 5 zile lucrătoare
+  const horasContrato = parseHours(detalle.horasContrato);
+  if (horasContrato > 0) {
+    return Number((horasContrato / 5).toFixed(2));
+  }
+  
+  // Prioritate 3: folosește horasContratoMes împărțit la zile lucrătoare din lună
+  const horasContratoMes = parseHours(detalle.horasContratoMes);
+  if (horasContratoMes > 0) {
+    try {
+      const fechaDate = new Date(fecha);
+      const year = fechaDate.getFullYear();
+      const month = fechaDate.getMonth();
+      
+      // Calculează zile lucrătoare din lună (excludem duminicile)
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      let workingDays = 0;
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        if (date.getDay() !== 0) { // Nu e duminică
+          workingDays++;
+        }
+      }
+      return workingDays > 0 ? Number((horasContratoMes / workingDays).toFixed(2)) : 0;
+    } catch {
+      return 0;
+    }
+  }
+  
+  return 0;
+};
+
 // Componenta PDF pentru detaliile de ore
 const HorasTrabajadasPDF = ({ 
   detalle, 
@@ -342,10 +391,17 @@ const HorasTrabajadasPDF = ({
               <Text style={[styles.tableHeaderCell, { flex: 0.9 }]}>Estado</Text>
             </View>
             {detalle.detaliiZilnice.map((detalleDia, index) => {
-              const plan = detalleDia.plan || 0;
+              // Fallback la orele din contract dacă nu există plan și nu există orar/cuadrante
+              const planValue = detalleDia.plan ?? 0;
+              const planFuente = detalleDia.plan_fuente || '';
+              const hasNoSchedule = planFuente === 'none' || !planFuente || planValue === 0;
+              const contractFallback = hasNoSchedule ? getDailyContractHours(detalleDia.fecha, detalle) : 0;
+              const finalPlan = planValue > 0 ? planValue : (contractFallback > 0 ? contractFallback : 0);
+              const finalPlanFuente = planValue > 0 ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
+              
               const fichado = detalleDia.fichado || 0;
-              const delta = detalleDia.delta || 0;
-              const estadoText = (plan > 0 && fichado === 0) ? 'Sin fichar' : '—';
+              const finalDelta = fichado - finalPlan;
+              const estadoText = (finalPlan > 0 && fichado === 0) ? 'Sin fichar' : '—';
               
               return (
                 <View key={`${detalleDia.fecha}-${index}`} style={styles.tableRow}>
@@ -357,19 +413,19 @@ const HorasTrabajadasPDF = ({
                     })}
                   </Text>
                   <Text style={[styles.tableCell, { flex: 0.8 }]}>
-                    {plan.toFixed(1)}
+                    {finalPlan.toFixed(1)}
                   </Text>
                   <Text style={[styles.tableCell, { flex: 1, fontSize: 7 }]}>
-                    {detalleDia.plan_fuente || 'N/A'}
+                    {finalPlanFuente}
                   </Text>
                   <Text style={[styles.tableCell, { flex: 0.8 }]}>
                     {fichado.toFixed(2)}
                   </Text>
                   <Text style={[styles.tableCell, { 
                     flex: 0.8,
-                    color: delta < 0 ? '#DC2626' : (delta > 0 ? '#059669' : '#6B7280')
+                    color: finalDelta < 0 ? '#DC2626' : (finalDelta > 0 ? '#059669' : '#6B7280')
                   }]}>
-                    {delta.toFixed(2)}
+                    {finalDelta.toFixed(2)}
                   </Text>
                   <Text style={[styles.tableCell, { flex: 0.7 }]}>
                     {detalleDia.incompleto ? 'Sí' : 'No'}

@@ -20,7 +20,7 @@ export class MonitoringService implements OnModuleInit {
     // Verifică dacă monitoring-ul este activat
     const monitoringEnabled =
       this.configService.get<string>('MONITORING_ENABLED') === 'true';
-    
+
     if (monitoringEnabled) {
       this.logger.log('✅ Monitoring service initialized and enabled');
     } else {
@@ -130,7 +130,7 @@ export class MonitoringService implements OnModuleInit {
 
     try {
       let message = '';
-      
+
       if (alert.type === 'high_db_latency') {
         message = `
 ⚠️ *Alerta de rendimiento*
@@ -178,4 +178,3 @@ export class MonitoringService implements OnModuleInit {
     return result;
   }
 }
-

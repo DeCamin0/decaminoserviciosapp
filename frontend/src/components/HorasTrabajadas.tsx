@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button } from './ui';
+import React, { useState, useEffect } from 'react';
+import { Card } from './ui';
 import EmployeeMonthlyTable from './EmployeeMonthlyTable';
 import EmployeeDetailDrawer from './EmployeeDetailDrawer';
 import EmployeeAlertsTable from './EmployeeAlertsTable';
@@ -196,11 +196,6 @@ interface TextProps {
   className?: string;
 }
 
-interface SpaceProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
 // Componente simple pentru UI
 const Title = ({ level, children, style, className, ...props }: TitleProps) => {
   const Tag = level === 2 ? 'h2' : level === 3 ? 'h3' : level === 4 ? 'h4' : level === 5 ? 'h5' : 'h6';
@@ -213,9 +208,6 @@ const Text = ({ children, type, style, className, ...props }: TextProps) => {
   return <span className={combinedClassName} style={style} {...props}>{children}</span>;
 };
 
-const Space = ({ children, className, ...props }: SpaceProps) => (
-  <div className={`flex gap-2 ${className || ''}`} {...props}>{children}</div>
-);
 
 // Interface pentru error handler
 interface ErrorHandler {
@@ -311,7 +303,7 @@ async function fetchResumen(
       let empleados: ResumenEmpleado[] = [];
       
       // Helper function pentru mapare item la ResumenEmpleado
-      const parseOptionalNumber = (value: any) => {
+      const parseOptionalNumber = (value: unknown) => {
         if (value === undefined || value === null || value === '') {
           return undefined;
         }
@@ -319,7 +311,7 @@ async function fetchResumen(
         return isNaN(num) ? undefined : num;
       };
 
-      const mapItemToResumen = (item: any, mesParam: string, tipoParam: 'mensual' | 'anual', empleadoIdParam?: number, empleadoNombreParam?: string) => {
+      const mapItemToResumen = (item: Record<string, unknown>, mesParam: string, tipoParam: 'mensual' | 'anual', empleadoIdParam?: number, empleadoNombreParam?: string) => {
         console.log('🔍 Mapping item:', item.empleadoNombre || item.empleadoId || empleadoNombreParam);
         console.log('🔍 Item keys:', Object.keys(item));
         console.log('🔍 Item raw data:', item);
@@ -432,7 +424,7 @@ async function fetchResumen(
           horasExtraRaw = item.total_extraordinarias;
         } else if (item.detalii_zilnice && Array.isArray(item.detalii_zilnice) && item.detalii_zilnice.length > 0) {
           // Calculează din suma excedente din detalii zilnice
-          const sumaExcedente = item.detalii_zilnice.reduce((sum: number, detalle: any) => {
+          const sumaExcedente = item.detalii_zilnice.reduce((sum: number, detalle: { excedente?: string | number }) => {
             const excedente = typeof detalle.excedente === 'string' ? parseFloat(detalle.excedente) : (detalle.excedente || 0);
             return sum + (typeof excedente === 'number' ? excedente : 0);
           }, 0);
@@ -678,7 +670,7 @@ async function fetchDetalle(
       
       // Endpointul de registre (detallemensual) întoarce un array simplu cu intrări/ieșiri
       if (tipoDetalle === 'detallemensual' && Array.isArray(data)) {
-        const normalizeField = (value: any, fallback = '--:--') => {
+        const normalizeField = (value: unknown, fallback = '--:--') => {
           if (value === undefined || value === null || value === '') return fallback;
           return String(value);
         };
@@ -737,7 +729,7 @@ async function fetchDetalle(
         // Mapează detalii_zilnice la formatul DetalleDia
         // Notă: în noua structură nu avem direct entrada/salida, ci doar plan/fichado
         // Trebuie să construim entrada/salida din alte surse sau să folosim plan/fichado
-        const dias = data.detalii_zilnice.map((detalle: any) => {
+        const dias = data.detalii_zilnice.map((detalle) => {
           // Calculează horas din fichado sau din alte câmpuri disponibile
           const horas = detalle.fichado || detalle.plan || 0;
           
@@ -761,7 +753,7 @@ async function fetchDetalle(
         
         console.log('🔍 Nuevo formato - Dias procesadas:', dias.length);
         
-        const parseNumber = (value: any, fallback = 0) => {
+        const parseNumber = (value: unknown, fallback = 0) => {
           if (value === undefined || value === null || value === '') return fallback;
           const num = typeof value === 'string' ? parseFloat(value) : Number(value);
           return isNaN(num) ? fallback : num;
@@ -772,7 +764,9 @@ async function fetchDetalle(
           empleadoNombre: data.empleadoNombre || empleadoNombre,
           mes: data.luna_selectata || mes,
           horasTrabajadas: parseNumber(data.horas_trabajadas_mes ?? data.horasTrabajadas ?? data.total_trabajadas, 0),
-          horasContrato: parseNumber(data.horas_contrato_mes ?? data.horasContrato ?? data.total_plan, 0),
+          // horasContrato trebuie să fie ore săptămânale (din HORAS DE CONTRATO din backend)
+          // Backend returnează horas_contrato ca ore săptămânale direct din HORAS DE CONTRATO
+          horasContrato: parseNumber(data.horas_contrato, 0),
           horasExtra: parseNumber(data.total_extraordinarias ?? data.horasExtra, 0),
           mediaSemanalAnual: parseNumber(data.mediaSemanalAnual, 0),
           dias: dias,
@@ -865,7 +859,7 @@ async function fetchDetalle(
               console.log('📝 Registros anual parsed sample:', Array.isArray(registrosData) ? registrosData.slice(0, 5) : registrosData);
 
               if (Array.isArray(registrosData)) {
-                const registrosNormalizados = registrosData.map((item: any) => ({
+                const registrosNormalizados = registrosData.map((item: Record<string, unknown>) => ({
                   fecha: item.FECHA || item.fecha || '--',
                   tipo: item.TIPO || item.tipo || '',
                   hora: item.HORA || item.hora || '--:--',
@@ -1022,7 +1016,7 @@ async function descargarPDF(empleadoId: number, mes: string): Promise<void> {
   // TODO: Implementar descarga real de PDF
 }
 
-async function fetchRegistrosEmpleado(codigo: string, mes?: string, empleadoNombre?: string) {
+async function fetchRegistrosEmpleado(codigo: string, mes?: string) {
   if (!codigo) {
     console.warn('⚠️ fetchRegistrosEmpleado called without codigo');
     return [];
@@ -1070,7 +1064,7 @@ async function fetchRegistrosEmpleado(codigo: string, mes?: string, empleadoNomb
     return [];
   }
 
-  return data.map((item: any) => ({
+  return data.map((item: Record<string, unknown>) => ({
     fecha: item.FECHA || item.fecha || '--',
     entrada: (item.TIPO || item.tipo || '').toLowerCase() === 'entrada' ? (item.HORA || item.hora || '--:--') : '--:--',
     salida: (item.TIPO || item.tipo || '').toLowerCase() === 'salida' ? (item.HORA || item.hora || '--:--') : '--:--',
@@ -1173,7 +1167,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
       cancelled = true;
       console.log('🔁 useEffect cleanup: cancelled request');
     };
-  }, [selectedMes, tipoReporte, empleadoId, soloEmpleado, codigo, empleadoNombre]);
+  }, [selectedMes, tipoReporte, empleadoId, soloEmpleado, codigo, empleadoNombre, handleApiError, handleNetworkError]);
 
   // Închide dropdown-ul când se face click în afara lui
   useEffect(() => {
@@ -1192,7 +1186,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
   const handleVerDetalle = async (empleadoId: number) => {
     setLoading(true);
     try {
-      const parseOptionalNumber = (value: any) => {
+      const parseOptionalNumber = (value: unknown) => {
         if (value === undefined || value === null || value === '') return undefined;
         const num = typeof value === 'string' ? parseFloat(value) : Number(value);
         return isNaN(num) ? undefined : num;
@@ -1268,17 +1262,19 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
           selectedMes,
           empleado.empleadoNombre,
           tipoReporte,
-          (empleado as any).codigo || (empleado as any).CODIGO || String(empleado.empleadoId)
+          (empleado as ResumenEmpleado & { codigo?: string; CODIGO?: string }).codigo || 
+          (empleado as ResumenEmpleado & { codigo?: string; CODIGO?: string }).CODIGO || 
+          String(empleado.empleadoId)
         );
         const mergedDetalle: DetalleEmpleado = {
           ...detalle,
           ...detalleBackend,
           dias: detalleBackend.dias,
-          detaliiZilnice: (detalleBackend as any).detaliiZilnice
-            ? (detalleBackend as any).detaliiZilnice
-            : (detalleBackend as any).detalii_zilnice
-              ? (detalleBackend as any).detalii_zilnice
-              : (detalle.detaliiZilnice || []),
+          detaliiZilnice: (() => {
+            type DetalleExtended = DetalleEmpleado & { detalii_zilnice?: DetalleEmpleado['detaliiZilnice'] };
+            const detalleExt = detalleBackend as DetalleExtended;
+            return detalleExt.detaliiZilnice || detalleExt.detalii_zilnice || detalle.detaliiZilnice || [];
+          })(),
           // Prioritate pentru datele mensual din backend
           horasTrabajadasMes: detalleBackend.horasTrabajadasMes ?? detalle.horasTrabajadasMes,
           horasMensualesPermitidas: detalleBackend.horasMensualesPermitidas ?? detalle.horasMensualesPermitidas,
@@ -1302,11 +1298,19 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
           mergedDetalle.fuente = detalleBackend.fuenteAnual;
         }
         mergedDetalle.fuenteAnual = mergedDetalle.fuenteAnual || detalleBackend.fuenteAnual || detalleBackend.fuente || mergedDetalle.fuente;
-        mergedDetalle.horasCuadranteAnual = parseOptionalNumber(
-          mergedDetalle.horasCuadranteAnual ?? (detalleBackend as any).horasCuadranteAnual ?? (detalleBackend as any).horas_cuadrante_anual
+          mergedDetalle.horasCuadranteAnual = parseOptionalNumber(
+          (() => {
+            type DetalleExtended = DetalleEmpleado & { horas_cuadrante_anual?: number | string };
+            const detalleExt = detalleBackend as DetalleExtended;
+            return mergedDetalle.horasCuadranteAnual ?? detalleExt.horasCuadranteAnual ?? detalleExt.horas_cuadrante_anual;
+          })()
         );
         mergedDetalle.horasHorarioAnual = parseOptionalNumber(
-          mergedDetalle.horasHorarioAnual ?? (detalleBackend as any).horasHorarioAnual ?? (detalleBackend as any).horas_horario_anual
+          (() => {
+            type DetalleExtended = DetalleEmpleado & { horas_horario_anual?: number | string };
+            const detalleExt = detalleBackend as DetalleExtended;
+            return mergedDetalle.horasHorarioAnual ?? detalleExt.horasHorarioAnual ?? detalleExt.horas_horario_anual;
+          })()
         );
         mergedDetalle.horasTrabajadasAnual = mergedDetalle.horasTrabajadasAnual
           ?? detalleBackend.horasTrabajadasAnual
@@ -1315,7 +1319,10 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
         mergedDetalle.horasContratoAnual = parseOptionalNumber(
           mergedDetalle.horasContratoAnual
             ?? detalleBackend.horasContratoAnual
-            ?? (detalleBackend as any).horas_contrato_anual
+            ?? (() => {
+              type DetalleExtended = DetalleEmpleado & { horas_contrato_anual?: number | string };
+              return (detalleBackend as DetalleExtended).horas_contrato_anual;
+            })()
             ?? detalleBackend.totalPlanAnual
             ?? detalleBackend.totalPlan
             ?? mergedDetalle.horasContrato
@@ -1328,7 +1335,11 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
             ?? mergedDetalle.horasContratoAnual
         );
         mergedDetalle.horasPermitidasAnual = parseOptionalNumber(
-          mergedDetalle.horasPermitidasAnual ?? detalleBackend.horasPermitidasAnual ?? (detalleBackend as any).horas_permitidas_interval ?? detalleBackend.totalPermitidasAnual ?? detalleBackend.totalPermitidas
+          (() => {
+            type DetalleExtended = DetalleEmpleado & { horas_permitidas_interval?: number | string };
+            const detalleExt = detalleBackend as DetalleExtended;
+            return mergedDetalle.horasPermitidasAnual ?? detalleExt.horasPermitidasAnual ?? detalleExt.horas_permitidas_interval ?? detalleBackend.totalPermitidasAnual ?? detalleBackend.totalPermitidas;
+          })()
         );
         console.log('🔍 Detalle backend merged:', mergedDetalle);
         setDetalleData(mergedDetalle);
@@ -1346,7 +1357,9 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
       let finalDetalle = detalle;
       try {
         const registros = await fetchRegistrosEmpleado(
-          (empleado as any).codigo || (empleado as any).CODIGO || String(empleado.empleadoId),
+          (empleado as ResumenEmpleado & { codigo?: string; CODIGO?: string }).codigo || 
+          (empleado as ResumenEmpleado & { codigo?: string; CODIGO?: string }).CODIGO || 
+          String(empleado.empleadoId),
           tipoReporte === 'mensual' ? selectedMes : undefined,
           empleado.empleadoNombre
         );

@@ -61,12 +61,12 @@ interface ExcelColumn {
   label: string;
   width?: number;
   type?: 'number' | 'string';
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Interface pentru date Excel (generic)
 interface ExcelDataItem {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Interface pentru totals

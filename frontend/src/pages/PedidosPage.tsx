@@ -1,16 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Button, Input, Select } from '../components/ui';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Card, Button, Input } from '../components/ui';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import { Link } from 'react-router-dom';
 import { isDemoMode } from '../utils/demo';
 
 // ===== TIPURI TYPESCRIPT =====
-type Usuario = {
-  id: string;
-  nombre: string;
-  comunidad: string;
-};
 
 type Producto = {
   id: number;
@@ -38,6 +33,36 @@ type PermisosState = {
   [comunidadId: number]: {
     [productoId: number]: boolean;
   };
+};
+
+type ComunidadDetalle = {
+  id?: number;
+  nombre?: string;
+  'NOMBRE O RAZON SOCIAL'?: string;
+  NIF?: string;
+  TELEFONO?: string;
+  DIRECCION?: string;
+  DIRECCIÓN?: string;
+  'CODIGO POSTAL'?: string;
+  POBLACION?: string;
+  PROVINCIA?: string;
+  PAIS?: string;
+  LATITUD?: number | null;
+  LONGITUD?: number | null;
+  productos?: Producto[];
+  datosCompletos?: {
+    'NOMBRE O RAZON SOCIAL'?: string;
+    NIF?: string;
+    TELEFONO?: string;
+    DIRECCION?: string;
+    'CODIGO POSTAL'?: string;
+    POBLACION?: string;
+    PROVINCIA?: string;
+    PAIS?: string;
+    LATITUD?: number | null;
+    LONGITUD?: number | null;
+  };
+  [key: string]: unknown;
 };
 
 // ===== API ENDPOINT PENTRU PRODUSE =====
@@ -352,10 +377,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const [notas, setNotas] = useState('');
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
   const [comunidadSeleccionada, setComunidadSeleccionada] = useState<number | null>(null);
-  const [loadingComunidades, setLoadingComunidades] = useState(false);
-  const [comunidadDetalles, setComunidadDetalles] = useState<any>(null);
+  const [, setLoadingComunidades] = useState(false);
+  const [comunidadDetalles, setComunidadDetalles] = useState<ComunidadDetalle | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [loadingProductos, setLoadingProductos] = useState(false);
+  const [loadingProductos] = useState(false);
   
   // State pentru searchable dropdown
   const [comunidadSearchTerm, setComunidadSearchTerm] = useState('');
@@ -409,7 +434,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     };
 
     loadComunidades();
-  }, [routes.getClientes, user?.isDemo]);
+  }, [user?.isDemo]);
 
   // Nu încarcă produsele la început - doar când se selectează o comunitate
   // Produsele se vor încărca în handleComunidadChange
@@ -478,11 +503,14 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         interface ProductoAPI {
           producto_id: number;
           numero_articulo: string;
+          descripcion?: string;
+          precio?: string | number;
+          permitido?: number | boolean;
           imagen_base64?: string;
           fotoproducto?: {
             data: number[];
           };
-          [key: string]: any; // Pentru alte proprietăți dinamic
+          [key: string]: unknown; // Pentru alte proprietăți dinamic
         }
 
         if (Array.isArray(data)) {
@@ -1038,8 +1066,8 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
   const [comunidadSeleccionada, setComunidadSeleccionada] = useState<number | null>(null);
   const [permisos, setPermisos] = useState<PermisosState>({});
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
-  const [loadingComunidades, setLoadingComunidades] = useState(false);
-  const [comunidadDetalles, setComunidadDetalles] = useState<any>(null);
+  const [, setLoadingComunidades] = useState(false);
+  const [comunidadDetalles, setComunidadDetalles] = useState<ComunidadDetalle | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
   
@@ -1095,7 +1123,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
     };
 
     loadComunidades();
-  }, [routes.getClientes, user?.isDemo]);
+  }, [user?.isDemo]);
 
   // Încarcă produsele din API sau demo
   useEffect(() => {
@@ -1164,7 +1192,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
     };
 
     loadProductos();
-  }, []);
+  }, [user?.isDemo]);
 
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = async (comunidadId: number) => {
@@ -1220,7 +1248,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
         interface PermisoAPI {
           producto_id: number;
           permitido: number | boolean;
-          [key: string]: any; // Pentru alte proprietăți dinamic
+          [key: string]: unknown; // Pentru alte proprietăți dinamic
         }
 
         // Mapează permisiunile din baza de date
@@ -1279,18 +1307,18 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
   };
 
   // Obținere permisiune pentru produs
-  const obtenerPermiso = (productoId: number): boolean => {
+  const obtenerPermiso = useCallback((productoId: number): boolean => {
     if (!comunidadSeleccionada) return false;
     const permiso = permisos[comunidadSeleccionada]?.[productoId] || false;
     console.log(`🔍 Verificando permiso para producto ${productoId} en comunidad ${comunidadSeleccionada}: ${permiso ? 'PERMITIDO' : 'DENEGADO'}`);
     return permiso;
-  };
+  }, [comunidadSeleccionada, permisos]);
 
   // Contorizare produse permise
   const productosPermitidos = useMemo(() => {
     if (!comunidadSeleccionada) return 0;
     return productos.filter(producto => obtenerPermiso(producto.id)).length;
-  }, [comunidadSeleccionada, permisos, productos]);
+  }, [comunidadSeleccionada, productos, obtenerPermiso]);
 
   // Filtrare comunități pentru searchable dropdown
   const comunidadesFiltradas = useMemo(() => {
@@ -1678,7 +1706,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
     };
 
     loadProductos();
-  }, []);
+  }, [user?.isDemo]);
 
   // Filtrare produse
   const productosFiltrados = useMemo(() => {

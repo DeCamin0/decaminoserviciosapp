@@ -114,7 +114,11 @@ export default function DocumentosPage() {
   // Estado para loading de nóminas
   const [nominasLoading, setNominasLoading] = useState(false);
 
+  // Estado para documentos solicitados
+  const [documentosSolicitados, setDocumentosSolicitados] = useState([]);
+
   const email = authUser?.['CORREO ELECTRONICO'] || authUser?.email;
+  const empleadoId = authUser?.CODIGO || authUser?.id || authUser?.userId;
 
   // Demo documentos data
   const setDemoDocumentos = () => {
@@ -651,6 +655,57 @@ export default function DocumentosPage() {
       setDocumentosLoading(false);
     }
   }, [email, authUser?.CODIGO, authUser?.id, authUser?.isDemo]);
+
+  // Fetch documentos solicitados
+  const fetchDocumentosSolicitados = useCallback(async () => {
+    if (!empleadoId) {
+      console.log('⚠️ No hay empleadoId para obtener documentos solicitados');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = routes.getDocumentosSolicitados(empleadoId);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      // Dacă endpoint-ul nu există încă (404), doar logăm și continuăm fără eroare
+      if (response.status === 404) {
+        console.log('ℹ️ Endpoint documentos-solicitados nu este disponibil încă (tabelul poate nu este creat)');
+        setDocumentosSolicitados([]);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📄 Documentos solicitados obtenidos:', data);
+      
+      if (data.success && data.data) {
+        // Filtrează doar cererile pendiente
+        const pendientes = data.data.filter(s => s.estado === 'pendiente');
+        setDocumentosSolicitados(pendientes);
+      } else {
+        setDocumentosSolicitados([]);
+      }
+    } catch (error) {
+      // Nu logăm ca eroare dacă este 404 (endpoint nu există încă)
+      if (error.message && error.message.includes('404')) {
+        console.log('ℹ️ Endpoint documentos-solicitados nu este disponibil încă');
+      } else {
+        console.error('❌ Error obteniendo documentos solicitados:', error);
+      }
+      setDocumentosSolicitados([]);
+    }
+  }, [empleadoId]);
 
   // Función para abrir el preview de un documento
   const handlePreviewDocument = async (documento) => {
@@ -1766,7 +1821,8 @@ export default function DocumentosPage() {
         await Promise.all([
           fetchNominas(),
           fetchDocumentos(),
-          fetchDocumentosOficiales()
+          fetchDocumentosOficiales(),
+          fetchDocumentosSolicitados()
         ]);
       } catch (error) {
         console.error('Error loading initial data:', error);
@@ -1779,7 +1835,7 @@ export default function DocumentosPage() {
     
     // Log acceso a la página
     activityLogger.logPageAccess('documentos', authUser);
-  }, [email, authUser, fetchNominas, fetchDocumentos, fetchDocumentosOficiales, authUser?.isDemo]);
+  }, [email, authUser, fetchNominas, fetchDocumentos, fetchDocumentosOficiales, fetchDocumentosSolicitados, authUser?.isDemo]);
 
   const handleUpload = (tip) => {
     // Establecer el tipo de documento
@@ -1789,7 +1845,97 @@ export default function DocumentosPage() {
     setShowCustomTypeSourceModal(true);
   };
 
-  const handleWebFileChange = async (event, tip) => {
+  // Funcție pentru ștergerea unui document existent
+  const handleDeleteDocumento = async (documentoId, docId) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(routes.deleteDocumento, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          id: documentoId,
+          doc_id: docId,
+          email: email
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Reîncarcă lista de documente
+        setTimeout(() => fetchDocumentos(), 500);
+        return true;
+      } else {
+        throw new Error(result.message || 'Error al eliminar documento');
+      }
+    } catch (error) {
+      console.error('Error deleting documento:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: `No se pudo eliminar el documento: ${error.message}`
+      });
+      return false;
+    }
+  };
+
+  // Funcție pentru înlocuirea unui document (șterge vechiul și încarcă unul nou)
+  const handleReplaceDocumento = async (event, tip, documentoExistente) => {
+    if (!event || !event.target || !event.target.files || !event.target.files[0]) return;
+    
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    setUploading(true);
+    
+    try {
+      // Șterge documentul existent dacă există
+      if (documentoExistente && documentoExistente.length > 0) {
+        const documentoToDelete = documentoExistente[0];
+        const deleted = await handleDeleteDocumento(documentoToDelete.id, documentoToDelete.doc_id);
+        if (!deleted) {
+          setUploading(false);
+          return;
+        }
+        // Așteaptă puțin pentru a se actualiza lista
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Creează un nou event pentru a încărca noul document
+      // (event-ul original a fost consumat, deci creăm unul nou)
+      const newEvent = {
+        target: {
+          files: [file]
+        }
+      };
+      
+      // Acum încarcă noul document cu flag-ul de reemplazo
+      await handleWebFileChange(newEvent, tip, true);
+    } catch (error) {
+      console.error('Error replacing documento:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: `Error al reemplazar el documento: ${error.message}`
+      });
+      setUploading(false);
+    }
+  };
+
+  const handleWebFileChange = async (event, tip, isReplacement = false) => {
     if (!event || !event.target || !event.target.files || !event.target.files[0]) return;
     
     const file = event.target.files[0];
@@ -1861,11 +2007,17 @@ export default function DocumentosPage() {
           empleado_email: authUser?.['CORREO ELECTRONICO'] || authUser?.email
         });
         
+        // Obținem token-ul JWT pentru autentificare
+        const token = localStorage.getItem('auth_token');
+        
         // Enviamos el documento al endpoint principal
         const response = await fetch(routes.uploadDocumento, {
           method: 'POST',
+          headers: {
+            // Nu includem Content-Type - browser-ul îl setează automat pentru FormData cu boundary
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
           body: formData,
-          // No incluir Content-Type header, dejar que el navegador lo establezca automáticamente para FormData
         });
         
         if (response.ok) {
@@ -1881,10 +2033,29 @@ export default function DocumentosPage() {
             email: email
           }, authUser);
           
+          // Verificăm dacă tipul documentului este unul dintre cele solicitate
+          // și reîncărcăm lista de cereri pentru a actualiza UI-ul
+          const tipoDocLower = (tip || '').toLowerCase().trim();
+          const tiposSolicitados = ['dni', 'certificado de titularidad', 'certificado de titularidad'];
+          const esTipoSolicitado = tiposSolicitados.some(tipo => 
+            tipoDocLower === tipo || tipoDocLower.includes(tipo) || tipo.includes(tipoDocLower)
+          );
+          
+          if (esTipoSolicitado) {
+            // Reîncărcăm lista de cereri pentru a elimina cererea completată
+            setTimeout(() => {
+              fetchDocumentosSolicitados();
+              fetchDocumentos(); // Reîncărcăm și lista de documente
+            }, 500);
+          } else {
+            // Reîncărcăm doar lista de documente
+            setTimeout(() => fetchDocumentos(), 500);
+          }
+          
           setNotification({
             type: 'success',
             title: '¡Éxito!',
-            message: '¡Documento subido correctamente!'
+            message: isReplacement ? '¡Documento reemplazado correctamente!' : '¡Documento subido correctamente!'
           });
         } else {
           // Mensaje de error más amigable
@@ -2047,6 +2218,15 @@ export default function DocumentosPage() {
             <div className="relative flex items-center gap-2">
               <span className="text-xl">📁</span>
               <span>Mis Documentos</span>
+              {documentosSolicitados.length > 0 && (
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                  activeTab === 'mis-documentos'
+                    ? 'bg-white text-blue-600'
+                    : 'bg-red-500 text-white'
+                }`}>
+                  {documentosSolicitados.length > 99 ? '99+' : documentosSolicitados.length}
+                </span>
+              )}
             </div>
           </button>
           <button
@@ -2342,7 +2522,10 @@ export default function DocumentosPage() {
                   </div>
                 </div>
                 <button
-                  onClick={fetchDocumentos}
+                  onClick={() => {
+                    fetchDocumentos();
+                    fetchDocumentosSolicitados();
+                  }}
                   disabled={documentosLoading}
                   className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
@@ -2358,6 +2541,76 @@ export default function DocumentosPage() {
                   </div>
                 </button>
               </div>
+
+              {/* Secțiune Documentos Solicitados */}
+              {documentosSolicitados.length > 0 && (
+                <div className="mb-6">
+                  <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl p-4 sm:p-6 shadow-lg">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-full flex items-center justify-center shadow-lg">
+                        <span className="text-white text-xl">📄</span>
+                      </div>
+                      <div>
+                        <h3 className="text-lg sm:text-xl font-bold text-gray-900">Documentos Solicitados</h3>
+                        <p className="text-sm text-gray-600">Tienes documentos pendientes de subir</p>
+                      </div>
+                    </div>
+                    
+                    {/* Informare clară */}
+                    <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-3 mb-4">
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0">
+                          <span className="text-blue-600 text-lg">ℹ️</span>
+                        </div>
+                        <div className="ml-3">
+                          <p className="text-xs sm:text-sm text-blue-800 font-medium">
+                            Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {documentosSolicitados.map((solicitud) => (
+                        <div
+                          key={solicitud.id}
+                          className="bg-white rounded-lg border-2 border-yellow-200 p-4 shadow-md hover:shadow-lg transition-all duration-300"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-2xl">
+                                  {solicitud.tipo_documento === 'DNI' ? '🆔' : '🏦'}
+                                </span>
+                                <h4 className="font-bold text-gray-900">{solicitud.tipo_documento}</h4>
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
+                                  Pendiente
+                                </span>
+                              </div>
+                              {solicitud.notas && (
+                                <p className="text-sm text-gray-600 mb-2">{solicitud.notas}</p>
+                              )}
+                              <p className="text-xs text-gray-500">
+                                Solicitado el {formatDate(solicitud.fecha_solicitud)}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                // Setează tipul documentului și deschide direct modalul de upload
+                                setDocumentType(solicitud.tipo_documento);
+                                setShowCustomTypeSourceModal(true);
+                              }}
+                              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+                            >
+                              📤 Subir Documento
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {documentosLoading ? (
                 <div className="flex justify-center py-8">
@@ -2434,20 +2687,21 @@ export default function DocumentosPage() {
                           </div>
                            
                           {/* Actions */}
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handlePreviewDocument(documento)}
-                              className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
-                            >
-                              <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                                <span className="text-xs sm:text-sm">👁️</span>
-                                <span className="text-xs sm:text-sm">Preview</span>
-                              </div>
-                            </button>
-                            
-                            <button
-                                 onClick={async () => {
+                          <div className="flex flex-col gap-2">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handlePreviewDocument(documento)}
+                                className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
+                              >
+                                <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                                <div className="relative flex items-center justify-center gap-1 sm:gap-2">
+                                  <span className="text-xs sm:text-sm">👁️</span>
+                                  <span className="text-xs sm:text-sm">Preview</span>
+                                </div>
+                              </button>
+                              
+                              <button
+                                   onClick={async () => {
                                    try {
                                      // Log descargar documento
                                      await activityLogger.logAction('documento_downloaded', {
@@ -2573,6 +2827,69 @@ export default function DocumentosPage() {
                                 <span className="text-xs sm:text-sm">Descargar</span>
                               </div>
                             </button>
+                            </div>
+                            
+                            {/* Buton de Reemplazar pentru DNI și Certificado de titularidad */}
+                            {(documento.tipo === 'DNI' || documento.tipo === 'Certificado de titularidad') && (
+                              <button
+                                onClick={async () => {
+                                  // Confirmă înlocuirea
+                                  const confirmar = window.confirm(
+                                    `¿Estás seguro de que deseas reemplazar el documento "${documento.fileName}"? El documento actual se eliminará y podrás subir uno nuevo.`
+                                  );
+                                  
+                                  if (!confirmar) return;
+                                  
+                                  try {
+                                    setUploading(true);
+                                    
+                                    // Șterge documentul vechi
+                                    const deleted = await handleDeleteDocumento(documento.id, documento.doc_id);
+                                    
+                                    if (deleted) {
+                                      // Așteaptă puțin pentru a se actualiza lista
+                                      await new Promise(resolve => setTimeout(resolve, 500));
+                                      
+                                      // Setează tipul documentului și deschide modalul de upload
+                                      setDocumentType(documento.tipo);
+                                      setShowCustomTypeSourceModal(true);
+                                      
+                                      setNotification({
+                                        type: 'success',
+                                        title: 'Documento Eliminado',
+                                        message: 'El documento anterior ha sido eliminado. Ahora puedes subir uno nuevo.'
+                                      });
+                                    }
+                                  } catch (error) {
+                                    console.error('Error al reemplazar documento:', error);
+                                    setNotification({
+                                      type: 'error',
+                                      title: 'Error',
+                                      message: `Error al reemplazar el documento: ${error.message}`
+                                    });
+                                  } finally {
+                                    setUploading(false);
+                                  }
+                                }}
+                                disabled={uploading}
+                                className="w-full group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                              >
+                                <div className="absolute inset-0 rounded-lg bg-amber-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                                <div className="relative flex items-center justify-center gap-1 sm:gap-2">
+                                  {uploading ? (
+                                    <>
+                                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                      <span className="text-xs sm:text-sm">Eliminando...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="text-xs sm:text-sm">🔄</span>
+                                      <span className="text-xs sm:text-sm">Reemplazar</span>
+                                    </>
+                                  )}
+                                </div>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2759,7 +3076,7 @@ export default function DocumentosPage() {
           )}
 
            {activeTab === 'upload-documentos' && (
-             <div>
+             <div data-upload-section>
                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
                  <div className="flex items-center gap-3 sm:gap-4">
                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
@@ -2794,16 +3111,20 @@ export default function DocumentosPage() {
                      
                      {/* Tipo de Documento */}
                      <div className="mb-6">
-                       <label className="block text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                       <label htmlFor="document-type-select" className="block text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
                          <span className="text-xl">📋</span>
                          <span>Tipo de Documento *</span>
                        </label>
                        <select
+                         id="document-type-select"
+                         name="documentType"
                          value={documentType}
                          onChange={(e) => setDocumentType(e.target.value)}
                          className="w-full px-5 py-4 text-lg border-2 border-gray-300 rounded-2xl text-gray-800 bg-gradient-to-br from-white to-orange-50/30 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-lg focus:shadow-2xl focus:shadow-orange-500/30 font-medium cursor-pointer"
                        >
                          <option value="">Selecciona un tipo de documento...</option>
+                         <option value="DNI">🆔 DNI (Documento de Identidad)</option>
+                         <option value="Certificado de titularidad">🏦 Certificado de titularidad</option>
                          <option value="justificante_medico">🏥 Justificante Médico</option>
                          <option value="certificado_matrimonio">💍 Certificado de Matrimonio</option>
                          <option value="justificante_ausencia">📅 Justificante de Ausencia</option>
@@ -2813,14 +3134,94 @@ export default function DocumentosPage() {
                        </select>
                          </div>
                      
+                     {/* Informare clară */}
+                     <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
+                       <div className="flex items-start">
+                         <div className="flex-shrink-0">
+                           <span className="text-blue-600 text-lg">ℹ️</span>
+                         </div>
+                         <div className="ml-3">
+                           <p className="text-sm text-blue-800 font-medium">
+                             Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                     
+                     {/* Aviso de reemplazo para DNI y Certificado de titularidad */}
+                     {(documentType === 'DNI' || documentType === 'Certificado de titularidad') && (() => {
+                       const documentoExistente = documentos.find(doc => 
+                         doc.tipo === documentType || 
+                         (documentType === 'DNI' && doc.tipo === 'DNI') ||
+                         (documentType === 'Certificado de titularidad' && doc.tipo === 'Certificado de titularidad')
+                       );
+                       
+                       if (documentoExistente) {
+                         return (
+                           <div className="mb-6 bg-amber-50 border-l-4 border-amber-500 rounded-lg p-4">
+                             <div className="flex items-start">
+                               <div className="flex-shrink-0">
+                                 <span className="text-amber-600 text-lg">⚠️</span>
+                               </div>
+                               <div className="ml-3 flex-1">
+                                 <p className="text-sm text-amber-800 font-medium mb-3">
+                                   Ya tienes un documento de tipo <strong>{documentType}</strong> subido:
+                                 </p>
+                                 <div className="bg-white rounded-lg p-3 mb-3 border border-amber-200">
+                                   <p className="text-xs text-gray-700 font-semibold">{documentoExistente.fileName}</p>
+                                   <p className="text-xs text-gray-500 mt-1">
+                                     Subido el: {formatDate(documentoExistente.uploadDate)}
+                                   </p>
+                                 </div>
+                                 <p className="text-sm text-amber-800 font-medium mb-3">
+                                   Si deseas reemplazarlo, selecciona un nuevo archivo:
+                                 </p>
+                                 <label className="block">
+                                   <input
+                                     type="file"
+                                     accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp"
+                                     onChange={(e) => handleReplaceDocumento(e, documentType, [documentoExistente])}
+                                     disabled={uploading}
+                                     className="hidden"
+                                     id={`replace-${documentType.replace(/\s+/g, '-')}`}
+                                   />
+                                   <button
+                                     type="button"
+                                     onClick={() => document.getElementById(`replace-${documentType.replace(/\s+/g, '-')}`)?.click()}
+                                     disabled={uploading}
+                                     className="w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                   >
+                                     {uploading ? (
+                                       <>
+                                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                         <span>Reemplazando...</span>
+                                       </>
+                                     ) : (
+                                       <>
+                                         <span>🔄</span>
+                                         <span>Reemplazar Documento</span>
+                                       </>
+                                     )}
+                                   </button>
+                                 </label>
+                               </div>
+                             </div>
+                           </div>
+                         );
+                       }
+                       return null;
+                     })()}
+                     
                      {/* Campo de texto personalizado si selecciona "Otro" */}
                      {documentType === 'otro' && (
                        <div className="mb-6">
-                         <label className="block text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                         <label htmlFor="custom-document-type-input" className="block text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
                            <span className="text-xl">✍️</span>
                            <span>Especifica el Tipo de Documento *</span>
                          </label>
                          <input
+                           id="custom-document-type-input"
+                           name="customDocumentType"
                            type="text"
                            value={customDocumentType}
                            onChange={(e) => setCustomDocumentType(e.target.value)}
@@ -2832,10 +3233,10 @@ export default function DocumentosPage() {
                      
                      {/* Formatos aceptados */}
                      <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-2xl">
-                       <label className="block text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+                       <div className="block text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
                          <span className="text-lg">📎</span>
                          <span>Formatos Aceptados</span>
-                       </label>
+                       </div>
                        <div className="flex flex-wrap gap-2">
                          {['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp'].map(format => (
                            <span key={format} className="px-3 py-2 bg-white text-blue-700 text-sm font-bold rounded-lg border-2 border-blue-300 shadow-sm">
@@ -3034,6 +3435,8 @@ export default function DocumentosPage() {
 
       {/* Input-uri ascunse pentru modalul personalizat */}
       <input
+        id="custom-file-input"
+        name="customFileInput"
         ref={customFileInputRef}
         type="file"
         accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/jpg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
@@ -3047,8 +3450,11 @@ export default function DocumentosPage() {
           }
         }}
         className="hidden"
+        aria-label="Seleccionar archivo desde galería"
       />
       <input
+        id="custom-camera-input"
+        name="customCameraInput"
         ref={customCameraInputRef}
         type="file"
         accept="image/jpeg,image/jpg,image/png,image/webp"
@@ -3063,6 +3469,7 @@ export default function DocumentosPage() {
           }
         }}
         className="hidden"
+        aria-label="Tomar foto con cámara"
       />
 
       {/* Modal para Tipo Personalizado de Documento */}
@@ -3090,10 +3497,12 @@ export default function DocumentosPage() {
             {/* Content */}
             <div className="p-6">
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="custom-document-type-modal-input" className="block text-sm font-medium text-gray-700 mb-2">
                   📋 Especificar Tipo de Documento *
                        </label>
                          <input
+                           id="custom-document-type-modal-input"
+                           name="customDocumentTypeModal"
                            type="text"
                            placeholder="Ej: Certificado de Residencia, Certificado de Trabajo, etc."
                            value={customDocumentType}

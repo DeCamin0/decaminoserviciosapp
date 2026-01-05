@@ -946,8 +946,7 @@ export class EmpleadosController {
       return;
     }
 
-    const email =
-      empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
+    const email = empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
     const nombre =
       this.empleadosService.getFormattedNombre(empleado) || 'Empleado';
 
@@ -996,9 +995,7 @@ export class EmpleadosController {
     try {
       await this.emailService.sendEmail(email, subject, html);
 
-      this.logger.log(
-        `✅ Email de resetare parolă trimis către: ${email}`,
-      );
+      this.logger.log(`✅ Email de resetare parolă trimis către: ${email}`);
     } catch (error: any) {
       this.logger.error(
         `❌ Error sending reset password email: ${error.message}`,
@@ -2314,7 +2311,8 @@ export class EmpleadosController {
 
       // Verifică că utilizatorul este manager/admin/developer
       const isManager = user?.isManager || false;
-      const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
+      const isDeveloper =
+        user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
       const userCodigo = user?.userId || user?.CODIGO;
 
       // Doar managerii, adminii și developerii pot vedea parola altor utilizatori
@@ -2338,7 +2336,10 @@ export class EmpleadosController {
 
   @Post('reset-password/:codigo')
   @UseGuards(JwtAuthGuard)
-  async resetPassword(@CurrentUser() user: any, @Param('codigo') codigo: string) {
+  async resetPassword(
+    @CurrentUser() user: any,
+    @Param('codigo') codigo: string,
+  ) {
     try {
       this.logger.log(
         `🔐 Reset password request - CODIGO: ${codigo || 'missing'}`,
@@ -2350,7 +2351,8 @@ export class EmpleadosController {
 
       // Verifică că utilizatorul este manager/admin/developer
       const isManager = user?.isManager || false;
-      const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
+      const isDeveloper =
+        user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
       const userCodigo = user?.userId || user?.CODIGO;
 
       // Doar managerii, adminii și developerii pot reseta parola altor utilizatori
@@ -2361,7 +2363,8 @@ export class EmpleadosController {
       }
 
       // Resetare parolă și generare nouă parolă
-      const result = await this.empleadosService.resetPasswordAndSendEmail(codigo);
+      const result =
+        await this.empleadosService.resetPasswordAndSendEmail(codigo);
 
       // Obține datele angajatului pentru email
       const empleado = await this.empleadosService.getEmpleadoByCodigo(codigo);

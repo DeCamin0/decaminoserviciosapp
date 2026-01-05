@@ -1,38 +1,64 @@
-﻿# Ignore generated files and build outputs
-dev-dist/
+﻿# Build outputs
 dist/
+build/
+dev-dist/
+.vite/
+
+# Dependencies
 node_modules/
-public/workbox-*.js
-public/sw.js
 
-# Ignore service worker files that are generated
-**/sw.js
-**/workbox-*.js
+# Native platforms
+android/
+ios/
 
-# Legacy modules kept doar ca referință
-old/facturare/**
-
-# Ignore Android build intermediates
-android/app/build/**
-
-# Ignore test files
-**/*.test.js
-**/*.test.jsx
-**/*.spec.js
-**/*.spec.jsx
-
-# Ignore config files that don't need linting
+# Generated files
+*.config.js
+*.config.ts
 vite.config.js
 tailwind.config.js
 postcss.config.js
+capacitor.config.ts
 
-# Ignore AutoFirma script - external library with many formatting issues
-**/autoscript.js
+# Scripts and utilities
+scripts/
+update-version.js
+proxy-server.js
+fix-syntax.js
+test-*.js
+test-*.jsx
+
+# Documentation
+docs/
+*.md
+CHANGELOG.md
+README*.md
+RELEASE*.md
+REVIEWER*.md
+SECURITY*.md
+DEMO*.md
+DATA_SAFETY*.md
+
+# Old/archive code
+old/
+archive/
+decamino-web/
+
+# Public vendor files
+public/vendor/
 public/autoscript.js
-public/vendor/autoscript.js
 
-# MSW generated worker
-public/mockServiceWorker.js
+# Cache and config
+.eslintcache
+.env*
+env.*.config
+package-proxy.json
 
-# Android build assets (generate by capacitate/copy)
-android/app/src/main/assets/public/**
+# TypeScript configs
+tsconfig*.json
+
+# Autoscript files
+**/autoscript.js
+
+# Very large files that cause memory issues (can be manually linted)
+# Uncomment the line below if CuadrantesEmpleadoPage.jsx continues to cause memory issues:
+# src/pages/CuadrantesEmpleadoPage.jsx

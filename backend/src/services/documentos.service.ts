@@ -3,14 +3,21 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 
 @Injectable()
 export class DocumentosService {
   private readonly logger = new Logger(DocumentosService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => DocumentosSolicitadosService))
+    private readonly documentosSolicitadosService?: DocumentosSolicitadosService,
+  ) {}
 
   /**
    * Helper function pentru a escapa valori SQL (prevenir SQL injection)
@@ -379,6 +386,50 @@ export class DocumentosService {
           this.logger.log(
             `✅ Documento ${index + 1}/${files.length} insertado: ${nombreArchivo} (${file.size} bytes)`,
           );
+
+          // Verificare automată: dacă tipul documentului este DNI, Certificado de titularidad sau Justificantes de banco,
+          // marchează cererea ca completată (dacă există)
+          if (tipoDoc && this.documentosSolicitadosService) {
+            const tipoDocNormalized = tipoDoc.toLowerCase().trim();
+            // Normalizăm tipurile pentru matching flexibil
+            const tiposSolicitados = [
+              'dni',
+              'certificado de titularidad',
+              'certificado titularidad',
+              'titularidad',
+              'justificantes de banco',
+              'justificante de banco',
+              'justificantes banco',
+              'justificante banco',
+            ];
+
+            // Verificăm dacă tipul documentului se potrivește cu unul dintre tipurile solicitate
+            const matchesTipo = tiposSolicitados.some((tipo) => {
+              // Matching exact sau dacă tipul documentului conține tipul solicitat
+              return (
+                tipoDocNormalized === tipo ||
+                tipoDocNormalized.includes(tipo) ||
+                tipo.includes(tipoDocNormalized)
+              );
+            });
+
+            if (matchesTipo) {
+              try {
+                await this.documentosSolicitadosService.marcarCompletado(
+                  id,
+                  tipoDoc, // Folosim tipul exact trimis, nu cel normalizat
+                );
+                this.logger.log(
+                  `✅ Solicitud marcada como completada automáticamente: empleado ${id}, tipo ${tipoDoc}`,
+                );
+              } catch (solicitudError: any) {
+                // Nu aruncăm eroare dacă verificarea eșuează, doar logăm
+                this.logger.warn(
+                  `⚠️ No se pudo marcar solicitud como completada: ${solicitudError.message}`,
+                );
+              }
+            }
+          }
         } catch (insertError: any) {
           this.logger.error(
             `❌ Error insertando documento ${index + 1}/${files.length}: ${insertError.message}`,

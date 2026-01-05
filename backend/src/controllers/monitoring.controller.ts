@@ -66,4 +66,3 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
     return await this.monitoringService.performHealthCheck();
   }
 }
-

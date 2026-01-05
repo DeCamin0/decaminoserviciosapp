@@ -80,6 +80,22 @@ export const computeMonthlyAlertSummary = (detalleData) => {
     const excedenteNegativo = parseNumericValue(item?.excedenteNegativo);
     const plan = parseNumericValue(item?.plan);
     const fichado = parseNumericValue(item?.fichado);
+    // Verifică dacă există regularizare confirmată pentru această zi
+    const hasRegularizacionConfirmada = item?.has_regularizacion_confirmada === 1 || 
+                                       item?.has_regularizacion_confirmada === true || 
+                                       item?.has_regularizacion_confirmada === '1' ||
+                                       item?.has_regularizacion_confirmada === 1.0;
+
+    // Debug: log pentru zilele cu delta != 0
+    if (deltaValue !== 0 && deltaValue !== undefined && deltaValue !== null) {
+      console.log(`🔍 [AlertSummary] Ziua ${fecha}: delta=${deltaValue}, has_regularizacion_confirmada=${item?.has_regularizacion_confirmada} (type: ${typeof item?.has_regularizacion_confirmada})`);
+    }
+
+    // IMPORTANT: Excludem zilele care au regularizări confirmate
+    if (hasRegularizacionConfirmada) {
+      console.log(`✅ [AlertSummary] Ziua ${fecha} are regularizare confirmată (${item?.has_regularizacion_confirmada}) - excludem din alerte`);
+      return;
+    }
 
     const candidate =
       (Number.isFinite(deltaValue) ? deltaValue : undefined) ??
@@ -88,6 +104,19 @@ export const computeMonthlyAlertSummary = (detalleData) => {
       (Number.isFinite(excedenteNegativo) ? excedenteNegativo : undefined);
 
     if (!Number.isFinite(candidate) || candidate === 0) {
+      return;
+    }
+
+    // Ignorăm alertele foarte mici (sub 0.1 ore = 6 minute)
+    if (Math.abs(candidate) < 0.1) {
+      console.log(`⚠️ [AlertSummary] Ignorăm alerta mică pentru ${fecha}: delta=${candidate} (sub 0.1 ore)`);
+      return;
+    }
+
+    // Excludem ziua de azi dacă nu există fichajes (tura nu a început încă)
+    const today = new Date().toISOString().split('T')[0];
+    if (fecha === today && (!fichado || fichado === 0)) {
+      console.log(`⚠️ [AlertSummary] Excludem ziua de azi ${fecha} - tura nu a început încă (fichado=${fichado})`);
       return;
     }
 
@@ -358,6 +387,16 @@ export const fetchMonthlyAlerts = async ({
         delta: d.delta
       })));
     }
+    
+    // Debug: verifică dacă există zile cu regularizări în detalii
+    const zileCuRegularizare = detalii.filter(d => 
+      d?.has_regularizacion_confirmada === 1 || 
+      d?.has_regularizacion_confirmada === true || 
+      d?.has_regularizacion_confirmada === '1'
+    );
+    console.log(`🔍 [MonthlyAlerts] Found ${zileCuRegularizare.length} zile cu regularizări confirmate din ${detalii.length} total:`, 
+      zileCuRegularizare.map(d => ({ fecha: d.fecha, has_regularizacion: d.has_regularizacion_confirmada }))
+    );
     
     // Normalizează și calculează summary
     const normalized = normalizeDetalles(detalii);

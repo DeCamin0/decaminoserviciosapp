@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Link } from 'react-router-dom';
 import Back3DButton from '../components/Back3DButton.jsx';

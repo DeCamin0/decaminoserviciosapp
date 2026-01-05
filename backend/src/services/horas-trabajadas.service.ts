@@ -402,8 +402,26 @@ export class HorasTrabajadasService {
         fichaje_base AS (
           SELECT
             CAST(f.CODIGO AS CHAR) AS empleadoId,
-            DATE(f.FECHA)          AS fecha,
-            f.DURACION             AS duracion
+            -- Pentru turele de noapte: dacă Salida are DURACION și există Entrada în ziua anterioară după ora 17:00,
+            -- atribuim DURACION-ul la data de Entrada (workday_date), nu la data de Salida
+            CASE
+              WHEN f.TIPO = 'Salida' 
+                AND f.DURACION IS NOT NULL 
+                AND TRIM(f.DURACION) != '' 
+                AND f.DURACION != '00:00:00'
+                AND CAST(TIME(f.HORA) AS TIME) < TIME('12:00:00') -- Salida înainte de 12:00 (dimineața) = tură de noapte
+                AND EXISTS (
+                  SELECT 1
+                  FROM Fichaje f_entrada
+                  WHERE f_entrada.CODIGO = f.CODIGO
+                    AND f_entrada.TIPO = 'Entrada'
+                    AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+                    AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00') -- Entrada după 17:00 = tură de noapte
+                )
+              THEN DATE_SUB(f.FECHA, INTERVAL 1 DAY) -- Tură de noapte: atribuie la data de început (workday_date)
+              ELSE DATE(f.FECHA) -- Tură normală: folosește data fichaje-ului
+            END AS fecha,
+            f.DURACION AS duracion
           FROM Fichaje f
           WHERE f.FECHA >= @d_first AND f.FECHA < DATE_ADD(@d_last, INTERVAL 1 DAY)
         ),
@@ -417,16 +435,43 @@ export class HorasTrabajadasService {
           FROM fichaje_base
           WHERE duracion IS NOT NULL AND TRIM(duracion) <> '' AND duracion <> '00:00:00'
         ),
+        regularizaciones_confirmadas AS (
+          SELECT
+            employee_codigo AS empleadoId,
+            workday_date AS fecha,
+            effective_minutes,
+            -- Convert effective_minutes to seconds for consistency
+            effective_minutes * 60 AS effective_secs
+          FROM FichajeRegularizacion
+          WHERE status = 'CONFIRMED'
+            AND effective_minutes IS NOT NULL
+            AND workday_date >= @d_first
+            AND workday_date < DATE_ADD(@d_last, INTERVAL 1 DAY)
+        ),
         fichaje_dia AS (
           SELECT
             he.empleadoId,
             he.fecha,
-            ROUND(COALESCE(SUM(fd.dur_secs),0)/3600,2) AS horas_fichadas,
-            CASE WHEN he.cnt_events > 0 AND COALESCE(SUM(fd.dur_secs),0) = 0 THEN 1 ELSE 0 END AS fichaje_incompleto
+            -- Folosește effective_minutes din regularizare dacă există (pe workday_date), altfel suma DURACION din Fichaje
+            -- Notă: Pentru ture de noapte, workday_date = ziua de început, deci orele se atribuie zilei de început
+            ROUND(
+              COALESCE(
+                rc.effective_secs / 3600.0,
+                COALESCE(SUM(fd.dur_secs), 0) / 3600.0
+              ),
+              2
+            ) AS horas_fichadas,
+            CASE 
+              WHEN rc.effective_secs IS NOT NULL THEN 0
+              WHEN he.cnt_events > 0 AND COALESCE(SUM(fd.dur_secs),0) = 0 THEN 1 
+              ELSE 0 
+            END AS fichaje_incompleto
           FROM fichaje_has_events he
           LEFT JOIN fichaje_with_duration fd
             ON fd.empleadoId = he.empleadoId AND fd.fecha = he.fecha
-          GROUP BY he.empleadoId, he.fecha, he.cnt_events
+          LEFT JOIN regularizaciones_confirmadas rc
+            ON rc.empleadoId = he.empleadoId AND rc.fecha = he.fecha
+          GROUP BY he.empleadoId, he.fecha, he.cnt_events, rc.effective_secs
         ),
         fichaje_mes AS (
           SELECT empleadoId, ROUND(SUM(horas_fichadas),2) AS horas_fichadas_mes
@@ -973,7 +1018,28 @@ export class HorasTrabajadasService {
             ON tf.empleadoId = ef.empleadoId
         ),
         fichaje_base AS (
-          SELECT CAST(f.CODIGO AS CHAR) AS empleadoId, DATE(f.FECHA) AS fecha, f.DURACION AS duracion
+          SELECT
+            CAST(f.CODIGO AS CHAR) AS empleadoId,
+            -- Pentru turele de noapte: dacă Salida are DURACION și există Entrada în ziua anterioară după ora 17:00,
+            -- atribuim DURACION-ul la data de Entrada (workday_date), nu la data de Salida
+            CASE
+              WHEN f.TIPO = 'Salida' 
+                AND f.DURACION IS NOT NULL 
+                AND TRIM(f.DURACION) != '' 
+                AND f.DURACION != '00:00:00'
+                AND CAST(TIME(f.HORA) AS TIME) < TIME('12:00:00') -- Salida înainte de 12:00 (dimineața) = tură de noapte
+                AND EXISTS (
+                  SELECT 1
+                  FROM Fichaje f_entrada
+                  WHERE f_entrada.CODIGO = f.CODIGO
+                    AND f_entrada.TIPO = 'Entrada'
+                    AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+                    AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00') -- Entrada după 17:00 = tură de noapte
+                )
+              THEN DATE_SUB(f.FECHA, INTERVAL 1 DAY) -- Tură de noapte: atribuie la data de început (workday_date)
+              ELSE DATE(f.FECHA) -- Tură normală: folosește data fichaje-ului
+            END AS fecha,
+            f.DURACION AS duracion
           FROM Fichaje f
           WHERE f.FECHA >= @d_first AND f.FECHA < DATE_ADD(@d_last, INTERVAL 1 DAY)
         ),
@@ -987,13 +1053,38 @@ export class HorasTrabajadasService {
           FROM fichaje_base
           WHERE duracion IS NOT NULL AND TRIM(duracion) <> '' AND duracion <> '00:00:00'
         ),
+        regularizaciones_confirmadas AS (
+          SELECT
+            employee_codigo AS empleadoId,
+            workday_date AS fecha,
+            effective_minutes,
+            -- Convert effective_minutes to seconds for consistency
+            effective_minutes * 60 AS effective_secs
+          FROM FichajeRegularizacion
+          WHERE status = 'CONFIRMED'
+            AND effective_minutes IS NOT NULL
+            AND workday_date >= @d_first
+            AND workday_date < DATE_ADD(@d_last, INTERVAL 1 DAY)
+        ),
         fichaje_dia AS (
-          SELECT he.empleadoId, he.fecha,
-                 ROUND(COALESCE(SUM(fd.dur_secs),0)/3600,2) AS horas_fichadas
+          SELECT 
+            he.empleadoId, 
+            he.fecha,
+            -- Folosește effective_minutes din regularizare dacă există (pe workday_date), altfel suma DURACION din Fichaje
+            -- Notă: Pentru ture de noapte, workday_date = ziua de început, deci orele se atribuie zilei de început
+            ROUND(
+              COALESCE(
+                rc.effective_secs / 3600.0,
+                COALESCE(SUM(fd.dur_secs), 0) / 3600.0
+              ),
+              2
+            ) AS horas_fichadas
           FROM fichaje_has_events he
           LEFT JOIN fichaje_with_duration fd
             ON fd.empleadoId = he.empleadoId AND fd.fecha = he.fecha
-          GROUP BY he.empleadoId, he.fecha
+          LEFT JOIN regularizaciones_confirmadas rc
+            ON rc.empleadoId = he.empleadoId AND rc.fecha = he.fecha
+          GROUP BY he.empleadoId, he.fecha, rc.effective_secs
         ),
         fichaje_anual AS (
           SELECT empleadoId, ROUND(SUM(horas_fichadas),2) AS horas_trabajadas_anual

@@ -1,0 +1,140 @@
+[1mdiff --git a/backend/prisma/schema.prisma b/backend/prisma/schema.prisma[m
+[1mindex 1acceeb..e5aa33f 100644[m
+[1m--- a/backend/prisma/schema.prisma[m
+[1m+++ b/backend/prisma/schema.prisma[m
+[36m@@ -10,6 +10,11 @@[m [mdatasource db {[m
+ model User {[m
+   CODIGO               String  @id @map("CODIGO") @db.VarChar(50)[m
+   NOMBRE_APELLIDOS     String? @map("NOMBRE / APELLIDOS") @db.VarChar(255)[m
+[32m+[m[32m  NOMBRE_APELLIDOS_BACKUP String? @map("NOMBRE_APELLIDOS_BACKUP") @db.VarChar(255)[m
+[32m+[m[32m  NOMBRE               String? @map("NOMBRE") @db.VarChar(120)[m
+[32m+[m[32m  APELLIDO1            String? @map("APELLIDO1") @db.VarChar(120)[m
+[32m+[m[32m  APELLIDO2            String? @map("APELLIDO2") @db.VarChar(120)[m
+[32m+[m[32m  NOMBRE_SPLIT_CONFIANZA Int @default(2) @map("NOMBRE_SPLIT_CONFIANZA") @db.TinyInt[m
+   NACIONALIDAD         String? @db.VarChar(100)[m
+   DIRECCION            String? @db.VarChar(700)[m
+   DNI_NIE              String? @map("D.N.I. / NIE") @db.VarChar(50)[m
+[36m@@ -32,6 +37,7 @@[m [mmodel User {[m
+   CONTRASENA           String? @map("Contraseña") @db.VarChar(255)[m
+   DerechoPedidos       String? @db.VarChar(100)[m
+   TrabajaFestivos      String? @db.VarChar(50)[m
+[32m+[m[32m  VACACIONES_RESTANTES_ANO_ANTERIOR Decimal? @map("VACACIONES_RESTANTES_ANO_ANTERIOR") @db.Decimal(5, 1)[m
+ [m
+   @@index([DNI_NIE], map: "idx_datos_dni")[m
+   @@index([CENTRO_TRABAJO], map: "idx_datos_empleados_centro")[m
+[36m@@ -481,6 +487,24 @@[m [mmodel Nominas {[m
+   fecha_subida DateTime @default(now()) @db.DateTime(0)[m
+   Mes          String?  @db.VarChar(100)[m
+   Ano          String?  @db.VarChar(100)[m
+[32m+[m[32m  accesos      NominasAccesos[][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel NominasAccesos {[m
+[32m+[m[32m  id              Int      @id @default(autoincrement()) @db.UnsignedInt[m
+[32m+[m[32m  nomina_id       Int      @map("nomina_id") @db.UnsignedInt[m
+[32m+[m[32m  empleado_codigo String   @map("empleado_codigo") @db.VarChar(50)[m
+[32m+[m[32m  empleado_nombre String   @map("empleado_nombre") @db.VarChar(255)[m
+[32m+[m[32m  tipo_acceso     String   @map("tipo_acceso") @db.VarChar(20) // 'preview', 'download', 'email'[m
+[32m+[m[32m  fecha_acceso    DateTime @default(now()) @map("fecha_acceso") @db.DateTime(0)[m
+[32m+[m[32m  ip              String?  @map("ip") @db.VarChar(100)[m
+[32m+[m[32m  user_agent      String?  @map("user_agent") @db.Text[m
+[32m+[m
+[32m+[m[32m  nomina Nominas @relation(fields: [nomina_id], references: [id], onDelete: Cascade)[m
+[32m+[m
+[32m+[m[32m  @@index([nomina_id, empleado_codigo], map: "idx_nomina_empleado")[m
+[32m+[m[32m  @@index([fecha_acceso], map: "idx_fecha_acceso")[m
+[32m+[m[32m  @@map("NominasAccesos")[m
+ }[m
+ [m
+ model NotificariFichaje {[m
+[36m@@ -952,4 +976,134 @@[m [mmodel ScheduledMessage {[m
+   @@index([start_date, end_date], map: "idx_scheduled_message_dates")[m
+   @@index([created_by], map: "idx_scheduled_message_created_by")[m
+   @@map("scheduled_messages")[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel Convenios {[m
+[32m+[m[32m  id        Int             @id @default(autoincrement())[m
+[32m+[m[32m  nombre    String          @unique @db.VarChar(200)[m
+[32m+[m[32m  activo    Boolean         @default(true)[m
+[32m+[m[32m  created_at DateTime       @default(now()) @db.Timestamp(0)[m
+[32m+[m[32m  updated_at DateTime       @updatedAt @db.Timestamp(0)[m
+[32m+[m[32m  grupos    ConvenioGrupo[][m
+[32m+[m[32m  config    ConvenioConfig?[m
+[32m+[m
+[32m+[m[32m  @@index([activo], map: "idx_convenios_activo")[m
+[32m+[m[32m  @@map("convenios")[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel ConvenioGrupo {[m
+[32m+[m[32m  id          Int       @id @default(autoincrement())[m
+[32m+[m[32m  convenio_id Int       @map("convenio_id")[m
+[32m+[m[32m  grupo_nombre String   @map("grupo_nombre") @db.VarChar(200)[m
+[32m+[m[32m  activo      Boolean   @default(true)[m
+[32m+[m[32m  created_at  DateTime  @default(now()) @db.Timestamp(0)[m
+[32m+[m[32m  updated_at  DateTime  @updatedAt @db.Timestamp(0)[m
+[32m+[m[32m  convenio    Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_grupo_convenio")[m
+[32m+[m
+[32m+[m[32m  @@unique([grupo_nombre], map: "uq_convenio_grupo_nombre")[m
+[32m+[m[32m  @@index([convenio_id], map: "idx_convenio_grupo_convenio")[m
+[32m+[m[32m  @@index([activo], map: "idx_convenio_grupo_activo")[m
+[32m+[m[32m  @@map("convenio_grupo")[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel ConvenioConfig {[m
+[32m+[m[32m  id                        Int       @id @default(autoincrement())[m
+[32m+[m[32m  convenio_id               Int       @unique @map("convenio_id")[m
+[32m+[m[32m  dias_vacaciones_anuales    Int       @default(31) @map("dias_vacaciones_anuales")[m
+[32m+[m[32m  dias_asuntos_propios_anuales Int    @default(0) @map("dias_asuntos_propios_anuales")[m
+[32m+[m[32m  activo                    Boolean   @default(true)[m
+[32m+[m[32m  created_at                DateTime  @default(now()) @db.Timestamp(0)[m
+[32m+[m[32m  updated_at                DateTime  @updatedAt @db.Timestamp(0)[m
+[32m+[m[32m  convenio                  Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_config_convenio")[m
+[32m+[m
+[32m+[m[32m  @@index([activo], map: "idx_convenio_config_activo")[m
+[32m+[m[32m  @@map("convenio_config")[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel AssistantAuditLog {[m
+[32m+[m[32m  id              BigInt   @id @default(autoincrement())[m
+[32m+[m[32m  usuario_id      String   @map("usuario_id") @db.VarChar(50)[m
+[32m+[m[32m  usuario_nombre  String?  @map("usuario_nombre") @db.VarChar(255)[m
+[32m+[m[32m  usuario_rol     String?  @map("usuario_rol") @db.VarChar(100)[m
+[32m+[m[32m  mensaje         String   @db.Text[m
+[32m+[m[32m  intent_detectado String? @map("intent_detectado") @db.VarChar(100)[m
+[32m+[m[32m  confianza       Decimal? @db.Decimal(3, 2)[m
+[32m+[m[32m  respuesta       String?  @db.Text[m
+[32m+[m[32m  escalado        Boolean  @default(false)[m
+[32m+[m[32m  ticket_id       String?  @map("ticket_id") @db.VarChar(50)[m
+[32m+[m[32m  datos_consultados String? @map("datos_consultados") @db.Text[m
+[32m+[m[32m  error           String?  @db.Text[m
+[32m+[m[32m  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)[m
+[32m+[m
+[32m+[m[32m  @@index([usuario_id], map: "idx_audit_usuario")[m
+[32m+[m[32m  @@index([intent_detectado], map: "idx_audit_intent")[m
+[32m+[m[32m  @@index([created_at], map: "idx_audit_created")[m
+[32m+[m[32m  @@map("assistant_audit_log")[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel KbArticle {[m
+[32m+[m[32m  id        Int      @id @default(autoincrement())[m
+[32m+[m[32m  titulo    String   @db.VarChar(255)[m
+[32m+[m[32m  contenido String   @db.Text[m
+[32m+[m[32m  categoria String?  @db.VarChar(100)[m
+[32m+[m[32m  tags      String?  @db.VarChar(500)[m
+[32m+[m[32m  activo    Boolean  @default(true)[m
+[32m+[m[32m  created_at DateTime @default(now()) @map("created_at") @db.Timestamp(0)[m
+[32m+[m[32m  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamp(0)[m
+[32m+[m
+[32m+[m[32m  @@index([categoria], map: "idx_kb_categoria")[m
+[32m+[m[32m  @@index([activo], map: "idx_kb_activo")[m
+[32m+[m[32m  @@map("kb_articles")[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mmodel TicketAi {[m
+[32m+[m[32m  id              String   @id @db.VarChar(50)[m
+[32m+[m[32m  usuario_id      String   @map("usuario_id") @db.VarChar(50)[m
+[32m+[m[32m  usuario_nombre  String?  @map("usuario_nombre") @db.VarChar(255)[m
+[32m+[m[32m  usuario_rol     String?  @map("usuario_rol") @db.VarChar(100)[m
+[32m+[m[32m  mensaje_original String  @map("mensaje_original") @db.Text[m
+[32m+[m[32m  intent_detectado String? @map("intent_detectado") @db.VarCh

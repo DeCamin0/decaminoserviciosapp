@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, Button, Input } from '../components/ui';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
@@ -37,6 +37,27 @@ type Producto = {
 type Comunidad = {
   id: number;
   nombre: string;
+  'NOMBRE O RAZON SOCIAL'?: string;
+};
+
+type ComunidadDetalle = {
+  id?: number;
+  nombre?: string;
+  'NOMBRE O RAZON SOCIAL'?: string;
+  [key: string]: unknown;
+};
+
+type ProductoApiItem = {
+  producto_id?: number;
+  numero_articulo?: string;
+  descripcion?: string;
+  precio?: string | number;
+  permitido?: number | boolean | string;
+  imagen_base64?: string;
+  fotoproducto?: {
+    data?: number[];
+  };
+  [key: string]: unknown;
 };
 
 type LineaPedido = {
@@ -140,13 +161,6 @@ const ToastContainer: React.FC<{ toasts: Toast[]; onClose: (id: string) => void 
 };
 
 // ===== FUNCȚII UTILITARE =====
-const formatMoney = (amount: number): string => {
-  return new Intl.NumberFormat("es-ES", { 
-    style: "currency", 
-    currency: "EUR" 
-  }).format(amount);
-};
-
 const formatDate = (date: Date): string => {
   return new Intl.DateTimeFormat("es-ES", {
     day: '2-digit',
@@ -157,7 +171,6 @@ const formatDate = (date: Date): string => {
 
 // ===== COMPONENTA PRINCIPAL =====
 const EmpleadoPedidosPage: React.FC = () => {
-  const { user } = useAuth();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Funcție pentru adăugarea de notificări
@@ -215,18 +228,125 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const [notas, setNotas] = useState('');
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
   const [comunidadSeleccionada, setComunidadSeleccionada] = useState<number | null>(null);
-  const [loadingComunidades, setLoadingComunidades] = useState(false);
-  const [comunidadDetalles, setComunidadDetalles] = useState<any>(null);
+  const [comunidadDetalles, setComunidadDetalles] = useState<ComunidadDetalle | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [cantidadesProductos, setCantidadesProductos] = useState<{[key: number]: number}>({});
   
   // Nu mai avem nevoie de state pentru dropdown - comunitatea se selectează automat
 
+  // Actualizează detaliile comunității când se selectează una
+  const handleComunidadChange = useCallback(async (comunidadId: number) => {
+    setComunidadSeleccionada(comunidadId);
+    
+    try {
+      // NU schimbăm numele comunității - folosim numele corect din comunidadDetalles
+      let nombreComunidad = comunidadDetalles?.nombre || 'Comunidad no encontrada';
+      
+      // Verifică dacă numele este corect
+      if (nombreComunidad === 'Comunidad no encontrada') {
+        // Încearcă să găsești în lista de comunități
+        const comunidad = comunidades.find(c => c.id === comunidadId);
+        if (comunidad) {
+          nombreComunidad = comunidad.nombre || comunidad['NOMBRE O RAZON SOCIAL'] || 'Comunidad no encontrada';
+        }
+      }
+      
+      // Cargando detalles para la comunidad
+      
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const url = `${routes.getCatalogo}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Procesează răspunsul (obiect sau array de produse cu permisiuni)
+      if (data && (Array.isArray(data) || typeof data === 'object')) {
+        let productosConPermisos;
+        
+        if (Array.isArray(data)) {
+          // Dacă este array, mapează toate produsele
+          productosConPermisos = data.map((item: ProductoApiItem) => {
+            // Folosește imagen_base64 direct din backend
+            let imagenBase64 = '';
+            if (item.imagen_base64) {
+              // Dacă este deja base64, adaugă prefixul data:image/jpeg
+              imagenBase64 = `data:image/jpeg;base64,${item.imagen_base64}`;
+            } else if (item.fotoproducto && item.fotoproducto.data && Array.isArray(item.fotoproducto.data)) {
+              // Fallback la conversia din Buffer
+              imagenBase64 = bufferToBase64(item.fotoproducto.data);
+            }
+            
+            return {
+              id: item.producto_id,
+              numero: item.numero_articulo || '',
+              descripcion: item.descripcion || '',
+              precio: parseFloat(String(item.precio || 0)),
+              permitido: item.permitido === 1 || item.permitido === true || item.permitido === '1',
+              imagen: imagenBase64 || undefined
+            };
+          });
+        } else {
+          // Dacă este obiect singular, creează array cu un singur element
+          let imagenBase64 = '';
+          if (data.imagen_base64) {
+            // Dacă este deja base64, adaugă prefixul data:image/jpeg
+            imagenBase64 = `data:image/jpeg;base64,${data.imagen_base64}`;
+          } else if (data.fotoproducto && data.fotoproducto.data && Array.isArray(data.fotoproducto.data)) {
+            // Fallback la conversia din Buffer
+            imagenBase64 = bufferToBase64(data.fotoproducto.data);
+          }
+          
+          productosConPermisos = [{
+            id: data.producto_id,
+            numero: data.numero_articulo || '',
+            descripcion: data.descripcion || '',
+            precio: parseFloat(String(data.precio || 0)),
+            permitido: data.permitido === 1 || data.permitido === true || data.permitido === '1',
+            imagen: imagenBase64 || undefined
+          }];
+        }
+        
+        // Actualizează produsele cu permisiunile lor
+        setProductos(productosConPermisos);
+        
+        // NU schimbăm numele comunității - păstrăm numele corect
+        setComunidadDetalles(prev => ({
+          ...prev,
+          id: comunidadId,
+          nombre: nombreComunidad,
+          productos: productosConPermisos
+        }));
+      }
+    } catch (error) {
+      console.error('❌ Error loading comunidad detalles:', error);
+      addToast('error', 'Error', 'No se pudieron cargar los detalles de la comunidad.');
+    }
+  }, [comunidadDetalles, comunidades, addToast]);
+
   // Încarcă centrele de trabajo (comunidades) și datele complete ale angajatului
   useEffect(() => {
     const loadComunidadesAndUserData = async () => {
-      setLoadingComunidades(true);
       try {
         // Încarcă comunitățile
         const response = await fetch(routes.getClientes, {
@@ -345,13 +465,12 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         }
       } catch (error) {
         console.error('Error loading comunidades and user data:', error);
-      } finally {
-        setLoadingComunidades(false);
       }
     };
 
     loadComunidadesAndUserData();
-  }, [routes.getClientes, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes.getClientes, user, addToast, handleComunidadChange]);
 
   // Încarcă produsele din API
   useEffect(() => {
@@ -389,135 +508,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     };
 
     loadProductos();
-  }, []);
-
-  // Actualizează detaliile comunității când se selectează una
-  const handleComunidadChange = async (comunidadId: number) => {
-    setComunidadSeleccionada(comunidadId);
-    
-    try {
-      // NU schimbăm numele comunității - folosim numele corect din comunidadDetalles
-      let nombreComunidad = comunidadDetalles?.nombre || 'Comunidad no encontrada';
-      
-      // Verifică dacă numele este corect
-      if (nombreComunidad === 'Comunidad no encontrada') {
-        // Încearcă să găsești în lista de comunități
-        const comunidad = comunidades.find(c => c.id === comunidadId);
-        if (comunidad) {
-          nombreComunidad = comunidad.nombre || comunidad['NOMBRE O RAZON SOCIAL'] || 'Comunidad no encontrada';
-        }
-      }
-      
-      // Cargando detalles para la comunidad
-      
-      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
-      const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-App-Source': 'DeCamino-Web-App',
-        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const url = `${routes.getCatalogo}?cliente_id=${comunidadId}&cliente_nombre=${encodeURIComponent(nombreComunidad)}`;
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      // Procesează răspunsul (obiect sau array de produse cu permisiuni)
-      if (data && (Array.isArray(data) || typeof data === 'object')) {
-        let productosConPermisos;
-        
-        if (Array.isArray(data)) {
-          // Dacă este array, mapează toate produsele
-          productosConPermisos = data.map((item: any) => {
-            // Folosește imagen_base64 direct din backend
-            let imagenBase64 = '';
-            if (item.imagen_base64) {
-              // Dacă este deja base64, adaugă prefixul data:image/jpeg
-              imagenBase64 = `data:image/jpeg;base64,${item.imagen_base64}`;
-            } else if (item.fotoproducto && item.fotoproducto.data && Array.isArray(item.fotoproducto.data)) {
-              // Fallback la conversia din Buffer
-              imagenBase64 = bufferToBase64(item.fotoproducto.data);
-            }
-            
-            return {
-              id: item.producto_id,
-              numero: item.numero_articulo || '',
-              descripcion: item.descripcion || '',
-              precio: parseFloat(item.precio || 0),
-              permitido: item.permitido === 1 || item.permitido === true || item.permitido === '1',
-              imagen: imagenBase64 || undefined
-            };
-          });
-        } else {
-          // Dacă este obiect singular, creează array cu un singur element
-          let imagenBase64 = '';
-          if (data.imagen_base64) {
-            // Dacă este deja base64, adaugă prefixul data:image/jpeg
-            imagenBase64 = `data:image/jpeg;base64,${data.imagen_base64}`;
-          } else if (data.fotoproducto && data.fotoproducto.data && Array.isArray(data.fotoproducto.data)) {
-            // Fallback la conversia din Buffer
-            imagenBase64 = bufferToBase64(data.fotoproducto.data);
-          }
-          
-          productosConPermisos = [{
-            id: data.producto_id,
-            numero: data.numero_articulo || '',
-            descripcion: data.descripcion || '',
-            precio: parseFloat(data.precio || 0),
-            permitido: data.permitido === 1 || data.permitido === true || data.permitido === '1',
-            imagen: imagenBase64 || undefined
-          }];
-        }
-        
-        // Log pentru imagini
-        const productosConImagen = productosConPermisos.filter(p => p.imagen).length;
-        // Productos con imagen procesados
-        
-        // Actualizează produsele cu permisiunile lor
-        setProductos(productosConPermisos);
-        
-        // NU schimbăm numele comunității - păstrăm numele corect
-        setComunidadDetalles(prev => ({
-          ...prev!,
-          id: comunidadId,
-          productos: productosConPermisos,
-          // Include datele complete ale comunității
-          'NOMBRE O RAZON SOCIAL': prev?.datosCompletos?.['NOMBRE O RAZON SOCIAL'] || prev?.nombre || 'N/A',
-          NIF: prev?.datosCompletos?.NIF || 'N/A',
-          TELEFONO: prev?.datosCompletos?.TELEFONO || 'N/A',
-          DIRECCION: prev?.datosCompletos?.DIRECCION || 'N/A',
-          'CODIGO POSTAL': prev?.datosCompletos?.['CODIGO POSTAL'] || 'N/A',
-          POBLACION: prev?.datosCompletos?.POBLACION || 'N/A',
-          PROVINCIA: prev?.datosCompletos?.PROVINCIA || 'N/A',
-          PAIS: prev?.datosCompletos?.PAIS || 'N/A',
-          LATITUD: prev?.datosCompletos?.LATITUD || null,
-          LONGITUD: prev?.datosCompletos?.LONGITUD || null
-        }));
-        
-        addToast('success', 'Detalles cargados', `Detalles de "${nombreComunidad}" (ID: ${comunidadId}) cargados correctamente. ${productosConPermisos.length} productos con permisos.`);
-      } else {
-        throw new Error('Respuesta vacía o inválida');
-      }
-      
-    } catch (error) {
-      console.error('❌ Error cargando detalles de comunidad:', error);
-      addToast('error', 'Error', 'No se pudieron cargar los detalles de la comunidad.');
-    }
-  };
+  }, [addToast]);
 
   // Nu mai avem nevoie de filtrare - comunitatea se selectează automat
 
@@ -567,7 +558,6 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const agregarProducto = (producto: Producto, cantidad: number = 1) => {
     // Verifică limita de cheltuieli
     if (!puedeAgregarProducto(producto, cantidad)) {
-      const limite = getLimiteGasto();
       addToast('error', 'Límite excedido', `No se puede agregar este producto. Has superado el límite de gasto permitido.`);
       return;
     }
@@ -600,13 +590,6 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     setLineasPedido(prev => prev.map((linea, i) => 
       i === index ? { ...linea, cantidad } : linea
     ));
-  };
-
-  // Calculează totalul unei linii
-  const calcularLinea = (linea: LineaPedido) => {
-    const subtotal = linea.cantidad * linea.precio_unitario;
-    const iva = subtotal * 0.21; // IVA fix la 21%
-    return subtotal + iva;
   };
 
   // Calculează subtotalul (fără IVA)

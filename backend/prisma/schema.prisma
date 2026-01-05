@@ -229,6 +229,25 @@ model CarpetasDocumentos {
   archivo            Bytes?
 }
 
+model DocumentosSolicitados {
+  id                Int      @id @default(autoincrement())
+  empleado_id       String   @map("empleado_id") @db.VarChar(50)
+  tipo_documento    String   @map("tipo_documento") @db.VarChar(255)
+  estado            String   @default("pendiente") @db.VarChar(50) // pendiente, completado, rechazado
+  fecha_solicitud   DateTime @default(now()) @map("fecha_solicitud") @db.Timestamp(0)
+  fecha_completado  DateTime? @map("fecha_completado") @db.Timestamp(0)
+  solicitado_por    String   @map("solicitado_por") @db.VarChar(50)
+  notas             String?  @db.Text
+  aplicar_a_nuevos   Boolean  @default(false) @map("aplicar_a_nuevos") // Si true, se aplica automáticamente a futuros empleados activos
+
+  @@index([empleado_id], map: "idx_documentos_solicitados_empleado")
+  @@index([estado], map: "idx_documentos_solicitados_estado")
+  @@index([tipo_documento], map: "idx_documentos_solicitados_tipo")
+  @@index([empleado_id, estado], map: "idx_documentos_solicitados_empleado_estado")
+  @@index([aplicar_a_nuevos], map: "idx_documentos_solicitados_aplicar_a_nuevos")
+  @@map("documentos_solicitados")
+}
+
 model CatologoProductos {
   id                      Int                 @id @default(autoincrement())
   N_mero_de_art_culo      String              @map("Número de artículo") @db.VarChar(50)
@@ -912,6 +931,22 @@ enum NotificariFichaje_tip {
   salida
 }
 
+enum FichajeRegularizacionType {
+  NO_EXTRA
+  DECLARES_EXTRA
+  PUNCH_ERROR
+  AUTO_CLOSE
+  LEGACY
+  NO_PUNCH
+}
+
+enum FichajeRegularizacionStatus {
+  PENDING
+  CONFIRMED
+  NEEDS_REVIEW
+  REJECTED
+}
+
 enum retenciones_irpf_categoria {
   Actual
   CeutaYMelilla
@@ -1110,4 +1145,43 @@ model CostePersonal {
   @@index([mes, ano], map: "idx_coste_mes_ano")
   @@index([empleado_encontrado], map: "idx_coste_encontrado")
   @@map("coste_personal")
+}
+
+model FichajeRegularizacion {
+  id                  Int                         @id @default(autoincrement())
+  
+  // Workday identification (NOT calendar date)
+  employee_codigo     String                      @db.VarChar(50)
+  workday_date        DateTime                    @db.Date  // Shift start date (22:00-06:00 → date of 22:00)
+  
+  // Time window for this workday (covers all shifts, including night shifts)
+  window_start        DateTime                    @db.DateTime(0)  // First Entrada of workday
+  window_end          DateTime                    @db.DateTime(0)  // Last Salida of workday (may be next day)
+  
+  // Regularization data
+  fichaje_ids         String?                     @db.Text  // JSON array of fichaje IDs in this workday
+  regularization_type FichajeRegularizacionType
+  status              FichajeRegularizacionStatus
+  
+  scheduled_minutes   Int                         // From cuadrante/horario for workday_date (sum multiple segments if split)
+  punched_minutes     Int                         // Sum of all durations in [window_start, window_end]
+  effective_minutes   Int?                        // Final minutes used in reports
+  
+  reason_code         String?                     @db.VarChar(100)
+  notes               String?                     @db.Text
+  
+  created_by          String                      @db.VarChar(50)  // employee/admin/system
+  created_at          DateTime                    @default(now()) @db.Timestamp(0)
+  confirmed_at        DateTime?                   @db.Timestamp(0)
+  reviewed_at         DateTime?                   @db.Timestamp(0)
+  reviewed_by         String?                     @db.VarChar(50)
+  
+  ip_address          String?                     @db.VarChar(100)
+  user_agent          String?                     @db.Text
+
+  @@unique([employee_codigo, window_start], map: "uq_emp_window_start")
+  @@index([employee_codigo, workday_date], map: "idx_emp_workday")
+  @@index([status], map: "idx_regularizacion_status")
+  @@index([workday_date], map: "idx_workday_date")
+  @@map("FichajeRegularizacion")
 }

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { X, Download, Info, CheckCircle } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { X, Download, Info } from 'lucide-react';
 
 interface InstallAutofirmaModalProps {
   lang?: 'ro' | 'es';

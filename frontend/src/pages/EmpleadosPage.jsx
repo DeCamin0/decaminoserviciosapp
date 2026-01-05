@@ -410,9 +410,22 @@ export default function EmpleadosPage() {
     return true;
   };
 
+  /**
+   * Formatează IBAN-ul adăugând spații la fiecare 4 caractere
+   * Exemplu: ES4014650100941740476856 -> ES40 1465 0100 9417 4047 6856
+   */
+  const formatearIBAN = (iban) => {
+    if (!iban) return '';
+    // Elimină toate spațiile existente
+    const ibanLimpio = iban.replace(/\s/g, '').toUpperCase();
+    // Adaugă spații la fiecare 4 caractere
+    return ibanLimpio.replace(/(.{4})/g, '$1 ').trim();
+  };
+
   const validarIBAN = (iban) => {
     if (!iban || iban.trim() === '') return null;
     
+    // Elimină spațiile pentru validare
     const ibanLimpio = iban.replace(/\s/g, '').toUpperCase();
     
     if (!/^ES\d{22}$/.test(ibanLimpio)) {
@@ -670,6 +683,29 @@ export default function EmpleadosPage() {
 
   // Estado para email
   const [showEmailModal, setShowEmailModal] = useState(false);
+  // State pentru modalul de solicitare documente
+  const [showSolicitarDocumentoModal, setShowSolicitarDocumentoModal] = useState(false);
+  const [selectedUserForDocumento, setSelectedUserForDocumento] = useState(null);
+  const [documentoSolicitudForm, setDocumentoSolicitudForm] = useState({
+    tipo_documento: '',
+    tipo_personalizado: '',
+    notas: ''
+  });
+  const [documentoSolicitudLoading, setDocumentoSolicitudLoading] = useState(false);
+  const [documentoSolicitudError, setDocumentoSolicitudError] = useState(null);
+  
+  // State pentru solicitare în masă (toti angajații)
+  const [showSolicitarDocumentoTodosModal, setShowSolicitarDocumentoTodosModal] = useState(false);
+  const [documentoTodosForm, setDocumentoTodosForm] = useState({
+    tipo_documento: '',
+    tipo_personalizado: '',
+    notas: '',
+    solo_activos: true, // Doar angajații activi
+    aplicar_a_nuevos: false // Aplică la viitorii angajați activi
+  });
+  const [documentoTodosLoading, setDocumentoTodosLoading] = useState(false);
+  const [documentoTodosProgress, setDocumentoTodosProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
+  const [documentoTodosError, setDocumentoTodosError] = useState(null);
   const [emailForm, setEmailForm] = useState({
     destinatar: 'angajat',
     grup: 'Empleado',
@@ -1368,8 +1404,14 @@ export default function EmpleadosPage() {
     setAddSuccess(false);
     
     try {
+      // Normalizează IBAN-ul (elimină spațiile) înainte de salvare
+      const normalizedAddForm = { ...addForm };
+      if (normalizedAddForm['Nº Cuenta']) {
+        normalizedAddForm['Nº Cuenta'] = normalizedAddForm['Nº Cuenta'].replace(/\s/g, '').toUpperCase();
+      }
+      
       // Deschide direct modalul pentru generare PDF - fără validare
-      setPdfEmployeeData({ ...addForm });
+      setPdfEmployeeData(normalizedAddForm);
       setShowPDFModal(true);
     } catch (error) {
       console.error('❌ Error in handleAddUser:', error);
@@ -1461,6 +1503,11 @@ export default function EmpleadosPage() {
 
       // Construiește body-ul pentru EDITARE (PUT request), incluzând parametrii pentru email
       const updateBody = { ...editForm };
+      
+      // Normalizează IBAN-ul (elimină spațiile) înainte de salvare
+      if (updateBody['Nº Cuenta']) {
+        updateBody['Nº Cuenta'] = updateBody['Nº Cuenta'].replace(/\s/g, '').toUpperCase();
+      }
       
       // Asigură-te că câmpurile separate sunt incluse chiar dacă sunt goale
       if (editForm.NOMBRE !== undefined) updateBody.NOMBRE = editForm.NOMBRE;
@@ -1633,7 +1680,12 @@ export default function EmpleadosPage() {
             }
             
             // Folosește EmployeePDFGenerator pentru a genera și trimite ficha
-            setPdfEmployeeData({ ...editForm });
+            // Normalizează IBAN-ul (elimină spațiile) înainte de salvare
+            const normalizedEditForm = { ...editForm };
+            if (normalizedEditForm['Nº Cuenta']) {
+              normalizedEditForm['Nº Cuenta'] = normalizedEditForm['Nº Cuenta'].replace(/\s/g, '').toUpperCase();
+            }
+            setPdfEmployeeData(normalizedEditForm);
             setEnviarAGestoria(true);
             setMensajeAdicionalGestoria(mensajeRetrimite);
             setArchivosGestoria([]);
@@ -2072,6 +2124,197 @@ export default function EmpleadosPage() {
     setEmailSuccess(false);
     setEmailProgress(null); // Reset progres
     setShowEmailModal(true);
+  };
+
+  // Funcții pentru solicitare documente
+  const openSolicitarDocumentoModal = (user) => {
+    setSelectedUserForDocumento(user);
+    setDocumentoSolicitudForm({
+      tipo_documento: '',
+      tipo_personalizado: '',
+      notas: ''
+    });
+    setDocumentoSolicitudError(null);
+    setShowSolicitarDocumentoModal(true);
+  };
+
+  const handleSolicitarDocumento = async () => {
+    if (!selectedUserForDocumento?.CODIGO) {
+      setDocumentoSolicitudError('No se ha identificado el empleado.');
+      return;
+    }
+
+    if (!documentoSolicitudForm.tipo_documento) {
+      setDocumentoSolicitudError('Por favor, selecciona un tipo de documento.');
+      return;
+    }
+
+    setDocumentoSolicitudLoading(true);
+    setDocumentoSolicitudError(null);
+
+    try {
+      const result = await callApi(routes.createDocumentoSolicitado, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          empleado_id: selectedUserForDocumento.CODIGO,
+          tipo_documento: documentoSolicitudForm.tipo_documento,
+          notas: documentoSolicitudForm.notas || undefined,
+        }),
+      });
+
+      if (result.success || result.id) {
+        setNotification({
+          type: 'success',
+          title: 'Solicitud Creada',
+          message: `Se ha creado la solicitud de ${documentoSolicitudForm.tipo_documento} para ${getFormattedNombre(selectedUserForDocumento)}.`,
+          show: true
+        });
+        setShowSolicitarDocumentoModal(false);
+        setDocumentoSolicitudForm({ tipo_documento: '', notas: '' });
+        setSelectedUserForDocumento(null);
+      } else {
+        setDocumentoSolicitudError(result.error || 'Error al crear la solicitud');
+      }
+    } catch (error) {
+      console.error('Error creando solicitud:', error);
+      setDocumentoSolicitudError(error.message || 'Error al crear la solicitud');
+    } finally {
+      setDocumentoSolicitudLoading(false);
+    }
+  };
+
+  // Funcție pentru solicitare în masă (toti angajații)
+  const openSolicitarDocumentoTodosModal = () => {
+    setDocumentoTodosForm({
+      tipo_documento: '',
+      tipo_personalizado: '',
+      notas: '',
+      solo_activos: true
+    });
+    setDocumentoTodosError(null);
+    setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
+    setShowSolicitarDocumentoTodosModal(true);
+  };
+
+  const handleSolicitarDocumentoTodos = async () => {
+    if (!documentoTodosForm.tipo_documento) {
+      setDocumentoTodosError('Por favor, selecciona un tipo de documento.');
+      return;
+    }
+
+    // Verifică dacă e "Otro" și are tip personalizat completat
+    if (documentoTodosForm.tipo_documento === 'otro') {
+      if (!documentoTodosForm.tipo_personalizado || !documentoTodosForm.tipo_personalizado.trim()) {
+        setDocumentoTodosError('Por favor, especifica el tipo de documento personalizado.');
+        return;
+      }
+    }
+
+    // Filtrează angajații: toți sau doar activi
+    let empleadosParaSolicitar = documentoTodosForm.solo_activos
+      ? users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO')
+      : users;
+
+    // Dacă există filtru de căutare, aplică-l
+    if (searchTerm) {
+      empleadosParaSolicitar = getFilteredUsers.filter(u => 
+        documentoTodosForm.solo_activos 
+          ? (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO'
+          : true
+      );
+    }
+
+    if (empleadosParaSolicitar.length === 0) {
+      setDocumentoTodosError('No hay empleados para solicitar documentos.');
+      return;
+    }
+
+    setDocumentoTodosLoading(true);
+    setDocumentoTodosError(null);
+    setDocumentoTodosProgress({ 
+      current: 0, 
+      total: empleadosParaSolicitar.length, 
+      success: 0, 
+      failed: 0 
+    });
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    try {
+      // Procesează în batch-uri pentru a nu suprasolicita backend-ul
+      const batchSize = 10;
+      for (let i = 0; i < empleadosParaSolicitar.length; i += batchSize) {
+        const batch = empleadosParaSolicitar.slice(i, i + batchSize);
+        
+        // Procesează batch-ul în paralel
+        const promises = batch.map(async (empleado) => {
+          if (!empleado.CODIGO) return { success: false, empleado };
+          
+          try {
+            const result = await callApi(routes.createDocumentoSolicitado, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                empleado_id: empleado.CODIGO,
+                tipo_documento: documentoTodosForm.tipo_documento === 'otro' 
+                  ? documentoTodosForm.tipo_personalizado.trim()
+                  : documentoTodosForm.tipo_documento,
+                notas: documentoTodosForm.notas || undefined,
+                aplicar_a_nuevos: documentoTodosForm.aplicar_a_nuevos || false,
+              }),
+            });
+            
+            return { success: result.success || result.id, empleado };
+          } catch (error) {
+            console.error(`Error creando solicitud para ${empleado.CODIGO}:`, error);
+            return { success: false, empleado, error: error.message };
+          }
+        });
+
+        const results = await Promise.all(promises);
+        
+        results.forEach((result) => {
+          if (result.success) {
+            successCount++;
+          } else {
+            failedCount++;
+          }
+        });
+
+        setDocumentoTodosProgress({
+          current: Math.min(i + batchSize, empleadosParaSolicitar.length),
+          total: empleadosParaSolicitar.length,
+          success: successCount,
+          failed: failedCount
+        });
+      }
+
+      setNotification({
+        type: 'success',
+        title: 'Solicitudes Creadas',
+        message: `Se han creado ${successCount} solicitudes de ${documentoTodosForm.tipo_documento}${failedCount > 0 ? ` (${failedCount} fallidas)` : ''}.`,
+        show: true
+      });
+
+      // Închide modalul după un scurt delay
+      setTimeout(() => {
+        setShowSolicitarDocumentoTodosModal(false);
+        setDocumentoTodosForm({ tipo_documento: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
+        setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error creando solicitudes en masa:', error);
+      setDocumentoTodosError(error.message || 'Error al crear las solicitudes');
+    } finally {
+      setDocumentoTodosLoading(false);
+    }
   };
 
   const handleSendEmail = async () => {
@@ -2645,6 +2888,48 @@ export default function EmpleadosPage() {
                     {/* Shimmer effect */}
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
                   </button>
+
+                  {/* Solicitar Documento a Todos - ORANGE */}
+                  <button
+                    onClick={openSolicitarDocumentoTodosModal}
+                    className="group relative overflow-hidden flex-1 min-w-[140px] transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid rgba(249, 115, 22, 0.25)',
+                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.15)',
+                      padding: '0.75rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(249, 115, 22, 0.15)';
+                    }}
+                  >
+                    {/* Glow sutil en hover */}
+                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                    
+                    {/* Contenido */}
+                    <div className="relative flex items-center gap-2 justify-center">
+                      <div 
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                          boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)'
+                        }}
+                      >
+                        <span className="text-base">📄</span>
+                      </div>
+                      <span className="text-sm font-bold text-orange-800">Solicitar Doc a Todos</span>
+                    </div>
+                    
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  </button>
                 </div>
 
                 {/* Lista empleados */}
@@ -2774,6 +3059,17 @@ export default function EmpleadosPage() {
                                 <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
                                   filter: 'drop-shadow(0 2px 4px rgba(139, 92, 246, 0.4))',
                                 }}>🔑</span>
+                              </button>
+                              
+                              {/* Icon Solicitar Documento */}
+                              <button
+                                onClick={() => openSolicitarDocumentoModal(user)}
+                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
+                                title="Solicitar documento (DNI, Justificantes de banco, etc.)"
+                              >
+                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
+                                  filter: 'drop-shadow(0 2px 4px rgba(234, 179, 8, 0.4))',
+                                }}>📄</span>
                               </button>
                             </div>
                           </div>
@@ -2969,9 +3265,14 @@ export default function EmpleadosPage() {
                           ) : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
                         }`}
                         value={addForm[field] || ''}
-                        onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                        onChange={(e) => {
+                          const valor = e.target.value;
+                          // Formatează automat IBAN-ul cu spații
+                          const valorFormateado = formatearIBAN(valor);
+                          setAddForm(prev => ({ ...prev, [field]: valorFormateado }));
+                        }}
                         placeholder="ES91 2100 0418 4502 0005 1332 (IBAN español)"
-                        maxLength="24"
+                        maxLength={34} // 24 caractere + 5 spații = 29, dar permitem mai mult pentru flexibilitate
                       />
                       {addForm[field] && addForm[field].trim() !== '' && (
                         <div className="flex items-center gap-2 text-sm">
@@ -3955,9 +4256,14 @@ export default function EmpleadosPage() {
                         ) : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
                       }`}
                       value={editForm[field] || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      onChange={(e) => {
+                        const valor = e.target.value;
+                        // Formatează automat IBAN-ul cu spații
+                        const valorFormateado = formatearIBAN(valor);
+                        setEditForm(prev => ({ ...prev, [field]: valorFormateado }));
+                      }}
                       placeholder="ES91 2100 0418 4502 0005 1332 (IBAN español)"
-                      maxLength="24"
+                      maxLength={34} // 24 caractere + 5 spații = 29, dar permitem mai mult pentru flexibilitate
                     />
                     {editForm[field] && editForm[field].trim() !== '' && (
                       <div className="flex items-center gap-2 text-sm">
@@ -4410,24 +4716,30 @@ export default function EmpleadosPage() {
                     {(editForm?.NOMBRE || editForm?.APELLIDO1 || editForm?.APELLIDO2) && (
                       <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">📝 Nombre</label>
+                          <label htmlFor="edit-nombre" className="block text-xs font-medium text-gray-600 mb-1">📝 Nombre</label>
                           <Input
+                            id="edit-nombre"
+                            name="NOMBRE"
                             value={editForm.NOMBRE || ''}
                             onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
                             className="text-sm"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">📝 Primer Apellido</label>
+                          <label htmlFor="edit-apellido1" className="block text-xs font-medium text-gray-600 mb-1">📝 Primer Apellido</label>
                           <Input
+                            id="edit-apellido1"
+                            name="APELLIDO1"
                             value={editForm.APELLIDO1 || ''}
                             onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
                             className="text-sm"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">📝 Segundo Apellido</label>
+                          <label htmlFor="edit-apellido2" className="block text-xs font-medium text-gray-600 mb-1">📝 Segundo Apellido</label>
                           <Input
+                            id="edit-apellido2"
+                            name="APELLIDO2"
                             value={editForm.APELLIDO2 || ''}
                             onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
                             className="text-sm"
@@ -4435,7 +4747,7 @@ export default function EmpleadosPage() {
                         </div>
                         {editForm.NOMBRE_SPLIT_CONFIANZA !== undefined && (
                           <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">ℹ️ Confianza del Split</label>
+                            <div className="block text-xs font-medium text-gray-600 mb-1">ℹ️ Confianza del Split</div>
                             <p className="text-xs text-gray-700 bg-white px-2 py-1 rounded border border-gray-200">
                               {editForm.NOMBRE_SPLIT_CONFIANZA === 2 ? '✅ Confiado' : editForm.NOMBRE_SPLIT_CONFIANZA === 1 ? '⚠️ Incierto' : '❌ Fallido'}
                             </p>
@@ -4901,6 +5213,393 @@ export default function EmpleadosPage() {
               </>
             )}
           </Button>
+        </div>
+      </Modal>
+
+      {/* Modal pentru solicitare documente */}
+      <Modal
+        isOpen={showSolicitarDocumentoModal}
+        onClose={() => {
+          setShowSolicitarDocumentoModal(false);
+          setSelectedUserForDocumento(null);
+          setDocumentoSolicitudForm({ tipo_documento: '', notas: '' });
+          setDocumentoSolicitudError(null);
+        }}
+        title="Solicitar Documento"
+        size="md"
+      >
+        {selectedUserForDocumento && (
+          <div className="space-y-6">
+            {/* Info angajat */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+                  <span className="text-white text-xl">👤</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">
+                    {getFormattedNombre(selectedUserForDocumento) || 'Sin nombre'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Código: {selectedUserForDocumento.CODIGO}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Selector tip document */}
+            <div>
+              <label htmlFor="solicitud-tipo-documento-select" className="block text-sm font-semibold text-gray-700 mb-3">
+                Tipo de Documento <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="solicitud-tipo-documento-select"
+                name="tipoDocumento"
+                value={documentoSolicitudForm.tipo_documento}
+                onChange={(e) => setDocumentoSolicitudForm(prev => ({ ...prev, tipo_documento: e.target.value, tipo_personalizado: e.target.value === 'otro' ? prev.tipo_personalizado : '' }))}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white"
+              >
+                <option value="">Selecciona un tipo...</option>
+                <option value="DNI">DNI (Documento de Identidad)</option>
+                <option value="Certificado de titularidad">Certificado de titularidad</option>
+                <option value="otro">📎 Otro (Personalizado)</option>
+              </select>
+            </div>
+
+            {/* Campo de texto personalizado si selecciona "Otro" */}
+            {documentoSolicitudForm.tipo_documento === 'otro' && (
+              <div>
+                <label htmlFor="solicitud-tipo-personalizado-input" className="block text-sm font-semibold text-gray-700 mb-3">
+                  Especifica el Tipo de Documento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="solicitud-tipo-personalizado-input"
+                  name="tipoPersonalizado"
+                  type="text"
+                  value={documentoSolicitudForm.tipo_personalizado}
+                  onChange={(e) => setDocumentoSolicitudForm(prev => ({ ...prev, tipo_personalizado: e.target.value }))}
+                  placeholder="Ej: Certificado de Estudios, Carta de Recomendación, Justificante Médico..."
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                />
+              </div>
+            )}
+
+            {/* Informare clară */}
+            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <span className="text-blue-600 text-xl">ℹ️</span>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-blue-800 font-medium">
+                    Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notas opționale */}
+            <div>
+              <label htmlFor="solicitud-notas-textarea" className="block text-sm font-semibold text-gray-700 mb-3">
+                Notas (opcional)
+              </label>
+              <textarea
+                id="solicitud-notas-textarea"
+                name="notas"
+                value={documentoSolicitudForm.notas}
+                onChange={(e) => setDocumentoSolicitudForm(prev => ({ ...prev, notas: e.target.value }))}
+                placeholder="Añade alguna nota o instrucción adicional..."
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-all duration-200"
+                rows={4}
+              />
+            </div>
+
+            {/* Error message */}
+            {documentoSolicitudError && (
+              <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                    <span className="text-red-600 text-lg">⚠️</span>
+                  </div>
+                  <div>
+                    <p className="text-red-800 font-medium">Error</p>
+                    <p className="text-red-600 text-sm">{documentoSolicitudError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Butoane */}
+            <div className="flex gap-4 justify-center mt-8">
+              <Button
+                onClick={() => {
+                  setShowSolicitarDocumentoModal(false);
+                  setSelectedUserForDocumento(null);
+                  setDocumentoSolicitudForm({ tipo_documento: '', tipo_personalizado: '', notas: '' });
+                  setDocumentoSolicitudError(null);
+                }}
+                variant="outline"
+                size="lg"
+                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+              >
+                <span className="mr-2">✖️</span>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSolicitarDocumento}
+                variant="primary"
+                size="lg"
+                loading={documentoSolicitudLoading}
+                disabled={documentoSolicitudLoading || !documentoSolicitudForm.tipo_documento || (documentoSolicitudForm.tipo_documento === 'otro' && !documentoSolicitudForm.tipo_personalizado?.trim())}
+                className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg"
+              >
+                {documentoSolicitudLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Creando...
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-2">📄</span>
+                    Solicitar Documento
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal pentru solicitare documente în masă (toti angajații) */}
+      <Modal
+        isOpen={showSolicitarDocumentoTodosModal}
+        onClose={() => {
+          setShowSolicitarDocumentoTodosModal(false);
+          setDocumentoTodosForm({ tipo_documento: '', tipo_personalizado: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
+          setDocumentoTodosError(null);
+          setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
+        }}
+        title="Solicitar Documento a Todos los Empleados"
+        size="md"
+      >
+        <div className="space-y-6">
+          {/* Info */}
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                <span className="text-white text-xl">👥</span>
+              </div>
+              <div>
+                <p className="font-bold text-gray-900">
+                  {documentoTodosForm.solo_activos 
+                    ? users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO').length
+                    : users.length
+                  } empleados
+                </p>
+                <p className="text-sm text-gray-600">
+                  {documentoTodosForm.solo_activos ? 'Solo activos' : 'Todos los empleados'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Selector tip document */}
+          <div>
+            <label htmlFor="solicitud-todos-tipo-documento-select" className="block text-sm font-semibold text-gray-700 mb-3">
+              Tipo de Documento <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="solicitud-todos-tipo-documento-select"
+              name="tipoDocumentoTodos"
+              value={documentoTodosForm.tipo_documento}
+              onChange={(e) => setDocumentoTodosForm(prev => ({ ...prev, tipo_documento: e.target.value, tipo_personalizado: e.target.value === 'otro' ? prev.tipo_personalizado : '' }))}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200 bg-white"
+            >
+              <option value="">Selecciona un tipo...</option>
+              <option value="DNI">DNI (Documento de Identidad)</option>
+              <option value="Certificado de titularidad">Certificado de titularidad</option>
+              <option value="otro">📎 Otro (Personalizado)</option>
+            </select>
+          </div>
+
+          {/* Campo de texto personalizado si selecciona "Otro" */}
+          {documentoTodosForm.tipo_documento === 'otro' && (
+            <div>
+              <label htmlFor="solicitud-todos-tipo-personalizado-input" className="block text-sm font-semibold text-gray-700 mb-3">
+                Especifica el Tipo de Documento <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="solicitud-todos-tipo-personalizado-input"
+                name="tipoPersonalizadoTodos"
+                type="text"
+                value={documentoTodosForm.tipo_personalizado}
+                onChange={(e) => setDocumentoTodosForm(prev => ({ ...prev, tipo_personalizado: e.target.value }))}
+                placeholder="Ej: Certificado de Estudios, Carta de Recomendación, Justificante Médico..."
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200"
+              />
+            </div>
+          )}
+
+          {/* Informare clară */}
+          <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <span className="text-blue-600 text-xl">ℹ️</span>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-blue-800 font-medium">
+                  Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Checkbox pentru doar activi */}
+          <div>
+            <label htmlFor="solicitud-todos-solo-activos-checkbox" className="flex items-center gap-3 cursor-pointer">
+              <input
+                id="solicitud-todos-solo-activos-checkbox"
+                name="soloActivos"
+                type="checkbox"
+                checked={documentoTodosForm.solo_activos}
+                onChange={(e) => setDocumentoTodosForm(prev => ({ ...prev, solo_activos: e.target.checked }))}
+                className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Solo empleados activos
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-8">
+              Si está desmarcado, se solicitará a todos los empleados (activos e inactivos)
+            </p>
+          </div>
+
+          {/* Checkbox pentru aplicare la viitorii angajați */}
+          <div>
+            <label htmlFor="solicitud-todos-aplicar-a-nuevos-checkbox" className="flex items-center gap-3 cursor-pointer">
+              <input
+                id="solicitud-todos-aplicar-a-nuevos-checkbox"
+                name="aplicarANuevos"
+                type="checkbox"
+                checked={documentoTodosForm.aplicar_a_nuevos}
+                onChange={(e) => setDocumentoTodosForm(prev => ({ ...prev, aplicar_a_nuevos: e.target.checked }))}
+                className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Aplicar a futuros empleados activos
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 mt-1 ml-8">
+              Si está marcado, esta solicitud se aplicará automáticamente a todos los empleados activos que se agreguen en el futuro
+            </p>
+          </div>
+
+          {/* Notas opționale */}
+          <div>
+            <label htmlFor="solicitud-todos-notas-textarea" className="block text-sm font-semibold text-gray-700 mb-3">
+              Notas (opcional)
+            </label>
+            <textarea
+              id="solicitud-todos-notas-textarea"
+              name="notasTodos"
+              value={documentoTodosForm.notas}
+              onChange={(e) => setDocumentoTodosForm(prev => ({ ...prev, notas: e.target.value }))}
+              placeholder="Añade alguna nota o instrucción adicional para todos los empleados..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none transition-all duration-200"
+              rows={4}
+            />
+          </div>
+
+          {/* Progress bar pentru procesare în masă */}
+          {documentoTodosLoading && documentoTodosProgress.total > 0 && (
+            <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-orange-900">
+                    Procesando solicitudes...
+                  </span>
+                  <span className="text-sm font-bold text-orange-700">
+                    {documentoTodosProgress.current} / {documentoTodosProgress.total}
+                  </span>
+                </div>
+                
+                {/* Bară de progres */}
+                <div className="w-full bg-orange-200 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-orange-500 to-amber-600 rounded-full transition-all duration-300 ease-out"
+                    style={{
+                      width: `${(documentoTodosProgress.current / documentoTodosProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+                
+                {/* Statistici */}
+                <div className="mt-3 flex items-center justify-between text-xs text-orange-700">
+                  <span>✅ Reușite: {documentoTodosProgress.success}</span>
+                  {documentoTodosProgress.failed > 0 && (
+                    <span className="text-red-600">❌ Eșuate: {documentoTodosProgress.failed}</span>
+                  )}
+                  <span className="font-semibold">
+                    {Math.round((documentoTodosProgress.current / documentoTodosProgress.total) * 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error message */}
+          {documentoTodosError && (
+            <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                  <span className="text-red-600 text-lg">⚠️</span>
+                </div>
+                <div>
+                  <p className="text-red-800 font-medium">Error</p>
+                  <p className="text-red-600 text-sm">{documentoTodosError}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Butoane */}
+          <div className="flex gap-4 justify-center mt-8">
+            <Button
+              onClick={() => {
+                setShowSolicitarDocumentoTodosModal(false);
+                setDocumentoTodosForm({ tipo_documento: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
+                setDocumentoTodosError(null);
+                setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
+              }}
+              variant="outline"
+              size="lg"
+              className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+              disabled={documentoTodosLoading}
+            >
+              <span className="mr-2">✖️</span>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSolicitarDocumentoTodos}
+              variant="primary"
+              size="lg"
+              loading={documentoTodosLoading}
+              disabled={documentoTodosLoading || !documentoTodosForm.tipo_documento || (documentoTodosForm.tipo_documento === 'otro' && !documentoTodosForm.tipo_personalizado?.trim())}
+              className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 shadow-lg"
+            >
+              {documentoTodosLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <span className="mr-2">📄</span>
+                  Solicitar a Todos
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </Modal>
 

@@ -3,7 +3,10 @@
  * Simulates backend database for DEMO mode
  */
 
-type Store = Record<string, any[]>;
+// Tip pentru un item din store (trebuie să aibă cel puțin un id opțional)
+type StoreItem = Record<string, unknown> & { id?: string | number };
+
+type Store = Record<string, StoreItem[]>;
 
 const STORE_KEY = '__demo_store__';
 
@@ -79,13 +82,13 @@ export const DemoStore = {
    */
   get(resource: string, id: string) {
     const items = store[resource] ?? [];
-    return items.find((item: any) => String(item.id) === String(id)) || null;
+    return items.find((item: StoreItem) => String(item.id) === String(id)) || null;
   },
 
   /**
    * Create new item
    */
-  create(resource: string, item: any) {
+  create(resource: string, item: Record<string, unknown>) {
     if (!store[resource]) {
       store[resource] = [];
     }
@@ -105,9 +108,9 @@ export const DemoStore = {
   /**
    * Update existing item
    */
-  update(resource: string, id: string, patch: any) {
+  update(resource: string, id: string, patch: Partial<Record<string, unknown>>) {
     const items = store[resource] ?? [];
-    const index = items.findIndex((item: any) => String(item.id) === String(id));
+    const index = items.findIndex((item: StoreItem) => String(item.id) === String(id));
     
     if (index === -1) return null;
     
@@ -128,7 +131,7 @@ export const DemoStore = {
    */
   remove(resource: string, id: string) {
     const items = store[resource] ?? [];
-    const index = items.findIndex((item: any) => String(item.id) === String(id));
+    const index = items.findIndex((item: StoreItem) => String(item.id) === String(id));
     
     if (index === -1) return false;
     

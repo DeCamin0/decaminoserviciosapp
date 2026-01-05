@@ -105,7 +105,9 @@ export class AuthService {
 
       // Calculează un hash simplu al parolei pentru a invalida token-urile când se schimbă parola
       // Folosim primul caracter, ultimul caracter și lungimea pentru a crea un hash unic
-      const passwordHash = this.getPasswordHash(contraseñaPassword || dniPassword);
+      const passwordHash = this.getPasswordHash(
+        contraseñaPassword || dniPassword,
+      );
 
       // Generate JWT token
       const payload = {

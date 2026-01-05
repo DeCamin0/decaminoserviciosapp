@@ -3,8 +3,11 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -12,7 +15,11 @@ import PDFDocument from 'pdfkit';
 export class EmpleadosService {
   private readonly logger = new Logger(EmpleadosService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => DocumentosSolicitadosService))
+    private readonly documentosSolicitadosService?: DocumentosSolicitadosService,
+  ) {}
 
   /**
    * Helper function to get formatted employee name
@@ -605,6 +612,31 @@ export class EmpleadosService {
       this.logger.log(
         `✅ Empleado adăugat cu succes: ${empleadoData.CODIGO}${wasPasswordGenerated ? ' (con contraseña temporal generada)' : ''}`,
       );
+
+      // Aplicăm automat cererile cu aplicar_a_nuevos = true dacă angajatul este activ
+      if (this.documentosSolicitadosService) {
+        const estado = empleadoData.ESTADO || '';
+        const esActivo = estado.toString().trim().toUpperCase() === 'ACTIVO';
+
+        if (esActivo) {
+          try {
+            const result =
+              await this.documentosSolicitadosService.aplicarReglasANuevoEmpleado(
+                empleadoData.CODIGO,
+              );
+            if (result.aplicadas > 0) {
+              this.logger.log(
+                `✅ ${result.aplicadas} solicitud(es) aplicada(s) automáticamente a nuevo empleado ${empleadoData.CODIGO}`,
+              );
+            }
+          } catch (error: any) {
+            // Nu aruncăm eroare pentru a nu bloca crearea angajatului
+            this.logger.warn(
+              `⚠️ Error aplicando reglas a nuevo empleado ${empleadoData.CODIGO}: ${error.message}`,
+            );
+          }
+        }
+      }
 
       return {
         success: true,
@@ -1832,18 +1864,14 @@ export class EmpleadosService {
 
       await this.prisma.$executeRawUnsafe(query);
 
-      this.logger.log(
-        `✅ Parolă resetată pentru angajat: ${codigo}`,
-      );
+      this.logger.log(`✅ Parolă resetată pentru angajat: ${codigo}`);
 
       return {
         success: true,
         temporaryPassword: newPassword,
       };
     } catch (error: any) {
-      this.logger.error(
-        `❌ Error resetting password: ${error.message}`,
-      );
+      this.logger.error(`❌ Error resetting password: ${error.message}`);
       throw error;
     }
   }

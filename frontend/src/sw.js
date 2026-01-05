@@ -1,13 +1,13 @@
 // Service Worker entry point pentru VitePWA injectManifest
 import { precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
-import { NetworkFirst, NetworkOnly } from 'workbox-strategies';
+import { NetworkFirst } from 'workbox-strategies';
 
 // Precache assets
 precacheAndRoute(self.__WB_MANIFEST);
 
 // Activează automat noul Service Worker când se instalează (fără a aștepta)
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   console.log('[SW] Installing new Service Worker...');
   // Skip waiting pentru a activa automat noul Service Worker
   self.skipWaiting();
@@ -51,14 +51,6 @@ self.addEventListener('activate', (event) => {
 // Interceptăm doar:
 // 1. Asset-urile statice (JS, CSS, imagini) - deja acoperite de precacheAndRoute
 // 2. Request-urile către n8n (pentru endpoint-urile nemigrate)
-
-// Helper pentru a verifica dacă un URL este către backend-ul nostru
-const isOurBackend = (url) => {
-  const origin = url.origin;
-  return origin === 'https://api.decaminoservicios.com' || 
-         origin === 'http://localhost:3000' ||
-         origin.includes('api.decaminoservicios.com');
-};
 
 // IMPORTANT: Nu adăugăm niciun route pentru backend-ul nostru
 // Astfel, toate request-urile către backend trec direct, fără interceptare
@@ -149,7 +141,7 @@ self.addEventListener('notificationclick', (event) => {
 
   // Deschide aplicația
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       const basePath = self.location.pathname.replace(/\/sw\.js$/, '') || '/';
       
       // Dacă există deja o fereastră deschisă, o focusează
@@ -166,7 +158,7 @@ self.addEventListener('notificationclick', (event) => {
         ? `${self.location.origin}${basePath}${urlFromData.replace(/^\//, '')}`
         : `${self.location.origin}${basePath}`;
       
-      return clients.openWindow(urlToOpen);
+      return self.clients.openWindow(urlToOpen);
     })
   );
 });

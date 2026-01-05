@@ -50,7 +50,8 @@ export class FichajesController {
       const ultimoRegistro =
         await this.fichajesService.getUltimoRegistro(codigo);
 
-      return ultimoRegistro;
+      // Returnează întotdeauna un obiect JSON valid, chiar dacă nu există registru
+      return ultimoRegistro || null;
     } catch (error: any) {
       this.logger.error('❌ Error getting ultimo registro:', error);
       throw error;

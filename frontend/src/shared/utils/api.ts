@@ -21,7 +21,7 @@ class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public data?: any,
+    public data?: unknown,
     public isCorsError?: boolean
   ) {
     super(message);
@@ -133,13 +133,13 @@ export const getBackendUrl = (): string => {
 export const api = {
   get: <T>(endpoint: string) => apiRequest<T>(endpoint),
   
-  post: <T>(endpoint: string, data?: any) =>
+  post: <T>(endpoint: string, data?: unknown) =>
     apiRequest<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
     }),
     
-  put: <T>(endpoint: string, data?: any) =>
+  put: <T>(endpoint: string, data?: unknown) =>
     apiRequest<T>(endpoint, {
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,

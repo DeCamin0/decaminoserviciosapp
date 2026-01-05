@@ -1,16 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button, Card } from './ui';
 import type { DetalleEmpleado } from './HorasTrabajadas';
 import HorasTrabajadasPDF from './HorasTrabajadasPDF';
 import { pdf } from '@react-pdf/renderer';
+import DeclararNoPunchModal from './DeclararNoPunchModal';
+import { success } from '../utils/logger';
+
+type TitleProps = {
+  level?: number;
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+  [key: string]: unknown;
+};
+
+type TextProps = {
+  children?: React.ReactNode;
+  type?: string;
+  style?: React.CSSProperties;
+  [key: string]: unknown;
+};
 
 // Componente simple pentru UI
-const Title = ({ level, children, style, ...props }: any) => {
+const Title = ({ level, children, style, ...props }: TitleProps) => {
   const Tag = level === 2 ? 'h2' : level === 3 ? 'h3' : level === 4 ? 'h4' : level === 5 ? 'h5' : 'h6';
   return React.createElement(Tag, { style, ...props }, children);
 };
 
-const Text = ({ children, type, style, ...props }: any) => {
+const Text = ({ children, type, style, ...props }: TextProps) => {
   const className = type === 'secondary' ? 'text-gray-500' : '';
   return <span className={className} style={style} {...props}>{children}</span>;
 };
@@ -34,8 +50,15 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
 }) => {
   const [activeTab, setActiveTab] = React.useState<'registros' | 'detalles'>('registros');
   const isAnual = tipoReporte === 'anual';
+  
+  // State pentru modaluri de regularizare
+  const [showDeclararNoPunchModal, setShowDeclararNoPunchModal] = useState(false);
+  const [selectedDayForRegularization, setSelectedDayForRegularization] = useState<{
+    fecha: string;
+    plan?: number;
+  } | null>(null);
 
-  const formatHoursValue = React.useCallback((value: any, decimals = 2) => {
+  const formatHoursValue = React.useCallback((value: string | number | null | undefined, decimals = 2) => {
     if (value === undefined || value === null || value === '') return 'N/A';
     if (typeof value === 'string') {
       return value;
@@ -49,20 +72,20 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
     return 'N/A';
   }, []);
 
-  const formatDiffValue = React.useCallback((value: any) => {
+  const formatDiffValue = React.useCallback((value: string | number | null | undefined) => {
     if (value === undefined || value === null) return '0.00';
     const num = typeof value === 'string' ? parseFloat(value) : Number(value);
     if (isNaN(num)) return '0.00';
     return num.toFixed(2);
   }, []);
 
-  const parseNumeric = React.useCallback((value: any) => {
+  const parseNumeric = React.useCallback((value: unknown) => {
     if (value === undefined || value === null || value === '') return undefined;
     const num = typeof value === 'string' ? parseFloat(value) : Number(value);
     return Number.isFinite(num) ? num : undefined;
   }, []);
 
-  const parseHoursToDecimal = React.useCallback((value: any): number => {
+  const parseHoursToDecimal = React.useCallback((value: string | number | null | undefined): number => {
     if (value === undefined || value === null || value === '') return 0;
     if (typeof value === 'number') {
       return Number.isFinite(value) ? value : 0;
@@ -85,6 +108,47 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
     return 0;
   }, []);
 
+  // Helper pentru a calcula orele zilnice din contract ca fallback
+  const getDailyContractHours = React.useCallback((fecha: string): number => {
+    if (!detalle) return 0;
+    
+    // Prioritate 1: folosește horasContratoSemanal dacă există (ore săptămânale / 5 zile lucrătoare)
+    if (detalle.horasContratoSemanal && detalle.horasContratoSemanal > 0) {
+      return Number((detalle.horasContratoSemanal / 5).toFixed(2));
+    }
+    
+    // Prioritate 2: folosește horasContrato (ore săptămânale din detaliile angajatului) / 5 zile lucrătoare
+    const horasContrato = parseHoursToDecimal(detalle.horasContrato);
+    if (horasContrato > 0) {
+      return Number((horasContrato / 5).toFixed(2));
+    }
+    
+    // Prioritate 3: folosește horasContratoMes împărțit la zile lucrătoare din lună
+    const horasContratoMes = parseHoursToDecimal(detalle.horasContratoMes);
+    if (horasContratoMes > 0) {
+      try {
+        const fechaDate = new Date(fecha);
+        const year = fechaDate.getFullYear();
+        const month = fechaDate.getMonth();
+        
+        // Calculează zile lucrătoare din lună (excludem duminicile)
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        let workingDays = 0;
+        for (let day = 1; day <= daysInMonth; day++) {
+          const date = new Date(year, month, day);
+          if (date.getDay() !== 0) { // Nu e duminică
+            workingDays++;
+          }
+        }
+        return workingDays > 0 ? Number((horasContratoMes / workingDays).toFixed(2)) : 0;
+      } catch {
+        return 0;
+      }
+    }
+    
+    return 0;
+  }, [detalle, parseHoursToDecimal]);
+
   const formatDecimalHours = React.useCallback((hours: number) => {
     if (!Number.isFinite(hours) || hours <= 0) {
       return '00:00:00';
@@ -97,7 +161,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
   }, []);
 
   const detaliiTotals = React.useMemo(() => {
-    const lista = (detalle as any)?.detaliiZilnice;
+    const lista = detalle?.detaliiZilnice;
     if (!Array.isArray(lista) || lista.length === 0) {
       return undefined;
     }
@@ -109,7 +173,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
     let excedente = 0;
     let incompletos = 0;
 
-    lista.forEach((detalleDia: any) => {
+    lista.forEach((detalleDia) => {
       const planVal = parseNumeric(detalleDia?.plan);
       if (Number.isFinite(planVal)) {
         plan += Number(planVal);
@@ -154,10 +218,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
       excedente,
       incompletos
     };
-  }, [detalle?.detaliiZilnice, parseNumeric]);
+  }, [detalle, parseNumeric]);
 
   const diasAlerta = React.useMemo(() => {
-    const detalles = (detalle as any)?.detaliiZilnice;
+    const detalles = detalle?.detaliiZilnice;
     if (!Array.isArray(detalles) || detalles.length === 0) {
       return { total: 0, positivos: 0, negativos: 0 };
     }
@@ -165,7 +229,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
     let positivos = 0;
     let negativos = 0;
 
-    detalles.forEach((dia: any) => {
+    detalles.forEach((dia) => {
       const deltaValue = parseNumeric(dia?.delta);
       const excedenteValue = Number.isFinite(deltaValue)
         ? Number(deltaValue)
@@ -204,7 +268,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
         month: 'long',
         year: 'numeric'
       });
-    } catch (err) {
+    } catch {
       return ym;
     }
   }, []);
@@ -230,7 +294,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
         month: 'long',
         year: 'numeric'
       });
-    } catch (err) {
+    } catch {
       return detalle.mes;
     }
   }, [detalle?.mes, isAnual]);
@@ -382,7 +446,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                 return 0;
               };
 
-              const totalSec = (detalle.dias || []).reduce((acc, d: any) => acc + toSeconds(d.duracion), 0);
+              const totalSec = (detalle.dias || []).reduce((acc, d) => acc + toSeconds(d.duracion || '0:00:00'), 0);
               const totalHH = Math.floor(totalSec / 3600);
               const rem = totalSec % 3600;
               const totalMM = Math.floor(rem / 60);
@@ -429,7 +493,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   fontSize: '18px', 
                   fontWeight: 600, 
                   color: (() => {
-                    const rawExtra: any = isAnual
+                    const rawExtra: string | number | undefined = isAnual
                       ? (detalle.totalExtraordinarias ?? detalle.horasExtra)
                       : detalle.horasExtra;
                     const isPos = (typeof rawExtra === 'string')
@@ -439,7 +503,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   })()
                 }}>
                   {(() => {
-                    const rawExtra: any = isAnual
+                    const rawExtra: string | number | undefined = isAnual
                       ? (detalle.totalExtraordinarias ?? detalle.horasExtra)
                       : detalle.horasExtra;
                     if (typeof rawExtra === 'string') {
@@ -458,8 +522,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                 <div style={{ fontSize: '18px', fontWeight: 600, color: '#722ed1' }}>
                   {(() => {
                     const mediaBackend = isAnual
-                      ? (detalle as any).mediaSemanalAnual ?? (detalle as any).mediaSemanal
-                      : (detalle as any).mediaSemanal ?? (detalle as any).mediaSemanalAnual;
+                      ? (detalle as DetalleEmpleado & { mediaSemanalAnual?: string | number; mediaSemanal?: string | number }).mediaSemanalAnual ?? 
+                        (detalle as DetalleEmpleado & { mediaSemanalAnual?: string | number; mediaSemanal?: string | number }).mediaSemanal
+                      : (detalle as DetalleEmpleado & { mediaSemanalAnual?: string | number; mediaSemanal?: string | number }).mediaSemanal ?? 
+                        (detalle as DetalleEmpleado & { mediaSemanalAnual?: string | number; mediaSemanal?: string | number }).mediaSemanalAnual;
 
                     if (typeof mediaBackend === 'string' && mediaBackend.includes(':')) {
                       return `${mediaBackend}/semana`;
@@ -470,20 +536,28 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                       return `${formatDecimalHours(mediaBackendDecimal)}/semana`;
                     }
 
+                    type DetalleExtended = DetalleEmpleado & {
+                      horasTrabajadasAnual?: string | number;
+                      totalTrabajadasAnual?: string | number;
+                      totalTrabajadas?: string | number;
+                      horasTrabajadas?: string | number;
+                      horasTrabajadasMes?: string | number;
+                    };
+                    const detalleExt = detalle as DetalleExtended;
                     const horasBase = isAnual
                       ? parseHoursToDecimal(
-                          (detalle as any).horasTrabajadasAnual ??
-                          (detalle as any).totalTrabajadasAnual ??
-                          (detalle as any).totalTrabajadas ??
-                          (detalle as any).horasTrabajadas ??
-                          (detalle as any).horasTrabajadasMes
+                          detalleExt.horasTrabajadasAnual ??
+                          detalleExt.totalTrabajadasAnual ??
+                          detalleExt.totalTrabajadas ??
+                          detalleExt.horasTrabajadas ??
+                          detalleExt.horasTrabajadasMes
                         )
                       : parseHoursToDecimal(
-                          (detalle as any).horasTrabajadasMes ??
-                          (detalle as any).horasTrabajadas ??
-                          (detalle as any).totalTrabajadas ??
-                          (detalle as any).totalTrabajadasAnual ??
-                          (detalle as any).horasTrabajadasAnual
+                          detalleExt.horasTrabajadasMes ??
+                          detalleExt.horasTrabajadas ??
+                          detalleExt.totalTrabajadas ??
+                          detalleExt.totalTrabajadasAnual ??
+                          detalleExt.horasTrabajadasAnual
                         );
 
                     if (!horasBase || horasBase <= 0) {
@@ -491,12 +565,12 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                     }
 
                     const diasFuente = (() => {
-                      if (Array.isArray((detalle as any).detaliiZilnice) && (detalle as any).detaliiZilnice.length > 0) {
-                        const dias = new Set((detalle as any).detaliiZilnice.map((d: any) => d?.fecha).filter(Boolean));
+                      if (Array.isArray(detalle.detaliiZilnice) && detalle.detaliiZilnice.length > 0) {
+                        const dias = new Set(detalle.detaliiZilnice.map((d) => d?.fecha).filter(Boolean));
                         return dias.size;
                       }
                       if (Array.isArray(detalle.dias) && detalle.dias.length > 0) {
-                        const dias = new Set(detalle.dias.map((d: any) => d?.fecha).filter(Boolean));
+                        const dias = new Set(detalle.dias.map((d) => d?.fecha).filter(Boolean));
                         return dias.size;
                       }
 
@@ -832,7 +906,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {resumenMensualData.map((item: any, index: number) => (
+                      {resumenMensualData.map((item, index: number) => (
                         <tr key={`${item.ym}-${index}`} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 py-3 text-left font-medium text-gray-800">
                             {formatMonthLabel(item.ym)}
@@ -1107,6 +1181,18 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                             ? parseFloat((fichadoValue - positiveExcedente).toFixed(2))
                             : 0;
 
+                          // Fallback la orele din contract dacă nu există plan și nu există orar/cuadrante
+                          const planValue = parseNumeric(detalleDia.plan);
+                          const planFuente = detalleDia.plan_fuente || '';
+                          // Verifică dacă nu există orar/cuadrante (plan_fuente este 'none' sau nu există plan)
+                          const hasNoSchedule = planFuente === 'none' || !planFuente || (planValue === 0 || planValue === undefined);
+                          const contractFallback = hasNoSchedule ? getDailyContractHours(detalleDia.fecha) : 0;
+                          const finalPlan = (planValue !== undefined && planValue > 0) ? planValue : (contractFallback > 0 ? contractFallback : 0);
+                          const finalPlanFuente = (planValue !== undefined && planValue > 0) ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
+                          
+                          // Recalculează delta cu plan-ul final (cu fallback)
+                          const finalDelta = fichadoValue - finalPlan;
+
                           return (
                           <tr key={`${detalleDia.fecha}-${index}`} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -1118,12 +1204,12 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
                               <span className="font-mono text-sm bg-blue-100 px-3 py-1 rounded-lg border border-blue-200">
-                                {detalleDia.plan !== undefined ? detalleDia.plan : '0'}
+                                {finalPlan.toFixed(2)}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
                               <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                {detalleDia.plan_fuente || 'N/A'}
+                                {finalPlanFuente}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
@@ -1133,13 +1219,13 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
                               <span className={`font-mono text-sm px-3 py-1 rounded-lg border ${
-                                (detalleDia.delta || 0) < 0 
+                                finalDelta < 0 
                                   ? 'bg-red-100 border-red-200 text-red-800' 
-                                  : (detalleDia.delta || 0) > 0 
+                                  : finalDelta > 0 
                                     ? 'bg-green-100 border-green-200 text-green-800'
                                     : 'bg-gray-100 border-gray-200 text-gray-800'
                               }`}>
-                                {detalleDia.delta !== undefined ? detalleDia.delta.toFixed(2) : '0.00'}
+                                {formatDiffValue(finalDelta)}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-center">
@@ -1174,12 +1260,27 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                                 const tienePlan = plan > 0;
                                 const tieneFichado = fichado > 0;
                                 
-                                // Dacă există plan dar nu există fichado, afișează "Sin fichar"
+                                // Dacă există plan dar nu există fichado, afișează "Sin fichar" cu buton de regularizare
                                 if (tienePlan && !tieneFichado) {
                                   return (
-                                    <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 border border-red-200">
-                                      🚫 Sin fichar
-                                    </span>
+                                    <div className="flex flex-col items-center gap-2">
+                                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 border border-red-200">
+                                        🚫 Sin fichar
+                                      </span>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedDayForRegularization({
+                                            fecha: detalleDia.fecha,
+                                            plan: plan,
+                                          });
+                                          setShowDeclararNoPunchModal(true);
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                                        title="Regularizar esta fecha"
+                                      >
+                                        📝 Regularizar
+                                      </button>
+                                    </div>
                                   );
                                 }
                                 
@@ -1289,6 +1390,32 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
           )}
         </div>
       </div>
+      
+      {/* Modal pentru declarare no punch */}
+      {detalle && (
+        <DeclararNoPunchModal
+          isOpen={showDeclararNoPunchModal}
+          onClose={() => {
+            setShowDeclararNoPunchModal(false);
+            setSelectedDayForRegularization(null);
+          }}
+          onConfirm={async () => {
+            success('Motivo registrado correctamente. La regularización será revisada por el supervisor.');
+            setShowDeclararNoPunchModal(false);
+            setSelectedDayForRegularization(null);
+            // Opțional: reîncarcă datele pentru a actualiza UI-ul
+            // Poți adăuga un callback onRefresh dacă este necesar
+          }}
+          data={{
+            workday_date: selectedDayForRegularization?.fecha || '',
+            scheduled_hours: selectedDayForRegularization?.plan 
+              ? `${selectedDayForRegularization.plan}h` 
+              : undefined,
+            // Pentru admin care regularizează pentru alt angajat, folosim empleadoId ca codigo
+            employee_codigo: detalle?.empleadoId ? String(detalle.empleadoId) : undefined,
+          }}
+        />
+      )}
     </div>
   );
 };

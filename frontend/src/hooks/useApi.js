@@ -103,12 +103,20 @@ export const useApi = () => {
           throw new Error('Răspuns HTML nevalid de la server');
         }
       } else {
-        // Încercăm să parsez ca JSON oricum
-        try {
-          data = await response.json();
-        } catch (error) {
-          console.error('useApi JSON parsing error:', error);
-          throw new Error('Răspuns nevalid de la server');
+        // Când content-type este null sau necunoscut, verificăm dacă răspunsul este gol
+        const text = await response.text();
+        if (!text || text.trim() === '') {
+          // Răspuns gol - returnează null
+          data = null;
+        } else {
+          // Încercăm să parsez ca JSON
+          try {
+            data = JSON.parse(text);
+          } catch (error) {
+            console.error('useApi JSON parsing error:', error);
+            // Dacă nu e JSON valid, returnează textul ca string
+            data = text;
+          }
         }
       }
       

@@ -204,6 +204,18 @@ export default function SolicitudesPage() {
   // Ausencias states
   const [allAusencias, setAllAusencias] = useState([]);
 
+  // States pentru solicitare justificante (documentos solicitados)
+  const [showSolicitarJustificanteModal, setShowSolicitarJustificanteModal] = useState(false);
+  const [selectedAusenciaForJustificante, setSelectedAusenciaForJustificante] = useState(null);
+  const [justificanteForm, setJustificanteForm] = useState({
+    tipo_documento: '',
+    tipo_personalizado: '',
+    notas: ''
+  });
+  const [justificanteLoading, setJustificanteLoading] = useState(false);
+  const [justificanteError, setJustificanteError] = useState(null);
+  const [documentosSolicitadosMap, setDocumentosSolicitadosMap] = useState(new Map()); // Map<codigo_tipo, {estado, fecha_solicitud, fecha_completado}>
+
   const email = authUser?.email || authUser?.['CORREO ELECTRONICO'] || '';
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = authUser?.isManager || false;
@@ -1195,49 +1207,126 @@ export default function SolicitudesPage() {
     }
     
     try {
-      // Para todos los usuarios (empleado y manager) - solicitudes personales
       const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
-      const url = `${ENDPOINT}?email=${encodeURIComponent(email)}&codigo=${encodeURIComponent(userCode)}`;
-      console.log('🔍 [SolicitudesPage] Fetching solicitudes:', {
-        url,
-        endpoint: ENDPOINT,
-        email,
-        userCode,
-        hasAuthUser: !!authUser
-      });
-      const result = await callApi(url);
-      if (result.success) {
-        const data = Array.isArray(result.data) ? result.data : [result.data];
-        setSolicitudes(data);
-        
-        // Calculează totalul de zile pentru Asunto Propio și Vacaciones
-        let totalAsuntoDays = 0;
-        let totalVacacionesDays = 0;
-        
-        data.forEach(solicitud => {
-          if (solicitud.tipo === 'Asunto Propio' && solicitud.fecha_inicio && solicitud.fecha_fin) {
-            const start = new Date(solicitud.fecha_inicio);
-            const end = new Date(solicitud.fecha_fin);
-            const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-            totalAsuntoDays += days;
-          }
-          
-          if (solicitud.tipo === 'Vacaciones' && solicitud.fecha_inicio && solicitud.fecha_fin) {
-            const start = new Date(solicitud.fecha_inicio);
-            const end = new Date(solicitud.fecha_fin);
-            const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-            totalVacacionesDays += days;
-          }
+      
+      // Pentru "Mis Solicitudes" (activeTab === 'lista'): încărcăm din ausencias
+      // Astfel vedem toate absențele (vacaciones, asuntos propios, ausencias injustificadas, etc.)
+      // Indiferent dacă e manager sau angajat, în "Mis Solicitudes" vedem toate ausencias-urile lui
+      if (activeTab === 'lista') {
+        console.log('🔍 [SolicitudesPage] Mis Solicitudes - încărcare din ausencias:', {
+          userCode,
+          endpoint: routes.getAusencias,
+          isManager
         });
         
-        setTotalAsuntoPropioDays(totalAsuntoDays);
-        setTotalVacacionesDays(totalVacacionesDays);
+        const ausenciasUrl = `${routes.getAusencias}?codigo=${encodeURIComponent(userCode)}`;
+        const result = await callApi(ausenciasUrl);
+        
+        if (result.success) {
+          const ausenciasData = Array.isArray(result.data) ? result.data : [result.data];
+          
+          // Transformăm ausencias în format compatibil cu solicitudes pentru UI
+          const transformedData = ausenciasData.map(ausencia => ({
+            id: ausencia.id || ausencia.ID || `ausencia_${Math.random().toString(36).slice(2, 9)}`,
+            tipo: ausencia.TIPO || ausencia.tipo || 'Ausencia',
+            fecha_inicio: ausencia.FECHA_INICIO || ausencia.fecha_inicio || ausencia.FECHA || ausencia.fecha,
+            fecha_fin: ausencia.FECHA_FIN || ausencia.fecha_fin || ausencia.FECHA || ausencia.fecha,
+            FECHA: ausencia.FECHA || ausencia.fecha,
+            FECHA_INICIO: ausencia.FECHA_INICIO || ausencia.fecha_inicio,
+            FECHA_FIN: ausencia.FECHA_FIN || ausencia.fecha_fin,
+            // fecha_solicitud folosește created_at din ausencias
+            fecha_solicitud: ausencia.created_at || ausencia.CREATED_AT || ausencia.createdAt || ausencia.fecha_solicitud || ausencia.FECHA || ausencia.fecha,
+            created_at: ausencia.created_at || ausencia.CREATED_AT || ausencia.createdAt,
+            MOTIVO: ausencia.MOTIVO || ausencia.motivo || '',
+            motivo: ausencia.MOTIVO || ausencia.motivo || '',
+            ESTADO: ausencia.ESTADO || ausencia.estado || 'Aprobada',
+            estado: ausencia.ESTADO || ausencia.estado || 'Aprobada',
+            CODIGO: ausencia.CODIGO || ausencia.codigo || userCode,
+            NOMBRE: ausencia.NOMBRE || ausencia.nombre || '',
+            duracion: ausencia.duracion || ausencia.DURACION || '',
+            fuente: 'ausencias', // Marchează că vine din ausencias
+            raw: ausencia
+          }));
+          
+          setSolicitudes(transformedData);
+          
+          // Calculează totalul de zile pentru Asunto Propio și Vacaciones
+          let totalAsuntoDays = 0;
+          let totalVacacionesDays = 0;
+          
+          transformedData.forEach(item => {
+            const tipo = (item.tipo || item.TIPO || '').toLowerCase();
+            const fechaInicio = item.fecha_inicio || item.FECHA_INICIO || item.FECHA || item.fecha;
+            const fechaFin = item.fecha_fin || item.FECHA_FIN || item.FECHA || item.fecha;
+            
+            if (fechaInicio && fechaFin) {
+              const start = new Date(fechaInicio);
+              const end = new Date(fechaFin);
+              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              
+              if (tipo.includes('asunto') || tipo.includes('propio')) {
+                totalAsuntoDays += days;
+              } else if (tipo.includes('vacacion')) {
+                totalVacacionesDays += days;
+              }
+            } else if (fechaInicio) {
+              // Dacă e o singură dată, numără 1 zi
+              if (tipo.includes('asunto') || tipo.includes('propio')) {
+                totalAsuntoDays += 1;
+              } else if (tipo.includes('vacacion')) {
+                totalVacacionesDays += 1;
+              }
+            }
+          });
+          
+          setTotalAsuntoPropioDays(totalAsuntoDays);
+          setTotalVacacionesDays(totalVacacionesDays);
+        }
+      } else {
+        // Pentru alte taburi (ex: "Todas las Solicitudes"): păstrăm comportamentul vechi (din solicitudes)
+        const url = `${ENDPOINT}?email=${encodeURIComponent(email)}&codigo=${encodeURIComponent(userCode)}`;
+        console.log('🔍 [SolicitudesPage] Alte taburi - încărcare din solicitudes:', {
+          url,
+          endpoint: ENDPOINT,
+          email,
+          userCode,
+          activeTab,
+          hasAuthUser: !!authUser
+        });
+        const result = await callApi(url);
+        if (result.success) {
+          const data = Array.isArray(result.data) ? result.data : [result.data];
+          setSolicitudes(data);
+          
+          // Calculează totalul de zile pentru Asunto Propio și Vacaciones
+          let totalAsuntoDays = 0;
+          let totalVacacionesDays = 0;
+          
+          data.forEach(solicitud => {
+            if (solicitud.tipo === 'Asunto Propio' && solicitud.fecha_inicio && solicitud.fecha_fin) {
+              const start = new Date(solicitud.fecha_inicio);
+              const end = new Date(solicitud.fecha_fin);
+              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              totalAsuntoDays += days;
+            }
+            
+            if (solicitud.tipo === 'Vacaciones' && solicitud.fecha_inicio && solicitud.fecha_fin) {
+              const start = new Date(solicitud.fecha_inicio);
+              const end = new Date(solicitud.fecha_fin);
+              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              totalVacacionesDays += days;
+            }
+          });
+          
+          setTotalAsuntoPropioDays(totalAsuntoDays);
+          setTotalVacacionesDays(totalVacacionesDays);
+        }
       }
     } catch (error) {
-      console.error('Error fetching solicitudes:', error);
+      console.error('Error fetching solicitudes/ausencias:', error);
     }
     setOperationLoading('solicitudes', false);
-  }, [authUser, email, callApi, setOperationLoading]);
+  }, [authUser, email, callApi, setOperationLoading, activeTab, isManager]);
 
   const fetchAllSolicitudes = useCallback(async () => {
     setOperationLoading('allSolicitudes', true);
@@ -1450,7 +1539,7 @@ export default function SolicitudesPage() {
     }
 
     activityLogger.logPageAccess('solicitudes', authUser);
-  }, [authUser, isManager, fetchSolicitudes, fetchAllSolicitudes, fetchAllUsers, fetchAllAusencias, fetchBajasMedicas, setDemoSolicitudes, setOperationLoading]);
+  }, [authUser, isManager, activeTab, fetchSolicitudes, fetchAllSolicitudes, fetchAllUsers, fetchAllAusencias, fetchBajasMedicas, setDemoSolicitudes, setOperationLoading]);
   useEffect(() => {
     if (selectedTab === 'baja' && isManager) {
       fetchBajasMedicas();
@@ -1660,6 +1749,159 @@ export default function SolicitudesPage() {
       fetchAllAusencias();
     }
   }, 60000, true, 12000); // 60s base + max 12s jitter
+
+  // Funcții pentru solicitare justificante (documentos solicitados)
+  const openSolicitarJustificanteModal = (ausencia) => {
+    setSelectedAusenciaForJustificante(ausencia);
+    setJustificanteForm({
+      tipo_documento: 'Justificante',
+      tipo_personalizado: '',
+      notas: `Justificante para ausencia: ${ausencia.tipo || ausencia.TIPO || 'Ausencia'} - ${ausencia.FECHA || ausencia.fecha || ''}`
+    });
+    setJustificanteError(null);
+    setShowSolicitarJustificanteModal(true);
+  };
+
+  // Fetch documentos solicitados pentru ausencias (pentru a afișa statusul)
+  const fetchDocumentosSolicitadosForAusencias = useCallback(async () => {
+    if (authUser?.isDemo || selectedTab !== 'ausencias') {
+      return;
+    }
+
+    try {
+      // Obținem toate CODIGO-urile unice din ausencias
+      const codigosUnicos = new Set();
+      const ausenciasList = selectedUser === 'ALL' ? allAusencias : allAusencias.filter(a => a.CODIGO === selectedUser);
+      
+      ausenciasList.forEach(ausencia => {
+        const codigo = ausencia.CODIGO || ausencia.codigo;
+        if (codigo) codigosUnicos.add(codigo);
+      });
+
+      if (codigosUnicos.size === 0) {
+        setDocumentosSolicitadosMap(new Map());
+        return;
+      }
+
+      // Fetch documentos solicitados pentru fiecare codigo
+      const token = localStorage.getItem('auth_token');
+      const documentosMap = new Map();
+
+      await Promise.all(
+        Array.from(codigosUnicos).map(async (codigo) => {
+          try {
+            const url = routes.getDocumentosSolicitados(codigo);
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { Authorization: `Bearer ${token}` }),
+              },
+            });
+
+              if (response.ok) {
+              const data = await response.json();
+              if (data.success && data.data) {
+                // Filtrează doar justificantele (tipuri care conțin "justificante", "certificado médico" sau alte tipuri de justificante)
+                const justificantes = data.data.filter(doc => {
+                  const tipo = (doc.tipo_documento || '').toLowerCase();
+                  return tipo.includes('justificante') || 
+                         tipo.includes('certificado médico') || 
+                         tipo.includes('justificante médico') ||
+                         tipo.includes('justificante de ausencia');
+                });
+
+                justificantes.forEach(doc => {
+                  const key = `${codigo}_${doc.tipo_documento}`;
+                  documentosMap.set(key, {
+                    estado: doc.estado,
+                    fecha_solicitud: doc.fecha_solicitud,
+                    fecha_completado: doc.fecha_completado,
+                    tipo_documento: doc.tipo_documento
+                  });
+                });
+              }
+            }
+          } catch (error) {
+            console.warn(`Error fetching documentos solicitados for ${codigo}:`, error);
+          }
+        })
+      );
+
+      setDocumentosSolicitadosMap(documentosMap);
+    } catch (error) {
+      console.error('Error fetching documentos solicitados for ausencias:', error);
+      setDocumentosSolicitadosMap(new Map());
+    }
+  }, [authUser?.isDemo, selectedTab, selectedUser, allAusencias]);
+
+  // Fetch documentos solicitados pentru ausencias când se schimbă tab-ul sau ausencias
+  useEffect(() => {
+    if (selectedTab === 'ausencias' && isManager) {
+      fetchDocumentosSolicitadosForAusencias();
+    }
+  }, [selectedTab, selectedUser, allAusencias, isManager, fetchDocumentosSolicitadosForAusencias]);
+
+  const handleSolicitarJustificante = async () => {
+    if (!selectedAusenciaForJustificante) {
+      setJustificanteError('No se ha identificado la ausencia.');
+      return;
+    }
+
+    const codigoEmpleado = selectedAusenciaForJustificante.CODIGO || selectedAusenciaForJustificante.codigo || '';
+    if (!codigoEmpleado) {
+      setJustificanteError('No se ha identificado el empleado.');
+      return;
+    }
+
+    const tipoDocumento = justificanteForm.tipo_documento === 'otro' 
+      ? justificanteForm.tipo_personalizado?.trim() 
+      : justificanteForm.tipo_documento;
+
+    if (!tipoDocumento) {
+      setJustificanteError('Por favor, selecciona o especifica un tipo de justificante.');
+      return;
+    }
+
+    setJustificanteLoading(true);
+    setJustificanteError(null);
+
+    try {
+      const result = await callApi(routes.createDocumentoSolicitado, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          empleado_id: codigoEmpleado,
+          tipo_documento: tipoDocumento,
+          notas: justificanteForm.notas || undefined,
+        }),
+      });
+
+      if (result.success || result.id) {
+        setSuccessMsg(`Se ha creado la solicitud de justificante para ${selectedAusenciaForJustificante.NOMBRE || selectedAusenciaForJustificante.nombre || codigoEmpleado}.`);
+        setShowSolicitarJustificanteModal(false);
+        setJustificanteForm({ tipo_documento: '', tipo_personalizado: '', notas: '' });
+        setSelectedAusenciaForJustificante(null);
+        
+        // Reîncărcăm documentos solicitados pentru a actualiza statusul
+        setTimeout(() => {
+          fetchDocumentosSolicitadosForAusencias();
+        }, 500);
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => setSuccessMsg(''), 5000);
+      } else {
+        setJustificanteError(result.error || 'Error al crear la solicitud');
+      }
+    } catch (error) {
+      console.error('Error creando solicitud de justificante:', error);
+      setJustificanteError(error.message || 'Error al crear la solicitud');
+    } finally {
+      setJustificanteLoading(false);
+    }
+  };
 
   const validateDates = () => {
     if (!fechaInicio || !fechaFin) {
@@ -2586,18 +2828,6 @@ export default function SolicitudesPage() {
     return formatSecondsToHHMMSS(numeric * 3600);
   };
 
-  const DAY_BASED_ABSENCE_TYPES = new Set([
-    'Vacaciones',
-    'Asunto Propio',
-    'Asuntos Propios',
-    'Permiso Retribuido',
-    'Permiso Recuperable',
-    'Permiso No Retribuido',
-    'Permiso sin sueldo',
-    'Permiso médico',
-    'Permiso',
-  ]);
-
   const getFirstValue = (item, keys) => {
     if (!item) return null;
     for (const key of keys) {
@@ -2609,8 +2839,24 @@ export default function SolicitudesPage() {
   };
 
   const isDayBasedAbsenceType = (tipo = '') => {
-    const normalized = String(tipo || '').trim();
-    return DAY_BASED_ABSENCE_TYPES.has(normalized);
+    // IMPORTANT: Verifică și UNIDAD_DURACION dacă este disponibil
+    // Dacă UNIDAD_DURACION este 'dias', atunci este bazat pe zile
+    const tipoStr = (tipo || '').trim();
+    
+    // Tipuri cunoscute bazate pe zile
+    const dayBasedTypes = [
+      'Vacaciones',
+      'Asunto Propio',
+      'Permiso Retribuido',
+      'Permiso Recuperable',
+      'Permiso No Retribuido',
+      'Permiso sin sueldo',
+      'Permiso médico',
+      'Permiso',
+      'Ausencia Injustificada', // Adăugat pentru ausencias injustificadas
+    ];
+    
+    return dayBasedTypes.includes(tipoStr);
   };
 
   const getApprovedDaysCount = (item) => {
@@ -2659,19 +2905,40 @@ export default function SolicitudesPage() {
     }
 
     const duracion = getFirstValue(item, ['DURACION', 'duracion']);
+    const unidad = getFirstValue(item, ['UNIDAD_DURACION', 'unidad_duracion']);
+    
+    // IMPORTANT: Dacă UNIDAD_DURACION este 'dias', afișăm direct ca zile, nu ca timp
+    if (unidad === 'dias' || unidad === 'día' || unidad === 'días') {
+      if (typeof duracion === 'number') {
+        return `${duracion} ${duracion === 1 ? 'día' : 'días'}`;
+      }
+      if (typeof duracion === 'string' && duracion.trim() !== '') {
+        // Dacă este string numeric, convertim
+        const numDuracion = parseFloat(duracion);
+        if (!isNaN(numDuracion)) {
+          return `${numDuracion} ${numDuracion === 1 ? 'día' : 'días'}`;
+        }
+        return `${duracion} ${unidad}`;
+      }
+    }
+    
+    // Pentru 'horas' sau fără unitate, verificăm dacă este timp sau număr
     if (typeof duracion === 'string' && duracion.trim() !== '') {
       if (duracion.includes(':')) {
-        return duracion;
+        return duracion; // Este deja formatat ca timp (HH:MM:SS)
       }
-      const unidad = getFirstValue(item, ['UNIDAD_DURACION', 'unidad_duracion']);
       return unidad ? `${duracion} ${unidad}` : duracion;
     }
     if (typeof duracion === 'number') {
-      const formatted = formatDecimalDuration(duracion);
-      if (formatted) {
-        return formatted;
+      // Dacă UNIDAD_DURACION este 'horas', formatăm ca timp
+      if (unidad === 'horas') {
+        const formatted = formatDecimalDuration(duracion);
+        if (formatted) {
+          return formatted;
+        }
       }
-      return duracion.toString();
+      // Altfel, afișăm numărul direct cu unitatea
+      return unidad ? `${duracion} ${unidad}` : duracion.toString();
     }
 
     return null;
@@ -2679,9 +2946,25 @@ export default function SolicitudesPage() {
 
   const getAusenciaDurationDisplay = (item) => {
     const tipo = getFirstValue(item, ['TIPO', 'tipo']);
-    const isDayBased = isDayBasedAbsenceType(tipo);
+    const unidad = getFirstValue(item, ['UNIDAD_DURACION', 'unidad_duracion']);
+    const duracion = getFirstValue(item, ['DURACION', 'duracion']);
+    
+    // IMPORTANT: Verifică UNIDAD_DURACION pentru a determina dacă este bazat pe zile
+    const isDayBased = isDayBasedAbsenceType(tipo) || unidad === 'dias' || unidad === 'día' || unidad === 'días';
 
     if (isDayBased) {
+      // Pentru tipuri bazate pe zile, folosim DURACION direct dacă este disponibil
+      if (duracion !== null && duracion !== undefined && duracion !== '') {
+        const numDuracion = typeof duracion === 'number' ? duracion : parseFloat(duracion);
+        if (!isNaN(numDuracion) && numDuracion > 0) {
+          return {
+            isDayBased: true,
+            text: `${numDuracion} ${numDuracion === 1 ? 'día' : 'días'}`,
+          };
+        }
+      }
+      
+      // Fallback la getApprovedDaysCount
       const days = getApprovedDaysCount(item);
       return {
         isDayBased: true,
@@ -3995,6 +4278,74 @@ export default function SolicitudesPage() {
                           <p className="text-sm text-blue-800">{item.MOTIVO || item.motivo}</p>
                         </div>
                       )}
+
+                      {/* Buton pentru solicitare justificante - doar pentru tipuri care NU sunt Vacaciones sau Asunto Propio */}
+                      {selectedTab === 'ausencias' && (() => {
+                        const tipoNormalized = (item.tipo || item.TIPO || '').toLowerCase();
+                        const isVacaciones = tipoNormalized.includes('vacacion');
+                        const isAsuntoPropio = tipoNormalized.includes('asunto') && tipoNormalized.includes('propio');
+                        
+                        if (!isVacaciones && !isAsuntoPropio) {
+                          // Verificăm dacă există deja o cerere de justificante pentru această ausencia
+                          const codigo = item.CODIGO || item.codigo || '';
+                          let justificanteStatus = null;
+                          
+                          if (codigo) {
+                            // Căutăm în map pentru justificante (verificăm tipurile comune)
+                            const tiposJustificante = ['Justificante', 'Justificante Médico', 'Justificante de Ausencia', 'Certificado Médico'];
+                            for (const tipoJust of tiposJustificante) {
+                              const key = `${codigo}_${tipoJust}`;
+                              const docSolicitado = documentosSolicitadosMap.get(key);
+                              if (docSolicitado) {
+                                justificanteStatus = docSolicitado;
+                                break;
+                              }
+                            }
+                          }
+
+                          return (
+                            <div className="mt-4 flex justify-end items-center gap-3">
+                              {justificanteStatus ? (
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-3 py-1.5 rounded-lg font-semibold text-sm ${
+                                    justificanteStatus.estado === 'completado' 
+                                      ? 'bg-green-100 text-green-800 border border-green-300' 
+                                      : justificanteStatus.estado === 'pendiente'
+                                      ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                                      : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                  }`}>
+                                    {justificanteStatus.estado === 'completado' ? '✅ Completado' : 
+                                     justificanteStatus.estado === 'pendiente' ? '⏳ Pendiente' : 
+                                     '📄 ' + justificanteStatus.estado}
+                                  </span>
+                                  {justificanteStatus.fecha_solicitud && (
+                                    <span className="text-xs text-gray-500">
+                                      Solicitado: {formatDate(justificanteStatus.fecha_solicitud)}
+                                    </span>
+                                  )}
+                                  {justificanteStatus.fecha_completado && (
+                                    <span className="text-xs text-green-600">
+                                      Completado: {formatDate(justificanteStatus.fecha_completado)}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => openSolicitarJustificanteModal(item)}
+                                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white"
+                                >
+                                  <div className="absolute inset-0 rounded-lg bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                                  <div className="relative flex items-center gap-2">
+                                    <span className="text-sm">📄</span>
+                                    <span className="text-sm">Solicitar Justificante</span>
+                                  </div>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {selectedTab === 'baja' && (
                         <div className="bg-rose-50 p-4 rounded-lg border border-rose-200 mb-4">
@@ -5405,6 +5756,164 @@ export default function SolicitudesPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal pentru solicitare justificante */}
+      <Modal
+        isOpen={showSolicitarJustificanteModal}
+        onClose={() => {
+          setShowSolicitarJustificanteModal(false);
+          setSelectedAusenciaForJustificante(null);
+          setJustificanteForm({ tipo_documento: '', tipo_personalizado: '', notas: '' });
+          setJustificanteError(null);
+        }}
+        title="Solicitar Justificante"
+        size="md"
+      >
+        {selectedAusenciaForJustificante && (
+          <div className="space-y-6">
+            {/* Info ausencia */}
+            <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center shadow-lg">
+                  <span className="text-white text-xl">📄</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900">
+                    {selectedAusenciaForJustificante.NOMBRE || selectedAusenciaForJustificante.nombre || 'Sin nombre'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Tipo: {selectedAusenciaForJustificante.tipo || selectedAusenciaForJustificante.TIPO || 'Ausencia'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Fecha: {selectedAusenciaForJustificante.FECHA || selectedAusenciaForJustificante.fecha || '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Selector tip justificante */}
+            <div>
+              <label htmlFor="justificante-tipo-select" className="block text-sm font-semibold text-gray-700 mb-3">
+                Tipo de Justificante <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="justificante-tipo-select"
+                name="tipoJustificante"
+                value={justificanteForm.tipo_documento}
+                onChange={(e) => setJustificanteForm(prev => ({ 
+                  ...prev, 
+                  tipo_documento: e.target.value, 
+                  tipo_personalizado: e.target.value === 'otro' ? prev.tipo_personalizado : '' 
+                }))}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200 bg-white"
+              >
+                <option value="">Selecciona un tipo...</option>
+                <option value="Justificante">Justificante</option>
+                <option value="Justificante Médico">Justificante Médico</option>
+                <option value="Justificante de Ausencia">Justificante de Ausencia</option>
+                <option value="Certificado Médico">Certificado Médico</option>
+                <option value="otro">📎 Otro (Personalizado)</option>
+              </select>
+            </div>
+
+            {/* Campo de texto personalizado si selecciona "Otro" */}
+            {justificanteForm.tipo_documento === 'otro' && (
+              <div>
+                <label htmlFor="justificante-tipo-personalizado-input" className="block text-sm font-semibold text-gray-700 mb-3">
+                  Especifica el Tipo de Justificante <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="justificante-tipo-personalizado-input"
+                  name="tipoPersonalizado"
+                  type="text"
+                  value={justificanteForm.tipo_personalizado}
+                  onChange={(e) => setJustificanteForm(prev => ({ ...prev, tipo_personalizado: e.target.value }))}
+                  placeholder="Ej: Justificante de Fuerza Mayor, Certificado de Defunción..."
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-200"
+                />
+              </div>
+            )}
+
+            {/* Informare clară */}
+            <div className="bg-orange-50 border-l-4 border-orange-500 rounded-lg p-4">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <span className="text-orange-600 text-xl">ℹ️</span>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-orange-800 font-medium">
+                    Se solicitará un justificante para esta ausencia. El empleado recibirá una notificación y deberá subir el documento correspondiente.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notas opționale */}
+            <div>
+              <label htmlFor="justificante-notas-textarea" className="block text-sm font-semibold text-gray-700 mb-3">
+                Notas (opcional)
+              </label>
+              <textarea
+                id="justificante-notas-textarea"
+                name="notas"
+                value={justificanteForm.notas}
+                onChange={(e) => setJustificanteForm(prev => ({ ...prev, notas: e.target.value }))}
+                placeholder="Añade alguna nota o instrucción adicional..."
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none transition-all duration-200"
+                rows={4}
+              />
+            </div>
+
+            {/* Error message */}
+            {justificanteError && (
+              <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                    <span className="text-red-600 text-lg">⚠️</span>
+                  </div>
+                  <div>
+                    <p className="text-red-800 font-medium">Error</p>
+                    <p className="text-red-600 text-sm">{justificanteError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Butoane */}
+            <div className="flex gap-4 justify-center mt-8">
+              <button
+                onClick={() => {
+                  setShowSolicitarJustificanteModal(false);
+                  setSelectedAusenciaForJustificante(null);
+                  setJustificanteForm({ tipo_documento: '', tipo_personalizado: '', notas: '' });
+                  setJustificanteError(null);
+                }}
+                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200"
+              >
+                <span className="mr-2">✖️</span>
+                Cancelar
+              </button>
+              <button
+                onClick={handleSolicitarJustificante}
+                disabled={justificanteLoading || !justificanteForm.tipo_documento || (justificanteForm.tipo_documento === 'otro' && !justificanteForm.tipo_personalizado?.trim())}
+                className="px-8 py-3 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-semibold shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {justificanteLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    Creando...
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-2">📄</span>
+                    Solicitar Justificante
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

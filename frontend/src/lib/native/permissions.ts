@@ -1,4 +1,4 @@
-import { Camera, CameraPermissionType } from '@capacitor/camera';
+import { Camera } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { Toast } from '@capacitor/toast';
 

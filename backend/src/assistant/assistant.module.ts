@@ -28,6 +28,6 @@ import { VacacionesModule } from '../vacaciones/vacaciones.module';
     ConversationContextService,
     TelegramService,
   ],
-  exports: [AssistantService],
+  exports: [AssistantService, RbacService],
 })
 export class AssistantModule {}

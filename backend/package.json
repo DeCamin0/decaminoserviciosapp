@@ -20,7 +20,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:create-notifications": "node scripts/create-notifications-table.js",
     "db:create-push-subscriptions": "node scripts/create-push-subscriptions-table.js",
-    "db:create-grupos-referencia": "node scripts/create-grupos-referencia-table.js"
+    "db:create-grupos-referencia": "node scripts/create-grupos-referencia-table.js",
+    "db:create-fichaje-regularizacion": "node scripts/run-fichaje-regularizacion-migration.js",
+    "db:add-no-punch-type": "node scripts/run-no-punch-migration.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.11",

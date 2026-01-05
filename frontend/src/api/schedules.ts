@@ -9,11 +9,11 @@ const HORARIOS_BACKEND_URL = import.meta.env.DEV
 
 // Interface pentru callApi function
 interface CallApiFunction {
-  (endpoint: string, data?: any): Promise<any>;
+  (endpoint: string | { action: string; table?: string; id?: string | number }, data?: unknown): Promise<unknown>;
 }
 
 // Interface pentru răspuns API
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
@@ -23,10 +23,10 @@ export interface ApiResponse<T = any> {
 // Interface pentru răspuns JSON din API
 interface ApiJsonResponse {
   success?: boolean;
-  data?: any;
+  data?: unknown;
   error?: string;
   message?: string;
-  [key: string]: any; // Pentru alte proprietăți dinamic
+  [key: string]: unknown; // Pentru alte proprietăți dinamic
 }
 
 // Interface pentru orar din API
@@ -42,7 +42,7 @@ interface ScheduleApiItem {
   viernes?: string;
   sabado?: string;
   domingo?: string;
-  [key: string]: any; // Pentru alte proprietăți dinamic
+  [key: string]: unknown; // Pentru alte proprietăți dinamic
 }
 
 /**
@@ -83,7 +83,7 @@ export async function createSchedule(callApi: CallApiFunction, scheduleData: Sch
     let result: ApiJsonResponse | null = null;
     try {
       result = await response.json();
-    } catch (_) {
+    } catch {
       // Ignoră dacă nu e JSON
     }
 
@@ -153,7 +153,7 @@ export async function getSchedule(callApi: CallApiFunction, scheduleId: string |
 /**
  * Lista toate orarele prin callApi
  */
-export async function listSchedules(_callApi: CallApiFunction): Promise<ApiResponse<ScheduleData[]>> {
+export async function listSchedules(): Promise<ApiResponse<ScheduleData[]>> {
   try {
     console.log('📋 Listando orarele via backend');
 
@@ -171,7 +171,11 @@ export async function listSchedules(_callApi: CallApiFunction): Promise<ApiRespo
     });
 
     let result: ApiJsonResponse | null = null;
-    try { result = await response.json(); } catch (_) {}
+    try { 
+      result = await response.json(); 
+    } catch {
+      // Ignoră dacă nu e JSON
+    }
     console.log('📦 RAW horarios response:', result);
 
     const messageFromBackend = result?.message || result?.msg || result?.error;
@@ -331,12 +335,12 @@ export async function listSchedules(_callApi: CallApiFunction): Promise<ApiRespo
         exitMarginMinutes: it.exit_margin_minutes ?? it.exitMarginMinutes ?? null,
         weeklyBreakMinutes: it.weekly_break_minutes ?? it.weeklyBreakMinutes ?? null,
         days
-      } as any;
+      } as ScheduleData;
     });
 
     return {
       success: true,
-      data: normalized as any,
+      data: normalized as ScheduleData[],
       message: messageFromBackend || 'Orarele obținute cu succes'
     };
 

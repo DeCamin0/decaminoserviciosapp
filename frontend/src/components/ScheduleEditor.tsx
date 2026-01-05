@@ -11,6 +11,23 @@ import {
 } from '../types/schedule';
 import { createSchedule, updateSchedule } from '../api/schedules';
 
+// Interface pentru callApi function
+type CallApiFunction = (endpoint: string | { action: string; table?: string; id?: string | number }, data?: unknown) => Promise<unknown>;
+
+// Tip extins pentru payload cu câmpuri suplimentare
+type SchedulePayload = ScheduleData & {
+  totalWeekMinutes?: number;
+  totalWeekHours?: number;
+  id?: string | number;
+};
+
+// Tip pentru răspunsul backend-ului
+interface BackendResponse {
+  message?: string;
+  nombre?: string;
+  [key: string]: unknown;
+}
+
 interface Centro {
   id: number;
   nombre: string;
@@ -24,7 +41,7 @@ interface Grupo {
 interface ScheduleEditorProps {
   centros: Centro[];
   grupos: Grupo[];
-  callApi?: any; // Funcția callApi din useApi hook
+  callApi?: CallApiFunction; // Funcția callApi din useApi hook
   onSave?: (schedule: ScheduleData) => void;
   onError?: (error: string) => void;
   initialData?: ScheduleData; // Datele inițiale pentru editare
@@ -168,7 +185,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
   };
 
   // Gestionează schimbarea câmpurilor de bază
-  const handleFieldChange = (field: keyof ScheduleData, value: any) => {
+  const handleFieldChange = (field: keyof ScheduleData, value: string | number | null) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -241,7 +258,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
       // Calculează totalul de minute/ore săptămânale (după descanso)
       const totalMinutes = Math.max(0, totalWeekMinutes - formData.weeklyBreakMinutes);
 
-      const payload = { 
+      const payload: SchedulePayload = { 
         ...formData, 
         centroId: centroNombre, // trimite numele în loc de id
         grupoId: grupoNombre,   // trimite numele în loc de id
@@ -249,15 +266,16 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
         grupoNombre,
         totalWeekMinutes: totalMinutes,
         totalWeekHours: Number((totalMinutes / 60).toFixed(2))
-      } as any;
+      };
 
       const result = isEditMode 
         ? await updateSchedule(callApi, payload.id || payload.nombre || 'unknown', payload) 
         : await createSchedule(callApi, payload);
       
       if (result.success) {
-        const backendMsg = (result.data as any)?.message || result.message || (isEditMode ? 'Horario actualizado' : 'Horario creado');
-        const backendName = (result.data as any)?.nombre || payload.nombre || '';
+        const backendData = result.data as BackendResponse | undefined;
+        const backendMsg = backendData?.message || result.message || (isEditMode ? 'Horario actualizado' : 'Horario creado');
+        const backendName = backendData?.nombre || payload.nombre || '';
         showToastMessage('success', `✅ ${backendMsg}${backendName ? `: ${backendName}` : ''}`);
         onSave?.(payload);
       } else {

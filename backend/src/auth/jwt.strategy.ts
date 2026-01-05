@@ -49,7 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           const dniPassword = String(user.DNI_NIE || '').trim();
           const currentPassword = contraseñaPassword || dniPassword;
           const currentPasswordHash = this.getPasswordHash(currentPassword);
-          
+
           // Dacă hash-ul parolei din token nu corespunde cu hash-ul parolei actuale,
           // înseamnă că parola a fost schimbată și token-ul este invalid
           if (payload.passwordHash !== currentPasswordHash) {
@@ -65,7 +65,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         }
         // Pentru alte erori (ex: user nu există), logăm dar nu invalidăm token-ul
         // pentru a nu bloca utilizatorii din cauza unor erori temporare
-        console.warn('[JwtStrategy] Error validating password hash:', error.message);
+        console.warn(
+          '[JwtStrategy] Error validating password hash:',
+          error.message,
+        );
       }
     }
 

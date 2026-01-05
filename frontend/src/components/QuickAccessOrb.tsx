@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import {
   motion,
   useAnimationFrame,
@@ -277,7 +277,6 @@ const QuickAccessOrb = ({
             </svg>
 
             {positionedItems.map(({ item, x, y }) => {
-              const glowId = `qa-glow-${item.id}`;
               const isActive = hoveredId === item.id || focusedId === item.id;
               const tooltipId = item.hint ? tooltipIdFor(item.id) : undefined;
               return (

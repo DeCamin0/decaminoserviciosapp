@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { BASE_URL } from '../../utils/routes';
 import ExcelJS from 'exceljs';
@@ -16,6 +16,14 @@ type EmpleadoStats = {
   lastLogin: string | null;
   lastFichaje: string | null;
 };
+
+type GroupHeader = {
+  __isGroupHeader: true;
+  __groupName: string;
+  __groupCount: number;
+};
+
+type GroupedItem = EmpleadoStats | GroupHeader;
 
 type SortField = 'codigo' | 'nombre' | 'centro' | 'grupo' | 'estado' | 'loginCount' | 'fichajesCount' | 'lastLogin' | 'lastFichaje' | null;
 type SortDirection = 'asc' | 'desc' | null;
@@ -55,9 +63,9 @@ export default function EmpleadosStatusList() {
         const data = await res.json();
 
         setStats(Array.isArray(data) ? data : []);
-      } catch (err: any) {
+      } catch (err) {
         console.error('[EmpleadosStatusList] Error fetching stats:', err);
-        setError(err.message || 'Error desconocido al cargar estadísticas');
+        setError(err instanceof Error ? err.message : 'Error desconocido al cargar estadísticas');
       } finally {
         setLoading(false);
       }
@@ -133,13 +141,13 @@ export default function EmpleadosStatusList() {
 
   // Sortare și grupare date
   const sortedAndGroupedStats = useMemo(() => {
-    let result = [...stats];
+    const result = [...stats];
 
     // Aplică sortarea
     if (sortField && sortDirection) {
       result.sort((a, b) => {
-        let aValue: any = a[sortField];
-        let bValue: any = b[sortField];
+        let aValue: string | number | null | undefined = a[sortField];
+        let bValue: string | number | null | undefined = b[sortField];
 
         // Tratează null/undefined
         if (aValue == null) aValue = '';
@@ -196,7 +204,8 @@ export default function EmpleadosStatusList() {
       // Returnează array-ul cu grupuri
       return groups.flatMap(([groupName, empleados]) => {
         // Adaugă un rând de header pentru grup (va fi tratat special în render)
-        return [{ __isGroupHeader: true, __groupName: groupName, __groupCount: empleados.length } as any, ...empleados];
+        const groupHeader: GroupHeader = { __isGroupHeader: true, __groupName: groupName, __groupCount: empleados.length };
+        return [groupHeader, ...empleados];
       });
     }
 
@@ -258,7 +267,7 @@ export default function EmpleadosStatusList() {
       });
 
       // Adaugă datele (folosește datele sortate/grupate, dar fără header-ele de grup)
-      sortedAndGroupedStats.forEach((item: any) => {
+      sortedAndGroupedStats.forEach((item: GroupedItem) => {
         if (item.__isGroupHeader) {
           // Adaugă un rând de separator pentru grup în Excel
           worksheet.addRow({
@@ -289,7 +298,7 @@ export default function EmpleadosStatusList() {
       });
 
       // Aplică borduri la toate celulele
-      worksheet.eachRow((row, rowNumber) => {
+      worksheet.eachRow((row) => {
         row.eachCell((cell) => {
           cell.border = {
             top: { style: 'thin' },
@@ -382,7 +391,7 @@ export default function EmpleadosStatusList() {
       doc.setFontSize(7);
 
       let rowIndex = 0;
-      sortedAndGroupedStats.forEach((item: any) => {
+      sortedAndGroupedStats.forEach((item: GroupedItem) => {
         // Verifică dacă mai avem spațiu pe pagină
         if (currentY > pageHeight - 20) {
           doc.addPage();
@@ -636,7 +645,7 @@ export default function EmpleadosStatusList() {
                 </td>
               </tr>
             ) : (
-              sortedAndGroupedStats.map((item: any, index: number) => {
+              sortedAndGroupedStats.map((item: GroupedItem, index: number) => {
                 // Verifică dacă este un header de grup
                 if (item.__isGroupHeader) {
                   return (

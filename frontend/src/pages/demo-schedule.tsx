@@ -126,7 +126,7 @@ const DemoSchedulePage: React.FC = () => {
           <ul className="text-blue-700 space-y-2 text-sm">
             <li>• <strong>Completa los campos obligatorios:</strong> Nombre, Centro y Grupo</li>
             <li>• <strong>Configura los horarios:</strong> Puedes definir hasta 3 intervalos por día</li>
-            <li>• <strong>Usa los botones de día:</strong> "Copiar a toda la semana" y "Vaciar día"</li>
+            <li>• <strong>Usa los botones de día:</strong> &quot;Copiar a toda la semana&quot; y &quot;Vaciar día&quot;</li>
             <li>• <strong>Valida los datos:</strong> Las entradas y salidas deben ser pares completos</li>
             <li>• <strong>Revisa el total:</strong> Se calcula automáticamente las horas semanales</li>
             <li>• <strong>Guarda el horario:</strong> Se enviará a n8n y aparecerá en consola</li>
@@ -140,11 +140,11 @@ const DemoSchedulePage: React.FC = () => {
           </h3>
           <div className="text-green-700 text-sm space-y-2">
             <p>
-              <strong>1.</strong> Nombre: "Limpieza Bosquepino"<br/>
-              <strong>2.</strong> Centro: "Bosquepino2"<br/>
-              <strong>3.</strong> Grupo: "Limpiador"<br/>
+              <strong>1.</strong> Nombre: &quot;Limpieza Bosquepino&quot;<br/>
+              <strong>2.</strong> Centro: &quot;Bosquepino2&quot;<br/>
+              <strong>3.</strong> Grupo: &quot;Limpiador&quot;<br/>
               <strong>4.</strong> Configura Lunes: 08:00-16:00<br/>
-              <strong>5.</strong> Haz clic en "Copiar a toda la semana"<br/>
+              <strong>5.</strong> Haz clic en &quot;Copiar a toda la semana&quot;<br/>
               <strong>6.</strong> Guarda el horario
             </p>
           </div>

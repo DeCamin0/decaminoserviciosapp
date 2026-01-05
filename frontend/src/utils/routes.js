@@ -182,6 +182,39 @@ export const routes = {
     ? 'http://localhost:3000/api/registros'
     : 'https://api.decaminoservicios.com/api/registros',
   deleteFichaje: `${BASE_URL}/api/registros`,
+  confirmarJornada: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/confirmar-jornada'
+    : 'https://api.decaminoservicios.com/api/registros/confirmar-jornada',
+  checkConfirmation: (codigo, fecha) => import.meta.env.DEV
+    ? `http://localhost:3000/api/registros/check-confirmation/${codigo}/${fecha}`
+    : `https://api.decaminoservicios.com/api/registros/check-confirmation/${codigo}/${fecha}`,
+  getRegularizacionesPendientes: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/regularizaciones/pendientes'
+    : 'https://api.decaminoservicios.com/api/registros/regularizaciones/pendientes',
+  getRegularizacionesConfirmed: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/regularizaciones/confirmed'
+    : 'https://api.decaminoservicios.com/api/registros/regularizaciones/confirmed',
+  aprobarRegularizacion: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/registros/regularizaciones/${id}/aprobar`
+    : `https://api.decaminoservicios.com/api/registros/regularizaciones/${id}/aprobar`,
+  rechazarRegularizacion: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/registros/regularizaciones/${id}/rechazar`
+    : `https://api.decaminoservicios.com/api/registros/regularizaciones/${id}/rechazar`,
+  requestRegularizacion: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/request-regularizacion'
+    : 'https://api.decaminoservicios.com/api/registros/request-regularizacion',
+  getNoPunchDays: (start, end) => {
+    const params = new URLSearchParams();
+    if (start) params.append('start', start);
+    if (end) params.append('end', end);
+    const query = params.toString();
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/registros/no-punch${query ? `?${query}` : ''}`
+      : `https://api.decaminoservicios.com/api/registros/no-punch${query ? `?${query}` : ''}`;
+  },
+  declararNoPunch: import.meta.env.DEV
+    ? 'http://localhost:3000/api/registros/no-punch/declare'
+    : 'https://api.decaminoservicios.com/api/registros/no-punch/declare',
   
   // Cuadrantes (Schedules)
   getCuadrantes: import.meta.env.DEV
@@ -280,6 +313,16 @@ export const routes = {
   downloadDocumento: import.meta.env.DEV
     ? 'http://localhost:3000/api/documentos/download'
     : 'https://api.decaminoservicios.com/api/documentos/download',
+  // Documentos Solicitados
+  getDocumentosSolicitados: (empleadoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/documentos-solicitados${empleadoId ? `?empleadoId=${empleadoId}` : ''}`
+    : `https://api.decaminoservicios.com/api/documentos-solicitados${empleadoId ? `?empleadoId=${empleadoId}` : ''}`,
+  createDocumentoSolicitado: import.meta.env.DEV
+    ? 'http://localhost:3000/api/documentos-solicitados'
+    : 'https://api.decaminoservicios.com/api/documentos-solicitados',
+  marcarDocumentoSolicitadoCompletado: import.meta.env.DEV
+    ? 'http://localhost:3000/api/documentos-solicitados/completar'
+    : 'https://api.decaminoservicios.com/api/documentos-solicitados/completar',
   
   // Avatares empleados
   getAvatar: import.meta.env.DEV

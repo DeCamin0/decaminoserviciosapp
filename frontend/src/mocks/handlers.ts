@@ -3,7 +3,7 @@
  * Covers all application modules and functionality
  */
 
-import { http, HttpResponse } from 'msw';
+import { http } from 'msw';
 import { DemoStore } from './demoStore';
 import { randDelay, ok, err, parseUrl, paginate, searchItems } from './serverUtils';
 

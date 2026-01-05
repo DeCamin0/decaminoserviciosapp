@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { routes } from '../utils/routes';
 
 // Interfaces pentru componente UI
@@ -119,6 +119,8 @@ interface HorasPermitidasProps {
 
 const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) => {
   const [data, setData] = useState<HorasPermitidasItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<HorasPermitidasItem | null>(null);
   const [newItem, setNewItem] = useState({
@@ -132,9 +134,28 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const [tableScrollWidth, setTableScrollWidth] = useState(0);
 
-  useEffect(() => {
-    fetchHorasPermitidas().then(setData);
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchHorasPermitidas();
+      setData(result);
+      if (result.length === 0) {
+        setError('No se encontraron datos en el servidor');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Error al cargar las horas permitidas';
+      setError(errorMessage);
+      setData([]);
+      console.error('Error loading horas permitidas:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -522,18 +543,27 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
           </tbody>
         </table>
         
-{data.length === 0 && (
+        {loading && (
+          <div className="text-center py-12">
+            <div className="text-gray-400 text-6xl mb-4 animate-pulse">⏳</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Cargando datos...</h3>
+            <p className="text-gray-500">Por favor, espere mientras se cargan las horas permitidas.</p>
+          </div>
+        )}
+
+        {!loading && data.length === 0 && (
           <div className="text-center py-12">
             <div className="text-gray-400 text-6xl mb-4">📊</div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">No hay datos disponibles</h3>
             <p className="text-gray-500 mb-4">
-              No se pudieron cargar las horas permitidas desde el servidor.
+              {error || 'No se pudieron cargar las horas permitidas desde el servidor.'}
             </p>
             <button
-              onClick={() => window.location.reload()}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
+              onClick={loadData}
+              disabled={loading}
+              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
             >
-              🔄 Reintentar
+              {loading ? 'Cargando...' : '🔄 Reintentar'}
             </button>
           </div>
         )}
@@ -662,7 +692,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
             
             <div className="mb-6">
               <p className="text-gray-700 mb-2">
-                ¿Estás seguro de que quieres eliminar el grupo <strong>"{itemToDelete}"</strong>?
+                ¿Estás seguro de que quieres eliminar el grupo <strong>&quot;{itemToDelete}&quot;</strong>?
               </p>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                 <p className="text-sm text-red-700 font-medium">

@@ -7,7 +7,7 @@ import { routes } from '../utils/routes.js';
 import ScheduleEditor from '../components/ScheduleEditor';
 import Back3DButton from '../components/Back3DButton';
 import { toMinutes } from '../types/schedule';
-import { Loader2, RotateCcw, Pencil, Trash2, Plus } from 'lucide-react';
+import { Loader2, RotateCcw, Pencil, Trash2, Plus, Copy } from 'lucide-react';
 
 const FESTIVOS_ENDPOINT = routes.getFestivos;
 const CREATE_FESTIVO_ENDPOINT = routes.createFestivo;
@@ -206,20 +206,29 @@ export default function CuadrantesPage() {
     const cuadrante = cuadrantesLista[cuadranteIndex];
     if (!cuadrante) return;
 
-    // Extraer turnurile unice din cuadrante
+    // Extraer turnurile unice din TOATE cuadrant-urile pentru luna respectivă
     const shifts = new Set();
     shifts.add('LIBRE'); // Adăugăm întotdeauna LIBRE
     
-    for (let i = 1; i <= 31; i++) {
-      const ziKey = `ZI_${i}`;
-      const value = cuadrante[ziKey];
-      if (value && value !== 'LIBRE' && value.trim() !== '') {
-        shifts.add(value);
+    // Parcurge toate cuadrant-urile pentru a găsi toate turele disponibile
+    cuadrantesLista.forEach(cuadranteItem => {
+      for (let i = 1; i <= 31; i++) {
+        const ziKey = `ZI_${i}`;
+        const value = cuadranteItem[ziKey];
+        if (value && value !== 'LIBRE' && value.trim() !== '') {
+          // Adaugă valoarea exactă așa cum este în cuadrant
+          // (ex: "T1 07:30-19:30", "T2 19:30-07:30", "07:30-19:30", etc.)
+          shifts.add(value.trim());
+        }
       }
-    }
+    });
 
-    // Convertir a array y ordenar
-    const shiftsArray = Array.from(shifts).sort();
+    // Convertir a array y ordenar: LIBRE primul, apoi celelalte sortate
+    const shiftsArray = Array.from(shifts).sort((a, b) => {
+      if (a === 'LIBRE') return -1;
+      if (b === 'LIBRE') return 1;
+      return a.localeCompare(b);
+    });
     
     setAvailableShifts(shiftsArray);
     setEditingDay({
@@ -819,6 +828,74 @@ export default function CuadrantesPage() {
     },
     [activeTab],
   );
+
+  const handleCreateFestivoNextYear = useCallback((festivo) => {
+    if (!festivo || !festivo.date) {
+      showToast('error', 'No se puede crear el festivo para el año siguiente: fecha inválida');
+      return;
+    }
+
+    // Normalizează data (similar cu toInputDate din openFestivoModal)
+    const toInputDate = (value) => {
+      if (!value) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return value;
+      }
+      const dateObj = new Date(value);
+      if (!Number.isNaN(dateObj.getTime())) {
+        return dateObj.toISOString().slice(0, 10);
+      }
+      return value?.toString().split('T')[0] || '';
+    };
+
+    const normalizedDate = toInputDate(festivo.date);
+    if (!normalizedDate) {
+      showToast('error', 'Fecha inválida: no se pudo normalizar la fecha');
+      return;
+    }
+
+    // Parsează direct string-ul YYYY-MM-DD pentru a evita probleme cu timezone
+    const dateMatch = normalizedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!dateMatch) {
+      showToast('error', 'Fecha inválida: formato debe ser YYYY-MM-DD');
+      return;
+    }
+
+    const [, yearStr, monthStr, dayStr] = dateMatch;
+    const currentYear = parseInt(yearStr, 10);
+
+    // Calculează data pentru anul următor (păstrând ziua și luna)
+    const nextYear = currentYear + 1;
+    const nextYearDateStr = `${nextYear}-${monthStr}-${dayStr}`; // YYYY-MM-DD
+
+    // Calculează observedDate pentru anul următor dacă există
+    let nextYearObservedDateStr = '';
+    if (festivo.observedDate) {
+      const normalizedObservedDate = toInputDate(festivo.observedDate);
+      if (normalizedObservedDate) {
+        const observedDateMatch = normalizedObservedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (observedDateMatch) {
+          const [, , obsMonthStr, obsDayStr] = observedDateMatch;
+          nextYearObservedDateStr = `${nextYear}-${obsMonthStr}-${obsDayStr}`;
+        }
+      }
+    }
+
+    // Creează obiectul festivo precompletat pentru anul următor
+    const nextYearFestivo = {
+      id: '', // Lăsăm gol pentru autogenerare
+      date: nextYearDateStr,
+      name: festivo.name || '',
+      scope: festivo.scope || 'Nacional',
+      ccaa: festivo.ccaa || '',
+      observedDate: nextYearObservedDateStr,
+      notes: festivo.notes || '',
+      active: festivo.active ?? 1,
+    };
+
+    // Deschide modalul de creare cu datele precompletate
+    openFestivoModal(nextYearFestivo, 'create');
+  }, [openFestivoModal, showToast]);
 
   const handleFestivoSave = useCallback(async () => {
     if (!festivoForm) {
@@ -3573,6 +3650,16 @@ export default function CuadrantesPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                aria-label="Crear para el año siguiente"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-green-50 hover:text-green-600"
+                                onClick={() => handleCreateFestivoNextYear(festivo)}
+                                title="Crear este festivo para el año siguiente"
+                              >
+                                <Copy className="h-4 w-4" />
+                                <span className="sr-only">Crear para el año siguiente</span>
+                              </button>
                               <button
                                 type="button"
                                 aria-label="Editar festivo"

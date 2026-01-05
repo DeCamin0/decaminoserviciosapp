@@ -48,6 +48,7 @@ backend/coverage/
 
 # Frontend specific
 frontend/dist/
+frontend/.eslintcache
 
 # n8n snapshots (may contain secrets)
 backend/n8n-snapshots/

@@ -31,6 +31,8 @@ import { AusenciasController } from './controllers/ausencias.controller';
 import { AusenciasService } from './services/ausencias.service';
 import { FichajesController } from './controllers/fichajes.controller';
 import { FichajesService } from './services/fichajes.service';
+import { FichajeRegularizacionController } from './controllers/fichaje-regularizacion.controller';
+import { FichajeRegularizacionService } from './services/fichaje-regularizacion.service';
 import { CuadrantesController } from './controllers/cuadrantes.controller';
 import { CuadrantesService } from './services/cuadrantes.service';
 import { TelegramService } from './services/telegram.service';
@@ -54,6 +56,8 @@ import { DocumentosController } from './controllers/documentos.controller';
 import { DocumentosService } from './services/documentos.service';
 import { DocumentosOficialesController } from './controllers/documentos-oficiales.controller';
 import { DocumentosOficialesService } from './services/documentos-oficiales.service';
+import { DocumentosSolicitadosController } from './controllers/documentos-solicitados.controller';
+import { DocumentosSolicitadosService } from './services/documentos-solicitados.service';
 import { InspeccionesController } from './controllers/inspecciones.controller';
 import { InspeccionesService } from './services/inspecciones.service';
 import { HorariosController } from './controllers/horarios.controller';
@@ -106,6 +110,7 @@ import { MonitoringController } from './controllers/monitoring.controller';
     ContractTypesController,
     AusenciasController,
     FichajesController,
+    FichajeRegularizacionController,
     CuadrantesController,
     BajasMedicasController,
     HorasAsignadasController,
@@ -117,6 +122,7 @@ import { MonitoringController } from './controllers/monitoring.controller';
     NominasController,
     DocumentosController,
     DocumentosOficialesController,
+    DocumentosSolicitadosController,
     InspeccionesController,
     HorariosController,
     FestivosController,
@@ -142,6 +148,7 @@ import { MonitoringController } from './controllers/monitoring.controller';
     EmailService,
     AusenciasService,
     FichajesService,
+    FichajeRegularizacionService,
     CuadrantesService,
     TelegramService,
     BajasMedicasService,
@@ -154,6 +161,7 @@ import { MonitoringController } from './controllers/monitoring.controller';
     NominasService,
     DocumentosService,
     DocumentosOficialesService,
+    DocumentosSolicitadosService,
     InspeccionesService,
     HorariosService,
     FestivosService,

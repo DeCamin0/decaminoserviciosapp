@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import QuickAccessOrb from '../components/QuickAccessOrb';
 import { demoQuickAccessItems } from '../components/quick-access/data';
 

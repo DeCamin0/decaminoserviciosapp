@@ -1,11 +1,22 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { FichajeRegularizacionService } from './fichaje-regularizacion.service';
 
 @Injectable()
 export class FichajesService {
   private readonly logger = new Logger(FichajesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => FichajeRegularizacionService))
+    private readonly regularizacionService?: FichajeRegularizacionService,
+  ) {}
 
   /**
    * Escapă un string pentru SQL
@@ -49,16 +60,146 @@ export class FichajesService {
       // Construim query-ul SQL similar cu n8n
       // FECHA >= prima zi a lunii (MES-01)
       // FECHA < prima zi a lunii următoare (MES+1 lună)
+      // LEFT JOIN cu FichajeRegularizacion pentru a obține effective_minutes
+      // Include atât CONFIRMED cât și REJECTED (ambele au effective_minutes setat)
+      // Include has_regularizacion pentru a detecta dacă există o regularizare (indiferent de status)
       const query = `
-        SELECT *
-        FROM Fichaje
-        WHERE CODIGO = ${this.escapeSql(codigoClean)}
-          AND FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
-          AND FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
-        ORDER BY FECHA DESC, HORA DESC
+        SELECT 
+          f.*,
+          CASE 
+            WHEN fr_confirmed.status IN ('CONFIRMED', 'REJECTED') AND fr_confirmed.effective_minutes IS NOT NULL 
+            THEN fr_confirmed.effective_minutes
+            ELSE NULL
+          END AS effective_minutes,
+          CASE 
+            WHEN fr_confirmed.status IN ('CONFIRMED', 'REJECTED') AND fr_confirmed.effective_minutes IS NOT NULL 
+            THEN CONCAT(
+              LPAD(FLOOR(fr_confirmed.effective_minutes / 60), 2, '0'), ':',
+              LPAD(fr_confirmed.effective_minutes % 60, 2, '0'), ':00'
+            )
+            ELSE NULL
+          END AS effective_duration,
+          CASE 
+            WHEN fr_any.id IS NOT NULL THEN 1
+            ELSE 0
+          END AS has_regularizacion
+        FROM Fichaje f
+        LEFT JOIN FichajeRegularizacion fr_confirmed
+          ON fr_confirmed.employee_codigo = f.CODIGO
+          AND (
+            -- Prioritate 1: Dacă fichaje_ids este setat și nu este gol, folosim DOAR fichaje_ids
+            (fr_confirmed.fichaje_ids IS NOT NULL 
+             AND fr_confirmed.fichaje_ids != '[]'
+             AND fr_confirmed.fichaje_ids != ''
+             AND (fr_confirmed.fichaje_ids LIKE CONCAT('%"', f.ID, '"%')
+                  OR fr_confirmed.fichaje_ids LIKE CONCAT('%', f.ID, '%')))
+            -- Fallback: Dacă fichaje_ids este NULL sau gol, folosim window_start/window_end
+            OR ((fr_confirmed.fichaje_ids IS NULL 
+                 OR fr_confirmed.fichaje_ids = '[]'
+                 OR fr_confirmed.fichaje_ids = '')
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_confirmed.window_start
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_confirmed.window_end)
+          )
+          AND fr_confirmed.status IN ('CONFIRMED', 'REJECTED')
+          AND fr_confirmed.effective_minutes IS NOT NULL
+        LEFT JOIN FichajeRegularizacion fr_any
+          ON fr_any.employee_codigo = f.CODIGO
+          AND (
+            -- Prioritate 1: Dacă fichaje_ids este setat și nu este gol, folosim DOAR fichaje_ids
+            (fr_any.fichaje_ids IS NOT NULL 
+             AND fr_any.fichaje_ids != '[]'
+             AND fr_any.fichaje_ids != ''
+             AND (fr_any.fichaje_ids LIKE CONCAT('%"', f.ID, '"%')
+                  OR fr_any.fichaje_ids LIKE CONCAT('%', f.ID, '%')))
+            -- Fallback: Dacă fichaje_ids este NULL sau gol, folosim window_start/window_end
+            OR ((fr_any.fichaje_ids IS NULL 
+                 OR fr_any.fichaje_ids = '[]'
+                 OR fr_any.fichaje_ids = '')
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_any.window_start
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_any.window_end)
+          )
+        WHERE f.CODIGO = ${this.escapeSql(codigoClean)}
+          AND f.FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
+          AND f.FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+        ORDER BY f.FECHA DESC, f.HORA DESC
       `;
 
       const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      // Debug: verifică dacă există effective_duration în răspuns
+      const rowsWithEffective = rows.filter(
+        (r) => r.effective_duration || r.effective_minutes,
+      );
+      if (rowsWithEffective.length > 0) {
+        this.logger.log(
+          `🔍 Found ${rowsWithEffective.length} registros with effective_duration/effective_minutes`,
+        );
+        this.logger.debug(
+          `Sample row with effective: ${JSON.stringify(rowsWithEffective[0], null, 2)}`,
+        );
+      } else {
+        // Debug: verifică dacă există regularizări pentru acest codigo și lună
+        const checkRegularizacionQuery = `
+          SELECT 
+            id,
+            employee_codigo,
+            workday_date,
+            status,
+            effective_minutes
+          FROM FichajeRegularizacion
+          WHERE employee_codigo = ${this.escapeSql(codigoClean)}
+            AND workday_date >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
+            AND workday_date < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+        `;
+        const regularizaciones = await this.prisma.$queryRawUnsafe<any[]>(
+          checkRegularizacionQuery,
+        );
+        this.logger.debug(
+          `🔍 Found ${regularizaciones.length} regularizaciones for codigo ${codigoClean} in month ${mesClean}`,
+        );
+        if (regularizaciones.length > 0) {
+          this.logger.debug(
+            `Regularizaciones: ${JSON.stringify(regularizaciones, null, 2)}`,
+          );
+          // Verifică dacă JOIN-ul funcționează corect pentru prima regularizare
+          const firstReg = regularizaciones[0];
+          // Convert workday_date to string format YYYY-MM-DD
+          const workdayDateStr =
+            firstReg.workday_date instanceof Date
+              ? firstReg.workday_date.toISOString().split('T')[0]
+              : firstReg.workday_date;
+          const testJoinQuery = `
+            SELECT 
+              f.FECHA,
+              f.CODIGO,
+              STR_TO_DATE(f.FECHA, '%Y-%m-%d') AS fecha_parsed,
+              fr.workday_date,
+              fr.status,
+              fr.effective_minutes,
+              CASE 
+                WHEN fr.status = 'CONFIRMED' AND fr.effective_minutes IS NOT NULL 
+                THEN CONCAT(
+                  LPAD(FLOOR(fr.effective_minutes / 60), 2, '0'), ':',
+                  LPAD(fr.effective_minutes % 60, 2, '0'), ':00'
+                )
+                ELSE NULL
+              END AS effective_duration
+            FROM Fichaje f
+            LEFT JOIN FichajeRegularizacion fr
+              ON fr.employee_codigo = f.CODIGO
+              AND fr.workday_date = STR_TO_DATE(f.FECHA, '%Y-%m-%d')
+              AND fr.status = 'CONFIRMED'
+            WHERE f.CODIGO = ${this.escapeSql(codigoClean)}
+              AND f.FECHA = ${this.escapeSql(workdayDateStr)}
+            LIMIT 5
+          `;
+          const testJoin =
+            await this.prisma.$queryRawUnsafe<any[]>(testJoinQuery);
+          this.logger.debug(
+            `Test JOIN result: ${JSON.stringify(testJoin, null, 2)}`,
+          );
+        }
+      }
 
       this.logger.log(
         `✅ Registros retrieved: ${rows.length} records (codigo: ${codigoClean}, mes: ${mesClean})`,
@@ -135,15 +276,115 @@ export class FichajesService {
       }
 
       // Query SQL: toate registros pentru luna specificată (FĂRĂ filtrare pe CODIGO)
+      // Include effective_duration din FichajeRegularizacion
+      // Include has_regularizacion pentru a detecta dacă există o regularizare (indiferent de status)
       const query = `
-        SELECT *
-        FROM Fichaje
-        WHERE FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
-          AND FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
-        ORDER BY FECHA DESC, HORA DESC
+        SELECT 
+          f.*,
+          CASE 
+            WHEN fr_confirmed.status IN ('CONFIRMED', 'REJECTED') AND fr_confirmed.effective_minutes IS NOT NULL 
+            THEN fr_confirmed.effective_minutes
+            ELSE NULL
+          END AS effective_minutes,
+          CASE 
+            WHEN fr_confirmed.status IN ('CONFIRMED', 'REJECTED') AND fr_confirmed.effective_minutes IS NOT NULL 
+            THEN CONCAT(
+              LPAD(FLOOR(fr_confirmed.effective_minutes / 60), 2, '0'), ':',
+              LPAD(fr_confirmed.effective_minutes % 60, 2, '0'), ':00'
+            )
+            ELSE NULL
+          END AS effective_duration,
+          CASE 
+            WHEN fr_any.id IS NOT NULL THEN 1
+            ELSE 0
+          END AS has_regularizacion
+        FROM Fichaje f
+        LEFT JOIN FichajeRegularizacion fr_confirmed
+          ON fr_confirmed.employee_codigo = f.CODIGO
+          AND (
+            -- Prioritate 1: Dacă fichaje_ids este setat și nu este gol, folosim DOAR fichaje_ids
+            (fr_confirmed.fichaje_ids IS NOT NULL 
+             AND fr_confirmed.fichaje_ids != '[]'
+             AND fr_confirmed.fichaje_ids != ''
+             AND (fr_confirmed.fichaje_ids LIKE CONCAT('%"', f.ID, '"%')
+                  OR fr_confirmed.fichaje_ids LIKE CONCAT('%', f.ID, '%')))
+            -- Fallback: Dacă fichaje_ids este NULL sau gol, folosim window_start/window_end
+            OR ((fr_confirmed.fichaje_ids IS NULL 
+                 OR fr_confirmed.fichaje_ids = '[]'
+                 OR fr_confirmed.fichaje_ids = '')
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_confirmed.window_start
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_confirmed.window_end)
+          )
+          AND fr_confirmed.status IN ('CONFIRMED', 'REJECTED')
+          AND fr_confirmed.effective_minutes IS NOT NULL
+        LEFT JOIN FichajeRegularizacion fr_any
+          ON fr_any.employee_codigo = f.CODIGO
+          AND (
+            -- Prioritate 1: Dacă fichaje_ids este setat și nu este gol, folosim DOAR fichaje_ids
+            (fr_any.fichaje_ids IS NOT NULL 
+             AND fr_any.fichaje_ids != '[]'
+             AND fr_any.fichaje_ids != ''
+             AND (fr_any.fichaje_ids LIKE CONCAT('%"', f.ID, '"%')
+                  OR fr_any.fichaje_ids LIKE CONCAT('%', f.ID, '%')))
+            -- Fallback: Dacă fichaje_ids este NULL sau gol, folosim window_start/window_end
+            OR ((fr_any.fichaje_ids IS NULL 
+                 OR fr_any.fichaje_ids = '[]'
+                 OR fr_any.fichaje_ids = '')
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_any.window_start
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_any.window_end)
+          )
+        WHERE f.FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
+          AND f.FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+        ORDER BY f.FECHA DESC, f.HORA DESC
       `;
 
       const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      // Debug: verifică dacă există registre cu effective_duration sau has_regularizacion
+      const withEffective = rows.filter(
+        (r: any) => r.effective_duration || r.effective_minutes,
+      );
+      const withRegularizacion = rows.filter(
+        (r: any) => r.has_regularizacion === 1 || r.has_regularizacion === true,
+      );
+
+      if (withEffective.length > 0) {
+        this.logger.log(
+          `🔍 Found ${withEffective.length} registros with effective_duration/effective_minutes`,
+        );
+        this.logger.debug(
+          `Sample row with effective:`,
+          JSON.stringify(withEffective[0], null, 2),
+        );
+      }
+
+      if (withRegularizacion.length > 0) {
+        this.logger.log(
+          `🔍 Found ${withRegularizacion.length} registros with has_regularizacion=1`,
+        );
+      } else {
+        // Debug: verifică dacă există regularizări pentru această lună
+        const checkRegQuery = `
+          SELECT 
+            id,
+            employee_codigo,
+            workday_date,
+            window_start,
+            window_end,
+            status,
+            effective_minutes
+          FROM FichajeRegularizacion
+          WHERE workday_date >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
+            AND workday_date < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+          LIMIT 5
+        `;
+        const regs = await this.prisma.$queryRawUnsafe<any[]>(checkRegQuery);
+        if (regs.length > 0) {
+          this.logger.warn(
+            `⚠️ Found ${regs.length} regularizaciones in DB but JOIN didn't match! Sample: ${JSON.stringify(regs[0], null, 2)}`,
+          );
+        }
+      }
 
       this.logger.log(
         `✅ Registros empleados retrieved: ${rows.length} records (mes: ${mesClean})`,
@@ -205,20 +446,73 @@ export class FichajesService {
         );
       }
 
-      // Construim query-ul SQL
+      // Construim query-ul SQL cu LEFT JOIN pentru effective_minutes
+      // Include has_regularizacion pentru a detecta dacă există o regularizare (indiferent de status)
       let query = `
-        SELECT *
-        FROM Fichaje
-        WHERE FECHA >= STR_TO_DATE(${this.escapeSql(fechaInicioClean)}, '%Y-%m-%d')
-          AND FECHA <= STR_TO_DATE(${this.escapeSql(fechaFinClean)}, '%Y-%m-%d')
+        SELECT 
+          f.*,
+          CASE 
+            WHEN fr_confirmed.status IN ('CONFIRMED', 'REJECTED') AND fr_confirmed.effective_minutes IS NOT NULL 
+            THEN fr_confirmed.effective_minutes
+            ELSE NULL
+          END AS effective_minutes,
+          CASE 
+            WHEN fr_confirmed.status IN ('CONFIRMED', 'REJECTED') AND fr_confirmed.effective_minutes IS NOT NULL 
+            THEN CONCAT(
+              LPAD(FLOOR(fr_confirmed.effective_minutes / 60), 2, '0'), ':',
+              LPAD(fr_confirmed.effective_minutes % 60, 2, '0'), ':00'
+            )
+            ELSE NULL
+          END AS effective_duration,
+          CASE 
+            WHEN fr_any.id IS NOT NULL THEN 1
+            ELSE 0
+          END AS has_regularizacion
+        FROM Fichaje f
+        LEFT JOIN FichajeRegularizacion fr_confirmed
+          ON fr_confirmed.employee_codigo = f.CODIGO
+          AND (
+            -- Prioritate 1: Dacă fichaje_ids este setat și nu este gol, folosim DOAR fichaje_ids
+            (fr_confirmed.fichaje_ids IS NOT NULL 
+             AND fr_confirmed.fichaje_ids != '[]'
+             AND fr_confirmed.fichaje_ids != ''
+             AND (fr_confirmed.fichaje_ids LIKE CONCAT('%"', f.ID, '"%')
+                  OR fr_confirmed.fichaje_ids LIKE CONCAT('%', f.ID, '%')))
+            -- Fallback: Dacă fichaje_ids este NULL sau gol, folosim window_start/window_end
+            OR ((fr_confirmed.fichaje_ids IS NULL 
+                 OR fr_confirmed.fichaje_ids = '[]'
+                 OR fr_confirmed.fichaje_ids = '')
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_confirmed.window_start
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_confirmed.window_end)
+          )
+          AND fr_confirmed.status IN ('CONFIRMED', 'REJECTED')
+          AND fr_confirmed.effective_minutes IS NOT NULL
+        LEFT JOIN FichajeRegularizacion fr_any
+          ON fr_any.employee_codigo = f.CODIGO
+          AND (
+            -- Prioritate 1: Dacă fichaje_ids este setat și nu este gol, folosim DOAR fichaje_ids
+            (fr_any.fichaje_ids IS NOT NULL 
+             AND fr_any.fichaje_ids != '[]'
+             AND fr_any.fichaje_ids != ''
+             AND (fr_any.fichaje_ids LIKE CONCAT('%"', f.ID, '"%')
+                  OR fr_any.fichaje_ids LIKE CONCAT('%', f.ID, '%')))
+            -- Fallback: Dacă fichaje_ids este NULL sau gol, folosim window_start/window_end
+            OR ((fr_any.fichaje_ids IS NULL 
+                 OR fr_any.fichaje_ids = '[]'
+                 OR fr_any.fichaje_ids = '')
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_any.window_start
+                AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_any.window_end)
+          )
+        WHERE f.FECHA >= STR_TO_DATE(${this.escapeSql(fechaInicioClean)}, '%Y-%m-%d')
+          AND f.FECHA <= STR_TO_DATE(${this.escapeSql(fechaFinClean)}, '%Y-%m-%d')
       `;
 
       // Dacă este specificat codigo, adăugăm filtrare
       if (codigoClean && codigoClean !== '') {
-        query += ` AND CODIGO = ${this.escapeSql(codigoClean)}`;
+        query += ` AND f.CODIGO = ${this.escapeSql(codigoClean)}`;
       }
 
-      query += ` ORDER BY FECHA DESC, HORA DESC`;
+      query += ` ORDER BY f.FECHA DESC, f.HORA DESC`;
 
       const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
 
@@ -278,7 +572,24 @@ export class FichajesService {
     modificatDe: string;
     data: string;
     motivo: string;
-  }): Promise<{ success: true; id: string }> {
+  }): Promise<{
+    success: true;
+    id: string;
+    needs_confirmation?: boolean;
+    confirmation_data?: {
+      delta_minutes: number;
+      punched_minutes: number;
+      scheduled_minutes: number;
+      workday_date: string;
+    };
+    entrada_warning?: {
+      message: string;
+      scheduled_time: string;
+      fichada_time: string;
+      delay_minutes: number;
+      suggestion: string;
+    };
+  }> {
     try {
       // Validări
       if (!fichajeData.id || fichajeData.id.trim() === '') {
@@ -352,7 +663,86 @@ export class FichajesService {
         `✅ Fichaje added: ID=${fichajeData.id}, CODIGO=${fichajeData.codigo}, TIPO=${fichajeData.tipo}, FECHA=${fichajeData.data}`,
       );
 
-      return { success: true, id: fichajeData.id };
+      // Verificări pentru Entrada și Salida
+      let needs_confirmation = false;
+      let confirmation_data = null;
+      let entrada_warning = null; // Warning pentru Entrada tardía
+
+      if (this.regularizacionService) {
+        try {
+          if (fichajeData.tipo === 'Entrada') {
+            // Verifică dacă Entrada e mai târziu decât programat
+            const fechaDate = new Date(fichajeData.data);
+            const scheduledEntryTime =
+              await this.regularizacionService.getScheduledEntryTime(
+                fichajeData.codigo,
+                fechaDate,
+              );
+
+            if (scheduledEntryTime) {
+              // Parse ora fichada (ex: "09:30:00" sau "09:30")
+              const horaParts = fichajeData.hora.split(':');
+              const horaFichada = `${horaParts[0].padStart(2, '0')}:${horaParts[1].padStart(2, '0')}`;
+
+              // Parse ora programată
+              const [scheduledHour, scheduledMin] = scheduledEntryTime
+                .split(':')
+                .map(Number);
+              const [fichadaHour, fichadaMin] = horaFichada
+                .split(':')
+                .map(Number);
+
+              const scheduledMinutes = scheduledHour * 60 + scheduledMin;
+              const fichadaMinutes = fichadaHour * 60 + fichadaMin;
+              const delayMinutes = fichadaMinutes - scheduledMinutes;
+
+              // Dacă e mai târziu cu >15 minute, afișează warning
+              if (
+                delayMinutes >
+                this.regularizacionService['CONFIRMATION_THRESHOLD_MINUTES']
+              ) {
+                const delayHours = Math.floor(delayMinutes / 60);
+                const delayMins = delayMinutes % 60;
+
+                entrada_warning = {
+                  message: `⚠️ Has fichado la entrada con ${delayHours > 0 ? `${delayHours}h ` : ''}${delayMins}min de retraso.`,
+                  scheduled_time: scheduledEntryTime,
+                  fichada_time: horaFichada,
+                  delay_minutes: delayMinutes,
+                  suggestion: `Recuerda fichar la salida más tarde para compensar las horas.`,
+                };
+              }
+            }
+          } else if (fichajeData.tipo === 'Salida') {
+            // Verifică dacă trebuie confirmare pentru Salida
+            const checkResult =
+              await this.regularizacionService.checkNeedsConfirmation(
+                fichajeData.codigo,
+                fichajeData.data,
+              );
+            needs_confirmation = checkResult.needs_confirmation;
+            confirmation_data = {
+              delta_minutes: checkResult.delta_minutes,
+              punched_minutes: checkResult.punched_minutes,
+              scheduled_minutes: checkResult.scheduled_minutes,
+              workday_date: checkResult.workday_date,
+            };
+          }
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ Error checking entrada/salida confirmation: ${error.message}`,
+          );
+          // Nu aruncăm eroare, doar logăm
+        }
+      }
+
+      return {
+        success: true,
+        id: fichajeData.id,
+        needs_confirmation,
+        confirmation_data,
+        entrada_warning, // Warning pentru Entrada tardía (în spaniolă)
+      };
     } catch (error: any) {
       this.logger.error('❌ Error adding fichaje:', error);
       if (error instanceof BadRequestException) {

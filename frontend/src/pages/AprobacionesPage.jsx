@@ -6,16 +6,35 @@ import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
 import { useAdminApi } from '../hooks/useAdminApi';
 import activityLogger from '../utils/activityLogger';
+import { routes } from '../utils/routes';
 
 
 export default function AprobacionesPage() {
   const { user: authUser } = useAuth();
   const { getPermissions } = useAdminApi();
   
+  // State pentru tab-uri
+  const [activeTab, setActiveTab] = useState('cambios'); // 'cambios' sau 'regularizaciones'
+  
   // State pentru cambios de datos
   const [pendingCambios, setPendingCambios] = useState([]);
   const [loadingCambios, setLoadingCambios] = useState(true);
   const [errorCambios, setErrorCambios] = useState('');
+  
+  // State pentru regularizaciones de fichajes
+  const [activeRegularizacionSubtab, setActiveRegularizacionSubtab] = useState('pending'); // 'pending' sau 'confirmed'
+  const [pendingRegularizaciones, setPendingRegularizaciones] = useState([]);
+  const [loadingRegularizaciones, setLoadingRegularizaciones] = useState(true);
+  const [errorRegularizaciones, setErrorRegularizaciones] = useState('');
+  const [confirmedRegularizaciones, setConfirmedRegularizaciones] = useState([]);
+  const [loadingConfirmedRegularizaciones, setLoadingConfirmedRegularizaciones] = useState(true);
+  const [errorConfirmedRegularizaciones, setErrorConfirmedRegularizaciones] = useState('');
+  const [regularizacionToReject, setRegularizacionToReject] = useState(null);
+  const [rejectRegularizacionReason, setRejectRegularizacionReason] = useState('');
+  const [createAusenciaOnReject, setCreateAusenciaOnReject] = useState(false);
+  const [showRejectRegularizacionModal, setShowRejectRegularizacionModal] = useState(false);
+  const [showApproveRegularizacionModal, setShowApproveRegularizacionModal] = useState(false);
+  const [regularizacionToApprove, setRegularizacionToApprove] = useState(null);
   
   // State pentru permisiuni
   const [userPermissions, setUserPermissions] = useState(null);
@@ -251,6 +270,100 @@ export default function AprobacionesPage() {
     }
   }, [authUser?.isDemo]);
 
+  // Funcție pentru fetch regularizări pending
+  const fetchPendingRegularizaciones = useCallback(async () => {
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Skipping fetchPendingRegularizaciones');
+      return;
+    }
+
+    setLoadingRegularizaciones(true);
+    setErrorRegularizaciones('');
+    try {
+      const url = routes.getRegularizacionesPendientes;
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('[Aprobaciones] Regularizaciones pending data:', data);
+      
+      if (data.success && Array.isArray(data.pendientes)) {
+        setPendingRegularizaciones(data.pendientes);
+      } else {
+        setPendingRegularizaciones([]);
+      }
+    } catch (error) {
+      console.error('Error fetching pending regularizaciones:', error);
+      setErrorRegularizaciones('Error al cargar las regularizaciones pendientes.');
+      setPendingRegularizaciones([]);
+    } finally {
+      setLoadingRegularizaciones(false);
+    }
+  }, [authUser?.isDemo]);
+
+  // Funcție pentru fetch regularizări confirmed
+  const fetchConfirmedRegularizaciones = useCallback(async () => {
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Skipping fetchConfirmedRegularizaciones');
+      return;
+    }
+
+    setLoadingConfirmedRegularizaciones(true);
+    setErrorConfirmedRegularizaciones('');
+    try {
+      const url = routes.getRegularizacionesConfirmed;
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('[Aprobaciones] Regularizaciones confirmed data:', data);
+      
+      if (data.success && Array.isArray(data.regularizaciones)) {
+        setConfirmedRegularizaciones(data.regularizaciones);
+      } else {
+        setConfirmedRegularizaciones([]);
+      }
+    } catch (error) {
+      console.error('Error fetching confirmed regularizaciones:', error);
+      setErrorConfirmedRegularizaciones('Error al cargar las regularizaciones confirmadas.');
+      setConfirmedRegularizaciones([]);
+    } finally {
+      setLoadingConfirmedRegularizaciones(false);
+    }
+  }, [authUser?.isDemo]);
+
   useEffect(() => {
     // Așteaptă până când permisiunile sunt verificate
     if (canAccess === null) {
@@ -259,17 +372,198 @@ export default function AprobacionesPage() {
 
     if (!canAccess) {
       setLoadingCambios(false);
+      setLoadingRegularizaciones(false);
       return;
     }
 
     if (authUser?.isDemo) {
       console.log('🎭 DEMO mode: Using demo aprobaciones data instead of fetching from backend');
       setDemoAprobaciones();
+      setLoadingRegularizaciones(false);
       return;
     }
 
     fetchPendingCambios();
-  }, [canAccess, authUser?.isDemo, fetchPendingCambios]);
+    fetchPendingRegularizaciones();
+    fetchConfirmedRegularizaciones();
+  }, [canAccess, authUser?.isDemo, fetchPendingCambios, fetchPendingRegularizaciones, fetchConfirmedRegularizaciones]);
+
+  // Funcție pentru aprobare regularizare
+  const handleApproveRegularizacion = (regularizacion) => {
+    setRegularizacionToApprove(regularizacion);
+    setShowApproveRegularizacionModal(true);
+  };
+
+  const confirmApproveRegularizacion = async () => {
+    if (!regularizacionToApprove) return;
+
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Simulating regularizacion approval');
+      setNotification({
+        type: 'success',
+        title: '¡Éxito! (DEMO)',
+        message: 'Regularización aprobada con éxito! (Simulación DEMO)'
+      });
+      setPendingRegularizaciones(prev => prev.filter(r => r.id !== regularizacionToApprove.id));
+      setShowApproveRegularizacionModal(false);
+      setRegularizacionToApprove(null);
+      return;
+    }
+
+    setProcessingAction(true);
+    try {
+      const url = routes.aprobarRegularizacion(regularizacionToApprove.id);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers
+      });
+      
+      if (response.ok) {
+        const responseData = await response.json();
+        console.log('Response data:', responseData);
+        setNotification({
+          type: 'success',
+          title: '¡Éxito!',
+          message: 'Regularización aprobada correctamente.'
+        });
+        
+        setShowApproveRegularizacionModal(false);
+        setRegularizacionToApprove(null);
+        
+        fetchPendingRegularizaciones();
+        fetchConfirmedRegularizaciones();
+      } else {
+        const errorText = await response.text();
+        console.error('Server error:', errorText);
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: `Error al aprobar la regularización! Estado: ${response.status}`
+        });
+      }
+    } catch (error) {
+      console.error('Error approving regularizacion:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Error al aprobar la regularización!'
+      });
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Funcție pentru respingere regularizare
+  const handleRejectRegularizacion = (regularizacion) => {
+    setRegularizacionToReject(regularizacion);
+    setRejectRegularizacionReason('');
+    setCreateAusenciaOnReject(false); // Reset checkbox
+    setShowRejectRegularizacionModal(true);
+  };
+
+  const confirmRejectRegularizacion = async () => {
+    if (!rejectRegularizacionReason.trim()) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Por favor, introduce un motivo para el rechazo'
+      });
+      return;
+    }
+
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Simulating regularizacion rejection');
+      setNotification({
+        type: 'success',
+        title: '¡Éxito! (DEMO)',
+        message: `Regularización rechazada con motivo: ${rejectRegularizacionReason} (Simulación DEMO)`
+      });
+      setPendingRegularizaciones(prev => prev.filter(r => r.id !== regularizacionToReject.id));
+      setShowRejectRegularizacionModal(false);
+      setRejectRegularizacionReason('');
+      setRegularizacionToReject(null);
+      return;
+    }
+
+    setProcessingAction(true);
+    try {
+      const url = routes.rechazarRegularizacion(regularizacionToReject.id);
+      
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ 
+          notes: rejectRegularizacionReason,
+          create_ausencia: createAusenciaOnReject // Trimite flag-ul pentru crearea ausencia
+        })
+      });
+      
+      if (response.ok) {
+        const responseData = await response.json();
+        console.log('Response data:', responseData);
+        setNotification({
+          type: 'success',
+          title: '¡Éxito!',
+          message: 'Regularización rechazada correctamente.'
+        });
+        
+        setShowRejectRegularizacionModal(false);
+        setRejectRegularizacionReason('');
+        setCreateAusenciaOnReject(false);
+        setRegularizacionToReject(null);
+        
+        fetchPendingRegularizaciones();
+        fetchConfirmedRegularizaciones();
+      } else {
+        const errorText = await response.text();
+        console.error('Server error:', errorText);
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: `Error al rechazar la regularización! Estado: ${response.status}`
+        });
+      }
+    } catch (error) {
+      console.error('Error rejecting regularizacion:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Error al rechazar la regularización!'
+      });
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Helper pentru formatare ore (Xh Ym)
+  const formatMinutesToHoursMinutes = (totalMinutes) => {
+    if (totalMinutes === 0) return '0m';
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    let formatted = '';
+    if (hours > 0) formatted += `${hours}h `;
+    if (minutes > 0 || hours === 0) formatted += `${minutes}m`;
+    return formatted.trim();
+  };
 
   const handleApproveCambio = (cambio) => {
     // Deschide modalul de confirmare
@@ -615,16 +909,50 @@ export default function AprobacionesPage() {
         </button>
       </div>
 
-      {/* Chip de secțiune: doar Cambios de Datos */}
+      {/* Tab-uri */}
       <div className="mb-6">
-        <span className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-red-600 text-white text-sm font-semibold shadow">
-          <span>📝</span> Cambios de Datos
-        </span>
+        <div className="flex gap-2 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('cambios')}
+            className={`px-6 py-3 font-semibold text-sm transition-colors ${
+              activeTab === 'cambios'
+                ? 'text-red-600 border-b-2 border-red-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span>📝</span>
+              Cambios de Datos
+              {pendingCambios.length > 0 && (
+                <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">
+                  {pendingCambios.length}
+                </span>
+              )}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('regularizaciones')}
+            className={`px-6 py-3 font-semibold text-sm transition-colors ${
+              activeTab === 'regularizaciones'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span>⏰</span>
+              Regularizaciones de Fichajes
+              {pendingRegularizaciones.length > 0 && (
+                <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
+                  {pendingRegularizaciones.length}
+                </span>
+              )}
+            </span>
+          </button>
+        </div>
       </div>
 
-      {/* Secțiunea Fichajes a fost eliminată */}
-
       {/* Conținut pentru Cambios de Datos */}
+      {activeTab === 'cambios' && (
       <div>
         <Card>
           <div className="flex items-center justify-between mb-4">
@@ -704,6 +1032,301 @@ export default function AprobacionesPage() {
           )}
         </Card>
       </div>
+      )}
+
+      {/* Conținut pentru Regularizaciones de Fichajes */}
+      {activeTab === 'regularizaciones' && (
+      <div>
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow">
+                ⏰
+              </div>
+              <div>
+                <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Regularizaciones de Fichajes</h2>
+                <p className="text-gray-500 text-sm">Gestiona las jornadas regularizadas</p>
+              </div>
+            </div>
+            {/* Buton Refresh 3D albastru */}
+            <button
+              onClick={() => {
+                if (activeRegularizacionSubtab === 'pending') {
+                  fetchPendingRegularizaciones();
+                } else {
+                  fetchConfirmedRegularizaciones();
+                }
+              }}
+              disabled={activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones}
+              className={`group relative w-12 h-12 rounded-2xl transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-xl hover:shadow-blue-500/50 overflow-hidden ${(activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
+                boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+              }}
+              title="Actualizar lista"
+            >
+              <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              <div className="relative flex items-center justify-center h-full">
+                <span className={`text-2xl ${(activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones) ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`}>🔄</span>
+              </div>
+            </button>
+          </div>
+
+          {/* Subtab-uri */}
+          <div className="mb-6">
+            <div className="flex gap-2 border-b border-gray-200">
+              <button
+                onClick={() => setActiveRegularizacionSubtab('pending')}
+                className={`px-6 py-2 font-semibold text-sm transition-colors ${
+                  activeRegularizacionSubtab === 'pending'
+                    ? 'text-orange-600 border-b-2 border-orange-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span>⏳</span>
+                  Pendientes
+                  {pendingRegularizaciones.length > 0 && (
+                    <span className="bg-orange-600 text-white text-xs px-2 py-0.5 rounded-full">
+                      {pendingRegularizaciones.length}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveRegularizacionSubtab('confirmed')}
+                className={`px-6 py-2 font-semibold text-sm transition-colors ${
+                  activeRegularizacionSubtab === 'confirmed'
+                    ? 'text-green-600 border-b-2 border-green-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span>✅</span>
+                  Confirmadas
+                  {confirmedRegularizaciones.length > 0 && (
+                    <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">
+                      {confirmedRegularizaciones.length}
+                    </span>
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+          
+          {/* Conținut pentru Pending */}
+          {activeRegularizacionSubtab === 'pending' && (
+            <>
+              {errorRegularizaciones && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                  {errorRegularizaciones}
+                </div>
+              )}
+
+              {loadingRegularizaciones ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Cargando regularizaciones pendientes...</p>
+                </div>
+              ) : (pendingRegularizaciones || []).length === 0 ? (
+                <div className="text-center py-10">
+                  <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-green-50 border border-green-200 flex items-center justify-center text-2xl">✅</div>
+                  <div className="text-gray-800 font-semibold">No hay regularizaciones pendientes</div>
+                  <div className="text-gray-500 text-sm">Cuando haya jornadas con horas extra declaradas, aparecerán aquí.</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingRegularizaciones.map((regularizacion, index) => {
+                    const deltaMinutes = regularizacion.punched_minutes - regularizacion.scheduled_minutes;
+                    const deltaFormatted = formatMinutesToHoursMinutes(Math.abs(deltaMinutes));
+                    const isMore = deltaMinutes > 0;
+                    const punchedFormatted = formatMinutesToHoursMinutes(regularizacion.punched_minutes);
+                    const scheduledFormatted = formatMinutesToHoursMinutes(regularizacion.scheduled_minutes);
+                    const workdayDate = new Date(regularizacion.workday_date).toLocaleDateString('es-ES', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    });
+                    
+                    return (
+                      <div key={regularizacion.id} className="group p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-semibold text-gray-900">Empleado: {regularizacion.employee_codigo}</div>
+                              <div className="text-xs text-gray-500 mt-1">Fecha: {workdayDate}</div>
+                              <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                  <span className="text-gray-500">Horas fichadas:</span>
+                                  <span className="ml-2 font-semibold text-blue-600">{punchedFormatted}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Horas previstas:</span>
+                                  <span className="ml-2 font-semibold text-green-600">{scheduledFormatted}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Diferencia:</span>
+                                  <span className={`ml-2 font-bold ${isMore ? 'text-orange-600' : 'text-red-600'}`}>
+                                    {isMore ? '+' : '-'}{deltaFormatted}
+                                  </span>
+                                </div>
+                              </div>
+                              {/* Afișează reason_code pentru a ști motivul regularizării */}
+                              {regularizacion.reason_code && (
+                                <div className="mt-2 text-xs bg-blue-50 border border-blue-200 p-2 rounded">
+                                  <span className="font-medium text-blue-800">Motivo:</span>
+                                  <span className="ml-2 text-blue-700 font-semibold">
+                                    {regularizacion.reason_code === 'employee_confirmed_no_extra' && '✅ Empleado confirmó: No trabajó de más'}
+                                    {regularizacion.reason_code === 'employee_confirmed_punch_error' && '✅ Empleado confirmó: Error de fichaje'}
+                                    {regularizacion.reason_code === 'employee_declares_extra' && '⚠️ Empleado declara: Trabajó de más'}
+                                    {regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' && '❌ Ausencia injustificada'}
+                                    {regularizacion.reason_code === 'OLVIDO_FICHAR' && '⚠️ Olvidó fichar'}
+                                    {regularizacion.reason_code === 'OTRO' && '📝 Otro motivo'}
+                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_declares_extra', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
+                                  </span>
+                                </div>
+                              )}
+                              {regularizacion.notes && (
+                                <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                  <span className="font-medium">Notas:</span> {regularizacion.notes}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button 
+                              onClick={() => handleApproveRegularizacion(regularizacion)} 
+                              disabled={processingAction} 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              Aprobar
+                            </Button>
+                            <Button 
+                              onClick={() => handleRejectRegularizacion(regularizacion)} 
+                              disabled={processingAction} 
+                              variant="outline" 
+                              size="sm" 
+                              className="border-red-600 text-red-600 hover:bg-red-50"
+                            >
+                              Rechazar
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Conținut pentru Confirmed */}
+          {activeRegularizacionSubtab === 'confirmed' && (
+            <>
+              {errorConfirmedRegularizaciones && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                  {errorConfirmedRegularizaciones}
+                </div>
+              )}
+
+              {loadingConfirmedRegularizaciones ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Cargando regularizaciones confirmadas...</p>
+                </div>
+              ) : (confirmedRegularizaciones || []).length === 0 ? (
+                <div className="text-center py-10">
+                  <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center text-2xl">📋</div>
+                  <div className="text-gray-800 font-semibold">No hay regularizaciones confirmadas</div>
+                  <div className="text-gray-500 text-sm">Las regularizaciones confirmadas aparecerán aquí.</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {confirmedRegularizaciones.map((regularizacion, index) => {
+                    const punchedFormatted = formatMinutesToHoursMinutes(regularizacion.punched_minutes);
+                    const scheduledFormatted = formatMinutesToHoursMinutes(regularizacion.scheduled_minutes);
+                    const effectiveFormatted = regularizacion.effective_minutes ? formatMinutesToHoursMinutes(regularizacion.effective_minutes) : 'N/A';
+                    const workdayDate = new Date(regularizacion.workday_date).toLocaleDateString('es-ES', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    });
+                    const confirmedDate = regularizacion.confirmed_at ? new Date(regularizacion.confirmed_at).toLocaleDateString('es-ES', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    }) : 'N/A';
+                    
+                    return (
+                      <div key={regularizacion.id} className="group p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center text-green-600">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-semibold text-gray-900">Empleado: {regularizacion.employee_codigo}</div>
+                              <div className="text-xs text-gray-500 mt-1">Fecha: {workdayDate}</div>
+                              <div className="text-xs text-gray-400 mt-1">Confirmada: {confirmedDate}</div>
+                              <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                  <span className="text-gray-500">Horas fichadas:</span>
+                                  <span className="ml-2 font-semibold text-blue-600">{punchedFormatted}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Horas previstas:</span>
+                                  <span className="ml-2 font-semibold text-green-600">{scheduledFormatted}</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Horas efectivas:</span>
+                                  <span className="ml-2 font-bold text-green-700">{effectiveFormatted}</span>
+                                </div>
+                              </div>
+                              {/* Afișează reason_code pentru regularizările confirmate */}
+                              {regularizacion.reason_code && (
+                                <div className="mt-2 text-xs bg-blue-50 border border-blue-200 p-2 rounded">
+                                  <span className="font-medium text-blue-800">Motivo:</span>
+                                  <span className="ml-2 text-blue-700 font-semibold">
+                                    {regularizacion.reason_code === 'employee_confirmed_no_extra' && '✅ Empleado confirmó: No trabajó de más'}
+                                    {regularizacion.reason_code === 'employee_confirmed_punch_error' && '✅ Empleado confirmó: Error de fichaje'}
+                                    {regularizacion.reason_code === 'employee_declares_extra' && '⚠️ Empleado declara: Trabajó de más'}
+                                    {regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' && '❌ Ausencia injustificada'}
+                                    {regularizacion.reason_code === 'OLVIDO_FICHAR' && '⚠️ Olvidó fichar'}
+                                    {regularizacion.reason_code === 'OTRO' && '📝 Otro motivo'}
+                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_declares_extra', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
+                                  </span>
+                                </div>
+                              )}
+                              {regularizacion.notes && (
+                                <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                  <span className="font-medium">Notas:</span> {regularizacion.notes}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                              ✅ Confirmada
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      </div>
+      )}
 
       {/* Modal de detalles */}
       <Modal
@@ -945,6 +1568,169 @@ export default function AprobacionesPage() {
         </div>
       </Modal>
       
+      {/* Modal de confirmare aprobare regularizare */}
+      <Modal
+        isOpen={showApproveRegularizacionModal}
+        onClose={() => {
+          setShowApproveRegularizacionModal(false);
+          setRegularizacionToApprove(null);
+        }}
+        title="Confirmar aprobación de regularización"
+        size="lg"
+      >
+        {regularizacionToApprove && (
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <p className="text-sm text-yellow-800 font-medium mb-2">
+                ⚠️ ¿Estás seguro que deseas aprobar esta regularización?
+              </p>
+              <p className="text-sm text-yellow-700">
+                Se aprobarán las horas fichadas ({formatMinutesToHoursMinutes(regularizacionToApprove.punched_minutes)}) como horas efectivas trabajadas.
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Empleado</label>
+                <p className="text-gray-900 font-semibold">{regularizacionToApprove.employee_codigo}</p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Fecha</label>
+                <p className="text-gray-900">
+                  {new Date(regularizacionToApprove.workday_date).toLocaleDateString('es-ES', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Horas fichadas</label>
+                  <p className="text-blue-600 font-bold">{formatMinutesToHoursMinutes(regularizacionToApprove.punched_minutes)}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Horas previstas</label>
+                  <p className="text-green-600 font-bold">{formatMinutesToHoursMinutes(regularizacionToApprove.scheduled_minutes)}</p>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Diferencia</label>
+                <p className={`font-bold ${regularizacionToApprove.punched_minutes > regularizacionToApprove.scheduled_minutes ? 'text-orange-600' : 'text-red-600'}`}>
+                  {regularizacionToApprove.punched_minutes > regularizacionToApprove.scheduled_minutes ? '+' : '-'}
+                  {formatMinutesToHoursMinutes(Math.abs(regularizacionToApprove.punched_minutes - regularizacionToApprove.scheduled_minutes))}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={confirmApproveRegularizacion}
+                disabled={processingAction}
+                className="flex-1 bg-green-600 hover:bg-green-700"
+              >
+                {processingAction ? 'Procesando...' : '✅ Sí, aprobar'}
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowApproveRegularizacionModal(false);
+                  setRegularizacionToApprove(null);
+                }}
+                variant="outline"
+                className="flex-1"
+                disabled={processingAction}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal para motivo de rechazo de regularizacion */}
+      <Modal
+        isOpen={showRejectRegularizacionModal}
+        onClose={() => {
+          setShowRejectRegularizacionModal(false);
+          setRejectRegularizacionReason('');
+          setCreateAusenciaOnReject(false);
+          setRegularizacionToReject(null);
+        }}
+        title="Motivo del rechazo de regularización"
+      >
+        <div className="space-y-4">
+          {regularizacionToReject && (
+            <div className="bg-gray-50 p-3 rounded-lg mb-4">
+              <p className="text-sm text-gray-700">
+                <span className="font-medium">Empleado:</span> {regularizacionToReject.employee_codigo}
+              </p>
+              <p className="text-sm text-gray-700">
+                <span className="font-medium">Fecha:</span> {new Date(regularizacionToReject.workday_date).toLocaleDateString('es-ES')}
+              </p>
+              <p className="text-sm text-gray-700">
+                <span className="font-medium">Horas fichadas:</span> {formatMinutesToHoursMinutes(regularizacionToReject.punched_minutes)}
+              </p>
+              <p className="text-sm text-gray-700">
+                <span className="font-medium">Horas previstas:</span> {formatMinutesToHoursMinutes(regularizacionToReject.scheduled_minutes)}
+              </p>
+            </div>
+          )}
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Explica por qué rechazas esta regularización:</label>
+            <textarea
+              value={rejectRegularizacionReason}
+              onChange={(e) => setRejectRegularizacionReason(e.target.value)}
+              placeholder="Introduce el motivo del rechazo..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              rows={4}
+              required
+            />
+          </div>
+          
+          {/* Checkbox pentru crearea ausencia injustificada */}
+          <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <input
+              type="checkbox"
+              id="createAusenciaOnReject"
+              checked={createAusenciaOnReject}
+              onChange={(e) => setCreateAusenciaOnReject(e.target.checked)}
+              className="mt-1"
+            />
+            <label htmlFor="createAusenciaOnReject" className="text-sm text-gray-700 cursor-pointer">
+              <span className="font-medium">Registrar como Ausencia Injustificada</span>
+              <p className="text-xs text-gray-600 mt-1">
+                Si marcas esta opción, se creará automáticamente una ausencia injustificada para esta fecha.
+              </p>
+            </label>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <Button
+              onClick={confirmRejectRegularizacion}
+              disabled={processingAction || !rejectRegularizacionReason.trim()}
+              className="flex-1 bg-red-600 hover:bg-red-700"
+            >
+              {processingAction ? 'Procesando...' : 'Confirmar rechazo'}
+            </Button>
+            <Button
+              onClick={() => {
+                setShowRejectRegularizacionModal(false);
+                setRejectRegularizacionReason('');
+                setRegularizacionToReject(null);
+              }}
+              variant="outline"
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Componenta de Notificări */}
       {notification && (
         <Notification

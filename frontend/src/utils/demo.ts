@@ -22,7 +22,7 @@ export function isDemoMode(): boolean {
   if (typeof window !== 'undefined') {
     try {
       queryFlag = new URLSearchParams(window.location.search).get('demo') === 'true';
-    } catch (e) {
+    } catch {
       // Ignore URL parsing errors
     }
   }
