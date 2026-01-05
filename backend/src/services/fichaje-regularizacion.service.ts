@@ -367,7 +367,8 @@ export class FichajeRegularizacionService {
     try {
       const fechaStr = workday_date.toISOString().split('T')[0]; // YYYY-MM-DD
       const mesStr = fechaStr.substring(0, 7); // YYYY-MM
-      const dia = workday_date.getDate();
+      // Folosește ziua din fechaStr pentru a evita problemele de timezone
+      const dia = parseInt(fechaStr.split('-')[2], 10);
 
       // Încearcă să găsească în cuadrante
       const cuadranteQuery = `
@@ -381,10 +382,18 @@ export class FichajeRegularizacionService {
       const cuadrante =
         await this.prisma.$queryRawUnsafe<any[]>(cuadranteQuery);
 
+      this.logger.debug(
+        `🔍 calculateScheduledMinutes - Checking cuadrante for ${employee_codigo} on ${fechaStr} (day ${dia}, month ${mesStr}): found ${cuadrante?.length || 0} results`,
+      );
+
       if (cuadrante && cuadrante.length > 0 && cuadrante[0].schedule) {
         // Calculează din cuadrante (folosește helper existent)
         const scheduleStr = cuadrante[0].schedule;
-        return this.parseScheduleToMinutes(scheduleStr);
+        const minutes = this.parseScheduleToMinutes(scheduleStr);
+        this.logger.debug(
+          `✅ calculateScheduledMinutes - Found cuadrante schedule: ${scheduleStr} = ${minutes} minutes`,
+        );
+        return minutes;
       }
 
       // Fallback la horario - folosește CASE pentru ziua săptămânii
@@ -444,21 +453,114 @@ export class FichajeRegularizacionService {
         workday_date,
       );
 
+      this.logger.debug(
+        `🔍 calculateScheduledMinutes - Checking horario for ${employee_codigo} on ${fechaStr}: found ${horario?.length || 0} results`,
+      );
+
       if (horario && horario.length > 0) {
         const h = horario[0];
         let totalMinutes = 0;
+        let segmentsFound = 0;
 
-        // Sumă toate segmentele (split shifts)
-        if (h.in1 && h.out1) {
-          totalMinutes += this.timeDiffMinutes(h.in1, h.out1);
-        }
-        if (h.in2 && h.out2) {
-          totalMinutes += this.timeDiffMinutes(h.in2, h.out2);
-        }
-        if (h.in3 && h.out3) {
-          totalMinutes += this.timeDiffMinutes(h.in3, h.out3);
+        // Verifică câte segmente sunt definite (nu NULL)
+        if (h.in1 && h.out1) segmentsFound++;
+        if (h.in2 && h.out2) segmentsFound++;
+        if (h.in3 && h.out3) segmentsFound++;
+
+        this.logger.debug(
+          `🔍 calculateScheduledMinutes - Found ${segmentsFound} segments in horario for ${employee_codigo} on ${fechaStr}`,
+        );
+
+        // Dacă există mai mult de 1 segment, înseamnă că sunt ture multiple (split shifts)
+        // În acest caz, toate segmentele trebuie să fie lucrate în aceeași zi
+        // Dacă există doar 1 segment, folosim doar acela
+        // Dacă există 3 segmente (ex: 07:00-15:00, 15:00-23:00, 23:00-07:00), 
+        // acestea reprezintă opțiuni de ture, nu ture care trebuie toate lucrate
+        // În acest caz, folosim doar prima tură disponibilă sau verificăm cuadrantele
+        
+        // Verifică dacă toate cele 3 segmente sunt definite și dacă suma lor este 24 ore
+        // Dacă da, înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
+        if (segmentsFound === 3 && h.in1 && h.out1 && h.in2 && h.out2 && h.in3 && h.out3) {
+          const seg1 = this.timeDiffMinutes(h.in1, h.out1);
+          const seg2 = this.timeDiffMinutes(h.in2, h.out2);
+          const seg3 = this.timeDiffMinutes(h.in3, h.out3);
+          const correctedSeg1 = seg1 < 0 ? seg1 + 24 * 60 : seg1;
+          const correctedSeg2 = seg2 < 0 ? seg2 + 24 * 60 : seg2;
+          const correctedSeg3 = seg3 < 0 ? seg3 + 24 * 60 : seg3;
+          const totalAllSegments = correctedSeg1 + correctedSeg2 + correctedSeg3;
+          
+          // Dacă suma tuturor segmentelor este 24 ore (1440 minute), 
+          // înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
+          // În acest caz, folosim doar prima tură disponibilă
+          if (totalAllSegments === 24 * 60) {
+            this.logger.debug(
+              `⚠️ All 3 segments sum to 24h - these are shift options, not all shifts to work. Using only first segment.`,
+            );
+            const segment1 = this.timeDiffMinutes(h.in1, h.out1);
+            const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
+            totalMinutes = correctedSegment1;
+            this.logger.debug(
+              `  Using Segment 1 only: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1})`,
+            );
+          } else {
+            // Dacă suma nu este 24 ore, înseamnă că sunt split shifts care trebuie toate lucrate
+            // Sumă toate segmentele
+            if (h.in1 && h.out1) {
+              const segment1 = this.timeDiffMinutes(h.in1, h.out1);
+              const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
+              totalMinutes += correctedSegment1;
+              this.logger.debug(
+                `  Segment 1: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1}, total so far: ${totalMinutes})`,
+              );
+            }
+            if (h.in2 && h.out2) {
+              const segment2 = this.timeDiffMinutes(h.in2, h.out2);
+              const correctedSegment2 = segment2 < 0 ? segment2 + 24 * 60 : segment2;
+              totalMinutes += correctedSegment2;
+              this.logger.debug(
+                `  Segment 2: ${h.in2} - ${h.out2} = ${segment2} minutes (night shift: ${segment2 < 0}, corrected: ${correctedSegment2}, total so far: ${totalMinutes})`,
+              );
+            }
+            if (h.in3 && h.out3) {
+              const segment3 = this.timeDiffMinutes(h.in3, h.out3);
+              const correctedSegment3 = segment3 < 0 ? segment3 + 24 * 60 : segment3;
+              totalMinutes += correctedSegment3;
+              this.logger.debug(
+                `  Segment 3: ${h.in3} - ${h.out3} = ${segment3} minutes (night shift: ${segment3 < 0}, corrected: ${correctedSegment3}, total so far: ${totalMinutes})`,
+              );
+            }
+          }
+        } else {
+          // Dacă nu sunt toate cele 3 segmente definite, sumă doar segmentele disponibile
+          if (h.in1 && h.out1) {
+            const segment1 = this.timeDiffMinutes(h.in1, h.out1);
+            const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
+            totalMinutes += correctedSegment1;
+            this.logger.debug(
+              `  Segment 1: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1}, total so far: ${totalMinutes})`,
+            );
+          }
+          if (h.in2 && h.out2) {
+            const segment2 = this.timeDiffMinutes(h.in2, h.out2);
+            const correctedSegment2 = segment2 < 0 ? segment2 + 24 * 60 : segment2;
+            totalMinutes += correctedSegment2;
+            this.logger.debug(
+              `  Segment 2: ${h.in2} - ${h.out2} = ${segment2} minutes (night shift: ${segment2 < 0}, corrected: ${correctedSegment2}, total so far: ${totalMinutes})`,
+            );
+          }
+          if (h.in3 && h.out3) {
+            const segment3 = this.timeDiffMinutes(h.in3, h.out3);
+            const correctedSegment3 = segment3 < 0 ? segment3 + 24 * 60 : segment3;
+            totalMinutes += correctedSegment3;
+            this.logger.debug(
+              `  Segment 3: ${h.in3} - ${h.out3} = ${segment3} minutes (night shift: ${segment3 < 0}, corrected: ${correctedSegment3}, total so far: ${totalMinutes})`,
+            );
+          }
         }
 
+        this.logger.debug(
+          `✅ calculateScheduledMinutes - Found horario: total = ${totalMinutes} minutes (${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m)`,
+        );
         return totalMinutes;
       }
 
@@ -667,6 +769,10 @@ export class FichajeRegularizacionService {
           fechaAnterior.setDate(fechaAnterior.getDate() - 1);
           const fechaAnteriorStr = fechaAnterior.toISOString().split('T')[0];
           
+          this.logger.debug(
+            `🔍 Checking for night shift: Salida on ${fechaStr} at ${horaTime}, checking Entrada on ${fechaAnteriorStr}`,
+          );
+          
           const entradaQuery = `
             SELECT HORA
             FROM Fichaje
@@ -679,11 +785,19 @@ export class FichajeRegularizacionService {
           
           const entradas = await this.prisma.$queryRawUnsafe<any[]>(entradaQuery);
           
+          this.logger.debug(
+            `🔍 Found ${entradas?.length || 0} Entradas on ${fechaAnteriorStr}`,
+          );
+          
           if (entradas && entradas.length > 0) {
             const entradaHoraStr = entradas[0].HORA instanceof Date
               ? entradas[0].HORA.toTimeString().slice(0, 8)
               : entradas[0].HORA;
             const [entradaHours] = entradaHoraStr.split(':').map(Number);
+            
+            this.logger.debug(
+              `🔍 Entrada time: ${entradaHoraStr} (${entradaHours} hours), checking if >= 17`,
+            );
             
             if (entradaHours >= 17) {
               // Este tură nocturnă: Entrada în ziua anterioară după 17:00, Salida în ziua următoare dimineața
@@ -695,15 +809,24 @@ export class FichajeRegularizacionService {
             } else {
               // Nu este tură nocturnă, folosește data Salida-ului
               workday_date = new Date(fechaStr + 'T00:00:00');
+              this.logger.debug(
+                `✅ Not night shift (Entrada at ${entradaHoraStr} < 17:00). Setting workday_date to ${fechaStr}`,
+              );
             }
           } else {
             // Nu există Entrada în ziua anterioară, folosește data Salida-ului
             workday_date = new Date(fechaStr + 'T00:00:00');
+            this.logger.debug(
+              `✅ No Entrada found on ${fechaAnteriorStr}. Setting workday_date to ${fechaStr}`,
+            );
           }
         } else {
           // Salida nu este dimineața, nu este tură nocturnă
         // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
         workday_date = new Date(fechaStr + 'T00:00:00');
+        this.logger.debug(
+          `✅ Salida is not morning (${horaTime}). Setting workday_date to ${fechaStr}`,
+        );
         }
       } else if (workday) {
         // Caz normal: există workday valid și nu există DURACION direct
@@ -728,9 +851,42 @@ export class FichajeRegularizacionService {
       }
 
       // Calculează scheduled_minutes din cuadrante/horario
+      // IMPORTANT: Pentru a evita problemele de timezone, folosim fechaStr direct când nu este tură nocturnă
+      // Verificăm dacă este tură nocturnă comparând workday_date cu fechaStr folosind o metodă care evită timezone
+      let dateForCalculation: Date;
+      let dateStrForCalculation: string;
+      
+      // Extrage data din workday_date folosind metode locale pentru a evita problemele de timezone
+      const workdayYear = workday_date.getFullYear();
+      const workdayMonth = workday_date.getMonth() + 1;
+      const workdayDay = workday_date.getDate();
+      const workdayDateStr = `${workdayYear}-${String(workdayMonth).padStart(2, '0')}-${String(workdayDay).padStart(2, '0')}`;
+      
+      this.logger.debug(
+        `🔍 workday_date local: ${workdayDateStr}, fechaStr: ${fechaStr}, workday_date ISO: ${workday_date.toISOString()}`,
+      );
+      
+      // Dacă workday_date (extras local) este diferit de fechaStr, înseamnă că este tură nocturnă
+      // Pentru zilele normale (nu tură nocturnă), folosim fechaStr direct pentru a evita problemele de timezone
+      if (workdayDateStr !== fechaStr) {
+        // Este tură nocturnă, folosim workday_date (data Entrada-ului)
+        dateStrForCalculation = workdayDateStr;
+        dateForCalculation = new Date(workdayDateStr + 'T12:00:00');
+        this.logger.debug(
+          `🌙 Night shift detected. Using workday_date for calculation: ${dateStrForCalculation}`,
+        );
+      } else {
+        // Nu este tură nocturnă, folosim fechaStr direct pentru a evita problemele de timezone
+        dateStrForCalculation = fechaStr;
+        dateForCalculation = new Date(fechaStr + 'T12:00:00');
+        this.logger.debug(
+          `✅ Normal day. Using fechaStr directly for calculation: ${dateStrForCalculation}`,
+        );
+      }
+      
       const scheduled_minutes = await this.calculateScheduledMinutes(
         employee_codigo,
-        workday_date,
+        dateForCalculation,
       );
 
       const delta_minutes = punched_minutes - scheduled_minutes;
@@ -1397,21 +1553,66 @@ export class FichajeRegularizacionService {
 
     const s = schedule.trim();
 
-    // Format "08:00-17:00"
-    const timeRangeMatch = s.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    // Format cu ture multiple separate prin "/" sau ",": "07:00-15:00 / 15:00-23:00 / 23:00-07:00"
+    // Sau: "07:00-15:00, 15:00-23:00, 23:00-07:00"
+    const separators = /[\/,]/;
+    if (separators.test(s)) {
+      // Split pe separator și calculează fiecare segment
+      const segments = s.split(separators);
+      let totalMinutes = 0;
+      
+      for (const segment of segments) {
+        const trimmed = segment.trim();
+        if (!trimmed) continue;
+        
+        // Format "08:00-17:00" sau "T1:08:00-17:00"
+        const timeRangeMatch = trimmed.match(/(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+        if (timeRangeMatch) {
+          const [, h1, m1, h2, m2] = timeRangeMatch;
+          const start = parseInt(h1) * 60 + parseInt(m1);
+          const end = parseInt(h2) * 60 + parseInt(m2);
+          const segmentMinutes = end > start ? end - start : 24 * 60 - start + end;
+          totalMinutes += segmentMinutes;
+          this.logger.debug(
+            `  Parsed segment "${trimmed}": ${h1}:${m1}-${h2}:${m2} = ${segmentMinutes} minutes`,
+          );
+        }
+      }
+      
+      if (totalMinutes > 0) {
+        this.logger.debug(
+          `✅ parseScheduleToMinutes - Multiple segments total: ${totalMinutes} minutes (${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m)`,
+        );
+        return totalMinutes;
+      }
+    }
+
+    // Format "08:00-17:00" (un singur interval)
+    const timeRangeMatch = s.match(/(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
     if (timeRangeMatch) {
       const [, h1, m1, h2, m2] = timeRangeMatch;
       const start = parseInt(h1) * 60 + parseInt(m1);
       const end = parseInt(h2) * 60 + parseInt(m2);
-      return end > start ? end - start : 24 * 60 - start + end;
+      const minutes = end > start ? end - start : 24 * 60 - start + end;
+      this.logger.debug(
+        `✅ parseScheduleToMinutes - Single segment: ${h1}:${m1}-${h2}:${m2} = ${minutes} minutes`,
+      );
+      return minutes;
     }
 
     // Format "8h" sau "24h (3×8h)"
     const hoursMatch = s.match(/(\d+)h/);
     if (hoursMatch) {
-      return parseInt(hoursMatch[1]) * 60;
+      const minutes = parseInt(hoursMatch[1]) * 60;
+      this.logger.debug(
+        `✅ parseScheduleToMinutes - Hours format: ${hoursMatch[1]}h = ${minutes} minutes`,
+      );
+      return minutes;
     }
 
+    this.logger.warn(
+      `⚠️ parseScheduleToMinutes - Could not parse schedule: "${s}"`,
+    );
     return 0;
   }
 

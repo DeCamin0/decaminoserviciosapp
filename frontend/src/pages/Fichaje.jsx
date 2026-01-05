@@ -422,6 +422,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [bajasMedicas, setBajasMedicas] = useState([]);
   const [isOnBajaMedica, setIsOnBajaMedica] = useState(false);
   const [currentBajaMedica, setCurrentBajaMedica] = useState(null);
+  
+  // State pentru festivos
+  const [festivos, setFestivos] = useState([]);
+  const [isTodayFestivo, setIsTodayFestivo] = useState(false);
 
   // State pentru modal-ul de confirmare fichaje
   const [showFichajeConfirmModal, setShowFichajeConfirmModal] = useState(false);
@@ -464,8 +468,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   // Funcție pentru a verifica dacă utilizatorul este în vacanță, asunto propio sau baja médica
   const checkCurrentAbsenceStatus = useCallback(() => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    // Folosește data locală, nu UTC, pentru a evita problemele de timezone
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`; // YYYY-MM-DD (local timezone)
     
     loggerDebug('Checking absence status for today:', todayStr);
     loggerDebug('Available ausencias:', ausencias);
@@ -554,12 +561,36 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       
       // Verifică interval de date
       if (fechaInicio && fechaFin) {
-        const inicio = new Date(fechaInicio);
-        const fin = new Date(fechaFin);
-        const isInRange = today >= inicio && today <= fin;
+        // Normalizează datele pentru a compara doar partea de dată (YYYY-MM-DD)
+        const inicioDateStr = fechaInicio.split('T')[0]; // Ia doar partea de dată, ignoră ora
+        const finDateStr = fechaFin.split('T')[0];
+        
+        // Dacă absența este pe o singură zi (fechaInicio === fechaFin), verifică doar dacă este exact ziua de astăzi
+        if (inicioDateStr === finDateStr) {
+          const isExactMatch = todayStr === inicioDateStr;
+          loggerDebug('Single day check:', {
+            inicioDateStr,
+            finDateStr,
+            today: todayStr,
+            isExactMatch
+          });
+          return isExactMatch;
+        }
+        
+        // Pentru absențe pe mai multe zile, verifică intervalul
+        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const inicioDateOnly = new Date(inicioDateStr);
+        const finDateOnly = new Date(finDateStr);
+        
+        // Setează ora la 00:00:00 pentru comparație corectă
+        inicioDateOnly.setHours(0, 0, 0, 0);
+        finDateOnly.setHours(23, 59, 59, 999); // Include toată ziua de sfârșit
+        todayDateOnly.setHours(0, 0, 0, 0);
+        
+        const isInRange = todayDateOnly >= inicioDateOnly && todayDateOnly <= finDateOnly;
         loggerDebug('Range check:', {
-          inicio: inicio.toISOString().split('T')[0],
-          fin: fin.toISOString().split('T')[0],
+          inicioDateStr,
+          finDateStr,
           today: todayStr,
           isInRange
         });
@@ -605,6 +636,71 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       success('Utilizatorul nu este în absență pentru ziua curentă');
     }
   }, [ausencias, bajasMedicas, normalizeDateInput]);
+
+  // Funcție pentru a încărca festivos pentru anul curent
+  const fetchFestivos = useCallback(async () => {
+    try {
+      const currentYear = new Date().getFullYear();
+      const url = `${routes.getFestivos}?accion=get&ano=${currentYear}`;
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      loggerDebug('🔍 Fetching festivos from:', url);
+      const res = await fetch(url, { headers });
+      const data = await res.json();
+      const festivosList = Array.isArray(data) ? data : [];
+      loggerDebug('✅ Festivos loaded for year', currentYear, ':', festivosList.length, 'festivos');
+      loggerDebug('📋 Festivos list:', festivosList);
+      setFestivos(festivosList);
+    } catch (error) {
+      logError('❌ Error fetching festivos:', error);
+      setFestivos([]);
+    }
+  }, []);
+  
+  // Verifică dacă ziua curentă este festivo
+  const checkTodayFestivo = useCallback(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+    
+    loggerDebug('🔍 Checking if today is festivo:', todayStr);
+    loggerDebug('🔍 Festivos list:', festivos);
+    loggerDebug('🔍 Festivos count:', festivos.length);
+    
+    const isFestivo = festivos.some(festivo => {
+      const festivoDate = festivo.date || festivo.fecha || festivo.DATE || festivo.FECHA;
+      const observedDate = festivo.observed_date || festivo.fechaObservada || festivo.OBSERVED_DATE || festivo.FECHA_OBSERVADA;
+      
+      loggerDebug('🔍 Checking festivo:', { festivoDate, observedDate, festivo });
+      
+      // Verifică data oficială sau data observată
+      const festivoDateStr = festivoDate ? normalizeDateInput(festivoDate) : null;
+      const observedDateStr = observedDate ? normalizeDateInput(observedDate) : null;
+      
+      const matches = festivoDateStr === todayStr || observedDateStr === todayStr;
+      if (matches) {
+        loggerDebug('✅ Found matching festivo:', { festivoDateStr, observedDateStr, todayStr });
+      }
+      
+      return matches;
+    });
+    
+    loggerDebug('🔍 Final result - isTodayFestivo:', isFestivo, 'for date:', todayStr);
+    setIsTodayFestivo(isFestivo);
+    
+    // Log și informații despre TrabajaFestivos
+    if (isFestivo) {
+      const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
+      loggerDebug('🔍 Today is festivo. TrabajaFestivos:', trabajaFestivos);
+    }
+    
+    return isFestivo;
+  }, [festivos, normalizeDateInput, authUser]);
 
   // Fetch bajas médicas pentru angajatul curent
   useEffect(() => {
@@ -670,6 +766,20 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     loggerDebug('Bajas médicas loaded:', bajasMedicas.length, 'items');
     checkCurrentAbsenceStatus();
   }, [ausencias, bajasMedicas, checkCurrentAbsenceStatus]); // checkCurrentAbsenceStatus este memoizat cu useCallback
+  
+  // Încarcă festivos pentru anul curent
+  useEffect(() => {
+    if (authUser && !authUser?.isDemo) {
+      fetchFestivos();
+    }
+  }, [authUser, fetchFestivos]);
+  
+  // Verifică dacă ziua curentă este festivo când se schimbă festivos
+  useEffect(() => {
+    if (festivos.length > 0) {
+      checkTodayFestivo();
+    }
+  }, [festivos, checkTodayFestivo]);
 
   const fetchMonthlyAlerts = useCallback(async (month, notifyOnResult = false) => {
     if (!isAuthenticated || !authUser) return null;
@@ -2038,6 +2148,20 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   }, [logs, cuadranteAsignado]);
 
   const isEntradaAllowed = useMemo(() => {
+    // Verifică dacă ziua curentă este festivo și utilizatorul nu lucrează în festivos
+    if (isTodayFestivo) {
+      const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
+      const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
+      const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
+      loggerDebug('🔍 isEntradaAllowed - isTodayFestivo:', isTodayFestivo, 'trabajaFestivos:', trabajaFestivos, 'trabajaEnFestivos:', trabajaEnFestivos);
+      if (!trabajaEnFestivos) {
+        loggerDebug('❌ Today is festivo and user does not work on festivos - blocking Entrada');
+        return false; // Nu permite fichar în zile de sărbătoare dacă nu lucrează în festivos
+      } else {
+        loggerDebug('✅ Today is festivo but user works on festivos - allowing Entrada');
+      }
+    }
+    
     // Verifică dacă există orar/cuadrante pentru ziua curentă
     // Dacă nu există orar pentru ziua curentă, NU permite fichar
     if (!horarioAsignado && !cuadranteAsignado) {
@@ -2069,16 +2193,30 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
     // Dacă tura nu este completă și există orar, permite oricând (pentru cazul când uită să ficheze)
     return true;
-  }, [isTimeWithinSchedule, isShiftComplete, horarioAsignado, cuadranteAsignado]);
+  }, [isTimeWithinSchedule, isShiftComplete, horarioAsignado, cuadranteAsignado, isTodayFestivo, authUser]);
 
   const isSalidaAllowed = useMemo(() => {
+    // Verifică dacă ziua curentă este festivo și utilizatorul nu lucrează în festivos
+    if (isTodayFestivo) {
+      const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
+      const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
+      const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
+      loggerDebug('🔍 isSalidaAllowed - isTodayFestivo:', isTodayFestivo, 'trabajaFestivos:', trabajaFestivos, 'trabajaEnFestivos:', trabajaEnFestivos);
+      if (!trabajaEnFestivos) {
+        loggerDebug('❌ Today is festivo and user does not work on festivos - blocking Salida');
+        return false; // Nu permite fichar în zile de sărbătoare dacă nu lucrează în festivos
+      } else {
+        loggerDebug('✅ Today is festivo but user works on festivos - allowing Salida');
+      }
+    }
+    
     // Dacă tura este completă, Salida este dezactivată (tura s-a terminat)
     if (isShiftComplete) {
       return false;
     }
     // Dacă tura nu este completă, verifică programul normal
     return isTimeWithinSchedule('Salida');
-  }, [isTimeWithinSchedule, isShiftComplete]);
+  }, [isTimeWithinSchedule, isShiftComplete, isTodayFestivo, authUser]);
 
   // Memoizează rezultatul calculului pentru mesajul informativ (evită recalculare la fiecare secundă)
   const timeRestrictionMessage = useMemo(() => {
@@ -2518,6 +2656,33 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             </div>
           )}
 
+          {/* Avertisment pentru festivo */}
+          {isTodayFestivo && !isOnVacationOrAbsence && !isOnBajaMedica && (() => {
+            const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
+            const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
+            const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
+            if (!trabajaEnFestivos) {
+              return (
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <span className="text-blue-600 text-lg">🎉</span>
+                    </div>
+                    <div>
+                      <p className="text-blue-800 font-semibold">
+                        Hoy es día festivo
+                      </p>
+                      <p className="text-blue-600 text-sm mt-1">
+                        Según nuestros datos, no trabajas en días festivos, por lo que no necesitas fichar hoy. ¡Disfruta del día!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           {/* Avertisment pentru alte absențe */}
           {isOnVacationOrAbsence && !isOnBajaMedica && (
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
@@ -2636,9 +2801,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
-                  : ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)
-                    ? getTimeRestrictionMessage('Entrada') || 'Entrada no permitida en este momento'
-                    : 'Iniciar jornada'
+                  : isTodayFestivo && (() => {
+                      const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
+                      const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
+                      const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
+                      return !trabajaEnFestivos;
+                    })()
+                    ? 'No puedes fichar durante fiesta'
+                    : ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)
+                      ? getTimeRestrictionMessage('Entrada') || 'Entrada no permitida en este momento'
+                      : 'Iniciar jornada'
               }
             >
               {/* Glow effect */}
@@ -2665,9 +2837,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
-                  : ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)
-                    ? getTimeRestrictionMessage('Salida') || 'Salida no permitida en este momento'
-                    : 'Finalizar jornada'
+                  : isTodayFestivo && (() => {
+                      const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
+                      const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
+                      const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
+                      return !trabajaEnFestivos;
+                    })()
+                    ? 'No puedes fichar durante fiesta'
+                    : ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)
+                      ? getTimeRestrictionMessage('Salida') || 'Salida no permitida en este momento'
+                      : 'Finalizar jornada'
               }
             >
               {/* Glow effect */}
@@ -6351,6 +6530,7 @@ export default function FichajePage() {
           'FECHA BAJA': found['FECHA BAJA'] || found.fecha_baja || found.fechaBaja || found['FECHA_BAJA'] || '',
           'Fecha Antigüedad': found['Fecha Antigüedad'] || found.fecha_antiguedad || found.fechaAntiguedad || '',
           'Antigüedad': found['Antigüedad'] || found.antiguedad || '',
+          'TrabajaFestivos': found['TrabajaFestivos'] || found.trabajaFestivos || found.TRABAJA_FESTIVOS || 'NO',
         };
         loggerDebug('FichajePage mapped user:', mappedUser);
         setUserData(mappedUser);

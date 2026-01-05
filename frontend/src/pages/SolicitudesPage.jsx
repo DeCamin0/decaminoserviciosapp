@@ -2655,7 +2655,10 @@ export default function SolicitudesPage() {
           fecha_solicitud: formatDate(item.fecha_solicitud),
           fecha_inicio: formatDate(item.fecha_inicio || item['fecha inicio'] || item.fecha),
           fecha_fin: formatDate(item.fecha_fin || item['fecha fin']),
-          duracion: `${item.FECHA ? calculateDaysFromCombinedDate(item.FECHA) : calculateDays(item.fecha_inicio || item['fecha inicio'] || item.fecha, item.fecha_fin || item['fecha fin'])} días`,
+          duracion: (() => {
+            const durationInfo = getAusenciaDurationDisplay(item);
+            return durationInfo.text;
+          })(),
           motivo: item.motivo || ''
         };
       });
@@ -2882,7 +2885,10 @@ export default function SolicitudesPage() {
             formatDate(item.fecha_solicitud) || '',
             formatDate(item.fecha_inicio || item['fecha inicio'] || item.fecha) || '',
             formatDate(item.fecha_fin || item['fecha fin']) || '',
-            `${item.FECHA ? calculateDaysFromCombinedDate(item.FECHA) : calculateDays(item.fecha_inicio || item['fecha inicio'] || item.fecha, item.fecha_fin || item['fecha fin'])} días`,
+            (() => {
+              const durationInfo = getAusenciaDurationDisplay(item);
+              return durationInfo.text;
+            })(),
             item.motivo || ''
           ])
         ];
@@ -3861,7 +3867,14 @@ export default function SolicitudesPage() {
                       </div>
                       <div className="bg-gray-50 p-3 rounded-lg">
             <span className="block text-xs font-medium text-gray-600 mb-1">Duración</span>
-                        <p className="text-sm font-semibold text-red-600 break-words">{solicitud.FECHA ? calculateDaysFromCombinedDate(solicitud.FECHA) : calculateDays(solicitud.fecha_inicio || solicitud["fecha inicio"] || solicitud.fecha, solicitud.fecha_fin || solicitud["fecha fin"])} días</p>
+                        {(() => {
+                          const durationInfo = getAusenciaDurationDisplay(solicitud);
+                          return (
+                            <p className={`text-sm font-semibold break-words ${durationInfo.isDayBased ? 'text-red-600' : 'text-purple-600'}`}>
+                              {durationInfo.isDayBased ? `📅 ${durationInfo.text}` : `⏱️ ${durationInfo.text}`}
+                            </p>
+                          );
+                        })()}
                       </div>
                     </div>
                     
