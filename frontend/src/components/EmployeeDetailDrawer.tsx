@@ -1181,14 +1181,16 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                             ? parseFloat((fichadoValue - positiveExcedente).toFixed(2))
                             : 0;
 
-                          // Fallback la orele din contract dacă nu există plan și nu există orar/cuadrante
+                          // Fallback la orele din contract DOAR dacă nu există nici cuadrante nici horario
                           const planValue = parseNumeric(detalleDia.plan);
                           const planFuente = detalleDia.plan_fuente || '';
-                          // Verifică dacă nu există orar/cuadrante (plan_fuente este 'none' sau nu există plan)
-                          const hasNoSchedule = planFuente === 'none' || !planFuente || (planValue === 0 || planValue === undefined);
+                          // Verifică dacă nu există orar/cuadrante (plan_fuente este 'none' sau nu există)
+                          // IMPORTANT: Nu verificăm planValue === 0 pentru că poate fi o zi liberă în orar/cuadrante
+                          const hasNoSchedule = planFuente === 'none' || !planFuente || (planFuente !== 'cuadrante' && planFuente !== 'horario');
                           const contractFallback = hasNoSchedule ? getDailyContractHours(detalleDia.fecha) : 0;
-                          const finalPlan = (planValue !== undefined && planValue > 0) ? planValue : (contractFallback > 0 ? contractFallback : 0);
-                          const finalPlanFuente = (planValue !== undefined && planValue > 0) ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
+                          // Folosim planValue dacă există (chiar dacă este 0), altfel fallback la contract
+                          const finalPlan = (planValue !== undefined && planValue !== null) ? planValue : (contractFallback > 0 ? contractFallback : 0);
+                          const finalPlanFuente = (planValue !== undefined && planValue !== null) ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
                           
                           // Recalculează delta cu plan-ul final (cu fallback)
                           const finalDelta = fichadoValue - finalPlan;

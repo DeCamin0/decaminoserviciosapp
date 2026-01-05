@@ -109,7 +109,7 @@ export const computeMonthlyAlertSummary = (detalleData) => {
 
     // Ignorăm alertele foarte mici (sub 0.1 ore = 6 minute)
     if (Math.abs(candidate) < 0.1) {
-      console.log(`⚠️ [AlertSummary] Ignorăm alerta mică pentru ${fecha}: delta=${candidate} (sub 0.1 ore)`);
+      console.log(`⚠️ [AlertSummary] Ignorăm alerta mică pentru ${fecha}: delta=${candidate} (sub 0.1 ore = 6 minute)`);
       return;
     }
 

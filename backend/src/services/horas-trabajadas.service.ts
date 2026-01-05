@@ -297,6 +297,7 @@ export class HorasTrabajadasService {
           SELECT 
             CAST(a.\`CODIGO\` AS CHAR) AS empleadoId,
             TRIM(a.\`TIPO\`)   AS tipo,
+            a.\`DURACION\` AS duracion,
             TRIM(REPLACE(REPLACE(a.\`FECHA\`,'–','-'),'—','-')) AS fecha_txt
           FROM Ausencias a
         ),
@@ -304,6 +305,7 @@ export class HorasTrabajadasService {
           SELECT
             empleadoId,
             tipo,
+            duracion,
             CASE 
               WHEN fecha_txt LIKE '% %' 
                 THEN TRIM(TRAILING '-' FROM SUBSTRING_INDEX(fecha_txt,' ',1))
@@ -320,8 +322,24 @@ export class HorasTrabajadasService {
           SELECT
             empleadoId,
             tipo,
+            duracion,
             COALESCE(STR_TO_DATE(start_raw, '%Y-%m-%d'), STR_TO_DATE(start_raw, '%Y-%m-%e')) AS d_start,
-            COALESCE(STR_TO_DATE(end_raw,   '%Y-%m-%d'), STR_TO_DATE(end_raw,   '%Y-%m-%e')) AS d_end
+            COALESCE(STR_TO_DATE(end_raw,   '%Y-%m-%d'), STR_TO_DATE(end_raw,   '%Y-%m-%e')) AS d_end,
+            -- Determină dacă ausencia este pe ore sau pe zile
+            -- Tipuri pe ore: Salida Sin Regreso, Salida Centro, Entrada Centro (au DURACION în format TIME)
+            -- Tipuri pe zile: Vacaciones, Asunto Propio, Permiso, Baja, Ausencia Injustificada
+            CASE
+              WHEN UPPER(tipo) = 'VACACIONES' THEN 0
+              WHEN UPPER(tipo) LIKE '%ASUNTO PROPIO%' THEN 0
+              WHEN UPPER(tipo) LIKE '%PERMISO%' THEN 0
+              WHEN UPPER(tipo) LIKE '%BAJA%' THEN 0
+              WHEN UPPER(tipo) LIKE '%AUSENCIA INJUSTIFICADA%' THEN 0
+              WHEN UPPER(tipo) LIKE '%SALIDA SIN REGRESO%' THEN 1
+              WHEN UPPER(tipo) LIKE '%SALIDA CENTRO%' THEN 1
+              WHEN UPPER(tipo) LIKE '%ENTRADA CENTRO%' THEN 1
+              WHEN duracion IS NOT NULL AND TRIM(duracion) != '' AND duracion != '00:00:00' THEN 1
+              ELSE 0
+            END AS es_pe_ore
           FROM aus_parts
         ),
         aus_dia AS (
@@ -329,7 +347,14 @@ export class HorasTrabajadasService {
             f.d AS fecha,
             n.empleadoId,
             MAX(CASE WHEN UPPER(n.tipo)='VACACIONES' THEN 1 ELSE 0 END) AS es_vacaciones,
-            MAX(CASE WHEN UPPER(n.tipo)<> 'VACACIONES' THEN 1 ELSE 0 END) AS es_ausencia
+            -- es_ausencia = 1 doar pentru ausencias pe zile (nu pe ore)
+            MAX(CASE WHEN UPPER(n.tipo)<> 'VACACIONES' AND n.es_pe_ore = 0 THEN 1 ELSE 0 END) AS es_ausencia,
+            -- Sumă orele din ausencias pe ore pentru ziua respectivă
+            -- DURACION este TEXT în MySQL (format "HH:MM:SS"), deci trebuie convertit la TIME
+            SUM(CASE WHEN n.es_pe_ore = 1 THEN 
+              COALESCE(TIME_TO_SEC(STR_TO_DATE(n.duracion, '%H:%i:%s')) / 3600.0, 0)
+              ELSE 0 
+            END) AS horas_ausencia_ore
           FROM fechas f
           JOIN aus_norm n
             ON n.d_start IS NOT NULL 
@@ -364,10 +389,14 @@ export class HorasTrabajadasService {
               WHEN bj.es_baja = 1 THEN 0
               WHEN COALESCE(au.es_vacaciones,0) = 1 THEN 0
               WHEN fd2.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos,0) = 0 THEN 0
-              WHEN COALESCE(au.es_ausencia,0) = 1 THEN 0
-              WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia
-              WHEN hd.horas_horario_dia IS NOT NULL THEN hd.horas_horario_dia
-              ELSE 0
+              WHEN COALESCE(au.es_ausencia,0) = 1 THEN 0 -- Ausencias pe zile setează planul la 0
+              ELSE GREATEST(
+                0, -- Asigură că planul nu scade sub zero
+                COALESCE(
+                  CASE WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia ELSE NULL END,
+                  hd.horas_horario_dia
+                ) - COALESCE(au.horas_ausencia_ore, 0) -- Scade orele din ausencias pe ore
+              )
             END AS horas_plan,
             CASE
               WHEN bj.es_baja = 1 THEN 'baja_medica'
@@ -936,12 +965,14 @@ export class HorasTrabajadasService {
         aus_raw AS (
           SELECT CAST(a.\`CODIGO\` AS CHAR) AS empleadoId,
                  TRIM(a.\`TIPO\`)           AS tipo,
+                 a.\`DURACION\` AS duracion,
                  TRIM(REPLACE(REPLACE(a.\`FECHA\`,'–','-'),'—','-')) AS fecha_txt
           FROM Ausencias a
         ),
         aus_parts AS (
           SELECT empleadoId,
                  tipo,
+                 duracion,
                  CASE 
                    WHEN fecha_txt LIKE '% %' THEN TRIM(TRAILING '-' FROM SUBSTRING_INDEX(fecha_txt,' ',1))
                    ELSE fecha_txt
@@ -953,15 +984,37 @@ export class HorasTrabajadasService {
           FROM aus_raw
         ),
         aus_norm AS (
-          SELECT empleadoId, tipo,
+          SELECT empleadoId, tipo, duracion,
                  COALESCE(STR_TO_DATE(start_raw, '%Y-%m-%d'), STR_TO_DATE(start_raw, '%Y-%m-%e')) AS d_start,
-                 COALESCE(STR_TO_DATE(end_raw,   '%Y-%m-%d'), STR_TO_DATE(end_raw,   '%Y-%m-%e')) AS d_end
+                 COALESCE(STR_TO_DATE(end_raw,   '%Y-%m-%d'), STR_TO_DATE(end_raw,   '%Y-%m-%e')) AS d_end,
+                 -- Determină dacă ausencia este pe ore sau pe zile
+                 -- Tipuri pe ore: Salida Sin Regreso, Salida Centro, Entrada Centro (au DURACION în format TIME)
+                 -- Tipuri pe zile: Vacaciones, Asunto Propio, Permiso, Baja, Ausencia Injustificada
+                 CASE
+                   WHEN UPPER(tipo) = 'VACACIONES' THEN 0
+                   WHEN UPPER(tipo) LIKE '%ASUNTO PROPIO%' THEN 0
+                   WHEN UPPER(tipo) LIKE '%PERMISO%' THEN 0
+                   WHEN UPPER(tipo) LIKE '%BAJA%' THEN 0
+                   WHEN UPPER(tipo) LIKE '%AUSENCIA INJUSTIFICADA%' THEN 0
+                   WHEN UPPER(tipo) LIKE '%SALIDA SIN REGRESO%' THEN 1
+                   WHEN UPPER(tipo) LIKE '%SALIDA CENTRO%' THEN 1
+                   WHEN UPPER(tipo) LIKE '%ENTRADA CENTRO%' THEN 1
+                   WHEN duracion IS NOT NULL AND TRIM(duracion) != '' AND duracion != '00:00:00' THEN 1
+                   ELSE 0
+                 END AS es_pe_ore
           FROM aus_parts
         ),
         aus_dia AS (
           SELECT an.empleadoId, f.d AS fecha,
                  MAX(CASE WHEN UPPER(an.tipo)='VACACIONES' THEN 1 ELSE 0 END) AS es_vacaciones,
-                 MAX(CASE WHEN UPPER(an.tipo)<> 'VACACIONES' THEN 1 ELSE 0 END) AS es_ausencia
+                 -- es_ausencia = 1 doar pentru ausencias pe zile (nu pe ore)
+                 MAX(CASE WHEN UPPER(an.tipo)<> 'VACACIONES' AND an.es_pe_ore = 0 THEN 1 ELSE 0 END) AS es_ausencia,
+                 -- Sumă orele din ausencias pe ore pentru ziua respectivă
+                 -- DURACION este TEXT în MySQL (format "HH:MM:SS"), deci trebuie convertit la TIME
+                 SUM(CASE WHEN an.es_pe_ore = 1 THEN 
+                   COALESCE(TIME_TO_SEC(STR_TO_DATE(an.duracion, '%H:%i:%s')) / 3600.0, 0)
+                   ELSE 0 
+                 END) AS horas_ausencia_ore
           FROM aus_norm an
           JOIN fechas f
             ON an.d_start IS NOT NULL
@@ -986,9 +1039,14 @@ export class HorasTrabajadasService {
               WHEN COALESCE(au.es_vacaciones,0) = 1 THEN 0
               WHEN fd2.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos,0) = 0 THEN 0
               WHEN COALESCE(au.es_ausencia,0) = 1 THEN 0
-              WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia
-              WHEN hd.horas_horario_dia IS NOT NULL THEN hd.horas_horario_dia
-              ELSE 0
+              ELSE GREATEST(
+                COALESCE(
+                  CASE WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia ELSE NULL END,
+                  CASE WHEN hd.horas_horario_dia IS NOT NULL THEN hd.horas_horario_dia ELSE NULL END,
+                  0
+                ) - COALESCE(au.horas_ausencia_ore, 0),
+                0
+              )
             END AS horas_plan,
             CASE
               WHEN bj.es_baja = 1 THEN 'baja_medica'

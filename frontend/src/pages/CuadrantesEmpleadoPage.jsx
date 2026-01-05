@@ -869,35 +869,54 @@ export default function CuadrantesEmpleadoPage() {
   }, [authUser?.email, fetchUserData]);
 
   // Funcție pentru a încărca orarul asignat
+  // Memoizăm și optimizăm pentru a preveni apeluri repetate
+  const centroUsuario = useMemo(() => 
+    userData?.['CENTRO TRABAJO'] || authUser?.['CENTRO TRABAJO'] || authUser?.centroTrabajo || authUser?.['CENTRO'] || authUser?.centro || authUser?.role || '',
+    [userData?.['CENTRO TRABAJO'], authUser?.['CENTRO TRABAJO'], authUser?.centroTrabajo, authUser?.['CENTRO'], authUser?.centro, authUser?.role]
+  );
+  
+  const grupoUsuario = useMemo(() => 
+    userData?.['GRUPO'] || authUser?.['GRUPO'] || authUser?.grupo || '',
+    [userData?.['GRUPO'], authUser?.['GRUPO'], authUser?.grupo]
+  );
+  
+  // Flag pentru a preveni apeluri duplicate
+  const horarioFetchedRef = useRef(false);
+  
   const fetchHorarioAsignado = useCallback(async () => {
+    if (!centroUsuario || !grupoUsuario || horarioFetchedRef.current) return;
+    
+    horarioFetchedRef.current = true;
+    
     try {
       const { listSchedules } = await import('../api/schedules');
       const response = await listSchedules(null);
       
       if (response.success && Array.isArray(response.data)) {
-        const centroUsuario = userData?.['CENTRO TRABAJO'] || authUser?.['CENTRO TRABAJO'] || authUser?.centroTrabajo || authUser?.['CENTRO'] || authUser?.centro || authUser?.role || '';
-        const grupoUsuario = userData?.['GRUPO'] || authUser?.['GRUPO'] || authUser?.grupo || '';
-        
-        
         const horarioMatch = response.data.find(horario => 
           horario.centroNombre === centroUsuario && 
           horario.grupoNombre === grupoUsuario
         );
         
         if (horarioMatch) {
-          setHorarioAsignado(horarioMatch);
+          // Verificăm dacă horarioAsignado s-a schimbat înainte de a-l seta
+          setHorarioAsignado(prev => {
+            if (prev?.id === horarioMatch.id) return prev; // Nu schimbăm dacă este același
+            return horarioMatch;
+          });
         }
       }
     } catch (error) {
       // Error loading assigned schedule
+      horarioFetchedRef.current = false; // Resetăm flag-ul în caz de eroare
     }
-  }, [authUser, userData]);
+  }, [centroUsuario, grupoUsuario]);
 
   useEffect(() => {
-    if (authUser && !authUser.isDemo) {
+    if (authUser && !authUser.isDemo && centroUsuario && grupoUsuario && !horarioFetchedRef.current) {
       fetchHorarioAsignado();
     }
-  }, [authUser, fetchHorarioAsignado]);
+  }, [authUser?.isDemo, centroUsuario, grupoUsuario, fetchHorarioAsignado]);
 
   // Fetch fichajes pentru angajatul curent
 
@@ -1720,11 +1739,11 @@ const getFirstValue = (record, keys) => {
 
 
   // Generez celulele pentru calendar
-
-  // Recalculare calendarCells
-  const calendarCells = [];
-
-  if (isLunaValida) {
+  // Folosim useMemo pentru a preveni recalculări inutile și re-render-uri în cascadă
+  const calendarCells = useMemo(() => {
+    const cells = [];
+    
+    if (!isLunaValida) return cells;
 
     const [year, month] = selectedLunaNorm.split('-').map(Number);
 
@@ -1744,7 +1763,7 @@ const getFirstValue = (record, keys) => {
 
     for (let i = 0; i < startDay; i++) {
 
-      calendarCells.push(null);
+      cells.push(null);
 
     }
 
@@ -2028,134 +2047,9 @@ const getFirstValue = (record, keys) => {
 
       
 
-      // Verific dacă există alertă pentru această zi
+      // Logica pentru alertaFichaj și durataMunca s-a mutat în CalendarDayCell
 
-      let alertaFichaj = false;
-
-      let durataMunca = '';
-
-      
-
-      if (tip === 'T1') {
-
-        const entradas = fichajesZi.filter(f => f["TIPO"] === 'Entrada');
-
-        const salidas = fichajesZi.filter(f => f["TIPO"] === 'Salida');
-
-        
-        // Verifică dacă ziua este trecută înainte de a afișa avertizarea
-        const currentDate = new Date();
-        const currentYear = currentDate.getFullYear();
-        const currentMonth = currentDate.getMonth() + 1;
-        const currentDay = currentDate.getDate();
-        
-        const isPastDay = year < currentYear || 
-                         (year === currentYear && month < currentMonth) || 
-                         (year === currentYear && month === currentMonth && day < currentDay);
-
-        // Verifică dacă ziua are regularizare confirmată (dataZi este deja definită mai sus)
-        const hasRegularizacion = regularizacionesConfirmadas.get(dataZi) === true;
-
-        // IMPORTANT: Nu setăm alertaFichaj dacă fichajes sau regularizările sunt încă în proces de încărcare
-        if ((entradas.length === 0 || salidas.length === 0) && isPastDay && !hasRegularizacion && !loadingFichajes && !loadingRegularizaciones) {
-          alertaFichaj = true;
-
-        } else {
-
-          // Verifică dacă există durată regularizată (effective_minutes sau effective_duration)
-          let durataRegularizata = null;
-          
-          // Caut primul fichaje de tip Salida pentru această zi care are effective_minutes sau effective_duration
-          const salidaConRegularizacion = fichajesZi.find(f => 
-            f["TIPO"] === 'Salida' && 
-            ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
-             (f["effective_duration"] && f["effective_duration"].trim() !== ''))
-          );
-
-          if (salidaConRegularizacion) {
-            // Prioritate: effective_minutes (minute), apoi effective_duration (HH:MM:SS)
-            if (salidaConRegularizacion["effective_minutes"] !== null && 
-                salidaConRegularizacion["effective_minutes"] !== undefined) {
-              const effectiveMinutes = Number(salidaConRegularizacion["effective_minutes"]);
-              if (!isNaN(effectiveMinutes) && effectiveMinutes > 0) {
-                const ore = Math.floor(effectiveMinutes / 60);
-                const minute = effectiveMinutes % 60;
-                durataRegularizata = `${ore}h ${minute}m`;
-              }
-            } else if (salidaConRegularizacion["effective_duration"] && 
-                      salidaConRegularizacion["effective_duration"].trim() !== '') {
-              // Parsează effective_duration (format: HH:MM:SS sau HH:MM)
-              const durationStr = salidaConRegularizacion["effective_duration"].trim();
-              const parts = durationStr.split(':').map(Number);
-              if (parts.length >= 2) {
-                const ore = parts[0] || 0;
-                const minute = parts[1] || 0;
-                if (ore > 0 || minute > 0) {
-                  durataRegularizata = `${ore}h ${minute}m`;
-                }
-              }
-            }
-          }
-
-          if (durataRegularizata) {
-            // Folosește durata regularizată
-            durataMunca = durataRegularizata;
-          } else {
-            // Calculează durata manual din Entrada/Salida (fallback)
-            const entradasSorted = entradas.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-
-            const salidasSorted = salidas.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
-
-            
-
-            const perioade = Math.min(entradas.length, salidas.length);
-
-            let durataTotala = 0;
-
-            
-
-            for (let j = 0; j < perioade; j++) {
-
-              const entrada = entradasSorted[j]["HORA"];
-
-              const salida = salidasSorted[j]["HORA"];
-
-              
-
-              const [h1, m1] = entrada.split(':').map(Number);
-
-              const [h2, m2] = salida.split(':').map(Number);
-
-              
-
-              let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
-
-              if (durataMinute < 0) durataMinute += 24 * 60;
-
-              
-
-              durataTotala += durataMinute;
-
-            }
-
-            
-
-            if (durataTotala > 0) {
-
-              const ore = Math.floor(durataTotala / 60);
-
-              const minute = durataTotala % 60;
-
-              durataMunca = `${ore}h ${minute}m`;
-
-            }
-          }
-
-        }
-
-      }
-
-      calendarCells.push({
+      cells.push({
 
         day,
 
@@ -2163,9 +2057,9 @@ const getFirstValue = (record, keys) => {
 
         orar,
 
-        alertaFichaj,
-
-        durataMunca,
+        // alertaFichaj și durataMunca se calculează în CalendarDayCell
+        alertaFichaj: false, // placeholder, se calculează în componentă
+        durataMunca: '', // placeholder, se calculează în componentă
 
         motivoAusencia,
 
@@ -2178,8 +2072,20 @@ const getFirstValue = (record, keys) => {
       day++;
 
     }
-
-  }
+    
+    return cells;
+  }, [
+    isLunaValida,
+    selectedLunaNorm,
+    cuadrant,
+    fichajes,
+    regularizacionesConfirmadas,
+    loadingFichajes,
+    loadingRegularizaciones,
+    ausencias,
+    bajasCalendar,
+    horarioAsignado
+  ]);
 
 
 
@@ -2205,8 +2111,7 @@ const getFirstValue = (record, keys) => {
       return fecha.startsWith(fechaPrefix);
     });
 
-    // Calculez doar orele reglementate (effective_minutes sau effective_duration)
-    // Doar pentru fichajes de tip Salida care au regularizare
+    // Calculează orele: dacă există regularizare, folosește regularizarea, altfel folosește DURACION
     const parseHHMMSS = (s) => {
       if (!s || typeof s !== 'string') return 0;
       const parts = s.split(':').map(Number);
@@ -2221,22 +2126,32 @@ const getFirstValue = (record, keys) => {
       return 0;
     };
 
-    // Suma orele reglementate din effective_minutes sau effective_duration
+    // Pentru fiecare Salida, folosește regularizarea dacă există, altfel DURACION
+    // Pentru turele nocturne, regularizarea este pe workday_date (ziua de început)
+    // Dar DURACION este în Salida de pe ziua de sfârșit, deci trebuie să procesăm corect
     fichajesLunaSelectata
-      .filter(f => f["TIPO"] === 'Salida' && 
-                   ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
-                    (f["effective_duration"] && f["effective_duration"].trim() !== '')))
+      .filter(f => f["TIPO"] === 'Salida')
       .forEach(f => {
-        // Prioritate: effective_minutes (minute), apoi effective_duration (HH:MM:SS)
+        // Prioritate 1: effective_minutes (regularizare confirmată)
         if (f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) {
           const effectiveMinutes = Number(f["effective_minutes"]);
           if (!isNaN(effectiveMinutes) && effectiveMinutes > 0) {
             totalMinute += effectiveMinutes;
             totalSeconds += effectiveMinutes * 60;
           }
-        } else if (f["effective_duration"] && f["effective_duration"].trim() !== '') {
-          // Parsează effective_duration (format: HH:MM:SS sau HH:MM)
+        } 
+        // Prioritate 2: effective_duration (regularizare confirmată)
+        else if (f["effective_duration"] && f["effective_duration"].trim() !== '') {
           const durationStr = f["effective_duration"].trim();
+          const secFromDuration = parseHHMMSS(durationStr);
+          if (secFromDuration > 0) {
+            totalSeconds += secFromDuration;
+            totalMinute += Math.floor(secFromDuration / 60);
+          }
+        }
+        // Prioritate 3: DURACION (când nu există regularizare)
+        else if (f["DURACION"] && f["DURACION"].trim() !== '' && f["DURACION"] !== '00:00:00') {
+          const durationStr = f["DURACION"].trim();
           const secFromDuration = parseHHMMSS(durationStr);
           if (secFromDuration > 0) {
             totalSeconds += secFromDuration;
@@ -2295,9 +2210,50 @@ const getFirstValue = (record, keys) => {
 
 
 
-  // Funcții pentru rezolvarea alertelor
+  // Funcție pentru obținerea locației automate folosind contextul global
+  // Mutată aici pentru a fi disponibilă în handleResolveAlert
+  const handleGetCurrentLocation = useCallback(async () => {
+    try {
+      // Folosim contextul global pentru locație
+      const coords = await getCurrentLocation();
+      const { latitude, longitude } = coords;
 
-  const handleResolveAlert = (cell) => {
+      // Obține adresa folosind funcția din context
+      const address = await getAddressFromCoords(latitude, longitude);
+
+      if (address) {
+        setFichajeAddress(address);
+        alert('¡La ubicación se ha obtenido automáticamente!');
+      } else {
+        // Fallback la coordonatele GPS
+        setFichajeAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        alert('No se pudo obtener la dirección para la ubicación actual.');
+      }
+
+    } catch (error) {
+
+      if (error.code === 1) {
+
+        alert('El acceso a la ubicación fue denegado. Por favor permite el acceso en la configuración del navegador.');
+
+      } else if (error.code === 2) {
+
+        alert('No se pudo obtener la ubicación. Por favor verifica tu conexión a internet.');
+
+      } else {
+
+        alert('Error al obtener la ubicación. Por favor intenta de nuevo.');
+
+      }
+
+    }
+
+  }, [getCurrentLocation, getAddressFromCoords]);
+
+  // Funcții pentru rezolvarea alertelor
+  // Memoizăm pentru a preveni re-render-uri inutile ale CalendarDayCell
+
+  const handleResolveAlert = useCallback((cell) => {
 
     if (cell.alertaFichaj) {
 
@@ -2363,12 +2319,12 @@ const getFirstValue = (record, keys) => {
 
     }
 
-  };
+  }, [selectedLunaNorm, handleGetCurrentLocation]);
 
 
 
   // Funcție pentru "Indicar motivo" (zile trecute fără fichajes)
-  const handleIndicarMotivo = (cell) => {
+  const handleIndicarMotivo = useCallback((cell) => {
     const [year, month] = selectedLunaNorm.split('-').map(Number);
     const dataZi = formatDateYMD(year, month, cell.day);
     
@@ -2381,7 +2337,7 @@ const getFirstValue = (record, keys) => {
       employee_codigo: empleadoCodigo || undefined
     });
     setShowNoPunchModal(true);
-  };
+  }, [selectedLunaNorm, empleadoCodigo]);
 
 
 
@@ -2498,52 +2454,6 @@ const getFirstValue = (record, keys) => {
 
   };
 
-
-
-  // Funcție pentru obținerea locației automate folosind contextul global
-
-  const handleGetCurrentLocation = async () => {
-
-    try {
-      // Folosim contextul global pentru locație
-      const coords = await getCurrentLocation();
-      const { latitude, longitude } = coords;
-
-      // Obține adresa folosind funcția din context
-      const address = await getAddressFromCoords(latitude, longitude);
-
-      if (address) {
-        setFichajeAddress(address);
-        alert('¡La ubicación se ha obtenido automáticamente!');
-      } else {
-        // Fallback la coordonatele GPS
-        setFichajeAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        alert('No se pudo obtener la dirección para la ubicación actual.');
-      }
-
-    } catch (error) {
-
-      if (error.code === 1) {
-
-        alert('El acceso a la ubicación fue denegado. Por favor permite el acceso en la configuración del navegador.');
-
-      } else if (error.code === 2) {
-
-        alert('La ubicación no pudo ser determinada. Por favor inténtalo de nuevo.');
-
-      } else if (error.code === 3) {
-
-        alert('Tiempo de espera agotado al obtener la ubicación. Por favor inténtalo de nuevo.');
-
-      } else {
-
-        alert('Error al obtener la ubicación. Por favor inténtalo de nuevo.');
-
-      }
-
-    }
-
-  };
 
 
 
@@ -3703,6 +3613,10 @@ const getFirstValue = (record, keys) => {
                     regularizacionesConfirmadas={regularizacionesConfirmadas}
 
                     loadingFichajes={loadingFichajes}
+
+                    loadingRegularizaciones={loadingRegularizaciones}
+
+                    fichajes={fichajes}
 
                   />
 

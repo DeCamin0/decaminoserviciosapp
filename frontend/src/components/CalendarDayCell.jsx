@@ -1,16 +1,19 @@
+import { memo, useMemo } from 'react';
 
 /**
  * CalendarDayCell - Componentă pentru o zi din calendar
  * Extrasă din CuadrantesEmpleadoPage pentru a reduce AST și rezolva problema OOM la ESLint
  */
-const CalendarDayCell = ({ 
+const CalendarDayCell = memo(({ 
   cell, 
   selectedLunaNorm, 
   ziSelectata, 
   handleResolveAlert, 
   handleIndicarMotivo,
   regularizacionesConfirmadas,
-  loadingFichajes = false
+  loadingFichajes = false,
+  loadingRegularizaciones = false,
+  fichajes = []
 }) => {
   // Helper pentru formatare data
   const pad2 = (n) => n < 10 ? '0' + n : n;
@@ -20,11 +23,235 @@ const CalendarDayCell = ({
   const [selectedYear, selectedMonth] = selectedLunaNorm.split('-').map(Number);
   const dataZi = formatDateYMD(selectedYear, selectedMonth, cell.day);
   
-  // Verifică dacă ziua are regularizare confirmată
-  const hasRegularizacion = regularizacionesConfirmadas?.get(dataZi) === true;
+  // Extragem datele relevante pentru ziua specifică înainte de useMemo
+  const fichajesZi = useMemo(() => {
+    return Array.isArray(fichajes) ? fichajes.filter(f => 
+      (f["FECHA"] || '').startsWith(dataZi)
+    ) : [];
+  }, [fichajes, dataZi]);
   
-  // Dacă are regularizare confirmată sau fichajes sunt încă în proces de încărcare, ignorăm alertaFichaj
-  const alertaFichajReal = (hasRegularizacion || loadingFichajes) ? false : cell.alertaFichaj;
+  // Pentru turele nocturne, extragem și ziua următoare
+  const salidasZiUrmatoare = useMemo(() => {
+    if ((cell.tip !== 'T2' && cell.tip !== 'T3') || !fichajes) return [];
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    const dataZiUrmatoare = cell.day < daysInMonth 
+      ? formatDateYMD(selectedYear, selectedMonth, cell.day + 1)
+      : formatDateYMD(selectedYear, selectedMonth + 1, 1);
+    return Array.isArray(fichajes) ? fichajes.filter(f => 
+      f["TIPO"] === 'Salida' && (f["FECHA"] || '').startsWith(dataZiUrmatoare)
+    ) : [];
+  }, [fichajes, cell.tip, cell.day, selectedYear, selectedMonth, dataZi]);
+  
+  // CALCULUL ALERTAFICHAJ ȘI DURATAMUNCA ÎN COMPONENTĂ - cu useMemo pentru optimizare
+  const { alertaFichaj, durataMunca, hasRegularizacion } = useMemo(() => {
+    let alertaFichaj = false;
+    let durataMunca = '';
+    
+    // Verifică dacă ziua are regularizare confirmată
+    const hasRegularizacion = regularizacionesConfirmadas?.get(dataZi) === true;
+    
+    // Verifică pentru toate tipurile de ture (T1, T2, T3)
+    if (cell.tip !== 'T1' && cell.tip !== 'T2' && cell.tip !== 'T3') {
+      return { alertaFichaj, durataMunca, hasRegularizacion };
+    }
+    
+    const entradas = fichajesZi.filter(f => f["TIPO"] === 'Entrada');
+    const salidas = fichajesZi.filter(f => f["TIPO"] === 'Salida');
+    
+    // Verifică dacă ziua este trecută
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentDay = currentDate.getDate();
+    
+    const isPastDay = selectedYear < currentYear || 
+                     (selectedYear === currentYear && selectedMonth < currentMonth) || 
+                     (selectedYear === currentYear && selectedMonth === currentMonth && cell.day < currentDay);
+    
+    // Pentru turele nocturne, regularizarea este pe workday_date (ziua de început)
+    // Verificăm regularizarea pe ziua curentă și pe ziua anterioară (pentru turele nocturne)
+    let hasRegularizacionAnterioara = false;
+    if (cell.day > 1) {
+      const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth, cell.day - 1);
+      hasRegularizacionAnterioara = regularizacionesConfirmadas?.get(dataZiAnterioara) === true;
+    } else if (selectedMonth > 1) {
+      // Dacă suntem pe prima zi a lunii, verificăm ultima zi a lunii anterioare
+      const lastDayPrevMonth = new Date(selectedYear, selectedMonth - 1, 0).getDate();
+      const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth - 1, lastDayPrevMonth);
+      hasRegularizacionAnterioara = regularizacionesConfirmadas?.get(dataZiAnterioara) === true;
+    }
+    
+    const hasRegularizacionFinal = hasRegularizacion || hasRegularizacionAnterioara;
+    
+    // Pentru turele nocturne (T2, T3), verificăm dacă există DURACION în ziua următoare
+    let hasDuracionZiUrmatoare = false;
+    if ((cell.tip === 'T2' || cell.tip === 'T3') && salidasZiUrmatoare.length > 0) {
+      hasDuracionZiUrmatoare = salidasZiUrmatoare.some(f => 
+        f["DURACION"] && 
+        f["DURACION"].trim() !== '' && 
+        f["DURACION"] !== '00:00:00'
+      );
+    }
+    
+    // Setăm alertaFichaj dacă este necesar
+    // IMPORTANT: Afișăm "sin fichar" IMEDIAT dacă nu există regularizare în Map
+    // Dacă regularizările se încarcă mai târziu:
+    //   - Dacă există regularizare → hasRegularizacionFinal devine true, alertaFichaj devine false
+    //   - Dacă NU există regularizare → hasRegularizacionFinal rămâne false, alertaFichaj rămâne true
+    if (isPastDay && 
+        !hasDuracionZiUrmatoare &&
+        (entradas.length === 0 || (salidas.length === 0 && !hasDuracionZiUrmatoare))) {
+      
+      // Dacă NU există regularizare în Map → setăm alertaFichaj IMEDIAT
+      // Nu așteptăm loadingRegularizaciones să devină false
+      if (!hasRegularizacionFinal) {
+        alertaFichaj = true;
+      }
+      // Dacă hasRegularizacionFinal este true (există regularizare în Map),
+      // alertaFichaj rămâne false și durata se calculează din regularizare
+    }
+    
+    // Calculăm durata ÎNTOTDEAUNA, indiferent de alertaFichaj
+    // Verifică dacă există durată regularizată (effective_minutes sau effective_duration)
+    let durataRegularizata = null;
+    
+    // Pentru turele nocturne (T2, T3), regularizarea poate fi în Salida de pe ziua următoare
+    let salidaConRegularizacion = null;
+    
+    if (cell.tip === 'T2' || cell.tip === 'T3') {
+      // Căutăm regularizarea în Salida de pe ziua următoare (pentru turele nocturne)
+      salidaConRegularizacion = salidasZiUrmatoare.find(f => 
+        f["TIPO"] === 'Salida' && 
+        ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
+         (f["effective_duration"] && f["effective_duration"].trim() !== ''))
+      );
+    }
+    
+    // Dacă nu am găsit în ziua următoare (sau e T1), căutăm în ziua curentă
+    if (!salidaConRegularizacion) {
+      salidaConRegularizacion = fichajesZi.find(f => 
+        f["TIPO"] === 'Salida' && 
+        ((f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) ||
+         (f["effective_duration"] && f["effective_duration"].trim() !== ''))
+      );
+    }
+    
+    if (salidaConRegularizacion) {
+      // Prioritate: effective_minutes (minute), apoi effective_duration (HH:MM:SS)
+      if (salidaConRegularizacion["effective_minutes"] !== null && 
+          salidaConRegularizacion["effective_minutes"] !== undefined) {
+        const effectiveMinutes = Number(salidaConRegularizacion["effective_minutes"]);
+        if (!isNaN(effectiveMinutes) && effectiveMinutes > 0) {
+          const ore = Math.floor(effectiveMinutes / 60);
+          const minute = effectiveMinutes % 60;
+          durataRegularizata = `${ore}h ${minute}m`;
+        }
+      } else if (salidaConRegularizacion["effective_duration"] && 
+                salidaConRegularizacion["effective_duration"].trim() !== '') {
+        // Parsează effective_duration (format: HH:MM:SS sau HH:MM)
+        const durationStr = salidaConRegularizacion["effective_duration"].trim();
+        const parts = durationStr.split(':').map(Number);
+        if (parts.length >= 2) {
+          const ore = parts[0] || 0;
+          const minute = parts[1] || 0;
+          if (ore > 0 || minute > 0) {
+            durataRegularizata = `${ore}h ${minute}m`;
+          }
+        }
+      }
+    }
+    
+    if (durataRegularizata) {
+      // Folosește durata regularizată
+      durataMunca = durataRegularizata;
+    } else {
+      // Când nu există regularizare, folosim DURACION din Salida (dacă există)
+      // Pentru turele nocturne (T2, T3), DURACION este în Salida de pe ziua următoare
+      let salidaConDuracion = null;
+      
+      if (cell.tip === 'T2' || cell.tip === 'T3') {
+        // Pentru turele nocturne, căutăm DURACION în Salida de pe ziua următoare
+        salidaConDuracion = salidasZiUrmatoare.find(f => 
+          f["DURACION"] && 
+          f["DURACION"].trim() !== '' && 
+          f["DURACION"] !== '00:00:00'
+        );
+      }
+      
+      // Dacă nu am găsit în ziua următoare (sau e T1), căutăm în ziua curentă
+      if (!salidaConDuracion) {
+        salidaConDuracion = salidas.find(f => 
+          f["DURACION"] && 
+          f["DURACION"].trim() !== '' && 
+          f["DURACION"] !== '00:00:00'
+        );
+      }
+      
+      if (salidaConDuracion && salidaConDuracion["DURACION"]) {
+        // Parsează DURACION (format: HH:MM:SS sau HH:MM)
+        const durationStr = salidaConDuracion["DURACION"].trim();
+        const parts = durationStr.split(':').map(Number);
+        if (parts.length >= 2) {
+          const ore = parts[0] || 0;
+          const minute = parts[1] || 0;
+          if (ore > 0 || minute > 0) {
+            durataMunca = `${ore}h ${minute}m`;
+          }
+        }
+      } else {
+        // Fallback: Calculează durata manual din Entrada/Salida (doar dacă nu există DURACION)
+        // Pentru turele nocturne (T2, T3), combinăm Entrada de pe ziua curentă cu Salida de pe ziua următoare
+        let entradasToUse = [...entradas];
+        let salidasToUse = [...salidas];
+        
+        // Pentru turele nocturne, adăugăm Salida de pe ziua următoare
+        if ((cell.tip === 'T2' || cell.tip === 'T3') && salidasZiUrmatoare.length > 0) {
+          salidasToUse = [...salidas, ...salidasZiUrmatoare];
+        }
+        
+        const entradasSorted = entradasToUse.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
+        const salidasSorted = salidasToUse.sort((a, b) => a["HORA"].localeCompare(b["HORA"]));
+        
+        const perioade = Math.min(entradasSorted.length, salidasSorted.length);
+        
+        let durataTotala = 0;
+        
+        for (let j = 0; j < perioade; j++) {
+          const entrada = entradasSorted[j]["HORA"];
+          const salida = salidasSorted[j]["HORA"];
+          
+          const [h1, m1] = entrada.split(':').map(Number);
+          const [h2, m2] = salida.split(':').map(Number);
+          
+          let durataMinute = (h2 * 60 + m2) - (h1 * 60 + m1);
+          // Pentru turele nocturne, durata poate fi negativă (ex: 19:30 -> 07:30 = -12h = +12h)
+          if (durataMinute < 0) durataMinute += 24 * 60;
+          
+          durataTotala += durataMinute;
+        }
+        
+        if (durataTotala > 0) {
+          const ore = Math.floor(durataTotala / 60);
+          const minute = durataTotala % 60;
+          durataMunca = `${ore}h ${minute}m`;
+        }
+      }
+    }
+    
+    return { alertaFichaj, durataMunca, hasRegularizacion };
+  }, [
+    cell.tip,
+    cell.day,
+    selectedYear,
+    selectedMonth,
+    fichajesZi,
+    salidasZiUrmatoare,
+    regularizacionesConfirmadas?.get(dataZi),
+    loadingRegularizaciones
+  ]);
+  
+  // Dacă are regularizare confirmată, ignorăm alertaFichaj
+  const alertaFichajReal = hasRegularizacion ? false : alertaFichaj;
 
   if (cell.day === 3) {
     console.log('🎨 [CELL DAY 3] Render CalendarDayCell:', {
@@ -104,7 +331,8 @@ const CalendarDayCell = ({
     textColor = '#92400e';
     shadowColor = 'rgba(251, 191, 36, 0.25)';
     glowColor = '#fbbf24';
-  } else if (cell.tip === 'T1') {
+  } else if (cell.tip === 'T1' || cell.tip === 'T2' || cell.tip === 'T3') {
+    // Toate tipurile de ture (T1, T2, T3) au culoare verde pentru zile lucrătoare
     bgGradient = 'linear-gradient(135deg, rgba(134, 239, 172, 0.2) 0%, rgba(74, 222, 128, 0.2) 100%)';
     borderColor = 'rgba(34, 197, 94, 0.4)';
     textColor = '#15803d';
@@ -250,7 +478,7 @@ const CalendarDayCell = ({
         )}
         
         {/* Duración */}
-        {cell.durataMunca && (
+        {durataMunca && (
           <div 
             className="text-xs font-bold rounded px-2 py-1"
             style={{
@@ -258,7 +486,7 @@ const CalendarDayCell = ({
               color: textColor
             }}
           >
-            ⏱️ {cell.durataMunca}
+            ⏱️ {durataMunca}
           </div>
         )}
         
@@ -281,6 +509,52 @@ const CalendarDayCell = ({
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparator pentru a preveni re-render-uri inutile
+  if (prevProps.cell?.day !== nextProps.cell?.day) return false;
+  if (prevProps.cell?.tip !== nextProps.cell?.tip) return false;
+  if (prevProps.cell?.orar !== nextProps.cell?.orar) return false;
+  if (prevProps.selectedLunaNorm !== nextProps.selectedLunaNorm) return false;
+  if (prevProps.ziSelectata?.day !== nextProps.ziSelectata?.day) return false;
+  if (prevProps.loadingFichajes !== nextProps.loadingFichajes) return false;
+  if (prevProps.loadingRegularizaciones !== nextProps.loadingRegularizaciones) return false;
+  
+  // Comparăm regularizarea pentru ziua specifică
+  const [year, month] = nextProps.selectedLunaNorm.split('-').map(Number);
+  const pad2 = (n) => n < 10 ? '0' + n : n;
+  const dataZi = `${year}-${pad2(month)}-${pad2(nextProps.cell?.day)}`;
+  const prevHasReg = prevProps.regularizacionesConfirmadas?.get(dataZi) === true;
+  const nextHasReg = nextProps.regularizacionesConfirmadas?.get(dataZi) === true;
+  if (prevHasReg !== nextHasReg) return false;
+  
+  // Comparăm fichajes pentru ziua specifică (doar dacă s-au schimbat)
+  const prevFichajesZi = Array.isArray(prevProps.fichajes) ? prevProps.fichajes.filter(f => 
+    (f["FECHA"] || '').startsWith(dataZi)
+  ) : [];
+  const nextFichajesZi = Array.isArray(nextProps.fichajes) ? nextProps.fichajes.filter(f => 
+    (f["FECHA"] || '').startsWith(dataZi)
+  ) : [];
+  
+  // Comparăm numărul de fichajes și conținutul lor (simplificat - comparăm doar length și DURACION/effective_minutes)
+  if (prevFichajesZi.length !== nextFichajesZi.length) return false;
+  
+  // Comparăm DURACION și effective_minutes pentru Salida
+  const prevSalidas = prevFichajesZi.filter(f => f["TIPO"] === 'Salida');
+  const nextSalidas = nextFichajesZi.filter(f => f["TIPO"] === 'Salida');
+  if (prevSalidas.length !== nextSalidas.length) return false;
+  
+  // Comparăm DURACION și effective_minutes
+  for (let i = 0; i < prevSalidas.length; i++) {
+    const prevSalida = prevSalidas[i];
+    const nextSalida = nextSalidas[i];
+    if (prevSalida["DURACION"] !== nextSalida["DURACION"]) return false;
+    if (prevSalida["effective_minutes"] !== nextSalida["effective_minutes"]) return false;
+    if (prevSalida["effective_duration"] !== nextSalida["effective_duration"]) return false;
+  }
+  
+  return true; // Props-urile sunt identice, nu re-renderizăm
+});
+
+CalendarDayCell.displayName = 'CalendarDayCell';
 
 export default CalendarDayCell;

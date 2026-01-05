@@ -391,13 +391,16 @@ const HorasTrabajadasPDF = ({
               <Text style={[styles.tableHeaderCell, { flex: 0.9 }]}>Estado</Text>
             </View>
             {detalle.detaliiZilnice.map((detalleDia, index) => {
-              // Fallback la orele din contract dacă nu există plan și nu există orar/cuadrante
+              // Fallback la orele din contract DOAR dacă nu există nici cuadrante nici horario
               const planValue = detalleDia.plan ?? 0;
               const planFuente = detalleDia.plan_fuente || '';
-              const hasNoSchedule = planFuente === 'none' || !planFuente || planValue === 0;
+              // Verifică dacă nu există orar/cuadrante (plan_fuente este 'none' sau nu există)
+              // IMPORTANT: Nu verificăm planValue === 0 pentru că poate fi o zi liberă în orar/cuadrante
+              const hasNoSchedule = planFuente === 'none' || !planFuente || (planFuente !== 'cuadrante' && planFuente !== 'horario');
               const contractFallback = hasNoSchedule ? getDailyContractHours(detalleDia.fecha, detalle) : 0;
-              const finalPlan = planValue > 0 ? planValue : (contractFallback > 0 ? contractFallback : 0);
-              const finalPlanFuente = planValue > 0 ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
+              // Folosim planValue dacă există (chiar dacă este 0), altfel fallback la contract
+              const finalPlan = (planValue !== undefined && planValue !== null) ? planValue : (contractFallback > 0 ? contractFallback : 0);
+              const finalPlanFuente = (planValue !== undefined && planValue !== null) ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
               
               const fichado = detalleDia.fichado || 0;
               const finalDelta = fichado - finalPlan;

@@ -105,6 +105,11 @@ const calculateAlertCounts = (empleado: ResumenEmpleado): AlertCounts => {
       return;
     }
 
+    // Ignorăm alertele foarte mici (sub 0.1 ore = 6 minute)
+    if (Math.abs(excedenteRaw) < 0.1) {
+      return;
+    }
+
     if (excedenteRaw > 0) {
       positivos += 1;
     } else {
