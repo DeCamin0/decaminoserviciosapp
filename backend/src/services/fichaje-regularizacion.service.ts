@@ -462,6 +462,11 @@ export class FichajeRegularizacionService {
         let totalMinutes = 0;
         let segmentsFound = 0;
 
+        // Log datele primite pentru debugging
+        this.logger.debug(
+          `🔍 calculateScheduledMinutes - Raw horario data: in1=${h.in1} (type: ${typeof h.in1}), out1=${h.out1} (type: ${typeof h.out1}), in2=${h.in2} (type: ${typeof h.in2}), out2=${h.out2} (type: ${typeof h.out2}), in3=${h.in3} (type: ${typeof h.in3}), out3=${h.out3} (type: ${typeof h.out3})`,
+        );
+
         // Verifică câte segmente sunt definite (nu NULL)
         if (h.in1 && h.out1) segmentsFound++;
         if (h.in2 && h.out2) segmentsFound++;
@@ -489,18 +494,23 @@ export class FichajeRegularizacionService {
           const correctedSeg3 = seg3 < 0 ? seg3 + 24 * 60 : seg3;
           const totalAllSegments = correctedSeg1 + correctedSeg2 + correctedSeg3;
           
-          // Dacă suma tuturor segmentelor este 24 ore (1440 minute), 
+          this.logger.debug(
+            `🔍 Checking if all 3 segments sum to 24h: seg1=${seg1} (corrected: ${correctedSeg1}), seg2=${seg2} (corrected: ${correctedSeg2}), seg3=${seg3} (corrected: ${correctedSeg3}), total=${totalAllSegments} minutes`,
+          );
+          
+          // Dacă suma tuturor segmentelor este 24 ore (1440 minute) sau aproape 24 ore (permite o mică diferență pentru erori de rotunjire),
           // înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
           // În acest caz, folosim doar prima tură disponibilă
-          if (totalAllSegments === 24 * 60) {
+          if (totalAllSegments >= 23 * 60 && totalAllSegments <= 25 * 60) {
+            // Suma este aproape 24 ore (permite o diferență de ±1 oră pentru erori de rotunjire)
             this.logger.debug(
-              `⚠️ All 3 segments sum to 24h - these are shift options, not all shifts to work. Using only first segment.`,
+              `⚠️ All 3 segments sum to ~24h (${totalAllSegments} minutes) - these are shift options, not all shifts to work. Using only first segment.`,
             );
             const segment1 = this.timeDiffMinutes(h.in1, h.out1);
             const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
             totalMinutes = correctedSegment1;
             this.logger.debug(
-              `  Using Segment 1 only: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1})`,
+              `  Using Segment 1 only: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1}, final total: ${totalMinutes})`,
             );
           } else {
             // Dacă suma nu este 24 ore, înseamnă că sunt split shifts care trebuie toate lucrate
