@@ -631,7 +631,7 @@ WHERE ti.empleadoId = '${codigo}';
       }
 
       // Query de debug pentru fichajes_incompleto - folosește același WITH clause
-      const mainQuery = this.buildCalculateQuery(mes);
+      const mainQuery = this.buildCalculateQuery();
       // Extrage WITH clause - caută până la scoring_final AS (care este pe linie nouă după ),)
       const withMatch =
         mainQuery.match(/^(WITH[\s\S]*?),\s*\n\s*scoring_final AS/s) ||
