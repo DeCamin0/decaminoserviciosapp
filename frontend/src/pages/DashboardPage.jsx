@@ -20,6 +20,7 @@ import {
   Mail,
   Settings,
   ShoppingCart,
+  Trophy,
   UserCircle,
   Users,
 } from 'lucide-react';
@@ -44,6 +45,7 @@ const InicioPage = () => {
   const [monthlyAlerts, setMonthlyAlerts] = useState(null);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
   const [alertNotification, setAlertNotification] = useState(null);
+  const [notification, setNotification] = useState(null);
   const alertsFetchedRef = useRef({ userId: null, month: null, fetched: false });
   const [empleadoCompleto, setEmpleadoCompleto] = useState(null);
   const [userPermissions, setUserPermissions] = useState(null);
@@ -633,6 +635,16 @@ const InicioPage = () => {
       });
     }
 
+    // Salón de la Fama - disponibil pentru toți utilizatorii
+    list.push({
+      id: 'hall-of-fame',
+      label: 'Salón de la Fama',
+      hint: 'Clasament lunar',
+      icon: <Trophy className="h-6 w-6 text-white" />,
+      gradient: 'from-yellow-400 via-amber-500 to-orange-500',
+      href: '/hall-of-fame',
+    });
+
     return list;
   }, [
     isManager,
@@ -1089,6 +1101,16 @@ const InicioPage = () => {
         />
       )}
 
+      {notification && (
+        <Notification
+          type={notification.type}
+          title={notification.title}
+          message={notification.message}
+          duration={notification.duration}
+          onClose={() => setNotification(null)}
+        />
+      )}
+
       {loadingAlerts && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-sm text-yellow-700">
           <div className="h-4 w-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
@@ -1239,13 +1261,28 @@ const InicioPage = () => {
                           });
                           const data = await response.json();
                           if (data.success) {
-                            alert('✅ ¡Notificación enviada! Verifica el icono de notificaciones.');
+                            setNotification({
+                              type: 'success',
+                              title: '¡Notificación enviada!',
+                              message: 'Verifica el icono de notificaciones para ver el mensaje.',
+                              duration: 4000
+                            });
                           } else {
-                            alert('❌ Error: ' + data.message);
+                            setNotification({
+                              type: 'error',
+                              title: 'Error',
+                              message: data.message || 'No se pudo enviar la notificación',
+                              duration: 5000
+                            });
                           }
                         } catch (error) {
                           console.error('Error sending test notification:', error);
-                          alert('❌ Error al enviar la notificación: ' + error.message);
+                          setNotification({
+                            type: 'error',
+                            title: 'Error al enviar',
+                            message: error.message || 'Ocurrió un error al enviar la notificación',
+                            duration: 5000
+                          });
                         }
                       }}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"

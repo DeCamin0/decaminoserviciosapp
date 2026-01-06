@@ -51,7 +51,8 @@ import {
   LazyComunicadosPage,
   LazyComunicadoDetailPage,
   LazyComunicadoCreatePage,
-  LazyMensajesEnviadosPage
+  LazyMensajesEnviadosPage,
+  LazyHallOfFamePage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -475,6 +476,18 @@ function AppRoutes() {
           <ProtectedRoute>
             <MainLayout>
               <LazyMensajesEnviadosPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Ruta para Hall of Fame */}
+      <Route
+        path="/hall-of-fame"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LazyHallOfFamePage />
             </MainLayout>
           </ProtectedRoute>
         }

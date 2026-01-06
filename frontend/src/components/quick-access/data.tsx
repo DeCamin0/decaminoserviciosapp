@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   ShoppingCart,
+  Trophy,
   UserCircle,
   Users,
 } from 'lucide-react';
@@ -107,6 +108,14 @@ export const demoQuickAccessItems: ActionItem[] = [
     gradient: 'from-fuchsia-500 via-purple-500 to-cyan-500',
     role: 'manager',
     href: '/estadisticas',
+  },
+  {
+    id: 'hall-of-fame',
+    label: 'Salón de la Fama',
+    hint: 'Clasament lunar',
+    icon: <Trophy className="h-6 w-6 text-white" />,
+    gradient: 'from-yellow-400 via-amber-500 to-orange-500',
+    href: '/hall-of-fame',
   },
   {
     id: 'mis-inspecciones',

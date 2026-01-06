@@ -362,10 +362,28 @@ export class FichajeRegularizacionService {
    */
   async calculateScheduledMinutes(
     employee_codigo: string,
-    workday_date: Date,
+    workday_date: Date | string,
   ): Promise<number> {
     try {
-      const fechaStr = workday_date.toISOString().split('T')[0]; // YYYY-MM-DD
+      // Normalizează input-ul la string YYYY-MM-DD pentru a evita problemele de timezone
+      let fechaStr: string;
+      let workdayDateObj: Date;
+
+      if (typeof workday_date === 'string') {
+        // Dacă este deja string, folosește-l direct
+        fechaStr = workday_date;
+        // Construiește Date folosind UTC pentru a evita timezone issues
+        const [year, month, day] = fechaStr.split('-').map(Number);
+        workdayDateObj = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+      } else {
+        // Dacă este Date, extrage string-ul folosind metode locale (nu toISOString care e UTC)
+        const year = workday_date.getFullYear();
+        const month = String(workday_date.getMonth() + 1).padStart(2, '0');
+        const day = String(workday_date.getDate()).padStart(2, '0');
+        fechaStr = `${year}-${month}-${day}`;
+        workdayDateObj = workday_date;
+      }
+
       const mesStr = fechaStr.substring(0, 7); // YYYY-MM
       // Folosește ziua din fechaStr pentru a evita problemele de timezone
       const dia = parseInt(fechaStr.split('-')[2], 10);
@@ -397,34 +415,44 @@ export class FichajeRegularizacionService {
       }
 
       // Fallback la horario - folosește CASE pentru ziua săptămânii
+      // Folosește STR_TO_DATE pentru a converti string-ul la DATE și a evita timezone issues
+      // Pentru datele din trecut, relaxăm condițiile vigente_hasta pentru a permite regularizări
+      const fechaDate = new Date(fechaStr + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isPastDate = fechaDate < today;
+
+      // Dacă data este în trecut, folosim orarul cel mai recent care era activ la acea dată
+      // (verificăm doar vigente_desde, nu vigente_hasta strict pentru datele din trecut)
+      // Dacă data este în prezent sau viitor, folosim condițiile normale de vigencia
       const horarioQuery = `
         SELECT 
-          CASE DAYOFWEEK(?)
+          CASE DAYOFWEEK(STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
             WHEN 2 THEN h.lun_in1 WHEN 3 THEN h.mar_in1 WHEN 4 THEN h.mie_in1
             WHEN 5 THEN h.joi_in1 WHEN 6 THEN h.vin_in1 WHEN 7 THEN h.sam_in1
             WHEN 1 THEN h.dum_in1 ELSE NULL
           END as in1,
-          CASE DAYOFWEEK(?)
+          CASE DAYOFWEEK(STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
             WHEN 2 THEN h.lun_out1 WHEN 3 THEN h.mar_out1 WHEN 4 THEN h.mie_out1
             WHEN 5 THEN h.joi_out1 WHEN 6 THEN h.vin_out1 WHEN 7 THEN h.sam_out1
             WHEN 1 THEN h.dum_out1 ELSE NULL
           END as out1,
-          CASE DAYOFWEEK(?)
+          CASE DAYOFWEEK(STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
             WHEN 2 THEN h.lun_in2 WHEN 3 THEN h.mar_in2 WHEN 4 THEN h.mie_in2
             WHEN 5 THEN h.joi_in2 WHEN 6 THEN h.vin_in2 WHEN 7 THEN h.sam_in2
             WHEN 1 THEN h.dum_in2 ELSE NULL
           END as in2,
-          CASE DAYOFWEEK(?)
+          CASE DAYOFWEEK(STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
             WHEN 2 THEN h.lun_out2 WHEN 3 THEN h.mar_out2 WHEN 4 THEN h.mie_out2
             WHEN 5 THEN h.joi_out2 WHEN 6 THEN h.vin_out2 WHEN 7 THEN h.sam_out2
             WHEN 1 THEN h.dum_out2 ELSE NULL
           END as out2,
-          CASE DAYOFWEEK(?)
+          CASE DAYOFWEEK(STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
             WHEN 2 THEN h.lun_in3 WHEN 3 THEN h.mar_in3 WHEN 4 THEN h.mie_in3
             WHEN 5 THEN h.joi_in3 WHEN 6 THEN h.vin_in3 WHEN 7 THEN h.sam_in3
             WHEN 1 THEN h.dum_in3 ELSE NULL
           END as in3,
-          CASE DAYOFWEEK(?)
+          CASE DAYOFWEEK(STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
             WHEN 2 THEN h.lun_out3 WHEN 3 THEN h.mar_out3 WHEN 4 THEN h.mie_out3
             WHEN 5 THEN h.joi_out3 WHEN 6 THEN h.vin_out3 WHEN 7 THEN h.sam_out3
             WHEN 1 THEN h.dum_out3 ELSE NULL
@@ -434,24 +462,18 @@ export class FichajeRegularizacionService {
           ON h.centro_nombre = de.\`CENTRO TRABAJO\`
          AND h.grupo_nombre = de.GRUPO
         WHERE de.CODIGO = ${this.escapeSql(employee_codigo)}
-          AND (h.vigente_desde IS NULL OR h.vigente_desde <= ?)
-          AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= ?)
+          AND (h.vigente_desde IS NULL OR h.vigente_desde <= STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))
+          ${
+            isPastDate
+              ? `-- Pentru datele din trecut, ignorăm vigente_hasta pentru a permite regularizări`
+              : `AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= STR_TO_DATE(${this.escapeSql(fechaStr)}, '%Y-%m-%d'))`
+          }
         ORDER BY h.vigente_desde DESC
         LIMIT 1
       `;
 
-      const fechaDate = workday_date.toISOString().split('T')[0];
-      const horario = await this.prisma.$queryRawUnsafe<any[]>(
-        horarioQuery,
-        fechaDate,
-        fechaDate,
-        fechaDate,
-        fechaDate,
-        fechaDate,
-        fechaDate,
-        workday_date,
-        workday_date,
-      );
+      // Folosește query-ul direct fără parametri suplimentari (toate valorile sunt deja în query)
+      const horario = await this.prisma.$queryRawUnsafe<any[]>(horarioQuery);
 
       this.logger.debug(
         `🔍 calculateScheduledMinutes - Checking horario for ${employee_codigo} on ${fechaStr}: found ${horario?.length || 0} results`,
@@ -479,25 +501,34 @@ export class FichajeRegularizacionService {
         // Dacă există mai mult de 1 segment, înseamnă că sunt ture multiple (split shifts)
         // În acest caz, toate segmentele trebuie să fie lucrate în aceeași zi
         // Dacă există doar 1 segment, folosim doar acela
-        // Dacă există 3 segmente (ex: 07:00-15:00, 15:00-23:00, 23:00-07:00), 
+        // Dacă există 3 segmente (ex: 07:00-15:00, 15:00-23:00, 23:00-07:00),
         // acestea reprezintă opțiuni de ture, nu ture care trebuie toate lucrate
         // În acest caz, folosim doar prima tură disponibilă sau verificăm cuadrantele
-        
+
         // Verifică dacă toate cele 3 segmente sunt definite și dacă suma lor este 24 ore
         // Dacă da, înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
-        if (segmentsFound === 3 && h.in1 && h.out1 && h.in2 && h.out2 && h.in3 && h.out3) {
+        if (
+          segmentsFound === 3 &&
+          h.in1 &&
+          h.out1 &&
+          h.in2 &&
+          h.out2 &&
+          h.in3 &&
+          h.out3
+        ) {
           const seg1 = this.timeDiffMinutes(h.in1, h.out1);
           const seg2 = this.timeDiffMinutes(h.in2, h.out2);
           const seg3 = this.timeDiffMinutes(h.in3, h.out3);
           const correctedSeg1 = seg1 < 0 ? seg1 + 24 * 60 : seg1;
           const correctedSeg2 = seg2 < 0 ? seg2 + 24 * 60 : seg2;
           const correctedSeg3 = seg3 < 0 ? seg3 + 24 * 60 : seg3;
-          const totalAllSegments = correctedSeg1 + correctedSeg2 + correctedSeg3;
-          
+          const totalAllSegments =
+            correctedSeg1 + correctedSeg2 + correctedSeg3;
+
           this.logger.debug(
             `🔍 Checking if all 3 segments sum to 24h: seg1=${seg1} (corrected: ${correctedSeg1}), seg2=${seg2} (corrected: ${correctedSeg2}), seg3=${seg3} (corrected: ${correctedSeg3}), total=${totalAllSegments} minutes`,
           );
-          
+
           // Dacă suma tuturor segmentelor este 24 ore (1440 minute) sau aproape 24 ore (permite o mică diferență pentru erori de rotunjire),
           // înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
           // În acest caz, folosim doar prima tură disponibilă
@@ -507,7 +538,8 @@ export class FichajeRegularizacionService {
               `⚠️ All 3 segments sum to ~24h (${totalAllSegments} minutes) - these are shift options, not all shifts to work. Using only first segment.`,
             );
             const segment1 = this.timeDiffMinutes(h.in1, h.out1);
-            const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
+            const correctedSegment1 =
+              segment1 < 0 ? segment1 + 24 * 60 : segment1;
             totalMinutes = correctedSegment1;
             this.logger.debug(
               `  Using Segment 1 only: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1}, final total: ${totalMinutes})`,
@@ -517,7 +549,8 @@ export class FichajeRegularizacionService {
             // Sumă toate segmentele
             if (h.in1 && h.out1) {
               const segment1 = this.timeDiffMinutes(h.in1, h.out1);
-              const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
+              const correctedSegment1 =
+                segment1 < 0 ? segment1 + 24 * 60 : segment1;
               totalMinutes += correctedSegment1;
               this.logger.debug(
                 `  Segment 1: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1}, total so far: ${totalMinutes})`,
@@ -525,7 +558,8 @@ export class FichajeRegularizacionService {
             }
             if (h.in2 && h.out2) {
               const segment2 = this.timeDiffMinutes(h.in2, h.out2);
-              const correctedSegment2 = segment2 < 0 ? segment2 + 24 * 60 : segment2;
+              const correctedSegment2 =
+                segment2 < 0 ? segment2 + 24 * 60 : segment2;
               totalMinutes += correctedSegment2;
               this.logger.debug(
                 `  Segment 2: ${h.in2} - ${h.out2} = ${segment2} minutes (night shift: ${segment2 < 0}, corrected: ${correctedSegment2}, total so far: ${totalMinutes})`,
@@ -533,7 +567,8 @@ export class FichajeRegularizacionService {
             }
             if (h.in3 && h.out3) {
               const segment3 = this.timeDiffMinutes(h.in3, h.out3);
-              const correctedSegment3 = segment3 < 0 ? segment3 + 24 * 60 : segment3;
+              const correctedSegment3 =
+                segment3 < 0 ? segment3 + 24 * 60 : segment3;
               totalMinutes += correctedSegment3;
               this.logger.debug(
                 `  Segment 3: ${h.in3} - ${h.out3} = ${segment3} minutes (night shift: ${segment3 < 0}, corrected: ${correctedSegment3}, total so far: ${totalMinutes})`,
@@ -544,7 +579,8 @@ export class FichajeRegularizacionService {
           // Dacă nu sunt toate cele 3 segmente definite, sumă doar segmentele disponibile
           if (h.in1 && h.out1) {
             const segment1 = this.timeDiffMinutes(h.in1, h.out1);
-            const correctedSegment1 = segment1 < 0 ? segment1 + 24 * 60 : segment1;
+            const correctedSegment1 =
+              segment1 < 0 ? segment1 + 24 * 60 : segment1;
             totalMinutes += correctedSegment1;
             this.logger.debug(
               `  Segment 1: ${h.in1} - ${h.out1} = ${segment1} minutes (night shift: ${segment1 < 0}, corrected: ${correctedSegment1}, total so far: ${totalMinutes})`,
@@ -552,7 +588,8 @@ export class FichajeRegularizacionService {
           }
           if (h.in2 && h.out2) {
             const segment2 = this.timeDiffMinutes(h.in2, h.out2);
-            const correctedSegment2 = segment2 < 0 ? segment2 + 24 * 60 : segment2;
+            const correctedSegment2 =
+              segment2 < 0 ? segment2 + 24 * 60 : segment2;
             totalMinutes += correctedSegment2;
             this.logger.debug(
               `  Segment 2: ${h.in2} - ${h.out2} = ${segment2} minutes (night shift: ${segment2 < 0}, corrected: ${correctedSegment2}, total so far: ${totalMinutes})`,
@@ -560,7 +597,8 @@ export class FichajeRegularizacionService {
           }
           if (h.in3 && h.out3) {
             const segment3 = this.timeDiffMinutes(h.in3, h.out3);
-            const correctedSegment3 = segment3 < 0 ? segment3 + 24 * 60 : segment3;
+            const correctedSegment3 =
+              segment3 < 0 ? segment3 + 24 * 60 : segment3;
             totalMinutes += correctedSegment3;
             this.logger.debug(
               `  Segment 3: ${h.in3} - ${h.out3} = ${segment3} minutes (night shift: ${segment3 < 0}, corrected: ${correctedSegment3}, total so far: ${totalMinutes})`,
@@ -589,7 +627,7 @@ export class FichajeRegularizacionService {
         const horasContrato = parseFloat(contract[0].horas_contrato);
         if (!isNaN(horasContrato) && horasContrato > 0) {
           // Verifică dacă ziua este lucrătoare (luni-vineri = 2-6 în DAYOFWEEK)
-          const dayOfWeek = workday_date.getDay(); // 0 = duminică, 1 = luni, ..., 6 = sâmbătă
+          const dayOfWeek = workdayDateObj.getUTCDay(); // 0 = duminică, 1 = luni, ..., 6 = sâmbătă
           const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // Luni-Vineri
 
           if (isWeekday) {
@@ -763,26 +801,27 @@ export class FichajeRegularizacionService {
         this.logger.debug(
           `✅ Using DURACION directly: ${durationStr} = ${punched_minutes} minutes for ${employee_codigo} on ${fechaStr}`,
         );
-        
+
         // Detectează dacă este tură nocturnă:
         // - Salida este înainte de 12:00 (dimineața)
         // - Există Entrada în ziua anterioară după 17:00
-        const horaTime = horaStr instanceof Date 
-          ? horaStr.toTimeString().slice(0, 8) 
-          : horaStr;
+        const horaTime =
+          horaStr instanceof Date
+            ? horaStr.toTimeString().slice(0, 8)
+            : horaStr;
         const [salidaHours] = horaTime.split(':').map(Number);
         const isMorningSalida = salidaHours < 12; // Salida înainte de 12:00 = dimineața
-        
+
         if (isMorningSalida) {
           // Verifică dacă există Entrada în ziua anterioară după 17:00
           const fechaAnterior = new Date(fechaStr + 'T00:00:00');
           fechaAnterior.setDate(fechaAnterior.getDate() - 1);
           const fechaAnteriorStr = fechaAnterior.toISOString().split('T')[0];
-          
+
           this.logger.debug(
             `🔍 Checking for night shift: Salida on ${fechaStr} at ${horaTime}, checking Entrada on ${fechaAnteriorStr}`,
           );
-          
+
           const entradaQuery = `
             SELECT HORA
             FROM Fichaje
@@ -792,23 +831,25 @@ export class FichajeRegularizacionService {
             ORDER BY HORA DESC
             LIMIT 1
           `;
-          
-          const entradas = await this.prisma.$queryRawUnsafe<any[]>(entradaQuery);
-          
+
+          const entradas =
+            await this.prisma.$queryRawUnsafe<any[]>(entradaQuery);
+
           this.logger.debug(
             `🔍 Found ${entradas?.length || 0} Entradas on ${fechaAnteriorStr}`,
           );
-          
+
           if (entradas && entradas.length > 0) {
-            const entradaHoraStr = entradas[0].HORA instanceof Date
-              ? entradas[0].HORA.toTimeString().slice(0, 8)
-              : entradas[0].HORA;
+            const entradaHoraStr =
+              entradas[0].HORA instanceof Date
+                ? entradas[0].HORA.toTimeString().slice(0, 8)
+                : entradas[0].HORA;
             const [entradaHours] = entradaHoraStr.split(':').map(Number);
-            
+
             this.logger.debug(
               `🔍 Entrada time: ${entradaHoraStr} (${entradaHours} hours), checking if >= 17`,
             );
-            
+
             if (entradaHours >= 17) {
               // Este tură nocturnă: Entrada în ziua anterioară după 17:00, Salida în ziua următoare dimineața
               // workday_date = ziua de început (ziua Entrada-ului)
@@ -832,11 +873,11 @@ export class FichajeRegularizacionService {
           }
         } else {
           // Salida nu este dimineața, nu este tură nocturnă
-        // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
-        workday_date = new Date(fechaStr + 'T00:00:00');
-        this.logger.debug(
-          `✅ Salida is not morning (${horaTime}). Setting workday_date to ${fechaStr}`,
-        );
+          // Setează workday_date la data specificată (fechaStr este deja YYYY-MM-DD)
+          workday_date = new Date(fechaStr + 'T00:00:00');
+          this.logger.debug(
+            `✅ Salida is not morning (${horaTime}). Setting workday_date to ${fechaStr}`,
+          );
         }
       } else if (workday) {
         // Caz normal: există workday valid și nu există DURACION direct
@@ -865,17 +906,17 @@ export class FichajeRegularizacionService {
       // Verificăm dacă este tură nocturnă comparând workday_date cu fechaStr folosind o metodă care evită timezone
       let dateForCalculation: Date;
       let dateStrForCalculation: string;
-      
+
       // Extrage data din workday_date folosind metode locale pentru a evita problemele de timezone
       const workdayYear = workday_date.getFullYear();
       const workdayMonth = workday_date.getMonth() + 1;
       const workdayDay = workday_date.getDate();
       const workdayDateStr = `${workdayYear}-${String(workdayMonth).padStart(2, '0')}-${String(workdayDay).padStart(2, '0')}`;
-      
+
       this.logger.debug(
         `🔍 workday_date local: ${workdayDateStr}, fechaStr: ${fechaStr}, workday_date ISO: ${workday_date.toISOString()}`,
       );
-      
+
       // Dacă workday_date (extras local) este diferit de fechaStr, înseamnă că este tură nocturnă
       // Pentru zilele normale (nu tură nocturnă), folosim fechaStr direct pentru a evita problemele de timezone
       if (workdayDateStr !== fechaStr) {
@@ -893,7 +934,7 @@ export class FichajeRegularizacionService {
           `✅ Normal day. Using fechaStr directly for calculation: ${dateStrForCalculation}`,
         );
       }
-      
+
       const scheduled_minutes = await this.calculateScheduledMinutes(
         employee_codigo,
         dateForCalculation,
@@ -1342,7 +1383,10 @@ export class FichajeRegularizacionService {
       // Dacă punched_minutes = 0 dar există scheduled_minutes > 0 (ex: "Olvidó fichar"),
       // folosește scheduled_minutes în loc de punched_minutes
       let effective_minutes = regularizacion.punched_minutes;
-      if (regularizacion.punched_minutes === 0 && regularizacion.scheduled_minutes > 0) {
+      if (
+        regularizacion.punched_minutes === 0 &&
+        regularizacion.scheduled_minutes > 0
+      ) {
         effective_minutes = regularizacion.scheduled_minutes;
         this.logger.log(
           `📝 Approve regularizacion: punched_minutes=0, using scheduled_minutes=${regularizacion.scheduled_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
@@ -1570,25 +1614,28 @@ export class FichajeRegularizacionService {
       // Split pe separator și calculează fiecare segment
       const segments = s.split(separators);
       let totalMinutes = 0;
-      
+
       for (const segment of segments) {
         const trimmed = segment.trim();
         if (!trimmed) continue;
-        
+
         // Format "08:00-17:00" sau "T1:08:00-17:00"
-        const timeRangeMatch = trimmed.match(/(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+        const timeRangeMatch = trimmed.match(
+          /(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+        );
         if (timeRangeMatch) {
           const [, h1, m1, h2, m2] = timeRangeMatch;
           const start = parseInt(h1) * 60 + parseInt(m1);
           const end = parseInt(h2) * 60 + parseInt(m2);
-          const segmentMinutes = end > start ? end - start : 24 * 60 - start + end;
+          const segmentMinutes =
+            end > start ? end - start : 24 * 60 - start + end;
           totalMinutes += segmentMinutes;
           this.logger.debug(
             `  Parsed segment "${trimmed}": ${h1}:${m1}-${h2}:${m2} = ${segmentMinutes} minutes`,
           );
         }
       }
-      
+
       if (totalMinutes > 0) {
         this.logger.debug(
           `✅ parseScheduleToMinutes - Multiple segments total: ${totalMinutes} minutes (${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m)`,
@@ -1598,7 +1645,9 @@ export class FichajeRegularizacionService {
     }
 
     // Format "08:00-17:00" (un singur interval)
-    const timeRangeMatch = s.match(/(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    const timeRangeMatch = s.match(
+      /(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+    );
     if (timeRangeMatch) {
       const [, h1, m1, h2, m2] = timeRangeMatch;
       const start = parseInt(h1) * 60 + parseInt(m1);
@@ -1860,17 +1909,26 @@ export class FichajeRegularizacionService {
       }> = [];
 
       // Iterăm prin fiecare zi din interval
-      const start = new Date(start_date + 'T00:00:00');
-      const end = new Date(end_date + 'T23:59:59');
+      // Folosim string-uri direct pentru a evita problemele de timezone
+      const [startYear, startMonth, startDay] = start_date
+        .split('-')
+        .map(Number);
+      const [endYear, endMonth, endDay] = end_date.split('-').map(Number);
+      const start = new Date(Date.UTC(startYear, startMonth - 1, startDay));
+      const end = new Date(Date.UTC(endYear, endMonth - 1, endDay));
       const current = new Date(start);
 
       while (current <= end) {
-        const fechaStr = current.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Extrage data folosind UTC pentru a evita timezone issues
+        const year = current.getUTCFullYear();
+        const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(current.getUTCDate()).padStart(2, '0');
+        const fechaStr = `${year}-${month}-${day}`;
 
-        // Calculează scheduled_minutes pentru această zi
+        // Calculează scheduled_minutes pentru această zi - pasează string-ul direct
         const scheduled_minutes = await this.calculateScheduledMinutes(
           employee_codigo,
-          current,
+          fechaStr,
         );
 
         // Dacă există program (scheduled_minutes > 0), verifică dacă există fichajes
@@ -1960,10 +2018,10 @@ export class FichajeRegularizacionService {
       } = dto;
 
       // Calculează scheduled_minutes pentru această zi
-      const workdayDateObj = new Date(workday_date + 'T00:00:00');
+      // Pasează string-ul direct pentru a evita problemele de timezone
       const scheduled_minutes = await this.calculateScheduledMinutes(
         employee_codigo,
-        workdayDateObj,
+        workday_date,
       );
 
       if (scheduled_minutes === 0) {

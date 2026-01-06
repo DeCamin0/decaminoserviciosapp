@@ -33,6 +33,7 @@ const ComunicadosPage = lazy(() => import('../ComunicadosPage'));
 const ComunicadoDetailPage = lazy(() => import('../ComunicadoDetailPage'));
 const ComunicadoCreatePage = lazy(() => import('../ComunicadoCreatePage'));
 const MensajesEnviadosPage = lazy(() => import('../MensajesEnviadosPage'));
+const HallOfFamePage = lazy(() => import('../HallOfFamePage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -296,6 +297,14 @@ export const LazyMensajesEnviadosPage = (props) => {
   );
 };
 
+export const LazyHallOfFamePage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Salón de la Fama..." />}>
+      <HallOfFamePage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -324,5 +333,6 @@ export default {
   LazyComunicadosPage,
   LazyComunicadoDetailPage,
   LazyComunicadoCreatePage,
-  LazyMensajesEnviadosPage
+  LazyMensajesEnviadosPage,
+  LazyHallOfFamePage
 };

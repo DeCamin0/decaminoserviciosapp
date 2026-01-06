@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useCallback } from 'react';
 
 /**
  * CalendarDayCell - Componentă pentru o zi din calendar
@@ -15,9 +15,9 @@ const CalendarDayCell = memo(({
   loadingRegularizaciones = false,
   fichajes = []
 }) => {
-  // Helper pentru formatare data
+  // Helper pentru formatare data - folosim useCallback pentru a evita recrearea la fiecare render
   const pad2 = (n) => n < 10 ? '0' + n : n;
-  const formatDateYMD = (year, month, day) => year + '-' + pad2(month) + '-' + pad2(day);
+  const formatDateYMD = useCallback((year, month, day) => year + '-' + pad2(month) + '-' + pad2(day), []);
   
   // Calculez dataZi pentru verificarea regularizărilor
   const [selectedYear, selectedMonth] = selectedLunaNorm.split('-').map(Number);
@@ -40,7 +40,7 @@ const CalendarDayCell = memo(({
     return Array.isArray(fichajes) ? fichajes.filter(f => 
       f["TIPO"] === 'Salida' && (f["FECHA"] || '').startsWith(dataZiUrmatoare)
     ) : [];
-  }, [fichajes, cell.tip, cell.day, selectedYear, selectedMonth, dataZi]);
+  }, [fichajes, cell.tip, cell.day, selectedYear, selectedMonth, formatDateYMD]);
   
   // CALCULUL ALERTAFICHAJ ȘI DURATAMUNCA ÎN COMPONENTĂ - cu useMemo pentru optimizare
   const { alertaFichaj, durataMunca, hasRegularizacion } = useMemo(() => {
@@ -455,14 +455,17 @@ const CalendarDayCell = memo(({
     return { alertaFichaj, durataMunca, hasRegularizacion };
   }, [
     cell.tip,
+    cell.planFuente,
     cell.day,
     selectedYear,
     selectedMonth,
+    dataZi,
     fichajesZi,
     fichajes,
     salidasZiUrmatoare,
-    regularizacionesConfirmadas?.get(dataZi),
-    loadingRegularizaciones
+    regularizacionesConfirmadas,
+    loadingRegularizaciones,
+    formatDateYMD
   ]);
   
   // Dacă are regularizare confirmată, ignorăm alertaFichaj

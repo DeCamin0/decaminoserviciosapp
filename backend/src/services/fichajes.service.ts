@@ -166,10 +166,15 @@ export class FichajesService {
           )
       `;
 
-      const noPunchRows = await this.prisma.$queryRawUnsafe<any[]>(noPunchRegularizacionesQuery);
-      
+      const noPunchRows = await this.prisma.$queryRawUnsafe<any[]>(
+        noPunchRegularizacionesQuery,
+      );
+
       // Combinăm rezultatele
-      const rows = [...(await this.prisma.$queryRawUnsafe<any[]>(query)), ...noPunchRows];
+      const rows = [
+        ...(await this.prisma.$queryRawUnsafe<any[]>(query)),
+        ...noPunchRows,
+      ];
 
       // Debug: verifică dacă există effective_duration în răspuns
       const rowsWithEffective = rows.filter(

@@ -37,6 +37,21 @@ export const routes = {
   getEstadisticasEmpleados: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/estadisticas'
     : 'https://api.decaminoservicios.com/api/empleados/estadisticas',
+  getHallOfFame: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame',
+  getHallOfFameLatestMonth: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/latest-month'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/latest-month',
+  getHallOfFameEmployee: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/hall-of-fame/${codigo}`
+    : `https://api.decaminoservicios.com/api/hall-of-fame/${codigo}`,
+  calculateHallOfFame: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/calculate'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/calculate',
+  calculateHallOfFameEmployee: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/hall-of-fame/calculate/employee/${codigo}`
+    : `https://api.decaminoservicios.com/api/hall-of-fame/calculate/employee/${codigo}`,
   exportEstadisticasEmpleadosExcel: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/estadisticas/export-excel'
     : 'https://api.decaminoservicios.com/api/empleados/estadisticas/export-excel',

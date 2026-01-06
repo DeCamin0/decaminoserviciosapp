@@ -358,12 +358,12 @@ export class DocumentosService {
           readBodyFieldForIndex('documento_tipo', index, null) ||
           readBodyFieldForIndex('tipo', index, null) ||
           null;
-        
+
         // Tratăm string-urile goale ca null
         if (tipoDoc && typeof tipoDoc === 'string' && tipoDoc.trim() === '') {
           tipoDoc = null;
         }
-        
+
         // Log pentru debugging
         if (index === 0) {
           this.logger.log(
@@ -437,23 +437,24 @@ export class DocumentosService {
           this.logger.log(
             `🔍 [Upload] Verificando solicitud para empleado ${id}, tipo ${tipoDoc || 'NULL'}, servicio disponible: ${!!this.documentosSolicitadosService}`,
           );
-          
+
           if (tipoDoc && this.documentosSolicitadosService) {
             try {
               this.logger.log(
                 `🔍 [Upload] Intentando marcar solicitud como completada: empleado ${id}, tipo ${tipoDoc}`,
               );
-              
+
               // Încercăm mai întâi cu tipul exact
-              const result = await this.documentosSolicitadosService.marcarCompletado(
-                id,
-                tipoDoc,
-              );
-              
+              const result =
+                await this.documentosSolicitadosService.marcarCompletado(
+                  id,
+                  tipoDoc,
+                );
+
               this.logger.log(
                 `🔍 [Upload] Resultado marcarCompletado: updated=${result.updated}`,
               );
-              
+
               if (result.updated > 0) {
                 this.logger.log(
                   `✅ Solicitud marcada como completada automáticamente: empleado ${id}, tipo ${tipoDoc}`,
@@ -463,16 +464,17 @@ export class DocumentosService {
                 this.logger.log(
                   `🔍 [Upload] No se encontró con tipo exacto, intentando matching flexibil...`,
                 );
-                
-                const resultFlexible = await this.documentosSolicitadosService.marcarCompletadoFlexible(
-                  id,
-                  tipoDoc,
-                );
-                
+
+                const resultFlexible =
+                  await this.documentosSolicitadosService.marcarCompletadoFlexible(
+                    id,
+                    tipoDoc,
+                  );
+
                 this.logger.log(
                   `🔍 [Upload] Resultado marcarCompletadoFlexible: updated=${resultFlexible.updated}`,
                 );
-                
+
                 if (resultFlexible.updated > 0) {
                   this.logger.log(
                     `✅ Solicitud marcada como completada automáticamente (matching flexibil): empleado ${id}, tipo ${tipoDoc}`,
@@ -488,9 +490,7 @@ export class DocumentosService {
               this.logger.warn(
                 `⚠️ No se pudo marcar solicitud como completada: ${solicitudError.message}`,
               );
-              this.logger.warn(
-                `⚠️ Stack trace: ${solicitudError.stack}`,
-              );
+              this.logger.warn(`⚠️ Stack trace: ${solicitudError.stack}`);
             }
           } else {
             if (!tipoDoc) {

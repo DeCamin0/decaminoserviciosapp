@@ -83,6 +83,8 @@ import { VacacionesModule } from './vacaciones/vacaciones.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { MonitoringService } from './services/monitoring.service';
 import { MonitoringController } from './controllers/monitoring.controller';
+import { HallOfFameController } from './controllers/hall-of-fame.controller';
+import { HallOfFameService } from './services/hall-of-fame.service';
 
 @Module({
   imports: [
@@ -105,6 +107,7 @@ import { MonitoringController } from './controllers/monitoring.controller';
     EmpleadosController,
     AvatarController,
     MonthlyAlertsController,
+    HallOfFameController,
     PushController,
     ClientesController,
     ContractTypesController,
@@ -144,6 +147,7 @@ import { MonitoringController } from './controllers/monitoring.controller';
     EmpleadosStatsService,
     AvatarService,
     MonthlyAlertsService,
+    HallOfFameService,
     PushService,
     EmailService,
     AusenciasService,

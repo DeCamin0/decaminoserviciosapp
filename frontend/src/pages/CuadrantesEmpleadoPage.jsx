@@ -1460,11 +1460,15 @@ export default function CuadrantesEmpleadoPage() {
 
   
 
-  // Adaug decembrie din anul anterior (primul în listă)
+  // Adaug ultimele 3 luni din anul anterior: octombrie, noiembrie, decembrie
 
-  const decembrieAnterior = `${previousYear}-12`;
+  for (let month = 10; month <= 12; month++) {
 
-  luniCurente.push(decembrieAnterior);
+    const yearMonth = `${previousYear}-${String(month).padStart(2, '0')}`;
+
+    luniCurente.push(yearMonth);
+
+  }
 
   
 
@@ -1486,16 +1490,16 @@ export default function CuadrantesEmpleadoPage() {
 
   
 
-  // Filtrez doar luniile relevante: decembrie anul anterior + toate lunile din anul curent
+  // Filtrez doar luniile relevante: ultimele 3 luni din anul anterior + toate lunile din anul curent
 
-  // Și le sortez astfel: decembrie anul anterior primul, apoi lunile din anul curent în ordine
+  // Și le sortez cronologic
 
   const luniDisponibile = luniDisponibileRaw.filter(luna => {
 
     const [year, month] = luna.split('-').map(Number);
 
-    // Include decembrie anul anterior
-    if (year === previousYear && month === 12) return true;
+    // Include ultimele 3 luni din anul anterior (octombrie, noiembrie, decembrie)
+    if (year === previousYear && month >= 10 && month <= 12) return true;
     // Include toate lunile din anul curent
     if (year === currentYear && month >= 1 && month <= 12) return true;
     return false;
@@ -1507,15 +1511,7 @@ export default function CuadrantesEmpleadoPage() {
 
     
 
-    // Decembrie anul anterior este întotdeauna primul
-
-    if (yearA === previousYear && monthA === 12) return -1;
-
-    if (yearB === previousYear && monthB === 12) return 1;
-
-    
-
-    // Apoi sortăm cronologic (an, apoi lună)
+    // Sortăm cronologic (an, apoi lună)
 
     if (yearA !== yearB) return yearA - yearB;
 
@@ -1791,8 +1787,6 @@ const getFirstValue = (record, keys) => {
     for (let i = 0; i < daysInMonth; i++) {
 
       const dataZi = formatDateYMD(year, month, day);
-
-      const fichajesZi = Array.isArray(fichajes) ? fichajes.filter(f => (f["FECHA"] || '').startsWith(dataZi)) : [];
 
       if (day === 3) {
         // Calculare celulă pentru day 3

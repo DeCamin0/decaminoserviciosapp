@@ -517,9 +517,26 @@ export class HorasTrabajadasService {
                   '{"fecha":"', DATE_FORMAT(dp.fecha, '%Y-%m-%d'),
                   '","plan":', CAST(ROUND(dp.horas_plan,2) AS CHAR),
                   ',"plan_fuente":"', dp.fuente, '"',
-                  ',"fichado":', CAST(ROUND(COALESCE(fd.horas_fichadas,0),2) AS CHAR),
-                  ',"delta":',   CAST(ROUND(COALESCE(fd.horas_fichadas,0) - dp.horas_plan,2) AS CHAR),
-                  ',"incompleto":', COALESCE(fd.fichaje_incompleto,0),
+                  -- Prioritate: regularizare CONFIRMED > fichaje_dia > 0
+                  ',"fichado":', CAST(ROUND(
+                    COALESCE(
+                      rc.effective_secs / 3600.0,
+                      fd.horas_fichadas,
+                      0
+                    ), 2
+                  ) AS CHAR),
+                  ',"delta":', CAST(ROUND(
+                    COALESCE(
+                      rc.effective_secs / 3600.0,
+                      fd.horas_fichadas,
+                      0
+                    ) - dp.horas_plan, 2
+                  ) AS CHAR),
+                  ',"incompleto":', COALESCE(
+                    -- Dacă există regularizare CONFIRMED, nu este incomplet
+                    CASE WHEN rc.effective_secs IS NOT NULL THEN 0 ELSE fd.fichaje_incompleto END,
+                    0
+                  ),
                   '}'
                 )
                 ORDER BY dp.fecha
@@ -530,6 +547,8 @@ export class HorasTrabajadasService {
           FROM daily_plan dp
           LEFT JOIN fichaje_dia fd
             ON fd.empleadoId = dp.empleadoId AND fd.fecha = dp.fecha
+          LEFT JOIN regularizaciones_confirmadas rc
+            ON rc.empleadoId = dp.empleadoId AND rc.fecha = dp.fecha
           GROUP BY dp.empleadoId
         ),
         sumar_flags_zile AS (

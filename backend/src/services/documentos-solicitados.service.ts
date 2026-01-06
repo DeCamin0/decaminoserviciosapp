@@ -249,7 +249,7 @@ export class DocumentosSolicitadosService {
     try {
       // Normalizăm tipul documentului pentru matching
       const tipoDocNormalized = tipoDocumento.toLowerCase().trim();
-      
+
       // Căutăm solicitări pendiente pentru acest angajat
       const solicitudesQuery = `
         SELECT id, tipo_documento
@@ -257,19 +257,22 @@ export class DocumentosSolicitadosService {
         WHERE \`empleado_id\` = ${this.escapeSql(empleadoId)}
           AND \`estado\` = 'pendiente'
       `;
-      
-      const solicitudes = await this.prisma.$queryRawUnsafe<
-        Array<{ id: bigint | number; tipo_documento: string }>
-      >(solicitudesQuery);
+
+      const solicitudes =
+        await this.prisma.$queryRawUnsafe<
+          Array<{ id: bigint | number; tipo_documento: string }>
+        >(solicitudesQuery);
 
       let updated = 0;
 
       // Verificăm fiecare solicitare pentru matching flexibil
       for (const solicitud of solicitudes) {
-        const tipoSolicitudNormalized = solicitud.tipo_documento.toLowerCase().trim();
-        
+        const tipoSolicitudNormalized = solicitud.tipo_documento
+          .toLowerCase()
+          .trim();
+
         // Matching exact sau dacă unul conține pe celălalt
-        const matches = 
+        const matches =
           tipoDocNormalized === tipoSolicitudNormalized ||
           tipoDocNormalized.includes(tipoSolicitudNormalized) ||
           tipoSolicitudNormalized.includes(tipoDocNormalized);
@@ -299,7 +302,10 @@ export class DocumentosSolicitadosService {
 
       return { success: true, updated };
     } catch (error: any) {
-      this.logger.error('❌ Error marcando solicitud como completada (flexible):', error);
+      this.logger.error(
+        '❌ Error marcando solicitud como completada (flexible):',
+        error,
+      );
       throw new BadRequestException(
         `Error al marcar solicitud como completada: ${error.message}`,
       );

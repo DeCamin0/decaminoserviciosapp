@@ -4017,7 +4017,7 @@ export default function CuadrantesPage() {
                         const empleado = angajatiFiltrati.find(emp => (emp['CODIGO'] || emp.id) === selectedEmpleado);
                         if (empleado) {
                           payload.empleado = empleado['CODIGO'] || empleado.id;
-                          payload.nombre = empleado['NOMBRE / APELLIDOS'] || empleado.NOMBRE || empleado.EMAIL || 'Unknown';
+                          // NOMBRE eliminat - se filtrează doar pe CODIGO și CENTRO
                         }
                       }
                       
@@ -4046,7 +4046,7 @@ export default function CuadrantesPage() {
                       const params = new URLSearchParams();
                       if (payload.centro) params.set('centro', payload.centro);
                       if (payload.empleado) params.set('empleado', payload.empleado);
-                      if (payload.nombre) params.set('nombre', payload.nombre);
+                      // nombre eliminat - filtrare doar pe CODIGO și CENTRO
                       if (payload.mesAno) params.set('mesAno', payload.mesAno);
                       
                       const endpoint = `${routes.getCuadrantes}${params.toString() ? '?' + params.toString() : ''}`;
