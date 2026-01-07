@@ -90,6 +90,63 @@ export class BajasMedicasController {
     }
   }
 
+  @Post('manual')
+  async createManualBaja(@Body() body: any) {
+    try {
+      const { codigoEmpleado, fechaBaja, fechaAlta, situacion, tipo, recaida } =
+        body || {};
+
+      if (!codigoEmpleado || String(codigoEmpleado).trim() === '') {
+        throw new BadRequestException('codigoEmpleado es obligatorio');
+      }
+      if (!fechaBaja || String(fechaBaja).trim() === '') {
+        throw new BadRequestException('fechaBaja es obligatoria (YYYY-MM-DD)');
+      }
+
+      const result = await this.bajasMedicasService.createManualBaja({
+        codigoEmpleado: String(codigoEmpleado).trim(),
+        fechaBaja: String(fechaBaja).trim(),
+        fechaAlta: fechaAlta ? String(fechaAlta).trim() : undefined,
+        situacion: situacion ? String(situacion).trim() : undefined,
+        tipo: tipo ? String(tipo).trim() : undefined,
+        recaida: recaida !== undefined ? Boolean(recaida) : undefined,
+      });
+
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error creating manual baja médica:', error);
+      throw error;
+    }
+  }
+
+  @Post('resolve-conflicts')
+  async resolveConflicts(@Body() body: any) {
+    try {
+      const resolutions = Array.isArray(body?.resolutions)
+        ? body.resolutions
+        : [];
+
+      if (resolutions.length === 0) {
+        throw new BadRequestException('resolutions debe ser un array no vacío');
+      }
+
+      const result = await this.bajasMedicasService.resolveConflicts(
+        resolutions,
+      );
+
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error resolving bajas médicas conflicts:', error);
+      throw error;
+    }
+  }
+
   @Put()
   async updateBajaMedica(@Body() body: any) {
     try {

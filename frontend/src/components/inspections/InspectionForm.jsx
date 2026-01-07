@@ -897,6 +897,18 @@ const InspectionForm = ({ type }) => {
                    {formData.trabajador?.codigo && formData.trabajador.codigo.trim() !== '' ? ` (${safeText(formData.trabajador.codigo)})` : null}
                  </Text>
                  <Text style={styles.inspector}>Supervisor: {safeText(formData.supervisor)}</Text>
+                 {/* Scor total calculat din toate punctele */}
+                 {formData.puncte && formData.puncte.length > 0 && (() => {
+                   const totalScoruri = formData.puncte.reduce((sum, punct) => {
+                     return sum + (punct.rango || 0) + (punct.calidad || 0);
+                   }, 0);
+                   const scorTotal = totalScoruri / (formData.puncte.length * 2);
+                   return (
+                     <Text style={{...styles.inspector, fontWeight: 'bold', color: '#e53e3e'}}>
+                       ⭐ Puntuación Total: {scorTotal.toFixed(2)}/5
+                     </Text>
+                   );
+                 })()}
                </View>
 
               {/* Puncte de inspecție */}
@@ -1157,10 +1169,23 @@ const InspectionForm = ({ type }) => {
         // Convertește blob-ul în Base64
         const base64 = await blobToBase64(blob);
         
+        // Calculează scorul total: media tuturor scorurilor (rango + calidad) pentru toate punctele
+        let scorTotal = 0;
+        if (formData.puncte && formData.puncte.length > 0) {
+          const totalScoruri = formData.puncte.reduce((sum, punct) => {
+            const rango = punct.rango || 0;
+            const calidad = punct.calidad || 0;
+            return sum + rango + calidad;
+          }, 0);
+          // Media: suma tuturor (rango + calidad) / (număr_puncte * 2)
+          scorTotal = totalScoruri / (formData.puncte.length * 2);
+        }
+        
         // Salvează datele pentru previzualizare
         setPdfPreviewData({
           ...formData,
-          pdfBase64: base64
+          pdfBase64: base64,
+          scor_total: Math.round(scorTotal * 100) / 100 // Rotunjire la 2 zecimale
         });
         
         // Pentru mobile (iOS/Android), folosim base64 direct în loc de blob URL

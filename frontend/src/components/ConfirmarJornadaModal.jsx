@@ -35,21 +35,49 @@ export default function ConfirmarJornadaModal({
   const deltaHours = formatMinutesToHours(Math.abs(delta_minutes));
   const isMore = delta_minutes > 0;
 
-  const handleConfirm = async (decision, reason = null) => {
+  const handleConfirm = async (userChoice, reason = null) => {
     setLoading(true);
     try {
+      // Logica pentru decision și effective_minutes:
+      // 
+      // DELTA POZITIVĂ (+): punched > scheduled (ex: 8h29 vs 8h)
+      //   - "No he trabajado más" (user_no) → decision='no_extra', effective=scheduled (8h)
+      //   - "He trabajado más" (user_yes) → decision='worked_more', effective=punched (8h29)
+      //
+      // DELTA NEGATIVĂ (-): punched < scheduled (ex: 7h38 vs 8h)
+      //   - "Sí, he trabajado menos" (user_yes) → decision='no_extra', effective=punched (7h38)
+      //   - "No, fue error de fichaje" (user_no) → decision='no_extra', effective=scheduled (8h), reason='punch_error'
+      //
+      // Ambele cazuri de delta negativă sunt NO_EXTRA (user confirmă situația, nu declară extra)
+      
+      let decision;
+      if (isMore) {
+        // Delta pozitivă: user_yes = worked_more, user_no = no_extra
+        decision = userChoice === 'user_yes' ? 'worked_more' : 'no_extra';
+      } else {
+        // Delta negativă: ambele sunt no_extra
+        // Diferența e în effective_minutes (handled by backend via 'worked_less' flag)
+        decision = 'no_extra';
+      }
+      
       const body = {
         employee_codigo,
         fecha,
         decision,
       };
       
-      // Dacă e minus și e "error de fichaje", adaugă reason
-      if (!isMore && reason === 'punch_error') {
-        body.reason = 'punch_error';
+      // Pentru delta negativă, adăugăm un flag pentru a diferenția între cele 2 cazuri
+      if (!isMore) {
+        if (userChoice === 'user_yes') {
+          // "Sí, he trabajado menos" → effective = punched
+          body.reason = 'worked_less';
+        } else if (reason === 'punch_error') {
+          // "No, fue error de fichaje" → effective = scheduled
+          body.reason = 'punch_error';
+        }
       }
       
-      console.log('🔍 DEBUG ConfirmarJornadaModal - Sending request:', body);
+      console.log('🔍 DEBUG ConfirmarJornadaModal - Sending request:', body, 'userChoice:', userChoice, 'isMore:', isMore);
       
       const result = await callApi(routes.confirmarJornada, {
         method: 'POST',
@@ -68,10 +96,9 @@ export default function ConfirmarJornadaModal({
 
       if (result.success) {
         const resultData = result.data || result; // callApi returnează { success: true, data }
-        const message = resultData.message || 
-          (decision === 'no_extra'
-            ? 'Jornada confirmada correctamente.'
-            : 'Jornada enviada para revisión.');
+        const message = decision === 'no_extra'
+          ? 'Jornada confirmada correctamente.'
+          : 'Jornada enviada para revisión.';
         
         success(message);
         onConfirm?.(resultData);
@@ -132,14 +159,14 @@ export default function ConfirmarJornadaModal({
               </p>
               <div className="flex gap-3 justify-center">
                 <Button
-                  onClick={() => handleConfirm('no_extra')}
+                  onClick={() => handleConfirm('user_no')}
                   disabled={loading}
                   className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold"
                 >
                   No he trabajado más
                 </Button>
                 <Button
-                  onClick={() => handleConfirm('worked_more')}
+                  onClick={() => handleConfirm('user_yes')}
                   disabled={loading}
                   className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-lg font-semibold"
                 >
@@ -154,14 +181,14 @@ export default function ConfirmarJornadaModal({
               </p>
               <div className="flex gap-3 justify-center">
                 <Button
-                  onClick={() => handleConfirm('no_extra', null)}
+                  onClick={() => handleConfirm('user_yes', null)}
                   disabled={loading}
                   className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold"
                 >
                   Sí, he trabajado menos
                 </Button>
                 <Button
-                  onClick={() => handleConfirm('no_extra', 'punch_error')}
+                  onClick={() => handleConfirm('user_no', 'punch_error')}
                   disabled={loading}
                   className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold"
                 >

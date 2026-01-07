@@ -434,7 +434,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [showConfirmarJornadaModal, setShowConfirmarJornadaModal] = useState(false);
   const [confirmarJornadaData, setConfirmarJornadaData] = useState(null);
   // State pentru a stoca dacă fiecare fichaje necesită regularizare (pentru a ascunde butonul când nu este necesar)
-  const [needsRegularizationMap, setNeedsRegularizationMap] = useState({});
+  // eslint-disable-next-line no-unused-vars
+  const [_needsRegularizationMap, setNeedsRegularizationMap] = useState({});
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -467,12 +468,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
   // Funcție pentru a verifica dacă utilizatorul este în vacanță, asunto propio sau baja médica
   const checkCurrentAbsenceStatus = useCallback(() => {
-    const today = new Date();
+    const now = new Date();
     // Folosește data locală, nu UTC, pentru a evita problemele de timezone
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
     const todayStr = `${year}-${month}-${day}`; // YYYY-MM-DD (local timezone)
+
+    // Comparăm doar date (fără oră) ca să putem include corect ziua de "Fecha alta"
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
     
     loggerDebug('Checking absence status for today:', todayStr);
     loggerDebug('Available ausencias:', ausencias);
@@ -482,13 +487,6 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     if (bajasMedicas && bajasMedicas.length > 0) {
       currentBaja = bajasMedicas.find((baja) => {
         if (!baja || typeof baja !== 'object') return false;
-        
-        // Verifică dacă Situación este "Alta" - dacă da, nu este activă
-        const situacion = baja.Situacion || baja.situacion || baja['Situación'] || baja.estado || baja.ESTADO || '';
-        if (situacion && situacion.toLowerCase().includes('alta')) {
-          success('Baja médica cu Situación "Alta" - nu este activă:', baja);
-          return false;
-        }
         
         const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || '';
         const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
@@ -509,16 +507,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         finDate.setHours(0, 0, 0, 0);
         
           // Dacă fechaFin este în trecut, baja médica nu este activă
-          if (today > finDate) {
+          if (todayDate > finDate) {
             success('Baja médica cu fecha_alta în trecut - nu este activă:', { fechaFin: fin, today: todayStr });
             return false;
           }
           
-          // Verifică dacă ziua curentă este în intervalul [inicio, fin]
-        return today >= inicioDate && today <= finDate;
+          // Verifică dacă ziua curentă este în intervalul [inicio, fin] (inclusiv fin)
+        return todayDate >= inicioDate && todayDate <= finDate;
         } else {
           // Dacă nu există fechaFin, consideră activă până în prezent
-          return today >= inicioDate;
+          return todayDate >= inicioDate;
         }
       });
     }
@@ -578,7 +576,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         }
         
         // Pentru absențe pe mai multe zile, verifică intervalul
-        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayDateOnly = new Date(todayDate);
         const inicioDateOnly = new Date(inicioDateStr);
         const finDateOnly = new Date(finDateStr);
         
@@ -604,7 +602,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const fin = new Date(fechaFinStr);
         
         // Compară doar partea de dată (YYYY-MM-DD) ignorând ora
-        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayDateOnly = new Date(todayDate);
         const inicioDateOnly = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
         const finDateOnly = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
         
@@ -1791,7 +1789,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         });
         
         // Verifică dacă trebuie confirmare (doar pentru Salida)
-        if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data) {
+        if (tipo === 'Salida' && result.data?.auto_sent_for_review) {
+          setNotification({
+            type: 'success',
+            title: 'Enviado a aprobación',
+            message:
+              'La diferencia supera 15 minutos. Se ha enviado automáticamente para revisión.',
+            duration: 6000,
+          });
+        } else if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data) {
           setConfirmarJornadaData({
             ...result.data.confirmation_data,
             fecha: fechaMadrid,
@@ -3279,17 +3285,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                   ⚠️ Sin duración
                                 </span>
                               )}
-                              {/* Buton Regularizar - apare dacă are duration dar nu există regularizare și necesită regularizare */}
-                              {(() => {
-                                const key = `${item.codigo || item.CODIGO || authUser?.CODIGO || authUser?.codigo}_${item.data}_${item.tipo}`;
-                                const needsRegularization = needsRegularizationMap[key]; // true dacă necesită, false dacă nu, undefined dacă nu a fost verificat încă
-                                // Afișăm butonul dacă verificarea nu s-a terminat (undefined) sau dacă returnează true
-                                // Ascundem doar dacă verificarea returnează explicit false
-                                return item.duration && 
-                                  !(item.effective_duration && item.effective_duration.trim() !== '') && 
-                                  !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') &&
-                                  needsRegularization !== false; // Afișăm dacă nu este explicit false
-                              })() && (
+                              {/* Buton Regularizar - apare mereu dacă are duration dar nu există regularizare */}
+                              {item.duration && 
+                                !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                                !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') && (
                                 <button
                                   onClick={async () => {
                                     try {
@@ -3320,20 +3319,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                           });
                                         }
                                       } else {
-                                        // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare direct
+                                        // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
                                         const checkResult = await callApi(routes.checkConfirmation(item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data));
-                                        const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }, dar poate fi și direct obiectul
-                                        console.log('🔍 DEBUG checkResult pentru Regularizar:', {
-                                          success: checkResult.success,
-                                          needs_confirmation: resultData.needs_confirmation,
-                                          needs_confirmation_type: typeof resultData.needs_confirmation,
-                                          delta_minutes: resultData.delta_minutes,
-                                          punched_minutes: resultData.punched_minutes,
-                                          scheduled_minutes: resultData.scheduled_minutes,
-                                          full_result: checkResult,
-                                          resultData: resultData
-                                        });
-                                        if (checkResult.success && resultData.needs_confirmation) {
+                                        const resultData = checkResult.data || checkResult;
+                                        
+                                        if (checkResult.success) {
                                           setConfirmarJornadaData({
                                             ...resultData,
                                             fecha: item.data,
@@ -3341,11 +3331,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                           });
                                           setShowConfirmarJornadaModal(true);
                                         } else {
-                                          console.log('⚠️ DEBUG: Nu se deschide modalul - success:', checkResult.success, 'needs_confirmation:', resultData.needs_confirmation);
                                           setNotification({
-                                            type: 'info',
-                                            title: 'Sin diferencia',
-                                            message: 'No hay diferencia significativa para regularizar.',
+                                            type: 'error',
+                                            title: 'Error',
+                                            message: 'No se pudo verificar la diferencia. Intenta de nuevo.',
                                           });
                                         }
                                       }
@@ -3584,7 +3573,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const [registros, setRegistros] = useState([]);
   const [registrosBrutos, setRegistrosBrutos] = useState([]);
   // State pentru a stoca dacă fiecare fichaje necesită regularizare (pentru a ascunde butonul când nu este necesar)
-  const [needsRegularizationMap, setNeedsRegularizationMap] = useState({});
+  // eslint-disable-next-line no-unused-vars
+  const [_needsRegularizationMap, setNeedsRegularizationMap] = useState({});
   // State pentru modal-ul de confirmare jornada
   const [showConfirmarJornadaModal, setShowConfirmarJornadaModal] = useState(false);
   const [confirmarJornadaData, setConfirmarJornadaData] = useState(null);
@@ -5496,17 +5486,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                             ) : (
                               <>
                                 <span className="text-gray-400 text-xs">-</span>
-                                {/* Buton Regularizar pentru managers - apare dacă are duration dar nu există regularizare și necesită regularizare */}
-                                {(() => {
-                                  const key = `${item.codigo}_${item.data}_${item.tipo}`;
-                                  const needsRegularization = needsRegularizationMap[key]; // true dacă necesită, false dacă nu, undefined dacă nu a fost verificat încă
-                                  // Afișăm butonul dacă verificarea nu s-a terminat (undefined) sau dacă returnează true
-                                  // Ascundem doar dacă verificarea returnează explicit false
-                                  return item.duration && 
-                                    !(item.effective_duration && item.effective_duration.trim() !== '') && 
-                                    !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') &&
-                                    needsRegularization !== false; // Afișăm dacă nu este explicit false
-                                })() && (
+                                {/* Buton Regularizar pentru managers - apare mereu dacă are duration dar nu există regularizare */}
+                                {item.duration && 
+                                  !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                                  !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') && (
                                   <button
                                     onClick={async () => {
                                       try {
@@ -5536,20 +5519,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                                             });
                                           }
                                         } else {
-                                          // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare direct
+                                          // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
                                           const checkResult = await callApi(routes.checkConfirmation(item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data));
-                                          const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
-                                          console.log('🔍 DEBUG checkResult pentru Regularizar (admin tab):', {
-                                            success: checkResult.success,
-                                            needs_confirmation: resultData.needs_confirmation,
-                                            needs_confirmation_type: typeof resultData.needs_confirmation,
-                                            delta_minutes: resultData.delta_minutes,
-                                            punched_minutes: resultData.punched_minutes,
-                                            scheduled_minutes: resultData.scheduled_minutes,
-                                            full_result: checkResult,
-                                            resultData: resultData
-                                          });
-                                          if (checkResult.success && resultData.needs_confirmation) {
+                                          const resultData = checkResult.data || checkResult;
+                                          
+                                          if (checkResult.success) {
                                             setConfirmarJornadaData({
                                               ...resultData,
                                               fecha: item.data,
@@ -5557,11 +5531,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                                             });
                                             setShowConfirmarJornadaModal(true);
                                           } else {
-                                            console.log('⚠️ DEBUG: Nu se deschide modalul - success:', checkResult.success, 'needs_confirmation:', resultData.needs_confirmation);
                                             setNotification({
-                                              type: 'info',
-                                              title: 'Sin diferencia',
-                                              message: 'No hay diferencia significativa para regularizar.',
+                                              type: 'error',
+                                              title: 'Error',
+                                              message: 'No se pudo verificar la diferencia. Intenta de nuevo.',
                                             });
                                           }
                                         }
@@ -5773,17 +5746,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                           ) : (
                             <div className="flex flex-col gap-1">
                               <span className="text-gray-400 text-xs">-</span>
-                              {/* Buton Regularizar pentru managers - apare dacă are duration dar nu există regularizare și necesită regularizare */}
-                              {(() => {
-                                const key = `${item.codigo}_${item.data}_${item.tipo}`;
-                                const needsRegularization = needsRegularizationMap[key]; // true dacă necesită, false dacă nu, undefined dacă nu a fost verificat încă
-                                // Afișăm butonul dacă verificarea nu s-a terminat (undefined) sau dacă returnează true
-                                // Ascundem doar dacă verificarea returnează explicit false
-                                return item.duration && 
-                                  !(item.effective_duration && item.effective_duration.trim() !== '') && 
-                                  !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') &&
-                                  needsRegularization !== false; // Afișăm dacă nu este explicit false
-                              })() && (
+                              {/* Buton Regularizar pentru managers - apare mereu dacă are duration dar nu există regularizare */}
+                              {item.duration && 
+                                !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                                !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') && (
                                 <button
                                   onClick={async () => {
                                     try {

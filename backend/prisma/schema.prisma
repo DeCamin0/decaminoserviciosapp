@@ -414,6 +414,7 @@ model InspeccionesDocumentos {
   Nombre_Supervisor String? @map("Nombre Supervisor") @db.VarChar(200)
   Centro            String? @db.VarChar(300)
   Locacion          String? @db.VarChar(500)
+  scor_total        Decimal? @map("scor_total") @db.Decimal(5, 2)
 }
 
 model LeadsDigitalizacion {

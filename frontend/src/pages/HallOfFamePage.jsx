@@ -282,32 +282,32 @@ const HallOfFamePage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 px-3 py-4 sm:px-4 sm:py-6 md:px-8 md:py-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="mb-4 sm:mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
             <Back3DButton />
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-500 bg-clip-text text-transparent">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-500 bg-clip-text text-transparent truncate">
                 🏆 Salón de la Fama
               </h1>
-              <p className="text-gray-600 mt-1">Clasificación mensual de empleados</p>
+              <p className="text-gray-600 mt-1 text-xs sm:text-sm">Clasificación mensual de empleados</p>
             </div>
           </div>
         </div>
 
         {/* Bloc de explicație - compact */}
-        <Card className="mb-4 p-4 bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-200">
-          <div className="flex items-start gap-3">
+        <Card className="mb-3 sm:mb-4 p-2.5 sm:p-3 md:p-4 bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 border-2 border-amber-200">
+          <div className="flex items-start gap-2 sm:gap-3">
             <div className="flex-shrink-0">
-              <Trophy className="w-6 h-6 text-amber-600" />
+              <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600" />
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-bold text-gray-900 mb-1.5 flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-1 sm:mb-1.5 flex items-center gap-2">
                 🏆 Salón de la Fama
               </h2>
-              <p className="text-sm text-gray-700 leading-relaxed">
+              <p className="text-xs sm:text-sm text-gray-700 leading-relaxed">
                 Este espacio reconoce el compromiso, la constancia y la implicación de nuestros equipos.
                 Aquí se reflejan los resultados mensuales basados en distintos indicadores de trabajo y actitud profesional.
                 En el futuro, este ranking podrá estar vinculado a reconocimientos, beneficios y recompensas internas.
@@ -317,37 +317,38 @@ const HallOfFamePage = () => {
         </Card>
 
         {/* Badge "En desarrollo" */}
-        <div className="mb-4 flex justify-end">
-          <span className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-300">
+        <div className="mb-3 sm:mb-4 flex justify-end">
+          <span className="inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full border border-gray-300">
             <span className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></span>
-            🔧 Funcionalidad en evolución
+            <span className="hidden sm:inline">🔧 Funcionalidad en evolución</span>
+            <span className="sm:hidden">🔧 En evolución</span>
           </span>
         </div>
 
         {/* Filters - doar pentru admin */}
         {canCalculate && (
-          <Card className="mb-6 p-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-gray-500" />
-                <label htmlFor="hall-of-fame-month" className="text-sm font-medium text-gray-700">Mes:</label>
+          <Card className="mb-3 sm:mb-4 md:mb-6 p-2.5 sm:p-3 md:p-4">
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                <label htmlFor="hall-of-fame-month" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">Mes:</label>
                 <input
                   id="hall-of-fame-month"
                   name="hall-of-fame-month"
                   type="month"
                   value={selectedMonth}
                   onChange={handleMonthChange}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm flex-1 min-w-0"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <label htmlFor="hall-of-fame-top" className="text-sm font-medium text-gray-700">Top:</label>
+              <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+                <label htmlFor="hall-of-fame-top" className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">Top:</label>
                 <select
                   id="hall-of-fame-top"
                   name="hall-of-fame-top"
                   value={limit}
                   onChange={(e) => setLimit(parseInt(e.target.value, 10))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm flex-1 sm:flex-initial"
                 >
                   <option value={10}>Top 10</option>
                   <option value={20}>Top 20</option>
@@ -359,53 +360,93 @@ const HallOfFamePage = () => {
               <button
                 onClick={calculateScores}
                 disabled={loading}
-                className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto sm:ml-auto px-3 sm:px-4 py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RefreshCw className="w-4 h-4" />
-                Calcular Scores
+                <span className="hidden sm:inline">Calcular Scores</span>
+                <span className="sm:hidden">Calcular</span>
               </button>
             </div>
           </Card>
         )}
         
-        {/* Pentru angajați normali: afișează luna selectată și buton pentru luna anterioară */}
+        {/* Pentru angajați normali: afișează luna selectată și butoane pentru ultimele luni */}
         {!canCalculate && selectedMonth && (() => {
           const now = new Date();
           const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
           const isCurrentMonth = selectedMonth === currentMonth;
           
-          // Calculează luna anterioară
-          const [year, month] = selectedMonth.split('-').map(Number);
-          const prevMonthDate = new Date(year, month - 2, 1); // month - 2 pentru că month este 1-based
-          const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+          // Calculează ultimele 3 luni anterioare
+          const [currentYear, currentMonthNum] = currentMonth.split('-').map(Number);
+          const previousMonths = [];
+          
+          for (let i = 1; i <= 3; i++) {
+            const prevMonthDate = new Date(currentYear, currentMonthNum - 1 - i, 1);
+            const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+            previousMonths.push(prevMonth);
+          }
+          
+          const getShortMonthName = (mes) => {
+            if (!mes) return '';
+            const [year, month] = mes.split('-');
+            const monthIndex = parseInt(month, 10) - 1;
+            const shortYear = year.toString().slice(-2);
+            return `${MONTHS[monthIndex].slice(0, 3)} ${shortYear}`;
+          };
           
           return (
-            <Card className="mb-6 p-4 bg-blue-50 border border-blue-200">
-              <div className="flex items-center justify-between">
+            <Card className="mb-3 sm:mb-4 md:mb-6 p-2.5 sm:p-3 md:p-4 bg-blue-50 border border-blue-200">
+              <div className="flex flex-col gap-3 sm:gap-4">
                 <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">
-                    Mostrando resultados para: <strong>{getMonthName(selectedMonth)}</strong>
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0" />
+                  <span className="text-xs sm:text-sm font-medium text-gray-700">
+                    <span className="hidden sm:inline">Mostrando resultados para: </span>
+                    <strong className="break-words">{getMonthName(selectedMonth)}</strong>
                   </span>
                 </div>
-                {isCurrentMonth && (
-                  <button
-                    onClick={() => setSelectedMonth(prevMonth)}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    Ver {getMonthName(prevMonth)}
-                  </button>
-                )}
-                {!isCurrentMonth && (
-                  <button
-                    onClick={() => setSelectedMonth(currentMonth)}
-                    className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    Volver a {getMonthName(currentMonth)}
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {isCurrentMonth ? (
+                    <>
+                      {previousMonths.map((month) => (
+                        <button
+                          key={month}
+                          onClick={() => setSelectedMonth(month)}
+                          className="px-2 sm:px-3 py-1.5 sm:py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 sm:gap-2"
+                        >
+                          <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span className="hidden sm:inline">{getMonthName(month)}</span>
+                          <span className="sm:hidden">{getShortMonthName(month)}</span>
+                        </button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setSelectedMonth(currentMonth)}
+                        className="px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-600 text-white text-xs sm:text-sm rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1.5 sm:gap-2"
+                      >
+                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">Volver a {getMonthName(currentMonth)}</span>
+                        <span className="sm:hidden">Volver</span>
+                      </button>
+                      {previousMonths.map((month) => (
+                        <button
+                          key={month}
+                          onClick={() => setSelectedMonth(month)}
+                          className={`px-2 sm:px-3 py-1.5 sm:py-2 text-white text-xs sm:text-sm rounded-lg transition-colors flex items-center gap-1.5 sm:gap-2 ${
+                            selectedMonth === month 
+                              ? 'bg-blue-800' 
+                              : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
+                        >
+                          <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span className="hidden sm:inline">{getMonthName(month)}</span>
+                          <span className="sm:hidden">{getShortMonthName(month)}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
               </div>
             </Card>
           );
@@ -417,45 +458,47 @@ const HallOfFamePage = () => {
             <LoadingSpinner />
           </div>
         ) : ranking.length === 0 ? (
-          <Card className="p-12 text-center bg-gradient-to-br from-gray-50 to-white">
+          <Card className="p-6 sm:p-8 md:p-12 text-center bg-gradient-to-br from-gray-50 to-white">
             <div className="max-w-md mx-auto">
-              <div className="mb-4">
-                <Trophy className="w-16 h-16 text-gray-300 mx-auto" />
+              <div className="mb-3 sm:mb-4">
+                <Trophy className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-700 mb-3">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-700 mb-2 sm:mb-3 px-2">
                 ✨ Aún no hay datos para este mes
               </h3>
-              <p className="text-gray-600 leading-relaxed mb-4">
+              <p className="text-sm sm:text-base text-gray-600 leading-relaxed mb-3 sm:mb-4 px-2">
                 Cuando se calculen los resultados, aquí aparecerán los empleados destacados.
               </p>
-              <p className="text-gray-500 text-sm">
+              <p className="text-xs sm:text-sm text-gray-500 px-2">
                 Este espacio servirá para reconocer el esfuerzo y la implicación del equipo.
               </p>
               {canCalculate && (
-                <div className="mt-6">
+                <div className="mt-4 sm:mt-6">
                   <button
                     onClick={calculateScores}
                     disabled={loading}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 text-white text-sm sm:text-base rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    Calcular Scores para {getMonthName(selectedMonth)}
+                    <span className="hidden sm:inline">Calcular Scores para {getMonthName(selectedMonth)}</span>
+                    <span className="sm:hidden">Calcular Scores</span>
                   </button>
                 </div>
               )}
             </div>
           </Card>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-2 sm:gap-3 md:gap-4">
             {/* Podium 3D pentru primii 3 */}
             {ranking.length >= 3 && ranking.slice(0, 3).length === 3 && (
-              <div className="mb-8">
-                <div className="text-center mb-6">
-                  <h2 className="text-2xl font-bold bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-500 bg-clip-text text-transparent">
+              <div className="mb-4 sm:mb-6 md:mb-8">
+                <div className="text-center mb-3 sm:mb-4 md:mb-6">
+                  <h2 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-500 bg-clip-text text-transparent">
                     🏆 Top 3 del Mes
                   </h2>
                 </div>
-                <div className="flex items-end justify-center gap-4 mb-6 perspective-1000" style={{ perspective: '1000px' }}>
+                {/* Desktop: horizontal, Mobile: vertical */}
+                <div className="hidden lg:flex items-end justify-center gap-4 mb-6 perspective-1000" style={{ perspective: '1000px' }}>
                   {/* Locul 2 (stânga) */}
                   <div 
                     className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-105 hover:-translate-y-2"
@@ -563,6 +606,63 @@ const HallOfFamePage = () => {
                     </div>
                   </div>
                 </div>
+                
+                {/* Mobile: Versiune verticală compactă pentru Top 3 */}
+                <div className="lg:hidden space-y-2 mb-3 sm:mb-4 md:mb-6">
+                  {/* Locul 1 */}
+                  <div className="bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-yellow-300 w-full max-w-full overflow-hidden">
+                    <div className="flex items-center gap-2 sm:gap-3 text-white w-full max-w-full">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+                        <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-200" />
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="text-xs opacity-90 mb-0.5">#1</div>
+                        <div className="font-bold text-xs sm:text-sm md:text-base truncate leading-tight w-full">{ranking[0]?.empleadoNombre || ranking[0]?.empleado_codigo}</div>
+                        <div className="text-xs opacity-75 truncate w-full">{ranking[0]?.grupo || '-'}</div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-xl sm:text-2xl font-extrabold whitespace-nowrap">{formatScore(ranking[0]?.score_final)}</div>
+                        <div className="text-xs opacity-90 whitespace-nowrap">Puntuación</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Locul 2 */}
+                  <div className="bg-gradient-to-br from-gray-300 via-gray-400 to-gray-500 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-gray-400 w-full max-w-full overflow-hidden">
+                    <div className="flex items-center gap-2 sm:gap-3 text-white w-full max-w-full">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+                        <Medal className="w-5 h-5 sm:w-6 sm:h-6 text-gray-200" />
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="text-xs opacity-90 mb-0.5">#2</div>
+                        <div className="font-bold text-xs sm:text-sm md:text-base truncate leading-tight w-full">{ranking[1]?.empleadoNombre || ranking[1]?.empleado_codigo}</div>
+                        <div className="text-xs opacity-75 truncate w-full">{ranking[1]?.grupo || '-'}</div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-xl sm:text-2xl font-extrabold whitespace-nowrap">{formatScore(ranking[1]?.score_final)}</div>
+                        <div className="text-xs opacity-90 whitespace-nowrap">Puntuación</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Locul 3 */}
+                  <div className="bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-amber-500 w-full max-w-full overflow-hidden">
+                    <div className="flex items-center gap-2 sm:gap-3 text-white w-full max-w-full">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+                        <Award className="w-5 h-5 sm:w-6 sm:h-6 text-amber-200" />
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <div className="text-xs opacity-90 mb-0.5">#3</div>
+                        <div className="font-bold text-xs sm:text-sm md:text-base truncate leading-tight w-full">{ranking[2]?.empleadoNombre || ranking[2]?.empleado_codigo}</div>
+                        <div className="text-xs opacity-75 truncate w-full">{ranking[2]?.grupo || '-'}</div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-xl sm:text-2xl font-extrabold whitespace-nowrap">{formatScore(ranking[2]?.score_final)}</div>
+                        <div className="text-xs opacity-90 whitespace-nowrap">Puntuación</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -574,25 +674,27 @@ const HallOfFamePage = () => {
               return (
                 <Card
                   key={item.empleado_codigo || index}
-                  className={`p-4 transition-shadow ${canCalculate ? 'hover:shadow-lg cursor-pointer' : ''}`}
+                  padding=""
+                  className={`p-2.5 sm:p-3 md:p-4 transition-shadow overflow-hidden ${canCalculate ? 'hover:shadow-lg cursor-pointer' : ''}`}
                   onClick={canCalculate ? () => fetchBreakdown(item.empleado_codigo) : undefined}
                 >
-                  <div className="flex items-center gap-4">
+                  {/* Desktop Layout */}
+                  <div className="hidden lg:flex items-center gap-4">
                     {/* Position Badge */}
-                    <div className={`${getBadgeColor(position)} text-white rounded-full ${position <= 3 ? 'w-20 h-20 ring-2 ring-white/50' : 'w-16 h-16'} flex items-center justify-center shadow-lg transition-transform hover:scale-105`}>
+                    <div className={`${getBadgeColor(position)} text-white rounded-full ${position <= 3 ? 'w-20 h-20 ring-2 ring-white/50' : 'w-16 h-16'} flex items-center justify-center shadow-lg transition-transform hover:scale-105 flex-shrink-0`}>
                       {getBadgeIcon(position)}
                     </div>
 
                     {/* Employee Info */}
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-800">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xl font-bold text-gray-800 truncate">
                         {item.empleadoNombre || item.empleado_codigo}
                       </h3>
-                      <p className="text-sm text-gray-500">{item.grupo || '-'}</p>
+                      <p className="text-sm text-gray-500 truncate">{item.grupo || '-'}</p>
                     </div>
 
                     {/* Scores */}
-                    <div className="flex gap-6">
+                    <div className="flex gap-4 xl:gap-6 flex-shrink-0">
                       <div className="text-center">
                         <div className="text-2xl font-bold text-blue-600">
                           {formatScore(item.score_final)}
@@ -626,7 +728,7 @@ const HallOfFamePage = () => {
                     </div>
 
                     {/* Info Icon */}
-                    <div className="relative group">
+                    <div className="relative group flex-shrink-0">
                       <Info className="w-5 h-5 text-gray-400 hover:text-blue-600 cursor-pointer" />
                       <div className="absolute right-0 top-8 w-64 p-3 bg-white border border-gray-200 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                         <div className="text-xs space-y-1">
@@ -644,12 +746,96 @@ const HallOfFamePage = () => {
                       <button
                         onClick={(e) => calculateEmployeeScore(item.empleado_codigo, e)}
                         disabled={loading}
-                        className="px-3 py-1.5 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1.5 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                         title="Recalcular score para este empleado"
                       >
                         <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
                         Recalcular
                       </button>
+                    )}
+                  </div>
+
+                  {/* Mobile Layout */}
+                  <div className="lg:hidden space-y-2 w-full max-w-full">
+                    {/* Header cu badge și nume */}
+                    <div className="flex items-center gap-2 w-full max-w-full">
+                      <div className={`${getBadgeColor(position)} text-white rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shadow-lg flex-shrink-0`}>
+                        {position <= 10 ? getBadgeIcon(position) : <span className="text-xs sm:text-sm font-bold">#{position}</span>}
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <h3 className="text-sm sm:text-base font-bold text-gray-800 truncate leading-tight w-full">
+                          {item.empleadoNombre || item.empleado_codigo}
+                        </h3>
+                        <p className="text-xs text-gray-500 truncate leading-tight w-full">{item.grupo || '-'}</p>
+                      </div>
+                      {canCalculate && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(item.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className="px-1.5 py-1 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Score Final - destacat */}
+                    <div className="bg-blue-50 rounded-lg p-2 border border-blue-200">
+                      <div className="text-center">
+                        <div className="text-xl sm:text-2xl font-bold text-blue-600">
+                          {formatScore(item.score_final)}
+                        </div>
+                        <div className="text-xs text-gray-600 font-medium">Puntuación Final</div>
+                      </div>
+                    </div>
+
+                    {/* Restul scorurilor în grid 2 coloane - mai compact */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="bg-green-50 rounded-lg p-1.5 sm:p-2 border border-green-200 overflow-hidden">
+                        <div className="text-xs sm:text-sm font-semibold text-green-700 text-center leading-tight break-words">
+                          {formatScore(item.score_indeplinire)}
+                        </div>
+                        <div className="text-xs text-gray-600 text-center leading-tight mt-0.5 break-words">Horas (55%)</div>
+                      </div>
+                      <div className="bg-purple-50 rounded-lg p-1.5 sm:p-2 border border-purple-200 overflow-hidden">
+                        <div className="text-xs sm:text-sm font-semibold text-purple-700 text-center leading-tight break-words">
+                          {formatScore(item.score_calitate)}
+                        </div>
+                        <div className="text-xs text-gray-600 text-center leading-tight mt-0.5 break-words">Calidad (20%)</div>
+                      </div>
+                      <div className="bg-orange-50 rounded-lg p-1.5 sm:p-2 border border-orange-200 overflow-hidden">
+                        <div className="text-xs sm:text-sm font-semibold text-orange-700 text-center leading-tight break-words">
+                          {formatScore(item.score_punctualitate)}
+                        </div>
+                        <div className="text-xs text-gray-600 text-center leading-tight mt-0.5 break-words">Puntualidad (15%)</div>
+                      </div>
+                      <div className="bg-pink-50 rounded-lg p-1.5 sm:p-2 border border-pink-200 overflow-hidden">
+                        <div className="text-xs sm:text-sm font-semibold text-pink-700 text-center leading-tight break-words">
+                          {formatScore(item.score_uso_app)}
+                        </div>
+                        <div className="text-xs text-gray-600 text-center leading-tight mt-0.5 break-words">Uso App (10%)</div>
+                      </div>
+                    </div>
+
+                    {/* Info breakdown - expandable pe mobile */}
+                    {canCalculate && breakdownData && Object.keys(breakdownData).length > 0 && (
+                      <details className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+                        <summary className="text-xs text-gray-600 font-medium cursor-pointer flex items-center gap-2">
+                          <Info className="w-3 h-3" />
+                          Ver detalles
+                        </summary>
+                        <div className="mt-2 space-y-1 text-xs text-gray-600">
+                          <div><strong>Horas fichadas:</strong> {formatScore(breakdownData.horas_pontate)}h</div>
+                          <div><strong>Objetivo:</strong> {formatScore(breakdownData.target_ajustat)}h</div>
+                          <div><strong>Días neutros:</strong> {breakdownData.dias_neutre || 0}</div>
+                          <div><strong>Fichajes incompletos:</strong> {breakdownData.fichajes_incompleto || 0}</div>
+                          <div><strong>Acciones:</strong> {formatScore(breakdownData.acciones_totales)}</div>
+                        </div>
+                      </details>
                     )}
                   </div>
                 </Card>
@@ -659,14 +845,14 @@ const HallOfFamePage = () => {
         )}
 
         {/* Mini-bloc "¿Cómo funciona?" - Mutat sub lista */}
-        <Card className="mt-6 p-4 bg-blue-50 border border-blue-200">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+        <Card className="mt-3 sm:mt-4 md:mt-6 p-2.5 sm:p-3 md:p-4 bg-blue-50 border border-blue-200 mb-4 sm:mb-6">
+          <div className="flex items-start gap-2 sm:gap-3">
+            <Info className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm sm:text-base font-semibold text-gray-900 mb-1.5 sm:mb-2 flex items-center gap-2">
                 📊 ¿Cómo funciona?
               </h3>
-              <ul className="text-sm text-gray-700 space-y-1">
+              <ul className="text-xs sm:text-sm text-gray-700 space-y-1">
                 <li>• El ranking se calcula de forma mensual</li>
                 <li>• Se tienen en cuenta distintos factores de desempeño</li>
                 <li>• La posición puede variar cada mes</li>
@@ -678,35 +864,38 @@ const HallOfFamePage = () => {
 
         {/* Breakdown Modal */}
         {breakdown && selectedEmployee && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
             <Card className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold">Breakdown - {breakdown.empleadoNombre || selectedEmployee}</h2>
+              <div className="p-4 sm:p-6">
+                <div className="flex justify-between items-center mb-4 gap-2">
+                  <h2 className="text-lg sm:text-xl md:text-2xl font-bold truncate min-w-0 flex-1">
+                    Breakdown - {breakdown.empleadoNombre || selectedEmployee}
+                  </h2>
                   <button
                     onClick={() => {
                       setBreakdown(null);
                       setSelectedEmployee(null);
                     }}
-                    className="text-gray-500 hover:text-gray-700"
+                    className="text-gray-500 hover:text-gray-700 flex-shrink-0 text-xl sm:text-2xl"
+                    aria-label="Cerrar"
                   >
                     ✕
                   </button>
                 </div>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3 sm:space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                      <div className="text-sm text-gray-500">Puntuación Final</div>
-                      <div className="text-2xl font-bold text-blue-600">{formatScore(breakdown.score_final)}</div>
+                      <div className="text-xs sm:text-sm text-gray-500">Puntuación Final</div>
+                      <div className="text-xl sm:text-2xl font-bold text-blue-600">{formatScore(breakdown.score_final)}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-gray-500">Ranking</div>
-                      <div className="text-2xl font-bold">#{breakdown.ranking || '-'}</div>
+                      <div className="text-xs sm:text-sm text-gray-500">Ranking</div>
+                      <div className="text-xl sm:text-2xl font-bold">#{breakdown.ranking || '-'}</div>
                     </div>
                   </div>
-                  <div className="border-t pt-4">
-                    <h3 className="font-bold mb-2">Detalles KPI:</h3>
-                    <div className="space-y-2 text-sm">
+                  <div className="border-t pt-3 sm:pt-4">
+                    <h3 className="text-sm sm:text-base font-bold mb-2">Detalles KPI:</h3>
+                    <div className="space-y-2 text-xs sm:text-sm">
                       <div><strong>Cumplimiento horas (55%):</strong> {formatScore(breakdown.score_indeplinire)}</div>
                       <div><strong>Calidad fichaje (20%):</strong> {formatScore(breakdown.score_calitate)}</div>
                       <div><strong>Puntualidad (15%):</strong> {formatScore(breakdown.score_punctualitate)}</div>
@@ -714,9 +903,9 @@ const HallOfFamePage = () => {
                     </div>
                   </div>
                   {breakdown.breakdown_json && (
-                    <div className="border-t pt-4">
-                      <h3 className="font-bold mb-2">Desglose JSON:</h3>
-                      <pre className="bg-gray-100 p-3 rounded text-xs overflow-auto">
+                    <div className="border-t pt-3 sm:pt-4">
+                      <h3 className="text-sm sm:text-base font-bold mb-2">Desglose JSON:</h3>
+                      <pre className="bg-gray-100 p-2 sm:p-3 rounded text-xs overflow-auto max-h-40 sm:max-h-60">
                         {JSON.stringify(breakdown.breakdown_json, null, 2)}
                       </pre>
                     </div>

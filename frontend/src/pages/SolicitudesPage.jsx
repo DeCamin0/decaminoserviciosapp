@@ -19,6 +19,8 @@ const MONTHS = [
 const ENDPOINT = routes.getSolicitudesByEmail;
 const BAJA_UPLOAD_ENDPOINT = routes.uploadBajasMedicas || '';
 const BAJA_LIST_ENDPOINT = routes.getBajasMedicas || '';
+const BAJA_MANUAL_ENDPOINT = routes.createBajaMedicaManual || '';
+const BAJA_RESOLVE_CONFLICTS_ENDPOINT = routes.resolveBajasMedicasConflicts || '';
 
 const normalizeTipo = (value) =>
   String(value || '')
@@ -85,6 +87,62 @@ const formatBajaRecord = (item) => {
   const idPosicion = item?.['Id.Posición'] ?? item?.['Id.Posicion'] ?? item?.Id_Posici_n ?? '';
   // ID unic bazat pe Id.Caso + Id.Posición (cheia unică din baza de date)
   const uniqueId = idCaso && idPosicion ? `${idCaso}_${idPosicion}` : (item?.id ?? `baja_${Math.random().toString(36).slice(2, 9)}`);
+
+  const parseISODateOnlyToUtc = (value) => {
+    const s = String(value || '').trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!y || !mo || !d) return null;
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    return isNaN(dt.getTime()) ? null : dt;
+  };
+
+  const calculateInclusiveDays = (startISO, endISO) => {
+    const start = parseISODateOnlyToUtc(startISO);
+    const end = parseISODateOnlyToUtc(endISO);
+    if (!start || !end) return null;
+    const diff = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    if (!isFinite(diff) || diff < 1) return null;
+    return diff;
+  };
+
+  const fechaBajaRaw =
+    item?.['Fecha baja'] ??
+    item?.['Fecha Baja'] ??
+    item?.fecha_baja ??
+    item?.fechaBaja ??
+    '';
+  const fechaAltaRaw =
+    item?.['Fecha de alta'] ??
+    item?.['Fecha alta'] ??
+    item?.['Fecha Alta'] ??
+    item?.fecha_alta ??
+    item?.fechaAlta ??
+    '';
+
+  const fuente = item?.fuente ?? '';
+
+  const rawDiasBaja = item?.['Días de baja'] ?? item?.['Dias de baja'] ?? item?.dias_baja ?? null;
+  const rawDiasPrevSps =
+    item?.['Días previstos Servicio Público de Salud'] ??
+    item?.['Dias previstos Servicio Publico de Salud'] ??
+    item?.dias_previstos_sps ??
+    null;
+
+  // For MANUAL records, if day counts are missing/0, compute from dates (inclusive).
+  const computedDiasBaja =
+    String(fuente || '').toUpperCase() === 'MANUAL' &&
+    (rawDiasBaja === null || rawDiasBaja === undefined || rawDiasBaja === '' || Number(rawDiasBaja) === 0) &&
+    fechaBajaRaw
+      ? calculateInclusiveDays(
+          String(fechaBajaRaw).slice(0, 10),
+          (fechaAltaRaw ? String(fechaAltaRaw).slice(0, 10) : new Date().toISOString().slice(0, 10))
+        )
+      : null;
+
   return {
     id: uniqueId,
     casoId: idCaso ?? '',
@@ -102,12 +160,8 @@ const formatBajaRecord = (item) => {
       item?.codigoEmpleado ??
       '',
     situacion: item?.['Situación'] ?? item?.Situacion ?? item?.situacion ?? '',
-    diasBaja: item?.['Días de baja'] ?? item?.['Dias de baja'] ?? item?.dias_baja ?? 0,
-    diasPrevistosSps:
-      item?.['Días previstos Servicio Público de Salud'] ??
-      item?.['Dias previstos Servicio Publico de Salud'] ??
-      item?.dias_previstos_sps ??
-      0,
+    diasBaja: rawDiasBaja ?? computedDiasBaja ?? 0,
+    diasPrevistosSps: rawDiasPrevSps ?? 0,
     inicioPagoDelegado:
       item?.['Inicio pago delegado'] ?? item?.inicio_pago_delegado ?? item?.inicioPagoDelegado ?? '',
     finPagoDelegado:
@@ -129,20 +183,9 @@ const formatBajaRecord = (item) => {
     ultimoParteConfirmacion:
       item?.['Último Parte de Confirmación'] ?? item?.ultimo_parte_confirmacion ?? '',
     diasBajaDetalle: item?.['Días de baja'] ?? item?.dias_baja ?? '',
-    fechaBaja:
-      item?.['Fecha baja'] ??
-      item?.['Fecha Baja'] ??
-      item?.fecha_baja ??
-      item?.fechaBaja ??
-      '',
-    fechaAlta:
-      item?.['Fecha de alta'] ??
-      item?.['Fecha alta'] ??
-      item?.['Fecha Alta'] ??
-      item?.fecha_alta ??
-      item?.fechaAlta ??
-      '',
-    fuente: item?.fuente ?? '',
+    fechaBaja: fechaBajaRaw,
+    fechaAlta: fechaAltaRaw,
+    fuente,
     updatedAt: item?.updated_at ?? item?.updatedAt ?? '',
     tipo: 'Baja Médica',
     estado: item?.['Situación'] ?? item?.situacion ?? '',
@@ -200,6 +243,19 @@ export default function SolicitudesPage() {
   // State pentru editare bajas médicas
   const [editingBaja, setEditingBaja] = useState(null); // { idCaso, idPosicion, field: 'fechaBaja' | 'fechaAlta' | 'situacion' }
   const [editingBajaValue, setEditingBajaValue] = useState('');
+
+  // Manual baja (creare rapidă)
+  const [showManualBajaModal, setShowManualBajaModal] = useState(false);
+  const [manualEmployeeSearch, setManualEmployeeSearch] = useState('');
+  const [manualShowEmployeeDropdown, setManualShowEmployeeDropdown] = useState(false);
+  const [manualSelectedEmployee, setManualSelectedEmployee] = useState(null); // { codigo, name, email }
+  const [manualBajaFechaBaja, setManualBajaFechaBaja] = useState('');
+  const [manualBajaFechaAlta, setManualBajaFechaAlta] = useState('');
+
+  // Conflicte MANUAL vs MUTUA (după upload Excel)
+  const [showBajaConflictsModal, setShowBajaConflictsModal] = useState(false);
+  const [bajaConflicts, setBajaConflicts] = useState([]);
+  const [bajaConflictChoices, setBajaConflictChoices] = useState({}); // key -> action
   
   // Ausencias states
   const [allAusencias, setAllAusencias] = useState([]);
@@ -289,7 +345,7 @@ export default function SolicitudesPage() {
       (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
     
     // For Vacaciones and Asuntos Propios, don't use occupiedDates - use availability logic instead
-    if (tipo === 'Vacaciones' || tipo === 'Asunto Propio') {
+    if (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios') {
       // Dacă se editează, ignorăm TOATE verificările (disponibilitatea, perioada de blocare, zilele din trecut, etc.)
       // Permitem selectarea oricărei date (trecut, prezent, viitor)
       if (isEditingVacacionesOrAsuntoPropio) {
@@ -1661,6 +1717,20 @@ export default function SolicitudesPage() {
           result?.message || 'Archivo de bajas médicas cargado correctamente.'
         );
 
+        // Dacă backend a detectat conflicte MANUAL vs MUTUA, afișăm modalul de rezolvare
+        const conflicts = Array.isArray(result?.conflicts) ? result.conflicts : [];
+        if (conflicts.length > 0) {
+          setBajaConflicts(conflicts);
+          // Default: "merge" (dacă Mutua nu are fecha alta, păstrăm manual; altfel păstrăm Mutua)
+          const initialChoices = {};
+          for (const c of conflicts) {
+            const key = `${c?.manual?.idCaso || ''}_${c?.manual?.idPosicion || ''}__${c?.mutua?.idCaso || ''}_${c?.mutua?.idPosicion || ''}`;
+            if (key !== '__') initialChoices[key] = 'merge';
+          }
+          setBajaConflictChoices(initialChoices);
+          setShowBajaConflictsModal(true);
+        }
+
         // Log upload bajas médicas
         await activityLogger.logBajaMedicaUploaded(
           { fileName: file.name, fileSize: file.size },
@@ -1697,6 +1767,159 @@ export default function SolicitudesPage() {
       fetchBajasMedicas,
     ]
   );
+
+  const handleOpenManualBajaModal = useCallback(() => {
+    if (!isManager) return;
+    setManualEmployeeSearch('');
+    setManualShowEmployeeDropdown(false);
+    setManualSelectedEmployee(null);
+    setManualBajaFechaBaja('');
+    setManualBajaFechaAlta('');
+    setShowManualBajaModal(true);
+  }, [isManager]);
+
+  const handleCreateManualBaja = useCallback(async () => {
+    if (!isManager) return;
+    if (!BAJA_MANUAL_ENDPOINT) {
+      setErrorMsg('Endpoint para crear baja manual no está configurado.');
+      return;
+    }
+    if (!manualSelectedEmployee?.codigo) {
+      setErrorMsg('Selecciona un empleado (código).');
+      return;
+    }
+    if (!manualBajaFechaBaja) {
+      setErrorMsg('Fecha baja es obligatoria.');
+      return;
+    }
+
+    setOperationLoading('createManualBaja', true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const payload = {
+        codigoEmpleado: manualSelectedEmployee.codigo,
+        fechaBaja: manualBajaFechaBaja,
+        fechaAlta: manualBajaFechaAlta || undefined,
+        fuente: 'MANUAL',
+      };
+
+      const resp = await fetch(BAJA_MANUAL_ENDPOINT, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(t || `HTTP ${resp.status}`);
+      }
+      const result = await resp.json();
+      if (!result?.success) {
+        throw new Error(result?.message || 'No se pudo crear la baja manual.');
+      }
+
+      setSuccessMsg(result?.message || 'Baja médica manual creada correctamente.');
+      setShowManualBajaModal(false);
+      await fetchBajasMedicas();
+    } catch (e) {
+      setErrorMsg(
+        e instanceof Error ? `No se pudo crear: ${e.message}` : 'No se pudo crear.'
+      );
+    } finally {
+      setOperationLoading('createManualBaja', false);
+    }
+  }, [
+    isManager,
+    manualSelectedEmployee,
+    manualBajaFechaBaja,
+    manualBajaFechaAlta,
+    setOperationLoading,
+    setErrorMsg,
+    setSuccessMsg,
+    fetchBajasMedicas,
+  ]);
+
+  const handleResolveBajaConflicts = useCallback(async () => {
+    if (!isManager) return;
+    if (!BAJA_RESOLVE_CONFLICTS_ENDPOINT) {
+      setErrorMsg('Endpoint para resolver conflictos no está configurado.');
+      return;
+    }
+
+    const resolutions = (bajaConflicts || [])
+      .map((c) => {
+        const key = `${c?.manual?.idCaso || ''}_${c?.manual?.idPosicion || ''}__${c?.mutua?.idCaso || ''}_${c?.mutua?.idPosicion || ''}`;
+        const action = bajaConflictChoices?.[key] || 'merge';
+        return {
+          action,
+          manualIdCaso: c?.manual?.idCaso,
+          manualIdPosicion: c?.manual?.idPosicion,
+          mutuaIdCaso: c?.mutua?.idCaso,
+          mutuaIdPosicion: c?.mutua?.idPosicion,
+        };
+      })
+      .filter(
+        (r) => r.manualIdCaso && r.manualIdPosicion && r.mutuaIdCaso && r.mutuaIdPosicion
+      );
+
+    if (resolutions.length === 0) {
+      setShowBajaConflictsModal(false);
+      return;
+    }
+
+    setOperationLoading('resolveBajaConflicts', true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const resp = await fetch(BAJA_RESOLVE_CONFLICTS_ENDPOINT, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ resolutions }),
+      });
+      if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(t || `HTTP ${resp.status}`);
+      }
+      const result = await resp.json();
+      if (!result?.success) {
+        throw new Error(result?.message || 'No se pudo resolver conflictos.');
+      }
+
+      setSuccessMsg(
+        `Conflictos resueltos: ${result?.resolved ?? resolutions.length}.`
+      );
+      setShowBajaConflictsModal(false);
+      setBajaConflicts([]);
+      setBajaConflictChoices({});
+      await fetchBajasMedicas();
+    } catch (e) {
+      setErrorMsg(
+        e instanceof Error ? `No se pudo resolver: ${e.message}` : 'No se pudo resolver.'
+      );
+    } finally {
+      setOperationLoading('resolveBajaConflicts', false);
+    }
+  }, [
+    isManager,
+    bajaConflicts,
+    bajaConflictChoices,
+    setOperationLoading,
+    setErrorMsg,
+    setSuccessMsg,
+    fetchBajasMedicas,
+  ]);
 
   const handleExportEstadisticasExcel = async () => {
     try {
@@ -3582,6 +3805,35 @@ export default function SolicitudesPage() {
     ];
   }, [userSearchTerm, userList, getUserName]);
 
+  const manualEmployeeOptions = useMemo(() => {
+    const term = manualEmployeeSearch.toLowerCase().trim();
+    const mapped = (allUsers || [])
+      .map((u) => {
+        const codigo = u?.['CODIGO'] || u?.codigo || '';
+        const name = u?.['NOMBRE / APELLIDOS'] || u?.nombre || '';
+        const email = u?.['CORREO ELECTRONICO'] || u?.EMAIL || u?.email || '';
+        return {
+          codigo: String(codigo || '').trim(),
+          name: String(name || '').trim(),
+          email: String(email || '').trim(),
+        };
+      })
+      .filter((u) => u.codigo || u.email || u.name);
+
+    const filtered = term
+      ? mapped.filter((u) => {
+          return (
+            u.codigo.toLowerCase().includes(term) ||
+            u.name.toLowerCase().includes(term) ||
+            u.email.toLowerCase().includes(term)
+          );
+        })
+      : mapped;
+
+    filtered.sort((a, b) => (a.name || a.codigo).localeCompare(b.name || b.codigo));
+    return filtered.slice(0, 50);
+  }, [allUsers, manualEmployeeSearch]);
+
   // Mobile: control expand/collapse pentru "Motivo" per solicitud
   const [expandedMotivos, setExpandedMotivos] = useState({}); // { [id]: boolean }
 
@@ -4350,9 +4602,29 @@ export default function SolicitudesPage() {
                           : 'Cargar listado'}
                       </span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenManualBajaModal}
+                      disabled={!BAJA_MANUAL_ENDPOINT}
+                      className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2 ${
+                        !BAJA_MANUAL_ENDPOINT
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
+                      }`}
+                      title="Añadir una baja manual (fuente: MANUAL)"
+                    >
+                      <span>➕</span>
+                      <span>Añadir manual</span>
+                    </button>
                     {!BAJA_UPLOAD_ENDPOINT && (
                       <span className="text-xs text-rose-500">
                         Configura `VITE_UPLOAD_BAJAS_MEDICAS` para habilitar la carga.
+                      </span>
+                    )}
+                    {!BAJA_MANUAL_ENDPOINT && (
+                      <span className="text-xs text-gray-500">
+                        Endpoint manual no configurado.
                       </span>
                     )}
                     <input
@@ -5646,7 +5918,7 @@ export default function SolicitudesPage() {
                               const today = new Date();
                               const currentDate = new Date(dateStr);
                               const isToday = currentDate.toDateString() === today.toDateString();
-                              const isPast = currentDate < today;
+                              const isPast = editingSolicitud === null && currentDate < today;
                               // Ignorăm perioada de blocare când se editează o solicitare
                               const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
                                 (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
@@ -5734,7 +6006,7 @@ export default function SolicitudesPage() {
                     )}
                     
                     {/* Availability info for Vacaciones and Asuntos Propios - Only for managers */}
-                    {isManager && !isOperationLoading('occupiedDates') && (tipo === 'Vacaciones' || tipo === 'Asunto Propio') && Object.keys(dateAvailability).length > 0 && (
+                    {editingSolicitud === null && isManager && !isOperationLoading('occupiedDates') && (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios') && Object.keys(dateAvailability).length > 0 && (
                       <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
@@ -5858,6 +6130,7 @@ export default function SolicitudesPage() {
                     )}
 
                     {/* Calendar Legend */}
+                    {editingSolicitud === null && (
                     <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                       <h4 className="text-sm font-bold text-gray-800 mb-2">Leyenda del Calendario:</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -5902,6 +6175,7 @@ export default function SolicitudesPage() {
                       </div>
                       )}
                     </div>
+                    )}
                     
                     {/* Selected dates info */}
                     {selectedDates.length > 0 && (
@@ -6002,7 +6276,7 @@ export default function SolicitudesPage() {
                               const today = new Date();
                               const currentDate = new Date(dateStr);
                               const isToday = currentDate.toDateString() === today.toDateString();
-                              const isPast = currentDate < today;
+                              const isPast = editingSolicitud === null && currentDate < today;
                               // Ignorăm perioada de blocare când se editează o solicitare
                               const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
                                 (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
@@ -6077,7 +6351,7 @@ export default function SolicitudesPage() {
                     </div>
 
                     {/* Availability info for Asuntos Propios */}
-                    {Object.keys(dateAvailability).length > 0 && (
+                    {editingSolicitud === null && Object.keys(dateAvailability).length > 0 && (
                       <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                         <p className="text-sm font-medium text-purple-800">
                           📊 Disponibilidad de Asuntos Propios
@@ -6095,6 +6369,7 @@ export default function SolicitudesPage() {
                     )}
 
                     {/* Calendar Legend for Asuntos Propios */}
+                    {editingSolicitud === null && (
                     <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                       <div className="flex justify-between items-center mb-2">
                         <h4 className="text-sm font-bold text-gray-800">Leyenda del Calendario:</h4>
@@ -6149,6 +6424,7 @@ export default function SolicitudesPage() {
                         </p>
                       </div>
                     </div>
+                    )}
                     
                     {/* Selected dates info */}
                     {selectedDates.length > 0 && (
@@ -6443,6 +6719,278 @@ export default function SolicitudesPage() {
                 <>
                   <Trash2 className="w-4 h-4" />
                   Eliminar
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Añadir baja manual */}
+      <Modal
+        isOpen={showManualBajaModal}
+        onClose={() => setShowManualBajaModal(false)}
+        title="Añadir baja manual"
+        size="md"
+      >
+        <div className="space-y-5">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm text-rose-800">
+            Crea una baja médica manual (fuente: <b>MANUAL</b>) para estar al día si Mutua no actualiza.
+            Cuando llegue la baja desde Mutua (Excel), el sistema te pedirá resolver el conflicto.
+          </div>
+
+          <div className="relative">
+            <label
+              htmlFor="manual-baja-employee-search"
+              className="block text-sm font-semibold text-gray-700 mb-2"
+            >
+              Empleado (código / nombre / email) <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="manual-baja-employee-search"
+              type="text"
+              value={manualEmployeeSearch}
+              onChange={(e) => {
+                setManualEmployeeSearch(e.target.value);
+                setManualShowEmployeeDropdown(true);
+              }}
+              onFocus={() => setManualShowEmployeeDropdown(true)}
+              placeholder="Ej: 10000084, Pirvu, pirvu@..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+            />
+            {manualSelectedEmployee?.codigo && (
+              <div className="mt-2 text-xs text-gray-600">
+                Seleccionado: <b>{manualSelectedEmployee.codigo}</b> — {manualSelectedEmployee.name || manualSelectedEmployee.email}
+              </div>
+            )}
+
+            {manualShowEmployeeDropdown && (
+              <div className="absolute z-[9999] w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+                {manualEmployeeOptions.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                    No se encontraron empleados.
+                  </div>
+                ) : (
+                  <div className="p-2">
+                    {manualEmployeeOptions.map((u) => {
+                      const key = `${u.codigo || u.email || u.name}`;
+                      return (
+                        <button
+                          key={key}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setManualSelectedEmployee(u);
+                            setManualEmployeeSearch(`${u.codigo} - ${u.name || u.email}`);
+                            setManualShowEmployeeDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-rose-50 rounded-lg transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-gray-900 truncate">
+                                {u.name || 'Sin nombre'}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">
+                                {u.email || '—'}
+                              </div>
+                            </div>
+                            <div className="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-1 rounded-lg">
+                              {u.codigo || 'N/A'}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="manual-baja-fecha-baja" className="block text-sm font-semibold text-gray-700 mb-2">
+                Fecha baja <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="manual-baja-fecha-baja"
+                type="date"
+                value={manualBajaFechaBaja}
+                onChange={(e) => setManualBajaFechaBaja(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="manual-baja-fecha-alta" className="block text-sm font-semibold text-gray-700 mb-2">
+                Fecha alta (opcional)
+              </label>
+              <input
+                id="manual-baja-fecha-alta"
+                type="date"
+                value={manualBajaFechaAlta}
+                onChange={(e) => setManualBajaFechaAlta(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 justify-end pt-2">
+            <button
+              onClick={() => setShowManualBajaModal(false)}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleCreateManualBaja}
+              disabled={isOperationLoading('createManualBaja')}
+              className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isOperationLoading('createManualBaja') ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Creando...
+                </>
+              ) : (
+                <>
+                  <span>➕</span>
+                  Crear baja manual
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Resolver conflictos MANUAL vs MUTUA */}
+      <Modal
+        isOpen={showBajaConflictsModal}
+        onClose={() => setShowBajaConflictsModal(false)}
+        title="Resolver conflictos (MANUAL vs MUTUA)"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+            Se detectaron registros duplicados (MANUAL y MUTUA) para la misma baja. Elige qué hacer.
+            Verás explícitamente <b>Fecha alta MANUAL</b> y <b>Fecha alta MUTUA</b>.
+          </div>
+
+          {(bajaConflicts || []).length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              No hay conflictos.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {bajaConflicts.map((c) => {
+                const key = `${c?.manual?.idCaso || ''}_${c?.manual?.idPosicion || ''}__${c?.mutua?.idCaso || ''}_${c?.mutua?.idPosicion || ''}`;
+                const choice = bajaConflictChoices?.[key] || 'merge';
+                return (
+                  <div key={key} className="border border-gray-200 rounded-xl p-4 bg-white">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-gray-900 truncate">
+                          {c?.trabajador || 'Sin nombre'}{' '}
+                          <span className="text-gray-500 font-semibold">
+                            (Código: {c?.codigoEmpleado || 'N/A'})
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Fecha baja: <b>{formatDate(c?.fechaBaja)}</b>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        MANUAL: {c?.manual?.idCaso}/{c?.manual?.idPosicion} · MUTUA: {c?.mutua?.idCaso}/{c?.mutua?.idPosicion}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <div className="text-xs font-semibold text-amber-800">Fecha alta (MANUAL)</div>
+                        <div className="text-sm font-bold text-amber-900">
+                          {formatDate(c?.fechaAltaManual) || '-'}
+                        </div>
+                      </div>
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                        <div className="text-xs font-semibold text-emerald-800">Fecha alta (MUTUA)</div>
+                        <div className="text-sm font-bold text-emerald-900">
+                          {formatDate(c?.fechaAltaMutua) || '-'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="text-xs font-semibold text-gray-700 mb-2">Acción</div>
+                      <div className="flex flex-col sm:flex-row gap-3 text-sm">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`conflict_${key}`}
+                            value="keep_manual"
+                            checked={choice === 'keep_manual'}
+                            onChange={() =>
+                              setBajaConflictChoices((prev) => ({ ...prev, [key]: 'keep_manual' }))
+                            }
+                          />
+                          <span><b>Conservar MANUAL</b> (sobrescribe MUTUA)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`conflict_${key}`}
+                            value="use_mutua"
+                            checked={choice === 'use_mutua'}
+                            onChange={() =>
+                              setBajaConflictChoices((prev) => ({ ...prev, [key]: 'use_mutua' }))
+                            }
+                          />
+                          <span><b>Usar MUTUA</b></span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`conflict_${key}`}
+                            value="merge"
+                            checked={choice === 'merge'}
+                            onChange={() =>
+                              setBajaConflictChoices((prev) => ({ ...prev, [key]: 'merge' }))
+                            }
+                          />
+                          <span><b>Unir</b> (si MUTUA no tiene alta, copia MANUAL)</span>
+                        </label>
+                      </div>
+                      {choice === 'keep_manual' && (
+                        <div className="mt-2 text-xs text-rose-700">
+                          Nota: “Conservar MANUAL” actualizará la Fecha alta de MUTUA con la de MANUAL (incluso si está vacía).
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex gap-3 justify-end pt-2">
+            <button
+              onClick={() => setShowBajaConflictsModal(false)}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+            >
+              Más tarde
+            </button>
+            <button
+              onClick={handleResolveBajaConflicts}
+              disabled={isOperationLoading('resolveBajaConflicts')}
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isOperationLoading('resolveBajaConflicts') ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Aplicando...
+                </>
+              ) : (
+                <>
+                  <span>✅</span>
+                  Aplicar decisiones
                 </>
               )}
             </button>

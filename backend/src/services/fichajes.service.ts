@@ -626,6 +626,7 @@ export class FichajesService {
     success: true;
     id: string;
     needs_confirmation?: boolean;
+    auto_sent_for_review?: boolean;
     confirmation_data?: {
       delta_minutes: number;
       punched_minutes: number;
@@ -770,7 +771,47 @@ export class FichajesService {
                 fichajeData.codigo,
                 fichajeData.data,
               );
-            needs_confirmation = checkResult.needs_confirmation;
+            const threshold =
+              (this.regularizacionService as any)['CONFIRMATION_THRESHOLD_MINUTES'] ??
+              15;
+            const delta = Number(checkResult.delta_minutes) || 0;
+
+            // Business rule:
+            // - abs(delta) <= 15 => auto OK (no modal, no approvals)
+            // - abs(delta)  > 15 => auto send to approvals (NEEDS_REVIEW), no modal
+            if (Math.abs(delta) > threshold) {
+              try {
+                await this.regularizacionService.confirmJornada({
+                  employee_codigo: fichajeData.codigo,
+                  fecha: fichajeData.data,
+                  decision: 'worked_more',
+                  reason: 'auto_threshold_exceeded',
+                  created_by: fichajeData.codigo,
+                  ip_address: undefined,
+                  user_agent: undefined,
+                });
+                this.logger.log(
+                  `✅ Auto-sent jornada to review (NEEDS_REVIEW): codigo=${fichajeData.codigo}, fecha=${fichajeData.data}, delta_minutes=${delta}`,
+                );
+                // Do not open modal in frontend
+                needs_confirmation = false;
+                confirmation_data = null;
+                return {
+                  success: true,
+                  id: fichajeData.id,
+                  needs_confirmation: false,
+                  auto_sent_for_review: true,
+                };
+              } catch (autoErr: any) {
+                // If auto-send fails, fall back to old behavior (modal) so user isn't blocked
+                this.logger.warn(
+                  `⚠️ Auto-send to review failed, falling back to modal: ${autoErr?.message || autoErr}`,
+                );
+                needs_confirmation = true;
+              }
+            } else {
+              needs_confirmation = false;
+            }
             confirmation_data = {
               delta_minutes: checkResult.delta_minutes,
               punched_minutes: checkResult.punched_minutes,

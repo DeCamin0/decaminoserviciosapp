@@ -1579,11 +1579,24 @@ export default function AprobacionesPage() {
         size="lg"
       >
         {regularizacionToApprove && (() => {
-          // Dacă punched_minutes = 0 dar există scheduled_minutes > 0 (ex: "Olvidó fichar"),
-          // folosește scheduled_minutes în loc de punched_minutes
-          const effectiveMinutes = regularizacionToApprove.punched_minutes === 0 && regularizacionToApprove.scheduled_minutes > 0
-            ? regularizacionToApprove.scheduled_minutes
-            : regularizacionToApprove.punched_minutes;
+          // Logica pentru effective_minutes la aprobare:
+          // 1. Dacă regularization_type = NO_EXTRA → păstrează effective_minutes (deja setat la scheduled_minutes)
+          // 2. Dacă regularization_type = DECLARES_EXTRA → păstrează effective_minutes (deja setat la punched_minutes)
+          //    Excepție: dacă punched_minutes = 0 → folosește scheduled_minutes
+          let effectiveMinutes = regularizacionToApprove.effective_minutes; // Păstrează valoarea existentă by default
+          
+          if (regularizacionToApprove.regularization_type === 'NO_EXTRA') {
+            // Când user a zis "No", păstrăm effective_minutes așa cum e (deja setat la scheduled_minutes)
+            effectiveMinutes = regularizacionToApprove.effective_minutes;
+          } else if (regularizacionToApprove.regularization_type === 'DECLARES_EXTRA') {
+            // Când user a zis "Sí", păstrăm effective_minutes așa cum e (deja setat la punched_minutes)
+            // Excepție: dacă punched_minutes = 0, folosim scheduled_minutes
+            if (regularizacionToApprove.punched_minutes === 0 && regularizacionToApprove.scheduled_minutes > 0) {
+              effectiveMinutes = regularizacionToApprove.scheduled_minutes;
+            } else {
+              effectiveMinutes = regularizacionToApprove.effective_minutes;
+            }
+          }
           
           return (
             <div className="space-y-4">

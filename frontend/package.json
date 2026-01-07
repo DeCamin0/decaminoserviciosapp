@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.01.06.0058",
+  "version": "2026.01.07.0105",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -62,7 +62,7 @@
     "http-proxy-middleware": "^3.0.5",
     "i18next": "^23.7.6",
     "jsonwebtoken": "^9.0.2",
-    "jspdf": "^3.0.3",
+    "jspdf": "^4.0.0",
     "lucide-react": "^0.294.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.54",

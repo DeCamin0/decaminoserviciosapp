@@ -275,7 +275,7 @@ export default function MisInspeccionesPage() {
           type: inspection.type || inspection.tipo_inspeccion,
           date: formatDate(inspection.date || inspection.fecha || inspection.fecha_subida),
           originalDate: inspection.date || inspection.fecha || inspection.fecha_subida, // Păstrează data originală pentru filtrare
-            inspector: inspection.inspector || inspection.inspector_nombre || inspection['Nombre Supervisor'] || null,
+            inspector: inspection.inspector || inspection.inspector_nombre || inspection.Nombre_Supervisor || inspection['Nombre Supervisor'] || null,
             trabajador: inspection.trabajador || inspection.nombre_empleado || null,
             employeeCode: inspection.employeeCode || inspection.codigo_empleado || null,
             location: inspection.location || inspection.ubicacion || inspection.lugar || inspection.sitio || inspection.direccion || inspection.Locacion || null,
@@ -285,8 +285,9 @@ export default function MisInspeccionesPage() {
               const url = inspection.pdfUrl || inspection.archivo?.url || inspection.archivo || inspection.url_pdf;
               // Asigură-te că pdfUrl este întotdeauna string sau null
               return typeof url === 'string' ? url : (url ? String(url) : null);
-            })()
-        }));
+            })(),
+            scor_total: inspection.scor_total || null
+          }));
         
         setInspections(processedInspections);
         console.log('✅ Inspecciones procesadas:', processedInspections);
@@ -706,6 +707,11 @@ export default function MisInspeccionesPage() {
                                   👤 {inspection.employeeCode}
                                 </span>
                               )}
+                              {inspection.scor_total !== null && inspection.scor_total !== undefined && (
+                                <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold border border-yellow-300">
+                                  ⭐ {Number(inspection.scor_total).toFixed(2)}/5
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -814,9 +820,16 @@ export default function MisInspeccionesPage() {
                   <h3 className="text-xl font-bold text-gray-900">
                     Preview Inspección
                   </h3>
-                  <p className="text-sm text-red-600 font-medium">
-                    {previewData?.id}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-red-600 font-medium">
+                      {previewData?.id}
+                    </p>
+                    {previewData?.scor_total !== null && previewData?.scor_total !== undefined && (
+                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold border border-yellow-300">
+                        ⭐ {Number(previewData.scor_total).toFixed(2)}/5
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
               <button

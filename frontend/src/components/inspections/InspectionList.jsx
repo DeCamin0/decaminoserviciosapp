@@ -308,13 +308,14 @@ const InspectionList = ({ onBackToSelection }) => {
             id: inspection.id || inspection.id_inspeccion,
             type: inspection.type || inspection.tipo_inspeccion,
             date: formatDate(inspection.date || inspection.fecha || inspection.fecha_subida),
-            inspector: inspection.inspector || inspection.inspector_nombre || inspection['Nombre Supervisor'] || 'N/A',
+            inspector: inspection.inspector || inspection.inspector_nombre || inspection.Nombre_Supervisor || inspection['Nombre Supervisor'] || 'N/A',
             trabajador: inspection.trabajador || inspection.nombre_empleado || 'N/A',
             employeeCode: inspection.employeeCode || inspection.codigo_empleado || 'N/A',
             location: inspection.location || inspection.ubicacion || inspection.lugar || inspection.sitio || inspection.direccion || inspection.Locacion || 'N/A',
             centro: inspection.centro || inspection.Centro || 'N/A',
             status: inspection.status || inspection.estado || inspection.estado_inspeccion || 'completada',
-            pdfUrl: inspection.pdfUrl || inspection.archivo?.url || inspection.archivo || inspection.url_pdf || 'N/A'
+            pdfUrl: inspection.pdfUrl || inspection.archivo?.url || inspection.archivo || inspection.url_pdf || 'N/A',
+            scor_total: inspection.scor_total || null
           };
           
           return mappedInspection;
@@ -1144,6 +1145,11 @@ const InspectionList = ({ onBackToSelection }) => {
                       {inspection.employeeCode && (
                         <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold border border-blue-300">
                           {inspection.employeeCode}
+                        </span>
+                      )}
+                      {inspection.scor_total !== null && inspection.scor_total !== undefined && (
+                        <span className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold border border-yellow-300">
+                          ⭐ {Number(inspection.scor_total).toFixed(2)}/5
                         </span>
                       )}
                     </div>

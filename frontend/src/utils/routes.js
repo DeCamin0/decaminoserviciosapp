@@ -278,6 +278,12 @@ export const routes = {
   updateBajasMedicas: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas'
     : 'https://api.decaminoservicios.com/api/bajas-medicas',
+  createBajaMedicaManual: import.meta.env.DEV
+    ? 'http://localhost:3000/api/bajas-medicas/manual'
+    : 'https://api.decaminoservicios.com/api/bajas-medicas/manual',
+  resolveBajasMedicasConflicts: import.meta.env.DEV
+    ? 'http://localhost:3000/api/bajas-medicas/resolve-conflicts'
+    : 'https://api.decaminoservicios.com/api/bajas-medicas/resolve-conflicts',
   
   // Documentos
   getNominas: import.meta.env.DEV

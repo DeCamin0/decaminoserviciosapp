@@ -28,6 +28,7 @@ export class InspeccionesService {
       Nombre_Supervisor: string | null;
       Centro: string | null;
       Locacion: string | null;
+      scor_total: number | null;
     }>
   > {
     try {
@@ -54,7 +55,8 @@ export class InspeccionesService {
           fecha_subida,
           \`Nombre Supervisor\`,
           Centro,
-          Locacion
+          Locacion,
+          scor_total
         FROM InspeccionesDocumentos
         WHERE codigo_empleado = ${escapedCodigo}
         ORDER BY fecha_subida DESC
@@ -72,6 +74,7 @@ export class InspeccionesService {
           'Nombre Supervisor': string | null;
           Centro: string | null;
           Locacion: string | null;
+          scor_total: number | null;
         }>
       >(query);
 
@@ -87,6 +90,7 @@ export class InspeccionesService {
         Nombre_Supervisor: row['Nombre Supervisor'] || null,
         Centro: row.Centro,
         Locacion: row.Locacion,
+        scor_total: row.scor_total !== null ? Number(row.scor_total) : null,
       }));
 
       this.logger.log(
@@ -120,6 +124,7 @@ export class InspeccionesService {
       Nombre_Supervisor: string | null;
       Centro: string | null;
       Locacion: string | null;
+      scor_total: number | null;
     }>
   > {
     try {
@@ -135,7 +140,8 @@ export class InspeccionesService {
           fecha_subida,
           \`Nombre Supervisor\`,
           Centro,
-          Locacion
+          Locacion,
+          scor_total
         FROM InspeccionesDocumentos
         ORDER BY fecha_subida DESC
       `;
@@ -151,6 +157,7 @@ export class InspeccionesService {
           'Nombre Supervisor': string | null;
           Centro: string | null;
           Locacion: string | null;
+          scor_total: number | null;
         }>
       >(query);
 
@@ -165,6 +172,7 @@ export class InspeccionesService {
         Nombre_Supervisor: row['Nombre Supervisor'] || null,
         Centro: row.Centro,
         Locacion: row.Locacion,
+        scor_total: row.scor_total !== null ? Number(row.scor_total) : null,
       }));
 
       this.logger.log(`✅ Found ${mappedResults.length} total inspecciones`);
@@ -205,6 +213,8 @@ export class InspeccionesService {
       const codigoEmpleado = body.codigo_empleado || '';
       const centroTrabajo = body.centro || '';
       const locatie = body.locatie || '';
+      // Scorul total: media tuturor scorurilor (rango + calidad) pentru toate punctele
+      const scorTotal = body.scor_total || null;
 
       // PDF base64 - convert to Buffer
       let pdfBuffer: Buffer | null = null;
@@ -257,7 +267,8 @@ export class InspeccionesService {
           fecha_subida,
           \`Nombre Supervisor\`,
           Centro,
-          Locacion
+          Locacion,
+          scor_total
         ) VALUES (
           ${this.escapeSql(inspeccionId)},
           ${this.escapeSql(tipoInspeccion)},
@@ -268,7 +279,8 @@ export class InspeccionesService {
           ${this.escapeSql(timestamp)},
           ${this.escapeSql(nombreInspector)},
           ${this.escapeSql(centroTrabajo)},
-          ${this.escapeSql(locatie)}
+          ${this.escapeSql(locatie)},
+          ${scorTotal !== null ? scorTotal : 'NULL'}
         )
       `;
 
