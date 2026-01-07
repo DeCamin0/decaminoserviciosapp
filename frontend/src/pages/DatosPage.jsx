@@ -73,6 +73,33 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
   }
 };
 
+// Funcție helper pentru transformare automată în majuscule
+const toUpperCaseIfNeeded = (field, value) => {
+  // Câmpuri care NU trebuie transformate în majuscule
+  const excludeFields = [
+    'DIRECCION',
+    'CORREO ELECTRONICO',
+    'NACIONALIDAD',
+    'FECHA NACIMIENTO',
+    'FECHA DE ALTA',
+    'FECHA BAJA',
+    'Fecha Antigüedad',
+    'Antigüedad'
+  ];
+  
+  if (excludeFields.includes(field)) {
+    return value;
+  }
+  
+  // Pentru DNI/NIE și IBAN, transformăm doar literele în majuscule
+  if (field === 'D.N.I. / NIE' || field === 'Nº Cuenta') {
+    return value.toUpperCase();
+  }
+  
+  // Pentru restul câmpurilor text, transformăm totul în majuscule
+  return value.toUpperCase();
+};
+
 export default function DatosPage() {
   const { user: authUser, logout } = useAuth();
   const { callApi } = useApi();
@@ -1637,7 +1664,7 @@ const [editLoading, setEditLoading] = useState(false);
                             ) : 'border-gray-200 focus:ring-red-500 focus:border-red-500'
                           }`}
                           value={editForm[field] || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                           placeholder="123456789012 (12 cifras)"
                           maxLength="12"
                         />
@@ -1673,7 +1700,7 @@ const [editLoading, setEditLoading] = useState(false);
                             ) : 'border-gray-200 focus:ring-red-500 focus:border-red-500'
                           }`}
                           value={editForm[field] || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                           placeholder="ES91 2100 0418 4502 0005 1332 (IBAN español)"
                           maxLength="24"
                         />
@@ -1709,7 +1736,7 @@ const [editLoading, setEditLoading] = useState(false);
                             ) : 'border-gray-200 focus:ring-red-500 focus:border-red-500'
                           }`}
                           value={editForm[field] || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                           placeholder="12345678A (DNI) sau X1234567A (NIE)"
                           maxLength="9"
                         />
@@ -1884,7 +1911,7 @@ const [editLoading, setEditLoading] = useState(false);
                           type="text"
                           className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                           value={editForm[field] || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                           placeholder="Ingresa nombre completo..."
                         />
                         {/* Campos separados si existen */}
@@ -1896,7 +1923,7 @@ const [editLoading, setEditLoading] = useState(false);
                                 type="text"
                                 className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
                                 value={editForm.NOMBRE || ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: toUpperCaseIfNeeded('NOMBRE', e.target.value) }))}
                                 placeholder="Nombre"
                               />
                             </div>
@@ -1906,7 +1933,7 @@ const [editLoading, setEditLoading] = useState(false);
                                 type="text"
                                 className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
                                 value={editForm.APELLIDO1 || ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: toUpperCaseIfNeeded('APELLIDO1', e.target.value) }))}
                                 placeholder="Primer Apellido"
                               />
                             </div>
@@ -1916,7 +1943,7 @@ const [editLoading, setEditLoading] = useState(false);
                                 type="text"
                                 className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
                                 value={editForm.APELLIDO2 || ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: toUpperCaseIfNeeded('APELLIDO2', e.target.value) }))}
                                 placeholder="Segundo Apellido"
                               />
                             </div>
@@ -1938,7 +1965,7 @@ const [editLoading, setEditLoading] = useState(false);
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                         value={editForm[field] || ''}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                         placeholder={`Ingresa ${field.toLowerCase()}...`}
                       />
                     )}

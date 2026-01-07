@@ -19,6 +19,33 @@ import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHe
 import CorregirNombresTab from '../components/employees/CorregirNombresTab';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 
+// Funcție helper pentru transformare automată în majuscule
+const toUpperCaseIfNeeded = (field, value) => {
+  // Câmpuri care NU trebuie transformate în majuscule
+  const excludeFields = [
+    'DIRECCION',
+    'CORREO ELECTRONICO',
+    'NACIONALIDAD',
+    'FECHA NACIMIENTO',
+    'FECHA DE ALTA',
+    'FECHA BAJA',
+    'Fecha Antigüedad',
+    'Antigüedad'
+  ];
+  
+  if (excludeFields.includes(field)) {
+    return value;
+  }
+  
+  // Pentru DNI/NIE și IBAN, transformăm doar literele în majuscule
+  if (field === 'D.N.I. / NIE' || field === 'Nº Cuenta') {
+    return value.toUpperCase();
+  }
+  
+  // Pentru restul câmpurilor text, transformăm totul în majuscule
+  return value.toUpperCase();
+};
+
 // Función para generar el código
 const generateCodigo = () => {
   return Date.now().toString().slice(-8); // Usa timestamp en lugar de random
@@ -3179,7 +3206,7 @@ export default function EmpleadosPage() {
                         value={addForm[field]}
                         onChange={(e) => {
                           // Permitem editare manuală, dar useEffect-ul va sincroniza dacă există câmpuri separate
-                          setAddForm(prev => ({ ...prev, [field]: e.target.value }));
+                          setAddForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }));
                         }}
                         placeholder="NOMBRE / APELLIDOS (se completa automáticamente al escribir en campos separados)"
                       />
@@ -3191,7 +3218,7 @@ export default function EmpleadosPage() {
                             id="add-nombre"
                             name="NOMBRE"
                             value={addForm.NOMBRE || ''}
-                            onChange={(e) => setAddForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
+                            onChange={(e) => setAddForm(prev => ({ ...prev, NOMBRE: toUpperCaseIfNeeded('NOMBRE', e.target.value) }))}
                             placeholder="Nombre"
                             className="text-sm"
                           />
@@ -3202,7 +3229,7 @@ export default function EmpleadosPage() {
                             id="add-apellido1"
                             name="APELLIDO1"
                             value={addForm.APELLIDO1 || ''}
-                            onChange={(e) => setAddForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
+                            onChange={(e) => setAddForm(prev => ({ ...prev, APELLIDO1: toUpperCaseIfNeeded('APELLIDO1', e.target.value) }))}
                             placeholder="Primer Apellido"
                             className="text-sm"
                           />
@@ -3213,7 +3240,7 @@ export default function EmpleadosPage() {
                             id="add-apellido2"
                             name="APELLIDO2"
                             value={addForm.APELLIDO2 || ''}
-                            onChange={(e) => setAddForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
+                            onChange={(e) => setAddForm(prev => ({ ...prev, APELLIDO2: toUpperCaseIfNeeded('APELLIDO2', e.target.value) }))}
                             placeholder="Segundo Apellido"
                             className="text-sm"
                           />
@@ -3236,7 +3263,7 @@ export default function EmpleadosPage() {
                           ) : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
                         }`}
                         value={addForm[field] || ''}
-                        onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                        onChange={(e) => setAddForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                         placeholder="12345678A (DNI) sau X1234567A (NIE)"
                         maxLength="9"
                       />
@@ -3272,7 +3299,7 @@ export default function EmpleadosPage() {
                           ) : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
                         }`}
                         value={addForm[field] || ''}
-                        onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                        onChange={(e) => setAddForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                         placeholder="123456789012 (12 cifras)"
                         maxLength="12"
                       />
@@ -3312,7 +3339,7 @@ export default function EmpleadosPage() {
                           const valor = e.target.value;
                           // Formatează automat IBAN-ul cu spații
                           const valorFormateado = formatearIBAN(valor);
-                          setAddForm(prev => ({ ...prev, [field]: valorFormateado }));
+                          setAddForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, valorFormateado) }));
                         }}
                         placeholder="ES91 2100 0418 4502 0005 1332 (IBAN español)"
                         maxLength={34} // 24 caractere + 5 spații = 29, dar permitem mai mult pentru flexibilitate
@@ -3688,7 +3715,7 @@ export default function EmpleadosPage() {
                       name={field}
                       placeholder={field}
                       value={addForm[field]}
-                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                     />
                   )}
                 </div>
@@ -4227,7 +4254,7 @@ export default function EmpleadosPage() {
                         ) : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
                       }`}
                       value={editForm[field] || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                       placeholder="12345678A (DNI) sau X1234567A (NIE)"
                       maxLength="9"
                     />
@@ -4266,7 +4293,7 @@ export default function EmpleadosPage() {
                       onChange={(e) => {
                         // Elimină spații și liniuțe în timpul input-ului
                         const cleaned = e.target.value.replace(/[\s-]/g, '');
-                        setEditForm(prev => ({ ...prev, [field]: cleaned }));
+                        setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, cleaned) }));
                       }}
                       placeholder="123456789012 (12 cifras)"
                       maxLength="12"
@@ -4307,7 +4334,7 @@ export default function EmpleadosPage() {
                         const valor = e.target.value;
                         // Formatează automat IBAN-ul cu spații
                         const valorFormateado = formatearIBAN(valor);
-                        setEditForm(prev => ({ ...prev, [field]: valorFormateado }));
+                        setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, valorFormateado) }));
                       }}
                       placeholder="ES91 2100 0418 4502 0005 1332 (IBAN español)"
                       maxLength={34} // 24 caractere + 5 spații = 29, dar permitem mai mult pentru flexibilitate
@@ -4708,7 +4735,7 @@ export default function EmpleadosPage() {
                       min="0"
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 hover:border-gray-300"
                       value={editForm[field] || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                       placeholder="0.00"
                     />
                     <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -4757,7 +4784,7 @@ export default function EmpleadosPage() {
                       id={fieldId}
                       name={field}
                       value={editForm[field] || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                     />
                     {/* Campos separados si existen */}
                     {(editForm?.NOMBRE || editForm?.APELLIDO1 || editForm?.APELLIDO2) && (
@@ -4768,7 +4795,7 @@ export default function EmpleadosPage() {
                             id="edit-nombre"
                             name="NOMBRE"
                             value={editForm.NOMBRE || ''}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: e.target.value }))}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: toUpperCaseIfNeeded('NOMBRE', e.target.value) }))}
                             className="text-sm"
                           />
                         </div>
@@ -4778,7 +4805,7 @@ export default function EmpleadosPage() {
                             id="edit-apellido1"
                             name="APELLIDO1"
                             value={editForm.APELLIDO1 || ''}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: e.target.value }))}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: toUpperCaseIfNeeded('APELLIDO1', e.target.value) }))}
                             className="text-sm"
                           />
                         </div>
@@ -4788,7 +4815,7 @@ export default function EmpleadosPage() {
                             id="edit-apellido2"
                             name="APELLIDO2"
                             value={editForm.APELLIDO2 || ''}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: e.target.value }))}
+                            onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: toUpperCaseIfNeeded('APELLIDO2', e.target.value) }))}
                             className="text-sm"
                           />
                         </div>
@@ -4817,7 +4844,7 @@ export default function EmpleadosPage() {
                     id={fieldId}
                     name={field}
                     value={editForm[field] || ''}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                   />
                 )}
                 </div>

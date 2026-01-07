@@ -3972,6 +3972,44 @@ fichajes_por_dia AS (
   GROUP BY empleadoId, workday_date
 ),
 
+-- Numără zilele cu fichele fără adresă (DIRECCION NULL sau gol)
+fichajes_sin_direccion AS (
+  SELECT 
+    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CASE
+      WHEN f.TIPO = 'Salida' 
+        AND f.DURACION IS NOT NULL 
+        AND TRIM(f.DURACION) <> '' 
+        AND f.DURACION <> '00:00:00'
+        AND CAST(TIME(f.HORA) AS TIME) < TIME('12:00:00')
+        AND EXISTS (
+          SELECT 1
+          FROM Fichaje f_entrada
+          WHERE f_entrada.CODIGO = f.CODIGO
+            AND f_entrada.TIPO = 'Entrada'
+            AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+            AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00')
+        )
+      THEN DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+      ELSE DATE(f.FECHA)
+    END AS workday_date
+  FROM Fichaje f
+  WHERE f.FECHA >= @d_first AND f.FECHA < DATE_ADD(@d_last, INTERVAL 1 DAY)
+    AND (f.DIRECCION IS NULL OR TRIM(f.DIRECCION) = '')
+  GROUP BY empleadoId, workday_date
+),
+
+fichajes_sin_direccion_empleado AS (
+  SELECT 
+    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    COUNT(DISTINCT fsd.workday_date) AS dias_sin_direccion
+  FROM DatosEmpleados de
+  LEFT JOIN fichajes_sin_direccion fsd ON BINARY fsd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+    AND fsd.workday_date BETWEEN @d_first AND @d_today
+  WHERE de.ESTADO = 'ACTIVO'
+  GROUP BY de.CODIGO
+),
+
 calitate_pontaj AS (
   SELECT 
     CAST(de.CODIGO AS CHAR) AS empleadoId,
@@ -3991,7 +4029,8 @@ calitate_pontaj AS (
       THEN dp.fecha
     END) AS fichajes_incompleto,
     COALESCE(re.regularizaciones_confirmed, 0) AS regularizaciones_confirmed,
-    COALESCE(re.regularizaciones_pendiente, 0) AS regularizaciones_pendiente
+    COALESCE(re.regularizaciones_pendiente, 0) AS regularizaciones_pendiente,
+    COALESCE(fsde.dias_sin_direccion, 0) AS fichajes_sin_direccion
   FROM DatosEmpleados de
   LEFT JOIN daily_plan dp ON BINARY dp.empleadoId = BINARY CAST(de.CODIGO AS CHAR) 
     AND dp.fecha >= @d_first 
@@ -4003,11 +4042,12 @@ calitate_pontaj AS (
     AND fr_confirmed.effective_minutes IS NOT NULL
     AND fr_confirmed.effective_minutes > 0
   LEFT JOIN regularizaciones_empleado re ON BINARY re.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+  LEFT JOIN fichajes_sin_direccion_empleado fsde ON BINARY fsde.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
   LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND bj.fecha = dp.fecha
   LEFT JOIN aus_dia au ON BINARY au.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND au.fecha = dp.fecha
   LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND fd.fecha = dp.fecha
   WHERE de.ESTADO = 'ACTIVO'
-  GROUP BY de.CODIGO
+  GROUP BY de.CODIGO, fsde.dias_sin_direccion
 ),
 
 horario_start_dia AS (
@@ -4260,21 +4300,27 @@ scoring AS (
     CAST(de.CODIGO AS CHAR) AS empleadoId,
     de.\`NOMBRE / APELLIDOS\` AS empleadoNombre,
     de.GRUPO AS grupo,
-    CASE 
-      WHEN ta.target_ajustat > 0 AND COALESCE(hp.horas_pontate, 0) > 0 THEN
-        CASE 
-          WHEN (COALESCE(hp.horas_pontate, 0) / ta.target_ajustat) < 0.8 THEN
-            LEAST(75, (COALESCE(hp.horas_pontate, 0) / ta.target_ajustat) * 100)
-          ELSE
-            LEAST(100, (COALESCE(hp.horas_pontate, 0) / ta.target_ajustat) * 100)
-        END
-      WHEN ta.target_ajustat > 0 AND COALESCE(hp.horas_pontate, 0) = 0 THEN
-        0
-      ELSE 0
-    END AS score_indeplinire,
+    GREATEST(0, 
+      CASE 
+        WHEN ta.target_ajustat > 0 AND COALESCE(hp.horas_pontate, 0) > 0 THEN
+          CASE 
+            WHEN (COALESCE(hp.horas_pontate, 0) / ta.target_ajustat) < 0.8 THEN
+              LEAST(75, (COALESCE(hp.horas_pontate, 0) / ta.target_ajustat) * 100)
+            ELSE
+              LEAST(100, (COALESCE(hp.horas_pontate, 0) / ta.target_ajustat) * 100)
+          END
+        WHEN ta.target_ajustat > 0 AND COALESCE(hp.horas_pontate, 0) = 0 THEN
+          0
+        ELSE 0
+      END - 
+      (COALESCE(cp.fichajes_sin_direccion, 0) * 2) -
+      (COALESCE(cp.regularizaciones_confirmed, 0) * 1.5)
+    ) AS score_indeplinire,
     GREATEST(0, 100 - 
       (GREATEST(0, cp.fichajes_incompleto - (cp.regularizaciones_confirmed * 0.5)) * 5) - 
-      (cp.regularizaciones_pendiente * 5)
+      (cp.regularizaciones_pendiente * 5) -
+      (COALESCE(cp.fichajes_sin_direccion, 0) * 3) -
+      (COALESCE(cp.regularizaciones_confirmed, 0) * 2)
     ) AS score_calitate,
     CASE 
       WHEN eo.has_orar = 1 AND p.zile_cu_orar > 0 THEN
@@ -4312,6 +4358,7 @@ scoring AS (
       'fichajes_incompleto', COALESCE(cp.fichajes_incompleto, 0),
       'regularizaciones_confirmed', COALESCE(cp.regularizaciones_confirmed, 0),
       'regularizaciones_pendiente', COALESCE(cp.regularizaciones_pendiente, 0),
+      'fichajes_sin_direccion', COALESCE(cp.fichajes_sin_direccion, 0),
       'zile_punctuale', COALESCE(p.zile_punctuale, 0),
       'zile_cu_orar', COALESCE(p.zile_cu_orar, 0),
       'has_orar', eo.has_orar,
