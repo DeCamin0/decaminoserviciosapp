@@ -501,8 +501,9 @@ const HallOfFamePage = () => {
                 <div className="hidden lg:flex items-end justify-center gap-4 mb-6 perspective-1000" style={{ perspective: '1000px' }}>
                   {/* Locul 2 (stânga) */}
                   <div 
-                    className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-105 hover:-translate-y-2"
+                    className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-105 hover:-translate-y-2 cursor-pointer"
                     style={{ transformStyle: 'preserve-3d' }}
+                    onClick={canCalculate && ranking[1]?.empleado_codigo ? () => fetchBreakdown(ranking[1].empleado_codigo) : undefined}
                   >
                     <div className="relative">
                       {/* Podium base */}
@@ -536,8 +537,9 @@ const HallOfFamePage = () => {
 
                   {/* Locul 1 (centru - cel mai înalt) */}
                   <div 
-                    className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-110 hover:-translate-y-3 z-10"
+                    className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-110 hover:-translate-y-3 z-10 cursor-pointer"
                     style={{ transformStyle: 'preserve-3d' }}
+                    onClick={canCalculate && ranking[0]?.empleado_codigo ? () => fetchBreakdown(ranking[0].empleado_codigo) : undefined}
                   >
                     <div className="relative">
                       {/* Podium base - cel mai înalt */}
@@ -573,8 +575,9 @@ const HallOfFamePage = () => {
 
                   {/* Locul 3 (dreapta) */}
                   <div 
-                    className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-105 hover:-translate-y-2"
+                    className="flex-1 max-w-xs transform transition-all duration-500 hover:scale-105 hover:-translate-y-2 cursor-pointer"
                     style={{ transformStyle: 'preserve-3d' }}
+                    onClick={canCalculate && ranking[2]?.empleado_codigo ? () => fetchBreakdown(ranking[2].empleado_codigo) : undefined}
                   >
                     <div className="relative">
                       {/* Podium base - cel mai jos */}
@@ -610,7 +613,10 @@ const HallOfFamePage = () => {
                 {/* Mobile: Versiune verticală compactă pentru Top 3 */}
                 <div className="lg:hidden space-y-2 mb-3 sm:mb-4 md:mb-6">
                   {/* Locul 1 */}
-                  <div className="bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-yellow-300 w-full max-w-full overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-yellow-300 w-full max-w-full overflow-hidden cursor-pointer hover:shadow-xl transition-shadow"
+                    onClick={canCalculate && ranking[0]?.empleado_codigo ? () => fetchBreakdown(ranking[0].empleado_codigo) : undefined}
+                  >
                     <div className="flex items-center gap-2 sm:gap-3 text-white w-full max-w-full">
                       <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/30 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
                         <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-200" />
@@ -628,7 +634,10 @@ const HallOfFamePage = () => {
                   </div>
                   
                   {/* Locul 2 */}
-                  <div className="bg-gradient-to-br from-gray-300 via-gray-400 to-gray-500 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-gray-400 w-full max-w-full overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-br from-gray-300 via-gray-400 to-gray-500 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-gray-400 w-full max-w-full overflow-hidden cursor-pointer hover:shadow-xl transition-shadow"
+                    onClick={canCalculate && ranking[1]?.empleado_codigo ? () => fetchBreakdown(ranking[1].empleado_codigo) : undefined}
+                  >
                     <div className="flex items-center gap-2 sm:gap-3 text-white w-full max-w-full">
                       <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
                         <Medal className="w-5 h-5 sm:w-6 sm:h-6 text-gray-200" />
@@ -646,7 +655,10 @@ const HallOfFamePage = () => {
                   </div>
                   
                   {/* Locul 3 */}
-                  <div className="bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-amber-500 w-full max-w-full overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 rounded-lg p-2.5 sm:p-3 shadow-lg border-2 border-amber-500 w-full max-w-full overflow-hidden cursor-pointer hover:shadow-xl transition-shadow"
+                    onClick={canCalculate && ranking[2]?.empleado_codigo ? () => fetchBreakdown(ranking[2].empleado_codigo) : undefined}
+                  >
                     <div className="flex items-center gap-2 sm:gap-3 text-white w-full max-w-full">
                       <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
                         <Award className="w-5 h-5 sm:w-6 sm:h-6 text-amber-200" />

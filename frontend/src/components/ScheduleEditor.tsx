@@ -83,6 +83,10 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
   const [errors, setErrors] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showToast, setShowToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  
+  // State pentru câmpul Centro searchable
+  const [centroSearchTerm, setCentroSearchTerm] = useState('');
+  const [centroDropdownOpen, setCentroDropdownOpen] = useState(false);
 
   // Helper pentru a normaliza datele ISO la format YYYY-MM-DD pentru input-uri de tip date
   const normalizeDateForInput = (date: string | null | undefined): string => {
@@ -104,8 +108,28 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
         vigenteDesde: normalizeDateForInput(initialData.vigenteDesde) || null,
         vigenteHasta: normalizeDateForInput(initialData.vigenteHasta) || null,
       });
+      // Actualizează și centroSearchTerm dacă există centroId
+      if (initialData.centroId) {
+        const centro = centros.find(c => c.id === initialData.centroId);
+        if (centro) {
+          setCentroSearchTerm(centro.nombre);
+        }
+      }
     }
-  }, [initialData]);
+  }, [initialData, centros]);
+  
+  // Actualizează centroSearchTerm când se schimbă formData.centroId
+  useEffect(() => {
+    if (formData.centroId) {
+      const centro = centros.find(c => c.id === formData.centroId);
+      if (centro && centroSearchTerm !== centro.nombre) {
+        setCentroSearchTerm(centro.nombre);
+      }
+    } else if (!formData.centroId && centroSearchTerm) {
+      // Dacă centroId este null, dar searchTerm există, păstrează-l (poate utilizatorul scrie)
+      // Nu resetăm searchTerm aici pentru a permite utilizatorului să scrie
+    }
+  }, [formData.centroId, centros, centroSearchTerm]);
 
   // Calculează totalul de ore săptămânale
   const totalWeekMinutes = calcWeekMinutes(formData.days);
@@ -397,28 +421,65 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
           />
         </div>
 
-        {/* Centro */}
-        <div>
+        {/* Centro - Searchable */}
+        <div className="relative">
           <label
             htmlFor="schedule-centro"
             className="block text-sm font-medium text-gray-700 mb-1"
           >
             Centro *
           </label>
-          <select
-            id="schedule-centro"
-            name="scheduleCentro"
-            value={formData.centroId || ''}
-            onChange={(e) => handleFieldChange('centroId', e.target.value ? parseInt(e.target.value) : null)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
-          >
-            <option value="">Selecciona un centro</option>
-            {centros.map(centro => (
-              <option key={centro.id} value={centro.id}>
-                {centro.nombre}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <input
+              id="schedule-centro"
+              name="scheduleCentro"
+              type="text"
+              value={centroSearchTerm || (formData.centroId ? centros.find(c => c.id === formData.centroId)?.nombre || '' : '')}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setCentroSearchTerm(newValue);
+                setCentroDropdownOpen(true);
+                if (!newValue.trim()) {
+                  handleFieldChange('centroId', null);
+                }
+              }}
+              onFocus={() => setCentroDropdownOpen(true)}
+              onBlur={() => {
+                // Delay pentru a permite click pe opțiune
+                setTimeout(() => setCentroDropdownOpen(false), 200);
+              }}
+              placeholder="Buscar o escribir centro..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+            {centroDropdownOpen && centros.filter(c => 
+              c.nombre.toLowerCase().includes(centroSearchTerm.toLowerCase())
+            ).length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                {centros.filter(c => 
+                  c.nombre.toLowerCase().includes(centroSearchTerm.toLowerCase())
+                ).map(centro => (
+                  <div
+                    key={centro.id}
+                    onClick={() => {
+                      handleFieldChange('centroId', centro.id);
+                      setCentroSearchTerm(centro.nombre);
+                      setCentroDropdownOpen(false);
+                    }}
+                    className="p-2 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                  >
+                    {centro.nombre}
+                  </div>
+                ))}
+              </div>
+            )}
+            {centroDropdownOpen && centros.filter(c => 
+              c.nombre.toLowerCase().includes(centroSearchTerm.toLowerCase())
+            ).length === 0 && centroSearchTerm && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-2 text-gray-500">
+                No se encontraron centros
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Grupo */}
@@ -662,6 +723,8 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
                 D: { intervals: [{}, {}, {}] }
               }
             });
+            setCentroSearchTerm('');
+            setCentroDropdownOpen(false);
             setErrors([]);
           }}
           className="px-6 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"

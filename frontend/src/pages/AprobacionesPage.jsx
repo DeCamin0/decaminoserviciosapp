@@ -60,6 +60,9 @@ export default function AprobacionesPage() {
   // State pentru checkbox-uri "enviar a gestoria" pentru fiecare cambio
   const [enviarAGestoriaMap, setEnviarAGestoriaMap] = useState({});
 
+  // State pentru lista de angajați (pentru a afișa numele lângă cod)
+  const [empleados, setEmpleados] = useState([]);
+
   const userGrupo = useMemo(() => authUser?.GRUPO || authUser?.grupo || 'Empleado', [authUser?.GRUPO, authUser?.grupo]);
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = useMemo(() => authUser?.isManager || false, [authUser?.isManager]);
@@ -364,6 +367,57 @@ export default function AprobacionesPage() {
     }
   }, [authUser?.isDemo]);
 
+  // Funcție pentru fetch lista de angajați
+  const fetchEmpleados = useCallback(async () => {
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Skipping fetchEmpleados');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getEmpleados, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const empleadosList = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []);
+      setEmpleados(empleadosList);
+    } catch (error) {
+      console.error('Error fetching empleados:', error);
+      setEmpleados([]);
+    }
+  }, [authUser?.isDemo]);
+
+  // Funcție helper pentru a găsi numele angajatului după cod
+  const getEmpleadoNombre = useCallback((codigo) => {
+    if (!codigo || !empleados.length) return null;
+    
+    const empleado = empleados.find(emp => {
+      const empCodigo = emp.CODIGO || emp.codigo;
+      return empCodigo && empCodigo.toString() === codigo.toString();
+    });
+    
+    if (empleado) {
+      return empleado['NOMBRE / APELLIDOS'] || empleado.nombre || empleado.NOMBRE || null;
+    }
+    
+    return null;
+  }, [empleados]);
+
   useEffect(() => {
     // Așteaptă până când permisiunile sunt verificate
     if (canAccess === null) {
@@ -386,7 +440,8 @@ export default function AprobacionesPage() {
     fetchPendingCambios();
     fetchPendingRegularizaciones();
     fetchConfirmedRegularizaciones();
-  }, [canAccess, authUser?.isDemo, fetchPendingCambios, fetchPendingRegularizaciones, fetchConfirmedRegularizaciones]);
+    fetchEmpleados();
+  }, [canAccess, authUser?.isDemo, fetchPendingCambios, fetchPendingRegularizaciones, fetchConfirmedRegularizaciones, fetchEmpleados]);
 
   // Funcție pentru aprobare regularizare
   const handleApproveRegularizacion = (regularizacion) => {
@@ -1157,7 +1212,12 @@ export default function AprobacionesPage() {
                               {index + 1}
                             </div>
                             <div className="flex-1">
-                              <div className="font-semibold text-gray-900">Empleado: {regularizacion.employee_codigo}</div>
+                              <div className="font-semibold text-gray-900">
+                                Empleado: {regularizacion.employee_codigo}
+                                {getEmpleadoNombre(regularizacion.employee_codigo) && (
+                                  <span className="ml-2 text-gray-600 font-normal">- {getEmpleadoNombre(regularizacion.employee_codigo)}</span>
+                                )}
+                              </div>
                               <div className="text-xs text-gray-500 mt-1">Fecha: {workdayDate}</div>
                               <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
                                 <div>
@@ -1272,7 +1332,12 @@ export default function AprobacionesPage() {
                               {index + 1}
                             </div>
                             <div className="flex-1">
-                              <div className="font-semibold text-gray-900">Empleado: {regularizacion.employee_codigo}</div>
+                              <div className="font-semibold text-gray-900">
+                                Empleado: {regularizacion.employee_codigo}
+                                {getEmpleadoNombre(regularizacion.employee_codigo) && (
+                                  <span className="ml-2 text-gray-600 font-normal">- {getEmpleadoNombre(regularizacion.employee_codigo)}</span>
+                                )}
+                              </div>
                               <div className="text-xs text-gray-500 mt-1">Fecha: {workdayDate}</div>
                               <div className="text-xs text-gray-400 mt-1">Confirmada: {confirmedDate}</div>
                               <div className="mt-2 grid grid-cols-3 gap-4 text-sm">

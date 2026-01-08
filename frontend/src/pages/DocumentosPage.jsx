@@ -102,6 +102,10 @@ export default function DocumentosPage() {
   // Estado para el modal de tipo personalizado
   const [showCustomTypeModal, setShowCustomTypeModal] = useState(false);
   const [showCustomTypeSourceModal, setShowCustomTypeSourceModal] = useState(false);
+  
+  // Estado para el modal de confirmación de reemplazo
+  const [showReplaceConfirmModal, setShowReplaceConfirmModal] = useState(false);
+  const [documentToReplace, setDocumentToReplace] = useState(null);
 
   // Estado para documentos oficiales
   const [documentosOficiales, setDocumentosOficiales] = useState([]);
@@ -1859,8 +1863,14 @@ export default function DocumentosPage() {
   };
 
   // Funcție pentru ștergerea unui document existent
-  const handleDeleteDocumento = async (documentoId, docId) => {
+  const handleDeleteDocumento = async (documentoId, docId, fileName) => {
     try {
+      // Validare: fileName este obligatoriu
+      if (!fileName) {
+        console.error('❌ handleDeleteDocumento: fileName este lipsă!', { documentoId, docId, fileName });
+        throw new Error('El nombre del archivo es requerido para eliminar el documento');
+      }
+      
       const token = localStorage.getItem('auth_token');
       const headers = {
         'Content-Type': 'application/json',
@@ -1870,14 +1880,21 @@ export default function DocumentosPage() {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
+      const requestBody = {
+        id: documentoId,
+        doc_id: docId,
+        email: email,
+        fileName: fileName,
+        filename: fileName,
+        nombre_archivo: fileName
+      };
+      
+      console.log('🔍 [handleDeleteDocumento] Request body:', requestBody);
+      
       const response = await fetch(routes.deleteDocumento, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({
-          id: documentoId,
-          doc_id: docId,
-          email: email
-        }),
+        body: JSON.stringify(requestBody),
       });
       
       if (!response.ok) {
@@ -1887,12 +1904,15 @@ export default function DocumentosPage() {
       
       const result = await response.json();
       
-      if (result.success) {
+      console.log('🔍 [handleDeleteDocumento] Response result:', result);
+      
+      // Backend returnează {ok: true, mensaje: ...} sau {success: true, message: ...}
+      if (result.ok === true || result.success === true) {
         // Reîncarcă lista de documente
         setTimeout(() => fetchDocumentos(), 500);
         return true;
       } else {
-        throw new Error(result.message || 'Error al eliminar documento');
+        throw new Error(result.mensaje || result.message || 'Error al eliminar documento');
       }
     } catch (error) {
       console.error('Error deleting documento:', error);
@@ -1918,7 +1938,27 @@ export default function DocumentosPage() {
       // Șterge documentul existent dacă există
       if (documentoExistente && documentoExistente.length > 0) {
         const documentoToDelete = documentoExistente[0];
-        const deleted = await handleDeleteDocumento(documentoToDelete.id, documentoToDelete.doc_id);
+        
+        // Obține fileName cu fallback pentru compatibilitate
+        const fileNameToDelete = documentoToDelete.fileName || 
+                                documentoToDelete.nombre_archivo || 
+                                documentoToDelete.filename ||
+                                documentoToDelete.archivo;
+        
+        console.log('🔍 [handleReplaceDocumento] Document to delete:', documentoToDelete);
+        console.log('🔍 [handleReplaceDocumento] fileName to delete:', fileNameToDelete);
+        
+        if (!fileNameToDelete) {
+          setUploading(false);
+          setNotification({
+            type: 'error',
+            title: 'Error',
+            message: 'No se pudo obtener el nombre del archivo del documento a reemplazar'
+          });
+          return;
+        }
+        
+        const deleted = await handleDeleteDocumento(documentoToDelete.id, documentoToDelete.doc_id, fileNameToDelete);
         if (!deleted) {
           setUploading(false);
           return;
@@ -2861,44 +2901,10 @@ export default function DocumentosPage() {
                             {/* Buton de Reemplazar pentru DNI și Certificado de titularidad */}
                             {(documento.tipo === 'DNI' || documento.tipo === 'Certificado de titularidad') && (
                               <button
-                                onClick={async () => {
-                                  // Confirmă înlocuirea
-                                  const confirmar = window.confirm(
-                                    `¿Estás seguro de que deseas reemplazar el documento "${documento.fileName}"? El documento actual se eliminará y podrás subir uno nuevo.`
-                                  );
-                                  
-                                  if (!confirmar) return;
-                                  
-                                  try {
-                                    setUploading(true);
-                                    
-                                    // Șterge documentul vechi
-                                    const deleted = await handleDeleteDocumento(documento.id, documento.doc_id);
-                                    
-                                    if (deleted) {
-                                      // Așteaptă puțin pentru a se actualiza lista
-                                      await new Promise(resolve => setTimeout(resolve, 500));
-                                      
-                                      // Setează tipul documentului și deschide modalul de upload
-                                      setDocumentType(documento.tipo);
-                                      setShowCustomTypeSourceModal(true);
-                                      
-                                      setNotification({
-                                        type: 'success',
-                                        title: 'Documento Eliminado',
-                                        message: 'El documento anterior ha sido eliminado. Ahora puedes subir uno nuevo.'
-                                      });
-                                    }
-                                  } catch (error) {
-                                    console.error('Error al reemplazar documento:', error);
-                                    setNotification({
-                                      type: 'error',
-                                      title: 'Error',
-                                      message: `Error al reemplazar el documento: ${error.message}`
-                                    });
-                                  } finally {
-                                    setUploading(false);
-                                  }
+                                onClick={() => {
+                                  // Deschide modalul de confirmare
+                                  setDocumentToReplace(documento);
+                                  setShowReplaceConfirmModal(true);
                                 }}
                                 disabled={uploading}
                                 className="w-full group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
@@ -3841,6 +3847,123 @@ export default function DocumentosPage() {
                 className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm transition-colors"
               >
                 ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal modern de confirmare pentru înlocuirea documentului */}
+      {showReplaceConfirmModal && documentToReplace && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-opacity duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full transform transition-all duration-200 scale-100">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg">
+                  <span className="text-2xl">⚠️</span>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                    Confirmar Reemplazo
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Esta acción no se puede deshacer
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4">
+              <p className="text-gray-700 dark:text-gray-300 mb-4">
+                ¿Estás seguro de que deseas reemplazar el documento{' '}
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  "{documentToReplace.fileName}"
+                </span>
+                ?
+              </p>
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  ⚠️ El documento actual se eliminará permanentemente y podrás subir uno nuevo.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowReplaceConfirmModal(false);
+                  setDocumentToReplace(null);
+                }}
+                className="px-5 py-2.5 rounded-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setShowReplaceConfirmModal(false);
+                  
+                  try {
+                    setUploading(true);
+                    
+                    // Obține fileName cu fallback pentru compatibilitate
+                    const fileNameToDelete = documentToReplace.fileName || 
+                                            documentToReplace.nombre_archivo || 
+                                            documentToReplace.filename ||
+                                            documentToReplace.archivo;
+                    
+                    console.log('🔍 [Modal Replace] Document to replace:', documentToReplace);
+                    console.log('🔍 [Modal Replace] fileName to delete:', fileNameToDelete);
+                    
+                    if (!fileNameToDelete) {
+                      throw new Error('No se pudo obtener el nombre del archivo del documento');
+                    }
+                    
+                    // Șterge documentul vechi
+                    const deleted = await handleDeleteDocumento(documentToReplace.id, documentToReplace.doc_id, fileNameToDelete);
+                    
+                    if (deleted) {
+                      // Așteaptă puțin pentru a se actualiza lista
+                      await new Promise(resolve => setTimeout(resolve, 500));
+                      
+                      // Setează tipul documentului și deschide modalul de upload
+                      setDocumentType(documentToReplace.tipo);
+                      setShowCustomTypeSourceModal(true);
+                      
+                      setNotification({
+                        type: 'success',
+                        title: 'Documento Eliminado',
+                        message: 'El documento anterior ha sido eliminado. Ahora puedes subir uno nuevo.'
+                      });
+                    }
+                  } catch (error) {
+                    console.error('Error al reemplazar documento:', error);
+                    setNotification({
+                      type: 'error',
+                      title: 'Error',
+                      message: `Error al reemplazar el documento: ${error.message}`
+                    });
+                  } finally {
+                    setUploading(false);
+                    setDocumentToReplace(null);
+                  }
+                }}
+                disabled={uploading}
+                className="px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {uploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🔄</span>
+                    <span>Confirmar Reemplazo</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

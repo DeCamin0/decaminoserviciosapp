@@ -772,8 +772,9 @@ export class FichajesService {
                 fichajeData.data,
               );
             const threshold =
-              (this.regularizacionService as any)['CONFIRMATION_THRESHOLD_MINUTES'] ??
-              15;
+              (this.regularizacionService as any)[
+                'CONFIRMATION_THRESHOLD_MINUTES'
+              ] ?? 15;
             const delta = Number(checkResult.delta_minutes) || 0;
 
             // Business rule:

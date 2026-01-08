@@ -133,9 +133,8 @@ export class BajasMedicasController {
         throw new BadRequestException('resolutions debe ser un array no vacío');
       }
 
-      const result = await this.bajasMedicasService.resolveConflicts(
-        resolutions,
-      );
+      const result =
+        await this.bajasMedicasService.resolveConflicts(resolutions);
 
       return {
         success: true,

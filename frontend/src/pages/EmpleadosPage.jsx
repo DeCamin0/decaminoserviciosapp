@@ -122,6 +122,10 @@ export default function EmpleadosPage() {
   const [loadingEstadisticas, setLoadingEstadisticas] = useState(false);
   const [errorEstadisticas, setErrorEstadisticas] = useState(null);
   
+  // State pentru sortare
+  const [sortColumn, setSortColumn] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' sau 'desc'
+  
   // State pentru editare inline
   const [editingCell, setEditingCell] = useState(null); // { codigo, field }
   const [editingValue, setEditingValue] = useState('');
@@ -2468,6 +2472,74 @@ export default function EmpleadosPage() {
     }
   };
 
+  // Funcție pentru sortare
+  const handleSort = (column) => {
+    if (sortColumn === column) {
+      // Dacă coloana e deja sortată, schimbă direcția
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Dacă e o coloană nouă, setează-o ca sortată ascendent
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Funcție helper pentru a obține valoarea de sortat
+  const getSortValue = (emp, column) => {
+    switch (column) {
+      case 'CODIGO':
+        return emp.CODIGO || '';
+      case 'nombre':
+        return (emp.nombre || '').toLowerCase();
+      case 'email':
+        return (emp.email || '').toLowerCase();
+      case 'estado':
+        return (emp.estado || '').toLowerCase();
+      case 'fecha_alta':
+        return emp.fecha_alta || '';
+      case 'centro':
+        return (emp.centro || '').toLowerCase();
+      case 'grupo':
+        return (emp.grupo || '').toLowerCase();
+      case 'cuadrante':
+        return emp.cuadrante === 'Sí' || emp.cuadrante === true ? 1 : 0;
+      case 'horario':
+        return emp.horario === 'Si' || emp.horario === 'Sí' || emp.horario === true ? 1 : 0;
+      case 'centro_2':
+        return emp.centro_2 === 'Si' || emp.centro_2 === 'Sí' || emp.centro_2 === true ? 1 : 0;
+      case 'detalles_faltantes':
+        return (emp.detalles_faltantes || '').toLowerCase();
+      default:
+        return '';
+    }
+  };
+
+  // Date sortate
+  const sortedEstadisticas = useMemo(() => {
+    if (!sortColumn) {
+      return estadisticas;
+    }
+
+    return [...estadisticas].sort((a, b) => {
+      const aValue = getSortValue(a, sortColumn);
+      const bValue = getSortValue(b, sortColumn);
+
+      // Comparare pentru numere
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+
+      // Comparare pentru stringuri
+      if (aValue < bValue) {
+        return sortDirection === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortDirection === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [estadisticas, sortColumn, sortDirection]);
+
   return (
     <div className="space-y-6">
       {/* Header ULTRA MODERN */}
@@ -3839,21 +3911,164 @@ export default function EmpleadosPage() {
                 <table className="w-full bg-white border border-gray-200 rounded-lg shadow-sm" style={{ minWidth: '1520px' }}>
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '80px' }}>CODIGO</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '200px' }}>nombre</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '200px' }}>email</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '100px' }}>estado</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '120px' }}>fecha alta</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '250px' }}>centro</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '150px' }}>grupo</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '60px' }}>cuadrante</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '60px' }}>horario</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '50px' }}>centro</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b" style={{ width: '280px' }}>detalles_faltantes</th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '80px' }}
+                        onClick={() => handleSort('CODIGO')}
+                      >
+                        <div className="flex items-center gap-1">
+                          CODIGO
+                          {sortColumn === 'CODIGO' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '200px' }}
+                        onClick={() => handleSort('nombre')}
+                      >
+                        <div className="flex items-center gap-1">
+                          nombre
+                          {sortColumn === 'nombre' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '200px' }}
+                        onClick={() => handleSort('email')}
+                      >
+                        <div className="flex items-center gap-1">
+                          email
+                          {sortColumn === 'email' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '100px' }}
+                        onClick={() => handleSort('estado')}
+                      >
+                        <div className="flex items-center gap-1">
+                          estado
+                          {sortColumn === 'estado' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '120px' }}
+                        onClick={() => handleSort('fecha_alta')}
+                      >
+                        <div className="flex items-center gap-1">
+                          fecha alta
+                          {sortColumn === 'fecha_alta' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '250px' }}
+                        onClick={() => handleSort('centro')}
+                      >
+                        <div className="flex items-center gap-1">
+                          centro
+                          {sortColumn === 'centro' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '150px' }}
+                        onClick={() => handleSort('grupo')}
+                      >
+                        <div className="flex items-center gap-1">
+                          grupo
+                          {sortColumn === 'grupo' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '60px' }}
+                        onClick={() => handleSort('cuadrante')}
+                      >
+                        <div className="flex items-center gap-1">
+                          cuadrante
+                          {sortColumn === 'cuadrante' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '60px' }}
+                        onClick={() => handleSort('horario')}
+                      >
+                        <div className="flex items-center gap-1">
+                          horario
+                          {sortColumn === 'horario' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '50px' }}
+                        onClick={() => handleSort('centro_2')}
+                      >
+                        <div className="flex items-center gap-1">
+                          centro
+                          {sortColumn === 'centro_2' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        style={{ width: '280px' }}
+                        onClick={() => handleSort('detalles_faltantes')}
+                      >
+                        <div className="flex items-center gap-1">
+                          detalles_faltantes
+                          {sortColumn === 'detalles_faltantes' && (
+                            <span className="text-blue-600">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {estadisticas.map((emp, index) => (
+                    {sortedEstadisticas.map((emp, index) => (
                       <tr key={emp.CODIGO || index} className="hover:bg-gray-50 transition-colors">
                         <td className="px-3 py-3 text-sm text-gray-900 font-mono">{emp.CODIGO || '-'}</td>
                         <td className="px-3 py-3 text-sm text-gray-900 font-medium">{emp.nombre || '-'}</td>

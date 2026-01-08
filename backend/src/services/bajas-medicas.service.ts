@@ -48,11 +48,15 @@ export class BajasMedicasService {
     return isNaN(dt.getTime()) ? null : dt;
   }
 
-  private calculateInclusiveDays(fechaBajaISO: string, fechaAltaISO: string): number | null {
+  private calculateInclusiveDays(
+    fechaBajaISO: string,
+    fechaAltaISO: string,
+  ): number | null {
     const start = this.parseISODateOnlyToUtc(fechaBajaISO);
     const end = this.parseISODateOnlyToUtc(fechaAltaISO);
     if (!start || !end) return null;
-    const diff = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const diff =
+      Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
     if (!isFinite(diff) || diff < 1) return null;
     return diff;
   }
@@ -573,12 +577,17 @@ export class BajasMedicasService {
                     codigoEmpleado: c?.codigoEmpleado
                       ? String(c.codigoEmpleado)
                       : '',
-                    trabajador: c?.trabajador ? String(c.trabajador) : undefined,
+                    trabajador: c?.trabajador
+                      ? String(c.trabajador)
+                      : undefined,
                     fechaBaja: this.formatDbDateToISO(c?.fechaBaja),
                     fechaAltaManual: this.formatDbDateToISO(c?.fechaAltaManual),
                     fechaAltaMutua: this.formatDbDateToISO(c?.fechaAltaMutua),
                     manual: { idCaso: manualIdCaso, idPosicion: manualIdPos },
-                    mutua: { idCaso: String(idCaso), idPosicion: String(idPosicion) },
+                    mutua: {
+                      idCaso: String(idCaso),
+                      idPosicion: String(idPosicion),
+                    },
                   });
                 }
               }
@@ -708,9 +717,11 @@ export class BajasMedicasService {
     }
   }
 
-  async resolveConflicts(
-    resolutions: ConflictResolution[],
-  ): Promise<{ resolved: number; updatedMutua: number; deletedManual: number }> {
+  async resolveConflicts(resolutions: ConflictResolution[]): Promise<{
+    resolved: number;
+    updatedMutua: number;
+    deletedManual: number;
+  }> {
     let resolved = 0;
     let updatedMutua = 0;
     let deletedManual = 0;
@@ -759,7 +770,9 @@ export class BajasMedicasService {
             ? this.escapeSql(fechaAltaManualISO)
             : 'NULL';
         const situacionSQL =
-          fechaAltaManualISO !== null ? this.escapeSql('Alta') : this.escapeSql('Baja');
+          fechaAltaManualISO !== null
+            ? this.escapeSql('Alta')
+            : this.escapeSql('Baja');
 
         const updateRes = await this.prisma.$executeRawUnsafe(`
           UPDATE \`MutuaCasos\`

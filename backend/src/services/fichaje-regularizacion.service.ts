@@ -1093,15 +1093,16 @@ export class FichajeRegularizacionService {
       // Regula: statusul se decide după pragul de 15 minute, nu după decision
       // - |delta| > 15 min → NEEDS_REVIEW (intră la Aprobări)
       // - |delta| ≤ 15 min → CONFIRMED (nu intră la Aprobări)
-      const needsReview = Math.abs(delta_minutes) > this.CONFIRMATION_THRESHOLD_MINUTES;
+      const needsReview =
+        Math.abs(delta_minutes) > this.CONFIRMATION_THRESHOLD_MINUTES;
 
       if (decision === 'no_extra') {
         regularization_type = FichajeRegularizacionType.NO_EXTRA;
         // Statusul se decide după prag, nu după decision
-        status = needsReview 
-          ? FichajeRegularizacionStatus.NEEDS_REVIEW 
+        status = needsReview
+          ? FichajeRegularizacionStatus.NEEDS_REVIEW
           : FichajeRegularizacionStatus.CONFIRMED;
-        
+
         // Logica pentru effective_minutes în cazul NO_EXTRA:
         // - reason='worked_less' (delta negativă, user confirmă că a lucrat mai puțin) → punched_minutes
         // - reason='punch_error' (delta negativă, user zice că e eroare) → scheduled_minutes
@@ -1119,7 +1120,7 @@ export class FichajeRegularizacionService {
           effective_minutes = scheduled_minutes;
           reason_code = 'employee_confirmed_no_extra';
         }
-        
+
         this.logger.debug(
           `📝 confirmJornada: decision=no_extra, reason=${reason}, |delta|=${Math.abs(delta_minutes)}, threshold=${this.CONFIRMATION_THRESHOLD_MINUTES}, needsReview=${needsReview}, status=${status}, effective_minutes=${effective_minutes}`,
         );
@@ -1127,14 +1128,14 @@ export class FichajeRegularizacionService {
         // worked_more - user declară că a lucrat diferit (mai mult sau mai puțin)
         regularization_type = FichajeRegularizacionType.DECLARES_EXTRA;
         // Statusul se decide după prag, nu după decision
-        status = needsReview 
-          ? FichajeRegularizacionStatus.NEEDS_REVIEW 
+        status = needsReview
+          ? FichajeRegularizacionStatus.NEEDS_REVIEW
           : FichajeRegularizacionStatus.CONFIRMED;
         // Când user declară explicit că a lucrat diferit (worked_more), salvăm orele fichate (punched_minutes)
         // Indiferent dacă delta e pozitivă sau negativă - user recunoaște diferența
         effective_minutes = punched_minutes;
         reason_code = 'employee_declares_extra';
-        
+
         this.logger.debug(
           `📝 confirmJornada: decision=worked_more, |delta|=${Math.abs(delta_minutes)}, threshold=${this.CONFIRMATION_THRESHOLD_MINUTES}, needsReview=${needsReview}, status=${status}, effective_minutes=${effective_minutes} (punched)`,
         );
@@ -1425,21 +1426,30 @@ export class FichajeRegularizacionService {
       this.logger.debug(
         `🔍 approveRegularizacion: ID=${id}, regularization_type=${regularizacion.regularization_type}, punched_minutes=${regularizacion.punched_minutes}, scheduled_minutes=${regularizacion.scheduled_minutes}, current effective_minutes=${regularizacion.effective_minutes}`,
       );
-      
+
       let effective_minutes = regularizacion.effective_minutes; // Păstrează valoarea existentă by default
-      
-      if (regularizacion.regularization_type === FichajeRegularizacionType.NO_EXTRA) {
+
+      if (
+        regularizacion.regularization_type ===
+        FichajeRegularizacionType.NO_EXTRA
+      ) {
         // Când user a zis "No" (nu am lucrat mai mult/mai puțin), păstrăm effective_minutes așa cum e
         // (deja setat la scheduled_minutes în confirmJornada)
         effective_minutes = regularizacion.effective_minutes;
         this.logger.log(
           `📝 Approve regularizacion: regularization_type=NO_EXTRA, keeping existing effective_minutes=${effective_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
         );
-      } else if (regularizacion.regularization_type === FichajeRegularizacionType.DECLARES_EXTRA) {
+      } else if (
+        regularizacion.regularization_type ===
+        FichajeRegularizacionType.DECLARES_EXTRA
+      ) {
         // Când user a zis "Sí" (am lucrat mai mult/mai puțin), păstrăm effective_minutes așa cum e
         // (deja setat la punched_minutes în confirmJornada - user recunoaște diferența)
         // Excepție: dacă punched_minutes = 0 (ex: "Olvidó fichar"), folosim scheduled_minutes
-        if (regularizacion.punched_minutes === 0 && regularizacion.scheduled_minutes > 0) {
+        if (
+          regularizacion.punched_minutes === 0 &&
+          regularizacion.scheduled_minutes > 0
+        ) {
           effective_minutes = regularizacion.scheduled_minutes;
           this.logger.log(
             `📝 Approve regularizacion: DECLARES_EXTRA with punched_minutes=0, using scheduled_minutes=${regularizacion.scheduled_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
@@ -1452,7 +1462,7 @@ export class FichajeRegularizacionService {
           );
         }
       }
-      
+
       this.logger.debug(
         `🔍 approveRegularizacion: Final effective_minutes=${effective_minutes} for ID=${id}`,
       );
