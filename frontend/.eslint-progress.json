@@ -1,5 +1,5 @@
 {
-  "lastFile": "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\PeriodoContextBase.js",
+  "lastFile": "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useSpatialNavigation.js",
   "verifiedFiles": [
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\api\\schedules.ts",
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\App.jsx",
@@ -92,7 +92,27 @@
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\LocationContextBase.js",
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\NotificationsContext.jsx",
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\PeriodoContext.jsx",
-    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\PeriodoContextBase.js"
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\PeriodoContextBase.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\ThemeContext.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\contexts\\ThemeContextBase.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\examples\\AutoFirmaUsage.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\examples\\useAutoFirma.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useAdminApi.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useApi.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useApiCall.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useAppVersion.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useCleanup.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useComunicadosApi.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useErrorHandler.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useInteractionMode.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useLazyImage.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useLoadingState.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useOfflineAPI.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useOfflineStatus.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\usePolling.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\usePWAMigration.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\usePWAUpdate.js",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\hooks\\useSpatialNavigation.js"
   ],
   "skippedFiles": []
 }
