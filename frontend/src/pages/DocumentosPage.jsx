@@ -3879,7 +3879,7 @@ export default function DocumentosPage() {
               <p className="text-gray-700 dark:text-gray-300 mb-4">
                 ¿Estás seguro de que deseas reemplazar el documento{' '}
                 <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  "{documentToReplace.fileName}"
+                  &quot;{documentToReplace.fileName}&quot;
                 </span>
                 ?
               </p>
