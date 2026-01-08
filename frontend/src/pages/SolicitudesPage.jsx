@@ -204,6 +204,7 @@ export default function SolicitudesPage() {
   const [editingSolicitud, setEditingSolicitud] = useState(null); // ID-ul solicitării în curs de editare
   const [originalSolicitudData, setOriginalSolicitudData] = useState(null); // Datele originale ale solicitării în curs de editare
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, solicitudId: null }); // Modal de confirmare ștergere
+  const [convertirConfirm, setConvertirConfirm] = useState({ isOpen: false, ausencia: null }); // Modal de confirmare conversie ausencia
   // Loading states centralizate
   const { setOperationLoading, isOperationLoading } = useLoadingState();
   const [serverResp, setServerResp] = useState('');
@@ -233,6 +234,7 @@ export default function SolicitudesPage() {
   const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja'
   const selectedStatus = 'Todos';
   const [selectedMonth, setSelectedMonth] = useState(0);
+  const [selectedTipoAusencia, setSelectedTipoAusencia] = useState('ALL'); // Filtrul de tip pentru ausencias
   const [selectedUser, setSelectedUser] = useState('ALL');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -1126,7 +1128,7 @@ export default function SolicitudesPage() {
   // Reset calendar when tipo changes
   useEffect(() => {
     const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-    const allowedGroups = ['Limpiador', 'Developer'];
+    const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
 
     // If user is not in allowed groups and has Asuntos Propios selected, reset to Vacaciones
     if (tipo === 'Asuntos Propios' && !allowedGroups.includes(currentUserGroup)) {
@@ -1146,7 +1148,7 @@ export default function SolicitudesPage() {
   // Load occupied dates when calendar month/year changes or when tipo is Vacaciones o Asunto Propio
   useEffect(() => {
     const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-    const allowedGroups = ['Limpiador', 'Developer'];
+    const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
 
     if (tipo === 'Vacaciones') {
       loadOccupiedDates(calendarYear, calendarMonth);
@@ -2188,7 +2190,15 @@ export default function SolicitudesPage() {
                     
                     if (match) {
                       const tipoAusencia = match[1].trim();
-                      const fechaAusencia = match[2].trim();
+                      let fechaAusencia = match[2].trim();
+                      
+                      // Asigură-te că data este în format YYYY-MM-DD
+                      if (fechaAusencia.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                        const fechaParts = fechaAusencia.split('/');
+                        if (fechaParts.length === 3) {
+                          fechaAusencia = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                        }
+                      }
                       
                       if (!justificantesMapPorFecha.has(fechaAusencia)) {
                         justificantesMapPorFecha.set(fechaAusencia, []);
@@ -2200,7 +2210,8 @@ export default function SolicitudesPage() {
                         tipo_documento: doc.tipo_documento,
                         notas: doc.notas,
                         id: doc.id,
-                        tipoAusencia: tipoAusencia
+                        tipoAusencia: tipoAusencia,
+                        fechaAusencia: fechaAusencia
                       };
                       justificantesMapPorFecha.get(fechaAusencia).push(justificanteData);
                       
@@ -2218,16 +2229,9 @@ export default function SolicitudesPage() {
                   justificantesMapPorTipoYFecha.forEach((value, key) => {
                     justificantesMap.set(key, value);
                   });
-                  justificantesMapPorFecha.forEach((justificantes, fecha) => {
-                    if (justificantes.length === 1) {
-                      justificantesMap.set(`_${fecha}`, justificantes[0]);
-                    }
-                  });
-                  justificantesMapPorFecha.forEach((justificantesArray, fecha) => {
-                    if (justificantesArray.length > 0) {
-                      justificantesMap.set(`_${fecha}`, justificantesArray[0]);
-                    }
-                  });
+                  // ELIMINAT: Key-uri generice pe dată pentru a evita asocierea greșită a justificantelor
+                  // Fiecare absență trebuie să aibă propriile justificante asociate pe baza tipului și datei exacte
+                  // Nu mai adăugăm key-uri generice pe dată (_YYYY-MM-DD) pentru a preveni matching-ul greșit
                   
                   setJustificantesPorAusencia(justificantesMap);
                 }
@@ -2299,13 +2303,67 @@ export default function SolicitudesPage() {
                 });
 
                 justificantes.forEach(doc => {
-                  const key = `${codigo}_${doc.tipo_documento}`;
-                  documentosMap.set(key, {
-                    estado: doc.estado,
-                    fecha_solicitud: doc.fecha_solicitud,
-                    fecha_completado: doc.fecha_completado,
-                    tipo_documento: doc.tipo_documento
-                  });
+                  // Extrage tipul și data din notas pentru a crea key-ul corect
+                  const notas = doc.notas || '';
+                  let tipoAusencia = '';
+                  let fechaAusencia = '';
+                  
+                  // Pattern: "Justificante para ausencia: TIPO - YYYY-MM-DD"
+                  let match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
+                  if (!match) {
+                    // Pattern alternativ: "Justificante para ausencia: TIPO - DD/MM/YYYY"
+                    match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+                    if (match) {
+                      const fechaParts = match[2].trim().split('/');
+                      if (fechaParts.length === 3) {
+                        fechaAusencia = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                        tipoAusencia = match[1].trim();
+                      }
+                    }
+                  } else {
+                    tipoAusencia = match[1].trim();
+                    fechaAusencia = match[2].trim();
+                  }
+                  
+                  // Dacă am extras tipul și data, folosim key-ul complet
+                  if (tipoAusencia && fechaAusencia) {
+                    const key = `${codigo}_${tipoAusencia}_${fechaAusencia}`;
+                    const keySinEspacios = `${codigo}_${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}`;
+                    
+                    documentosMap.set(key, {
+                      estado: doc.estado,
+                      fecha_solicitud: doc.fecha_solicitud,
+                      fecha_completado: doc.fecha_completado,
+                      tipo_documento: doc.tipo_documento,
+                      notas: doc.notas,
+                      tipoAusencia: tipoAusencia,
+                      fechaAusencia: fechaAusencia
+                    });
+                    
+                    // Adăugăm și key-ul fără spații pentru matching flexibil
+                    if (keySinEspacios !== key) {
+                      documentosMap.set(keySinEspacios, {
+                        estado: doc.estado,
+                        fecha_solicitud: doc.fecha_solicitud,
+                        fecha_completado: doc.fecha_completado,
+                        tipo_documento: doc.tipo_documento,
+                        notas: doc.notas,
+                        tipoAusencia: tipoAusencia,
+                        fechaAusencia: fechaAusencia
+                      });
+                    }
+                  } else {
+                    // Fallback: dacă nu putem extrage tipul și data, folosim key-ul vechi (pentru compatibilitate cu justificante vechi)
+                    // NOTĂ: Acest fallback este folosit doar pentru justificante vechi care nu au tipul și data în notas
+                    const key = `${codigo}_${doc.tipo_documento}`;
+                    documentosMap.set(key, {
+                      estado: doc.estado,
+                      fecha_solicitud: doc.fecha_solicitud,
+                      fecha_completado: doc.fecha_completado,
+                      tipo_documento: doc.tipo_documento,
+                      notas: doc.notas
+                    });
+                  }
                 });
               }
             }
@@ -2413,7 +2471,15 @@ export default function SolicitudesPage() {
             
             if (match) {
               const tipoAusencia = match[1].trim();
-              const fechaAusencia = match[2].trim();
+              let fechaAusencia = match[2].trim();
+              
+              // Asigură-te că data este în format YYYY-MM-DD
+              if (fechaAusencia.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                const fechaParts = fechaAusencia.split('/');
+                if (fechaParts.length === 3) {
+                  fechaAusencia = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                }
+              }
               
               // Adăugăm în map-ul generic (doar pe dată) - SOLUȚIE GENERICĂ
               if (!justificantesMapPorFecha.has(fechaAusencia)) {
@@ -2426,7 +2492,8 @@ export default function SolicitudesPage() {
                 tipo_documento: doc.tipo_documento,
                 notas: doc.notas,
                 id: doc.id,
-                tipoAusencia: tipoAusencia // Păstrăm tipul pentru referință
+                tipoAusencia: tipoAusencia, // Păstrăm tipul pentru referință
+                fechaAusencia: fechaAusencia // Asigură-te că data este normalizată în YYYY-MM-DD
               };
               justificantesMapPorFecha.get(fechaAusencia).push(justificanteData);
               
@@ -2448,21 +2515,9 @@ export default function SolicitudesPage() {
           justificantesMapPorTipoYFecha.forEach((value, key) => {
             justificantesMap.set(key, value);
           });
-          // Adăugăm și key-urile pe dată (pentru matching generic)
-          justificantesMapPorFecha.forEach((justificantes, fecha) => {
-            // Dacă există doar un justificante pentru această dată, îl adăugăm cu key-ul generic
-            if (justificantes.length === 1) {
-              justificantesMap.set(`_${fecha}`, justificantes[0]); // Key generic: "_YYYY-MM-DD"
-            }
-          });
-          
-          // Adăugăm key-uri generice pe dată pentru matching flexibil (SOLUȚIE GENERICĂ)
-          justificantesMapPorFecha.forEach((justificantesArray, fecha) => {
-            // Key generic pentru matching pe dată: "_YYYY-MM-DD" - funcționează pentru orice tip
-            if (justificantesArray.length > 0) {
-              justificantesMap.set(`_${fecha}`, justificantesArray[0]); // Luăm primul justificante pentru această dată
-            }
-          });
+          // ELIMINAT: Key-uri generice pe dată pentru a evita asocierea greșită a justificantelor
+          // Fiecare absență trebuie să aibă propriile justificante asociate pe baza tipului și datei exacte
+          // Nu mai adăugăm key-uri generice pe dată (_YYYY-MM-DD) pentru a preveni matching-ul greșit
           
           setJustificantesPorAusencia(justificantesMap);
         } else {
@@ -3300,6 +3355,121 @@ export default function SolicitudesPage() {
     setDeleteConfirm({ isOpen: true, solicitudId });
   };
 
+  const handleConvertirAusencia = async (ausencia) => {
+    try {
+      setOperationLoading('convertir', true);
+      
+      // Obține solicitud_id din item
+      // Backend returnează câmpurile din tabelul Ausencias cu numele exacte din DB
+      // Schema Prisma: solicitud_id (lowercase)
+      const solicitudId = ausencia.solicitud_id || ausencia.SOLICITUD_ID || ausencia.id;
+      
+      if (!solicitudId) {
+        console.error('❌ Ausencia item (nu are solicitud_id):', ausencia);
+        setErrorMsg('No se pudo encontrar el ID de la solicitud asociada. Verifica la consola para más detalles.');
+        setConvertirConfirm({ isOpen: false, ausencia: null });
+        setOperationLoading('convertir', false);
+        return;
+      }
+      
+      console.log('🔍 Solicitud ID pentru conversie:', solicitudId, '| Item complet:', ausencia);
+      
+      // Determină tipul curent și tipul nou (conversie inversă)
+      const tipoActual = (ausencia.TIPO || ausencia.tipo || '').trim();
+      const tipoNuevo = tipoActual === 'Ausencias justificada'
+        ? 'Ausencia Injustificada'  // Dacă e justificada, devine injustificada
+        : tipoActual === 'Ausencia Injustificada'
+        ? 'Ausencias justificada'   // Dacă e injustificada, devine justificada
+        : 'Ausencia Injustificada'; // Fallback (nu ar trebui să se întâmple)
+      
+      // Folosește endpoint-ul de solicitudes pentru update
+      // Actualizăm tipul în solicitare, care va actualiza automat și ausencia asociată
+      const fechaInicio = ausencia.fecha_inicio || ausencia.FECHA_INICIO || ausencia.permiso_fecha_inicio || '';
+      const fechaFin = ausencia.fecha_fin || ausencia.FECHA_FIN || ausencia.permiso_fecha_fin || '';
+      
+      // Dacă nu avem fecha_inicio/fin separate, încercăm să le extragem din FECHA
+      let fechaInicioFinal = fechaInicio;
+      let fechaFinFinal = fechaFin;
+      if (!fechaInicioFinal && (ausencia.FECHA || ausencia.fecha)) {
+        const fechaStr = ausencia.FECHA || ausencia.fecha;
+        if (fechaStr.includes(' - ')) {
+          const partes = fechaStr.split(' - ');
+          fechaInicioFinal = partes[0]?.trim() || '';
+          fechaFinFinal = partes[1]?.trim() || partes[0]?.trim() || '';
+        } else {
+          fechaInicioFinal = fechaStr;
+          fechaFinFinal = fechaStr;
+        }
+      }
+      
+      const data = {
+        accion: 'update',
+        id: solicitudId,
+        email: ausencia.email || '',
+        codigo: ausencia.CODIGO || ausencia.codigo || '',
+        nombre: ausencia.NOMBRE || ausencia.nombre || '',
+        tipo: tipoNuevo, // Convertim la tipul opus
+        estado: 'Aprobada', // Păstrăm starea
+        motivo: ausencia.MOTIVO || ausencia.motivo || '',
+        fecha_inicio: fechaInicioFinal,
+        fecha_fin: fechaFinFinal,
+      };
+      
+      console.log('TRIMIT CONVERTIR AUSENCIA (prin solicitudes):', data);
+      
+      // Folosește endpoint-ul de solicitudes pentru update
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const result = await callApi(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      
+      // Procesează răspunsul
+      let responseData = result.data;
+      if (Array.isArray(responseData) && responseData.length > 0) {
+        responseData = responseData[0];
+      }
+      
+      const isSuccess = result.success || 
+        (responseData && (responseData.success === true || responseData.status === 'ok'));
+      
+      if (isSuccess) {
+        // Log conversia
+        const tipoActual = (ausencia.TIPO || ausencia.tipo || '').trim();
+        await activityLogger.logAction('ausencia_converted', {
+          ausencia_id: ausencia.id,
+          tipo_anterior: tipoActual,
+          tipo_nuevo: tipoNuevo,
+          user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+          email: authUser?.email
+        });
+        
+        setSuccessMsg('Ausencia convertida a injustificada correctamente.');
+        setConvertirConfirm({ isOpen: false, ausencia: null });
+        
+        // Reîncarcă listele
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg('No se pudo convertir la ausencia.');
+        setServerResp(`Error: ${result.error || responseData?.error || 'Error desconocido'}`);
+      }
+    } catch (e) {
+      console.error('Error converting ausencia:', e);
+      setErrorMsg(`Error al convertir: ${e.message}`);
+      setConvertirConfirm({ isOpen: false, ausencia: null });
+    } finally {
+      setOperationLoading('convertir', false);
+    }
+  };
+
   const handleDelete = async (solicitudId) => {
     try {
       setOperationLoading('delete', true);
@@ -3500,6 +3670,7 @@ export default function SolicitudesPage() {
       'Permiso médico',
       'Permiso',
       'Ausencia Injustificada', // Adăugat pentru ausencias injustificadas
+      'Ausencias justificada', // Adăugat pentru ausencias justificadas
     ];
     
     return dayBasedTypes.includes(tipoStr);
@@ -3630,6 +3801,25 @@ export default function SolicitudesPage() {
     return user ? (user['NOMBRE / APELLIDOS'] || email) : email;
   }, [allUsers]);
 
+  // Extrage tipurile unice de ausencias din backend (doar când selectedTab === 'ausencias')
+  const ausenciaTipos = useMemo(() => {
+    if (selectedTab !== 'ausencias' || !allAusencias || allAusencias.length === 0) {
+      return [];
+    }
+    
+    // Extrage tipurile unice din allAusencias
+    const tiposSet = new Set();
+    allAusencias.forEach(ausencia => {
+      const tipo = ausencia.TIPO || ausencia.tipo || '';
+      if (tipo && tipo.trim() !== '') {
+        tiposSet.add(tipo.trim());
+      }
+    });
+    
+    // Sortează tipurile alfabetic
+    return Array.from(tiposSet).sort();
+  }, [selectedTab, allAusencias]);
+
   const getFilteredSolicitudes = useMemo(() => {
     let filtered;
     
@@ -3713,6 +3903,16 @@ export default function SolicitudesPage() {
       });
     }
     
+    // Filtru după tip de ausencia (doar pentru tab-ul 'ausencias')
+    if (selectedTab === 'ausencias' && selectedTipoAusencia !== 'ALL') {
+      filtered = filtered.filter(s => {
+        const tipo = (s.TIPO || s.tipo || '').trim();
+        const selectedTipo = selectedTipoAusencia.trim();
+        // Comparație exactă (case-sensitive pentru a respecta tipurile din backend)
+        return tipo === selectedTipo;
+      });
+    }
+    
     // Sortare după fecha_solicitud (data solicitării) - cele mai recente sus
     const sorted = filtered.sort((a, b) => {
       let createdA, createdB;
@@ -3742,7 +3942,7 @@ export default function SolicitudesPage() {
       return 0;
     });
     return sorted;
-  }, [selectedTab, selectedUser, selectedMonth, allAusencias, allSolicitudes, allBajasMedicas, allUsers, bajaFilter]);
+  }, [selectedTab, selectedUser, selectedMonth, selectedTipoAusencia, allAusencias, allSolicitudes, allBajasMedicas, allUsers, bajaFilter]);
 
   // Statistici pentru bajas médicas
   const bajasStats = useMemo(() => {
@@ -4162,21 +4362,17 @@ export default function SolicitudesPage() {
                         let fechaNormalizada = '';
                         if (fechaAusencia) {
                           try {
-                            // Încearcă să parseze data
-                            let fecha = null;
-                            if (typeof fechaAusencia === 'string') {
-                              // Dacă este deja în format YYYY-MM-DD
-                              if (fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
-                                fechaNormalizada = fechaAusencia.substring(0, 10);
-                              } else {
-                                // Încearcă să parseze ca Date
-                                fecha = new Date(fechaAusencia);
-                                if (!isNaN(fecha.getTime())) {
-                                  fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
-                                }
+                            // Dacă este format "DD/MM/YYYY" sau "D/M/YYYY" (ex: "8/1/2026")
+                            if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                              const fechaParts = fechaAusencia.trim().split('/');
+                              if (fechaParts.length === 3) {
+                                fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
                               }
+                            } else if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
+                              fechaNormalizada = fechaAusencia.substring(0, 10);
                             } else {
-                              fecha = new Date(fechaAusencia);
+                              // Încearcă să parseze ca Date
+                              const fecha = new Date(fechaAusencia);
                               if (!isNaN(fecha.getTime())) {
                                 fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
                               }
@@ -4203,19 +4399,29 @@ export default function SolicitudesPage() {
                           justificante = justificantesPorAusencia.get(keySinEspacios);
                         }
                         
-                        // Dacă tot nu găsește, folosește matching generic pe dată (SOLUȚIE GENERICĂ)
-                        if (!justificante && fechaNormalizada) {
-                          // Key generic: "_YYYY-MM-DD" - funcționează pentru orice tip de ausencia
-                          const keyGenerico = `_${fechaNormalizada}`;
-                          justificante = justificantesPorAusencia.get(keyGenerico);
-                          if (!justificante) {
-                            // Fallback: caută orice key care se termină cu data
-                            const keysEnMap = Array.from(justificantesPorAusencia.keys());
-                            const keyConFecha = keysEnMap.find(k => k.endsWith(`_${fechaNormalizada}`));
-                            if (keyConFecha) {
-                              justificante = justificantesPorAusencia.get(keyConFecha);
-                            }
-                          }
+                        // ELIMINAT: Fallback generic pe dată pentru a evita asocierea greșită a justificantelor
+                        // Fiecare absență trebuie să aibă propriile justificante asociate pe baza tipului și datei
+                        // Dacă nu se găsește matching exact, înseamnă că nu există justificante pentru această absență specifică
+                        
+                        // VERIFICARE SUPLIMENTARĂ: Dacă justificantele au data diferită de absență, nu le asociem
+                        if (justificante && justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
+                          console.warn('⚠️ [DEBUG Lista] Justificante descartada - fecha no coincide:', {
+                            fechaAusencia: justificante.fechaAusencia,
+                            fechaNormalizada,
+                            tipoAusencia: justificante.tipoAusencia,
+                            tipoAusenciaItem: tipoAusencia
+                          });
+                          justificante = null; // Nu asociem justificantele cu data diferită
+                        }
+                        
+                        // VERIFICARE SUPLIMENTARĂ: Dacă tipul absenței nu se potrivește, nu le asociem
+                        if (justificante && justificante.tipoAusencia && tipoAusencia && 
+                            justificante.tipoAusencia.toLowerCase().trim() !== tipoAusencia.toLowerCase().trim()) {
+                          console.warn('⚠️ [DEBUG Lista] Justificante descartada - tipo no coincide:', {
+                            tipoAusenciaJustificante: justificante.tipoAusencia,
+                            tipoAusenciaItem: tipoAusencia
+                          });
+                          justificante = null; // Nu asociem justificantele cu tipul diferit
                         }
                         
                         // console.log('📄 Justificante encontrada en lista:', justificante ? 'found' : 'not found');
@@ -4547,32 +4753,47 @@ export default function SolicitudesPage() {
               </div>
 
 
-              {/* Selector meses - Moderno con efectos */}
-              <div className="overflow-x-auto">
-                <div className="flex gap-2 min-w-max pb-2">
-                  {MONTHS.map((month, idx) => (
-                    <button
-                      key={month}
-                      onClick={() => setSelectedMonth(idx)}
-                      className={`group relative px-4 py-2 rounded-lg text-sm font-bold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md whitespace-nowrap ${
-                        selectedMonth === idx
-                          ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-indigo-200'
-                          : 'bg-white text-indigo-600 border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50'
-                      }`}
-                    >
-                      {/* Glow effect */}
-                      <div className={`absolute inset-0 rounded-lg transition-all duration-300 ${
-                        selectedMonth === idx 
-                          ? 'bg-indigo-400 opacity-20 blur-sm animate-pulse' 
-                          : 'bg-indigo-400 opacity-0 group-hover:opacity-10 blur-sm'
-                      }`}></div>
-                      <span className="relative flex items-center gap-1">
-                        {idx === 0 && <span className="text-xs">📅</span>}
-                        {month}
-                      </span>
-                    </button>
-                  ))}
+              {/* Selector meses y tipo - Dropdowns en línea */}
+              <div className="flex flex-col sm:flex-row gap-4 w-full">
+                <div className="flex-1 sm:flex-initial sm:w-auto">
+                  <label htmlFor="month-selector" className="block text-sm font-semibold text-gray-700 mb-2">
+                    Filtrar por mes
+                  </label>
+                  <select
+                    id="month-selector"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                  >
+                    {MONTHS.map((month, idx) => (
+                      <option key={month} value={idx}>
+                        {idx === 0 ? `📅 ${month}` : month}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {/* Selector tipo ausencia - Dropdown (doar pentru tab-ul 'ausencias') */}
+                {selectedTab === 'ausencias' && (
+                  <div className="flex-1 sm:flex-initial sm:w-auto">
+                    <label htmlFor="tipo-ausencia-selector" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Filtrar por tipo
+                    </label>
+                    <select
+                      id="tipo-ausencia-selector"
+                      value={selectedTipoAusencia}
+                      onChange={(e) => setSelectedTipoAusencia(e.target.value)}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                    >
+                      <option value="ALL">📋 Todos los tipos</option>
+                      {ausenciaTipos.map((tipo) => (
+                        <option key={tipo} value={tipo}>
+                          {tipo}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -5162,14 +5383,23 @@ export default function SolicitudesPage() {
                         let fechaNormalizada = '';
                         if (fechaAusencia) {
                           try {
-                            const fecha = new Date(fechaAusencia);
-                            if (!isNaN(fecha.getTime())) {
-                              fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
+                            // Dacă este format "DD/MM/YYYY" sau "D/M/YYYY" (ex: "8/1/2026")
+                            if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                              const fechaParts = fechaAusencia.trim().split('/');
+                              if (fechaParts.length === 3) {
+                                fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                              }
                             } else if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
                               fechaNormalizada = fechaAusencia.substring(0, 10);
+                            } else {
+                              // Încearcă să parseze ca Date
+                              const fecha = new Date(fechaAusencia);
+                              if (!isNaN(fecha.getTime())) {
+                                fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
+                              }
                             }
                           } catch (e) {
-                            // Ignoră erorile
+                            console.warn('Error normalizando fecha:', fechaAusencia, e);
                           }
                         }
                         
@@ -5177,7 +5407,18 @@ export default function SolicitudesPage() {
                         // Key alternativ fără spații (pentru matching mai flexibil)
                         const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
                         
-                        // console.log('🔍 Buscando justificante para ausencia (tab ausencias)');
+                        console.log('🔍 [DEBUG] Buscando justificante para ausencia:', {
+                          tipoAusencia,
+                          fechaAusencia,
+                          fechaNormalizada,
+                          key,
+                          keySinEspacios,
+                          keysDisponibles: Array.from(justificantesPorAusencia.keys()),
+                          itemFECHA: item.FECHA,
+                          itemFecha: item.fecha,
+                          itemFechaInicio: item.fecha_inicio,
+                          itemComplet: item
+                        });
                         
                         // Încearcă mai întâi cu key-ul exact, apoi cu key-ul fără spații
                         let justificante = justificantesPorAusencia.get(key);
@@ -5185,15 +5426,44 @@ export default function SolicitudesPage() {
                           justificante = justificantesPorAusencia.get(keySinEspacios);
                         }
                         
-                        // Dacă tot nu găsește, încearcă să găsească orice justificante pentru această dată
-                        if (!justificante && fechaNormalizada) {
-                          const keysEnMap = Array.from(justificantesPorAusencia.keys());
-                          const keyConFecha = keysEnMap.find(k => k.endsWith(`_${fechaNormalizada}`));
-                          if (keyConFecha) {
-                            justificante = justificantesPorAusencia.get(keyConFecha);
-                            console.log('📄 Justificante encontrada por fecha (tab ausencias):', { keyConFecha: String(keyConFecha), justificante: justificante ? 'found' : 'not found' });
+                        if (justificante) {
+                          console.log('✅ [DEBUG] Justificante encontrada:', {
+                            key: justificante.tipoAusencia ? `${justificante.tipoAusencia}_${fechaNormalizada}` : 'unknown',
+                            estado: justificante.estado,
+                            fecha_solicitud: justificante.fecha_solicitud,
+                            fecha_completado: justificante.fecha_completado,
+                            notas: justificante.notas,
+                            tipoAusencia: justificante.tipoAusencia,
+                            fechaAusencia: justificante.fechaAusencia
+                          });
+                          
+                          // VERIFICARE SUPLIMENTARĂ: Dacă justificantele au data diferită de absență, nu le asociem
+                          if (justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
+                            console.warn('⚠️ [DEBUG] Justificante descartada - fecha no coincide:', {
+                              fechaAusencia: justificante.fechaAusencia,
+                              fechaNormalizada,
+                              tipoAusencia: justificante.tipoAusencia,
+                              tipoAusenciaItem: tipoAusencia
+                            });
+                            justificante = null; // Nu asociem justificantele cu data diferită
                           }
+                          
+                          // VERIFICARE SUPLIMENTARĂ: Dacă tipul absenței nu se potrivește, nu le asociem
+                          if (justificante && justificante.tipoAusencia && tipoAusencia && 
+                              justificante.tipoAusencia.toLowerCase().trim() !== tipoAusencia.toLowerCase().trim()) {
+                            console.warn('⚠️ [DEBUG] Justificante descartada - tipo no coincide:', {
+                              tipoAusenciaJustificante: justificante.tipoAusencia,
+                              tipoAusenciaItem: tipoAusencia
+                            });
+                            justificante = null; // Nu asociem justificantele cu tipul diferit
+                          }
+                        } else {
+                          console.log('❌ [DEBUG] No se encontró justificante para esta ausencia');
                         }
+                        
+                        // ELIMINAT: Fallback generic pe dată pentru a evita asocierea greșită a justificantelor
+                        // Fiecare absență trebuie să aibă propriile justificante asociate pe baza tipului și datei
+                        // Dacă nu se găsește matching exact, înseamnă că nu există justificante pentru această absență specifică
                         
                         // console.log('📄 Justificante encontrada (tab ausencias):', justificante ? 'found' : 'not found');
                         
@@ -5243,6 +5513,34 @@ export default function SolicitudesPage() {
                         return null;
                       })()}
 
+                      {/* Buton pentru convertir - pentru "Ausencias justificada" și "Ausencia Injustificada" */}
+                      {selectedTab === 'ausencias' && ((item.tipo || item.TIPO) === 'Ausencias justificada' || (item.tipo || item.TIPO) === 'Ausencia Injustificada') && (
+                        <div className="mt-4 flex justify-end items-center gap-3">
+                          <button
+                            onClick={() => setConvertirConfirm({ isOpen: true, ausencia: item })}
+                            className={`group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+                              (item.tipo || item.TIPO) === 'Ausencias justificada'
+                                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white'
+                                : 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                            }`}
+                          >
+                            <div className={`absolute inset-0 rounded-lg opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300 ${
+                              (item.tipo || item.TIPO) === 'Ausencias justificada'
+                                ? 'bg-red-400'
+                                : 'bg-green-400'
+                            }`}></div>
+                            <div className="relative flex items-center gap-2">
+                              <span className="text-sm">{(item.tipo || item.TIPO) === 'Ausencias justificada' ? '⚠️' : '✅'}</span>
+                              <span className="text-sm">
+                                {(item.tipo || item.TIPO) === 'Ausencias justificada'
+                                  ? 'Convertir en ausencia injustificada'
+                                  : 'Convertir en ausencia justificada'}
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+                      )}
+
                       {/* Buton pentru solicitare justificante - doar pentru tipuri care NU sunt Vacaciones sau Asunto Propio */}
                       {selectedTab === 'ausencias' && (() => {
                         const tipoNormalized = (item.tipo || item.TIPO || '').toLowerCase();
@@ -5252,17 +5550,65 @@ export default function SolicitudesPage() {
                         if (!isVacaciones && !isAsuntoPropio) {
                           // Verificăm dacă există deja o cerere de justificante pentru această ausencia
                           const codigo = item.CODIGO || item.codigo || '';
+                          const tipoAusencia = item.tipo || item.TIPO || '';
+                          const fechaAusencia = item.FECHA || item.fecha || item.fecha_inicio || item['fecha inicio'] || '';
+                          
+                          // Normalizează data pentru matching (format YYYY-MM-DD)
+                          let fechaNormalizada = '';
+                          if (fechaAusencia) {
+                            try {
+                              // Dacă este format "DD/MM/YYYY" sau "D/M/YYYY"
+                              if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                                const fechaParts = fechaAusencia.trim().split('/');
+                                if (fechaParts.length === 3) {
+                                  fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                                }
+                              } else if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
+                                fechaNormalizada = fechaAusencia.substring(0, 10);
+                              } else {
+                                const fecha = new Date(fechaAusencia);
+                                if (!isNaN(fecha.getTime())) {
+                                  fechaNormalizada = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
+                                }
+                              }
+                            } catch (e) {
+                              console.warn('Error normalizando fecha para matching:', fechaAusencia, e);
+                            }
+                          }
+                          
                           let justificanteStatus = null;
                           
-                          if (codigo) {
-                            // Căutăm în map pentru justificante (verificăm tipurile comune)
+                          if (codigo && tipoAusencia && fechaNormalizada) {
+                            // Căutăm cu key-ul complet: codigo_tipoAusencia_fecha
+                            const key = `${codigo}_${tipoAusencia}_${fechaNormalizada}`;
+                            const keySinEspacios = `${codigo}_${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
+                            
+                            justificanteStatus = documentosSolicitadosMap.get(key) || documentosSolicitadosMap.get(keySinEspacios);
+                            
+                            // VERIFICARE SUPLIMENTARĂ: Dacă justificantele au data diferită de absență, nu le asociem
+                            if (justificanteStatus && justificanteStatus.fechaAusencia && fechaNormalizada && 
+                                justificanteStatus.fechaAusencia !== fechaNormalizada) {
+                              justificanteStatus = null; // Nu asociem justificantele cu data diferită
+                            }
+                            
+                            // VERIFICARE SUPLIMENTARĂ: Dacă tipul absenței nu se potrivește, nu le asociem
+                            if (justificanteStatus && justificanteStatus.tipoAusencia && tipoAusencia && 
+                                justificanteStatus.tipoAusencia.toLowerCase().trim() !== tipoAusencia.toLowerCase().trim()) {
+                              justificanteStatus = null; // Nu asociem justificantele cu tipul diferit
+                            }
+                          } else if (codigo) {
+                            // Fallback: dacă nu avem tipul sau data, căutăm doar pe codigo_tipo (pentru compatibilitate cu justificante vechi)
+                            // NOTĂ: Acest fallback este folosit doar pentru justificante vechi care nu au tipul și data în notas
                             const tiposJustificante = ['Justificante', 'Justificante Médico', 'Justificante de Ausencia', 'Certificado Médico'];
                             for (const tipoJust of tiposJustificante) {
                               const key = `${codigo}_${tipoJust}`;
                               const docSolicitado = documentosSolicitadosMap.get(key);
                               if (docSolicitado) {
-                                justificanteStatus = docSolicitado;
-                                break;
+                                // Verificăm dacă justificantele vechi nu au fechaAusencia (sunt justificante vechi)
+                                if (!docSolicitado.fechaAusencia) {
+                                  justificanteStatus = docSolicitado;
+                                  break;
+                                }
                               }
                             }
                           }
@@ -5729,11 +6075,11 @@ export default function SolicitudesPage() {
                     value={tipo}
                     onChange={(e) => {
                       const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-                      const allowedGroups = ['Limpiador', 'Developer'];
+                      const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
                       
                       // Prevent selection of Asuntos Propios for non-allowed groups
                       if (e.target.value === 'Asuntos Propios' && !allowedGroups.includes(currentUserGroup)) {
-                        alert('Asuntos Propios solo está disponible para usuarios de Limpiador y Developer.');
+                        alert('Asuntos Propios solo está disponible para usuarios de Limpiador, Developer y Auxiliar De Servicios - L.');
                         return;
                       }
                       
@@ -5764,7 +6110,7 @@ export default function SolicitudesPage() {
                   >
                     {(() => {
                       const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-                      const allowedGroups = ['Limpiador', 'Developer'];
+                      const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
                       const isGroupAllowed = allowedGroups.includes(currentUserGroup);
                       
                       return (
@@ -6722,6 +7068,93 @@ export default function SolicitudesPage() {
                 </>
               )}
             </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal de confirmare conversie ausencia */}
+      <Modal
+        isOpen={convertirConfirm.isOpen}
+        onClose={() => setConvertirConfirm({ isOpen: false, ausencia: null })}
+        title=""
+        size="sm"
+        className="max-w-md"
+      >
+        <div className="text-center py-4">
+          {(() => {
+            const tipoActual = convertirConfirm.ausencia ? (convertirConfirm.ausencia.TIPO || convertirConfirm.ausencia.tipo || '').trim() : '';
+            const esJustificada = tipoActual === 'Ausencias justificada';
+            const convertirA = esJustificada ? 'injustificada' : 'justificada';
+            
+            return (
+              <>
+                {/* Icon */}
+                <div className={`mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-4 ${
+                  esJustificada ? 'bg-orange-100' : 'bg-green-100'
+                }`}>
+                  <span className="text-4xl">{esJustificada ? '⚠️' : '✅'}</span>
+                </div>
+                
+                {/* Titlu */}
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  Convertir en ausencia {convertirA}
+                </h3>
+                
+                {/* Mesaj */}
+                {esJustificada ? (
+                  <>
+                    <p className="text-gray-600 mb-4">
+                      Esta acción solo debe realizarse si no existe justificante válido para la ausencia.
+                    </p>
+                    <p className="text-sm text-gray-500 mb-6">
+                      ¿Estás seguro de que deseas convertir esta ausencia justificada en injustificada?
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-gray-600 mb-4">
+                    Esta acción convertirá la ausencia injustificada en justificada.
+                  </p>
+                )}
+              </>
+            );
+          })()}
+          
+          {/* Butoane */}
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => setConvertirConfirm({ isOpen: false, ausencia: null })}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+            >
+              Cancelar
+            </button>
+            {(() => {
+              const tipoActual = convertirConfirm.ausencia ? (convertirConfirm.ausencia.TIPO || convertirConfirm.ausencia.tipo || '').trim() : '';
+              const esJustificada = tipoActual === 'Ausencias justificada';
+              return (
+                <button
+                  onClick={() => {
+                    if (convertirConfirm.ausencia) {
+                      handleConvertirAusencia(convertirConfirm.ausencia);
+                    }
+                  }}
+                  disabled={isOperationLoading('convertir')}
+                  className={`px-6 py-2.5 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
+                    esJustificada
+                      ? 'bg-orange-600 hover:bg-orange-700'
+                      : 'bg-green-600 hover:bg-green-700'
+                  }`}
+                >
+                  {isOperationLoading('convertir') ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Convirtiendo...
+                    </>
+                  ) : (
+                    'Convertir'
+                  )}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </Modal>

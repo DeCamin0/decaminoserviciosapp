@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
 import { EmailService } from './email.service';
 import { SentEmailsService } from './sent-emails.service';
+import { EmpleadosService } from './empleados.service';
 
 @Injectable()
 export class AusenciasService {
@@ -14,6 +15,7 @@ export class AusenciasService {
     private readonly telegramService: TelegramService,
     private readonly emailService: EmailService,
     private readonly sentEmailsService: SentEmailsService,
+    private readonly empleadosService: EmpleadosService,
   ) {}
 
   /**
@@ -84,7 +86,115 @@ export class AusenciasService {
   }
 
   /**
-   * Trimite email pentru notificare absență
+   * Trimite email către angajat când înregistrează o ausencia
+   */
+  private async sendAusenciaEmailToEmpleado(ausenciaData: {
+    codigo: string;
+    nombre: string;
+    tipo: string;
+    fecha: string;
+    motivo?: string;
+  }): Promise<void> {
+    this.logger.log(
+      `📧 [sendAusenciaEmailToEmpleado] Called for ausencia - codigo: ${ausenciaData.codigo}`,
+    );
+
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn(
+        `⚠️ [sendAusenciaEmailToEmpleado] Email service not configured. Email notification not sent to empleado for ausencia - codigo: ${ausenciaData.codigo}`,
+      );
+      return;
+    }
+
+    // Obține email-ul angajatului
+    let empleadoEmail: string | null = null;
+    if (ausenciaData.codigo) {
+      try {
+        const empleado = await this.empleadosService.getEmpleadoByCodigo(
+          ausenciaData.codigo,
+        );
+        empleadoEmail =
+          empleado?.['CORREO ELECTRONICO'] ||
+          empleado?.CORREO_ELECTRONICO ||
+          null;
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ [sendAusenciaEmailToEmpleado] Could not fetch empleado email for ${ausenciaData.codigo}: ${error.message}`,
+        );
+      }
+    }
+
+    if (!empleadoEmail || empleadoEmail.trim() === '') {
+      this.logger.warn(
+        `⚠️ [sendAusenciaEmailToEmpleado] No email found for empleado ${ausenciaData.codigo}, skipping email notification`,
+      );
+      return;
+    }
+
+    // Definește variabilele înainte de try pentru a fi disponibile în catch
+    let subject = '';
+    let html = '';
+
+    try {
+      const emailData = this.formatAusenciaEmailHtml(ausenciaData);
+      subject = emailData.subject;
+      html = emailData.html;
+
+      this.logger.log(
+        `📧 [sendAusenciaEmailToEmpleado] Sending email to empleado ${empleadoEmail} - subject: ${subject}`,
+      );
+      await this.emailService.sendEmail(empleadoEmail, subject, html);
+      this.logger.log(
+        `✅ [sendAusenciaEmailToEmpleado] Email notification sent to ${empleadoEmail} for ausencia ${ausenciaData.codigo}`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: ausenciaData.codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: ausenciaData.nombre,
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendAusenciaEmailToEmpleado] Eroare la salvarea email-ului în BD: ${saveError.message}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [sendAusenciaEmailToEmpleado] Error sending email notification to empleado (non-blocking): ${error.message}`,
+      );
+
+      // Salvează și email-urile eșuate în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: ausenciaData.codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: ausenciaData.nombre,
+          subject: subject || `Ausencia ${ausenciaData.codigo}`,
+          message: html || '',
+          status: 'failed',
+          errorMessage: error.message || String(error),
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendAusenciaEmailToEmpleado] Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
+        );
+      }
+
+      // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+    }
+  }
+
+  /**
+   * Trimite email pentru notificare absență (către gestoria)
    */
   private async sendAusenciaEmail(ausenciaData: {
     codigo: string;
@@ -522,14 +632,30 @@ export class AusenciasService {
             );
           });
 
-        // Email notification
+        // Email notification către gestoria
         this.sendAusenciaEmail(ausenciaNotificationData).catch(
           (emailError: any) => {
             this.logger.warn(
-              `⚠️ Error sending email notification (non-blocking): ${emailError.message}`,
+              `⚠️ Error sending email notification to gestoria (non-blocking): ${emailError.message}`,
             );
           },
         );
+
+        // Email notification către angajat
+        this.logger.log(
+          `📧 [ADD] Attempting to send email notification to empleado - ausencia: ${ausenciaNotificationData.codigo}`,
+        );
+        this.sendAusenciaEmailToEmpleado(ausenciaNotificationData)
+          .then(() => {
+            this.logger.log(
+              `✅ [ADD] Email notification sent to empleado successfully - ausencia: ${ausenciaNotificationData.codigo}`,
+            );
+          })
+          .catch((emailError: any) => {
+            this.logger.error(
+              `❌ [ADD] Error sending email notification to empleado (non-blocking): ${emailError.message}`,
+            );
+          });
       });
 
       return { success: true, id: insertedId || 0 };

@@ -120,27 +120,42 @@ ${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
     estado: string;
     motivo?: string;
     accion: 'create' | 'update' | 'delete';
+    tipoAnterior?: string;
+    tipoNuevo?: string;
   }): Promise<void> {
     // Folosim Markdown format
     // IMPORTANT: Totul în spaniolă
-    const actionEmoji =
-      solicitudData.accion === 'create'
-        ? '🟢'
-        : solicitudData.accion === 'update'
-          ? '🔵'
-          : '🔴';
-    const actionText =
-      solicitudData.accion === 'create'
-        ? 'Nueva solicitud creada'
-        : solicitudData.accion === 'update'
-          ? 'Solicitud actualizada'
-          : 'Solicitud eliminada';
+    let actionEmoji = '';
+    let actionText = '';
+
+    if (solicitudData.accion === 'create') {
+      actionEmoji = '🟢';
+      actionText = 'Nueva solicitud creada';
+    } else if (
+      solicitudData.accion === 'update' &&
+      solicitudData.tipoAnterior &&
+      solicitudData.tipoNuevo
+    ) {
+      actionEmoji = '🔄';
+      actionText = 'Ausencia convertida';
+    } else if (solicitudData.accion === 'update') {
+      actionEmoji = '🔵';
+      actionText = 'Solicitud actualizada';
+    } else {
+      actionEmoji = '🔴';
+      actionText = 'Solicitud eliminada';
+    }
+
+    const cambioTipoSection =
+      solicitudData.tipoAnterior && solicitudData.tipoNuevo
+        ? `\n🔄 *Cambio de tipo:*\n   De "${solicitudData.tipoAnterior}" a "${solicitudData.tipoNuevo}"\n`
+        : '';
 
     const message = `
 ${actionEmoji} *${actionText}*
 
 👤 *Empleado:* ${solicitudData.nombre} (${solicitudData.codigo})
-📋 *Tipo:* ${solicitudData.tipo}
+📋 *Tipo:* ${solicitudData.tipo}${cambioTipoSection}
 📆 *Fecha:* ${solicitudData.fecha}
 ✅ *Estado:* ${solicitudData.estado}
 ${solicitudData.motivo ? `📝 *Motivo:* ${solicitudData.motivo}` : ''}

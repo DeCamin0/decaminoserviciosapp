@@ -31,6 +31,8 @@ export class SolicitudesService {
     estado: string;
     motivo?: string;
     accion: 'create' | 'update' | 'delete';
+    tipoAnterior?: string;
+    tipoNuevo?: string;
   }): { subject: string; html: string } {
     const actionEmoji =
       solicitudData.accion === 'create'
@@ -38,12 +40,21 @@ export class SolicitudesService {
         : solicitudData.accion === 'update'
           ? '🔵'
           : '🔴';
-    const actionText =
-      solicitudData.accion === 'create'
-        ? 'Nueva solicitud creada'
-        : solicitudData.accion === 'update'
-          ? 'Solicitud actualizada'
-          : 'Solicitud eliminada';
+    // Mesaj special pentru conversia tipului de ausencia
+    let actionText = '';
+    if (solicitudData.accion === 'create') {
+      actionText = 'Nueva solicitud creada';
+    } else if (
+      solicitudData.accion === 'update' &&
+      solicitudData.tipoAnterior &&
+      solicitudData.tipoNuevo
+    ) {
+      actionText = 'Ausencia convertida';
+    } else if (solicitudData.accion === 'update') {
+      actionText = 'Solicitud actualizada';
+    } else {
+      actionText = 'Solicitud eliminada';
+    }
 
     const subject = `${actionEmoji} ${actionText} - ${solicitudData.nombre} (${solicitudData.codigo})`;
 
@@ -74,6 +85,19 @@ export class SolicitudesService {
     <span class="label">📋 Tipo:</span>
     <span class="value">${solicitudData.tipo}</span>
   </div>
+  
+  ${
+    solicitudData.tipoAnterior && solicitudData.tipoNuevo
+      ? `
+  <div class="info-row" style="background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; border-radius: 4px; margin: 15px 0;">
+    <span class="label" style="color: #856404; font-weight: bold;">🔄 Cambio de tipo:</span>
+    <span class="value" style="color: #856404;">
+      De "${solicitudData.tipoAnterior}" a "${solicitudData.tipoNuevo}"
+    </span>
+  </div>
+  `
+      : ''
+  }
   
   <div class="info-row">
     <span class="label">📆 Fecha:</span>
@@ -137,6 +161,8 @@ export class SolicitudesService {
     motivo?: string;
     accion: 'create' | 'update' | 'delete';
     email?: string;
+    tipoAnterior?: string;
+    tipoNuevo?: string;
   }): Promise<void> {
     this.logger.log(
       `📧 [sendSolicitudEmailToEmpleado] Called for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
@@ -685,9 +711,32 @@ export class SolicitudesService {
       }
 
       // Obține solicitarea înainte de update pentru a verifica estado vechi
-      const beforeUpdate = await this.getSolicitudes({ limit: 1000 });
-      const solicitudBefore = beforeUpdate.find((s) => s.id === id);
+      // Folosim query direct pentru a obține solicitud-ul exact
+      let solicitudBefore: any = null;
+      try {
+        const beforeQuery = `SELECT * FROM solicitudes WHERE id = ${this.escapeSql(id)} LIMIT 1`;
+        const beforeResult = await this.prisma.$queryRawUnsafe(beforeQuery);
+        solicitudBefore =
+          Array.isArray(beforeResult) && beforeResult.length > 0
+            ? beforeResult[0]
+            : null;
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ [UPDATE] Error fetching solicitud before update: ${error.message}`,
+        );
+        // Fallback la metoda veche
+        const beforeUpdate = await this.getSolicitudes({ limit: 1000 });
+        solicitudBefore = beforeUpdate.find((s) => s.id === id);
+      }
+
       const codigo = data.codigo || solicitudBefore?.codigo || '';
+
+      this.logger.log(
+        `🔍 [UPDATE] Solicitud before update - id: ${id}, tipo: ${solicitudBefore?.tipo || 'N/A'}, codigo: ${codigo}, found: ${!!solicitudBefore}`,
+      );
+      this.logger.log(
+        `🔍 [UPDATE] Data update - tipo: ${data.tipo || 'N/A'}, codigo: ${data.codigo || 'N/A'}`,
+      );
 
       // Construiește SET clause dinamic pentru solicitudes
       const updates: string[] = [];
@@ -826,12 +875,43 @@ export class SolicitudesService {
         }
       });
 
-      // Verifică dacă s-a actualizat ceva
-      const updated = await this.getSolicitudes({ limit: 1000 });
-      const solicitud = updated.find((s) => s.id === id);
+      // Verifică dacă s-a actualizat ceva - folosim query direct
+      let solicitud: any = null;
+      try {
+        const afterQuery = `SELECT * FROM solicitudes WHERE id = ${this.escapeSql(id)} LIMIT 1`;
+        const afterResult = await this.prisma.$queryRawUnsafe(afterQuery);
+        solicitud =
+          Array.isArray(afterResult) && afterResult.length > 0
+            ? afterResult[0]
+            : null;
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ [UPDATE] Error fetching solicitud after update: ${error.message}`,
+        );
+        // Fallback la metoda veche
+        const updated = await this.getSolicitudes({ limit: 1000 });
+        solicitud = updated.find((s) => s.id === id);
+      }
+
+      this.logger.log(
+        `🔍 [UPDATE] Solicitud after update - found: ${!!solicitud}, id: ${id}, tipo: ${solicitud?.tipo || 'N/A'}`,
+      );
 
       // Trimite notificare pe Telegram și Email pentru update (complet async, nu așteptăm răspunsul)
       if (solicitud) {
+        // Detectează dacă s-a schimbat tipul între "Ausencias justificada" și "Ausencia Injustificada"
+        const tipoAnterior = (solicitudBefore?.tipo || '').trim();
+        const tipoNuevo = (solicitud.tipo || tipo || '').trim();
+        const esCambioTipoAusencia =
+          (tipoAnterior === 'Ausencias justificada' &&
+            tipoNuevo === 'Ausencia Injustificada') ||
+          (tipoAnterior === 'Ausencia Injustificada' &&
+            tipoNuevo === 'Ausencias justificada');
+
+        this.logger.log(
+          `🔍 [UPDATE] Detección cambio tipo - tipoAnterior: "${tipoAnterior}", tipoNuevo: "${tipoNuevo}", esCambio: ${esCambioTipoAusencia}`,
+        );
+
         const solicitudNotificationData = {
           codigo: solicitud.codigo || codigo || '',
           nombre: solicitud.nombre || nombre || '',
@@ -844,15 +924,29 @@ export class SolicitudesService {
           motivo: solicitud.motivo || motivo || '',
           accion: 'update' as const,
           email: solicitud.email || data.email,
+          tipoAnterior: esCambioTipoAusencia ? tipoAnterior : undefined,
+          tipoNuevo: esCambioTipoAusencia ? tipoNuevo : undefined,
         };
+
+        this.logger.log(
+          `📬 [UPDATE] Preparando notificaciones - codigo: ${solicitudNotificationData.codigo}, tipoAnterior: ${solicitudNotificationData.tipoAnterior || 'N/A'}, tipoNuevo: ${solicitudNotificationData.tipoNuevo || 'N/A'}, email: ${solicitudNotificationData.email || 'N/A'}`,
+        );
 
         setImmediate(() => {
           // Telegram notification (către gestoria)
+          this.logger.log(
+            `📱 [UPDATE] Sending Telegram notification - codigo: ${solicitudNotificationData.codigo}`,
+          );
           this.telegramService
             .sendSolicitudNotification(solicitudNotificationData)
+            .then(() => {
+              this.logger.log(
+                `✅ [UPDATE] Telegram notification sent successfully - codigo: ${solicitudNotificationData.codigo}`,
+              );
+            })
             .catch((telegramError: any) => {
-              this.logger.warn(
-                `⚠️ Error sending Telegram notification (non-blocking): ${telegramError.message}`,
+              this.logger.error(
+                `❌ [UPDATE] Error sending Telegram notification: ${telegramError.message}`,
               );
             });
 
@@ -874,8 +968,13 @@ export class SolicitudesService {
 
           // Email notification către angajat
           this.logger.log(
-            `📧 [UPDATE] Attempting to send email notification to empleado - solicitud: ${solicitudNotificationData.codigo}`,
+            `📧 [UPDATE] Attempting to send email notification to empleado - solicitud: ${solicitudNotificationData.codigo}, email: ${solicitudNotificationData.email || 'N/A'}`,
           );
+          if (!solicitudNotificationData.email) {
+            this.logger.warn(
+              `⚠️ [UPDATE] No email provided for empleado, will try to fetch from codigo: ${solicitudNotificationData.codigo}`,
+            );
+          }
           this.sendSolicitudEmailToEmpleado(solicitudNotificationData)
             .then(() => {
               this.logger.log(
@@ -884,7 +983,7 @@ export class SolicitudesService {
             })
             .catch((emailError: any) => {
               this.logger.error(
-                `❌ [UPDATE] Error sending email notification to empleado (non-blocking): ${emailError.message}`,
+                `❌ [UPDATE] Error sending email notification to empleado: ${emailError.message}`,
               );
             });
 
@@ -893,17 +992,38 @@ export class SolicitudesService {
             this.logger.log(
               `📬 [UPDATE] Attempting to send in-app notification to empleado - solicitud: ${solicitudNotificationData.codigo}`,
             );
+
+            // Mesaj personalizat pentru schimbarea tipului de ausencia
+            let notificationTitle = 'Solicitud actualizada';
+            let notificationMessage = `Tu solicitud de ${solicitudNotificationData.tipo} (${solicitudNotificationData.fecha}) ha sido actualizada. Estado: ${solicitudNotificationData.estado}`;
+
+            if (
+              solicitudNotificationData.tipoAnterior &&
+              solicitudNotificationData.tipoNuevo
+            ) {
+              notificationTitle = 'Ausencia convertida';
+              if (
+                solicitudNotificationData.tipoNuevo === 'Ausencia Injustificada'
+              ) {
+                notificationMessage = `Tu ausencia ha sido convertida de "${solicitudNotificationData.tipoAnterior}" a "${solicitudNotificationData.tipoNuevo}" (${solicitudNotificationData.fecha}).`;
+              } else {
+                notificationMessage = `Tu ausencia ha sido convertida de "${solicitudNotificationData.tipoAnterior}" a "${solicitudNotificationData.tipoNuevo}" (${solicitudNotificationData.fecha}).`;
+              }
+            }
+
             this.notificationsService
               .notifyUser('system', solicitudNotificationData.codigo, {
                 type: 'info',
-                title: 'Solicitud actualizada',
-                message: `Tu solicitud de ${solicitudNotificationData.tipo} (${solicitudNotificationData.fecha}) ha sido actualizada. Estado: ${solicitudNotificationData.estado}`,
+                title: notificationTitle,
+                message: notificationMessage,
                 data: {
                   solicitudId: id,
                   tipo: solicitudNotificationData.tipo,
                   fecha: solicitudNotificationData.fecha,
                   estado: solicitudNotificationData.estado,
                   motivo: solicitudNotificationData.motivo,
+                  tipoAnterior: solicitudNotificationData.tipoAnterior,
+                  tipoNuevo: solicitudNotificationData.tipoNuevo,
                 },
               })
               .then(() => {
@@ -919,9 +1039,137 @@ export class SolicitudesService {
           }
         });
       } else {
-        this.logger.warn(
-          `⚠️ [UPDATE] Solicitud not found after update (id: ${id}), skipping notifications`,
+        this.logger.error(
+          `❌ [UPDATE] Solicitud not found after update (id: ${id}), skipping notifications.`,
         );
+        // Încercăm totuși să trimitem notificări cu datele disponibile
+        // Folosim datele din `data` și `solicitudBefore` dacă există
+        const tipoAnterior = solicitudBefore?.tipo
+          ? (solicitudBefore.tipo || '').trim()
+          : '';
+        const tipoNuevo = data.tipo ? (data.tipo || '').trim() : '';
+        const esCambioTipoAusencia =
+          (tipoAnterior === 'Ausencias justificada' &&
+            tipoNuevo === 'Ausencia Injustificada') ||
+          (tipoAnterior === 'Ausencia Injustificada' &&
+            tipoNuevo === 'Ausencias justificada');
+
+        this.logger.log(
+          `🔍 [UPDATE] Fallback - tipoAnterior: "${tipoAnterior}", tipoNuevo: "${tipoNuevo}", esCambio: ${esCambioTipoAusencia}`,
+        );
+
+        if (codigo && (solicitudBefore || data.tipo)) {
+          this.logger.warn(
+            `⚠️ [UPDATE] Attempting to send notifications with fallback data - codigo: ${codigo}`,
+          );
+
+          const fallbackNotificationData = {
+            codigo: codigo || '',
+            nombre: nombre || solicitudBefore?.nombre || '',
+            tipo: tipo || solicitudBefore?.tipo || '',
+            fecha:
+              data.fecha_inicio && data.fecha_fin
+                ? `${data.fecha_inicio} - ${data.fecha_fin}`
+                : data.fecha_inicio ||
+                  data.fecha_fin ||
+                  solicitudBefore?.fecha_inicio ||
+                  'N/A',
+            estado: estado || solicitudBefore?.estado || '',
+            motivo: motivo || solicitudBefore?.motivo || '',
+            accion: 'update' as const,
+            email: data.email || solicitudBefore?.email,
+            tipoAnterior: esCambioTipoAusencia ? tipoAnterior : undefined,
+            tipoNuevo: esCambioTipoAusencia ? tipoNuevo : undefined,
+          };
+
+          this.logger.log(
+            `📬 [UPDATE] Fallback notification data - codigo: ${fallbackNotificationData.codigo}, tipoAnterior: ${fallbackNotificationData.tipoAnterior || 'N/A'}, tipoNuevo: ${fallbackNotificationData.tipoNuevo || 'N/A'}`,
+          );
+
+          setImmediate(() => {
+            this.logger.log(
+              `📬 [UPDATE] Sending fallback notifications - codigo: ${fallbackNotificationData.codigo}`,
+            );
+
+            // Telegram notification
+            this.telegramService
+              .sendSolicitudNotification(fallbackNotificationData)
+              .then(() => {
+                this.logger.log(
+                  `✅ [UPDATE] Fallback Telegram notification sent`,
+                );
+              })
+              .catch((e) =>
+                this.logger.error(`❌ Telegram fallback error: ${e.message}`),
+              );
+
+            // Email către gestoria
+            this.sendSolicitudEmail(fallbackNotificationData)
+              .then(() => {
+                this.logger.log(`✅ [UPDATE] Fallback email to gestoria sent`);
+              })
+              .catch((e) =>
+                this.logger.error(
+                  `❌ Email gestoria fallback error: ${e.message}`,
+                ),
+              );
+
+            // Email către angajat
+            this.sendSolicitudEmailToEmpleado(fallbackNotificationData)
+              .then(() => {
+                this.logger.log(`✅ [UPDATE] Fallback email to empleado sent`);
+              })
+              .catch((e) =>
+                this.logger.error(
+                  `❌ Email empleado fallback error: ${e.message}`,
+                ),
+              );
+
+            // Notificare în aplicație
+            if (fallbackNotificationData.codigo) {
+              let notificationTitle = 'Solicitud actualizada';
+              let notificationMessage = `Tu solicitud de ${fallbackNotificationData.tipo} (${fallbackNotificationData.fecha}) ha sido actualizada. Estado: ${fallbackNotificationData.estado}`;
+
+              if (
+                fallbackNotificationData.tipoAnterior &&
+                fallbackNotificationData.tipoNuevo
+              ) {
+                notificationTitle = 'Ausencia convertida';
+                notificationMessage = `Tu ausencia ha sido convertida de "${fallbackNotificationData.tipoAnterior}" a "${fallbackNotificationData.tipoNuevo}" (${fallbackNotificationData.fecha}).`;
+              }
+
+              this.notificationsService
+                .notifyUser('system', fallbackNotificationData.codigo, {
+                  type: 'info',
+                  title: notificationTitle,
+                  message: notificationMessage,
+                  data: {
+                    solicitudId: id,
+                    tipo: fallbackNotificationData.tipo,
+                    fecha: fallbackNotificationData.fecha,
+                    estado: fallbackNotificationData.estado,
+                    motivo: fallbackNotificationData.motivo,
+                    tipoAnterior: fallbackNotificationData.tipoAnterior,
+                    tipoNuevo: fallbackNotificationData.tipoNuevo,
+                  },
+                })
+                .then(() => {
+                  this.logger.log(
+                    `✅ [UPDATE] Fallback in-app notification sent`,
+                  );
+                })
+                .catch((e) =>
+                  this.logger.error(
+                    `❌ In-app notification fallback error: ${e.message}`,
+                  ),
+                );
+            }
+          });
+        } else {
+          this.logger.warn(
+            `⚠️ [UPDATE] Cannot send fallback notifications - missing codigo or tipo. codigo: ${codigo}, tipo: ${data.tipo}`,
+          );
+        }
       }
 
       return {

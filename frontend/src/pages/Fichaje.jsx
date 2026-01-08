@@ -141,6 +141,7 @@ const DAY_BASED_ABSENCE_TYPES = new Set([
   'Permiso sin sueldo',
   'Permiso médico',
   'Permiso',
+  'Ausencias justificada',
 ]);
 
 function isDayBasedAbsenceType(tipo = '') {
@@ -488,8 +489,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       currentBaja = bajasMedicas.find((baja) => {
         if (!baja || typeof baja !== 'object') return false;
         
-        const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || '';
-        const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
+        const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja['Fecha de baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || '';
+        const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha de alta'] || baja['Fecha de Alta'] || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
         
         if (!fechaInicio) return false;
         
@@ -526,8 +527,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       setIsOnVacationOrAbsence(true);
       setCurrentAbsenceType('Baja Médica');
       setCurrentBajaMedica({
-        startDate: normalizeDateInput(currentBaja.fecha_inicio || currentBaja.fechaInicio || currentBaja.FECHA_INICIO || currentBaja['Fecha baja'] || currentBaja.fecha_baja || currentBaja.fechaBaja || currentBaja['FECHA BAJA'] || ''),
-        endDate: normalizeDateInput(currentBaja.fecha_fin || currentBaja.fechaFin || currentBaja.FECHA_FIN || currentBaja['Fecha alta'] || currentBaja.fecha_alta || currentBaja.fechaAlta || currentBaja['FECHA ALTA'] || ''),
+        startDate: normalizeDateInput(currentBaja.fecha_inicio || currentBaja.fechaInicio || currentBaja.FECHA_INICIO || currentBaja['Fecha baja'] || currentBaja['Fecha Baja'] || currentBaja['Fecha de baja'] || currentBaja.fecha_baja || currentBaja.fechaBaja || currentBaja['FECHA BAJA'] || ''),
+        endDate: normalizeDateInput(currentBaja.fecha_fin || currentBaja.fechaFin || currentBaja.FECHA_FIN || currentBaja['Fecha de alta'] || currentBaja['Fecha de Alta'] || currentBaja['Fecha alta'] || currentBaja['Fecha Alta'] || currentBaja.fecha_alta || currentBaja.fechaAlta || currentBaja['FECHA ALTA'] || ''),
         situacion: currentBaja.Situacion || currentBaja.situacion || currentBaja['Situación'] || currentBaja.estado || '',
         motivo: currentBaja.Motivo || currentBaja.motivo || 'Baja médica'
       });
@@ -6101,87 +6102,80 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                 </div>
               </span>
             </h4>
-            <div className={`px-4 py-3 border-2 border-gray-200 rounded-xl transition-all duration-200 ${
-              form.address === 'Obteniendo ubicación...' || form.address === 'Ubicación no disponible' || 
-              (form.address && form.address.includes('denegado')) || (form.address && form.address.includes('GPS')) ||
-              (form.address && form.address.includes('Tiempo de espera')) || (form.address && form.address.includes('no soportada'))
-                ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
-                : 'bg-gray-50 text-gray-700'
-            }`}>
+            <div className="space-y-2">
+              {/* Input editabil pentru direcție */}
+              <input
+                type="text"
+                value={form.address || ''}
+                onChange={(e) => setForm(prev => ({ ...prev, address: e.target.value }))}
+                placeholder="Dirección del registro..."
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+              />
+              
+              {/* Buton pentru obținere automată direcție */}
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  {form.address === 'Obteniendo ubicación...' && (
-                    <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
-                  )}
-                  {(form.address === 'Ubicación no disponible' || (form.address && form.address.includes('denegado')) || 
-                    (form.address && form.address.includes('GPS')) || (form.address && form.address.includes('Tiempo de espera')) ||
-                    (form.address && form.address.includes('no soportada'))) && (
-                    <span className="text-yellow-600">⚠️</span>
-                  )}
-                  {form.address && form.address !== 'Obteniendo ubicación...' && form.address !== 'Ubicación no disponible' && 
-                   !form.address.includes('denegado') && !form.address.includes('GPS') && !form.address.includes('Tiempo de espera') &&
-                   !form.address.includes('no soportada') && (
-                    <span className="text-green-600">📍</span>
-                  )}
-                  <span className="text-sm">
-                    {form.address || 'Obteniendo ubicación actual...'}
-                  </span>
-                </div>
-                
-                {/* Buton pentru reîncercare */}
-                {(form.address === 'Ubicación no disponible' || (form.address && form.address.includes('denegado')) || 
-                  (form.address && form.address.includes('GPS')) || (form.address && form.address.includes('Tiempo de espera')) ||
-                  (form.address && form.address.includes('no soportada'))) && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setForm(prev => ({ ...prev, address: 'Obteniendo ubicación...' }));
-                      
-                      try {
-                        const coords = await locationContext.getCurrentLocation();
-                          
-                          try {
-                          const address = await locationContext.getAddressFromCoords(coords.latitude, coords.longitude);
-                          if (address) {
-                              setForm(prev => ({ 
-                                ...prev, 
-                              address: address 
-                              }));
-                            } else {
-                              setForm(prev => ({ 
-                                ...prev, 
-                              address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
-                              }));
-                            }
-                          } catch (error) {
+                <p className="text-xs text-gray-600 flex items-center gap-1">
+                  <span>📍</span>
+                  La ubicación se actualiza automáticamente con tu posición actual
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setForm(prev => ({ ...prev, address: 'Obteniendo ubicación...' }));
+                    
+                    try {
+                      const coords = await locationContext.getCurrentLocation();
+                        
+                        try {
+                        const address = await locationContext.getAddressFromCoords(coords.latitude, coords.longitude);
+                        if (address) {
+                            setForm(prev => ({ 
+                              ...prev, 
+                            address: address 
+                            }));
+                          } else {
                             setForm(prev => ({ 
                               ...prev, 
                             address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
-                          }));
-                        }
-                      } catch (error) {
-                        let errorMessage = 'Ubicación no disponible';
-                        
-                        if (error.code === 1) {
-                          errorMessage = 'Acceso a ubicación denegado. Permite el acceso en configuración del navegador.';
-                        } else if (error.code === 2) {
-                          errorMessage = 'Ubicación no pudo ser determinada. Verifica tu conexión GPS.';
-                        } else if (error.code === 3) {
-                          errorMessage = 'Tiempo de espera agotado. Intenta de nuevo.';
-                        }
-                        
-                        setForm(prev => ({ 
-                          ...prev, 
-                          address: errorMessage
+                            }));
+                          }
+                        } catch (error) {
+                          setForm(prev => ({ 
+                            ...prev, 
+                          address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
                         }));
                       }
-                    }}
-                    className="px-2 py-1 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded border border-yellow-300 transition-colors"
-                    title="Reintentar obtener ubicación"
-                  >
-                    🔄 Reintentar
-                  </button>
-                )}
+                    } catch (error) {
+                      let errorMessage = 'Ubicación no disponible';
+                      
+                      if (error.code === 1) {
+                        errorMessage = 'Acceso a ubicación denegado. Permite el acceso en configuración del navegador.';
+                      } else if (error.code === 2) {
+                        errorMessage = 'Ubicación no pudo ser determinada. Verifica tu conexión GPS.';
+                      } else if (error.code === 3) {
+                        errorMessage = 'Tiempo de espera agotado. Intenta de nuevo.';
+                      }
+                      
+                      setForm(prev => ({ 
+                        ...prev, 
+                        address: errorMessage
+                      }));
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg border border-blue-300 transition-colors flex items-center gap-1"
+                  title="Obtener ubicación automáticamente"
+                >
+                  {form.address === 'Obteniendo ubicación...' ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      Obteniendo...
+                    </>
+                  ) : (
+                    <>
+                      📍 Obtener Ubicación
+                    </>
+                  )}
+                </button>
               </div>
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -7347,6 +7341,22 @@ export default function FichajePage() {
         }
       }
 
+      if (incidenciaForm.tipo === 'Ausencias justificada') {
+        if (!incidenciaForm.permisoFechaInicio || !incidenciaForm.permisoFechaFin) {
+          setIncidenciaMessage('Debes indicar la fecha de inicio y fin para la ausencia justificada.');
+          setIsSubmittingIncidencia(false);
+          return;
+        }
+        const inicioDate = new Date(incidenciaForm.permisoFechaInicio);
+        const finDate = new Date(incidenciaForm.permisoFechaFin);
+        if (inicioDate > finDate) {
+          setIncidenciaMessage('La fecha de fin no puede ser anterior a la fecha de inicio.');
+          setIsSubmittingIncidencia(false);
+          return;
+        }
+        // Sin límite de días para Ausencias justificada
+      }
+
       // Obtiene la ubicación (opcional) folosind contextul global
       let loc = null;
       let address = null;
@@ -7513,7 +7523,7 @@ export default function FichajePage() {
         cuadrante_asignado: cuadrantePayload || null,
         sin_horario_asignado: sinHorarioAsignado
       };
-      if (incidenciaForm.tipo === 'Permiso Retribuido') {
+      if (incidenciaForm.tipo === 'Permiso Retribuido' || incidenciaForm.tipo === 'Ausencias justificada') {
         ausenciaPayload.permiso_fecha_inicio = incidenciaForm.permisoFechaInicio;
         ausenciaPayload.permiso_fecha_fin = incidenciaForm.permisoFechaFin;
       }
@@ -7832,7 +7842,7 @@ export default function FichajePage() {
             <div className="text-center mb-6">
               <p className="text-sm font-medium text-gray-700">Elige el tipo de ausencia que mejor se adapte a tu situación</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 onClick={() =>
                   setIncidenciaForm(f => ({
@@ -7911,6 +7921,36 @@ export default function FichajePage() {
                   </div>
                 </div>
               </button>
+              <button
+                onClick={() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  setIncidenciaForm(f => ({
+                    ...f,
+                    tipo: 'Ausencias justificada',
+                    permisoFechaInicio: f.permisoFechaInicio || today,
+                    permisoFechaFin: f.permisoFechaFin || today
+                  }));
+                }}
+                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg hover:shadow-xl ${
+                  incidenciaForm.tipo === 'Ausencias justificada'
+                    ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-indigo-500 text-white'
+                    : 'bg-white/90 text-cyan-700 border-2 border-cyan-300/50 hover:border-cyan-400'
+                }`}
+              >
+                <div className="text-center">
+                  <span className="text-3xl block mb-2">🩺</span>
+                  <div className="text-lg font-extrabold">Ausencias justificada</div>
+                  <div
+                    className={`text-xs mt-1 ${
+                      incidenciaForm.tipo === 'Ausencias justificada'
+                        ? 'text-white/90'
+                        : 'text-cyan-600'
+                    }`}
+                  >
+                    Ausencia médica justificada
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
           
@@ -7953,11 +7993,11 @@ export default function FichajePage() {
                 <p className="text-xs text-red-600 mt-1 font-medium">* Campo obligatorio</p>
               )}
             </div>
-            {incidenciaForm.tipo === 'Permiso Retribuido' && (
+            {(incidenciaForm.tipo === 'Permiso Retribuido' || incidenciaForm.tipo === 'Ausencias justificada') && (
               <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="permiso-fecha-inicio" className="block text-sm font-bold text-gray-700 mb-2">
-                    Fecha inicio del permiso
+                    Fecha inicio {incidenciaForm.tipo === 'Ausencias justificada' ? 'de la ausencia' : 'del permiso'}
                   </label>
                   <Input
                     id="permiso-fecha-inicio"
@@ -7969,12 +8009,16 @@ export default function FichajePage() {
                         permisoFechaInicio: e.target.value
                       }))
                     }
-                    className="w-full px-4 py-2 border-2 border-emerald-200/50 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-300/50 focus:border-emerald-400 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg"
+                    className={`w-full px-4 py-2 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg ${
+                      incidenciaForm.tipo === 'Ausencias justificada'
+                        ? 'border-cyan-200/50 focus:ring-cyan-300/50 focus:border-cyan-400'
+                        : 'border-emerald-200/50 focus:ring-emerald-300/50 focus:border-emerald-400'
+                    }`}
                   />
                 </div>
                 <div>
                   <label htmlFor="permiso-fecha-fin" className="block text-sm font-bold text-gray-700 mb-2">
-                    Fecha fin del permiso
+                    Fecha fin {incidenciaForm.tipo === 'Ausencias justificada' ? 'de la ausencia' : 'del permiso'}
                   </label>
                   <Input
                     id="permiso-fecha-fin"
@@ -7987,8 +8031,24 @@ export default function FichajePage() {
                         permisoFechaFin: e.target.value
                       }))
                     }
-                    className="w-full px-4 py-2 border-2 border-emerald-200/50 rounded-xl focus:outline-none focus:ring-4 focus:ring-emerald-300/50 focus:border-emerald-400 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg"
+                    className={`w-full px-4 py-2 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg ${
+                      incidenciaForm.tipo === 'Ausencias justificada'
+                        ? 'border-cyan-200/50 focus:ring-cyan-300/50 focus:border-cyan-400'
+                        : 'border-emerald-200/50 focus:ring-emerald-300/50 focus:border-emerald-400'
+                    }`}
                   />
+                </div>
+              </div>
+            )}
+            {incidenciaForm.tipo === 'Ausencias justificada' && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <span className="text-blue-600 text-xl">ℹ️</span>
+                  <div>
+                    <p className="text-sm font-medium text-blue-800">
+                      <strong>Aviso:</strong> Para ausencias prolongadas o repetidas, la empresa puede requerir parte de baja médica.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
