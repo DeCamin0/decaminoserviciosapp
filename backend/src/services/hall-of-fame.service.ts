@@ -4319,7 +4319,7 @@ uso_app AS (
     at.acciones_totales,
     CASE 
       WHEN mam.max_acciones > 0 THEN
-        (at.acciones_totales / mam.max_acciones) * 100
+        LEAST(100, (at.acciones_totales / mam.max_acciones) * 100)
       ELSE 0
     END AS score_uso_app
   FROM acciones_totales at
@@ -4483,12 +4483,16 @@ inspecciones_score AS (
 ),
 
 -- Responsabilidad digital: Detalii pentru breakdown
+-- Normalizăm la 0-100 (maxim 10 puncte raw → 100 puncte normalizate)
 responsabilidad_digital_detalle AS (
   SELECT 
     cp.empleadoId,
-    COALESCE(cp.score_comunicaciones, 0) + 
-    COALESCE(dp.score_documentos, 0) + 
-    COALESCE(ins.score_inspecciones, 0) AS score_responsabilidad_digital,
+    -- Normalizăm de la 0-10 la 0-100
+    LEAST(100, (
+      COALESCE(cp.score_comunicaciones, 0) + 
+      COALESCE(dp.score_documentos, 0) + 
+      COALESCE(ins.score_inspecciones, 0)
+    ) * 10) AS score_responsabilidad_digital,
     -- Detalii comunicaciones
     (
       SELECT COUNT(*) 
