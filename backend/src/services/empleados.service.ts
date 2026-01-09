@@ -321,7 +321,8 @@ export class EmpleadosService {
         \`Antigüedad\`,
         \`DerechoPedidos\`,
         \`TrabajaFestivos\`,
-        \`Contraseña\`
+        \`Contraseña\`,
+        certificado_handicap_confirmado
       FROM DatosEmpleados
       WHERE CODIGO = ${codigo}
       LIMIT 1
@@ -1873,6 +1874,96 @@ export class EmpleadosService {
     } catch (error: any) {
       this.logger.error(`❌ Error resetting password: ${error.message}`);
       throw error;
+    }
+  }
+
+  /**
+   * Confirmă certificatul de handicap pentru un angajat
+   * Dacă confirmă că are certificat, creează automat cererea de document
+   */
+  async confirmarCertificadoHandicap(
+    codigo: string,
+    tieneCertificado: boolean,
+  ): Promise<{ success: true; documentoCreado?: boolean }> {
+    try {
+      if (!codigo || codigo.trim() === '') {
+        throw new BadRequestException('CODIGO is required');
+      }
+
+      const codigoClean = codigo.trim();
+
+      // Actualizează câmpul de confirmare
+      const query = `
+        UPDATE DatosEmpleados
+        SET certificado_handicap_confirmado = ${tieneCertificado ? 1 : 0}
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(query);
+
+      this.logger.log(
+        `✅ Certificado handicap confirmado para ${codigoClean}: ${tieneCertificado}`,
+      );
+
+      let documentoCreado = false;
+
+      // Dacă confirmă că are certificat, creează automat cererea de document
+      if (tieneCertificado && this.documentosSolicitadosService) {
+        try {
+          // Verifică dacă există deja o cerere activă pentru acest tip de document
+          const solicitudExistente = await this.prisma.$queryRawUnsafe<
+            Array<{ id: bigint | number }>
+          >(
+            `
+            SELECT id FROM \`documentos_solicitados\`
+            WHERE empleado_id = ${this.escapeSql(codigoClean)}
+              AND tipo_documento = 'Certificado de Discapacidad'
+              AND estado = 'pendiente'
+            LIMIT 1
+          `,
+          );
+
+          if (solicitudExistente.length === 0) {
+            // Creează cererea de document
+            await this.documentosSolicitadosService.crearSolicitud({
+              empleado_id: codigoClean,
+              tipo_documento: 'Certificado de Discapacidad',
+              solicitado_por: 'system',
+              notas: 'Solicitud automática tras confirmación del empleado',
+              aplicar_a_nuevos: false,
+            });
+
+            documentoCreado = true;
+            this.logger.log(
+              `✅ Cerere de document creată automat pentru ${codigoClean}`,
+            );
+          } else {
+            this.logger.log(
+              `ℹ️ Există deja o cerere activă pentru ${codigoClean}`,
+            );
+          }
+        } catch (error: any) {
+          // Nu aruncăm eroarea pentru a nu bloca confirmarea dacă crearea cererii eșuează
+          this.logger.warn(
+            `⚠️ Error creando solicitud automática: ${error.message}`,
+          );
+        }
+      }
+
+      return {
+        success: true,
+        documentoCreado,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error confirmando certificado handicap: ${error.message}`,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al confirmar certificado: ${error.message}`,
+      );
     }
   }
 }

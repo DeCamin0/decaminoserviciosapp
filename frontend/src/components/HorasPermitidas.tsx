@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { routes } from '../utils/routes';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 
 // Interfaces pentru componente UI
 interface TitleProps {
@@ -118,6 +119,7 @@ interface HorasPermitidasProps {
 }
 
 const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) => {
+  const { isMobile } = useBreakpoint();
   const [data, setData] = useState<HorasPermitidasItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -451,129 +453,182 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
   return (
     <div
       style={{
-        borderRadius: 12,
+        borderRadius: isMobile ? 8 : 12,
         boxShadow: "0 8px 24px rgba(0,0,0,0.04)",
-        padding: 24,
+        padding: isMobile ? 8 : 24,
         backgroundColor: 'white',
         border: '1px solid #e5e7eb'
       }}
     >
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+      <div style={{ marginBottom: isMobile ? 12 : 16 }}>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'flex-start', marginBottom: 8, gap: isMobile ? 8 : 0 }}>
           <div>
             <Title
               level={4}
               style={{
                 margin: 0,
                 fontWeight: 600,
-                fontSize: "1.1rem",
+                fontSize: isMobile ? "0.95rem" : "1.1rem",
                 lineHeight: 1.2,
               }}
             >
               Horas Permitidas
             </Title>
-            <Text style={{ color: "#777", fontSize: "0.9rem" }}>
+            <Text style={{ color: "#777", fontSize: isMobile ? "0.75rem" : "0.9rem" }}>
               Límites máximos de jornada por grupo (mensual y anual).
             </Text>
           </div>
           <button
             onClick={handleAddNew}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 flex items-center gap-2"
+            className={`bg-blue-500 hover:bg-blue-600 text-white ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-medium transition-colors duration-200 flex items-center gap-1.5`}
           >
             <span>➕</span>
-            Añadir Grupo Nuevo
+            {isMobile ? 'Añadir' : 'Añadir Grupo Nuevo'}
           </button>
         </div>
       </div>
-      <div
-        ref={topScrollRef}
-        className="overflow-x-auto mb-3"
-        style={{
-          height: 24,
-          borderRadius: 8,
-          border: '1px solid #e5e7eb',
-          backgroundColor: '#f9fafb',
-          boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)'
-        }}
-        aria-hidden="true"
-      >
-        <div style={{ width: topScrollContentWidth, height: 1 }} />
-      </div>
-
-      <div ref={tableScrollRef} className="overflow-x-auto">
-        <table className="min-w-full bg-white border border-gray-200 rounded-lg">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupo</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Horas anuales permitidas</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Horas mensuales permitidas</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {data.map((item) => (
-              <tr key={item.grupo} className="hover:bg-gray-50">
-                <td className="px-4 py-4 whitespace-nowrap">
-                  <div className="font-medium text-gray-900">{item.grupo}</div>
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-center">
-                  <span className="font-semibold text-lg text-blue-600">{item.horasAnuales}h</span>
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-center">
-                  <span className="font-semibold text-lg text-green-600">{item.horasMensuales}h</span>
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <button
-                      onClick={() => handleEdit(item)}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors duration-200"
-                    >
-                      ✏️ Editar
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.grupo)}
-                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors duration-200"
-                    >
-                      🗑️ Eliminar
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        
-        {loading && (
-          <div className="text-center py-12">
-            <div className="text-gray-400 text-6xl mb-4 animate-pulse">⏳</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Cargando datos...</h3>
-            <p className="text-gray-500">Por favor, espere mientras se cargan las horas permitidas.</p>
-          </div>
-        )}
-
-        {!loading && data.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-gray-400 text-6xl mb-4">📊</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No hay datos disponibles</h3>
-            <p className="text-gray-500 mb-4">
-              {error || 'No se pudieron cargar las horas permitidas desde el servidor.'}
-            </p>
-            <button
-              onClick={loadData}
-              disabled={loading}
-              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200"
+      {isMobile ? (
+        // Versiune mobile: card-uri verticale
+        <div className="space-y-2">
+          {data.map((item) => (
+            <div
+              key={item.grupo}
+              className="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3"
             >
-              {loading ? 'Cargando...' : '🔄 Reintentar'}
-            </button>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-gray-900 dark:text-gray-100 text-xs truncate">
+                    {item.grupo}
+                  </div>
+                </div>
+                <div className="flex gap-1.5 ml-2">
+                  <button
+                    onClick={() => handleEdit(item)}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-medium transition-colors duration-200"
+                    title="Editar"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item.grupo)}
+                    className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-[10px] font-medium transition-colors duration-200"
+                    title="Eliminar"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-[10px]">
+                <div className="flex-1">
+                  <div className="text-gray-500 dark:text-gray-400 mb-0.5">Anual</div>
+                  <div className="font-semibold text-blue-600 dark:text-blue-400 text-xs">
+                    {item.horasAnuales}h
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="text-gray-500 dark:text-gray-400 mb-0.5">Mensual</div>
+                  <div className="font-semibold text-green-600 dark:text-green-400 text-xs">
+                    {item.horasMensuales}h
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        // Versiune desktop: tabel
+        <>
+          <div
+            ref={topScrollRef}
+            className="overflow-x-auto mb-3"
+            style={{
+              height: 24,
+              borderRadius: 8,
+              border: '1px solid #e5e7eb',
+              backgroundColor: '#f9fafb',
+              boxShadow: 'inset 0 1px 2px rgba(15, 23, 42, 0.04)'
+            }}
+            aria-hidden="true"
+          >
+            <div style={{ width: topScrollContentWidth, height: 1 }} />
           </div>
-        )}
-      </div>
+
+          <div ref={tableScrollRef} className="overflow-x-auto">
+            <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupo</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Horas anuales permitidas</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Horas mensuales permitidas</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {data.map((item) => (
+                  <tr key={item.grupo} className="hover:bg-gray-50">
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <div className="font-medium text-gray-900">{item.grupo}</div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      <span className="font-semibold text-lg text-blue-600">{item.horasAnuales}h</span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      <span className="font-semibold text-lg text-green-600">{item.horasMensuales}h</span>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors duration-200"
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.grupo)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors duration-200"
+                        >
+                          🗑️ Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {loading && (
+        <div className={`text-center ${isMobile ? 'py-6' : 'py-12'}`}>
+          <div className={`text-gray-400 ${isMobile ? 'text-4xl' : 'text-6xl'} mb-4 animate-pulse`}>⏳</div>
+          <h3 className={`${isMobile ? 'text-sm' : 'text-lg'} font-medium text-gray-900 mb-2`}>Cargando datos...</h3>
+          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>Por favor, espere mientras se cargan las horas permitidas.</p>
+        </div>
+      )}
+
+      {!loading && data.length === 0 && (
+        <div className={`text-center ${isMobile ? 'py-6' : 'py-12'}`}>
+          <div className={`text-gray-400 ${isMobile ? 'text-4xl' : 'text-6xl'} mb-4`}>📊</div>
+          <h3 className={`${isMobile ? 'text-sm' : 'text-lg'} font-medium text-gray-900 mb-2`}>No hay datos disponibles</h3>
+          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500 mb-4`}>
+            {error || 'No se pudieron cargar las horas permitidas desde el servidor.'}
+          </p>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className={`bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white ${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'} rounded-lg font-medium transition-colors duration-200`}
+          >
+            {loading ? 'Cargando...' : '🔄 Reintentar'}
+          </button>
+        </div>
+      )}
 
       {/* Modal para añadir nuevo grupo */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">Añadir Nuevo Grupo</h3>
+          <div className={`bg-white rounded-lg ${isMobile ? 'p-4 w-full max-w-sm' : 'p-6 w-96 max-w-md'} mx-4`}>
+            <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold mb-4`}>Añadir Nuevo Grupo</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Grupo</label>
@@ -626,8 +681,8 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
       {/* Modal para editar grupo */}
       {editingItem && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">Editar Grupo</h3>
+          <div className={`bg-white rounded-lg ${isMobile ? 'p-4 w-full max-w-sm' : 'p-6 w-96 max-w-md'} mx-4`}>
+            <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-semibold mb-4`}>Editar Grupo</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Grupo</label>
@@ -679,7 +734,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
       {/* Modal de confirmare pentru eliminare */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-96 max-w-md mx-4 shadow-2xl border border-red-200">
+          <div className={`bg-white rounded-xl ${isMobile ? 'p-4 w-full max-w-sm' : 'p-6 w-96 max-w-md'} mx-4 shadow-2xl border border-red-200`}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
                 <span className="text-2xl">⚠️</span>

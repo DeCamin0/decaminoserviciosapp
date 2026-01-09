@@ -35,7 +35,7 @@ export const demoQuickAccessItems: ActionItem[] = [
   },
   {
     id: 'fichar',
-    label: 'Fichar',
+    label: 'Registro de Jornada',
     hint: 'Control de horarios',
     icon: <Clock className="h-6 w-6 text-white" />,
     gradient: 'from-emerald-500 via-teal-500 to-cyan-500',

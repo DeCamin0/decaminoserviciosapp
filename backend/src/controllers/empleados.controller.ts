@@ -2389,4 +2389,58 @@ export class EmpleadosController {
       throw error;
     }
   }
+
+  /**
+   * POST /api/empleados/confirmar-certificado-handicap
+   * Confirmă certificatul de handicap pentru utilizatorul curent
+   */
+  @Post('confirmar-certificado-handicap')
+  @UseGuards(JwtAuthGuard)
+  async confirmarCertificadoHandicap(
+    @Body() body: { tiene_certificado: boolean },
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const codigo =
+        user?.CODIGO ||
+        user?.userId ||
+        user?.empleadoId ||
+        user?.codigo;
+
+      if (!codigo) {
+        throw new BadRequestException('No se pudo identificar al usuario');
+      }
+
+      if (typeof body.tiene_certificado !== 'boolean') {
+        throw new BadRequestException(
+          'tiene_certificado debe ser un booleano',
+        );
+      }
+
+      const result =
+        await this.empleadosService.confirmarCertificadoHandicap(
+          codigo,
+          body.tiene_certificado,
+        );
+
+      return {
+        success: true,
+        message: body.tiene_certificado
+          ? 'Certificado confirmado. Se ha creado automáticamente una solicitud de documento.'
+          : 'Confirmación registrada correctamente.',
+        documentoCreado: result.documentoCreado,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error confirmando certificado handicap:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al confirmar certificado: ${error.message}`,
+      );
+    }
+  }
 }

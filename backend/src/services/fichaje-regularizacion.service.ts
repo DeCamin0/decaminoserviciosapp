@@ -941,8 +941,14 @@ export class FichajeRegularizacionService {
       );
 
       const delta_minutes = punched_minutes - scheduled_minutes;
+      // Permite regularizarea doar dacă:
+      // 1. Există scheduled_minutes > 0 (există program prevăzut)
+      // 2. ȘI există punched_minutes > 0 (ore fichate)
+      // 3. ȘI diferența depășește pragul de 15 minute
       const needs_confirmation =
-        Math.abs(delta_minutes) > this.CONFIRMATION_THRESHOLD_MINUTES;
+        scheduled_minutes > 0 && punched_minutes > 0
+          ? Math.abs(delta_minutes) > this.CONFIRMATION_THRESHOLD_MINUTES
+          : false;
 
       this.logger.debug(
         `🔍 checkNeedsConfirmation result: punched=${punched_minutes}min (${Math.floor(punched_minutes / 60)}h ${punched_minutes % 60}m), scheduled=${scheduled_minutes}min (${Math.floor(scheduled_minutes / 60)}h ${scheduled_minutes % 60}m), delta=${delta_minutes}min, needs_confirmation=${needs_confirmation}`,

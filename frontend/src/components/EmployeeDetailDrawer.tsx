@@ -1,10 +1,282 @@
 import React, { useState } from 'react';
 import { Button, Card } from './ui';
-import type { DetalleEmpleado } from './HorasTrabajadas';
+import type { DetalleEmpleado, DetalleDia } from './HorasTrabajadas';
 import HorasTrabajadasPDF from './HorasTrabajadasPDF';
 import { pdf } from '@react-pdf/renderer';
 import DeclararNoPunchModal from './DeclararNoPunchModal';
 import { success } from '../utils/logger';
+import { useBreakpoint } from '../hooks/useBreakpoint';
+
+// Component pentru item-ul de detalle diario pe mobile (Plan vs Fichado)
+const MobileDetalleDiarioItem: React.FC<{
+  detalleDia: DetalleDia & {
+    plan?: number;
+    plan_fuente?: string;
+    fichado?: number;
+    delta?: number;
+    incompleto?: boolean | number;
+    ordinarias?: number;
+    excedente?: number;
+  };
+  parseNumeric: (val: unknown) => number | undefined;
+  formatDiffValue: (val: unknown) => string;
+  getDailyContractHours: (fecha: string) => number;
+  onRegularizar: (fecha: string, plan: number) => void;
+}> = ({ detalleDia, parseNumeric, formatDiffValue, getDailyContractHours, onRegularizar }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const fichadoValue = parseNumeric(detalleDia.fichado) ?? 0;
+  const deltaValue = parseNumeric(detalleDia.delta);
+  const excedenteValue = Number.isFinite(deltaValue)
+    ? Number(deltaValue)
+    : (parseNumeric(detalleDia.excedente) ?? 0);
+  const hasFichado = fichadoValue > 0;
+  const positiveExcedente = Number.isFinite(excedenteValue) ? Math.max(0, excedenteValue) : 0;
+  const ordinariasValue = hasFichado
+    ? parseFloat((fichadoValue - positiveExcedente).toFixed(2))
+    : 0;
+
+  const planValue = parseNumeric(detalleDia.plan);
+  const planFuente = detalleDia.plan_fuente || '';
+  const hasNoSchedule = planFuente === 'none' || !planFuente || (planFuente !== 'cuadrante' && planFuente !== 'horario');
+  const contractFallback = hasNoSchedule ? getDailyContractHours(detalleDia.fecha) : 0;
+  const finalPlan = (planValue !== undefined && planValue !== null) ? planValue : (contractFallback > 0 ? contractFallback : 0);
+  const finalPlanFuente = (planValue !== undefined && planValue !== null) ? planFuente : (contractFallback > 0 ? 'contrato' : 'N/A');
+  const finalDelta = fichadoValue - finalPlan;
+
+  const formattedDate = new Date(detalleDia.fecha).toLocaleDateString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  const deltaColor = finalDelta < 0 ? 'text-red-700 dark:text-red-400' : finalDelta > 0 ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-400';
+  const excedenteColor = excedenteValue > 0 ? 'text-red-700 dark:text-red-400' : excedenteValue < 0 ? 'text-yellow-700 dark:text-yellow-400' : 'text-gray-700 dark:text-gray-400';
+
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Data */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          {formattedDate}
+        </span>
+        
+        {/* Plan */}
+        <span className="text-[11px] text-blue-700 dark:text-blue-400 font-semibold min-w-[40px]">
+          {finalPlan.toFixed(2)}
+        </span>
+        
+        {/* Fuente Plan - scurtat */}
+        <span className="text-[10px] text-gray-600 dark:text-gray-400 min-w-[50px] truncate">
+          {finalPlanFuente === 'cuadrante' ? 'Cuad.' : finalPlanFuente === 'horario' ? 'Hor.' : finalPlanFuente === 'contrato' ? 'Cont.' : finalPlanFuente}
+        </span>
+        
+        {/* Fichado */}
+        <span className="text-[11px] text-green-700 dark:text-green-400 font-semibold min-w-[40px]">
+          {detalleDia.fichado !== undefined ? detalleDia.fichado : '0'}
+        </span>
+        
+        {/* Delta - colorat */}
+        <span className={`text-[11px] font-semibold min-w-[45px] ${deltaColor}`}>
+          {formatDiffValue(finalDelta)}
+        </span>
+        
+        {/* Chevron */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Plan complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Plan:</span>
+            <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-400">{finalPlan.toFixed(2)}</span>
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">({finalPlanFuente})</span>
+          </div>
+          
+          {/* Fichado complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fichado:</span>
+            <span className="text-[10px] font-semibold text-green-700 dark:text-green-400">{detalleDia.fichado !== undefined ? detalleDia.fichado : '0'}</span>
+          </div>
+          
+          {/* Delta */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Delta:</span>
+            <span className={`text-[10px] font-semibold ${deltaColor}`}>{formatDiffValue(finalDelta)}</span>
+          </div>
+          
+          {/* Ordinarias */}
+          {Number.isFinite(ordinariasValue) && ordinariasValue > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Ordinarias:</span>
+              <span className="text-[10px] font-semibold text-purple-700 dark:text-purple-400">{ordinariasValue.toFixed(2)}</span>
+            </div>
+          )}
+          
+          {/* Excedente */}
+          {Number.isFinite(excedenteValue) && excedenteValue !== 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Excedente:</span>
+              <span className={`text-[10px] font-semibold ${excedenteColor}`}>{excedenteValue.toFixed(2)}</span>
+            </div>
+          )}
+          
+          {/* Incompleto */}
+          {detalleDia.incompleto && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Incompleto:</span>
+              <span className="text-[10px] font-semibold text-yellow-700 dark:text-yellow-400">⚠️ Sí</span>
+            </div>
+          )}
+          
+          {/* Estado / Regularizar */}
+          {(() => {
+            const plan = detalleDia.plan || 0;
+            const fichado = detalleDia.fichado || 0;
+            const tienePlan = plan > 0;
+            const tieneFichado = fichado > 0;
+            
+            if (tienePlan && !tieneFichado) {
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRegularizar(detalleDia.fecha, plan);
+                  }}
+                  className="mt-2 w-full inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-medium rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                >
+                  📝 Regularizar
+                </button>
+              );
+            }
+            
+            const deltaNum = parseNumeric(detalleDia.delta) ?? 0;
+            if (deltaNum < 0) {
+              return (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Estado:</span>
+                  <span className="text-[10px] font-semibold text-red-700 dark:text-red-400">🚫 Deficit</span>
+                </div>
+              );
+            } else if (deltaNum > 0) {
+              return (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Estado:</span>
+                  <span className="text-[10px] font-semibold text-green-700 dark:text-green-400">✅ Excedente</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Component pentru item-ul de registru pe mobile (compact, similar cu TimeCheck)
+const MobileRegistroDetailItem: React.FC<{ 
+  dia: DetalleDia; 
+}> = ({ dia }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const formattedDate = new Date(dia.fecha).toLocaleDateString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  const isEntrada = dia.tipo === 'Entrada';
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (verde/roșu) */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          isEntrada ? 'bg-green-500' : 'bg-red-500'
+        }`}></div>
+        
+        {/* Data - text mic */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          {formattedDate}
+        </span>
+        
+        {/* Timp - text mic */}
+        <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold min-w-[50px]">
+          {isEntrada ? dia.entrada : dia.salida}
+        </span>
+        
+        {/* Tipo - text mic, scurtat */}
+        <span className={`text-[11px] font-semibold flex-1 ${
+          isEntrada ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+        }`}>
+          {isEntrada ? 'E' : 'S'}
+        </span>
+        
+        {/* Duration - text foarte mic */}
+        {dia.duracion && dia.duracion !== '--:--' && (
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 min-w-[45px]">
+            {dia.duracion}
+          </span>
+        )}
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Tipo complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            <span className={`text-[10px] font-semibold ${
+              isEntrada ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+            }`}>
+              {dia.tipo}
+            </span>
+          </div>
+          
+          {/* Hora completă */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Hora:</span>
+            <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+              {isEntrada ? dia.entrada : dia.salida}
+            </span>
+          </div>
+          
+          {/* Duración */}
+          {dia.duracion && dia.duracion !== '--:--' && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">⏱ Duración:</span>
+              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{dia.duracion}</span>
+            </div>
+          )}
+          
+          {/* Dirección */}
+          {dia.direccion && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+              <div className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">📍 Dirección</div>
+              <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words">
+                {dia.direccion}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 type TitleProps = {
   level?: number;
@@ -38,6 +310,7 @@ export type EmployeeDetailDrawerProps = {
   onDescargarPDF: (empleadoId: number, mes: string) => void;
   loading?: boolean;
   tipoReporte?: 'mensual' | 'anual';
+  isMobile?: boolean;
 };
 
 const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
@@ -46,8 +319,11 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
   detalle,
   onDescargarPDF,
   loading = false,
-  tipoReporte = 'mensual'
+  tipoReporte = 'mensual',
+  isMobile: isMobileProp = false
 }) => {
+  const { isMobile: isMobileBreakpoint } = useBreakpoint();
+  const isMobile = isMobileProp || isMobileBreakpoint;
   const [activeTab, setActiveTab] = React.useState<'registros' | 'detalles'>('registros');
   const isAnual = tipoReporte === 'anual';
   
@@ -343,6 +619,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
   if (!open) return null;
 
   return (
+    <>
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-6xl h-[90vh] overflow-y-auto shadow-2xl rounded-lg">
         {/* Header */}
@@ -476,18 +753,6 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
               </div>
               
               <div>
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {isAnual ? 'Horas contrato anual' : 'Horas contrato'}
-                </Text>
-                <div style={{ fontSize: '18px', fontWeight: 600, color: '#666' }}>
-                  {formatHoursValue(isAnual
-                    ? (detalle.horasContratoAnual ?? detalle.totalPlanAnual ?? detalle.totalPlan ?? detalle.horasContrato)
-                    : (detalle.horasContratoMes ?? detalle.horasContrato)
-                  )}
-                </div>
-              </div>
-              
-              <div>
                 <Text type="secondary" style={{ fontSize: '12px' }}>Horas extra</Text>
                 <div style={{ 
                   fontSize: '18px', 
@@ -609,65 +874,78 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
           <div>
             <Title level={5} style={{ 
               margin: 0, 
-              marginBottom: '16px', 
+              marginBottom: isMobile ? '12px' : '16px', 
               fontWeight: 600, 
-              fontSize: '0.9rem', 
+              fontSize: isMobile ? '0.8rem' : '0.9rem', 
               color: '#555' 
             }}>
               Detalle diario
             </Title>
             
-            <div className="overflow-x-auto shadow-lg rounded-lg border border-gray-200">
-              <table className="min-w-full bg-white">
-                <thead className="bg-gradient-to-r from-blue-600 to-indigo-600">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-white">📅 Fecha</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-white">🕐 Hora</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-white">🏷️ Tipo</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-white">⏱️ Duración</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-white">📍 Dirección</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {console.log('🔍 EmployeeDetailDrawer - Dias count:', detalle.dias.length, detalle.dias)}
-                  {detalle.dias.map((dia, index) => (
-                    <tr key={`${dia.fecha}-${index}`} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {new Date(dia.fecha).toLocaleDateString('es-ES', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric'
-                        })}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
-                        <span className="font-mono text-sm bg-gray-100 px-3 py-1 rounded-lg border">
-                          {dia.tipo === 'Entrada' ? dia.entrada : dia.salida}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
-                        <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${
-                          dia.tipo === 'Entrada' 
-                            ? 'bg-green-100 text-green-800 border border-green-200' 
-                            : 'bg-red-100 text-red-800 border border-red-200'
-                        }`}>
-                          {dia.tipo === 'Entrada' ? '✅ Entrada' : '❌ Salida'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
-                        <span className="font-mono text-sm bg-blue-100 px-3 py-1 rounded-lg border border-blue-200">
-                          {dia.duracion || '--:--'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 max-w-md" title={dia.direccion}>
-                        <div className="truncate">
-                          {dia.direccion}
-                        </div>
-                      </td>
+            {isMobile ? (
+              // Mobile: Listă verticală compactă (similar cu celelalte liste)
+              <div className="space-y-1.5">
+                {detalle.dias.map((dia, index) => (
+                  <MobileRegistroDetailItem
+                    key={`${dia.fecha}-${index}`}
+                    dia={dia}
+                  />
+                ))}
+              </div>
+            ) : (
+              // Desktop: Tabela orizontală originală
+              <div className="overflow-x-auto shadow-lg rounded-lg border border-gray-200">
+                <table className="min-w-full bg-white">
+                  <thead className="bg-gradient-to-r from-blue-600 to-indigo-600">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-white">📅 Fecha</th>
+                      <th className="px-4 py-3 text-center text-sm font-semibold text-white">🕐 Hora</th>
+                      <th className="px-4 py-3 text-center text-sm font-semibold text-white">🏷️ Tipo</th>
+                      <th className="px-4 py-3 text-center text-sm font-semibold text-white">⏱️ Duración</th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-white">📍 Dirección</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {console.log('🔍 EmployeeDetailDrawer - Dias count:', detalle.dias.length, detalle.dias)}
+                    {detalle.dias.map((dia, index) => (
+                      <tr key={`${dia.fecha}-${index}`} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {new Date(dia.fecha).toLocaleDateString('es-ES', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <span className="font-mono text-sm bg-gray-100 px-3 py-1 rounded-lg border">
+                            {dia.tipo === 'Entrada' ? dia.entrada : dia.salida}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${
+                            dia.tipo === 'Entrada' 
+                              ? 'bg-green-100 text-green-800 border border-green-200' 
+                              : 'bg-red-100 text-red-800 border border-red-200'
+                          }`}>
+                            {dia.tipo === 'Entrada' ? '✅ Entrada' : '❌ Salida'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <span className="font-mono text-sm bg-blue-100 px-3 py-1 rounded-lg border border-blue-200">
+                            {dia.duracion || '--:--'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-md" title={dia.direccion}>
+                          <div className="truncate">
+                            {dia.direccion}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
             {/* Botón descargar PDF */}
@@ -731,19 +1009,6 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                     <Text type="secondary" style={{ fontSize: '12px' }}>Centro Cuadrante</Text>
                     <div style={{ fontSize: '16px', fontWeight: 600, color: '#333' }}>
                       {detalle.centroCuadrante || 'N/A'}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      {infoLabel('Horas Contrato Anual', 'Horas Contrato Mensual')}
-                    </Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#666' }}>
-                      {formatHoursValue(
-                        isAnual
-                          ? (detalle.horasContratoAnual ?? detalle.totalPlanAnual ?? detalle.totalPlan ?? detalle.horasContrato)
-                          : (detalle.horasContratoMes ?? detalle.horasContrato)
-                      )}
                     </div>
                   </div>
                   
@@ -935,25 +1200,25 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
 
               {/* Resumen de Horas */}
               <Card size="small" style={{ backgroundColor: '#f8f9fa' }}>
-                <Title level={5} style={{ 
+                <Title level={5} className={`${isMobile ? 'text-sm mb-3' : 'mb-4'}`} style={{ 
                   margin: 0, 
-                  marginBottom: '16px', 
                   fontWeight: 600, 
-                  fontSize: '0.9rem', 
                   color: '#555' 
                 }}>
                   Resumen de Horas
                 </Title>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
+                <div className={`grid ${isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-4 gap-4'}`}>
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Estado Plan Hasta Hoy</Text>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Est. Plan Hoy' : 'Estado Plan Hasta Hoy'}
+                    </Text>
                     {(() => {
                       const estado = isAnual
                         ? (detalle.estadoPlanHastaHoyAnual ?? detalle.estadoPlanHastaHoy)
                         : detalle.estadoPlanHastaHoy;
                       return (
-                        <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        <div className={`inline-flex ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-1 text-xs'} font-semibold rounded-full ${
                           estado === 'OK' ? 'bg-green-100 text-green-800' :
                           estado === 'ALERTA' ? 'bg-yellow-100 text-yellow-800' :
                           estado === 'RIESGO' ? 'bg-red-100 text-red-800' :
@@ -966,13 +1231,15 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Estado Plan</Text>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Est. Plan' : 'Estado Plan'}
+                    </Text>
                     {(() => {
                       const estado = isAnual
                         ? (detalle.estadoPlanAnual ?? detalle.estadoPlan)
                         : detalle.estadoPlan;
                       return (
-                        <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        <div className={`inline-flex ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-1 text-xs'} font-semibold rounded-full ${
                           estado === 'OK' ? 'bg-green-100 text-green-800' :
                           estado === 'ALERTA' ? 'bg-yellow-100 text-yellow-800' :
                           estado === 'RIESGO' ? 'bg-red-100 text-red-800' :
@@ -985,13 +1252,15 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Estado Permitidas</Text>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Est. Permit.' : 'Estado Permitidas'}
+                    </Text>
                     {(() => {
                       const estado = isAnual
                         ? (detalle.estadoPermitidasAnual ?? detalle.estadoPermitidas)
                         : detalle.estadoPermitidas;
                       return (
-                        <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        <div className={`inline-flex ${isMobile ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-1 text-xs'} font-semibold rounded-full ${
                           estado === 'OK' ? 'bg-green-100 text-green-800' :
                           estado === 'ALERTA' ? 'bg-yellow-100 text-yellow-800' :
                           estado === 'RIESGO' ? 'bg-red-100 text-red-800' :
@@ -1004,10 +1273,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      {infoLabel('Total Trabajadas Anuales', 'Total Trabajadas')}
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? (isAnual ? 'Trab. Anual' : 'Total Trab.') : (isAnual ? 'Total Trabajadas Anuales' : 'Total Trabajadas')}
                     </Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#1890ff' }}>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#1890ff' }}>
                       {formatHoursValue(
                         isAnual
                           ? (detalle.totalTrabajadasAnual ?? detalle.totalTrabajadas ?? detalle.horasTrabajadas)
@@ -1017,10 +1286,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      {infoLabel('Total Plan Anual', 'Total Plan')}
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? (isAnual ? 'Plan Anual' : 'Total Plan') : (isAnual ? 'Total Plan Anual' : 'Total Plan')}
                     </Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#666' }}>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#666' }}>
                       {formatHoursValue(
                         isAnual
                           ? (detalle.totalPlanAnual ?? detalle.totalContratoAnual ?? detalle.horasContratoAnual ?? detalle.totalPlan ?? detalle.horasContrato)
@@ -1030,10 +1299,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      {infoLabel('Total Permitidas Anuales', 'Total Permitidas')}
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? (isAnual ? 'Perm. Anual' : 'Total Perm.') : (isAnual ? 'Total Permitidas Anuales' : 'Total Permitidas')}
                     </Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#52c41a' }}>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#52c41a' }}>
                       {formatHoursValue(
                         isAnual
                           ? (detalle.totalPermitidasAnual ?? detalle.totalPermitidas ?? detalle.horasAnualesPermitidas)
@@ -1043,10 +1312,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      {infoLabel('Plan Acumulado', 'Plan Hasta Hoy')}
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? (isAnual ? 'Plan Acum.' : 'Plan Hoy') : (isAnual ? 'Plan Acumulado' : 'Plan Hasta Hoy')}
                     </Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#666' }}>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#666' }}>
                       {formatHoursValue(
                         isAnual
                           ? (detalle.planHastaHoyAnual ?? detalle.totalPlanAnual ?? detalle.totalContratoAnual ?? detalle.horasContratoAnual ?? detalle.planHastaHoy ?? detalle.horasContrato)
@@ -1056,8 +1325,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Total Ordinarias</Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#666' }}>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Ord.' : 'Total Ordinarias'}
+                    </Text>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#666' }}>
                       {isAnual
                         ? (detalle.totalOrdinariasAnual ?? detalle.totalOrdinarias ?? 0)
                         : (detalle.totalOrdinarias ?? 0)}
@@ -1065,8 +1336,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Total Complementarias</Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#666' }}>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Comp.' : 'Total Complementarias'}
+                    </Text>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#666' }}>
                       {isAnual
                         ? (detalle.totalComplementariasAnual ?? detalle.totalComplementarias ?? 0)
                         : (detalle.totalComplementarias ?? 0)}
@@ -1074,8 +1347,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Total Extraordinarias</Text>
-                    <div style={{ fontSize: '16px', fontWeight: 600, color: '#1890ff' }}>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Extra.' : 'Total Extraordinarias'}
+                    </Text>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color: '#1890ff' }}>
                       {isAnual
                         ? (detalle.totalExtraordinariasAnual ?? detalle.totalExtraordinarias ?? 0)
                         : (detalle.totalExtraordinarias ?? 0)}
@@ -1083,10 +1358,10 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Diff Plan Hasta Hoy</Text>
-                    <div style={{ 
-                      fontSize: '16px', 
-                      fontWeight: 600, 
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Diff Plan Hoy' : 'Diff Plan Hasta Hoy'}
+                    </Text>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ 
                       color: (() => {
                         const valor = isAnual
                           ? (detalle.diffPlanHastaHoyAnual ?? detalle.diffPlanHastaHoy ?? 0)
@@ -1099,8 +1374,8 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      {infoLabel('Diff Plan Anual', 'Diff Plan Mensual')}
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? (isAnual ? 'Diff Plan A' : 'Diff Plan M') : (isAnual ? 'Diff Plan Anual' : 'Diff Plan Mensual')}
                     </Text>
                     {(() => {
                       const diffPlanValue = isAnual
@@ -1108,11 +1383,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                         : (detalle.diffPlanMensual ?? 0);
                       const color = diffPlanValue < 0 ? '#ff4d4f' : (diffPlanValue > 0 ? '#52c41a' : '#666');
                       return (
-                    <div style={{ 
-                      fontSize: '16px', 
-                      fontWeight: 600, 
-                      color
-                    }}>
+                    <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color }}>
                       {formatDiffValue(isAnual ? (detalle.diffPlanAnual ?? detalle.difVsContrato ?? detalle.diffPlanMensual) : detalle.diffPlanMensual)}
                     </div>
                     );
@@ -1120,18 +1391,16 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                   </div>
                   
                   <div>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Diff Permitidas</Text>
+                    <Text type="secondary" className={isMobile ? 'text-[10px]' : 'text-xs'}>
+                      {isMobile ? 'Diff Perm.' : 'Diff Permitidas'}
+                    </Text>
                     {(() => {
                       const diffPermValue = isAnual
                         ? (detalle.diffPermitidasAnual ?? detalle.difVsPermitidas ?? detalle.diffPermitidas ?? 0)
                         : (detalle.diffPermitidas ?? 0);
                       const color = diffPermValue < 0 ? '#ff4d4f' : (diffPermValue > 0 ? '#52c41a' : '#666');
                       return (
-                      <div style={{ 
-                        fontSize: '16px', 
-                        fontWeight: 600, 
-                        color
-                      }}>
+                      <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold`} style={{ color }}>
                         {formatDiffValue(isAnual ? (detalle.diffPermitidasAnual ?? detalle.difVsPermitidas ?? detalle.diffPermitidas) : detalle.diffPermitidas)}
                       </div>
                       );
@@ -1143,18 +1412,66 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
               {/* Detalle Diario (detalii_zilnice) */}
               {detalle.detaliiZilnice && detalle.detaliiZilnice.length > 0 && (
                 <div>
-                  <Title level={5} style={{ 
+                  <Title level={5} className={`${isMobile ? 'text-sm mb-3' : 'mb-4'}`} style={{ 
                     margin: 0, 
-                    marginBottom: '16px', 
                     fontWeight: 600, 
-                    fontSize: '0.9rem', 
                     color: '#555' 
                   }}>
                     Detalle Diario (Plan vs Fichado)
                   </Title>
                   
-                  <div className="overflow-x-auto shadow-lg rounded-lg border border-gray-200">
-                    <table className="min-w-full bg-white">
+                  {isMobile ? (
+                    // Mobile: Listă verticală compactă
+                    <div className="space-y-1.5">
+                      {detalle.detaliiZilnice.map((detalleDia, index) => (
+                        <MobileDetalleDiarioItem
+                          key={`${detalleDia.fecha}-${index}`}
+                          detalleDia={detalleDia}
+                          index={index}
+                          parseNumeric={parseNumeric}
+                          formatDiffValue={formatDiffValue}
+                          getDailyContractHours={getDailyContractHours}
+                          onRegularizar={(fecha, plan) => {
+                            setSelectedDayForRegularization({ fecha, plan });
+                            setShowDeclararNoPunchModal(true);
+                          }}
+                        />
+                      ))}
+                      {/* Totaluri pe mobile */}
+                      {detaliiTotals && (
+                        <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-purple-200 dark:border-purple-700">
+                          <div className="text-[11px] font-semibold text-purple-900 dark:text-purple-300 mb-2">Totales</div>
+                          <div className="grid grid-cols-2 gap-2 text-[10px]">
+                            <div>
+                              <span className="text-gray-600 dark:text-gray-400">Plan:</span>
+                              <span className="ml-1 font-semibold text-blue-700 dark:text-blue-400">{detaliiTotals.plan.toFixed(2)}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 dark:text-gray-400">Fichado:</span>
+                              <span className="ml-1 font-semibold text-green-700 dark:text-green-400">{detaliiTotals.fichado.toFixed(2)}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 dark:text-gray-400">Delta:</span>
+                              <span className={`ml-1 font-semibold ${
+                                detaliiTotals.delta < 0 ? 'text-red-600 dark:text-red-400' :
+                                detaliiTotals.delta > 0 ? 'text-green-600 dark:text-green-400' :
+                                'text-gray-600 dark:text-gray-400'
+                              }`}>
+                                {detaliiTotals.delta.toFixed(2)}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 dark:text-gray-400">Ordinarias:</span>
+                              <span className="ml-1 font-semibold text-purple-700 dark:text-purple-400">{detaliiTotals.ordinarias.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // Desktop: Tabela orizontală
+                    <div className="overflow-x-auto shadow-lg rounded-lg border border-gray-200">
+                      <table className="min-w-full bg-white">
                       <thead className="bg-gradient-to-r from-purple-600 to-indigo-600">
                         <tr>
                           <th className="px-4 py-3 text-left text-sm font-semibold text-white">📅 Fecha</th>
@@ -1368,11 +1685,12 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
                       )}
                     </table>
                   </div>
+                  )}
                 </div>
               )}
               
               {/* Botón descargar PDF */}
-              <div className="mt-8 pt-6 border-t border-gray-200">
+              <div className={`pt-6 border-t border-gray-200 dark:border-gray-700 ${isMobile ? 'mt-4' : 'mt-8'}`}>
                 <Button
                   variant="primary"
                   onClick={handleDescargarPDF}
@@ -1384,7 +1702,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
               </div>
             </div>
           )}
-          </div>
+        </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
               No hay datos disponibles
@@ -1392,33 +1710,34 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
           )}
         </div>
       </div>
-      
-      {/* Modal pentru declarare no punch */}
-      {detalle && (
-        <DeclararNoPunchModal
-          isOpen={showDeclararNoPunchModal}
-          onClose={() => {
-            setShowDeclararNoPunchModal(false);
-            setSelectedDayForRegularization(null);
-          }}
-          onConfirm={async () => {
-            success('Motivo registrado correctamente. La regularización será revisada por el supervisor.');
-            setShowDeclararNoPunchModal(false);
-            setSelectedDayForRegularization(null);
-            // Opțional: reîncarcă datele pentru a actualiza UI-ul
-            // Poți adăuga un callback onRefresh dacă este necesar
-          }}
-          data={{
-            workday_date: selectedDayForRegularization?.fecha || '',
-            scheduled_hours: selectedDayForRegularization?.plan 
-              ? `${selectedDayForRegularization.plan}h` 
-              : undefined,
-            // Pentru admin care regularizează pentru alt angajat, folosim empleadoId ca codigo
-            employee_codigo: detalle?.empleadoId ? String(detalle.empleadoId) : undefined,
-          }}
-        />
-      )}
     </div>
+    
+    {/* Modal pentru declarare no punch */}
+    {detalle && (
+      <DeclararNoPunchModal
+        isOpen={showDeclararNoPunchModal}
+        onClose={() => {
+          setShowDeclararNoPunchModal(false);
+          setSelectedDayForRegularization(null);
+        }}
+        onConfirm={async () => {
+          success('Motivo registrado correctamente. La regularización será revisada por el supervisor.');
+          setShowDeclararNoPunchModal(false);
+          setSelectedDayForRegularization(null);
+          // Opțional: reîncarcă datele pentru a actualiza UI-ul
+          // Poți adăuga un callback onRefresh dacă este necesar
+        }}
+        data={{
+          workday_date: selectedDayForRegularization?.fecha || '',
+          scheduled_hours: selectedDayForRegularization?.plan 
+            ? `${selectedDayForRegularization.plan}h` 
+            : undefined,
+          // Pentru admin care regularizează pentru alt angajat, folosim empleadoId ca codigo
+          employee_codigo: detalle?.empleadoId ? String(detalle.empleadoId) : undefined,
+        }}
+      />
+    )}
+    </>
   );
 };
 

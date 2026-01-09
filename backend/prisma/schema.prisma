@@ -38,6 +38,7 @@ model User {
   DerechoPedidos       String? @db.VarChar(100)
   TrabajaFestivos      String? @db.VarChar(50)
   VACACIONES_RESTANTES_ANO_ANTERIOR Decimal? @map("VACACIONES_RESTANTES_ANO_ANTERIOR") @db.Decimal(5, 1)
+  certificado_handicap_confirmado Boolean? @map("certificado_handicap_confirmado")
 
   @@index([DNI_NIE], map: "idx_datos_dni")
   @@index([CENTRO_TRABAJO], map: "idx_datos_empleados_centro")
@@ -412,6 +413,7 @@ model InspeccionesDocumentos {
   nombre_archivo    String? @db.VarChar(255)
   fecha_subida      String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
   Nombre_Supervisor String? @map("Nombre Supervisor") @db.VarChar(200)
+  codigo_supervisor String? @map("codigo_supervisor") @db.VarChar(50)
   Centro            String? @db.VarChar(300)
   Locacion          String? @db.VarChar(500)
   scor_total        Decimal? @map("scor_total") @db.Decimal(5, 2)
@@ -1197,6 +1199,7 @@ model HallOfFameMensual {
   score_calitate              Decimal  @map("score_calitate") @db.Decimal(5, 2)
   score_punctualitate         Decimal  @map("score_punctualitate") @db.Decimal(5, 2)
   score_uso_app               Decimal  @map("score_uso_app") @db.Decimal(5, 2)
+  score_responsabilidad_digital Decimal? @map("score_responsabilidad_digital") @db.Decimal(5, 2)
   horas_pontate               Decimal  @map("horas_pontate") @db.Decimal(10, 2)
   target_ajustat              Decimal  @map("target_ajustat") @db.Decimal(10, 2)
   target_initial              Decimal  @map("target_initial") @db.Decimal(10, 2)

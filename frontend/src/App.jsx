@@ -7,11 +7,12 @@ import { LocationProvider } from './contexts/LocationContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationsProvider } from './contexts/NotificationsContext';
 import ProtectedRoute from './components/ProtectedRoute';
-import MainLayout from './components/MainLayout';
+import ResponsiveLayout from './layouts/ResponsiveLayout';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import BrowserUpdatePrompt from './components/BrowserUpdatePrompt';
 import ErrorDisplay from './components/ErrorDisplay';
 import OfflineIndicator from './components/OfflineIndicator';
+import CertificadoHandicapDialog from './components/CertificadoHandicapDialog';
 import { PeriodoProvider } from './contexts/PeriodoContext';
 import IdleProvider from './providers/IdleProvider.jsx';
 import { usePWAMigration } from './hooks/usePWAMigration';
@@ -70,6 +71,7 @@ function App() {
             <LocationProvider>
               <IdleProvider>
                 <AppRoutes />
+                <CertificadoHandicapDialog />
                 <PWAUpdatePrompt />
                 <BrowserUpdatePrompt />
                 <OfflineIndicator />
@@ -120,14 +122,14 @@ function AppRoutes() {
           } 
         />
       
-      {/* Rute protejate - folosesc MainLayout */}
+      {/* Rute protejate - folosesc ResponsiveLayout */}
       <Route
                 path="/inicio"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <InicioPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -137,9 +139,9 @@ function AppRoutes() {
         path="/datos"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <DatosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -149,9 +151,9 @@ function AppRoutes() {
         path="/empleados"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyEmpleadosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -163,9 +165,9 @@ function AppRoutes() {
         path="/cuadernos"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyCuadernosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -175,9 +177,9 @@ function AppRoutes() {
         path="/cuadernos-centro"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyCuadernosPorCentroPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -192,9 +194,9 @@ function AppRoutes() {
         path="/solicitudes"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazySolicitudesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -204,9 +206,9 @@ function AppRoutes() {
         path="/fichaje"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyFichajePage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -216,9 +218,9 @@ function AppRoutes() {
         path="/documentos"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyDocumentosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -228,9 +230,9 @@ function AppRoutes() {
         path="/cuadrantes"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyCuadrantesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -240,9 +242,9 @@ function AppRoutes() {
         path="/cuadrantes-empleado"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyCuadrantesEmpleadoPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -252,9 +254,9 @@ function AppRoutes() {
         path="/aprobaciones"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyAprobacionesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -264,9 +266,9 @@ function AppRoutes() {
         path="/estadisticas"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyEstadisticasPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -276,9 +278,9 @@ function AppRoutes() {
         path="/estadisticas-cuadrantes"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyEstadisticasCuadrantesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -287,9 +289,9 @@ function AppRoutes() {
         path="/estadisticas-empleados"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyEstadisticasEmpleadosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -298,9 +300,9 @@ function AppRoutes() {
         path="/estadisticas-fichajes"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyEstadisticasFichajesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -310,9 +312,9 @@ function AppRoutes() {
         path="/clientes"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyClientesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -322,9 +324,9 @@ function AppRoutes() {
         path="/clientes/:nif"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyClienteDetallePage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -334,9 +336,9 @@ function AppRoutes() {
         path="/proveedores/:nif"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyProveedorDetallePage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -346,9 +348,9 @@ function AppRoutes() {
         path="/admin"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyAdminDashboard />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -358,9 +360,9 @@ function AppRoutes() {
         path="/documentos-empleados"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyDocumentosEmpleadosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -370,9 +372,9 @@ function AppRoutes() {
         path="/inspecciones"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyInspeccionesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -382,9 +384,9 @@ function AppRoutes() {
         path="/mis-inspecciones"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyMisInspeccionesPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -396,9 +398,9 @@ function AppRoutes() {
         path="/cuadernos"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyCuadernosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -408,9 +410,9 @@ function AppRoutes() {
         path="/pedidos"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyPedidosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -420,9 +422,9 @@ function AppRoutes() {
         path="/empleado-pedidos"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyEmpleadoPedidosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -432,9 +434,9 @@ function AppRoutes() {
         path="/comunicados"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyComunicadosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -442,9 +444,9 @@ function AppRoutes() {
         path="/comunicados/:id"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyComunicadoDetailPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -452,9 +454,9 @@ function AppRoutes() {
         path="/comunicados/nuevo"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyComunicadoCreatePage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -462,9 +464,9 @@ function AppRoutes() {
         path="/comunicados/:id/editar"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyComunicadoCreatePage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -474,9 +476,9 @@ function AppRoutes() {
         path="/mensajes-enviados"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyMensajesEnviadosPage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />
@@ -486,9 +488,9 @@ function AppRoutes() {
         path="/hall-of-fame"
         element={
           <ProtectedRoute>
-            <MainLayout>
+            <ResponsiveLayout>
               <LazyHallOfFamePage />
-            </MainLayout>
+            </ResponsiveLayout>
           </ProtectedRoute>
         }
       />

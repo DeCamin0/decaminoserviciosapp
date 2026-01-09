@@ -344,6 +344,7 @@ const InspectionForm = ({ type }) => {
     locatie: '',
     centro: '',
     supervisor: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
+    supervisor_codigo: user?.CODIGO || user?.codigo || null, // Adăugat codigo supervizor
     puncte: [],
     type: type,
     observaciones: '',
@@ -1311,6 +1312,7 @@ const InspectionForm = ({ type }) => {
       locatie: '',
       centro: '',
       supervisor: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
+      supervisor_codigo: user?.CODIGO || user?.codigo || null, // Păstrează codigo supervizor
       puncte: [],
       type: type,
       observaciones: '',

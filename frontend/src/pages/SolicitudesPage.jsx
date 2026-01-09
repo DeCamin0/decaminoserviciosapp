@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useLoadingState } from '../hooks/useLoadingState';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { Card, LoadingSpinner } from '../components/ui';
 import Modal from '../components/ui/Modal';
@@ -10,6 +11,7 @@ import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
 import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
+import { getEmployeeInitials } from '../utils/employeeNameHelper';
 
 const MONTHS = [
   'Todas las meses', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -81,6 +83,58 @@ const formatNumber = (value) => {
   return new Intl.NumberFormat('es-ES').format(number);
 };
 
+// Funcție pentru formatarea intervalelor de date (similar cu Fichaje)
+const formatDateRange = (fechaCombinada) => {
+  if (!fechaCombinada || fechaCombinada === '-' || fechaCombinada === '') return '—';
+  try {
+    let fechaNormalized = fechaCombinada.trim();
+    const sameDatePattern = /^(\d{4}-\d{2}-\d{2})-\s*(\1)$/;
+    const match = fechaNormalized.match(sameDatePattern);
+    if (match) {
+      fechaNormalized = `${match[1]} - ${match[1]}`;
+    }
+    
+    if (fechaNormalized.includes(' - ')) {
+      const [fechaInicio, fechaFin] = fechaNormalized.split(' - ');
+      if (fechaInicio.trim() === fechaFin.trim()) {
+        return fechaInicio.trim().split('-').reverse().join('/');
+      }
+      const startFormatted = fechaInicio.trim().split('-').reverse().join('/');
+      const endFormatted = fechaFin.trim().split('-').reverse().join('/');
+      return `${startFormatted} - ${endFormatted}`;
+    }
+    
+    return fechaNormalized.split('-').reverse().join('/');
+  } catch (error) {
+    return '—';
+  }
+};
+
+// Funcție pentru scurtarea tipului de solicitare
+const getSolicitudTipoShort = (tipo) => {
+  if (!tipo) return 'Sol.';
+  const tipoLower = tipo.toLowerCase();
+  if (tipoLower.includes('vacacion')) return 'Vac.';
+  if (tipoLower.includes('asunto') && tipoLower.includes('propio')) return 'As.Prop.';
+  if (tipoLower.includes('permiso') && tipoLower.includes('retribuido')) return 'Perm.Ret.';
+  if (tipoLower.includes('salida') && tipoLower.includes('regreso')) return 'Sal.Reg.';
+  if (tipoLower.includes('salida') && tipoLower.includes('sin')) return 'Sal.Sin';
+  return tipo.substring(0, 6) || 'Sol.';
+};
+
+// Funcție pentru culoarea indicatorului pe baza statusului
+const getStatusIndicatorColor = (estado) => {
+  switch (estado) {
+    case 'Aprobada':
+      return 'bg-green-500';
+    case 'Pendiente':
+      return 'bg-yellow-500';
+    case 'Rechazada':
+      return 'bg-red-500';
+    default:
+      return 'bg-gray-500';
+  }
+};
 
 const formatBajaRecord = (item) => {
   const idCaso = item?.['Id.Caso'] ?? item?.Id_Caso ?? item?.id ?? '';
@@ -193,9 +247,726 @@ const formatBajaRecord = (item) => {
   };
 };
 
+// Component pentru item-ul de baja médica pe mobile (compact, similar cu MobileAusenciaItemTodas)
+function MobileBajaMedicaItem({ item, formatDate, formatDateTime, getSituacionColor, isManager, editingBaja, editingBajaValue, onEditSituacion, onEditFechaBaja, onEditFechaAlta, formatNumber }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Scurtează numele pentru afișare compactă
+  const getTrabajadorShort = (trabajador) => {
+    if (!trabajador) return 'N/A';
+    if (trabajador.length <= 15) return trabajador;
+    return trabajador.substring(0, 12) + '...';
+  };
+  
+  // Scurtează situacion pentru afișare compactă
+  const getSituacionShort = (situacion) => {
+    if (!situacion) return 'N/A';
+    if (situacion.length <= 10) return situacion;
+    return situacion.substring(0, 8) + '...';
+  };
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (roșu pentru bajas médicas) */}
+        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-red-500"></div>
+        
+        {/* Caso ID - text mic */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[50px]">
+          #{item.casoId || item.id || 'N/A'}
+        </span>
+        
+        {/* Trabajador - text mic, scurtat */}
+        <span className="text-[11px] font-semibold flex-1 text-gray-700 dark:text-gray-300 truncate">
+          {getTrabajadorShort(item.trabajador)}
+        </span>
+        
+        {/* Situacion - badge mic */}
+        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${getSituacionColor(item.situacion)}`}>
+          {getSituacionShort(item.situacion || 'N/A')}
+        </span>
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Caso ID */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Caso:</span>
+            <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+              {item.casoId || item.id || 'N/A'}
+            </span>
+          </div>
+          
+          {/* Trabajador complet */}
+          {item.trabajador && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Trabajador:</span>
+              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+                {item.trabajador}
+              </span>
+            </div>
+          )}
+          
+          {/* Posición */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Posición:</span>
+            <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+              {item.posicionId || 'N/A'}
+            </span>
+          </div>
+          
+          {/* Código empleado */}
+          {item.codigoEmpleado && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Código:</span>
+              <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                {item.codigoEmpleado}
+              </span>
+            </div>
+          )}
+          
+          {/* Situación */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Situación:</span>
+            {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'situacion' ? (
+              <input
+                type="text"
+                value={editingBajaValue || ''}
+                onChange={(e) => onEditSituacion(e.target.value)}
+                className={`text-[10px] font-medium rounded-full px-2 py-1 border-2 border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${getSituacionColor(editingBajaValue)}`}
+                autoFocus
+                onBlur={() => {
+                  if (editingBajaValue !== item.situacion) {
+                    onEditSituacion(editingBajaValue, true);
+                  } else {
+                    onEditSituacion('', false);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (editingBajaValue !== item.situacion) {
+                      onEditSituacion(editingBajaValue, true);
+                    } else {
+                      onEditSituacion('', false);
+                    }
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onEditSituacion('', false);
+                  }
+                }}
+                placeholder="Situación"
+              />
+            ) : (
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium cursor-pointer hover:opacity-80 transition-opacity ${getSituacionColor(item.situacion)}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isManager && item.casoId && item.posicionId) {
+                    onEditSituacion(item.situacion || '', false);
+                  }
+                }}
+                title={isManager ? "Clic para editar" : ""}
+              >
+                {item.situacion || 'Situación desconocida'}
+              </span>
+            )}
+          </div>
+          
+          {/* Fuente */}
+          {item.fuente && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fuente:</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200">
+                {item.fuente}
+              </span>
+            </div>
+          )}
+          
+          {/* Días de baja */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">🩺 Días de baja:</span>
+            <span className="text-[10px] font-semibold text-rose-700 dark:text-rose-300">
+              {formatNumber(item.diasBaja)} días
+            </span>
+            {item.diasPrevistosSps > 0 && (
+              <span className="text-[9px] text-rose-600 dark:text-rose-400">
+                (Previsto SPS: {formatNumber(item.diasPrevistosSps)})
+              </span>
+            )}
+          </div>
+          
+          {/* Fecha baja */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fecha baja:</span>
+            {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaBaja' ? (
+              <input
+                type="date"
+                value={editingBajaValue || ''}
+                onChange={(e) => onEditFechaBaja(e.target.value)}
+                className="text-[10px] font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                onBlur={() => {
+                  if (editingBajaValue !== item.fechaBaja) {
+                    onEditFechaBaja(editingBajaValue, true);
+                  } else {
+                    onEditFechaBaja('', false);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onEditFechaBaja(editingBajaValue, true);
+                  } else if (e.key === 'Escape') {
+                    onEditFechaBaja('', false);
+                  }
+                }}
+              />
+            ) : (
+              <span
+                className="text-[10px] font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:text-blue-600 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isManager && item.casoId && item.posicionId) {
+                    onEditFechaBaja(item.fechaBaja || '', false);
+                  }
+                }}
+                title={isManager ? "Clic para editar" : ""}
+              >
+                {formatDate(item.fechaBaja)}
+              </span>
+            )}
+          </div>
+          
+          {/* Fecha alta */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fecha alta:</span>
+            {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaAlta' ? (
+              <input
+                type="date"
+                value={editingBajaValue || ''}
+                onChange={(e) => onEditFechaAlta(e.target.value)}
+                className="text-[10px] font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                onBlur={() => {
+                  if (editingBajaValue !== item.fechaAlta) {
+                    onEditFechaAlta(editingBajaValue, true);
+                  } else {
+                    onEditFechaAlta('', false);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onEditFechaAlta(editingBajaValue, true);
+                  } else if (e.key === 'Escape') {
+                    onEditFechaAlta('', false);
+                  }
+                }}
+              />
+            ) : (
+              <span
+                className="text-[10px] font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:text-blue-600 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isManager && item.casoId && item.posicionId) {
+                    onEditFechaAlta(item.fechaAlta || '', false);
+                  }
+                }}
+                title={isManager ? "Clic para editar" : ""}
+              >
+                {formatDate(item.fechaAlta)}
+              </span>
+            )}
+          </div>
+          
+          {/* Última actualización */}
+          {item.updatedAt && (
+            <div className="flex items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+              <span className="text-[9px] font-medium text-gray-500 dark:text-gray-400">Última actualización:</span>
+              <span className="text-[9px] text-gray-600 dark:text-gray-400">
+                {formatDateTime(item.updatedAt)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Component pentru item-ul de ausencia pe mobile în "Todas las Solicitudes" (compact, similar cu MobileSolicitudItem)
+function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatDate, formatDateRange, formatFechaFlexible, getTipoColor, formatHora }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const durationDisplay = getAusenciaDurationDisplay(item);
+  
+  // Formatează data
+  const formattedDate = formatFechaFlexible(item.FECHA || item.fecha, item.fecha_inicio, item.fecha_fin);
+  
+  // Formatează HORA
+  const formattedHora = formatHora(item.HORA || item.hora);
+  
+  // Scurtează tipul pentru afișare compactă
+  const getTipoShort = (tipo) => {
+    if (!tipo) return 'Aus.';
+    const tipoLower = tipo.toLowerCase();
+    if (tipoLower.includes('injustificada')) return 'Injust.';
+    if (tipoLower.includes('justificada')) return 'Justif.';
+    if (tipoLower.includes('permiso')) return 'Perm.';
+    return tipo.substring(0, 6) || 'Aus.';
+  };
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (portocaliu pentru ausencias) */}
+        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-orange-500"></div>
+        
+        {/* Fecha - text mic (primul în titlu) */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          {formattedDate.length > 12 ? formattedDate.substring(0, 12) + '...' : formattedDate}
+        </span>
+        
+        {/* Hora - text mic (după Fecha) */}
+        {formattedHora !== '—' && (
+          <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold min-w-[45px]">
+            {formattedHora}
+          </span>
+        )}
+        
+        {/* Tipo - text mic, scurtat */}
+        <span className="text-[11px] font-semibold flex-1 text-gray-700 dark:text-gray-300">
+          {getTipoShort(item.TIPO || item.tipo)}
+        </span>
+        
+        {/* Nume - text mic, scurtat */}
+        <span className="text-[10px] text-gray-500 dark:text-gray-400 min-w-[60px] truncate">
+          {item.NOMBRE || item.nombre || 'N/A'}
+        </span>
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Nume complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Empleado:</span>
+            <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+              {item.NOMBRE || item.nombre || 'N/A'}
+            </span>
+          </div>
+          
+          {/* Código */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Código:</span>
+            <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+              {item.CODIGO || item.codigo || 'N/A'}
+            </span>
+          </div>
+          
+          {/* Tipo complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getTipoColor(item.TIPO || item.tipo)}`}>
+              {item.TIPO || item.tipo || 'N/A'}
+            </span>
+          </div>
+          
+          {/* Fecha */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fecha:</span>
+            <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+              {formattedDate}
+            </span>
+          </div>
+          
+          {/* Hora */}
+          {formattedHora !== '—' && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Hora:</span>
+              <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                {formattedHora}
+              </span>
+            </div>
+          )}
+          
+          {/* Ubicación */}
+          {(item.LOCACION || item.locacion) && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Ubicación:</span>
+              <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                {item.LOCACION || item.locacion}
+              </span>
+            </div>
+          )}
+          
+          {/* Duración */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">
+              {durationDisplay.isDayBased ? '📅' : '⏱️'} Duración:
+            </span>
+            <span className={`text-[10px] font-medium ${
+              durationDisplay.isDayBased 
+                ? 'text-blue-700 dark:text-blue-300' 
+                : 'text-purple-700 dark:text-purple-300'
+            }`}>
+              {durationDisplay.text}
+            </span>
+          </div>
+          
+          {/* ID și Codigo */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 px-1.5 py-0.5 rounded">
+              ID: {item.id}
+            </span>
+            {item.CODIGO && (
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded">
+                Código: {item.CODIGO}
+              </span>
+            )}
+          </div>
+          
+          {/* Motivo */}
+          {(item.MOTIVO || item.motivo) && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+              <div className="text-[10px] font-medium text-orange-600 dark:text-orange-400 mb-1">📝 Motivo</div>
+              <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words">
+                {item.MOTIVO || item.motivo}
+              </p>
+            </div>
+          )}
+          
+          {/* Fecha Solicitud */}
+          {(item.created_at || item.CREATED_AT || item.createdAt) && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fecha Solicitud:</span>
+              <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                {(() => {
+                  const createdAt = item.created_at || item.CREATED_AT || item.createdAt;
+                  if (!createdAt) return 'N/A';
+                  try {
+                    const date = new Date(createdAt.replace(' ', 'T'));
+                    if (isNaN(date.getTime())) return createdAt;
+                    return `${date.toLocaleDateString('es-ES')} ${date.toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`;
+                  } catch (e) {
+                    return createdAt;
+                  }
+                })()}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Component pentru item-ul de solicitare pe mobile (compact, similar cu MobileAusenciaItem din Fichaje)
+function MobileSolicitudItem({ solicitud, getAusenciaDurationDisplay, formatDate, formatDateRange, getStatusColor, getSolicitudTipoShort, getStatusIndicatorColor, justificantesPorAusencia, openUploadJustificanteModal, onEdit, onDelete, isDeleting }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const durationDisplay = getAusenciaDurationDisplay(solicitud);
+  
+  // Formatează data solicitării
+  const formattedFechaSolicitud = formatDate(solicitud.fecha_solicitud);
+  
+  // Formatează perioada
+  const formattedPeriodo = solicitud.FECHA 
+    ? formatDateRange(solicitud.FECHA)
+    : (solicitud.fecha_inicio && solicitud.fecha_fin 
+      ? formatDateRange(`${solicitud.fecha_inicio} - ${solicitud.fecha_fin}`)
+      : formatDate(solicitud.fecha_inicio || solicitud.fecha || solicitud["fecha inicio"] || ''));
+  
+  // Verifică dacă are justificante (doar pentru ausencias, nu pentru Vacaciones sau Asunto Propio)
+  const tipoNormalized = (solicitud.tipo || '').toLowerCase();
+  const isVacaciones = tipoNormalized.includes('vacacion');
+  const isAsuntoPropio = tipoNormalized.includes('asunto') && tipoNormalized.includes('propio');
+  const esAusencia = !isVacaciones && !isAsuntoPropio && 
+                    (solicitud.FECHA || solicitud.fecha || solicitud.fecha_inicio || solicitud.fecha_solicitud);
+  
+  let justificante = null;
+  if (esAusencia && justificantesPorAusencia) {
+    const tipoAusencia = solicitud.tipo || '';
+    let fechaAusencia = solicitud.FECHA || solicitud.fecha || solicitud.fecha_inicio || solicitud['fecha inicio'] || '';
+    
+    if (fechaAusencia && typeof fechaAusencia === 'string' && fechaAusencia.includes(' - ')) {
+      fechaAusencia = fechaAusencia.split(' - ')[0].trim();
+    }
+    
+    if (!fechaAusencia) {
+      fechaAusencia = solicitud.fecha_solicitud || '';
+    }
+    
+    let fechaNormalizada = '';
+    if (fechaAusencia) {
+      try {
+        if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+          const fechaParts = fechaAusencia.trim().split('/');
+          if (fechaParts.length === 3) {
+            fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+          }
+        } else if (typeof fechaAusencia === 'string' && fechaAusencia.match(/^\d{4}-\d{2}-\d{2}/)) {
+          fechaNormalizada = fechaAusencia.substring(0, 10);
+        } else {
+          const fecha = new Date(fechaAusencia);
+          if (!isNaN(fecha.getTime())) {
+            fechaNormalizada = fecha.toISOString().split('T')[0];
+          }
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+    
+    if (fechaNormalizada) {
+      const key = `${tipoAusencia}_${fechaNormalizada}`;
+      const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
+      justificante = justificantesPorAusencia.get(key) || justificantesPorAusencia.get(keySinEspacios);
+      
+      if (justificante && justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
+        justificante = null;
+      }
+      if (justificante && justificante.tipoAusencia && tipoAusencia && 
+          justificante.tipoAusencia.toLowerCase().trim() !== tipoAusencia.toLowerCase().trim()) {
+        justificante = null;
+      }
+    }
+  }
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (verde/galben/roșu) */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusIndicatorColor(solicitud.estado)}`}></div>
+        
+        {/* Pentru Vacaciones și Asuntos Propios: afișăm numele/inițialele în loc de FECHA */}
+        {(isVacaciones || isAsuntoPropio) && solicitud.nombre ? (
+          <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold min-w-[65px] truncate">
+            {(() => {
+              const nombre = solicitud.nombre || solicitud.NOMBRE || '';
+              if (!nombre) return '—';
+              // Dacă numele este prea lung, afișăm inițialele
+              if (nombre.length > 12) {
+                const parts = nombre.trim().split(' ').filter(p => p && p.trim() !== '');
+                if (parts.length >= 2) {
+                  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+                }
+                return nombre.substring(0, 10) + '...';
+              }
+              return nombre;
+            })()}
+          </span>
+        ) : (
+          /* Pentru alte tipuri: afișăm FECHA */
+          <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+            {formattedFechaSolicitud.length > 12 ? formattedFechaSolicitud.substring(0, 12) + '...' : formattedFechaSolicitud}
+          </span>
+        )}
+        
+        {/* Duration - text mic */}
+        <span className={`text-[10px] font-medium min-w-[45px] ${
+          durationDisplay.isDayBased 
+            ? 'text-blue-600 dark:text-blue-400' 
+            : 'text-purple-600 dark:text-purple-400'
+        }`}>
+          {durationDisplay.text}
+        </span>
+        
+        {/* Tipo - text mic, scurtat */}
+        <span className="text-[11px] font-semibold flex-1 text-gray-700 dark:text-gray-300">
+          {getSolicitudTipoShort(solicitud.tipo)}
+        </span>
+        
+        {/* Status badge mic */}
+        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${getStatusColor(solicitud.estado)}`}>
+          {solicitud.estado === 'Aprobada' ? '✓' : solicitud.estado === 'Pendiente' ? '⏳' : '✗'}
+        </span>
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Nume complet (doar pentru Vacaciones și Asuntos Propios) */}
+          {(isVacaciones || isAsuntoPropio) && solicitud.nombre && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Empleado:</span>
+              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+                {solicitud.nombre || solicitud.NOMBRE || 'N/A'}
+              </span>
+            </div>
+          )}
+          
+          {/* Tipo complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+              {solicitud.tipo}
+            </span>
+          </div>
+          
+          {/* Status complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Estado:</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusColor(solicitud.estado)}`}>
+              {solicitud.estado === 'Aprobada' ? '✅ Aprobada' : solicitud.estado === 'Pendiente' ? '⏳ Pendiente' : '❌ Rechazada'}
+            </span>
+          </div>
+          
+          {/* Período */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Período:</span>
+            <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+              {formattedPeriodo}
+            </span>
+          </div>
+          
+          {/* Duration complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">
+              {durationDisplay.isDayBased ? '📅' : '⏱️'} Duración:
+            </span>
+            <span className={`text-[10px] font-medium ${
+              durationDisplay.isDayBased 
+                ? 'text-blue-700 dark:text-blue-300' 
+                : 'text-purple-700 dark:text-purple-300'
+            }`}>
+              {durationDisplay.text}
+            </span>
+          </div>
+          
+          {/* ID și Codigo */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 px-1.5 py-0.5 rounded">
+              ID: {solicitud.id}
+            </span>
+            {solicitud.codigo && (
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded">
+                Código: {solicitud.codigo}
+              </span>
+            )}
+          </div>
+          
+          {/* Motivo */}
+          {solicitud.motivo && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+              <div className="text-[10px] font-medium text-orange-600 dark:text-orange-400 mb-1">📝 Motivo</div>
+              <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words">
+                {solicitud.motivo}
+              </p>
+            </div>
+          )}
+          
+          {/* Justificante (doar pentru ausencias) - similar cu card-ul desktop */}
+          {esAusencia && (() => {
+            if (justificante) {
+              const esPendiente = justificante.estado === 'pendiente';
+              const esCompletado = justificante.estado === 'completado';
+              
+              return (
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                  <div className="text-[10px] font-medium text-yellow-600 dark:text-yellow-400 mb-1">📋 Justificante</div>
+                  <div className="text-[10px] text-gray-700 dark:text-gray-300 mb-2">
+                    {justificante.tipo_documento} - {esCompletado ? '✅ Completado' : '⏳ Pendiente'}
+                  </div>
+                  {esPendiente && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.location.href = '/documentos';
+                      }}
+                      className="w-full px-2 py-1.5 text-[10px] font-medium rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors flex items-center justify-center gap-1"
+                    >
+                      📤 Subir
+                    </button>
+                  )}
+                </div>
+              );
+            } else {
+              // Dacă nu există justificante, afișăm butonul "Cargar Justificante"
+              return (
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                  <div className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    No hay justificante cargado para esta ausencia.
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (openUploadJustificanteModal) {
+                        openUploadJustificanteModal(solicitud);
+                      }
+                    }}
+                    className="w-full px-2 py-1.5 text-[10px] font-medium rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border border-green-300 dark:border-green-700 hover:bg-green-200 dark:hover:bg-green-800 transition-colors flex items-center justify-center gap-1"
+                  >
+                    📤 Cargar Justificante
+                  </button>
+                </div>
+              );
+            }
+          })()}
+          
+          {/* Butoane Edit și Delete (doar dacă sunt furnizate) */}
+          {onEdit && onDelete && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600 flex gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onEdit) {
+                    onEdit(solicitud);
+                  }
+                }}
+                className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors flex items-center justify-center gap-1"
+              >
+                ✏️ Editar
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onDelete) {
+                    onDelete(solicitud.id);
+                  }
+                }}
+                disabled={isDeleting}
+                className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-800 transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                🗑️ Eliminar
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SolicitudesPage() {
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
+  const { isMobile } = useBreakpoint();
   
   const [tipo, setTipo] = useState('Asuntos Propios');
   const [fechaInicio, setFechaInicio] = useState('');
@@ -3575,6 +4346,37 @@ export default function SolicitudesPage() {
     }
   };
 
+  // Formatează HORA corect (poate fi timestamp sau string simplu)
+  const formatHora = (hora) => {
+    if (!hora || hora === '—' || hora === '-' || hora === 'N/A') return '—';
+    
+    // Dacă este un timestamp ISO (ex: "1970-01-01T20:41:44.000Z")
+    if (typeof hora === 'string' && hora.includes('T') && hora.includes('Z')) {
+      try {
+        const date = new Date(hora);
+        if (!isNaN(date.getTime())) {
+          // Extrage doar ora și minutele
+          return date.toLocaleTimeString('es-ES', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+    
+    // Dacă este deja formatată (ex: "20:41:44" sau "20:41")
+    if (typeof hora === 'string' && hora.match(/^\d{1,2}:\d{2}(:\d{2})?$/)) {
+      // Dacă are secunde, le eliminăm
+      return hora.split(':').slice(0, 2).join(':');
+    }
+    
+    // Altfel, returnează valoarea originală
+    return hora;
+  };
+
   // Formatează flexibil câmpul FECHA care poate veni fie ca o dată simplă
   // fie ca un interval "YYYY-MM-DD - YYYY-MM-DD"
   const formatFechaFlexible = (value, fallbackInicio, fallbackFin) => {
@@ -4243,18 +5045,18 @@ export default function SolicitudesPage() {
         {activeTab === 'lista' ? (
           // Lista de solicitudes del usuario
           <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900">
+            <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2 mb-4' : 'mb-6'}`}>
+              <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-900`}>
                 Mis Solicitudes
               </h2>
-              <div className="flex gap-3">
+              <div className={`flex ${isMobile ? 'flex-wrap gap-1.5' : 'gap-3'}`}>
                 {totalAsuntoPropioDays > 0 && (
-                  <span className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                  <span className={`inline-flex items-center ${isMobile ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-sm'} font-medium rounded-full bg-purple-100 text-purple-800 border border-purple-200`}>
                     📅 Asunto Propio: {totalAsuntoPropioDays} días
                   </span>
                 )}
                 {totalVacacionesDays > 0 && (
-                  <span className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200">
+                  <span className={`inline-flex items-center ${isMobile ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-sm'} font-medium rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200`}>
                     🏖️ Vacaciones: {totalVacacionesDays} días
                   </span>
                 )}
@@ -4266,12 +5068,26 @@ export default function SolicitudesPage() {
                 <LoadingSpinner size="lg" text="Cargando solicitudes..." />
               </div>
             ) : solicitudes.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className={`text-center ${isMobile ? 'py-4 text-sm' : 'py-8'} text-gray-500`}>
                 No tienes solicitudes aún.
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className={isMobile ? "space-y-2" : "space-y-3"}>
                 {solicitudes.map((solicitud, index) => (
+                  isMobile ? (
+                    <MobileSolicitudItem
+                      key={solicitud.id || index}
+                      solicitud={solicitud}
+                      getAusenciaDurationDisplay={getAusenciaDurationDisplay}
+                      formatDate={formatDate}
+                      formatDateRange={formatDateRange}
+                      getStatusColor={getStatusColor}
+                      getSolicitudTipoShort={getSolicitudTipoShort}
+                      getStatusIndicatorColor={getStatusIndicatorColor}
+                      justificantesPorAusencia={justificantesPorAusencia}
+                      openUploadJustificanteModal={openUploadJustificanteModal}
+                    />
+                  ) : (
                   <div key={solicitud.id || index} className="card hover:shadow-lg transition-all duration-200 border-l-4 border-l-red-500">
                     {/* Header compact pe mobil, complet pe ecrane mari */}
                     <div className="flex items-start justify-between mb-4">
@@ -4526,6 +5342,7 @@ export default function SolicitudesPage() {
                       </div>
                     )}
                   </div>
+                  )
                 ))}
               </div>
             )}
@@ -4590,10 +5407,10 @@ export default function SolicitudesPage() {
                         setShowUserDropdown(true);
                       }}
                       onFocus={() => setShowUserDropdown(true)}
-                        className="w-full px-4 py-3 pl-12 pr-12 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/80 backdrop-blur-sm transition-all duration-300 text-sm placeholder-gray-400 shadow-sm group-hover:shadow-md"
+                        className={`w-full ${isMobile ? 'px-3 py-2 pl-10 pr-10 text-xs' : 'px-4 py-3 pl-12 pr-12 text-sm'} border-2 border-gray-200 ${isMobile ? 'rounded-lg' : 'rounded-xl'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/80 backdrop-blur-sm transition-all duration-300 placeholder-gray-400 shadow-sm group-hover:shadow-md`}
                     />
-                    <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                        <span className="text-gray-400 text-lg group-focus-within:text-blue-500 transition-colors">🔍</span>
+                    <div className={`absolute ${isMobile ? 'left-3' : 'left-4'} top-1/2 transform -translate-y-1/2`}>
+                        <span className={`text-gray-400 ${isMobile ? 'text-sm' : 'text-lg'} group-focus-within:text-blue-500 transition-colors`}>🔍</span>
                     </div>
                     <button
                         onClick={(e) => {
@@ -4601,9 +5418,9 @@ export default function SolicitudesPage() {
                           e.stopPropagation();
                           setShowUserDropdown(!showUserDropdown);
                         }}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-blue-500 transition-all duration-200 p-1 rounded-lg hover:bg-blue-50"
+                        className={`absolute ${isMobile ? 'right-2' : 'right-3'} top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-blue-500 transition-all duration-200 ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg hover:bg-blue-50`}
                       >
-                        <span className={`transform transition-transform duration-300 ${showUserDropdown ? 'rotate-180' : ''}`}>
+                        <span className={`${isMobile ? 'text-xs' : ''} transform transition-transform duration-300 ${showUserDropdown ? 'rotate-180' : ''}`}>
                         ▼
                       </span>
                     </button>
@@ -4611,7 +5428,7 @@ export default function SolicitudesPage() {
                   
                     {/* Dropdown refinado */}
                   {showUserDropdown && (
-                      <div className="absolute z-[9999] w-full mt-3 bg-white border border-gray-200 rounded-2xl shadow-2xl max-h-80 overflow-y-auto" 
+                      <div className={`absolute z-[9999] w-full ${isMobile ? 'mt-2' : 'mt-3'} bg-white border border-gray-200 ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-2xl ${isMobile ? 'max-h-60' : 'max-h-80'} overflow-y-auto`} 
                            style={{ 
                              zIndex: 9999,
                              position: 'absolute',
@@ -4620,12 +5437,12 @@ export default function SolicitudesPage() {
                              right: 0
                            }}>
                       {allUsers.length === 0 ? (
-                          <div className="px-6 py-12 text-center text-gray-500">
-                            <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                            <p className="text-sm font-medium">Cargando empleados...</p>
+                          <div className={`${isMobile ? 'px-4 py-8' : 'px-6 py-12'} text-center text-gray-500`}>
+                            <div className={`${isMobile ? 'w-6 h-6 border-2' : 'w-8 h-8 border-3'} border-blue-500 border-t-transparent rounded-full animate-spin mx-auto ${isMobile ? 'mb-2' : 'mb-3'}`}></div>
+                            <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>Cargando empleados...</p>
                         </div>
                       ) : (
-                          <div className="p-2">
+                          <div className={isMobile ? 'p-1.5' : 'p-2'}>
                             {getFilteredUsers.map(user => (
                         <button
                           key={user.email}
@@ -4636,28 +5453,28 @@ export default function SolicitudesPage() {
                             setUserSearchTerm(user.name);
                             setShowUserDropdown(false);
                           }}
-                              className={`w-full text-left px-4 py-3 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-200 flex items-center gap-3 rounded-xl mb-1 ${
+                              className={`w-full text-left ${isMobile ? 'px-2.5 py-2' : 'px-4 py-3'} hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-200 flex items-center ${isMobile ? 'gap-2' : 'gap-3'} ${isMobile ? 'rounded-lg mb-0.5' : 'rounded-xl mb-1'} ${
                                 selectedUser === user.email ? 'bg-gradient-to-r from-blue-100 to-purple-100 border-l-4 border-l-blue-500 shadow-sm' : ''
                               }`}
                             >
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-md transition-all duration-200 ${
+                              <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} ${isMobile ? 'rounded-lg' : 'rounded-xl'} flex items-center justify-center shadow-md transition-all duration-200 ${
                             user.email === 'ALL' 
                               ? 'bg-gradient-to-br from-gray-500 to-gray-600' 
                                   : 'bg-gradient-to-br from-blue-500 to-purple-600'
                               }`}>
-                            <span className="text-white text-sm font-bold">
+                            <span className={`text-white ${isMobile ? 'text-xs' : 'text-sm'} font-bold`}>
                               {user.email === 'ALL' ? '👥' : user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                             </span>
                           </div>
-                          <div className="flex-1">
-                                <p className="font-semibold text-gray-900 text-sm">{user.name}</p>
+                          <div className="flex-1 min-w-0">
+                                <p className={`font-semibold text-gray-900 ${isMobile ? 'text-xs truncate' : 'text-sm'}`}>{user.name}</p>
                             {user.email !== 'ALL' && (
-                              <p className="text-xs text-gray-500">{user.email}</p>
+                              <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 truncate`}>{user.email}</p>
                             )}
                           </div>
                           {selectedUser === user.email && (
-                                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                                  <span className="text-white text-xs">✓</span>
+                                <div className={`${isMobile ? 'w-5 h-5' : 'w-6 h-6'} bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0`}>
+                                  <span className={`text-white ${isMobile ? 'text-[10px]' : 'text-xs'}`}>✓</span>
                                 </div>
                           )}
                         </button>
@@ -4798,25 +5615,25 @@ export default function SolicitudesPage() {
             </div>
 
               {selectedTab === 'baja' && isManager && (
-                <div className="w-full mt-4 bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div className="text-sm text-rose-700">
+                <div className={`w-full mt-4 bg-rose-50 border border-rose-200 ${isMobile ? 'rounded-lg p-3' : 'rounded-2xl p-4'} flex flex-col md:flex-row md:items-center md:justify-between gap-3`}>
+                  <div className={`${isMobile ? 'text-[11px]' : 'text-sm'} text-rose-700`}>
                     Sube el fichero XML/Excel con las bajas médicas para sincronizarlo con el
                     sistema. Se registrará al usuario que realiza la carga.
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
                     <button
                       type="button"
                       onClick={handleBajaUploadClick}
                       disabled={
                         isOperationLoading('uploadBajas') || !BAJA_UPLOAD_ENDPOINT
                       }
-                      className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2 ${
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2'} rounded-lg font-semibold transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2 ${
                         isOperationLoading('uploadBajas') || !BAJA_UPLOAD_ENDPOINT
                           ? 'bg-rose-200 text-rose-500 cursor-not-allowed'
                           : 'bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700'
                       }`}
                     >
-                      <span>{isOperationLoading('uploadBajas') ? '⏳' : '🩺'}</span>
+                      <span className={isMobile ? 'text-sm' : ''}>{isOperationLoading('uploadBajas') ? '⏳' : '🩺'}</span>
                       <span>
                         {isOperationLoading('uploadBajas')
                           ? 'Cargando...'
@@ -4828,14 +5645,14 @@ export default function SolicitudesPage() {
                       type="button"
                       onClick={handleOpenManualBajaModal}
                       disabled={!BAJA_MANUAL_ENDPOINT}
-                      className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2 ${
+                      className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2'} rounded-lg font-semibold transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2 ${
                         !BAJA_MANUAL_ENDPOINT
                           ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                           : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
                       }`}
                       title="Añadir una baja manual (fuente: MANUAL)"
                     >
-                      <span>➕</span>
+                      <span className={isMobile ? 'text-sm' : ''}>➕</span>
                       <span>Añadir manual</span>
                     </button>
                     {!BAJA_UPLOAD_ENDPOINT && (
@@ -4863,11 +5680,11 @@ export default function SolicitudesPage() {
 
             {/* Panel de statistici pentru bajas médicas */}
             {selectedTab === 'baja' && isManager && (
-              <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-6 shadow-lg mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-rose-900 flex items-center gap-2">
-                    <span>📊</span>
-                    Estadísticas de Bajas Médicas
+              <div className={`bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 ${isMobile ? 'rounded-lg p-3' : 'rounded-xl p-6'} shadow-lg ${isMobile ? 'mb-3' : 'mb-6'}`}>
+                <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
+                  <h3 className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold text-rose-900 flex items-center gap-2`}>
+                    <span className={isMobile ? 'text-base' : ''}>📊</span>
+                    <span className={isMobile ? 'text-xs' : ''}>Estadísticas de Bajas Médicas</span>
                   </h3>
                   <button
                     onClick={() => {
@@ -4877,19 +5694,19 @@ export default function SolicitudesPage() {
                       });
                     }}
                     disabled={isOperationLoading('refreshBajas') || isOperationLoading('bajas')}
-                    className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`flex items-center gap-1.5 ${isMobile ? 'px-2 py-1 text-xs' : 'px-4 py-2'} bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
                     title="Actualizar lista"
                   >
                     <RefreshCw 
-                      className={`w-4 h-4 ${isOperationLoading('refreshBajas') || isOperationLoading('bajas') ? 'animate-spin' : ''}`} 
+                      className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${isOperationLoading('refreshBajas') || isOperationLoading('bajas') ? 'animate-spin' : ''}`} 
                     />
-                    <span>Actualizar</span>
+                    <span>{isMobile ? 'Actualizar' : 'Actualizar'}</span>
                   </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className={`grid grid-cols-1 md:grid-cols-3 ${isMobile ? 'gap-2' : 'gap-4'}`}>
                   <div 
                     onClick={() => setBajaFilter(null)}
-                    className={`bg-white rounded-lg p-4 border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
+                    className={`bg-white rounded-lg ${isMobile ? 'p-2.5' : 'p-4'} border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
                       bajaFilter === null 
                         ? 'border-blue-400 shadow-lg scale-105' 
                         : 'border-blue-200 hover:border-blue-300'
@@ -4903,12 +5720,12 @@ export default function SolicitudesPage() {
                       }
                     }}
                   >
-                    <div className="text-sm font-medium text-gray-600 mb-1">Total Casos</div>
-                    <div className="text-3xl font-bold text-blue-700">{bajasStats.total}</div>
+                    <div className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Total Casos</div>
+                    <div className={`${isMobile ? 'text-xl' : 'text-3xl'} font-bold text-blue-700`}>{bajasStats.total}</div>
                   </div>
                   <div 
                     onClick={() => setBajaFilter('cerradas')}
-                    className={`bg-white rounded-lg p-4 border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
+                    className={`bg-white rounded-lg ${isMobile ? 'p-2.5' : 'p-4'} border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
                       bajaFilter === 'cerradas' 
                         ? 'border-green-400 shadow-lg scale-105' 
                         : 'border-green-200 hover:border-green-300'
@@ -4922,13 +5739,13 @@ export default function SolicitudesPage() {
                       }
                     }}
                   >
-                    <div className="text-sm font-medium text-gray-600 mb-1">Casos Cerrados</div>
-                    <div className="text-3xl font-bold text-green-700">{bajasStats.cerradas}</div>
-                    <div className="text-xs text-gray-500 mt-1">Con alta médica</div>
+                    <div className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Casos Cerrados</div>
+                    <div className={`${isMobile ? 'text-xl' : 'text-3xl'} font-bold text-green-700`}>{bajasStats.cerradas}</div>
+                    <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 ${isMobile ? 'mt-0.5' : 'mt-1'}`}>Con alta médica</div>
                   </div>
                   <div 
                     onClick={() => setBajaFilter('abiertas')}
-                    className={`bg-white rounded-lg p-4 border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
+                    className={`bg-white rounded-lg ${isMobile ? 'p-2.5' : 'p-4'} border-2 shadow-md cursor-pointer transition-all hover:shadow-lg ${
                       bajaFilter === 'abiertas' 
                         ? 'border-orange-400 shadow-lg scale-105' 
                         : 'border-orange-200 hover:border-orange-300'
@@ -4942,9 +5759,9 @@ export default function SolicitudesPage() {
                       }
                     }}
                   >
-                    <div className="text-sm font-medium text-gray-600 mb-1">Casos Abiertos</div>
-                    <div className="text-3xl font-bold text-orange-700">{bajasStats.abiertas}</div>
-                    <div className="text-xs text-gray-500 mt-1">En seguimiento</div>
+                    <div className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium text-gray-600 ${isMobile ? 'mb-0.5' : 'mb-1'}`}>Casos Abiertos</div>
+                    <div className={`${isMobile ? 'text-xl' : 'text-3xl'} font-bold text-orange-700`}>{bajasStats.abiertas}</div>
+                    <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-500 ${isMobile ? 'mt-0.5' : 'mt-1'}`}>En seguimiento</div>
                   </div>
                 </div>
               </div>
@@ -4972,9 +5789,153 @@ export default function SolicitudesPage() {
                       : 'No existen solicitudes para esta selección.'}
                   </div>
                 ) : (
-                  getFilteredSolicitudes.map(item => {
-                    const durationInfo = getAusenciaDurationDisplay(item);
-                    return (
+                  <div className={isMobile ? "space-y-2" : "space-y-4"}>
+                    {getFilteredSolicitudes.map(item => {
+                      const durationInfo = getAusenciaDurationDisplay(item);
+                      
+                      // Pe mobil, folosim MobileAusenciaItemTodas pentru ausencias
+                      if (isMobile && selectedTab === 'ausencias') {
+                        return (
+                          <MobileAusenciaItemTodas
+                            key={item.id || item.email}
+                            item={item}
+                            getAusenciaDurationDisplay={getAusenciaDurationDisplay}
+                            formatDate={formatDate}
+                            formatDateRange={formatDateRange}
+                            formatFechaFlexible={formatFechaFlexible}
+                            getTipoColor={getTipoColor}
+                            formatHora={formatHora}
+                          />
+                        );
+                      }
+                      
+                      // Pe mobil, folosim MobileBajaMedicaItem pentru bajas médicas
+                      if (isMobile && selectedTab === 'baja') {
+                        return (
+                          <MobileBajaMedicaItem
+                            key={item.casoId || item.id}
+                            item={item}
+                            formatDate={formatDate}
+                            formatDateTime={formatDateTime}
+                            getSituacionColor={getSituacionColor}
+                            isManager={isManager}
+                            editingBaja={editingBaja}
+                            editingBajaValue={editingBajaValue}
+                            onEditSituacion={(value, shouldSave) => {
+                              if (shouldSave) {
+                                if (value !== item.situacion) {
+                                  handleSaveBajaDate(item.casoId, item.posicionId, 'situacion', value);
+                                } else {
+                                  setEditingBaja(null);
+                                  setEditingBajaValue('');
+                                }
+                              } else {
+                                // Deschide editarea - folosește valoarea din item
+                                setEditingBaja({ idCaso: item.casoId, idPosicion: item.posicionId, field: 'situacion' });
+                                setEditingBajaValue(item.situacion || '');
+                              }
+                            }}
+                            onEditFechaBaja={(value, shouldSave) => {
+                              if (shouldSave) {
+                                if (value !== item.fechaBaja) {
+                                  handleSaveBajaDate(item.casoId, item.posicionId, 'fechaBaja', value);
+                                } else {
+                                  setEditingBaja(null);
+                                  setEditingBajaValue('');
+                                }
+                              } else {
+                                // Deschide editarea - convertește data pentru input type="date" (YYYY-MM-DD)
+                                const dateStr = item.fechaBaja;
+                                if (dateStr && dateStr !== '-') {
+                                  try {
+                                    const date = new Date(dateStr);
+                                    if (!isNaN(date.getTime())) {
+                                      const year = date.getFullYear();
+                                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                                      const day = String(date.getDate()).padStart(2, '0');
+                                      setEditingBajaValue(`${year}-${month}-${day}`);
+                                    } else {
+                                      setEditingBajaValue('');
+                                    }
+                                  } catch {
+                                    setEditingBajaValue('');
+                                  }
+                                } else {
+                                  setEditingBajaValue('');
+                                }
+                                setEditingBaja({ idCaso: item.casoId, idPosicion: item.posicionId, field: 'fechaBaja' });
+                              }
+                            }}
+                            onEditFechaAlta={(value, shouldSave) => {
+                              if (shouldSave) {
+                                if (value !== item.fechaAlta) {
+                                  handleSaveBajaDate(item.casoId, item.posicionId, 'fechaAlta', value);
+                                } else {
+                                  setEditingBaja(null);
+                                  setEditingBajaValue('');
+                                }
+                              } else {
+                                // Deschide editarea - convertește data pentru input type="date" (YYYY-MM-DD)
+                                const dateStr = item.fechaAlta;
+                                if (dateStr && dateStr !== '-') {
+                                  try {
+                                    const date = new Date(dateStr);
+                                    if (!isNaN(date.getTime())) {
+                                      const year = date.getFullYear();
+                                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                                      const day = String(date.getDate()).padStart(2, '0');
+                                      setEditingBajaValue(`${year}-${month}-${day}`);
+                                    } else {
+                                      setEditingBajaValue('');
+                                    }
+                                  } catch {
+                                    setEditingBajaValue('');
+                                  }
+                                } else {
+                                  setEditingBajaValue('');
+                                }
+                                setEditingBaja({ idCaso: item.casoId, idPosicion: item.posicionId, field: 'fechaAlta' });
+                              }
+                            }}
+                            formatNumber={formatNumber}
+                          />
+                        );
+                      }
+                      
+                      // Pe mobil, folosim MobileSolicitudItem (doar pentru tab-urile care nu sunt 'ausencias' sau 'baja')
+                      if (isMobile && selectedTab !== 'ausencias' && selectedTab !== 'baja') {
+                        // Transformăm item-ul pentru a fi compatibil cu MobileSolicitudItem
+                        const solicitudForMobile = {
+                          ...item,
+                          fecha_solicitud: item.fecha_solicitud || item.created_at || item.CREATED_AT || item.createdAt,
+                          FECHA: item.FECHA || item.fecha || (item.fecha_inicio && item.fecha_fin ? `${item.fecha_inicio} - ${item.fecha_fin}` : item.fecha_inicio || item.fecha),
+                          fecha_inicio: item.fecha_inicio || (item.FECHA && item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[0] : item.FECHA),
+                          fecha_fin: item.fecha_fin || (item.FECHA && item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[1] : null),
+                          fecha: item.fecha || item.FECHA || item.fecha_inicio,
+                          // Adăugăm numele pentru Vacaciones și Asuntos Propios
+                          nombre: item.NOMBRE || item.nombre || getUserName(item.email),
+                        };
+                        
+                        return (
+                          <MobileSolicitudItem
+                            key={item.id || item.email}
+                            solicitud={solicitudForMobile}
+                            getAusenciaDurationDisplay={getAusenciaDurationDisplay}
+                            formatDate={formatDate}
+                            formatDateRange={formatDateRange}
+                            getStatusColor={getStatusColor}
+                            getSolicitudTipoShort={getSolicitudTipoShort}
+                            getStatusIndicatorColor={getStatusIndicatorColor}
+                            justificantesPorAusencia={new Map()} // Nu avem justificante pentru "Todas las Solicitudes"
+                            openUploadJustificanteModal={() => {}} // Nu avem funcționalitate de upload pentru "Todas las Solicitudes"
+                            onEdit={handleEdit} // Adăugăm butonul Edit
+                            onDelete={handleDeleteClick} // Adăugăm butonul Delete
+                            isDeleting={isOperationLoading('delete')} // Stare de loading pentru delete
+                          />
+                        );
+                      }
+                      
+                      return (
                     <div key={item.id || item.email} className="card hover:shadow-xl transition-all duration-300 border-l-4 border-l-purple-500 group">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-4 flex-1">
@@ -5152,7 +6113,7 @@ export default function SolicitudesPage() {
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duration-300">
                             <span className="block text-xs font-medium text-gray-600 mb-1">Hora</span>
-                              <p className="text-sm font-bold text-gray-900">{item.HORA || item.hora || 'N/A'}</p>
+                              <p className="text-sm font-bold text-gray-900">{formatHora(item.HORA || item.hora) || 'N/A'}</p>
                             </div>
                             {(item.created_at || item.CREATED_AT || item.createdAt) && (
                               <div className="bg-green-50 p-4 rounded-lg group-hover:bg-green-100 transition-colors duration-300 border border-green-200">
@@ -5687,7 +6648,8 @@ export default function SolicitudesPage() {
                       )}
                     </div>
                   );
-                  })
+                  })}
+                  </div>
                 )}
               </div>
             )}
@@ -5695,8 +6657,8 @@ export default function SolicitudesPage() {
         ) : activeTab === 'estadisticas' ? (
           // Tab Estadísticas - Vacaciones y Asuntos Propios
           <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900">
+            <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center justify-between'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
+              <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-900`}>
                 Estadísticas de Solicitudes
               </h2>
               <button
@@ -5718,16 +6680,16 @@ export default function SolicitudesPage() {
                   }
                 }}
                 disabled={estadisticasLoading}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'} bg-purple-600 hover:bg-purple-700 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} font-medium transition-colors disabled:opacity-50 flex items-center gap-2`}
               >
                 {estadisticasLoading ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className={`${isMobile ? 'w-3 h-3 border-2' : 'w-4 h-4 border-2'} border-white border-t-transparent rounded-full animate-spin`}></div>
                     Cargando...
                   </>
                 ) : (
                   <>
-                    <RefreshCw className="w-4 h-4" />
+                    <RefreshCw className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} />
                     Actualizar
                   </>
                 )}
@@ -5735,12 +6697,12 @@ export default function SolicitudesPage() {
             </div>
 
             {estadisticasLoading ? (
-              <div className="flex justify-center py-12">
-                <LoadingSpinner size="lg" text="Cargando estadísticas..." />
+              <div className={`flex justify-center ${isMobile ? 'py-6' : 'py-12'}`}>
+                <LoadingSpinner size={isMobile ? 'md' : 'lg'} text="Cargando estadísticas..." />
               </div>
             ) : estadisticas.length === 0 ? (
-              <div className="text-center py-12 bg-gray-50 rounded-xl">
-                <p className="text-gray-600 mb-4">No hay estadísticas disponibles</p>
+              <div className={`text-center ${isMobile ? 'py-6 px-3' : 'py-12'} bg-gray-50 ${isMobile ? 'rounded-lg' : 'rounded-xl'}`}>
+                <p className={`${isMobile ? 'text-sm mb-3' : 'text-gray-600 mb-4'}`}>No hay estadísticas disponibles</p>
                 <button
                   onClick={async () => {
                     setEstadisticasLoading(true);
@@ -5759,38 +6721,38 @@ export default function SolicitudesPage() {
                       setEstadisticasLoading(false);
                     }
                   }}
-                  className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                  className={`${isMobile ? 'px-4 py-1.5 text-xs' : 'px-6 py-2'} bg-purple-600 hover:bg-purple-700 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} font-medium transition-colors`}
                 >
                   Cargar Estadísticas
                 </button>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full bg-white border border-gray-200 rounded-xl overflow-hidden shadow-lg">
+                <table className={`min-w-full bg-white border border-gray-200 ${isMobile ? 'rounded-lg' : 'rounded-xl'} overflow-hidden shadow-lg`}>
                   <thead className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
                     <tr>
-                      <th className="px-6 py-4 text-left text-sm font-bold sticky left-0 bg-purple-600 z-10">Empleado</th>
-                      <th className="px-6 py-4 text-left text-sm font-bold">Código</th>
-                      <th className="px-6 py-4 text-left text-sm font-bold">Grupo</th>
-                      <th className="px-6 py-4 text-center text-sm font-bold border-l-2 border-purple-400" colSpan={5}>
+                      <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold sticky left-0 bg-purple-600 z-10`}>Empleado</th>
+                      <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold`}>Código</th>
+                      <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold`}>Grupo</th>
+                      <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={5}>
                         🏖️ Vacaciones
                       </th>
-                      <th className="px-6 py-4 text-center text-sm font-bold border-l-2 border-purple-400" colSpan={3}>
+                      <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={3}>
                         📅 Asuntos Propios
                       </th>
                     </tr>
                     <tr className="bg-purple-500/90">
-                      <th className="px-6 py-2 text-xs font-medium sticky left-0 bg-purple-500/90 z-10"></th>
-                      <th className="px-6 py-2 text-xs font-medium"></th>
-                      <th className="px-6 py-2 text-xs font-medium"></th>
-                      <th className="px-4 py-2 text-xs font-medium border-l-2 border-purple-400">Anuales</th>
-                      <th className="px-4 py-2 text-xs font-medium">Generados</th>
-                      <th className="px-4 py-2 text-xs font-medium">Consumidos</th>
-                      <th className="px-4 py-2 text-xs font-medium">Rest. Año Pasado</th>
-                      <th className="px-4 py-2 text-xs font-medium">Restantes</th>
-                      <th className="px-4 py-2 text-xs font-medium border-l-2 border-purple-400">Anuales</th>
-                      <th className="px-4 py-2 text-xs font-medium">Consumidos</th>
-                      <th className="px-4 py-2 text-xs font-medium">Restantes</th>
+                      <th className={`${isMobile ? 'px-3 py-1 text-[9px]' : 'px-6 py-2 text-xs'} font-medium sticky left-0 bg-purple-500/90 z-10`}></th>
+                      <th className={`${isMobile ? 'px-3 py-1 text-[9px]' : 'px-6 py-2 text-xs'} font-medium`}></th>
+                      <th className={`${isMobile ? 'px-3 py-1 text-[9px]' : 'px-6 py-2 text-xs'} font-medium`}></th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l-2 border-purple-400`}>Anuales</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Generados</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Rest. Año Pasado</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l-2 border-purple-400`}>Anuales</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -5801,25 +6763,25 @@ export default function SolicitudesPage() {
                           idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
                         }`}
                       >
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900 sticky left-0 bg-inherit z-10 whitespace-nowrap">
+                        <td className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} font-medium text-gray-900 sticky left-0 bg-inherit z-10 whitespace-nowrap`}>
                           {emp.nombre}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">
+                        <td className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-gray-700 whitespace-nowrap`}>
                           {emp.codigo}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                        <td className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-gray-600 whitespace-nowrap`}>
                           {emp.grupo || '-'}
                         </td>
-                        <td className="px-4 py-4 text-sm text-center text-gray-700 border-l-2 border-gray-200">
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-gray-700 border-l-2 border-gray-200`}>
                           {emp.vacaciones.dias_anuales}
                         </td>
-                        <td className="px-4 py-4 text-sm text-center text-gray-700">
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-gray-700`}>
                           {emp.vacaciones.dias_generados_hasta_hoy.toFixed(1)}
                         </td>
-                        <td className="px-4 py-4 text-sm text-center text-gray-700">
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-gray-700`}>
                           {emp.vacaciones.dias_consumidos_aprobados}
                         </td>
-                        <td className="px-4 py-4 text-sm text-center">
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center`}>
                           {editingRestantes[emp.codigo] !== undefined ? (
                             <input
                               type="number"
@@ -5897,12 +6859,12 @@ export default function SolicitudesPage() {
                                   setEditingRestantes(newEditing);
                                 }
                               }}
-                              className="w-20 px-2 py-1 text-center border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                              className={`${isMobile ? 'w-12 text-[10px] px-1 py-0.5 border' : 'w-20 px-2 py-1 border-2'} text-center border-purple-300 ${isMobile ? 'rounded' : 'rounded-lg'} focus:ring-2 focus:ring-purple-500 focus:border-purple-500`}
                               autoFocus
                             />
                           ) : (
                             <span
-                              className="text-gray-600 font-medium cursor-pointer hover:text-purple-600 hover:underline"
+                              className={`${isMobile ? 'text-[10px]' : 'text-sm'} text-gray-600 font-medium cursor-pointer hover:text-purple-600 hover:underline`}
                               onClick={() => {
                                 setEditingRestantes({
                                   ...editingRestantes,
@@ -5915,7 +6877,7 @@ export default function SolicitudesPage() {
                             </span>
                           )}
                         </td>
-                        <td className={`px-4 py-4 text-sm text-center font-semibold ${
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center font-semibold ${
                           emp.vacaciones.dias_restantes < 5 
                             ? 'text-red-600' 
                             : emp.vacaciones.dias_restantes < 10 
@@ -5924,13 +6886,13 @@ export default function SolicitudesPage() {
                         }`}>
                           {emp.vacaciones.dias_restantes.toFixed(1)}
                         </td>
-                        <td className="px-4 py-4 text-sm text-center text-gray-700 border-l-2 border-gray-200">
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-gray-700 border-l-2 border-gray-200`}>
                           {emp.asuntos_propios.dias_anuales}
                         </td>
-                        <td className="px-4 py-4 text-sm text-center text-gray-700">
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-gray-700`}>
                           {emp.asuntos_propios.dias_consumidos_aprobados}
                         </td>
-                        <td className={`px-4 py-4 text-sm text-center font-semibold ${
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center font-semibold ${
                           emp.asuntos_propios.dias_restantes < 2 
                             ? 'text-red-600' 
                             : emp.asuntos_propios.dias_restantes < 4 
@@ -5945,21 +6907,21 @@ export default function SolicitudesPage() {
                 </table>
                 
                 {/* Butoane de export */}
-                <div className="mt-4 flex gap-3 justify-end">
+                <div className={`${isMobile ? 'mt-2' : 'mt-4'} flex ${isMobile ? 'flex-col gap-2' : 'gap-3'} ${isMobile ? '' : 'justify-end'}`}>
                   <button
                     onClick={handleExportEstadisticasExcel}
                     disabled={estadisticasLoading || estadisticas.length === 0}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'} bg-green-600 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
                   >
-                    <span>📊</span>
+                    <span className={isMobile ? 'text-sm' : ''}>📊</span>
                     <span>Exportar Excel</span>
                   </button>
                   <button
                     onClick={handleExportEstadisticasPDF}
                     disabled={estadisticasLoading || estadisticas.length === 0}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
                   >
-                    <span>📄</span>
+                    <span className={isMobile ? 'text-sm' : ''}>📄</span>
                     <span>Exportar PDF</span>
                   </button>
                 </div>
@@ -6182,8 +7144,20 @@ export default function SolicitudesPage() {
                 )}
 
                 {/* Período Solicitado - Calendar for Vacaciones or Asuntos Propios */}
-                {tipo === 'Vacaciones' ? (
-                  // Calendar for Vacaciones
+                {tipo === 'Vacaciones' && (
+                  <>
+                    {/* Recomandare pentru mobil să rotească telefonul */}
+                    {isMobile && (
+                      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">📱</span>
+                          <p className="text-sm font-medium text-blue-800">
+                            💡 Recomendación: Rota tu teléfono a horizontal para una mejor experiencia con el calendario
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {/* Calendar for Vacaciones */}
                   <div 
                     className="relative group p-4 sm:p-6"
                     style={{
@@ -6462,8 +7436,13 @@ export default function SolicitudesPage() {
                         </div>
                       </div>
                     )}
-
-                    {/* Occupied dates info for Asuntos Propios */}
+                    </div>
+                  </>
+                )}
+                
+                {/* Elemente comune pentru Vacaciones și Asuntos Propios */}
+                {(tipo === 'Vacaciones' || tipo === 'Asuntos Propios') && (
+                  <>
                     {!isOperationLoading('occupiedDates') && tipo !== 'Vacaciones' && occupiedDates.length > 0 && (
                       <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                         <p className="text-sm font-medium text-red-800">
@@ -6534,10 +7513,25 @@ export default function SolicitudesPage() {
                         </p>
                       </div>
                     )}
-                  </div>
-                ) : (
-                  // Calendar for Asuntos Propios
-                  <div 
+                  </>
+                )}
+                
+                {/* Calendar for Asuntos Propios - separate conditional */}
+                {tipo === 'Asuntos Propios' && (
+                  <>
+                    {/* Recomandare pentru mobil să rotească telefonul */}
+                    {isMobile && (
+                      <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">📱</span>
+                          <p className="text-sm font-medium text-purple-800">
+                            💡 Recomendación: Rota tu teléfono a horizontal para una mejor experiencia con el calendario
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {/* Calendar for Asuntos Propios */}
+                    <div 
                     className="relative group p-4 sm:p-6"
                     style={{
                       background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
@@ -6784,6 +7778,7 @@ export default function SolicitudesPage() {
                       </div>
                     )}
                   </div>
+                  </>
                 )}
 
                 {/* Cálculo de días - MEGA WOW Badge */}

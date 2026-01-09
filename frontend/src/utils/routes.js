@@ -34,6 +34,9 @@ export const routes = {
   getEmpleadoMe: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/me'
     : 'https://api.decaminoservicios.com/api/empleados/me',
+  confirmarCertificadoHandicap: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/confirmar-certificado-handicap'
+    : 'https://api.decaminoservicios.com/api/empleados/confirmar-certificado-handicap',
   getEstadisticasEmpleados: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/estadisticas'
     : 'https://api.decaminoservicios.com/api/empleados/estadisticas',

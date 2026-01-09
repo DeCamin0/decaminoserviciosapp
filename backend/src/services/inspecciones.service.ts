@@ -207,6 +207,8 @@ export class InspeccionesService {
         : new Date().toISOString();
       const nombreInspector =
         body.supervisor || body.inspector?.nume || 'necunoscut';
+      const codigoSupervisor =
+        body.supervisor_codigo || body.codigo_supervisor || null;
       const nombreArchivo = body.nr || 'default';
       const tipoInspeccion = body.type || 'necunoscut';
       const empleadoNombre = body.trabajador?.nume || '';
@@ -266,6 +268,7 @@ export class InspeccionesService {
           nombre_archivo,
           fecha_subida,
           \`Nombre Supervisor\`,
+          codigo_supervisor,
           Centro,
           Locacion,
           scor_total
@@ -278,6 +281,7 @@ export class InspeccionesService {
           ${this.escapeSql(nombreArchivo)},
           ${this.escapeSql(timestamp)},
           ${this.escapeSql(nombreInspector)},
+          ${codigoSupervisor ? this.escapeSql(codigoSupervisor) : 'NULL'},
           ${this.escapeSql(centroTrabajo)},
           ${this.escapeSql(locatie)},
           ${scorTotal !== null ? scorTotal : 'NULL'}

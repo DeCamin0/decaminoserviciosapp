@@ -118,6 +118,9 @@ export class FichajesService {
                 AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_any.window_start
                 AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_any.window_end)
           )
+          -- IMPORTANT: has_regularizacion = 1 doar pentru regularizări CONFIRMED sau REJECTED
+          -- Permite regularizarea dacă există PENDING sau NEEDS_REVIEW (nu blochează butonul)
+          AND fr_any.status IN ('CONFIRMED', 'REJECTED')
         WHERE f.CODIGO = ${this.escapeSql(codigoClean)}
           AND f.FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
           AND f.FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
@@ -383,6 +386,9 @@ export class FichajesService {
                 AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') >= fr_any.window_start
                 AND STR_TO_DATE(CONCAT(f.FECHA, ' ', f.HORA), '%Y-%m-%d %H:%i:%s') <= fr_any.window_end)
           )
+          -- IMPORTANT: has_regularizacion = 1 doar pentru regularizări CONFIRMED sau REJECTED
+          -- Permite regularizarea dacă există PENDING sau NEEDS_REVIEW (nu blochează butonul)
+          AND fr_any.status IN ('CONFIRMED', 'REJECTED')
         WHERE f.FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
           AND f.FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
         ORDER BY f.FECHA DESC, f.HORA DESC

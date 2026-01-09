@@ -1,10 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { Card } from './ui';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card, Modal } from './ui';
 import EmployeeMonthlyTable from './EmployeeMonthlyTable';
 import EmployeeDetailDrawer from './EmployeeDetailDrawer';
 import EmployeeAlertsTable from './EmployeeAlertsTable';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 import { routes } from '../utils/routes';
+import { useApi } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContextBase';
+import ExcelJS from 'exceljs';
+
+// Declarație de tip pentru pdfMake
+declare global {
+  interface Window {
+    pdfMake?: unknown;
+  }
+}
 
 // Tipuri de date
 export type ResumenEmpleado = {
@@ -179,6 +189,77 @@ export type DetalleEmpleado = {
     horas_horario_mes?: number;
     fuente_mes?: string;
   }>;
+};
+
+// Tipuri pentru date externe
+type BajaMedica = {
+  CODIGO?: string;
+  codigo?: string;
+  Codigo_Empleado?: string;
+  codigoEmpleado?: string;
+  fecha_inicio?: string;
+  fechaInicio?: string;
+  FECHA_INICIO?: string;
+  'Fecha baja'?: string;
+  'Fecha Baja'?: string;
+  'Fecha de baja'?: string;
+  fecha_baja?: string;
+  fechaBaja?: string;
+  'FECHA BAJA'?: string;
+  fecha_fin?: string;
+  fechaFin?: string;
+  FECHA_FIN?: string;
+  'Fecha de alta'?: string;
+  'Fecha de Alta'?: string;
+  'Fecha alta'?: string;
+  'Fecha Alta'?: string;
+  fecha_alta?: string;
+  fechaAlta?: string;
+  'FECHA ALTA'?: string;
+  [key: string]: unknown;
+};
+
+type ActivityLog = {
+  id?: number;
+  timestamp?: string;
+  action?: string;
+  user?: string;
+  email?: string;
+  grupo?: string;
+  updateby?: string;
+  userAgent?: string;
+  url?: string;
+  sessionId?: string;
+  ip?: string;
+  [key: string]: unknown;
+};
+
+type EmpleadoRaw = {
+  CODIGO?: string | number;
+  codigo?: string | number;
+  'NOMBRE / APELLIDOS'?: string;
+  NOMBRE?: string;
+  nombre?: string;
+  'CORREO ELECTRONICO'?: string;
+  correo?: string;
+  email?: string;
+  ESTADO?: string;
+  estado?: string;
+  GRUPO?: string;
+  grupo?: string;
+  [key: string]: unknown;
+};
+
+type DetalleZilnic = {
+  fecha: string;
+  plan?: number;
+  plan_fuente?: string;
+  fichado?: number;
+  delta?: number;
+  incompleto?: number;
+  ordinarias?: number;
+  excedente?: number;
+  [key: string]: unknown;
 };
 
 // Interfaces pentru componente UI
@@ -1081,9 +1162,10 @@ interface HorasTrabajadasProps {
   soloEmpleado?: boolean;
   codigo?: string;
   empleadoNombre?: string;
+  isMobile?: boolean;
 }
 
-const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmpleado = false, codigo, empleadoNombre }) => {
+const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmpleado = false, codigo, empleadoNombre, isMobile = false }) => {
   console.log('🔍 HorasTrabajadas component props:', { empleadoId, soloEmpleado });
   const [selectedMes, setSelectedMes] = useState<string>(() => {
     const currentDate = new Date();
@@ -1098,9 +1180,31 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
   const [changingMonth, setChangingMonth] = useState(false);
   const [showMonthSelector, setShowMonthSelector] = useState(false);
   const [tablaActiva, setTablaActiva] = useState<'resumen' | 'alertas'>('resumen');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showSinRegistrosModal, setShowSinRegistrosModal] = useState(false);
+  const [empleadosSinRegistros, setEmpleadosSinRegistros] = useState<Array<{
+    codigo: string, 
+    nombre: string, 
+    grupo?: string,
+    ultimoLog?: {
+      timestamp: string;
+      action: string;
+      url?: string;
+    } | null;
+  }>>([]);
+  const [loadingSinRegistros, setLoadingSinRegistros] = useState(false);
   
   // Error handling
   const { handleApiError, handleNetworkError } = useErrorHandler();
+  const { callApi } = useApi();
+  const { user: authUser } = useAuth();
+  
+  // Verifică dacă utilizatorul este Admin, Supervisor sau Developer
+  const canViewSinRegistros = useMemo(() => {
+    if (!authUser) return false;
+    const grupo = (authUser.GRUPO || authUser.grupo || '').toString().trim().toUpperCase();
+    return grupo === 'ADMIN' || grupo === 'SUPERVISOR' || grupo === 'DEVELOPER';
+  }, [authUser]);
 
   // Cargar datos cuando cambia el mes o el tipo de reporte
   useEffect(() => {
@@ -1396,85 +1500,508 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
     }
   };
 
+  // Funcție pentru a normaliza datele (similar cu Fichaje.jsx)
+  const normalizeDateInput = (dateStr: string): string | null => {
+    if (!dateStr) return null;
+    // Dacă este deja în format ISO (YYYY-MM-DD), returnează direct
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+    // Încearcă să parseze alte formate
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
+    return date.toISOString().split('T')[0];
+  };
+
+  // Funcție pentru a verifica dacă un angajat este în baja médica activă
+  const isEmpleadoEnBajaMedica = (codigo: string, bajasMedicas: BajaMedica[]): boolean => {
+    if (!bajasMedicas || bajasMedicas.length === 0) return false;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const bajaActiva = bajasMedicas.find((baja: BajaMedica) => {
+      // Verifică dacă baja este pentru acest angajat
+      const bajaCodigo = String(baja.CODIGO || baja.codigo || baja.Codigo_Empleado || baja.codigoEmpleado || '').trim();
+      if (bajaCodigo !== codigo) return false;
+      
+      const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja['Fecha de baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || baja.fechaBaja || '';
+      const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha de alta'] || baja['Fecha de Alta'] || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
+      
+      if (!fechaInicio) return false;
+      
+      const inicio = normalizeDateInput(fechaInicio);
+      const fin = fechaFin ? normalizeDateInput(fechaFin) : null;
+      
+      if (!inicio) return false;
+      
+      const inicioDate = new Date(inicio);
+      inicioDate.setHours(0, 0, 0, 0);
+      
+      // Dacă există fechaFin (fecha_alta), verifică dacă este în trecut
+      if (fin) {
+        const finDate = new Date(fin);
+        finDate.setHours(0, 0, 0, 0);
+        
+        // Dacă fechaFin este în trecut, baja médica nu este activă
+        if (today > finDate) {
+          return false;
+        }
+        
+        // Verifică dacă ziua curentă este în intervalul [inicio, fin] (inclusiv fin)
+        return today >= inicioDate && today <= finDate;
+      } else {
+        // Dacă nu există fechaFin, consideră activă până în prezent
+        return today >= inicioDate;
+      }
+    });
+    
+    return !!bajaActiva;
+  };
+
+  // Funcție pentru a identifica angajații fără registre până la data curentă
+  const handleBuscarSinRegistros = async () => {
+    setLoadingSinRegistros(true);
+    setShowSinRegistrosModal(true);
+    
+    try {
+      // Obține lista completă de angajați
+      const resultEmpleados = await callApi(routes.getEmpleados);
+      
+      if (!resultEmpleados.success || !resultEmpleados.data) {
+        setEmpleadosSinRegistros([]);
+        setLoadingSinRegistros(false);
+        return;
+      }
+      
+      const allEmpleados = Array.isArray(resultEmpleados.data) ? resultEmpleados.data : [resultEmpleados.data];
+      
+      // Obține lista de bajas médicas pentru toți angajații
+      let bajasMedicas: BajaMedica[] = [];
+      try {
+        const token = localStorage.getItem('auth_token');
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(routes.getBajasMedicas, {
+          method: 'GET',
+          headers: headers,
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          bajasMedicas = Array.isArray(data) ? data : [];
+        }
+      } catch (error) {
+        console.warn('Error fetching bajas médicas (continuando sin filtrar):', error);
+        // Continuăm fără să filtrăm după baja médica dacă nu putem obține datele
+      }
+      
+      // Data curentă
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Obține anul și luna curentă din selectedMes
+      const [year, month] = selectedMes.split('-');
+      
+      // Obține log-urile pentru toți angajații (pentru a găsi ultimul log)
+      let allLogs: ActivityLog[] = [];
+      try {
+        const token = localStorage.getItem('auth_token');
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const logsUrl = import.meta.env.DEV
+          ? 'http://localhost:3000/api/activity-logs'
+          : 'https://api.decaminoservicios.com/api/activity-logs';
+        
+        const logsResponse = await fetch(`${logsUrl}?limit=10000`, {
+          method: 'GET',
+          headers: headers,
+        });
+        
+        if (logsResponse.ok) {
+          const logsData = await logsResponse.json();
+          allLogs = Array.isArray(logsData.logs) ? logsData.logs : (Array.isArray(logsData) ? logsData : []);
+        }
+      } catch (error) {
+        console.warn('Error fetching activity logs (continuando sin logs):', error);
+        // Continuăm fără log-uri dacă nu putem obține datele
+      }
+      
+      // Filtrează angajații care nu au registre până la data curentă
+      const sinRegistros = allEmpleados.filter((emp: EmpleadoRaw) => {
+        const codigo = String(emp.CODIGO || emp.codigo || '').trim();
+        if (!codigo) return false;
+        
+        // Exclude angajații inactivi (doar includem cei cu ESTADO === 'ACTIVO')
+        const estado = (emp.ESTADO || emp.estado || '').toString().trim().toUpperCase();
+        if (estado !== 'ACTIVO') {
+          return false;
+        }
+        
+        // Exclude anumite grupuri care nu necesită registre de fichaje
+        const grupo = (emp.GRUPO || emp.grupo || '').toString().trim().toUpperCase();
+        const gruposExcluidos = ['ADMIN', 'DEVELOPER', 'MANAGER', 'SUPERVISOR'];
+        if (gruposExcluidos.includes(grupo)) {
+          return false;
+        }
+        
+        // Exclude angajații care sunt în baja médica activă
+        if (isEmpleadoEnBajaMedica(codigo, bajasMedicas)) {
+          return false;
+        }
+        
+        // Caută angajatul în resumenData
+        const resumenEmpleado = resumenData.find(r => String(r.empleadoId) === codigo);
+        
+        // Dacă nu apare în resumenData, nu are registre
+        if (!resumenEmpleado) {
+          return true;
+        }
+        
+        // Verifică dacă are detalii zilnice cu registre până la data curentă
+        if (resumenEmpleado.detaliiZilnice && resumenEmpleado.detaliiZilnice.length > 0) {
+          // Verifică dacă are cel puțin o zi cu fichado > 0 până la data curentă
+          const tieneRegistros = resumenEmpleado.detaliiZilnice.some((detalle: DetalleZilnic) => {
+            const fechaDetalle = detalle.fecha;
+            // Compară doar zilele din luna curentă până la data curentă
+            if (fechaDetalle && fechaDetalle.startsWith(`${year}-${month}`)) {
+              const fechaDate = new Date(fechaDetalle);
+              fechaDate.setHours(0, 0, 0, 0);
+              if (fechaDate <= today) {
+                const fichado = detalle.fichado || 0;
+                return fichado > 0;
+              }
+            }
+            return false;
+          });
+          
+          return !tieneRegistros;
+        }
+        
+        // Verifică dacă horasTrabajadas este 0 sau null
+        const horasTrabajadas = resumenEmpleado.horasTrabajadas || resumenEmpleado.totalTrabajadas || 0;
+        const horasNum = typeof horasTrabajadas === 'string' 
+          ? (horasTrabajadas.includes(':') ? parseFloat(horasTrabajadas.split(':')[0]) : parseFloat(horasTrabajadas))
+          : (Number(horasTrabajadas) || 0);
+        
+        return horasNum === 0;
+      }).map((emp: EmpleadoRaw) => {
+        const codigo = String(emp.CODIGO || emp.codigo || '').trim();
+        const nombre = emp['NOMBRE / APELLIDOS'] || emp.NOMBRE || emp.nombre || 'Sin nombre';
+        const email = emp['CORREO ELECTRONICO'] || emp.correo || emp.email || '';
+        
+        // Găsește ultimul log pentru acest angajat (după email sau nume)
+        const logsEmpleado = allLogs.filter((log: ActivityLog) => {
+          const logEmail = (log.email || '').toString().trim().toLowerCase();
+          const logUser = (log.user || '').toString().trim();
+          const empEmailLower = email.toLowerCase();
+          const empNombreLower = nombre.toLowerCase();
+          
+          return (
+            (logEmail && logEmail === empEmailLower) ||
+            (logUser && logUser.toLowerCase().includes(empNombreLower)) ||
+            (logUser && empNombreLower.includes(logUser.toLowerCase()))
+          );
+        });
+        
+        // Sortează după timestamp desc și ia primul (ultimul log)
+        const ultimoLog = logsEmpleado.length > 0
+          ? logsEmpleado.sort((a: ActivityLog, b: ActivityLog) => {
+              const timeA = new Date(a.timestamp || 0).getTime();
+              const timeB = new Date(b.timestamp || 0).getTime();
+              return timeB - timeA;
+            })[0]
+          : null;
+        
+        return {
+          codigo,
+          nombre,
+          grupo: emp.GRUPO || emp.grupo || '',
+          ultimoLog: ultimoLog ? {
+            timestamp: ultimoLog.timestamp,
+            action: ultimoLog.action || 'unknown',
+            url: ultimoLog.url
+          } : null
+        };
+      });
+      
+      setEmpleadosSinRegistros(sinRegistros);
+    } catch (error) {
+      console.error('Error fetching empleados sin registros:', error);
+      setEmpleadosSinRegistros([]);
+    } finally {
+      setLoadingSinRegistros(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    if (!empleadosSinRegistros || empleadosSinRegistros.length === 0) {
+      alert('No hay datos para exportar a PDF.');
+      return;
+    }
+
+    try {
+      const ensurePdfMake = () => new Promise((resolve, reject) => {
+        if (window.pdfMake) return resolve(window.pdfMake);
+        const s1 = document.createElement('script');
+        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
+        s1.onload = () => {
+          const s2 = document.createElement('script');
+          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
+          s2.onload = () => resolve(window.pdfMake);
+          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
+          document.head.appendChild(s2);
+        };
+        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
+        document.head.appendChild(s1);
+      });
+
+      await ensurePdfMake();
+
+      const today = new Date();
+      const formattedDate = today.toLocaleDateString('es-ES');
+      const formattedMonth = new Date(selectedMes + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+      const tableBody = [
+        [{ text: 'Nº', style: 'tableHeader' }, { text: 'Nombre', style: 'tableHeader' }, { text: 'Código', style: 'tableHeader' }, { text: 'Grupo', style: 'tableHeader' }]
+      ];
+
+      empleadosSinRegistros.forEach((emp, index) => {
+        tableBody.push([
+          { text: (index + 1).toString(), style: 'tableCell' },
+          { text: emp.nombre, style: 'tableCell' },
+          { text: emp.codigo, style: 'tableCell' },
+          { text: emp.grupo || '', style: 'tableCell' }
+        ]);
+      });
+
+      const docDefinition = {
+        content: [
+          { text: 'DE CAMINO SERVICIOS AUXILIARES', style: 'companyName' },
+          { text: 'Reporte de Empleados Sin Registros', style: 'reportTitle' },
+          { text: `Período: ${formattedMonth} hasta ${formattedDate}`, style: 'period' },
+          { text: `Total de empleados sin registros: ${empleadosSinRegistros.length}`, style: 'totalCount', margin: [0, 10, 0, 10] },
+          {
+            table: {
+              headerRows: 1,
+              widths: [30, '*', 80, 100],
+              body: tableBody
+            },
+            layout: {
+              fillColor: function (rowIndex: number) {
+                return (rowIndex % 2 === 0) ? '#F9F9F9' : null;
+              }
+            }
+          }
+        ],
+        styles: {
+          companyName: { fontSize: 16, bold: true, alignment: 'center', margin: [0, 0, 0, 10] },
+          reportTitle: { fontSize: 14, bold: true, alignment: 'center', margin: [0, 0, 0, 5] },
+          period: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 10] },
+          totalCount: { fontSize: 12, bold: true, alignment: 'left', margin: [0, 0, 0, 5] },
+          tableHeader: { fontSize: 10, bold: true, fillColor: '#EEEEEE', alignment: 'center', padding: [5, 5, 5, 5] },
+          tableCell: { fontSize: 9, alignment: 'left', padding: [5, 5, 5, 5] }
+        },
+        defaultStyle: {
+          columnGap: 20,
+        }
+      };
+
+      const filename = `empleados_sin_registros_${selectedMes.replace('-', '_')}.pdf`;
+      window.pdfMake.createPdf(docDefinition).download(filename);
+
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('Error al exportar PDF. Por favor, inténtalo de nuevo.');
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (!empleadosSinRegistros || empleadosSinRegistros.length === 0) {
+      alert('No hay datos para exportar a Excel.');
+      return;
+    }
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Empleados Sin Registros');
+
+      // Header
+      worksheet.mergeCells('A1:D1');
+      worksheet.getCell('A1').value = 'DE CAMINO SERVICIOS AUXILIARES';
+      worksheet.getCell('A1').font = { bold: true, size: 16 };
+      worksheet.getCell('A1').alignment = { horizontal: 'center' };
+
+      worksheet.mergeCells('A2:D2');
+      worksheet.getCell('A2').value = 'Reporte de Empleados Sin Registros';
+      worksheet.getCell('A2').font = { bold: true, size: 14 };
+      worksheet.getCell('A2').alignment = { horizontal: 'center' };
+
+      const today = new Date();
+      const formattedDate = today.toLocaleDateString('es-ES');
+      const formattedMonth = new Date(selectedMes + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+      worksheet.mergeCells('A3:D3');
+      worksheet.getCell('A3').value = `Período: ${formattedMonth} hasta ${formattedDate}`;
+      worksheet.getCell('A3').font = { size: 10 };
+      worksheet.getCell('A3').alignment = { horizontal: 'center' };
+
+      worksheet.mergeCells('A4:D4');
+      worksheet.getCell('A4').value = `Total de empleados sin registros: ${empleadosSinRegistros.length}`;
+      worksheet.getCell('A4').font = { bold: true, size: 12 };
+      worksheet.getCell('A4').alignment = { horizontal: 'left' };
+      worksheet.getRow(4).height = 20; // Add some padding
+
+      // Table Headers
+      worksheet.getRow(6).values = ['Nº', 'Nombre', 'Código', 'Grupo'];
+      worksheet.getRow(6).font = { bold: true, size: 10 };
+      worksheet.getRow(6).eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFEEEDED' } // Light gray
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { horizontal: 'center' };
+      });
+
+      // Data Rows
+      empleadosSinRegistros.forEach((emp, index) => {
+        worksheet.addRow([index + 1, emp.nombre, emp.codigo, emp.grupo || '']);
+        worksheet.lastRow.eachCell((cell) => {
+          cell.font = { size: 9 };
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+        });
+      });
+
+      // Adjust column widths
+      worksheet.columns.forEach(column => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, cell => {
+          const columnLength = cell.value ? cell.value.toString().length : 10;
+          if (columnLength > maxLength) {
+            maxLength = columnLength;
+          }
+        });
+        column.width = maxLength < 10 ? 10 : maxLength + 2;
+      });
+
+      const filename = `empleados_sin_registros_${selectedMes.replace('-', '_')}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      alert('Error al exportar Excel. Por favor, inténtalo de nuevo.');
+    }
+  };
 
   return (
-    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ padding: isMobile ? '8px' : '24px', display: 'flex', flexDirection: 'column', gap: isMobile ? '8px' : '16px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: isMobile ? '12px' : '24px', gap: isMobile ? '12px' : '0' }}>
         <div>
-          <Title level={2} style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>
+          <Title level={2} style={{ margin: 0, fontSize: isMobile ? '1rem' : '1.5rem', fontWeight: 600 }}>
             Horas Trabajadas
           </Title>
-          <Text style={{ color: '#777', fontSize: '14px' }}>
+          <Text style={{ color: '#777', fontSize: isMobile ? '11px' : '14px' }}>
             {tablaActiva === 'resumen'
               ? (tipoReporte === 'mensual' 
-                  ? 'Resumen mensual de horas trabajadas por empleado'
-                  : 'Resumen anual de horas trabajadas por empleado')
-              : 'Visor de alertas por empleado (días con excedentes positivos o negativos)'}
+                  ? (isMobile ? 'Resumen mensual' : 'Resumen mensual de horas trabajadas por empleado')
+                  : (isMobile ? 'Resumen anual' : 'Resumen anual de horas trabajadas por empleado'))
+              : (isMobile ? 'Alertas' : 'Visor de alertas por empleado (días con excedentes positivos o negativos)')}
           </Text>
         </div>
         
-        <div className="flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
+        <div className={`flex ${isMobile ? 'flex-col' : 'flex-col md:flex-row md:items-center'} gap-2`}>
+          <div className={`flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl ${isMobile ? 'p-0.5' : 'p-1'}`}>
             <button
               onClick={() => setTablaActiva('resumen')}
-              className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+              className={`${isMobile ? 'px-2 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} font-medium rounded-lg transition-all duration-200 ${
                 tablaActiva === 'resumen'
-                  ? 'bg-white text-blue-700 shadow'
-                  : 'text-gray-600 hover:text-blue-600'
+                  ? 'bg-white dark:bg-gray-700 text-blue-700 dark:text-blue-400 shadow'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400'
               }`}
             >
-              📊 Resumen
+              {isMobile ? '📊 Res.' : '📊 Resumen'}
             </button>
             <button
               onClick={() => setTablaActiva('alertas')}
-              className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+              className={`${isMobile ? 'px-2 py-1.5 text-[10px]' : 'px-3 py-2 text-sm'} font-medium rounded-lg transition-all duration-200 ${
                 tablaActiva === 'alertas'
-                  ? 'bg-white text-red-600 shadow'
-                  : 'text-gray-600 hover:text-red-600'
+                  ? 'bg-white dark:bg-gray-700 text-red-600 dark:text-red-400 shadow'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400'
               }`}
             >
-              ⚠️ Alertas
+              {isMobile ? '⚠️ Alert.' : '⚠️ Alertas'}
             </button>
           </div>
           {/* Buton Registros Anuales */}
           <button
             onClick={() => setTipoReporte(tipoReporte === 'mensual' ? 'anual' : 'mensual')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
+            className={`${isMobile ? 'px-2 py-1.5 text-[10px]' : 'px-4 py-2 text-sm'} rounded-lg font-medium transition-all duration-300 ${
               tipoReporte === 'anual'
-                ? 'bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200'
-                : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
+                ? 'bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 border border-orange-300 dark:border-orange-700 hover:bg-orange-200 dark:hover:bg-orange-800'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700'
             }`}
           >
-            📊 {tipoReporte === 'mensual' ? 'Registros Anuales' : 'Registros Mensuales'}
+            📊 {isMobile ? (tipoReporte === 'mensual' ? 'Reg. Anual' : 'Reg. Mensual') : (tipoReporte === 'mensual' ? 'Registros Anuales' : 'Registros Mensuales')}
           </button>
           <div className="relative month-selector">
             <button
               onClick={() => setShowMonthSelector(!showMonthSelector)}
               disabled={changingMonth}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 transition-all duration-300 ${
+              className={`flex items-center gap-1.5 ${isMobile ? 'rounded-lg px-2 py-1.5' : 'rounded-xl px-4 py-2'} transition-all duration-300 ${
                 changingMonth 
-                  ? 'bg-blue-100 border border-blue-300 cursor-not-allowed' 
-                  : 'bg-blue-50 border border-blue-200 hover:bg-blue-100 cursor-pointer'
+                  ? 'bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-700 cursor-not-allowed' 
+                  : 'bg-blue-50 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-800 cursor-pointer'
               }`}
             >
               {changingMonth ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <div className={`animate-spin rounded-full ${isMobile ? 'h-3 w-3 border-b' : 'h-4 w-4 border-b-2'} border-blue-600 dark:border-blue-400`}></div>
               ) : (
-                <span className="text-blue-600">📅</span>
+                <span className={`text-blue-600 dark:text-blue-400 ${isMobile ? 'text-xs' : ''}`}>📅</span>
               )}
-              <span className={`font-medium transition-colors ${
-                changingMonth ? 'text-blue-500' : 'text-blue-700'
+              <span className={`${isMobile ? 'text-[10px]' : 'text-sm'} font-medium transition-colors ${
+                changingMonth ? 'text-blue-500 dark:text-blue-400' : 'text-blue-700 dark:text-blue-300'
               }`}>
                 {tipoReporte === 'mensual' 
-                  ? (selectedMes ? new Date(selectedMes + '-01').toLocaleDateString('es-ES', { 
-                      year: 'numeric', 
-                      month: 'long' 
-                    }) : 'Seleccionar mes')
-                  : (selectedMes ? selectedMes.split('-')[0] : 'Seleccionar año')
+                  ? (selectedMes ? (isMobile 
+                      ? new Date(selectedMes + '-01').toLocaleDateString('es-ES', { month: 'short', year: '2-digit' })
+                      : new Date(selectedMes + '-01').toLocaleDateString('es-ES', { year: 'numeric', month: 'long' })) 
+                    : (isMobile ? 'Mes' : 'Seleccionar mes'))
+                  : (selectedMes ? selectedMes.split('-')[0] : (isMobile ? 'Año' : 'Seleccionar año'))
                 }
               </span>
-              <span className={`transition-colors ${changingMonth ? 'text-blue-400' : 'text-blue-500'}`}>
+              <span className={`${isMobile ? 'text-[8px]' : 'text-sm'} transition-colors ${changingMonth ? 'text-blue-400' : 'text-blue-500 dark:text-blue-400'}`}>
                 {changingMonth ? '⏳' : showMonthSelector ? '▲' : '▼'}
               </span>
             </button>
@@ -1578,20 +2105,108 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
         </div>
       )}
 
+      {/* Buton pentru angajații fără registre - doar pentru Admin și Supervisor */}
+      {canViewSinRegistros && (
+        <div className={`mb-3 ${isMobile ? 'px-0' : ''}`}>
+          <button
+            onClick={handleBuscarSinRegistros}
+            className={`w-full ${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2.5 text-sm'} bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 rounded-lg text-orange-700 dark:text-orange-300 font-medium hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex items-center justify-center gap-2`}
+          >
+            <span>⚠️</span>
+            <span>{isMobile ? 'Sin Registros' : 'Ver Empleados Sin Registros'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Barra de búsqueda */}
+      <div className={`mb-3 ${isMobile ? 'px-0' : ''}`}>
+        <div className="relative">
+          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none">
+            <svg className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder={isMobile ? "Buscar..." : "Buscar por nombre, código, estado..."}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className={`w-full ${isMobile ? 'pl-9 pr-8 py-2 text-sm' : 'pl-10 pr-9 py-2.5'} border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              aria-label="Limpiar búsqueda"
+            >
+              <svg className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {searchTerm && (
+          <div className={`mt-1.5 ${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 dark:text-gray-400`}>
+            {(() => {
+              const filtered = resumenData.filter(emp => {
+                const searchLower = searchTerm.toLowerCase();
+                return (
+                  emp.empleadoNombre?.toLowerCase().includes(searchLower) ||
+                  String(emp.empleadoId).includes(searchLower) ||
+                  emp.estado?.toLowerCase().includes(searchLower) ||
+                  emp.grupo?.toLowerCase().includes(searchLower) ||
+                  emp.centroTrabajo?.toLowerCase().includes(searchLower) ||
+                  emp.tipoContrato?.toLowerCase().includes(searchLower)
+                );
+              });
+              return `${filtered.length} resultado${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`;
+            })()}
+          </div>
+        )}
+      </div>
+
       {/* Tabla de resumen / alertas */}
       <Card>
         {tablaActiva === 'resumen' ? (
           <EmployeeMonthlyTable 
-            data={resumenData} 
+            data={(() => {
+              if (!searchTerm) return resumenData;
+              const searchLower = searchTerm.toLowerCase();
+              return resumenData.filter(emp => {
+                return (
+                  emp.empleadoNombre?.toLowerCase().includes(searchLower) ||
+                  String(emp.empleadoId).includes(searchLower) ||
+                  emp.estado?.toLowerCase().includes(searchLower) ||
+                  emp.grupo?.toLowerCase().includes(searchLower) ||
+                  emp.centroTrabajo?.toLowerCase().includes(searchLower) ||
+                  emp.tipoContrato?.toLowerCase().includes(searchLower)
+                );
+              });
+            })()} 
             onVerDetalle={handleVerDetalle}
             loading={loading}
+            isMobile={isMobile}
           />
         ) : (
           <EmployeeAlertsTable
-            data={resumenData}
+            data={(() => {
+              if (!searchTerm) return resumenData;
+              const searchLower = searchTerm.toLowerCase();
+              return resumenData.filter(emp => {
+                return (
+                  emp.empleadoNombre?.toLowerCase().includes(searchLower) ||
+                  String(emp.empleadoId).includes(searchLower) ||
+                  emp.estado?.toLowerCase().includes(searchLower) ||
+                  emp.grupo?.toLowerCase().includes(searchLower) ||
+                  emp.centroTrabajo?.toLowerCase().includes(searchLower) ||
+                  emp.tipoContrato?.toLowerCase().includes(searchLower)
+                );
+              });
+            })()}
             onVerDetalle={handleVerDetalle}
             onDescargarPDF={handleDescargarPDF}
             loading={loading}
+            isMobile={isMobile}
           />
         )}
       </Card>
@@ -1604,7 +2219,119 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
         onDescargarPDF={handleDescargarPDF}
         loading={loading}
         tipoReporte={tipoReporte}
+        isMobile={isMobile}
       />
+
+      {/* Modal pentru angajații fără registre */}
+      <Modal isOpen={showSinRegistrosModal} onClose={() => setShowSinRegistrosModal(false)}>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-800 dark:text-gray-200`}>
+              Empleados Sin Registros
+            </h2>
+            <button
+              onClick={() => setShowSinRegistrosModal(false)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 dark:text-gray-400 mb-4`}>
+            Empleados que no tienen ningún registro en {selectedMes ? new Date(selectedMes + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }) : 'el mes actual'} hasta la fecha actual ({new Date().toLocaleDateString('es-ES')}).
+          </div>
+
+          {loadingSinRegistros ? (
+            <div className="flex justify-center items-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
+              <span className="ml-2 text-gray-600">Cargando...</span>
+            </div>
+          ) : empleadosSinRegistros.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <div className="text-4xl mb-2">✅</div>
+              <div className={`${isMobile ? 'text-sm' : 'text-base'} font-medium`}>
+                Todos los empleados tienen registros
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 dark:text-gray-400`}>
+                  Total: <span className="font-semibold text-orange-600 dark:text-orange-400">{empleadosSinRegistros.length}</span> empleado{empleadosSinRegistros.length !== 1 ? 's' : ''}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportPDF}
+                    className={`${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5`}
+                    title="Exportar PDF"
+                  >
+                    <svg className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    {!isMobile && <span>PDF</span>}
+                  </button>
+                  <button
+                    onClick={handleExportExcel}
+                    className={`${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5`}
+                    title="Exportar Excel"
+                  >
+                    <svg className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {!isMobile && <span>Excel</span>}
+                  </button>
+                </div>
+              </div>
+              <div className={`max-h-96 overflow-y-auto space-y-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                {empleadosSinRegistros.map((emp, index) => (
+                  <div
+                    key={emp.codigo || index}
+                    className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+                  >
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
+                      <span className="text-orange-600 dark:text-orange-400 font-semibold">
+                        {index + 1}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                        {emp.nombre}
+                      </div>
+                      <div className="text-gray-600 dark:text-gray-400">
+                        Código: {emp.codigo}
+                        {emp.grupo && ` • Grupo: ${emp.grupo}`}
+                      </div>
+                      {emp.ultimoLog ? (
+                        <div className="mt-1 text-gray-500 dark:text-gray-500 text-[10px]">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                            Último log: {new Date(emp.ultimoLog.timestamp).toLocaleDateString('es-ES', { 
+                              day: '2-digit', 
+                              month: '2-digit', 
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })} ({emp.ultimoLog.action})
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-gray-400 dark:text-gray-600 text-[10px]">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                            Sin logs en la aplicación
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

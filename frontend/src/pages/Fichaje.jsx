@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useLocation } from '../contexts/LocationContextBase';
 import { useApi } from '../hooks/useApi';
+import { useBreakpoint } from '../hooks/useBreakpoint';
 import { Card, Button, Modal, LoadingSpinner, Input, Notification } from '../components/ui';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
@@ -21,6 +22,31 @@ import { calculateCuadranteHours, calculateHorarioHours } from '../utils/cuadran
 import { debug as loggerDebug, warn, error as logError, success, demo, info } from '../utils/logger';
 import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 
+// Cache global pentru checkConfirmation - previne apeluri duplicate pentru aceeași combinație codigo + data
+const checkConfirmationCache = new Map(); // key: "codigo_data", value: Promise
+
+// Funcție helper pentru a obține sau crea un promise pentru checkConfirmation
+const getCheckConfirmationPromise = (callApi, codigo, data) => {
+  const cacheKey = `${codigo}_${data}`;
+  
+  // Dacă există deja un promise în cache pentru această combinație, îl returnăm
+  if (checkConfirmationCache.has(cacheKey)) {
+    return checkConfirmationCache.get(cacheKey);
+  }
+  
+  // Altfel, creăm un nou promise și îl adăugăm în cache
+  const promise = callApi(routes.checkConfirmation(codigo, data))
+    .finally(() => {
+      // Ștergem din cache după ce promise-ul s-a terminat (succes sau eroare)
+      // Folosim un timeout scurt pentru a permite și altor apeluri simultane să folosească același promise
+      setTimeout(() => {
+        checkConfirmationCache.delete(cacheKey);
+      }, 1000); // Ștergem după 1 secundă pentru a permite apelurile simultane
+    });
+  
+  checkConfirmationCache.set(cacheKey, promise);
+  return promise;
+};
 
 // Agrego función para normalizar hora
 function padTime(t) {
@@ -326,11 +352,300 @@ function generateSolicitudId() {
   return `SOL_${timestamp}_${random}`;
 }
 
+// Component pentru item-ul de ausencia pe mobile (compact, similar cu TimeCheck)
+function MobileAusenciaItem({ item, getAusenciaDurationDisplay, formatDateRange }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const durationDisplay = getAusenciaDurationDisplay(item);
+  
+  // Formatează data
+  const formattedDate = item.FECHA 
+    ? formatDateRange(item.FECHA) 
+    : (item.fecha_inicio && item.fecha_fin 
+      ? formatDateRange(`${item.fecha_inicio} - ${item.fecha_fin}`)
+      : (item.data ? item.data.split('-').reverse().join('/') : '—'));
+  
+  // Determină tipul și culoarea
+  const getTipoColor = () => {
+    if (item.tipo === 'Salida del Centro') return 'bg-orange-500';
+    if (item.tipo === 'Regreso al Centro') return 'bg-blue-500';
+    return 'bg-purple-500';
+  };
+  
+  // Scurtează tipul pentru afișare compactă
+  const getTipoShort = () => {
+    if (item.tipo === 'Salida del Centro') return 'Sal.';
+    if (item.tipo === 'Regreso al Centro') return 'Reg.';
+    return item.tipo?.substring(0, 4) || 'Aus.';
+  };
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (portocaliu/albastru/violet) */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getTipoColor()}`}></div>
+        
+        {/* Data - text mic */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          {formattedDate.length > 12 ? formattedDate.substring(0, 12) + '...' : formattedDate}
+        </span>
+        
+        {/* Duration - text mic */}
+        <span className={`text-[10px] font-medium min-w-[45px] ${
+          durationDisplay.isDayBased 
+            ? 'text-blue-600 dark:text-blue-400' 
+            : 'text-purple-600 dark:text-purple-400'
+        }`}>
+          {durationDisplay.text}
+        </span>
+        
+        {/* Tipo - text mic, scurtat */}
+        <span className="text-[11px] font-semibold flex-1 text-gray-700 dark:text-gray-300">
+          {getTipoShort()}
+        </span>
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Tipo complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
+              {item.tipo}
+            </span>
+          </div>
+          
+          {/* Duration complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">
+              {durationDisplay.isDayBased ? '📅' : '⏱️'} Duración:
+            </span>
+            <span className={`text-[10px] font-medium ${
+              durationDisplay.isDayBased 
+                ? 'text-blue-700 dark:text-blue-300' 
+                : 'text-purple-700 dark:text-purple-300'
+            }`}>
+              {durationDisplay.text}
+            </span>
+          </div>
+          
+          {/* Motivo */}
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+            <div className="text-[10px] font-medium text-orange-600 dark:text-orange-400 mb-1">📝 Motivo</div>
+            <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words">
+              {item.motivo || 'Sin motivo especificado'}
+            </p>
+          </div>
+          
+          {/* Locație */}
+          {item.locatia && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+              <div className="text-[10px] font-medium text-blue-600 dark:text-blue-400 mb-1">📍 Ubicación</div>
+              <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words mb-2">
+                {item.locatia}
+              </p>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const encodedAddress = encodeURIComponent(item.locatia);
+                  window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+              >
+                🌍 Ver en Google Maps
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Component pentru item-ul de registru pe mobile (compact, similar cu TimeCheck)
+function MobileRegistroItem({ item, authUser, isManager, callApi, setNotification, fetchLogs, selectedMonth, setConfirmarJornadaData, setShowConfirmarJornadaModal, routes }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const formattedDate = item.data ? item.data.split('-').reverse().join('/') : '—';
+  const isEntrada = item.tipo === 'Entrada';
+  
+  const handleRegularizar = async (e) => {
+    e.stopPropagation();
+    try {
+      const employeeCodigo = item.codigo || item.CODIGO;
+      const userCodigo = authUser?.CODIGO || authUser?.codigo;
+      const isOwnRecord = employeeCodigo && userCodigo && employeeCodigo.toString() === userCodigo.toString();
+      
+      if (isManager && !isOwnRecord) {
+        const result = await callApi(routes.requestRegularizacion, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+            fecha: item.data,
+          }),
+        });
+        if (result.success) {
+          setNotification({
+            type: 'success',
+            title: 'Regularización solicitada',
+            message: 'El empleado recibirá una notificación para confirmar.',
+          });
+          fetchLogs(selectedMonth).catch(err => {
+            console.error('Error reloading logs:', err);
+          });
+        }
+      } else {
+        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+        const resultData = checkResult.data || checkResult;
+        
+        // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
+        if (checkResult.success && resultData.needs_confirmation && resultData.scheduled_minutes > 0) {
+          setConfirmarJornadaData({
+            ...resultData,
+            fecha: item.data,
+            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+          });
+          setShowConfirmarJornadaModal(true);
+        } else if (checkResult.success && resultData.scheduled_minutes === 0) {
+          // Nu există program prevăzut - nu se permite regularizarea
+          setNotification({
+            type: 'info',
+            title: 'No se puede regularizar',
+            message: 'No hay horario previsto para este día. No se puede regularizar.',
+          });
+        } else {
+          setNotification({
+            type: 'error',
+            title: 'Error',
+            message: 'No se pudo verificar la diferencia. Intenta de nuevo.',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error regularizando:', err);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Error al solicitar regularización. Intenta de nuevo.',
+      });
+    }
+  };
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (verde/roșu) */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          isEntrada ? 'bg-green-500' : 'bg-red-500'
+        }`}></div>
+        
+        {/* Data - text mic */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          {formattedDate}
+        </span>
+        
+        {/* Timp - text mic */}
+        <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold min-w-[50px]">
+          {item.hora}
+        </span>
+        
+        {/* Tipo - text mic, scurtat */}
+        <span className={`text-[11px] font-semibold flex-1 ${
+          isEntrada ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+        }`}>
+          {isEntrada ? 'E' : 'S'}
+        </span>
+        
+        {/* Duration (doar pentru Salida) - text foarte mic */}
+        {item.tipo === 'Salida' && item.duration && (
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 min-w-[45px]">
+            {item.duration}
+          </span>
+        )}
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Tipo complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            <span className={`text-[10px] font-semibold ${
+              isEntrada ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+            }`}>
+              {item.tipo}
+            </span>
+          </div>
+          
+          {/* Duration detaliat (pentru Salida) */}
+          {item.tipo === 'Salida' && (
+            <div className="space-y-1">
+              {item.duration && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">⏱ Registrado:</span>
+                  <span className="text-[10px] text-gray-700 dark:text-gray-300">{item.duration}</span>
+                </div>
+              )}
+              {item.effective_duration && item.effective_duration.trim() !== '' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-green-600 dark:text-green-400">✅ Efectivo:</span>
+                  <span className="text-[10px] text-green-700 dark:text-green-300 font-medium">{item.effective_duration}</span>
+                </div>
+              )}
+              {!item.duration && (!item.effective_duration || item.effective_duration.trim() === '') && (
+                <span className="text-[10px] text-red-600 dark:text-red-400">⚠️ Sin duración</span>
+              )}
+              {/* Buton Regularizar */}
+              {item.duration && 
+                !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') && (
+                <button
+                  onClick={handleRegularizar}
+                  className="mt-1 inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors"
+                >
+                  🔄 Regularizar
+                </button>
+              )}
+            </div>
+          )}
+          
+          {/* Locație */}
+          {(item.address || item.loc) && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+              <div className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mb-1">📍 Ubicación</div>
+              <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words">
+                {item.address || `${item.loc?.latitude?.toFixed(5)}, ${item.loc?.longitude?.toFixed(5)}`}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Componente para el fichaje personal (Mi Fichaje)
 function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, setNotification, horarioAsignado, loadingHorario, cuadranteAsignado, loadingCuadrante, isTimeWithinSchedule, getTimeRestrictionMessage }) {
   const { t } = useTranslation();
   const { user: authUser, isAuthenticated } = useAuth();
   const { callApi } = useApi();
+  const { isMobile } = useBreakpoint();
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = authUser?.isManager || false;
   const [logs, setLogs] = useState([]);
@@ -1465,27 +1780,50 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
         );
         
-        // Procesează în batch-uri de 10 pentru a nu suprasolicita serverul
-        const BATCH_SIZE = 10;
+        // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
+        // Folosim un Set pentru a stoca combinațiile unice de codigo + data
+        const uniqueChecks = new Map();
+        const userCodigo = authUser?.CODIGO || authUser?.codigo;
+        for (const item of itemsToCheck) {
+          const codigo = item.codigo || item.CODIGO || userCodigo;
+          const data = item.data;
+          if (codigo && data) {
+            const uniqueKey = `${codigo}_${data}`;
+            if (!uniqueChecks.has(uniqueKey)) {
+              uniqueChecks.set(uniqueKey, { codigo, data });
+            }
+          }
+        }
+        
+        // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
         (async () => {
-          for (let i = 0; i < itemsToCheck.length; i += BATCH_SIZE) {
-            const batch = itemsToCheck.slice(i, i + BATCH_SIZE);
-            // Nu așteptăm batch-ul să se termine - procesăm în paralel și actualizăm incremental
-            batch.forEach(async (item) => {
-              const key = `${item.codigo || item.CODIGO || authUser?.CODIGO || authUser?.codigo}_${item.data}_${item.tipo}`;
-              try {
-                const checkResult = await callApi(routes.checkConfirmation(item.codigo || authUser?.CODIGO || authUser?.codigo, item.data));
-                const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+          for (const { codigo, data } of uniqueChecks.values()) {
+            try {
+              const checkResult = await getCheckConfirmationPromise(callApi, codigo, data);
+              const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+              
+              // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
+              // Căutăm toate registrele care corespund acestui codigo + data
+              const matchingItems = itemsToCheck.filter(item => 
+                (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
+              );
+              
+              for (const item of matchingItems) {
+                const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
                 setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
-              } catch (err) {
-                // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+              }
+            } catch (err) {
+              // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+              const matchingItems = itemsToCheck.filter(item => 
+                (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
+              );
+              for (const item of matchingItems) {
+                const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
                 setNeedsRegularizationMap(prev => ({ ...prev, [key]: true }));
               }
-            });
-            // Mic delay între batch-uri pentru a nu suprasolicita serverul (doar dacă sunt multe batch-uri)
-            if (i + BATCH_SIZE < itemsToCheck.length && itemsToCheck.length > BATCH_SIZE * 2) {
-              await new Promise(resolve => setTimeout(resolve, 50)); // Delay redus la 50ms
             }
+            // Delay între fiecare request pentru a evita rate limiting
+            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
           }
         })().catch(err => {
           loggerDebug('Error checking needs regularization:', err);
@@ -1798,13 +2136,20 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               'La diferencia supera 15 minutos. Se ha enviado automáticamente para revisión.',
             duration: 6000,
           });
-        } else if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data) {
+        } else if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data && result.data?.confirmation_data?.scheduled_minutes > 0) {
           setConfirmarJornadaData({
             ...result.data.confirmation_data,
             fecha: fechaMadrid,
             employee_codigo: userCode,
           });
           setShowConfirmarJornadaModal(true);
+        } else if (tipo === 'Salida' && result.data?.confirmation_data?.scheduled_minutes === 0) {
+          // Nu există program prevăzut - nu se permite regularizarea
+          setNotification({
+            type: 'info',
+            title: 'No se puede regularizar',
+            message: 'No hay horario previsto para este día. No se puede regularizar.',
+          });
         }
 
         // Verifică warning pentru Entrada tardía
@@ -2461,16 +2806,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       {loadingAlerts && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-sm text-yellow-700">
           <div className="h-4 w-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium">Comprobando alertas mensuales...</span>
+          <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>Comprobando alertas mensuales...</span>
         </div>
       )}
 
       {!loadingAlerts && monthlyAlerts && monthlyAlerts.total > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-md flex items-start gap-3">
-          <div className="text-2xl">⚠️</div>
+        <div className={`bg-yellow-50 border border-yellow-200 rounded-xl ${isMobile ? 'p-3' : 'p-4'} shadow-md flex items-start gap-3`}>
+          <div className={isMobile ? 'text-xl' : 'text-2xl'}>⚠️</div>
           <div>
-            <h3 className="text-lg font-semibold text-yellow-800">Alertas mensuales detectadas</h3>
-            <p className="text-sm text-yellow-700">
+            <h3 className={`${isMobile ? 'text-sm' : 'text-lg'} font-semibold text-yellow-800`}>Alertas mensuales detectadas</h3>
+            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-yellow-700`}>
               {(() => {
                 const parts = [];
                 if (monthlyAlerts.positivos > 0) {
@@ -2512,15 +2857,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       {/* Card cu ceas și butoane */}
       <Card>
         <div className="text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-red-600 text-2xl">🕒</span>
+          <div className={`${isMobile ? 'w-12 h-12 mb-3' : 'w-16 h-16 mb-4'} bg-red-100 rounded-full flex items-center justify-center mx-auto`}>
+            <span className={`text-red-600 ${isMobile ? 'text-xl' : 'text-2xl'}`}>🕒</span>
           </div>
-          <div className="text-4xl font-bold text-gray-900 mb-2">
+          <div className={`${isMobile ? 'text-3xl' : 'text-4xl'} font-bold text-gray-900 mb-2`}>
             {madridTimeStr || now.toLocaleTimeString()}
           </div>
-          <div className="text-xs text-gray-500 mb-6">Hora (Europe/Madrid)</div>
+          <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 mb-6`}>Hora (Europe/Madrid)</div>
           {/* Locația curentă afișată sub ceas - se obține doar când utilizatorul apasă Fichar (GDPR compliant) */}
-          <div className="mb-6 text-sm text-gray-600">
+          <div className={`mb-6 ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
             <div className="flex items-start justify-center gap-2">
               <span className="text-red-600">📍</span>
               <div className="text-center">
@@ -2549,17 +2894,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           {/* Informații despre orarul/cuadrantul asignat */}
           <div className="mb-6">
             {loadingCuadrante || loadingHorario ? (
-              <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+              <div className={`flex items-center justify-center gap-2 ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
                 <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 <span>Cargando horario...</span>
               </div>
             ) : cuadranteAsignado ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className={`bg-green-50 border border-green-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-green-600">📋</span>
-                  <span className="font-semibold text-green-800">Cuadrantes Asignado</span>
+                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-green-800`}>Cuadrantes Asignado</span>
                 </div>
-                <div className="text-sm text-green-700">
+                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-green-700`}>
                   <div><strong>Empleado:</strong> {cuadranteAsignado.NOMBRE || 'N/A'}</div>
                   <div><strong>Centro:</strong> {cuadranteAsignado.CENTRO || 'N/A'}</div>
                   <div><strong>Mes:</strong> {cuadranteAsignado.LUNA || 'N/A'}</div>
@@ -2581,12 +2926,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 </div>
               </div>
             ) : horarioAsignado ? (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className={`bg-blue-50 border border-blue-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-blue-600">📅</span>
-                  <span className="font-semibold text-blue-800">Horario Asignado</span>
+                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-blue-800`}>Horario Asignado</span>
                 </div>
-                <div className="text-sm text-blue-700">
+                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-700`}>
                   <div><strong>Centro:</strong> {horarioAsignado.centroNombre}</div>
                   <div><strong>Grupo:</strong> {horarioAsignado.grupoNombre}</div>
                   <div><strong>Horario:</strong> {horarioAsignado.nombre}</div>
@@ -2607,12 +2952,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 </div>
               </div>
             ) : (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className={`bg-yellow-50 border border-yellow-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-yellow-600">⚠️</span>
-                  <span className="font-semibold text-yellow-800">Sin Horario Asignado</span>
+                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-yellow-800`}>Sin Horario Asignado</span>
                 </div>
-                <div className="text-sm text-yellow-700">
+                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-yellow-700`}>
                   No se ha encontrado un horario específico para tu centro y grupo de trabajo.
                 </div>
               </div>
@@ -2622,18 +2967,18 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           {/* Mesaj informativ când butoanele sunt blocate */}
           {/* Avertisment pentru Baja Médica */}
           {isOnBajaMedica && currentBajaMedica && (
-            <div className="mb-4 p-4 bg-gradient-to-r from-rose-50 to-pink-50 border-2 border-rose-300 rounded-xl shadow-lg">
+            <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-gradient-to-r from-rose-50 to-pink-50 border-2 border-rose-300 rounded-xl shadow-lg`}>
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg flex items-center justify-center shadow-md">
-                    <span className="text-white text-xl">🏥</span>
+                  <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg flex items-center justify-center shadow-md`}>
+                    <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'}`}>🏥</span>
                   </div>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-base font-bold text-rose-800 mb-1">
+                  <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-rose-800 mb-1`}>
                     ⚠️ Estás en Baja Médica
                   </h3>
-                  <p className="text-rose-700 text-sm mb-2">
+                  <p className={`text-rose-700 ${isMobile ? 'text-xs' : 'text-sm'} mb-2`}>
                     Actualmente estás de baja médica. No puedes registrar fichajes durante este período. Por favor, consulta con tu médico y sigue las indicaciones.
                   </p>
                   {currentBajaMedica.startDate && (
@@ -2670,16 +3015,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
             if (!trabajaEnFestivos) {
               return (
-                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-blue-50 border border-blue-200 rounded-xl`}>
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <span className="text-blue-600 text-lg">🎉</span>
+                    <div className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-blue-100 rounded-lg flex items-center justify-center`}>
+                      <span className={`text-blue-600 ${isMobile ? 'text-base' : 'text-lg'}`}>🎉</span>
                     </div>
                     <div>
-                      <p className="text-blue-800 font-semibold">
+                      <p className={`text-blue-800 ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
                         Hoy es día festivo
                       </p>
-                      <p className="text-blue-600 text-sm mt-1">
+                      <p className={`text-blue-600 ${isMobile ? 'text-[10px]' : 'text-sm'} mt-1`}>
                         Según nuestros datos, no trabajas en días festivos, por lo que no necesitas fichar hoy. ¡Disfruta del día!
                       </p>
                     </div>
@@ -2692,16 +3037,16 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
           {/* Avertisment pentru alte absențe */}
           {isOnVacationOrAbsence && !isOnBajaMedica && (
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-yellow-50 border border-yellow-200 rounded-xl`}>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <span className="text-yellow-600 text-lg">⚠️</span>
+                <div className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-yellow-100 rounded-lg flex items-center justify-center`}>
+                  <span className={`text-yellow-600 ${isMobile ? 'text-base' : 'text-lg'}`}>⚠️</span>
                 </div>
                 <div>
-                  <p className="text-yellow-800 font-semibold">
+                  <p className={`text-yellow-800 ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
                     No puedes fichar durante {currentAbsenceType}
                   </p>
-                  <p className="text-yellow-600 text-sm">
+                  <p className={`text-yellow-600 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>
                     Los botones de Entrada y Salida están deshabilitados
                   </p>
                 </div>
@@ -2711,13 +3056,13 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
           {/* Mesaj informativ când butoanele sunt blocate din cauza orarului SAU când s-a completat tura */}
           {!isOnVacationOrAbsence && (horarioAsignado || cuadranteAsignado) && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-blue-50 border border-blue-200 rounded-xl`}>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <span className="text-blue-600 text-lg">⏰</span>
+                <div className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-blue-100 rounded-lg flex items-center justify-center`}>
+                  <span className={`text-blue-600 ${isMobile ? 'text-base' : 'text-lg'}`}>⏰</span>
                 </div>
                 <div>
-                  <p className="text-blue-800 font-semibold">
+                  <p className={`text-blue-800 ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
                     {(() => {
                       // Verifică dacă s-a completat tura de azi
                       const today = new Date().toISOString().split('T')[0];
@@ -2800,7 +3145,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             <button
               onClick={() => handleFichar('Entrada')}
               disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)}
-              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
+              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
                 isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)
                   ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
                   : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
@@ -2823,12 +3168,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               {/* Glow effect */}
               <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
               <div className="relative flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30">
-                  <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">🚪</span>
+                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
+                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>🚪</span>
                 </div>
                 <div className="text-left">
-                  <div className="text-lg font-bold">{fichando ? 'Marcando...' : 'Entrada'}</div>
-                  <div className="text-xs text-white/80">Iniciar jornada</div>
+                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>{fichando ? 'Marcando...' : 'Entrada'}</div>
+                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Iniciar jornada</div>
                 </div>
               </div>
             </button>
@@ -2836,7 +3181,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             <button
               onClick={() => handleFichar('Salida')}
               disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)}
-              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
+              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
                 isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)
                   ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
                   : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
@@ -2859,12 +3204,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               {/* Glow effect */}
               <div className="absolute inset-0 rounded-xl bg-red-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
               <div className="relative flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30">
-                  <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">🚪</span>
+                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
+                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>🚪</span>
                 </div>
                 <div className="text-left">
-                  <div className="text-lg font-bold">{fichando ? 'Marcando...' : 'Salida'}</div>
-                  <div className="text-xs text-white/80">Finalizar jornada</div>
+                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>{fichando ? 'Marcando...' : 'Salida'}</div>
+                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Finalizar jornada</div>
                 </div>
               </div>
             </button>
@@ -2872,7 +3217,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             <button
               onClick={() => handleFichar('Salida', 'Salida para incidencia', { bypassSchedule: true })}
               disabled={fichando || isOnVacationOrAbsence || !canUseIncidenceExit}
-              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
+              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
                 isOnVacationOrAbsence || !canUseIncidenceExit
                   ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
                   : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
@@ -2887,12 +3232,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             >
               <div className="absolute inset-0 rounded-xl bg-amber-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
               <div className="relative flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30">
-                  <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">⚡</span>
+                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
+                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>⚡</span>
                 </div>
                 <div className="text-left">
-                  <div className="text-lg font-bold">{fichando ? 'Marcando...' : 'Salida para incidencia'}</div>
-                  <div className="text-xs text-white/80">Salida imprevista</div>
+                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>{fichando ? 'Marcando...' : 'Salida Incidencia'}</div>
+                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Salida imprevista</div>
                 </div>
               </div>
             </button>
@@ -2900,7 +3245,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             <button
               onClick={hasCompletedCycle ? onFicharIncidencia : null}
               disabled={fichando || !hasCompletedCycle}
-              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
+              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
                 hasCompletedCycle && !fichando
                   ? 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
                   : 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
@@ -2914,18 +3259,18 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   : 'bg-gray-400'
               }`}></div>
               <div className="relative flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30">
-                  <span className={`text-xl transition-transform duration-300 ${
+                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
+                  <span className={`${isMobile ? 'text-base' : 'text-xl'} transition-transform duration-300 ${
                     hasCompletedCycle && !fichando ? 'group-hover:scale-110' : ''
                   }`}>
                     {!hasCompletedCycle ? '🔒' : '⚠️'}
                   </span>
                 </div>
                 <div className="text-left">
-                  <div className="text-lg font-bold">
+                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>
                     Registrar Ausencia
                   </div>
-                  <div className="text-xs text-white/80">
+                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>
                     {!hasCompletedCycle ? 'Completa ciclo primero' : 'Registro especial'}
                   </div>
                 </div>
@@ -2935,14 +3280,14 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           
           {/* Mensaje explicativo para incidencia */}
           {!hasCompletedCycle && (
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className={`mt-4 ${isMobile ? 'p-3' : 'p-4'} bg-amber-50 border border-amber-200 rounded-lg`}>
               <div className="flex items-center">
-                <span className="text-amber-600 text-lg mr-3">ℹ️</span>
+                <span className={`text-amber-600 ${isMobile ? 'text-base' : 'text-lg'} mr-3`}>ℹ️</span>
                 <div>
-                  <p className="text-amber-800 font-medium">
+                  <p className={`text-amber-800 ${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>
                     Para registrar una ausencia médica o personal
                   </p>
-                  <p className="text-amber-600 text-sm">
+                  <p className={`text-amber-600 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>
                     Primero debes hacer <strong>Salida</strong> para terminar tu jornada
                   </p>
                 </div>
@@ -2952,15 +3297,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           
           {/* Feedback pentru ultimul marcaj */}
           {lastFichaje && (
-            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className={`mt-4 ${isMobile ? 'p-3' : 'p-4'} bg-green-50 border border-green-200 rounded-lg`}>
               <div className="flex items-center">
-                <span className="text-green-600 text-lg mr-2">✅</span>
+                <span className={`text-green-600 ${isMobile ? 'text-base' : 'text-lg'} mr-2`}>✅</span>
                 <div>
-                  <p className="text-green-800 font-medium">
+                  <p className={`text-green-800 ${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>
                     {lastFichaje.tipo} marcado a las {lastFichaje.hora}
                   </p>
                   {lastFichaje.address && (
-                    <p className="text-green-600 text-sm">{lastFichaje.address}</p>
+                    <p className={`text-green-600 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>{lastFichaje.address}</p>
                   )}
                 </div>
               </div>
@@ -2969,19 +3314,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
           {/* Feedback pentru incidencia */}
           {incidenciaMessage && (
-            <div className={`mt-4 p-4 border rounded-lg ${
+            <div className={`mt-4 ${isMobile ? 'p-3' : 'p-4'} border rounded-lg ${
               incidenciaMessage.includes('succes') 
                 ? 'bg-green-50 border-green-200' 
                 : 'bg-red-50 border-red-200'
             }`}>
               <div className="flex items-center">
-                <span className={`text-lg mr-2 ${
+                <span className={`${isMobile ? 'text-base' : 'text-lg'} mr-2 ${
                   incidenciaMessage.includes('succes') ? 'text-green-600' : 'text-red-600'
                 }`}>
                   {incidenciaMessage.includes('succes') ? '✅' : '❌'}
                 </span>
                 <div>
-                  <p className={`font-medium ${
+                  <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium ${
                     incidenciaMessage.includes('succes') ? 'text-green-800' : 'text-red-800'
                   }`}>
                     {incidenciaMessage}
@@ -3072,37 +3417,46 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 </div>
               </div>
               
-              {/* Tab switcher */}
-              <div className="flex w-full flex-wrap sm:flex-nowrap bg-gray-100 rounded-xl p-1 gap-2 sm:w-auto sm:gap-1">
+              {/* Tab switcher - Optimizat pentru mobile */}
+              <div className={`flex w-full ${isMobile ? 'justify-between' : 'flex-wrap sm:flex-nowrap'} bg-gray-100 dark:bg-gray-800 rounded-xl ${isMobile ? 'p-0.5' : 'p-1'} ${isMobile ? 'gap-0.5' : 'gap-2 sm:w-auto sm:gap-1'}`}>
                 <button
                   onClick={() => setActiveTab('registros')}
-                  className={`flex-1 sm:flex-none text-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  className={`${isMobile ? 'flex-1 flex flex-col items-center justify-center px-2 py-2' : 'flex-1 sm:flex-none text-center px-4 py-2'} rounded-lg font-medium transition-all duration-200 ${
                     activeTab === 'registros'
-                      ? 'bg-white text-red-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
+                      ? 'bg-white dark:bg-gray-700 text-red-600 dark:text-red-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                   }`}
                 >
-                  📊 Registros
+                  <span className={isMobile ? 'text-base' : ''}>📊</span>
+                  <span className={`${isMobile ? 'text-[10px] mt-0.5' : ''}`}>
+                    {isMobile ? 'Reg.' : 'Registros'}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveTab('ausencias')}
-                  className={`flex-1 sm:flex-none text-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  className={`${isMobile ? 'flex-1 flex flex-col items-center justify-center px-2 py-2' : 'flex-1 sm:flex-none text-center px-4 py-2'} rounded-lg font-medium transition-all duration-200 ${
                     activeTab === 'ausencias'
-                      ? 'bg-white text-orange-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
+                      ? 'bg-white dark:bg-gray-700 text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                   }`}
                 >
-                  ⚠️ Ausencias
+                  <span className={isMobile ? 'text-base' : ''}>⚠️</span>
+                  <span className={`${isMobile ? 'text-[10px] mt-0.5' : ''}`}>
+                    {isMobile ? 'Aus.' : 'Ausencias'}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveTab('horas-trabajadas')}
-                  className={`flex-1 sm:flex-none text-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  className={`${isMobile ? 'flex-1 flex flex-col items-center justify-center px-2 py-2' : 'flex-1 sm:flex-none text-center px-4 py-2'} rounded-lg font-medium transition-all duration-200 ${
                     activeTab === 'horas-trabajadas'
-                      ? 'bg-white text-purple-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-800'
+                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                   }`}
                 >
-                  ⏰ Horas Trabajadas
+                  <span className={isMobile ? 'text-base' : ''}>⏰</span>
+                  <span className={`${isMobile ? 'text-[10px] mt-0.5' : ''}`}>
+                    {isMobile ? 'Horas' : 'Horas Trabajadas'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -3178,7 +3532,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   </div>
                 </div>
                 
-                {/* Buton ULTRA MODERN "Hoy" - 3D + Glassmorphism - RESPONSIVE */}
+                {/* Buton ULTRA MODERN "Hoy" - 3D + Glassmorphism - RESPONSIVE - Ascuns pe mobile */}
+                {!isMobile && (
                 <button
                   onClick={() => {
                     const currentDate = new Date();
@@ -3228,6 +3583,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                     <div className="absolute inset-0 bg-white/20 scale-0 group-active:scale-100 transition-transform duration-300 ease-out"></div>
                   </div>
                 </button>
+                )}
               </div>
             )}
             
@@ -3242,7 +3598,27 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   <div className="text-center text-gray-500 py-8">
                       {changingMonth ? "No hay registros para este mes." : "No se han registrado marcajes aún."}
                   </div>
+                ) : isMobile ? (
+                  // Mobile: Listă compactă (similar cu TimeCheck)
+                  <div className="space-y-1.5">
+                    {logs.map((item, index) => (
+                      <MobileRegistroItem
+                        key={index}
+                        item={item}
+                        authUser={authUser}
+                        isManager={isManager}
+                        callApi={callApi}
+                        setNotification={setNotification}
+                        fetchLogs={fetchLogs}
+                        selectedMonth={selectedMonth}
+                        setConfirmarJornadaData={setConfirmarJornadaData}
+                        setShowConfirmarJornadaModal={setShowConfirmarJornadaModal}
+                        routes={routes}
+                      />
+                    ))}
+                  </div>
                 ) : (
+                // Desktop: Layout original (carduri mari)
                 <div className="space-y-3">
                   {logs.map((item, index) => (
                 <div key={index} className="card hover:shadow-lg transition-all duration-200 border-l-4 border-l-green-500">
@@ -3321,16 +3697,24 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                         }
                                       } else {
                                         // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
-                                        const checkResult = await callApi(routes.checkConfirmation(item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data));
+                                        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
                                         const resultData = checkResult.data || checkResult;
                                         
-                                        if (checkResult.success) {
+                                        // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
+                                        if (checkResult.success && resultData.needs_confirmation && resultData.scheduled_minutes > 0) {
                                           setConfirmarJornadaData({
                                             ...resultData,
                                             fecha: item.data,
                                             employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
                                           });
                                           setShowConfirmarJornadaModal(true);
+                                        } else if (checkResult.success && resultData.scheduled_minutes === 0) {
+                                          // Nu există program prevăzut - nu se permite regularizarea
+                                          setNotification({
+                                            type: 'info',
+                                            title: 'No se puede regularizar',
+                                            message: 'No hay horario previsto para este día. No se puede regularizar.',
+                                          });
                                         } else {
                                           setNotification({
                                             type: 'error',
@@ -3391,7 +3775,20 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   <div className="text-center text-gray-500 py-8">
                       {changingMonth ? "No hay ausencias para este mes." : "No se han registrado ausencias aún."}
                   </div>
+                ) : isMobile ? (
+                  // Mobile: Listă compactă (similar cu lista de registros)
+                  <div className="space-y-1.5">
+                    {ausencias.map((item, index) => (
+                      <MobileAusenciaItem
+                        key={index}
+                        item={item}
+                        getAusenciaDurationDisplay={getAusenciaDurationDisplay}
+                        formatDateRange={formatDateRange}
+                      />
+                    ))}
+                  </div>
                 ) : (
+                // Desktop: Layout original (carduri mari)
                 <div className="space-y-3">
                   {ausencias.map((item, index) => {
                     const durationDisplay = getAusenciaDurationDisplay(item);
@@ -3466,15 +3863,18 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 </div>
               )) : activeTab === 'horas-trabajadas' ? (
                 // Componenta HorasTrabajadas pentru angajatul curent
-                <div className="mt-4">
+                <div className={isMobile ? "mt-2" : "mt-4"}>
                   {loggerDebug('HorasTrabajadas props:', { empleadoId: authUser?.CODIGO, soloEmpleado: true, authUser })}
                   {authUser && authUser.CODIGO ? (
-                    <HorasTrabajadas 
-                      empleadoId={authUser.CODIGO} 
-                      soloEmpleado={true}
-                      codigo={authUser.CODIGO || authUser.codigo}
-                      empleadoNombre={authUser['NOMBRE / APELLIDOS'] || authUser.NOMBRE || authUser.nombre}
-                    />
+                    <div className={isMobile ? "space-y-2" : ""}>
+                      <HorasTrabajadas 
+                        empleadoId={authUser.CODIGO} 
+                        soloEmpleado={true}
+                        codigo={authUser.CODIGO || authUser.codigo}
+                        empleadoNombre={authUser['NOMBRE / APELLIDOS'] || authUser.NOMBRE || authUser.nombre}
+                        isMobile={isMobile}
+                      />
+                    </div>
                   ) : (
                     <div className="flex justify-center py-8">
                       <LoadingSpinner size="lg" text="Cargando datos del usuario..." />
@@ -3560,12 +3960,244 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     </div>
   );
 }
+// Component pentru item-ul de registru empleado pe mobile (compact, similar cu TimeCheck)
+function MobileRegistroEmpleadoItem({ item, index, authUser, isManager, callApi, setNotification, fetchRegistros, selectedMonth, setConfirmarJornadaData, setShowConfirmarJornadaModal, routes, onEdit, onDelete }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const formattedDate = item.data ? item.data.split('-').reverse().join('/') : '—';
+  const isEntrada = item.tipo === 'Entrada';
+  
+  const handleRegularizar = async (e) => {
+    e.stopPropagation();
+    try {
+      const employeeCodigo = item.codigo || item.CODIGO;
+      const userCodigo = authUser?.CODIGO || authUser?.codigo;
+      const isOwnRecord = employeeCodigo && userCodigo && employeeCodigo.toString() === userCodigo.toString();
+      
+      if (isManager && !isOwnRecord) {
+        const result = await callApi(routes.requestRegularizacion, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+            fecha: item.data,
+          }),
+        });
+        if (result.success) {
+          setNotification({
+            type: 'success',
+            title: 'Regularización solicitada',
+            message: 'El empleado recibirá una notificación para confirmar.',
+          });
+          fetchRegistros(selectedMonth).catch(err => {
+            console.error('Error reloading registros:', err);
+          });
+        }
+      } else {
+        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+        const resultData = checkResult.data || checkResult;
+        
+        // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
+        if (checkResult.success && resultData.needs_confirmation && resultData.scheduled_minutes > 0) {
+          setConfirmarJornadaData({
+            ...resultData,
+            fecha: item.data,
+            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+          });
+          setShowConfirmarJornadaModal(true);
+        } else if (checkResult.success && resultData.scheduled_minutes === 0) {
+          // Nu există program prevăzut - nu se permite regularizarea
+          setNotification({
+            type: 'info',
+            title: 'No se puede regularizar',
+            message: 'No hay horario previsto para este día. No se puede regularizar.',
+          });
+        } else {
+          setNotification({
+            type: 'error',
+            title: 'Error',
+            message: 'No se pudo verificar la diferencia. Intenta de nuevo.',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error regularizando:', err);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Error al solicitar regularización. Intenta de nuevo.',
+      });
+    }
+  };
+  
+  // Extrage inițialele din numele complet
+  const getEmpleadoInitials = () => {
+    if (!item.empleado) return '—';
+    const parts = item.empleado.trim().split(' ').filter(part => part.length > 0);
+    if (parts.length === 0) return '—';
+    
+    // Dacă are un singur cuvânt, returnează primele 2-3 caractere
+    if (parts.length === 1) {
+      return parts[0].substring(0, 3).toUpperCase();
+    }
+    
+    // Pentru mai multe cuvinte, extrage prima literă din fiecare
+    return parts.map(part => part.charAt(0).toUpperCase()).join('.');
+  };
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (verde/roșu) */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          isEntrada ? 'bg-green-500' : 'bg-red-500'
+        }`}></div>
+        
+        {/* Empleado - inițiale */}
+        <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium min-w-[50px] truncate">
+          {getEmpleadoInitials()}
+        </span>
+        
+        {/* Data - text mic */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          {formattedDate}
+        </span>
+        
+        {/* Timp - text mic */}
+        <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold min-w-[50px]">
+          {item.hora}
+        </span>
+        
+        {/* Tipo - text mic, scurtat */}
+        <span className={`text-[11px] font-semibold flex-1 ${
+          isEntrada ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+        }`}>
+          {isEntrada ? 'E' : 'S'}
+        </span>
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Empleado complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Empleado:</span>
+            <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-400">
+              {item.empleado || '—'}
+            </span>
+          </div>
+          
+          {/* Tipo complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            <span className={`text-[10px] font-semibold ${
+              isEntrada ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
+            }`}>
+              {item.tipo}
+            </span>
+          </div>
+          
+          {/* Duration detaliat (pentru Salida) */}
+          {item.tipo === 'Salida' && (
+            <div className="space-y-1">
+              {item.duration && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">⏱ Registrado:</span>
+                  <span className="text-[10px] text-gray-700 dark:text-gray-300">{item.duration}</span>
+                </div>
+              )}
+              {item.effective_duration && item.effective_duration.trim() !== '' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-green-600 dark:text-green-400">✅ Efectivo:</span>
+                  <span className="text-[10px] text-green-700 dark:text-green-300 font-medium">{item.effective_duration}</span>
+                </div>
+              )}
+              {!item.duration && (!item.effective_duration || item.effective_duration.trim() === '') && (
+                <span className="text-[10px] text-red-600 dark:text-red-400">⚠️ Sin duración</span>
+              )}
+              {/* Buton Regularizar */}
+              {item.duration && 
+                !(item.effective_duration && item.effective_duration.trim() !== '') && 
+                !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') && (
+                <button
+                  onClick={handleRegularizar}
+                  className="mt-1 inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors"
+                >
+                  🔄 Regularizar
+                </button>
+              )}
+            </div>
+          )}
+          
+          {/* Locație */}
+          {(item.address || item.loc) && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+              <div className="text-[10px] font-medium text-blue-600 dark:text-blue-400 mb-1">📍 Ubicación</div>
+              <p className="text-[10px] text-gray-700 dark:text-gray-300 break-words mb-2">
+                {item.address || item.loc}
+              </p>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const encodedAddress = encodeURIComponent(item.address || item.loc);
+                  window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+                }}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+              >
+                🌍 Ver en Google Maps
+              </button>
+            </div>
+          )}
+          
+          {/* Modificado por */}
+          {item.modificatDe && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Modificado por:</span>
+              <span className="text-[10px] text-gray-700 dark:text-gray-300">{item.modificatDe}</span>
+            </div>
+          )}
+          
+          {/* Acțiuni */}
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-600 flex gap-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(index);
+              }}
+              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors"
+            >
+              ✏️ Editar
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(index);
+              }}
+              className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 transition-colors"
+            >
+              🗑️ Eliminar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Componenta pentru registrele angajaților (pentru manageri)
 function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onDeleteRegistroRef }) {
   const { t } = useTranslation();
   const { user: authUser } = useAuth();
   const { loading: apiLoading, callApi } = useApi();
   const locationContext = useLocation();
+  const { isMobile } = useBreakpoint();
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = authUser?.isManager || false;
   
@@ -3590,11 +4222,16 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const [changingMonth, setChangingMonth] = useState(false);
   const [loadingRegistros, setLoadingRegistros] = useState(true);
   
+  // Ref pentru a detecta dacă este prima montare (pentru a evita încărcarea toată luna la montare)
+  const isFirstMount = useRef(true);
+  
   // State pentru selecția perioadei
   const [showPeriodSelector, setShowPeriodSelector] = useState(false);
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [isPeriodMode, setIsPeriodMode] = useState(false);
+  // State pentru tipul de selecție în modal (mes sau rango)
+  const [periodSelectorMode, setPeriodSelectorMode] = useState('mes'); // 'mes' sau 'rango'
   
   const [modalVisible, setModalVisible] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
@@ -3602,6 +4239,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const [filterModal, setFilterModal] = useState(null);
   const [filter, setFilter] = useState({ empleado: '', luna: '', an: '', de: '', pana: '' });
   const [filtered, setFiltered] = useState([]);
+  const [saving, setSaving] = useState(false);
 
   // Funcție pentru ștergerea unui registro
   const handleDeleteRegistro = useCallback(async (idx) => {
@@ -3864,7 +4502,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
 
 
 
-  const fetchRegistros = useCallback(async (month = selectedMonth) => {
+  const fetchRegistros = useCallback(async (month = selectedMonth, useCurrentDay = false) => {
     setLoadingRegistros(true);
     setChangingMonth(month !== selectedMonth);
     
@@ -3876,31 +4514,47 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     }
     
     try {
-      // Para manager/supervisor - retorna todos los registros con filtro de mes
-      loggerDebug('Fetching registros for month:', month);
+      let url;
       
-      // Verifică dacă month este string înainte de a face split
-      let monthNumber, year;
-      if (typeof month === 'string' && month.includes('-')) {
-        const parts = month.split('-');
-        monthNumber = parts[1]; // 08 din 2025-08
-        year = parts[0]; // 2025 din 2025-08
+      if (useCurrentDay) {
+        // Încarcă doar ziua curentă folosind endpoint-ul pentru perioadă
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Folosim endpoint-ul pentru perioadă care acceptă fecha_inicio și fecha_fin
+        url = `${API_ENDPOINTS.REGISTROS_PERIODO}?fecha_inicio=${encodeURIComponent(todayStr)}&fecha_fin=${encodeURIComponent(todayStr)}`;
+        info('[Fichaje] Folosind backend-ul nou (getRegistrosPeriodo - ziua curentă):', url);
       } else {
-        // Dacă month nu este în formatul așteptat, folosește luna curentă
-        const currentDate = new Date();
-        monthNumber = String(currentDate.getMonth() + 1).padStart(2, '0');
-        year = currentDate.getFullYear().toString();
-        month = `${year}-${monthNumber}`;
-        warn('Month parameter invalid, using current month:', month);
+        // Para manager/supervisor - retorna todos los registros con filtro de mes
+        loggerDebug('Fetching registros for month:', month);
+        
+        // Verifică dacă month este string înainte de a face split
+        let monthNumber, year;
+        if (typeof month === 'string' && month.includes('-')) {
+          const parts = month.split('-');
+          monthNumber = parts[1]; // 08 din 2025-08
+          year = parts[0]; // 2025 din 2025-08
+        } else {
+          // Dacă month nu este în formatul așteptat, folosește luna curentă
+          const currentDate = new Date();
+          monthNumber = String(currentDate.getMonth() + 1).padStart(2, '0');
+          year = currentDate.getFullYear().toString();
+          month = `${year}-${monthNumber}`;
+          warn('Month parameter invalid, using current month:', month);
+        }
+        
+        loggerDebug('Month number:', monthNumber, 'Year:', year);
+        loggerDebug('Month parameter:', month);
+        
+        // Folosim REGISTROS_EMPLEADOS pentru a obține toate registrele pentru luna selectată
+        // Trimitem doar luna în format YYYY-MM
+        url = `${API_ENDPOINTS.REGISTROS_EMPLEADOS}?mes=${encodeURIComponent(month)}`;
+        info('[Fichaje] Folosind backend-ul nou (getRegistrosEmpleados):', url);
       }
       
-      loggerDebug('Month number:', monthNumber, 'Year:', year);
-      loggerDebug('Month parameter:', month);
-      
-      // Folosim REGISTROS_EMPLEADOS pentru a obține toate registrele pentru luna selectată
-      // Trimitem doar luna în format YYYY-MM
-      const url = `${API_ENDPOINTS.REGISTROS_EMPLEADOS}?mes=${encodeURIComponent(month)}`;
-      info('[Fichaje] Folosind backend-ul nou (getRegistrosEmpleados):', url);
+      // IMPORTANT: Resetăm datele înainte de a încărca noi date pentru a evita acumularea
+      setRegistrosBrutos([]);
+      setRegistros([]);
+      setFiltered([]);
       
       const token = localStorage.getItem('auth_token');
       const headers = {};
@@ -3916,6 +4570,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         if (result.data && typeof result.data === 'object' && result.data.status === 'not-modified') {
           success('Registros not-modified - păstrăm datele existente');
           // Nu facem nimic, păstrăm datele existente
+          setLoadingRegistros(false);
+          setChangingMonth(false);
           return;
         }
         
@@ -4105,6 +4761,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           // Salvează datele mapate și sortate
           setRegistrosBrutos(sortedRegistros);
           
+          // OPTIMIZARE: Setează loading false IMEDIAT după ce datele sunt procesate
+          // Nu așteptăm verificările de regularizare - ele se fac asincron în background
+          setLoadingRegistros(false);
+          setChangingMonth(false);
+          
           // Verifică asincron pentru fiecare fichaje dacă necesită regularizare (doar pentru Salida fără effective_duration)
           // IMPORTANT: Nu așteptăm toate request-urile - actualizăm map-ul incremental pentru a nu bloca UI-ul
           const itemsToCheck = sortedRegistros.filter(item => 
@@ -4114,27 +4775,49 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
           );
           
-          // Procesează în batch-uri de 10 pentru a nu suprasolicita serverul
-          const BATCH_SIZE = 10;
+          // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
+          // Folosim un Set pentru a stoca combinațiile unice de codigo + data
+          const uniqueChecks = new Map();
+          for (const item of itemsToCheck) {
+            const codigo = item.codigo || item.CODIGO;
+            const data = item.data;
+            if (codigo && data) {
+              const uniqueKey = `${codigo}_${data}`;
+              if (!uniqueChecks.has(uniqueKey)) {
+                uniqueChecks.set(uniqueKey, { codigo, data });
+              }
+            }
+          }
+          
+          // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
           (async () => {
-            for (let i = 0; i < itemsToCheck.length; i += BATCH_SIZE) {
-              const batch = itemsToCheck.slice(i, i + BATCH_SIZE);
-              // Nu așteptăm batch-ul să se termine - procesăm în paralel și actualizăm incremental
-              batch.forEach(async (item) => {
-                const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
-                try {
-                  const checkResult = await callApi(routes.checkConfirmation(item.codigo, item.data));
-                  const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+            for (const { codigo, data } of uniqueChecks.values()) {
+              try {
+                const checkResult = await getCheckConfirmationPromise(callApi, codigo, data);
+                const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+                
+                // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
+                // Căutăm toate registrele care corespund acestui codigo + data
+                const matchingItems = itemsToCheck.filter(item => 
+                  (item.codigo || item.CODIGO) === codigo && item.data === data
+                );
+                
+                for (const item of matchingItems) {
+                  const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
                   setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
-                } catch (err) {
-                  // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+                }
+              } catch (err) {
+                // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+                const matchingItems = itemsToCheck.filter(item => 
+                  (item.codigo || item.CODIGO) === codigo && item.data === data
+                );
+                for (const item of matchingItems) {
+                  const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
                   setNeedsRegularizationMap(prev => ({ ...prev, [key]: true }));
                 }
-              });
-              // Mic delay între batch-uri pentru a nu suprasolicita serverul (doar dacă sunt multe batch-uri)
-              if (i + BATCH_SIZE < itemsToCheck.length && itemsToCheck.length > BATCH_SIZE * 2) {
-                await new Promise(resolve => setTimeout(resolve, 50)); // Delay redus la 50ms
               }
+              // Delay între fiecare request pentru a evita rate limiting
+              await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
             }
           })().catch(err => {
             loggerDebug('Error checking needs regularization:', err);
@@ -4142,6 +4825,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         } else {
           warn('No registros found for month', month, '- păstrăm datele existente (nu ștergem)');
           // Nu ștergem datele existente - poate fi o problemă temporară sau o lună fără registros
+          setLoadingRegistros(false);
+          setChangingMonth(false);
         }
       } else {
         logError('[DEBUG] fetchRegistros failed:', result.error);
@@ -4149,6 +4834,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         setRegistrosBrutos([]);
         setRegistros([]);
         setFiltered([]);
+        setLoadingRegistros(false);
+        setChangingMonth(false);
       }
     } catch (error) {
       logError('Error fetching registros:', error);
@@ -4156,12 +4843,13 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       setRegistrosBrutos([]);
       setRegistros([]);
       setFiltered([]);
+      setLoadingRegistros(false);
+      setChangingMonth(false);
     }
-    setLoadingRegistros(false);
-    setChangingMonth(false);
   }, [authUser, callApi, selectedMonth]);
 
   // Încarcă angajații și registrele la montarea componentei
+  // IMPORTANT: Încarcă doar ziua curentă la montare pentru a evita acumularea de date
   useEffect(() => {
     if (!authUser) {
       return;
@@ -4169,7 +4857,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
 
     const loadData = async () => {
       await fetchEmpleados();
-      await fetchRegistros(selectedMonth);
+      // Încarcă doar ziua curentă când se deschide tab-ul
+      await fetchRegistros(selectedMonth, true);
     };
 
     loadData();
@@ -4336,18 +5025,28 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     fetchRegistros(selectedMonth);
   };
 
-  // Reîncarcă datele la montare și când se schimbă luna/utilizatorul
-  // Notă: acest ecran poate fi folosit fără state-ul `activeTab` din altă componentă
+  // Reîncarcă datele când se schimbă luna (doar dacă utilizatorul schimbă manual luna)
+  // Nu se declanșează la montare pentru a evita apeluri duplicate
   useEffect(() => {
     if (!authUser) return;
-    (async () => {
+    
+    // La prima montare, nu facem nimic (datele sunt deja încărcate de primul useEffect cu ziua curentă)
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    
+    // Doar dacă selectedMonth s-a schimbat manual (nu la montare inițială)
+    const loadMonthData = async () => {
       try {
-        await fetchRegistros(selectedMonth);
+        await fetchRegistros(selectedMonth, false); // Încarcă toată luna când utilizatorul schimbă manual
       } catch (error) {
         warn('[Fichaje] No se pudieron recargar los registros actuales:', error);
       }
-    })();
-  }, [authUser, fetchRegistros, selectedMonth]);
+    };
+    
+    loadMonthData();
+  }, [selectedMonth, authUser, fetchRegistros]); // Doar când selectedMonth se schimbă manual
 
   // Debug: afișează form-ul când se deschide modalul
   useEffect(() => {
@@ -4766,6 +5465,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       return;
     }
     
+    setSaving(true);
     try {
       // Găsește angajatul selectat pentru a obține codigo și email
       const empleadoSeleccionado = empleados.find(emp => emp.nombre === form.empleado);
@@ -4775,6 +5475,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           title: 'Error de Empleado',
           message: '¡No se encontró el empleado seleccionado!'
         });
+        setSaving(false);
         return;
       }
 
@@ -4800,6 +5501,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             title: 'Error de Identificación',
             message: 'No se pudo identificar el registro. Por favor, recarga la página e intenta de nuevo.'
           });
+          setSaving(false);
           return;
         }
       }
@@ -4969,6 +5671,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         title: errorTitle,
         message: errorMessage
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -4987,26 +5691,26 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   return (
     <div className="space-y-6">
       {/* Header moderno */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className={`flex items-center gap-4 mb-6`}>
         <div className="relative">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-            <span className="text-white text-xl">👥</span>
+          <div className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg`}>
+            <span className={`text-white ${isMobile ? 'text-lg' : 'text-xl'}`}>👥</span>
           </div>
           {/* Glow effect */}
-          <div className="absolute inset-0 w-12 h-12 bg-blue-400 rounded-xl opacity-20 blur-md animate-pulse"></div>
+          <div className={`absolute inset-0 ${isMobile ? 'w-10 h-10' : 'w-12 h-12'} bg-blue-400 rounded-xl opacity-20 blur-md animate-pulse`}></div>
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900`}>
             Registros de Empleados
           </h1>
-          <p className="text-sm text-gray-600">
+          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
             Administra y supervisa los marcajes del equipo
           </p>
         </div>
       </div>
 
       {/* Butoane de export și refresh - Modernos */}
-      <div className="flex flex-wrap gap-4 mb-6">
+      <div className={`flex flex-wrap gap-4 mb-6`}>
         <button
           onClick={() => {
             // Actualizează cu luna curentă, nu cu luna selectată
@@ -5017,37 +5721,37 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             // Actualizează și selectorul de lună la luna curentă
             setSelectedMonth(currentMonth);
           }}
-          className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
+          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200`}
         >
           {/* Glow effect */}
           <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
           <div className="relative flex items-center gap-2">
-            <span className="text-lg group-hover:scale-110 transition-transform duration-300">🔄</span>
-            <span>Actualizar</span>
+            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>🔄</span>
+            <span className={isMobile ? 'text-xs' : 'text-sm'}>Actualizar</span>
           </div>
         </button>
         
         <button
           onClick={handleExportPDF}
-          className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200"
+          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200`}
         >
           {/* Glow effect */}
           <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
           <div className="relative flex items-center gap-2">
-            <span className="text-lg group-hover:scale-110 transition-transform duration-300">📄</span>
-            <span>Exportar PDF</span>
+            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>📄</span>
+            <span className={isMobile ? 'text-xs' : 'text-sm'}>{isMobile ? 'PDF' : 'Exportar PDF'}</span>
           </div>
         </button>
         
         <button
           onClick={handleExportExcel}
-          className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-200"
+          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-200`}
         >
           {/* Glow effect */}
           <div className="absolute inset-0 rounded-xl bg-emerald-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
           <div className="relative flex items-center gap-2">
-            <span className="text-lg group-hover:scale-110 transition-transform duration-300">📊</span>
-            <span>Exportar Excel</span>
+            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>📊</span>
+            <span className={isMobile ? 'text-xs' : 'text-sm'}>{isMobile ? 'Excel' : 'Exportar Excel'}</span>
           </div>
         </button>
       </div>
@@ -5055,17 +5759,17 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       {/* Buton adăugare - Moderno */}
       <button
         onClick={openAdd}
-        className="group relative w-full px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200"
+        className={`group relative w-full ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200`}
       >
         {/* Glow effect */}
         <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
         <div className="relative flex items-center justify-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30">
-            <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">➕</span>
+          <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
+            <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>➕</span>
           </div>
           <div className="text-left">
-            <div className="text-lg font-bold">Añadir Registro</div>
-            <div className="text-xs text-white/80">Crear nuevo fichaje</div>
+            <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>Añadir Registro</div>
+            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Crear nuevo fichaje</div>
           </div>
         </div>
       </button>
@@ -5073,22 +5777,22 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       {/* Buton pentru afișarea/ascunderea listei de angajați - Moderno */}
       <button
         onClick={() => setShowEmpleados(!showEmpleados)}
-        className="group relative w-full px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-gray-200"
+        className={`group relative w-full ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-gray-200`}
       >
         {/* Glow effect */}
         <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-20 blur-md animate-pulse group-hover:opacity-30 transition-all duration-300"></div>
         <div className="relative flex items-center justify-center gap-2">
-          <span className="text-lg group-hover:scale-110 transition-transform duration-300">
+          <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>
             {showEmpleados ? '🔼' : '🔽'}
           </span>
-          <span>{showEmpleados ? 'Ocultar Lista de Empleados' : 'Mostrar Lista de Empleados'}</span>
+          <span className={isMobile ? 'text-xs' : 'text-sm'}>{showEmpleados ? (isMobile ? 'Ocultar' : 'Ocultar Lista de Empleados') : (isMobile ? 'Mostrar Empleados' : 'Mostrar Lista de Empleados')}</span>
         </div>
       </button>
 
       {/* Lista angajați - ascunsă/afișată */}
       {showEmpleados && (
         <Card>
-          <h2 className="text-xl font-bold text-red-600 mb-4">Lista de empleados</h2>
+          <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-bold text-red-600 mb-4`}>Lista de empleados</h2>
           
           {selectedEmpleado ? (
             // Afișează doar angajatul selectat
@@ -5162,14 +5866,14 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                     .map((item, index) => (
                       <div 
                         key={index} 
-                        className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
+                        className={`flex items-center justify-between ${isMobile ? 'p-3' : 'p-4'} bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors`}
                         onClick={() => setSelectedEmpleado(item.nombre)}
                       >
                         <div>
-                          <p className="font-bold text-red-600">{item.nombre}</p>
-                          <p className="text-gray-600">{item.email}</p>
+                          <p className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-red-600`}>{item.nombre}</p>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>{item.email}</p>
                           {item.grupo && (
-                            <p className="text-sm text-gray-500">Grupo: {item.grupo}</p>
+                            <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>Grupo: {item.grupo}</p>
                           )}
                         </div>
                       </div>
@@ -5196,113 +5900,68 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       <Card>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
+            <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-full flex items-center justify-center transition-all duration-300 ${
               changingMonth ? 'bg-yellow-100 animate-pulse' : 'bg-red-100'
             }`}>
-              <span className={`text-lg transition-all duration-300 ${
+              <span className={`${isMobile ? 'text-base' : 'text-lg'} transition-all duration-300 ${
                 changingMonth ? 'text-yellow-600' : 'text-red-600'
               }`}>
                 {changingMonth ? '⏳' : '📊'}
               </span>
             </div>
             <div>
-          <h2 className="text-xl font-bold text-red-600">
-                {selectedEmpleado ? `Marcajes para: ${selectedEmpleado}` : `Registros de ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`}
+          <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-bold text-red-600`}>
+                {selectedEmpleado ? (isMobile ? `Marcajes: ${selectedEmpleado.length > 15 ? selectedEmpleado.substring(0, 15) + '...' : selectedEmpleado}` : `Marcajes para: ${selectedEmpleado}`) : (isMobile ? `Registros ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'short', year: 'numeric' })}` : `Registros de ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`)}
                 {!changingMonth && filtered.length > 0 && (
-                  <span className="ml-3 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+                  <span className={`ml-3 px-3 py-1 bg-blue-100 text-blue-700 rounded-full ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
                     {selectedEmpleado 
                       ? (() => {
                           const empleadoRegistros = filtered.filter(item => item.empleado === selectedEmpleado);
-                          return `${empleadoRegistros.length} ${empleadoRegistros.length === 1 ? 'registro' : 'registros'}`;
+                          return `${empleadoRegistros.length} ${empleadoRegistros.length === 1 ? 'reg.' : 'regs.'}`;
                         })()
-                      : `${filtered.length} ${filtered.length === 1 ? 'registro' : 'registros'}`
+                      : `${filtered.length} ${filtered.length === 1 ? 'reg.' : 'regs.'}`
                     }
                   </span>
                 )}
           </h2>
-              <p className="text-sm text-gray-500">
-                {changingMonth ? 'Cargando registros...' : 'Administra los marcajes de los empleados'}
+              <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
+                {changingMonth ? 'Cargando registros...' : (isMobile ? 'Administra marcajes' : 'Administra los marcajes de los empleados')}
               </p>
             </div>
           </div>
           
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            {/* Selector ULTRA MODERN de lună - Glassmorphism + 3D - RESPONSIVE */}
-            <div className="relative group flex-1">
-              {/* Background blur effect */}
-              <div className="absolute inset-0 bg-white/20 backdrop-blur-xl rounded-2xl border border-white/30 shadow-2xl group-hover:shadow-red-200/50 transition-all duration-500"></div>
-              
-              {/* Main container */}
-              <div className="relative">
-                <select
-                  id="fichaje-month-select"
-                  name="fichaje-month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  disabled={changingMonth}
-                  className={`appearance-none bg-transparent border-0 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 pr-12 sm:pr-16 text-sm sm:text-base font-bold text-gray-800 focus:outline-none transition-all duration-300 w-full ${
-                    changingMonth ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                  }`}
-                  style={{
-                    textShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'none'
-                  }}
-                >
-                  {/* Ultimele 12 luni */}
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() - i);
-                    const year = date.getFullYear();
-                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-                    const value = `${year}-${month}`;
-                    return (
-                      <option key={value} value={value} className="py-2">
-                        {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
-                      </option>
-                    );
-                  })}
-                </select>
-                
-                {/* Icon spectaculos pentru dropdown */}
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3 sm:pr-6 pointer-events-none">
-                  {changingMonth ? (
-                    <div className="w-4 h-4 sm:w-6 sm:h-6 border-2 sm:border-3 border-red-500 border-t-transparent rounded-full animate-spin shadow-lg"></div>
-                  ) : (
-                    <div className="relative">
-                      {/* Glow effect */}
-                      <div className="absolute inset-0 bg-red-400/30 rounded-full blur-sm sm:blur-md animate-pulse"></div>
-                      {/* Main icon */}
-                      <svg className="w-4 h-4 sm:w-6 sm:h-6 text-red-500 group-hover:text-red-600 transition-all duration-300 group-hover:scale-110 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Decorative elements - hidden on mobile */}
-                <div className="hidden sm:block absolute top-2 left-2 w-2 h-2 bg-red-400/60 rounded-full animate-ping"></div>
-                <div className="hidden sm:block absolute bottom-2 right-8 w-1 h-1 bg-red-300/80 rounded-full animate-pulse"></div>
+            {/* Afișează ziua curentă/perioada activă */}
+            {!isPeriodMode ? (
+              <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {(() => {
+                    const today = new Date();
+                    const day = today.getDate();
+                    const monthName = today.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                    return `${day} de ${monthName}`;
+                  })()}
+                </span>
               </div>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out"></div>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-900 rounded-lg">
+                <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                  {periodStart} - {periodEnd}
+                </span>
               </div>
-            </div>
+            )}
 
-            {/* Buton pentru selecția perioadei */}
+            {/* Buton pentru selecția perioadei/mes */}
             <button
               onClick={() => setShowPeriodSelector(!showPeriodSelector)}
               disabled={changingMonth}
               className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl text-sm font-medium shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 ${
                 changingMonth ? 'opacity-50 cursor-not-allowed transform-none' : ''
               } ${isPeriodMode ? 'ring-2 ring-red-300' : ''}`}
-              title={isPeriodMode ? 'Rango de fechas personalizado activo' : 'Seleccionar rango de fechas personalizado'}
+              title={isPeriodMode ? 'Período personalizado activo' : 'Seleccionar período o mes'}
             >
               <span className="text-lg">📅</span>
-              {isPeriodMode ? 'Rango Activo' : 'Rango de fechas'}
+              {isPeriodMode ? 'Período Activo' : 'Filtrar'}
             </button>
 
             {/* Buton pentru reset perioadă */}
@@ -5320,7 +5979,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               </button>
             )}
             
-            {/* Buton ULTRA MODERN "Hoy" - 3D + Glassmorphism - RESPONSIVE */}
+            {/* Buton ULTRA MODERN "Hoy" - 3D + Glassmorphism - RESPONSIVE - Ascuns pe mobile */}
+            {!isMobile && (
             <button
               onClick={() => {
                 const currentDate = new Date();
@@ -5365,6 +6025,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out"></div>
               </div>
             </button>
+            )}
             
             {/* Buton pentru a curăța filtrul de angajat */}
           {selectedEmpleado && (
@@ -5460,23 +6121,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                       <td className="py-3 px-4 whitespace-nowrap">
                         {item.tipo === 'Salida' ? (
                           <div className="flex flex-col gap-1">
-                            {(() => {
-                              // Debug pentru a vedea exact ce valoare are effective_duration în UI
-                              if (item.id === 'FIC_1767527804648_b00jks0t0' || item.codigo === '10000001' && item.data === '2026-01-04' && item.tipo === 'Salida') {
-                                console.log('🔍 UI DEBUG pentru registrul problematic:', {
-                                  id: item.id,
-                                  codigo: item.codigo,
-                                  fecha: item.data,
-                                  tipo: item.tipo,
-                                  duration: item.duration,
-                                  effective_duration: item.effective_duration,
-                                  effective_duration_type: typeof item.effective_duration,
-                                  effective_duration_truthy: !!item.effective_duration,
-                                  effective_duration_trimmed: item.effective_duration ? item.effective_duration.trim() : 'N/A'
-                                });
-                              }
-                              return null;
-                            })()}
+                            {/* Debug log removed - was causing repeated executions on every render */}
                             {item.effective_duration && item.effective_duration.trim() !== '' ? (
                               <span 
                                 className="inline-flex items-center gap-1 text-green-700 font-bold bg-green-100 px-2 py-1 rounded text-xs whitespace-nowrap cursor-help"
@@ -5519,26 +6164,34 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                                               console.error('Error reloading registros:', err);
                                             });
                                           }
+                                      } else {
+                                        // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
+                                        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+                                        const resultData = checkResult.data || checkResult;
+                                        
+                                        // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
+                                        if (checkResult.success && resultData.needs_confirmation && resultData.scheduled_minutes > 0) {
+                                          setConfirmarJornadaData({
+                                            ...resultData,
+                                            fecha: item.data,
+                                            employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
+                                          });
+                                          setShowConfirmarJornadaModal(true);
+                                        } else if (checkResult.success && resultData.scheduled_minutes === 0) {
+                                          // Nu există program prevăzut - nu se permite regularizarea
+                                          setNotification({
+                                            type: 'info',
+                                            title: 'No se puede regularizar',
+                                            message: 'No hay horario previsto para este día. No se puede regularizar.',
+                                          });
                                         } else {
-                                          // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
-                                          const checkResult = await callApi(routes.checkConfirmation(item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data));
-                                          const resultData = checkResult.data || checkResult;
-                                          
-                                          if (checkResult.success) {
-                                            setConfirmarJornadaData({
-                                              ...resultData,
-                                              fecha: item.data,
-                                              employee_codigo: item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo,
-                                            });
-                                            setShowConfirmarJornadaModal(true);
-                                          } else {
-                                            setNotification({
-                                              type: 'error',
-                                              title: 'Error',
-                                              message: 'No se pudo verificar la diferencia. Intenta de nuevo.',
-                                            });
-                                          }
+                                          setNotification({
+                                            type: 'error',
+                                            title: 'Error',
+                                            message: 'No se pudo verificar la diferencia. Intenta de nuevo.',
+                                          });
                                         }
+                                      }
                                       } catch (err) {
                                         console.error('Error regularizando:', err);
                                         setNotification({
@@ -5679,8 +6332,33 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             </div>
           </div>
 
-            {/* Mobile: Carduri */}
-            <div className="lg:hidden space-y-3">
+            {/* Mobile: Lista compactă similară cu Mi Fichaje */}
+            <div className="lg:hidden space-y-2">
+              {(selectedEmpleado 
+                ? filtered.filter(item => item.empleado === selectedEmpleado)
+                : filtered
+              ).map((item, index) => (
+                <MobileRegistroEmpleadoItem
+                  key={index}
+                  item={item}
+                  index={index}
+                  authUser={authUser}
+                  isManager={isManager}
+                  callApi={callApi}
+                  setNotification={setNotification}
+                  fetchRegistros={fetchRegistros}
+                  selectedMonth={selectedMonth}
+                  setConfirmarJornadaData={setConfirmarJornadaData}
+                  setShowConfirmarJornadaModal={setShowConfirmarJornadaModal}
+                  routes={routes}
+                  onEdit={openEdit}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+            
+            {/* Mobile: Carduri (vechi - păstrat pentru referință, dar nu se mai folosește) */}
+            <div className="lg:hidden space-y-3 hidden">
               {(selectedEmpleado 
                 ? filtered.filter(item => item.empleado === selectedEmpleado)
                 : filtered
@@ -6220,17 +6898,17 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             
             <button
               onClick={handleSave}
-              disabled={apiLoading}
+              disabled={saving}
               className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {/* Glow effect */}
               <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
               <div className="relative flex items-center gap-2">
                 <span className="text-lg group-hover:scale-110 transition-transform duration-300">
-                  {apiLoading ? '⏳' : editIdx !== null ? '💾' : '✅'}
+                  {saving ? '⏳' : editIdx !== null ? '💾' : '✅'}
                 </span>
                 <span>
-                  {apiLoading ? 'Guardando...' : editIdx !== null ? 'Guardar Cambios' : 'Guardar Registro'}
+                  {saving ? 'Guardando...' : editIdx !== null ? 'Guardar Cambios' : 'Guardar Registro'}
                 </span>
               </div>
             </button>
@@ -6238,62 +6916,156 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         </div>
       </Modal>
 
-      {/* Modal pentru selecția perioadei */}
+      {/* Modal pentru selecția perioadei/mes */}
       {showPeriodSelector && (
         <Modal isOpen={showPeriodSelector} onClose={() => setShowPeriodSelector(false)}>
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-gray-800">Seleccionar Período</h2>
-            <p className="text-sm text-gray-600">
-              Selecciona un rango de fechas para filtrar los registros
-            </p>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="period-start-date" className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha de Inicio
-                </label>
-                <Input
-                  id="period-start-date"
-                  type="date"
-                  value={periodStart}
-                  onChange={(e) => setPeriodStart(e.target.value)}
-                  className="w-full"
-                  max={periodEnd || new Date().toISOString().split('T')[0]}
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="period-end-date" className="block text-sm font-medium text-gray-700 mb-2">
-                  Fecha de Fin
-                </label>
-                <Input
-                  id="period-end-date"
-                  type="date"
-                  value={periodEnd}
-                  onChange={(e) => setPeriodEnd(e.target.value)}
-                  className="w-full"
-                  min={periodStart}
-                  max={new Date().toISOString().split('T')[0]}
-                />
-              </div>
+            {/* Toggle între Mes și Rango de fechas */}
+            <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
+              <button
+                onClick={() => setPeriodSelectorMode('mes')}
+                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  periodSelectorMode === 'mes'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                📅 Por Mes
+              </button>
+              <button
+                onClick={() => setPeriodSelectorMode('rango')}
+                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  periodSelectorMode === 'rango'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                📆 Por Rango
+              </button>
             </div>
             
-            <div className="flex justify-end gap-2 pt-4">
-              <Button 
-                variant="secondary" 
-                onClick={() => setShowPeriodSelector(false)}
-                disabled={changingMonth}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={handlePeriodSearch}
-                loading={changingMonth}
-                disabled={!periodStart || !periodEnd}
-              >
-                Aplicar Período
-              </Button>
-            </div>
+            {/* Conținut în funcție de modul selectat */}
+            {periodSelectorMode === 'mes' ? (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Selecciona un mes para filtrar los registros
+                </p>
+                
+                <div>
+                  <label htmlFor="modal-month-select" className="block text-sm font-medium text-gray-700 mb-2">
+                    Mes
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="modal-month-select"
+                      name="modal-month"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      disabled={changingMonth}
+                      className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 w-full text-sm font-medium text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    >
+                      {/* Ultimele 12 luni */}
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const date = new Date();
+                        date.setMonth(date.getMonth() - i);
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                        const value = `${year}-${month}`;
+                        return (
+                          <option key={value} value={value}>
+                            {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => setShowPeriodSelector(false)}
+                    disabled={changingMonth}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setIsPeriodMode(false);
+                      setPeriodStart('');
+                      setPeriodEnd('');
+                      fetchRegistros(selectedMonth, false);
+                      setShowPeriodSelector(false);
+                    }}
+                    loading={changingMonth}
+                  >
+                    Aplicar Mes
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Selecciona un rango de fechas para filtrar los registros
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="period-start-date" className="block text-sm font-medium text-gray-700 mb-2">
+                      Fecha de Inicio
+                    </label>
+                    <Input
+                      id="period-start-date"
+                      type="date"
+                      value={periodStart}
+                      onChange={(e) => setPeriodStart(e.target.value)}
+                      className="w-full"
+                      max={periodEnd || new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="period-end-date" className="block text-sm font-medium text-gray-700 mb-2">
+                      Fecha de Fin
+                    </label>
+                    <Input
+                      id="period-end-date"
+                      type="date"
+                      value={periodEnd}
+                      onChange={(e) => setPeriodEnd(e.target.value)}
+                      className="w-full"
+                      min={periodStart}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => setShowPeriodSelector(false)}
+                    disabled={changingMonth}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={handlePeriodSearch}
+                    loading={changingMonth}
+                    disabled={!periodStart || !periodEnd}
+                  >
+                    Aplicar Rango
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -6389,6 +7161,7 @@ export default function FichajePage() {
   const { t } = useTranslation();
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
+  const { isMobile } = useBreakpoint();
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = authUser?.isManager || false;
   const [activeTab, setActiveTab] = useState('personal');
@@ -7610,10 +8383,10 @@ export default function FichajePage() {
           <Back3DButton to="/inicio" title="Regresar al Dashboard" />
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              Control de Fichajes
+              Registro de Jornada
             </h1>
             <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              Sistema de registro de horarios para empleados
+              Sistema de registro de jornada para empleados
             </p>
           </div>
         </div>
@@ -7622,7 +8395,7 @@ export default function FichajePage() {
       {/* Botón Reportar Error */}
       <div className="flex justify-end mb-4">
         <button 
-          onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de fichaje', '_blank')}
+          onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de registro de jornada', '_blank')}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
         >
           <span className="text-base">📱</span>
@@ -7811,7 +8584,7 @@ export default function FichajePage() {
               onDeleteRegistroRef={onDeleteRegistroRef}
             />
           ) : activeTab === 'horas' ? (
-            <HorasTrabajadas />
+            <HorasTrabajadas isMobile={isMobile} />
           ) : (
             <HorasPermitidas setNotification={setNotification} />
           )}

@@ -739,14 +739,6 @@ export default function CuadrantesEmpleadoPage() {
 
         setCuadrantesUser(lista);
 
-        
-
-        // Generez lista de luni disponibile
-
-        const luni = [...new Set(lista.map(c => c.LUNA || c.luna))];
-
-        
-
         // Detectez luna curentă
 
         const currentDate = new Date();
@@ -757,91 +749,9 @@ export default function CuadrantesEmpleadoPage() {
 
         const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
-        
-
-        // Normalizez toate lunile disponibile pentru comparație
-
-        const luniNormalizate = luni.map(l => {
-
-          if (typeof l === 'number') {
-
-            return excelDateToYYYYMM(l);
-
-          } else if (typeof l === 'string') {
-
-            // Asigur că luna are formatul corect YYYY-MM
-
-            const [year, month] = l.split('-');
-
-            if (year && month) {
-
-              return `${year}-${month.padStart(2, '0')}`;
-
-            }
-
-          }
-
-          return l;
-
-        });
-
-        
-
-        // Încerc să selectez luna curentă, dacă nu există, selectez prima lună disponibilă
-
-        const indexLunaCurenta = luniNormalizate.findIndex(luna => luna === currentMonthFormatted);
-
-        
-
-        if (indexLunaCurenta !== -1) {
-
-          setSelectedLuna(luni[indexLunaCurenta]);
-
-        } else {
-
-          // Încerc să găsesc luna cea mai apropiată de luna curentă
-
-          const currentMonthNum = currentMonth;
-
-          let closestMonth = null;
-
-          let minDifference = Infinity;
-
-          
-
-          luniNormalizate.forEach((luna, index) => {
-
-            const [year, month] = luna.split('-').map(Number);
-
-            if (year === currentYear) {
-
-              const difference = Math.abs(month - currentMonthNum);
-
-              if (difference < minDifference) {
-
-                minDifference = difference;
-
-                closestMonth = luni[index];
-
-              }
-
-            }
-
-          });
-
-          
-
-          if (closestMonth) {
-
-            setSelectedLuna(closestMonth);
-
-          } else if (luni.length > 0) {
-
-            setSelectedLuna(luni[0]);
-
-          }
-
-        }
+        // Întotdeauna selectez luna curentă, chiar dacă nu există cuadrante pentru ea
+        // Astfel utilizatorul vede calendarul pentru luna curentă direct
+        setSelectedLuna(currentMonthFormatted);
 
       } catch (e) {
 

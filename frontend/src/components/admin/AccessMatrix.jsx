@@ -37,7 +37,7 @@ export default function AccessMatrix() {
     // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
     // { id: 'tareas', name: 'Tareas Diarias', icon: '📋', description: 'Gestión de tareas por día' },
     { id: 'empleados', name: 'Empleados', icon: '👥', description: 'Gestión de empleados' },
-    { id: 'fichar', name: 'Fichar', icon: '⏰', description: 'Registro de jornada' },
+    { id: 'fichar', name: 'Registro de Jornada', icon: '⏰', description: 'Registro de jornada' },
     { id: 'solicitudes', name: 'Solicitudes', icon: '📝', description: 'Asuntos y vacaciones' },
     { id: 'documentos', name: 'Documentos', icon: '📄', description: 'Documentos y nóminas' },
     { id: 'documentos-empleados', name: 'Documentos Empleados', icon: '📂', description: 'Archivos por empleado' },

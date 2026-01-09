@@ -2550,6 +2550,9 @@ ORDER BY f.d;
           this.logger.log(
             `🔍 DEBUG hm_horas_debug din query pentru ${codigo}: ${row.hm_horas_debug || 'NULL'}`,
           );
+          this.logger.log(
+            `🔍 DEBUG score_responsabilidad_digital din query pentru ${codigo}: ${row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null ? row.score_responsabilidad_digital : 'NULL/UNDEFINED'}`,
+          );
 
           await this.prisma.hallOfFameMensual.upsert({
             where: {
@@ -2573,6 +2576,11 @@ ORDER BY f.d;
               score_uso_app: row.score_uso_app
                 ? Number(row.score_uso_app)
                 : null,
+              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
+                ? Number(row.score_responsabilidad_digital)
+                : breakdownJson?.score_responsabilidad_digital !== undefined && breakdownJson?.score_responsabilidad_digital !== null
+                  ? Number(breakdownJson.score_responsabilidad_digital)
+                  : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2627,6 +2635,11 @@ ORDER BY f.d;
               score_uso_app: row.score_uso_app
                 ? Number(row.score_uso_app)
                 : null,
+              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
+                ? Number(row.score_responsabilidad_digital)
+                : breakdownJson?.score_responsabilidad_digital !== undefined && breakdownJson?.score_responsabilidad_digital !== null
+                  ? Number(breakdownJson.score_responsabilidad_digital)
+                  : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2759,6 +2772,9 @@ ORDER BY f.d;
               score_calitate: row.score_calitate,
               score_punctualitate: row.score_punctualitate,
               score_uso_app: row.score_uso_app,
+              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
+                ? Number(row.score_responsabilidad_digital)
+                : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2801,6 +2817,9 @@ ORDER BY f.d;
               score_calitate: row.score_calitate,
               score_punctualitate: row.score_punctualitate,
               score_uso_app: row.score_uso_app,
+              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
+                ? Number(row.score_responsabilidad_digital)
+                : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2907,6 +2926,7 @@ ORDER BY f.d;
 
         // breakdown_json este deja un obiect în Prisma (tip Json)
         // Convert explicit Decimal fields to numbers
+        const breakdownJson = (row.breakdown_json as any) || {};
         const convertedRow = {
           ...row,
           empleadoNombre: empleado?.NOMBRE_APELLIDOS || row.empleado_codigo,
@@ -2923,6 +2943,11 @@ ORDER BY f.d;
             ? Number(row.score_punctualitate)
             : null,
           score_uso_app: row.score_uso_app ? Number(row.score_uso_app) : null,
+          score_responsabilidad_digital: row.score_responsabilidad_digital
+            ? Number(row.score_responsabilidad_digital)
+            : breakdownJson.score_responsabilidad_digital
+              ? Number(breakdownJson.score_responsabilidad_digital)
+              : null,
           horas_pontate: row.horas_pontate ? Number(row.horas_pontate) : null,
           target_ajustat: row.target_ajustat
             ? Number(row.target_ajustat)
@@ -2983,6 +3008,7 @@ ORDER BY f.d;
 
     // breakdown_json este deja un obiect în Prisma (tip Json)
     // Convert explicit Decimal fields to numbers
+    const breakdownJson = (result.breakdown_json as any) || {};
     const response = {
       ...result,
       empleadoNombre: empleado?.NOMBRE_APELLIDOS || codigo,
@@ -2999,6 +3025,11 @@ ORDER BY f.d;
         ? Number(result.score_punctualitate)
         : null,
       score_uso_app: result.score_uso_app ? Number(result.score_uso_app) : null,
+      score_responsabilidad_digital: result.score_responsabilidad_digital
+        ? Number(result.score_responsabilidad_digital)
+        : breakdownJson.score_responsabilidad_digital
+          ? Number(breakdownJson.score_responsabilidad_digital)
+          : null,
       horas_pontate: result.horas_pontate ? Number(result.horas_pontate) : null,
       target_ajustat: result.target_ajustat
         ? Number(result.target_ajustat)
@@ -4295,6 +4326,238 @@ uso_app AS (
   CROSS JOIN max_acciones_mes mam
 ),
 
+-- Responsabilidad digital: Comunicaciones pendientes (3%)
+comunicaciones_pendientes AS (
+  SELECT 
+    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CASE 
+      -- Dacă nu are comunicados asignate (nu există comunicados publicate), primește 3 puncte
+      WHEN NOT EXISTS (
+        SELECT 1 FROM comunicados c 
+        WHERE c.publicado = 1
+      ) THEN 3
+      -- Dacă are comunicados necitite, primește 0
+      WHEN EXISTS (
+        SELECT 1 
+        FROM comunicados c
+        WHERE c.publicado = 1
+          AND NOT EXISTS (
+            SELECT 1 
+            FROM comunicados_leidos cl 
+            WHERE cl.comunicado_id = c.id 
+              AND BINARY cl.user_id = BINARY CAST(de.CODIGO AS CHAR)
+          )
+      ) THEN 0
+      -- Dacă toate comunicados sunt citite, primește 3 puncte
+      ELSE 3
+    END AS score_comunicaciones
+  FROM DatosEmpleados de
+  WHERE de.ESTADO = 'ACTIVO'
+),
+
+-- Responsabilidad digital: Documentos pendientes (3%)
+documentos_pendientes AS (
+  SELECT 
+    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CASE 
+      -- Dacă nu are cereri de documente, primește 3 puncte
+      WHEN NOT EXISTS (
+        SELECT 1 FROM documentos_solicitados ds 
+        WHERE BINARY ds.empleado_id = BINARY CAST(de.CODIGO AS CHAR)
+      ) THEN 3
+      -- Dacă are cereri și nu le-a urcat (estado = 'pendiente'), primește 0
+      WHEN EXISTS (
+        SELECT 1 FROM documentos_solicitados ds 
+        WHERE BINARY ds.empleado_id = BINARY CAST(de.CODIGO AS CHAR)
+          AND BINARY ds.estado = BINARY 'pendiente'
+      ) THEN 0
+      -- Dacă totul este urcat (nu are cereri pendiente), primește 3 puncte
+      ELSE 3
+    END AS score_documentos
+  FROM DatosEmpleados de
+  WHERE de.ESTADO = 'ACTIVO'
+),
+
+-- Responsabilidad digital: Inspecciones (4%)
+-- Pentru supervizori: minim 1 inspecție pe zi lucrătoare
+-- Pentru angajați normali: scorul mediu al inspecțiilor
+-- Calculăm zilele lucrătoare per angajat, excluzând vacaciones, bajas, festivos, ausencias
+dias_laborables_mes AS (
+  SELECT 
+    dp.empleadoId,
+    COUNT(*) AS dias_laborables
+  FROM daily_plan dp
+  WHERE dp.fecha >= @d_first 
+    -- Pentru luna curentă, folosim @d_today; pentru luni trecute, folosim @d_last
+    AND dp.fecha <= CASE WHEN @d_today < @d_last THEN @d_today ELSE @d_last END
+    -- Exclude weekend-uri (în MySQL: Duminică = 1, Sâmbătă = 7)
+    AND DAYOFWEEK(dp.fecha) NOT IN (1, 7)
+    -- Exclude zilele neutre: bajas, vacaciones, festivos (pentru cei care nu lucrează în festivos), ausencias
+    -- O zi este lucrătoare dacă are horas_plan > 0 (adică nu este baja, vacaciones, festivo sau ausencia)
+    AND dp.horas_plan > 0
+  GROUP BY dp.empleadoId
+),
+inspecciones_count_mes AS (
+  SELECT 
+    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    COUNT(id.id) AS num_inspecciones
+  FROM DatosEmpleados de
+  LEFT JOIN InspeccionesDocumentos id 
+    ON (
+      -- Pentru supervizori: verifică codigo_supervisor
+      (BINARY UPPER(TRIM(de.GRUPO)) = BINARY 'SUPERVISOR' 
+        AND BINARY id.codigo_supervisor = BINARY CAST(de.CODIGO AS CHAR))
+      OR
+      -- Pentru angajați normali: verifică codigo_empleado
+      (BINARY UPPER(TRIM(de.GRUPO)) <> BINARY 'SUPERVISOR' 
+        AND BINARY id.codigo_empleado = BINARY CAST(de.CODIGO AS CHAR))
+    )
+    AND id.fecha_subida IS NOT NULL
+    AND TRIM(id.fecha_subida) <> ''
+    AND (
+      DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) >= @d_first 
+      AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) <= @d_last
+      OR DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) >= @d_first 
+      AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) <= @d_last
+    )
+  WHERE de.ESTADO = 'ACTIVO'
+  GROUP BY de.CODIGO
+),
+inspecciones_score AS (
+  SELECT 
+    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CASE 
+      -- Pentru supervizori: verifică dacă au minim 1 inspecție pe zi lucrătoare
+      WHEN BINARY UPPER(TRIM(de.GRUPO)) = BINARY 'SUPERVISOR' THEN
+        CASE 
+          -- Dacă nu are zile lucrătoare în lună (ex: toată luna în vacanță), primește 4 puncte
+          WHEN COALESCE(dlm.dias_laborables, 0) = 0 THEN 4
+          -- Calculează: (număr_inspecții / zile_lucrătoare) * 4, maxim 4
+          -- Dacă are cel puțin 1 inspecție pe zi lucrătoare, primește 4 puncte
+          ELSE LEAST(4, 
+            (COALESCE(icm.num_inspecciones, 0) / GREATEST(dlm.dias_laborables, 1)) * 4
+          )
+        END
+      -- Pentru angajați normali: dacă nu are inspecții, primește 4 puncte
+      WHEN NOT EXISTS (
+        SELECT 1 FROM InspeccionesDocumentos id 
+        WHERE BINARY id.codigo_empleado = BINARY CAST(de.CODIGO AS CHAR)
+          AND id.fecha_subida IS NOT NULL
+          AND TRIM(id.fecha_subida) <> ''
+          AND (
+            DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) >= @d_first 
+            AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) <= @d_last
+            OR DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) >= @d_first 
+            AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) <= @d_last
+          )
+      ) THEN 4
+      -- Pentru angajați normali: normalizăm scorul mediu de la 0-5 la 0-4 (KPI-ul pentru inspecții este 4%)
+      -- Formula: (scor_mediu / 5) * 4, maxim 4 puncte
+      ELSE LEAST(4, 
+        COALESCE((
+          SELECT (AVG(id.scor_total) / 5.0) * 4.0
+          FROM InspeccionesDocumentos id 
+          WHERE BINARY id.codigo_empleado = BINARY CAST(de.CODIGO AS CHAR)
+            AND id.scor_total IS NOT NULL
+            AND id.scor_total >= 0
+            AND id.scor_total <= 5
+            AND id.fecha_subida IS NOT NULL
+            AND TRIM(id.fecha_subida) <> ''
+            AND (
+              DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) >= @d_first 
+              AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) <= @d_last
+              OR DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) >= @d_first 
+              AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) <= @d_last
+            )
+        ), 4)
+      )
+    END AS score_inspecciones
+  FROM DatosEmpleados de
+  LEFT JOIN dias_laborables_mes dlm ON BINARY dlm.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+  LEFT JOIN inspecciones_count_mes icm ON BINARY icm.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+  WHERE de.ESTADO = 'ACTIVO'
+),
+
+-- Responsabilidad digital: Detalii pentru breakdown
+responsabilidad_digital_detalle AS (
+  SELECT 
+    cp.empleadoId,
+    COALESCE(cp.score_comunicaciones, 0) + 
+    COALESCE(dp.score_documentos, 0) + 
+    COALESCE(ins.score_inspecciones, 0) AS score_responsabilidad_digital,
+    -- Detalii comunicaciones
+    (
+      SELECT COUNT(*) 
+      FROM comunicados c
+      WHERE c.publicado = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM comunicados_leidos cl 
+          WHERE cl.comunicado_id = c.id 
+            AND BINARY cl.user_id = BINARY cp.empleadoId
+        )
+    ) AS comunicaciones_no_leidas,
+    (
+      SELECT COUNT(*) 
+      FROM comunicados c
+      WHERE c.publicado = 1
+        AND EXISTS (
+          SELECT 1 FROM comunicados_leidos cl 
+          WHERE cl.comunicado_id = c.id 
+            AND BINARY cl.user_id = BINARY cp.empleadoId
+        )
+    ) AS comunicaciones_leidas,
+    (
+      SELECT COUNT(*) 
+      FROM comunicados c
+      WHERE c.publicado = 1
+    ) AS comunicaciones_totales,
+    -- Detalii documentos
+    (
+      SELECT COUNT(*) 
+      FROM documentos_solicitados ds 
+      WHERE BINARY ds.empleado_id = BINARY cp.empleadoId
+        AND BINARY ds.estado = BINARY 'pendiente'
+    ) AS documentos_pendientes_count,
+    (
+      SELECT COUNT(*) 
+      FROM documentos_solicitados ds 
+      WHERE BINARY ds.empleado_id = BINARY cp.empleadoId
+        AND BINARY ds.estado = BINARY 'completado'
+    ) AS documentos_completados_count,
+    (
+      SELECT COUNT(*) 
+      FROM documentos_solicitados ds 
+      WHERE BINARY ds.empleado_id = BINARY cp.empleadoId
+    ) AS documentos_totales_count,
+    -- Detalii inspecciones
+    COALESCE(icm.num_inspecciones, 0) AS inspecciones_count,
+    COALESCE(dlm.dias_laborables, 0) AS dias_laborables_mes,
+    (
+      SELECT AVG(id.scor_total) 
+      FROM InspeccionesDocumentos id 
+      WHERE BINARY id.codigo_empleado = BINARY cp.empleadoId
+        AND id.scor_total IS NOT NULL
+        AND id.scor_total >= 0
+        AND id.scor_total <= 100
+        AND id.fecha_subida IS NOT NULL
+        AND TRIM(id.fecha_subida) <> ''
+        AND (
+          DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) >= @d_first 
+          AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d')) <= @d_last
+          OR DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) >= @d_first 
+          AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) <= @d_last
+        )
+    ) AS inspecciones_scor_medio,
+    COALESCE(cp.score_comunicaciones, 0) AS score_comunicaciones,
+    COALESCE(dp.score_documentos, 0) AS score_documentos,
+    COALESCE(ins.score_inspecciones, 0) AS score_inspecciones
+  FROM comunicaciones_pendientes cp
+  LEFT JOIN documentos_pendientes dp ON BINARY dp.empleadoId = BINARY cp.empleadoId
+  LEFT JOIN inspecciones_score ins ON BINARY ins.empleadoId = BINARY cp.empleadoId
+  LEFT JOIN inspecciones_count_mes icm ON BINARY icm.empleadoId = BINARY cp.empleadoId
+  LEFT JOIN dias_laborables_mes dlm ON BINARY dlm.empleadoId = BINARY cp.empleadoId
+),
+
 scoring AS (
   SELECT 
     CAST(de.CODIGO AS CHAR) AS empleadoId,
@@ -4330,6 +4593,7 @@ scoring AS (
       ELSE 100
     END AS score_punctualitate,
     COALESCE(ua.score_uso_app, 0) AS score_uso_app,
+    COALESCE(rd.score_responsabilidad_digital, 0) AS score_responsabilidad_digital,
     ta.target_ajustat AS target_ajustat_val,
     ta.target_initial AS target_initial_debug_val,
     ta.cs_horas_debug AS ta_cs_horas_debug,
@@ -4363,7 +4627,20 @@ scoring AS (
       'zile_cu_orar', COALESCE(p.zile_cu_orar, 0),
       'has_orar', eo.has_orar,
       'acciones_totales', COALESCE(ua.acciones_totales, 0),
-      'max_acciones_mes', COALESCE(mam.max_acciones, 0)
+      'max_acciones_mes', COALESCE(mam.max_acciones, 0),
+      'score_responsabilidad_digital', COALESCE(rd.score_responsabilidad_digital, 0),
+      'comunicaciones_no_leidas', COALESCE(rd.comunicaciones_no_leidas, 0),
+      'comunicaciones_leidas', COALESCE(rd.comunicaciones_leidas, 0),
+      'comunicaciones_totales', COALESCE(rd.comunicaciones_totales, 0),
+      'documentos_pendientes', COALESCE(rd.documentos_pendientes_count, 0),
+      'documentos_completados', COALESCE(rd.documentos_completados_count, 0),
+      'documentos_totales', COALESCE(rd.documentos_totales_count, 0),
+      'inspecciones_count', COALESCE(rd.inspecciones_count, 0),
+      'dias_laborables_mes', COALESCE(rd.dias_laborables_mes, 0),
+      'inspecciones_scor_medio', COALESCE(rd.inspecciones_scor_medio, NULL),
+      'score_comunicaciones', COALESCE(rd.score_comunicaciones, 0),
+      'score_documentos', COALESCE(rd.score_documentos, 0),
+      'score_inspecciones', COALESCE(rd.score_inspecciones, 0)
     ) AS breakdown_json
   FROM DatosEmpleados de
   JOIN empleado_orar eo ON BINARY eo.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
@@ -4376,6 +4653,7 @@ scoring AS (
   LEFT JOIN zile_neutre_hasta_hoy znh ON BINARY znh.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
   LEFT JOIN punctualitate p ON BINARY p.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
   LEFT JOIN uso_app ua ON BINARY ua.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+  LEFT JOIN responsabilidad_digital_detalle rd ON BINARY rd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
   CROSS JOIN max_acciones_mes mam
   WHERE de.ESTADO = 'ACTIVO'
 ),
@@ -4386,16 +4664,18 @@ scoring_final AS (
     s.empleadoNombre,
     s.grupo,
     ROUND(
-      (s.score_indeplinire * 0.55) + 
+      (s.score_indeplinire * 0.50) + 
       (s.score_calitate * 0.20) + 
-      (s.score_punctualitate * 0.15) + 
-      (s.score_uso_app * 0.10),
+      (s.score_punctualitate * 0.10) + 
+      (s.score_uso_app * 0.10) +
+      (s.score_responsabilidad_digital * 0.10),
       2
     ) AS score_final,
     s.score_indeplinire,
     s.score_calitate,
     s.score_punctualitate,
     s.score_uso_app,
+    s.score_responsabilidad_digital,
     s.breakdown_json,
     s.target_ajustat_val,
     s.target_initial_debug_val,
@@ -4416,6 +4696,7 @@ SELECT
   score_calitate,
   score_punctualitate,
   score_uso_app,
+  score_responsabilidad_digital,
   breakdown_json,
   target_initial_debug_val,
   ta_cs_horas_debug,

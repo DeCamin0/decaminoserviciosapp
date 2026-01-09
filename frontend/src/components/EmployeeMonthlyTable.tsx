@@ -6,12 +6,110 @@ export type EmployeeMonthlyTableProps = {
   data: ResumenEmpleado[];
   onVerDetalle: (empleadoId: number) => void;
   loading?: boolean;
+  isMobile?: boolean;
+};
+
+// Component pentru item-ul de horas pe mobile (compact, similar cu TimeCheck)
+const MobileHorasItem: React.FC<{ 
+  empleado: ResumenEmpleado; 
+  onVerDetalle: (empleadoId: number) => void;
+  formatHours: (value: string | number | undefined) => string;
+  getEstadoColor: (estado: string) => string;
+}> = ({ empleado, onVerDetalle, formatHours, getEstadoColor }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const estadoColor = getEstadoColor(empleado.estado || 'OK');
+  const horasTrabajadas = formatHours(empleado.horasTrabajadas || empleado.totalTrabajadas);
+  const horasPlan = formatHours(empleado.totalPlan || empleado.horasContrato);
+  
+  return (
+    <div className="relative">
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+      >
+        {/* Indicator mic (verde/galben/roșu) */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          empleado.estado === 'OK' ? 'bg-green-500' :
+          empleado.estado === 'ALERTA' ? 'bg-yellow-500' :
+          'bg-red-500'
+        }`}></div>
+        
+        {/* Nume - text mic */}
+        <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold flex-1 truncate">
+          {empleado.empleadoNombre}
+        </span>
+        
+        {/* Horas Trabajadas - text mic */}
+        <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[50px]">
+          {horasTrabajadas}
+        </span>
+        
+        {/* Estado - badge mic */}
+        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${estadoColor} min-w-[45px] text-center`}>
+          {empleado.estado || 'OK'}
+        </span>
+        
+        {/* Chevron pentru expand */}
+        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+          ▼
+        </span>
+      </div>
+      
+      {/* Detalii expandate */}
+      {isExpanded && (
+        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+          {/* Horas Trabajadas */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Trabajadas:</span>
+            <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{horasTrabajadas}</span>
+          </div>
+          
+          {/* Horas Plan */}
+          {horasPlan && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Plan:</span>
+              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{horasPlan}</span>
+            </div>
+          )}
+          
+          {/* Horas Permitidas */}
+          {empleado.totalPermitidas && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Permitidas:</span>
+              <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">{formatHours(empleado.totalPermitidas)}</span>
+            </div>
+          )}
+          
+          {/* Estado complet */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Estado:</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${estadoColor}`}>
+              {empleado.estado || 'OK'}
+            </span>
+          </div>
+          
+          {/* Buton Ver Detalle */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onVerDetalle(empleado.empleadoId);
+            }}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-medium rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+          >
+            👁️ Ver Detalle
+          </button>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const EmployeeMonthlyTable: React.FC<EmployeeMonthlyTableProps> = ({ 
   data, 
   onVerDetalle, 
-  loading = false 
+  loading = false,
+  isMobile = false
 }) => {
   const topScrollRef = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -145,6 +243,23 @@ const EmployeeMonthlyTable: React.FC<EmployeeMonthlyTableProps> = ({
       <div className="flex justify-center items-center py-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         <span className="ml-2 text-gray-600">Cargando...</span>
+      </div>
+    );
+  }
+
+  // Pe mobile, afișează listă verticală compactă
+  if (isMobile) {
+    return (
+      <div className="space-y-1.5">
+        {data.map((empleado) => (
+          <MobileHorasItem
+            key={empleado.empleadoId}
+            empleado={empleado}
+            onVerDetalle={onVerDetalle}
+            formatHours={formatHours}
+            getEstadoColor={getEstadoColor}
+          />
+        ))}
       </div>
     );
   }
