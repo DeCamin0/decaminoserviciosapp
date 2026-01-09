@@ -4379,7 +4379,7 @@ documentos_pendientes AS (
 ),
 
 -- Responsabilidad digital: Inspecciones (4%)
--- Pentru supervizori: minim 1 inspecție pe zi lucrătoare
+-- Pentru supervizori: minim 2 inspecții pe zi lucrătoare
 -- Pentru angajați normali: scorul mediu al inspecțiilor
 -- Calculăm zilele lucrătoare per angajat, excluzând vacaciones, bajas, festivos, ausencias
 dias_laborables_mes AS (
@@ -4427,16 +4427,20 @@ inspecciones_score AS (
   SELECT 
     CAST(de.CODIGO AS CHAR) AS empleadoId,
     CASE 
-      -- Pentru supervizori: verifică dacă au minim 1 inspecție pe zi lucrătoare
+      -- Pentru supervizori: sistem progresiv de puncte bazat pe inspecții pe zi lucrătoare
+      -- Minimum: 2 inspecții/zi lucrătoare (ex: 20 inspecții pentru 10 zile)
       WHEN BINARY UPPER(TRIM(de.GRUPO)) = BINARY 'SUPERVISOR' THEN
         CASE 
           -- Dacă nu are zile lucrătoare în lună (ex: toată luna în vacanță), primește 4 puncte
           WHEN COALESCE(dlm.dias_laborables, 0) = 0 THEN 4
-          -- Calculează: (număr_inspecții / zile_lucrătoare) * 4, maxim 4
-          -- Dacă are cel puțin 1 inspecție pe zi lucrătoare, primește 4 puncte
-          ELSE LEAST(4, 
-            (COALESCE(icm.num_inspecciones, 0) / GREATEST(dlm.dias_laborables, 1)) * 4
-          )
+          -- Sub minimum (2 inspecții/zi) → 0 puncte
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 2) THEN 0
+          -- 2-2.9 inspecții/zi (ex: 20-29 pentru 10 zile) → 2 puncte
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 3) THEN 2
+          -- 3-3.9 inspecții/zi (ex: 30-39 pentru 10 zile) → 3 puncte
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 4) THEN 3
+          -- 4+ inspecții/zi (ex: 40+ pentru 10 zile) → 4 puncte (maxim)
+          ELSE 4
         END
       -- Pentru angajați normali: dacă nu are inspecții, primește 4 puncte
       WHEN NOT EXISTS (
@@ -4664,11 +4668,11 @@ scoring_final AS (
     s.empleadoNombre,
     s.grupo,
     ROUND(
-      (s.score_indeplinire * 0.50) + 
+      (s.score_indeplinire * 0.30) + 
       (s.score_calitate * 0.20) + 
       (s.score_punctualitate * 0.10) + 
       (s.score_uso_app * 0.10) +
-      (s.score_responsabilidad_digital * 0.10),
+      (s.score_responsabilidad_digital * 0.30),
       2
     ) AS score_final,
     s.score_indeplinire,

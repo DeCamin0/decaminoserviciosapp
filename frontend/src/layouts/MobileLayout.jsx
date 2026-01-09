@@ -44,7 +44,7 @@ const MobileLayout = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden bg-gray-50 dark:bg-gray-900 transition-colors" style={{
+    <div className="min-h-screen flex flex-col relative bg-gray-50 dark:bg-gray-900 transition-colors" style={{
       WebkitFlexDirection: 'column',
       msFlexDirection: 'column',
       flexDirection: 'column'

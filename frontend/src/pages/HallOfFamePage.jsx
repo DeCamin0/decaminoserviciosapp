@@ -527,11 +527,11 @@ const HallOfFamePage = () => {
                             <div className="text-xs text-white/90 mb-1 font-semibold">Puntuación Final</div>
                             <div className="text-3xl font-extrabold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] mb-2">{formatScore(ranking[1]?.score_final)}</div>
                             <div className="text-[10px] space-y-0.5 text-white/90 border-t border-white/30 pt-2">
-                              <div>Horas (50%): {formatScore(ranking[1]?.score_indeplinire)}</div>
+                              <div>Horas (30%): {formatScore(ranking[1]?.score_indeplinire)}</div>
                               <div>Calidad (20%): {formatScore(ranking[1]?.score_calitate)}</div>
                               <div>Puntualidad (10%): {formatScore(ranking[1]?.score_punctualitate)}</div>
                               <div>Uso App (10%): {formatScore(ranking[1]?.score_uso_app)}</div>
-                              <div>Responsabilidad Digital (10%): {formatScore(ranking[1]?.score_responsabilidad_digital || (ranking[1]?.breakdown_json?.score_responsabilidad_digital))}</div>
+                              <div>Responsabilidad Digital (30%): {formatScore(ranking[1]?.score_responsabilidad_digital || (ranking[1]?.breakdown_json?.score_responsabilidad_digital))}</div>
                             </div>
                           </div>
                         </div>
@@ -572,11 +572,11 @@ const HallOfFamePage = () => {
                             <div className="text-xs text-white/90 mb-1 font-semibold">Puntuación Final</div>
                             <div className="text-4xl font-extrabold text-white drop-shadow-[0_3px_12px_rgba(0,0,0,0.6)] mb-2">{formatScore(ranking[0]?.score_final)}</div>
                             <div className="text-[10px] space-y-0.5 text-white/90 border-t border-white/30 pt-2">
-                              <div>Horas (50%): {formatScore(ranking[0]?.score_indeplinire)}</div>
+                              <div>Horas (30%): {formatScore(ranking[0]?.score_indeplinire)}</div>
                               <div>Calidad (20%): {formatScore(ranking[0]?.score_calitate)}</div>
                               <div>Puntualidad (10%): {formatScore(ranking[0]?.score_punctualitate)}</div>
                               <div>Uso App (10%): {formatScore(ranking[0]?.score_uso_app)}</div>
-                              <div>Responsabilidad Digital (10%): {formatScore(ranking[0]?.score_responsabilidad_digital || (ranking[0]?.breakdown_json?.score_responsabilidad_digital))}</div>
+                              <div>Responsabilidad Digital (30%): {formatScore(ranking[0]?.score_responsabilidad_digital || (ranking[0]?.breakdown_json?.score_responsabilidad_digital))}</div>
                             </div>
                           </div>
                         </div>
@@ -615,11 +615,11 @@ const HallOfFamePage = () => {
                             <div className="text-xs text-white/90 mb-1 font-semibold">Puntuación Final</div>
                             <div className="text-2xl font-extrabold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] mb-2">{formatScore(ranking[2]?.score_final)}</div>
                             <div className="text-[10px] space-y-0.5 text-white/90 border-t border-white/30 pt-2">
-                              <div>Horas (50%): {formatScore(ranking[2]?.score_indeplinire)}</div>
+                              <div>Horas (30%): {formatScore(ranking[2]?.score_indeplinire)}</div>
                               <div>Calidad (20%): {formatScore(ranking[2]?.score_calitate)}</div>
                               <div>Puntualidad (10%): {formatScore(ranking[2]?.score_punctualitate)}</div>
                               <div>Uso App (10%): {formatScore(ranking[2]?.score_uso_app)}</div>
-                              <div>Responsabilidad Digital (10%): {formatScore(ranking[2]?.score_responsabilidad_digital || (ranking[2]?.breakdown_json?.score_responsabilidad_digital))}</div>
+                              <div>Responsabilidad Digital (30%): {formatScore(ranking[2]?.score_responsabilidad_digital || (ranking[2]?.breakdown_json?.score_responsabilidad_digital))}</div>
                             </div>
                           </div>
                         </div>
@@ -655,11 +655,11 @@ const HallOfFamePage = () => {
                       </div>
                     </div>
                     <div className={`mt-2 pt-2 border-t border-white/30 ${isMobile ? 'text-[9px]' : 'text-[10px]'} space-y-0.5 text-white/90`}>
-                      <div>Horas (50%): {formatScore(ranking[0]?.score_indeplinire)}</div>
+                      <div>Horas (30%): {formatScore(ranking[0]?.score_indeplinire)}</div>
                       <div>Calidad (20%): {formatScore(ranking[0]?.score_calitate)}</div>
                       <div>Puntualidad (10%): {formatScore(ranking[0]?.score_punctualitate)}</div>
                       <div>Uso App (10%): {formatScore(ranking[0]?.score_uso_app)}</div>
-                      <div>Responsabilidad Digital (10%): {formatScore(ranking[0]?.score_responsabilidad_digital || (ranking[0]?.breakdown_json?.score_responsabilidad_digital))}</div>
+                      <div>Responsabilidad Digital (30%): {formatScore(ranking[0]?.score_responsabilidad_digital || (ranking[0]?.breakdown_json?.score_responsabilidad_digital))}</div>
                     </div>
                   </div>
                   
@@ -683,11 +683,11 @@ const HallOfFamePage = () => {
                       </div>
                     </div>
                     <div className={`mt-2 pt-2 border-t border-white/30 ${isMobile ? 'text-[9px]' : 'text-[10px]'} space-y-0.5 text-white/90`}>
-                      <div>Horas (50%): {formatScore(ranking[1]?.score_indeplinire)}</div>
+                      <div>Horas (30%): {formatScore(ranking[1]?.score_indeplinire)}</div>
                       <div>Calidad (20%): {formatScore(ranking[1]?.score_calitate)}</div>
                       <div>Puntualidad (10%): {formatScore(ranking[1]?.score_punctualitate)}</div>
                       <div>Uso App (10%): {formatScore(ranking[1]?.score_uso_app)}</div>
-                      <div>Responsabilidad Digital (10%): {formatScore(ranking[1]?.score_responsabilidad_digital || (ranking[1]?.breakdown_json?.score_responsabilidad_digital))}</div>
+                      <div>Responsabilidad Digital (30%): {formatScore(ranking[1]?.score_responsabilidad_digital || (ranking[1]?.breakdown_json?.score_responsabilidad_digital))}</div>
                     </div>
                   </div>
                   
@@ -711,11 +711,11 @@ const HallOfFamePage = () => {
                       </div>
                     </div>
                     <div className={`mt-2 pt-2 border-t border-white/30 ${isMobile ? 'text-[9px]' : 'text-[10px]'} space-y-0.5 text-white/90`}>
-                      <div>Horas (50%): {formatScore(ranking[2]?.score_indeplinire)}</div>
+                      <div>Horas (30%): {formatScore(ranking[2]?.score_indeplinire)}</div>
                       <div>Calidad (20%): {formatScore(ranking[2]?.score_calitate)}</div>
                       <div>Puntualidad (10%): {formatScore(ranking[2]?.score_punctualitate)}</div>
                       <div>Uso App (10%): {formatScore(ranking[2]?.score_uso_app)}</div>
-                      <div>Responsabilidad Digital (10%): {formatScore(ranking[2]?.score_responsabilidad_digital || (ranking[2]?.breakdown_json?.score_responsabilidad_digital))}</div>
+                      <div>Responsabilidad Digital (30%): {formatScore(ranking[2]?.score_responsabilidad_digital || (ranking[2]?.breakdown_json?.score_responsabilidad_digital))}</div>
                     </div>
                   </div>
                 </div>
@@ -761,7 +761,7 @@ const HallOfFamePage = () => {
                         <div className="text-lg font-semibold text-green-600">
                           {formatScore(item.score_indeplinire)}
                         </div>
-                        <div className="text-xs text-gray-500">Horas (50%)</div>
+                        <div className="text-xs text-gray-500">Horas (30%)</div>
                       </div>
                       <div className="text-center">
                         <div className="text-lg font-semibold text-purple-600">
@@ -785,7 +785,7 @@ const HallOfFamePage = () => {
                         <div className="text-lg font-semibold text-teal-600">
                           {formatScore(item.score_responsabilidad_digital || breakdownData?.score_responsabilidad_digital)}
                         </div>
-                        <div className="text-xs text-gray-500">Responsabilidad Digital (10%)</div>
+                        <div className="text-xs text-gray-500">Responsabilidad Digital (30%)</div>
                       </div>
                     </div>
 
@@ -869,7 +869,7 @@ const HallOfFamePage = () => {
                         <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} font-semibold text-green-700 text-center leading-tight break-words`}>
                           {formatScore(item.score_indeplinire)}
                         </div>
-                        <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-600 text-center leading-tight mt-0.5 break-words`}>Horas (50%)</div>
+                        <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-600 text-center leading-tight mt-0.5 break-words`}>Horas (30%)</div>
                       </div>
                       <div className={`bg-purple-50 rounded-lg ${isMobile ? 'p-1' : 'p-1.5 sm:p-2'} border border-purple-200 overflow-hidden`}>
                         <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} font-semibold text-purple-700 text-center leading-tight break-words`}>
@@ -893,7 +893,7 @@ const HallOfFamePage = () => {
                         <div className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} font-semibold text-teal-700 text-center leading-tight break-words`}>
                           {formatScore(item.score_responsabilidad_digital || breakdownData?.score_responsabilidad_digital)}
                         </div>
-                        <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-600 text-center leading-tight mt-0.5 break-words`}>Responsabilidad Digital (10%)</div>
+                        <div className={`${isMobile ? 'text-[9px]' : 'text-xs'} text-gray-600 text-center leading-tight mt-0.5 break-words`}>Responsabilidad Digital (30%)</div>
                       </div>
                     </div>
 
@@ -972,11 +972,11 @@ const HallOfFamePage = () => {
                   <div className={`border-t ${isMobile ? 'pt-2' : 'pt-3 sm:pt-4'}`}>
                     <h3 className={`${isMobile ? 'text-xs mb-1.5' : 'text-sm sm:text-base mb-2'} font-bold`}>Detalles KPI:</h3>
                     <div className={`${isMobile ? 'space-y-1 text-[10px]' : 'space-y-2 text-xs sm:text-sm'}`}>
-                      <div><strong>Cumplimiento horas (50%):</strong> {formatScore(breakdown.score_indeplinire)}</div>
+                      <div><strong>Cumplimiento horas (30%):</strong> {formatScore(breakdown.score_indeplinire)}</div>
                       <div><strong>Calidad fichaje (20%):</strong> {formatScore(breakdown.score_calitate)}</div>
                       <div><strong>Puntualidad (10%):</strong> {formatScore(breakdown.score_punctualitate)}</div>
                       <div><strong>Uso de la aplicación (10%):</strong> {formatScore(breakdown.score_uso_app)}</div>
-                      <div><strong>Responsabilidad digital (10%):</strong> {formatScore(breakdown.score_responsabilidad_digital)}</div>
+                      <div><strong>Responsabilidad digital (30%):</strong> {formatScore(breakdown.score_responsabilidad_digital)}</div>
                     </div>
                   </div>
                   {breakdown.breakdown_json && (
