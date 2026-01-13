@@ -91,12 +91,80 @@ export class NominasService {
   }
 
   /**
-   * Obține lista de nóminas cu filtrare bazată pe nume
-   * @param nombre - Numele angajatului pentru filtrare (opțional)
+   * Obține lista de nóminas cu filtrare bazată pe codigo (prioritate) sau nume (fallback)
+   * @param nombre - Numele angajatului pentru filtrare (fallback dacă nu există codigo)
+   * @param codigo - Codigo angajatului pentru filtrare (prioritate)
    * @returns Array de nóminas filtrate
    */
-  async getNominas(nombre?: string): Promise<any[]> {
+  async getNominas(nombre?: string, codigo?: string): Promise<any[]> {
     try {
+      // Dacă există codigo, căutăm mai întâi după codigo_empleado (prioritate)
+      if (codigo && codigo.trim() !== '') {
+        this.logger.log(`🔍 Searching nominas by codigo_empleado: ${codigo}`);
+
+        const query = `
+          SELECT 
+            \`id\`,
+            \`nombre\`,
+            \`tipo_mime\`,
+            \`fecha_subida\`,
+            \`Mes\`,
+            \`Ano\`,
+            \`codigo_empleado\`
+          FROM \`Nominas\`
+          WHERE \`codigo_empleado\` = ${this.escapeSql(codigo.trim())}
+          ORDER BY \`fecha_subida\` DESC
+        `;
+
+        const nominasByCodigo = await this.prisma.$queryRawUnsafe<
+          Array<{
+            id: number;
+            nombre: string | null;
+            tipo_mime: string | null;
+            fecha_subida: Date;
+            Mes: string | null;
+            Ano: string | null;
+            codigo_empleado: string | null;
+          }>
+        >(query);
+
+        if (nominasByCodigo && nominasByCodigo.length > 0) {
+          this.logger.log(
+            `✅ Found ${nominasByCodigo.length} nominas by codigo_empleado`,
+          );
+
+          return nominasByCodigo.map((nomina) => {
+            let mes = nomina.Mes ?? null;
+            let ano = nomina.Ano ?? null;
+
+            const base = this.stripExt(nomina.nombre ?? '');
+            const parts = base.split('_');
+            if ((!mes || !ano) && parts.length >= 2) {
+              const maybeAno = parts[parts.length - 1];
+              const maybeMes = parts[parts.length - 2];
+              if (!mes) mes = maybeMes || null;
+              if (!ano && this.isYear(maybeAno)) ano = maybeAno;
+            }
+
+            return {
+              id: Number(nomina.id), // Convert BigInt to Number pentru serializare JSON
+              nombre_empleado: this.extractNombreEmpleado(nomina),
+              archivo: nomina.nombre,
+              mes,
+              ano,
+              fecha_subida: nomina.fecha_subida,
+              codigo_empleado: nomina.codigo_empleado,
+            };
+          });
+        }
+
+        // Dacă nu am găsit după codigo, continuăm cu fallback pe nume
+        this.logger.log(
+          `⚠️ No nominas found by codigo_empleado, falling back to nombre search`,
+        );
+      }
+
+      // Fallback: căutăm după nume (dacă nu am găsit după codigo sau nu există codigo)
       // Obține toate nóminas din baza de date
       const nominas = await this.prisma.nominas.findMany({
         select: {
@@ -106,6 +174,7 @@ export class NominasService {
           fecha_subida: true,
           Mes: true,
           Ano: true,
+          codigo_empleado: true,
         },
         orderBy: {
           fecha_subida: 'desc',
@@ -121,6 +190,7 @@ export class NominasService {
           mes: nomina.Mes ?? null,
           ano: nomina.Ano ?? null,
           fecha_subida: nomina.fecha_subida,
+          codigo_empleado: nomina.codigo_empleado ?? null,
         }));
       }
 
@@ -153,8 +223,13 @@ export class NominasService {
             mes,
             ano,
             fecha_subida: n.fecha_subida,
+            codigo_empleado: n.codigo_empleado ?? null,
           };
         });
+
+      this.logger.log(
+        `✅ Found ${filtered.length} nominas by nombre (fallback)`,
+      );
 
       return filtered;
     } catch (error) {
@@ -760,6 +835,36 @@ export class NominasService {
       let processed = 0;
       let inserted = 0;
 
+      // Obținem codigo_empleado dacă există empleado_id sau dacă putem obține din nume
+      let codigoEmpleado: string | null = null;
+
+      // Încearcă să obțină codigo din empleado_id sau id dacă există
+      const empleadoId = body.empleado_id || body.id || null;
+      if (empleadoId) {
+        codigoEmpleado = empleadoId.toString();
+      } else if (nombre) {
+        // Încearcă să obțină codigo din nume
+        try {
+          const codigoQuery = `
+            SELECT \`CODIGO\`
+            FROM \`DatosEmpleados\`
+            WHERE TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) = ${this.escapeSql(nombre.trim().toUpperCase())}
+            LIMIT 1
+          `;
+          const codigoResult =
+            await this.prisma.$queryRawUnsafe<Array<{ CODIGO: string }>>(
+              codigoQuery,
+            );
+          if (codigoResult.length > 0 && codigoResult[0].CODIGO) {
+            codigoEmpleado = codigoResult[0].CODIGO;
+          }
+        } catch (codigoError: any) {
+          this.logger.warn(
+            `⚠️ Nu s-a putut obține codigo pentru ${nombre}: ${codigoError.message}`,
+          );
+        }
+      }
+
       // Process each file
       for (let index = 0; index < files.length; index++) {
         const file = files[index];
@@ -780,13 +885,15 @@ export class NominasService {
             \`archivo\`,
             \`tipo_mime\`,
             \`Mes\`,
-            \`Ano\`
+            \`Ano\`,
+            \`codigo_empleado\`
           ) VALUES (
             ${this.escapeSql(nombre)},
             ${file.buffer ? `0x${file.buffer.toString('hex')}` : 'NULL'},
             ${this.escapeSql(tipoMime)},
             ${this.escapeSql(mes)},
-            ${this.escapeSql(ano)}
+            ${this.escapeSql(ano)},
+            ${codigoEmpleado ? this.escapeSql(codigoEmpleado) : 'NULL'}
           )
         `;
 
@@ -795,7 +902,7 @@ export class NominasService {
           inserted++;
           processed++;
           this.logger.log(
-            `✅ Nómina ${index + 1}/${files.length} insertada: ${file.originalname} (${file.size} bytes)`,
+            `✅ Nómina ${index + 1}/${files.length} insertada: ${file.originalname} (${file.size} bytes), codigo: ${codigoEmpleado || 'NULL'}`,
           );
         } catch (insertError: any) {
           this.logger.error(

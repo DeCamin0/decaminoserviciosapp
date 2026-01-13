@@ -5,6 +5,8 @@ import { EmailService } from './email.service';
 import { SentEmailsService } from './sent-emails.service';
 import { NotificationsService } from './notifications.service';
 import { EmpleadosService } from './empleados.service';
+import { BajaVoluntariaPdfService } from './baja-voluntaria-pdf.service';
+import { DocumentosService } from './documentos.service';
 
 @Injectable()
 export class SolicitudesService {
@@ -18,6 +20,8 @@ export class SolicitudesService {
     private readonly sentEmailsService: SentEmailsService,
     private readonly notificationsService: NotificationsService,
     private readonly empleadosService: EmpleadosService,
+    private readonly bajaVoluntariaPdfService: BajaVoluntariaPdfService,
+    private readonly documentosService: DocumentosService,
   ) {}
 
   /**
@@ -469,6 +473,19 @@ export class SolicitudesService {
           row.fecha_solicitud instanceof Date
             ? row.fecha_solicitud.toISOString().replace('T', ' ').split('.')[0]
             : row.fecha_solicitud || row.FECHA_SOLICITUD,
+        // Câmpuri pentru BAJA_VOLUNTARIA
+        fecha_ultimo_dia_trabajo:
+          row.fecha_ultimo_dia_trabajo instanceof Date
+            ? row.fecha_ultimo_dia_trabajo.toISOString().split('T')[0]
+            : row.fecha_ultimo_dia_trabajo || null,
+        dias_preaviso:
+          row.dias_preaviso !== null && row.dias_preaviso !== undefined
+            ? Number(row.dias_preaviso)
+            : null,
+        cumple_preaviso_15:
+          row.cumple_preaviso_15 === true ||
+          row.cumple_preaviso_15 === 1 ||
+          row.cumple_preaviso_15 === '1',
       }));
     } catch (error: any) {
       this.logger.error('❌ Error retrieving solicitudes:', error);
@@ -496,6 +513,7 @@ export class SolicitudesService {
     fecha_inicio: string;
     fecha_fin: string;
     ip?: string; // IP pentru LOCACION în Ausencias
+    fecha_ultimo_dia_trabajo?: string; // Pentru BAJA_VOLUNTARIA
   }): Promise<any> {
     try {
       // Validează câmpurile obligatorii
@@ -505,7 +523,10 @@ export class SolicitudesService {
         );
       }
 
-      const estado = data.estado || 'Aprobada';
+      // Pentru BAJA_VOLUNTARIA, estado default este 'Pendiente' (nu 'Aprobada')
+      const estado =
+        data.estado ||
+        (data.tipo === 'BAJA_VOLUNTARIA' ? 'Pendiente' : 'Aprobada');
       const ip = data.ip || '';
 
       // Format fecha_inicio pentru MySQL (Date)
@@ -523,10 +544,43 @@ export class SolicitudesService {
         ? this.escapeSql(data.fecha_fin)
         : 'NULL';
 
+      // Pentru BAJA_VOLUNTARIA: calculează dias_preaviso și cumple_preaviso_15
+      let fechaUltimoDiaTrabajoSQL = 'NULL';
+      let diasPreavisoSQL = 'NULL';
+      let cumplePreaviso15SQL = 'FALSE';
+      const origenSQL = this.escapeSql('EMPLEADO');
+
+      if (data.tipo === 'BAJA_VOLUNTARIA' && data.fecha_ultimo_dia_trabajo) {
+        const fechaUltimoDiaDate = new Date(data.fecha_ultimo_dia_trabajo);
+        if (!isNaN(fechaUltimoDiaDate.getTime())) {
+          const fechaUltimoDiaFormatted = fechaUltimoDiaDate
+            .toISOString()
+            .split('T')[0];
+          fechaUltimoDiaTrabajoSQL = this.escapeSql(fechaUltimoDiaFormatted);
+
+          // Calculează dias_preaviso = DATEDIFF(fecha_ultimo_dia_trabajo, fecha_solicitud)
+          // Notă: fecha_solicitud este NOW() în momentul creării
+          const fechaSolicitud = new Date();
+          fechaSolicitud.setHours(0, 0, 0, 0); // Setează la începutul zilei pentru calcul corect
+          fechaUltimoDiaDate.setHours(0, 0, 0, 0); // Setează la începutul zilei pentru calcul corect
+          const diasPreaviso = Math.ceil(
+            (fechaUltimoDiaDate.getTime() - fechaSolicitud.getTime()) /
+              (1000 * 60 * 60 * 24),
+          );
+          diasPreavisoSQL = String(diasPreaviso);
+          cumplePreaviso15SQL = diasPreaviso >= 15 ? 'TRUE' : 'FALSE';
+
+          this.logger.log(
+            `📊 Calcul dias_preaviso: fecha_solicitud=${fechaSolicitud.toISOString().split('T')[0]}, fecha_ultimo_dia=${fechaUltimoDiaFormatted}, dias_preaviso=${diasPreaviso}`,
+          );
+        }
+      }
+
       // Query 1: INSERT în solicitudes
       const insertSolicitudQuery = `
         INSERT INTO solicitudes (
-          id, codigo, nombre, email, tipo, estado, fecha_inicio, fecha_fin, motivo, fecha_solicitud
+          id, codigo, nombre, email, tipo, estado, fecha_inicio, fecha_fin, motivo, fecha_solicitud,
+          origen, fecha_ultimo_dia_trabajo, dias_preaviso, cumple_preaviso_15
         ) VALUES (
           ${this.escapeSql(data.id)},
           ${this.escapeSql(data.codigo)},
@@ -537,7 +591,11 @@ export class SolicitudesService {
           ${fechaInicioSQL},
           ${fechaFinSQL},
           ${data.motivo ? this.escapeSql(data.motivo) : 'NULL'},
-          NOW()
+          NOW(),
+          ${origenSQL},
+          ${fechaUltimoDiaTrabajoSQL},
+          ${diasPreavisoSQL},
+          ${cumplePreaviso15SQL}
         )
       `;
 
@@ -550,8 +608,8 @@ export class SolicitudesService {
         // 1) INSERT în solicitudes
         await tx.$executeRawUnsafe(insertSolicitudQuery);
 
-        // 2) INSERT în Ausencias (doar dacă estado = 'Aprobada')
-        if (estado === 'Aprobada') {
+        // 2) INSERT în Ausencias (doar dacă estado = 'Aprobada' și NU este BAJA_VOLUNTARIA)
+        if (estado === 'Aprobada' && data.tipo !== 'BAJA_VOLUNTARIA') {
           const insertAusenciaQuery = `
             INSERT INTO Ausencias (
               solicitud_id, CODIGO, NOMBRE, TIPO, FECHA, HORA, LOCACION, MOTIVO, DURACION, created_at
@@ -580,14 +638,21 @@ export class SolicitudesService {
       });
 
       // Trimite notificare pe Telegram și Email (complet async, nu așteptăm răspunsul)
+      // Pentru BAJA_VOLUNTARIA, folosim fecha_ultimo_dia_trabajo
+      let fechaDisplay = 'N/A';
+      if (data.tipo === 'BAJA_VOLUNTARIA' && data.fecha_ultimo_dia_trabajo) {
+        fechaDisplay = data.fecha_ultimo_dia_trabajo;
+      } else if (data.fecha_inicio && data.fecha_fin) {
+        fechaDisplay = `${data.fecha_inicio} - ${data.fecha_fin}`;
+      } else if (data.fecha_inicio || data.fecha_fin) {
+        fechaDisplay = data.fecha_inicio || data.fecha_fin || 'N/A';
+      }
+
       const solicitudNotificationData = {
         codigo: data.codigo,
         nombre: data.nombre,
         tipo: data.tipo,
-        fecha:
-          data.fecha_inicio && data.fecha_fin
-            ? `${data.fecha_inicio} - ${data.fecha_fin}`
-            : data.fecha_inicio || data.fecha_fin || 'N/A',
+        fecha: fechaDisplay,
         estado: estado,
         motivo: data.motivo,
         accion: 'create' as const,
@@ -596,11 +661,19 @@ export class SolicitudesService {
 
       setImmediate(() => {
         // Telegram notification (către gestoria)
+        this.logger.log(
+          `📱 [CREATE] Attempting to send Telegram notification - solicitud: ${solicitudNotificationData.codigo}, tipo: ${solicitudNotificationData.tipo}, accion: ${solicitudNotificationData.accion}`,
+        );
         this.telegramService
           .sendSolicitudNotification(solicitudNotificationData)
+          .then(() => {
+            this.logger.log(
+              `✅ [CREATE] Telegram notification sent successfully - solicitud: ${solicitudNotificationData.codigo}, tipo: ${solicitudNotificationData.tipo}`,
+            );
+          })
           .catch((telegramError: any) => {
-            this.logger.warn(
-              `⚠️ Error sending Telegram notification (non-blocking): ${telegramError.message}`,
+            this.logger.error(
+              `❌ [CREATE] Error sending Telegram notification (non-blocking): ${telegramError.message}`,
             );
           });
 
@@ -684,6 +757,43 @@ export class SolicitudesService {
       throw new BadRequestException(
         `Error al crear solicitud: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Generează PDF preview pentru Baja Voluntaria (fără aprobare)
+   */
+  async generateBajaVoluntariaPreviewPDF(solicitud: any): Promise<Buffer> {
+    try {
+      const fechaUltimoDiaTrabajo =
+        solicitud.fecha_ultimo_dia_trabajo ||
+        solicitud.fecha_inicio ||
+        solicitud.fecha_fin;
+      const diasPreaviso = solicitud.dias_preaviso ?? 0;
+      const cumplePreaviso15 = solicitud.cumple_preaviso_15 ?? false;
+
+      if (!fechaUltimoDiaTrabajo) {
+        throw new BadRequestException(
+          'fecha_ultimo_dia_trabajo no está disponible',
+        );
+      }
+
+      const pdfBuffer =
+        await this.bajaVoluntariaPdfService.generateBajaVoluntariaPDF({
+          codigo: solicitud.codigo || '',
+          nombre: solicitud.nombre || '',
+          fecha_solicitud:
+            solicitud.fecha_solicitud || new Date().toISOString(),
+          fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo,
+          dias_preaviso: diasPreaviso,
+          cumple_preaviso_15: cumplePreaviso15,
+          motivo: solicitud.motivo,
+        });
+
+      return pdfBuffer;
+    } catch (error: any) {
+      this.logger.error(`❌ Eroare la generarea preview PDF: ${error.message}`);
+      throw error;
     }
   }
 
@@ -834,8 +944,8 @@ export class SolicitudesService {
         // 1) UPDATE în solicitudes
         await tx.$executeRawUnsafe(updateSolicitudQuery);
 
-        // 2) UPSERT sau DELETE în Ausencias
-        if (estado === 'Aprobada') {
+        // 2) UPSERT sau DELETE în Ausencias (NU pentru BAJA_VOLUNTARIA)
+        if (estado === 'Aprobada' && tipo !== 'BAJA_VOLUNTARIA') {
           // UPSERT în Ausencias
           const upsertAusenciaQuery = `
             INSERT INTO Ausencias (
@@ -864,7 +974,7 @@ export class SolicitudesService {
               DURACION = VALUES(DURACION)
           `;
           await tx.$executeRawUnsafe(upsertAusenciaQuery);
-        } else {
+        } else if (estado !== 'Aprobada') {
           // DELETE din Ausencias (dacă estado != 'Aprobada')
           const deleteAusenciaQuery = `
             DELETE FROM Ausencias
@@ -896,6 +1006,302 @@ export class SolicitudesService {
       this.logger.log(
         `🔍 [UPDATE] Solicitud after update - found: ${!!solicitud}, id: ${id}, tipo: ${solicitud?.tipo || 'N/A'}`,
       );
+
+      // Pentru BAJA_VOLUNTARIA aprobată: generează PDF, trimite email, setează fecha_baja_programada
+      if (
+        solicitud &&
+        solicitud.tipo === 'BAJA_VOLUNTARIA' &&
+        estado === 'Aprobada' &&
+        solicitudBefore?.estado !== 'Aprobada'
+      ) {
+        // Este prima aprobare (nu era deja Aprobada)
+        this.logger.log(
+          `🔄 [UPDATE] BAJA_VOLUNTARIA aprobată - procesare PDF și email pentru ${id}`,
+        );
+
+        try {
+          // Obține fecha_ultimo_dia_trabajo din solicitud
+          const fechaUltimoDiaTrabajo =
+            solicitud.fecha_ultimo_dia_trabajo ||
+            solicitudBefore?.fecha_ultimo_dia_trabajo;
+          const diasPreaviso =
+            solicitud.dias_preaviso || solicitudBefore?.dias_preaviso || 0;
+          const cumplePreaviso15 =
+            solicitud.cumple_preaviso_15 ||
+            solicitudBefore?.cumple_preaviso_15 ||
+            false;
+
+          if (fechaUltimoDiaTrabajo) {
+            // Generează PDF
+            const pdfBuffer =
+              await this.bajaVoluntariaPdfService.generateBajaVoluntariaPDF({
+                codigo: codigo,
+                nombre: nombre,
+                fecha_solicitud:
+                  solicitud.fecha_solicitud ||
+                  solicitudBefore?.fecha_solicitud ||
+                  new Date().toISOString(),
+                fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo,
+                dias_preaviso: diasPreaviso,
+                cumple_preaviso_15: cumplePreaviso15,
+                motivo: motivo,
+              });
+
+            // Formatează email HTML
+            const subject = `🟡 Baja Voluntaria Aprobada - ${nombre} (${codigo})`;
+            const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .header { background-color: #fff3cd; padding: 20px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #ffc107; }
+    .info-row { margin: 10px 0; }
+    .label { font-weight: bold; color: #555; }
+    .value { color: #333; }
+    .warning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; border-radius: 4px; margin: 15px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>🟡 Baja Voluntaria Aprobada</h2>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">👤 Empleado:</span>
+    <span class="value">${nombre} (${codigo})</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📅 Fecha de solicitud:</span>
+    <span class="value">${solicitud.fecha_solicitud || 'N/A'}</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📅 Último día de trabajo:</span>
+    <span class="value">${fechaUltimoDiaTrabajo}</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📊 Días de preaviso:</span>
+    <span class="value">${diasPreaviso}</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">✅ Cumple preaviso de 15 días:</span>
+    <span class="value">${cumplePreaviso15 ? 'SÍ' : 'NO'}</span>
+  </div>
+  
+  ${
+    motivo
+      ? `
+  <div class="info-row">
+    <span class="label">📝 Motivo:</span>
+    <span class="value">${motivo}</span>
+  </div>
+  `
+      : ''
+  }
+  
+  <div class="warning">
+    <h3 style="margin-top: 0; color: #856404;">ℹ️ Información importante</h3>
+    <p style="color: #856404;">Esta solicitud ha sido aprobada. El PDF adjunto contiene todos los detalles.</p>
+  </div>
+  
+  <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
+  <p style="color: #888; font-size: 12px; margin-top: 20px;">
+    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+  </p>
+</body>
+</html>
+            `.trim();
+
+            // Caută documentul încărcat de angajat (dacă există)
+            let documentoEmpleadoBuffer: Buffer | null = null;
+            let documentoEmpleadoFileName: string | null = null;
+            let documentoEmpleadoMimeType: string | null = null;
+
+            try {
+              // Obține email-ul angajatului pentru căutarea documentului
+              const empleadoEmailQuery = await this.prisma.$queryRawUnsafe<
+                Array<{ 'CORREO ELECTRONICO': string | null }>
+              >(`
+                SELECT \`CORREO ELECTRONICO\`
+                FROM DatosEmpleados
+                WHERE CODIGO = ${this.escapeSql(codigo)}
+                LIMIT 1
+              `);
+
+              const empleadoEmail =
+                empleadoEmailQuery.length > 0 &&
+                empleadoEmailQuery[0]['CORREO ELECTRONICO']
+                  ? empleadoEmailQuery[0]['CORREO ELECTRONICO'].trim()
+                  : null;
+
+              // Caută documentele cu tipo_documento = 'Baja Voluntaria'
+              const documentos = await this.documentosService.getDocumentos(
+                codigo,
+                empleadoEmail || undefined,
+              );
+
+              // Filtrează doar documentele cu tipo_documento = 'Baja Voluntaria'
+              const bajaVoluntariaDocs = documentos.filter(
+                (doc) =>
+                  (doc.tipo_documento || '').toLowerCase() ===
+                  'baja voluntaria',
+              );
+
+              if (bajaVoluntariaDocs.length > 0) {
+                // Sortează după doc_id (cel mai mare = cel mai recent) sau fecha_creacion
+                const sortedDocs = bajaVoluntariaDocs.sort((a, b) => {
+                  if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+                  if (b.fecha_creacion && a.fecha_creacion) {
+                    return (
+                      new Date(b.fecha_creacion).getTime() -
+                      new Date(a.fecha_creacion).getTime()
+                    );
+                  }
+                  return 0;
+                });
+
+                // Folosește cel mai recent document
+                const documentoMasReciente = sortedDocs[0];
+
+                if (documentoMasReciente.doc_id) {
+                  // Descarcă documentul
+                  const documentoDescargado =
+                    await this.documentosService.downloadDocumento(
+                      documentoMasReciente.doc_id,
+                      codigo,
+                      empleadoEmail || undefined,
+                    );
+
+                  documentoEmpleadoBuffer = documentoDescargado.archivo;
+                  documentoEmpleadoFileName =
+                    documentoDescargado.nombre_archivo;
+                  documentoEmpleadoMimeType = documentoDescargado.tipo_mime;
+
+                  this.logger.log(
+                    `✅ Documento de empleado encontrado y descargado: ${documentoEmpleadoFileName} (${documentoEmpleadoBuffer.length} bytes)`,
+                  );
+                }
+              } else {
+                this.logger.log(
+                  `ℹ️ No se encontró documento de empleado para BAJA_VOLUNTARIA ${id}`,
+                );
+              }
+            } catch (docError: any) {
+              this.logger.warn(
+                `⚠️ Error al buscar/descargar documento de empleado: ${docError.message}. Continuando sin documento...`,
+              );
+              // Nu oprește procesul dacă nu se găsește documentul
+            }
+
+            // Construiește array-ul de attachments
+            const attachments: Array<{
+              filename: string;
+              content: Buffer;
+              contentType?: string;
+            }> = [
+              {
+                filename: `Baja_Voluntaria_${codigo}_${new Date().toISOString().split('T')[0]}.pdf`,
+                content: pdfBuffer,
+                contentType: 'application/pdf',
+              },
+            ];
+
+            // Adaugă documentul încărcat de angajat dacă există
+            if (
+              documentoEmpleadoBuffer &&
+              documentoEmpleadoFileName &&
+              documentoEmpleadoMimeType
+            ) {
+              attachments.push({
+                filename: `Documento_Empleado_${documentoEmpleadoFileName}`,
+                content: documentoEmpleadoBuffer,
+                contentType: documentoEmpleadoMimeType,
+              });
+            }
+
+            // Trimite email către gestoria cu PDF și documentul angajatului (dacă există)
+            const GESTORIA_EMAIL = 'altemprado@gmail.com';
+            await this.emailService.sendEmailWithAttachments(
+              GESTORIA_EMAIL,
+              subject,
+              html,
+              attachments,
+              {
+                bcc: [
+                  'info@decaminoservicios.com',
+                  'mirisjm@gmail.com',
+                  'decamino.rrhh@gmail.com',
+                ],
+              },
+            );
+
+            this.logger.log(
+              `✅ Email cu ${attachments.length} attachment(s) trimis către gestoria pentru Baja voluntaria ${id}`,
+            );
+
+            // Actualizează enviado_gestoria și fecha_envio_gestoria
+            await this.prisma.$executeRawUnsafe(`
+              UPDATE solicitudes
+              SET enviado_gestoria = TRUE,
+                  fecha_envio_gestoria = NOW()
+              WHERE id = ${this.escapeSql(id)}
+            `);
+
+            // Setează fecha_baja_programada în DatosEmpleados
+            const fechaUltimoDiaDate = new Date(fechaUltimoDiaTrabajo);
+            if (!isNaN(fechaUltimoDiaDate.getTime())) {
+              const fechaFormatted = fechaUltimoDiaDate
+                .toISOString()
+                .split('T')[0];
+              await this.prisma.$executeRawUnsafe(`
+                UPDATE DatosEmpleados
+                SET \`fecha_baja_programada\` = ${this.escapeSql(fechaFormatted)}
+                WHERE CODIGO = ${this.escapeSql(codigo)}
+              `);
+              this.logger.log(
+                `✅ fecha_baja_programada actualizată pentru empleado ${codigo}`,
+              );
+            }
+
+            // Salvează email-ul în BD
+            try {
+              await this.sentEmailsService.saveSentEmail({
+                senderId: codigo,
+                recipientType: 'gestoria',
+                recipientEmail: GESTORIA_EMAIL,
+                recipientName: 'Gestoria',
+                subject,
+                message: html,
+                status: 'sent',
+                attachments: attachments.map((att) => ({
+                  filename: att.filename,
+                  fileContent: att.content,
+                  mimeType: att.contentType || 'application/octet-stream',
+                  fileSize: att.content.length,
+                })),
+              });
+            } catch (saveError: any) {
+              this.logger.warn(
+                `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+              );
+            }
+          } else {
+            this.logger.warn(
+              `⚠️ fecha_ultimo_dia_trabajo nu este setată pentru BAJA_VOLUNTARIA ${id}`,
+            );
+          }
+        } catch (error: any) {
+          this.logger.error(
+            `❌ Eroare la procesarea BAJA_VOLUNTARIA aprobată: ${error.message}`,
+          );
+          // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+        }
+      }
 
       // Trimite notificare pe Telegram și Email pentru update (complet async, nu așteptăm răspunsul)
       if (solicitud) {
@@ -1297,5 +1703,331 @@ export class SolicitudesService {
         `Error al eliminar solicitud: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Creează o solicitare de despido improcedente (doar pentru ADMIN)
+   * Poate fi salvată ca borrador sau confirmată direct
+   */
+  async createDespidoImprocedente(data: {
+    codigo: string;
+    nombre: string;
+    email?: string;
+    fecha_efectiva: string; // YYYY-MM-DD
+    comentario_empresa?: string;
+    created_by_user_id: string;
+    confirmar: boolean; // true = confirmar y notificar, false = guardar borrador
+    attachments?: Array<{
+      filename: string;
+      content: Buffer;
+      contentType?: string;
+    }>;
+  }): Promise<any> {
+    try {
+      // Validări
+      if (!data.codigo || !data.nombre || !data.fecha_efectiva) {
+        throw new BadRequestException(
+          'codigo, nombre și fecha_efectiva sunt obligatorii',
+        );
+      }
+
+      // Validează data efectivă
+      const fechaEfectivaDate = new Date(data.fecha_efectiva);
+      if (isNaN(fechaEfectivaDate.getTime())) {
+        throw new BadRequestException(
+          'fecha_efectiva trebuie să fie o dată validă',
+        );
+      }
+
+      // Generează ID unic
+      const id = `DESP_${Date.now()}`;
+
+      // Obține email-ul angajatului dacă nu este furnizat
+      let empleadoEmail = data.email;
+      if (!empleadoEmail) {
+        try {
+          const empleado = await this.empleadosService.getEmpleadoByCodigo(
+            data.codigo,
+          );
+          empleadoEmail =
+            empleado?.['CORREO ELECTRONICO'] ||
+            empleado?.CORREO_ELECTRONICO ||
+            null;
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ Could not fetch empleado email for ${data.codigo}: ${error.message}`,
+          );
+        }
+      }
+
+      // Determină estado în funcție de confirmar
+      const estado = data.confirmar ? 'CONFIRMADO' : 'BORRADOR';
+
+      // Format fecha_efectiva pentru MySQL (Date)
+      const fechaEfectivaFormatted = fechaEfectivaDate
+        .toISOString()
+        .split('T')[0];
+      const fechaEfectivaSQL = this.escapeSql(fechaEfectivaFormatted);
+
+      // Query INSERT în solicitudes
+      const insertQuery = `
+        INSERT INTO solicitudes (
+          id, codigo, nombre, email, tipo, estado, fecha_inicio, 
+          origen, fecha_efectiva, comentario_empresa, created_by_user_id,
+          enviado_gestoria, fecha_envio_gestoria, fecha_solicitud
+        ) VALUES (
+          ${this.escapeSql(id)},
+          ${this.escapeSql(data.codigo)},
+          ${this.escapeSql(data.nombre)},
+          ${empleadoEmail ? this.escapeSql(empleadoEmail) : 'NULL'},
+          ${this.escapeSql('DESPIDO_IMPROCEDENTE')},
+          ${this.escapeSql(estado)},
+          ${fechaEfectivaSQL},
+          ${this.escapeSql('EMPRESA')},
+          ${fechaEfectivaSQL},
+          ${data.comentario_empresa ? this.escapeSql(data.comentario_empresa) : 'NULL'},
+          ${this.escapeSql(data.created_by_user_id)},
+          ${data.confirmar ? 'TRUE' : 'FALSE'},
+          ${data.confirmar ? 'NOW()' : 'NULL'},
+          NOW()
+        )
+      `;
+
+      this.logger.log(
+        `📝 Create despido improcedente: ${id} (${data.codigo}), estado: ${estado}, confirmar: ${data.confirmar}`,
+      );
+
+      // Execută INSERT
+      await this.prisma.$executeRawUnsafe(insertQuery);
+
+      // Dacă este confirmat, actualizează fecha_baja_programada în DatosEmpleados
+      if (data.confirmar) {
+        const updateFechaBajaQuery = `
+          UPDATE DatosEmpleados
+          SET \`fecha_baja_programada\` = ${fechaEfectivaSQL}
+          WHERE CODIGO = ${this.escapeSql(data.codigo)}
+        `;
+        await this.prisma.$executeRawUnsafe(updateFechaBajaQuery);
+        this.logger.log(
+          `✅ fecha_baja_programada actualizată pentru empleado ${data.codigo}`,
+        );
+      }
+
+      // Dacă este confirmat, trimite email către gestoria
+      if (data.confirmar) {
+        await this.confirmarYNotificarGestoria(id, data, empleadoEmail);
+      }
+
+      // Returnează solicitarea creată
+      const created = await this.getSolicitudes({
+        codigo: data.codigo,
+        limit: 1,
+      });
+      const solicitud = created.find((s) => s.id === id);
+
+      return {
+        success: true,
+        status: 'ok',
+        solicitud_id: id,
+        solicitud: solicitud || null,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error creating despido improcedente:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al crear despido improcedente: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Confirmă o solicitare de despido și trimite email către gestoria
+   */
+  async confirmarYNotificarGestoria(
+    solicitudId: string,
+    data: {
+      codigo: string;
+      nombre: string;
+      fecha_efectiva: string;
+      comentario_empresa?: string;
+      attachments?: Array<{
+        filename: string;
+        content: Buffer;
+        contentType?: string;
+      }>;
+    },
+    empleadoEmail?: string | null,
+  ): Promise<void> {
+    try {
+      // Actualizează estado și marca enviado_gestoria
+      const updateQuery = `
+        UPDATE solicitudes
+        SET estado = ${this.escapeSql('CONFIRMADO')},
+            enviado_gestoria = TRUE,
+            fecha_envio_gestoria = NOW()
+        WHERE id = ${this.escapeSql(solicitudId)}
+      `;
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
+      // Actualizează fecha_baja_programada în DatosEmpleados
+      const fechaEfectivaDate = new Date(data.fecha_efectiva);
+      const fechaEfectivaFormatted = fechaEfectivaDate
+        .toISOString()
+        .split('T')[0];
+      const fechaEfectivaSQL = this.escapeSql(fechaEfectivaFormatted);
+
+      const updateFechaBajaQuery = `
+        UPDATE DatosEmpleados
+        SET \`fecha_baja_programada\` = ${fechaEfectivaSQL}
+        WHERE CODIGO = ${this.escapeSql(data.codigo)}
+      `;
+      await this.prisma.$executeRawUnsafe(updateFechaBajaQuery);
+
+      // Formatează email HTML
+      const subject = `🔴 Despido Improcedente - ${data.nombre} (${data.codigo})`;
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .header { background-color: #fee; padding: 20px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #dc3545; }
+    .info-row { margin: 10px 0; }
+    .label { font-weight: bold; color: #555; }
+    .value { color: #333; }
+    .warning { background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; border-radius: 4px; margin: 15px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>🔴 Despido Improcedente</h2>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">👤 Empleado:</span>
+    <span class="value">${data.nombre} (${data.codigo})</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">📅 Fecha efectiva del despido:</span>
+    <span class="value">${data.fecha_efectiva}</span>
+  </div>
+  
+  ${
+    data.comentario_empresa
+      ? `
+  <div class="info-row">
+    <span class="label">📝 Comentario interno:</span>
+    <span class="value">${data.comentario_empresa}</span>
+  </div>
+  `
+      : ''
+  }
+  
+  ${
+    empleadoEmail
+      ? `
+  <div class="info-row">
+    <span class="label">📧 Email empleado:</span>
+    <span class="value">${empleadoEmail}</span>
+  </div>
+  `
+      : ''
+  }
+  
+  <div class="warning">
+    <h3 style="margin-top: 0; color: #856404;">⚠️ Acción iniciada por la empresa</h3>
+    <p style="color: #856404;">Esta solicitud ha sido creada y confirmada por un administrador del sistema.</p>
+  </div>
+  
+  <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
+  <p style="color: #888; font-size: 12px; margin-top: 20px;">
+    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+  </p>
+</body>
+</html>
+      `.trim();
+
+      // Trimite email către gestoria
+      const GESTORIA_EMAIL = 'altemprado@gmail.com';
+
+      if (data.attachments && data.attachments.length > 0) {
+        await this.emailService.sendEmailWithAttachments(
+          GESTORIA_EMAIL,
+          subject,
+          html,
+          data.attachments,
+          {
+            bcc: [
+              'info@decaminoservicios.com',
+              'mirisjm@gmail.com',
+              'decamino.rrhh@gmail.com',
+            ],
+          },
+        );
+      } else {
+        await this.emailService.sendEmail(GESTORIA_EMAIL, subject, html, {
+          bcc: [
+            'info@decaminoservicios.com',
+            'mirisjm@gmail.com',
+            'decamino.rrhh@gmail.com',
+          ],
+        });
+      }
+
+      this.logger.log(
+        `✅ Email trimis către gestoria pentru despido improcedente ${solicitudId}`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: data.codigo,
+          recipientType: 'gestoria',
+          recipientEmail: GESTORIA_EMAIL,
+          recipientName: 'Gestoria',
+          subject,
+          message: html,
+          status: 'sent',
+          attachments: data.attachments
+            ? data.attachments.map((att) => ({
+                filename: att.filename,
+                fileContent: att.content,
+                mimeType: att.contentType || 'application/octet-stream',
+                fileSize: att.content.length,
+              }))
+            : undefined,
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error confirming and notifying gestoria: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Salvează o solicitare de despido ca borrador (fără a trimite email)
+   */
+  async guardarBorrador(data: {
+    codigo: string;
+    nombre: string;
+    email?: string;
+    fecha_efectiva: string;
+    comentario_empresa?: string;
+    created_by_user_id: string;
+  }): Promise<any> {
+    return this.createDespidoImprocedente({
+      ...data,
+      confirmar: false,
+    });
   }
 }

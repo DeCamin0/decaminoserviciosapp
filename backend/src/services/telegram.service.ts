@@ -109,6 +109,38 @@ ${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
   }
 
   /**
+   * Escape-uiește caracterele speciale Markdown pentru Telegram
+   * Nu escape-uiește liniuța `-` pentru a păstra formatul datelor (YYYY-MM-DD)
+   */
+  private escapeMarkdown(text: string): string {
+    if (!text) return text;
+    // Escape-uiește caracterele speciale Markdown: _ * [ ] ( ) ~ ` > # + = | { } . !
+    // NU escape-uim liniuța `-` pentru a păstra formatul datelor
+    return (
+      text
+        .replace(/\_/g, '\\_')
+        .replace(/\*/g, '\\*')
+        .replace(/\[/g, '\\[')
+        .replace(/\]/g, '\\]')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)')
+        .replace(/\~/g, '\\~')
+        .replace(/\`/g, '\\`')
+        .replace(/\>/g, '\\>')
+        .replace(/\#/g, '\\#')
+        .replace(/\+/g, '\\+')
+        // Nu escape-uim liniuța - pentru a păstra formatul datelor (YYYY-MM-DD)
+        // .replace(/\-/g, '\\-')
+        .replace(/\=/g, '\\=')
+        .replace(/\|/g, '\\|')
+        .replace(/\{/g, '\\{')
+        .replace(/\}/g, '\\}')
+        .replace(/\./g, '\\.')
+        .replace(/\!/g, '\\!')
+    );
+  }
+
+  /**
    * Trimite o notificare despre o solicitare nouă/actualizată
    * IMPORTANT: Toate mesajele Telegram trebuie să fie în spaniolă
    */
@@ -148,17 +180,27 @@ ${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
 
     const cambioTipoSection =
       solicitudData.tipoAnterior && solicitudData.tipoNuevo
-        ? `\n🔄 *Cambio de tipo:*\n   De "${solicitudData.tipoAnterior}" a "${solicitudData.tipoNuevo}"\n`
+        ? `\n🔄 *Cambio de tipo:*\n   De "${this.escapeMarkdown(solicitudData.tipoAnterior)}" a "${this.escapeMarkdown(solicitudData.tipoNuevo)}"\n`
         : '';
+
+    // Escape-uiește valorile pentru a evita erorile de parsing Markdown
+    const tipoEscaped = this.escapeMarkdown(solicitudData.tipo);
+    const nombreEscaped = this.escapeMarkdown(solicitudData.nombre);
+    const codigoEscaped = this.escapeMarkdown(solicitudData.codigo);
+    const fechaEscaped = this.escapeMarkdown(solicitudData.fecha);
+    const estadoEscaped = this.escapeMarkdown(solicitudData.estado);
+    const motivoEscaped = solicitudData.motivo
+      ? this.escapeMarkdown(solicitudData.motivo)
+      : '';
 
     const message = `
 ${actionEmoji} *${actionText}*
 
-👤 *Empleado:* ${solicitudData.nombre} (${solicitudData.codigo})
-📋 *Tipo:* ${solicitudData.tipo}${cambioTipoSection}
-📆 *Fecha:* ${solicitudData.fecha}
-✅ *Estado:* ${solicitudData.estado}
-${solicitudData.motivo ? `📝 *Motivo:* ${solicitudData.motivo}` : ''}
+👤 *Empleado:* ${nombreEscaped} (${codigoEscaped})
+📋 *Tipo:* ${tipoEscaped}${cambioTipoSection}
+📆 *Fecha:* ${fechaEscaped}
+✅ *Estado:* ${estadoEscaped}
+${motivoEscaped ? `📝 *Motivo:* ${motivoEscaped}` : ''}
     `.trim();
 
     await this.sendMessage(message);

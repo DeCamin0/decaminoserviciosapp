@@ -8,37 +8,38 @@ datasource db {
 }
 
 model User {
-  CODIGO               String  @id @map("CODIGO") @db.VarChar(50)
-  NOMBRE_APELLIDOS     String? @map("NOMBRE / APELLIDOS") @db.VarChar(255)
-  NOMBRE_APELLIDOS_BACKUP String? @map("NOMBRE_APELLIDOS_BACKUP") @db.VarChar(255)
-  NOMBRE               String? @map("NOMBRE") @db.VarChar(120)
-  APELLIDO1            String? @map("APELLIDO1") @db.VarChar(120)
-  APELLIDO2            String? @map("APELLIDO2") @db.VarChar(120)
-  NOMBRE_SPLIT_CONFIANZA Int @default(2) @map("NOMBRE_SPLIT_CONFIANZA") @db.TinyInt
-  NACIONALIDAD         String? @db.VarChar(100)
-  DIRECCION            String? @db.VarChar(700)
-  DNI_NIE              String? @map("D.N.I. / NIE") @db.VarChar(50)
-  SEG__SOCIAL          String? @map("SEG. SOCIAL") @db.VarChar(50)
-  N__Cuenta            String? @map("Nº Cuenta") @db.VarChar(100)
-  TELEFONO             String? @db.VarChar(30)
-  CORREO_ELECTRONICO   String? @map("CORREO ELECTRONICO") @db.VarChar(255)
-  FECHA_NACIMIENTO     String? @map("FECHA NACIMIENTO") @db.VarChar(100)
-  FECHA_DE_ALTA        String? @map("FECHA DE ALTA") @db.VarChar(100)
-  CENTRO_TRABAJO       String? @map("CENTRO TRABAJO") @db.VarChar(300)
-  TIPO_DE_CONTRATO     String? @map("TIPO DE CONTRATO") @db.VarChar(300)
-  SUELDO_BRUTO_MENSUAL String? @map("SUELDO BRUTO MENSUAL") @db.VarChar(300)
-  HORAS_DE_CONTRATO    String? @map("HORAS DE CONTRATO") @db.VarChar(50)
-  EMPRESA              String? @db.VarChar(100)
-  GRUPO                String? @map("GRUPO") @db.VarChar(200)
-  ESTADO               String? @map("ESTADO") @db.VarChar(50)
-  FECHA_BAJA           String? @map("FECHA BAJA") @db.VarChar(100)
-  Fecha_Antig_edad     String? @map("Fecha Antigüedad") @db.VarChar(100)
-  Antig_edad           String? @map("Antigüedad") @db.VarChar(500)
-  CONTRASENA           String? @map("Contraseña") @db.VarChar(255)
-  DerechoPedidos       String? @db.VarChar(100)
-  TrabajaFestivos      String? @db.VarChar(50)
+  CODIGO                            String   @id @map("CODIGO") @db.VarChar(50)
+  NOMBRE_APELLIDOS                  String?  @map("NOMBRE / APELLIDOS") @db.VarChar(255)
+  NOMBRE_APELLIDOS_BACKUP           String?  @map("NOMBRE_APELLIDOS_BACKUP") @db.VarChar(255)
+  NOMBRE                            String?  @map("NOMBRE") @db.VarChar(120)
+  APELLIDO1                         String?  @map("APELLIDO1") @db.VarChar(120)
+  APELLIDO2                         String?  @map("APELLIDO2") @db.VarChar(120)
+  NOMBRE_SPLIT_CONFIANZA            Int      @default(2) @map("NOMBRE_SPLIT_CONFIANZA") @db.TinyInt
+  NACIONALIDAD                      String?  @db.VarChar(100)
+  DIRECCION                         String?  @db.VarChar(700)
+  DNI_NIE                           String?  @map("D.N.I. / NIE") @db.VarChar(50)
+  SEG__SOCIAL                       String?  @map("SEG. SOCIAL") @db.VarChar(50)
+  N__Cuenta                         String?  @map("Nº Cuenta") @db.VarChar(100)
+  TELEFONO                          String?  @db.VarChar(30)
+  CORREO_ELECTRONICO                String?  @map("CORREO ELECTRONICO") @db.VarChar(255)
+  FECHA_NACIMIENTO                  String?  @map("FECHA NACIMIENTO") @db.VarChar(100)
+  FECHA_DE_ALTA                     String?  @map("FECHA DE ALTA") @db.VarChar(100)
+  CENTRO_TRABAJO                    String?  @map("CENTRO TRABAJO") @db.VarChar(300)
+  TIPO_DE_CONTRATO                  String?  @map("TIPO DE CONTRATO") @db.VarChar(300)
+  SUELDO_BRUTO_MENSUAL              String?  @map("SUELDO BRUTO MENSUAL") @db.VarChar(300)
+  HORAS_DE_CONTRATO                 String?  @map("HORAS DE CONTRATO") @db.VarChar(50)
+  EMPRESA                           String?  @db.VarChar(100)
+  GRUPO                             String?  @map("GRUPO") @db.VarChar(200)
+  ESTADO                            String?  @map("ESTADO") @db.VarChar(50)
+  FECHA_BAJA                        String?  @map("FECHA BAJA") @db.VarChar(100)
+  Fecha_Antig_edad                  String?  @map("Fecha Antigüedad") @db.VarChar(100)
+  Antig_edad                        String?  @map("Antigüedad") @db.VarChar(500)
+  CONTRASENA                        String?  @map("Contraseña") @db.VarChar(255)
+  DerechoPedidos                    String?  @db.VarChar(100)
+  TrabajaFestivos                   String?  @db.VarChar(50)
   VACACIONES_RESTANTES_ANO_ANTERIOR Decimal? @map("VACACIONES_RESTANTES_ANO_ANTERIOR") @db.Decimal(5, 1)
-  certificado_handicap_confirmado Boolean? @map("certificado_handicap_confirmado")
+  certificado_handicap_confirmado   Boolean? @map("certificado_handicap_confirmado")
+  fecha_baja_programada             String?  @map("fecha_baja_programada") @db.VarChar(100)
 
   @@index([DNI_NIE], map: "idx_datos_dni")
   @@index([CENTRO_TRABAJO], map: "idx_datos_empleados_centro")
@@ -79,11 +80,11 @@ model Notification {
 }
 
 model PushSubscription {
-  id         String   @id @default(uuid()) @db.VarChar(36)
-  userId     String   @map("user_id") @db.VarChar(50)
-  endpoint   String   @db.Text
-  p256dh     String   @db.Text
-  auth       String   @db.Text
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  userId    String   @map("user_id") @db.VarChar(50)
+  endpoint  String   @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
@@ -148,16 +149,16 @@ model ChatMessageRead {
 }
 
 model Comunicado {
-  id            BigInt            @id @default(autoincrement())
-  titulo        String            @db.VarChar(255)
-  contenido     String            @db.Text
-  autor_id      String            @map("autor_id") @db.VarChar(50)
-  publicado     Boolean           @default(false)
-  archivo       Bytes?            @map("archivo")
-  nombre_archivo String?          @map("nombre_archivo") @db.VarChar(255)
-  created_at    DateTime          @default(now()) @db.Timestamp(0)
-  updated_at    DateTime          @updatedAt @db.Timestamp(0)
-  leidos        ComunicadoLeido[]
+  id             BigInt            @id @default(autoincrement())
+  titulo         String            @db.VarChar(255)
+  contenido      String            @db.Text
+  autor_id       String            @map("autor_id") @db.VarChar(50)
+  publicado      Boolean           @default(false)
+  archivo        Bytes?            @map("archivo")
+  nombre_archivo String?           @map("nombre_archivo") @db.VarChar(255)
+  created_at     DateTime          @default(now()) @db.Timestamp(0)
+  updated_at     DateTime          @updatedAt @db.Timestamp(0)
+  leidos         ComunicadoLeido[]
 
   @@index([publicado, created_at], map: "idx_comunicado_publicado_created")
   @@index([autor_id], map: "idx_comunicado_autor")
@@ -231,15 +232,15 @@ model CarpetasDocumentos {
 }
 
 model DocumentosSolicitados {
-  id                Int      @id @default(autoincrement())
-  empleado_id       String   @map("empleado_id") @db.VarChar(50)
-  tipo_documento    String   @map("tipo_documento") @db.VarChar(255)
-  estado            String   @default("pendiente") @db.VarChar(50) // pendiente, completado, rechazado
-  fecha_solicitud   DateTime @default(now()) @map("fecha_solicitud") @db.Timestamp(0)
-  fecha_completado  DateTime? @map("fecha_completado") @db.Timestamp(0)
-  solicitado_por    String   @map("solicitado_por") @db.VarChar(50)
-  notas             String?  @db.Text
-  aplicar_a_nuevos   Boolean  @default(false) @map("aplicar_a_nuevos") // Si true, se aplica automáticamente a futuros empleados activos
+  id               Int       @id @default(autoincrement())
+  empleado_id      String    @map("empleado_id") @db.VarChar(50)
+  tipo_documento   String    @map("tipo_documento") @db.VarChar(255)
+  estado           String    @default("pendiente") @db.VarChar(50) // pendiente, completado, rechazado
+  fecha_solicitud  DateTime  @default(now()) @map("fecha_solicitud") @db.Timestamp(0)
+  fecha_completado DateTime? @map("fecha_completado") @db.Timestamp(0)
+  solicitado_por   String    @map("solicitado_por") @db.VarChar(50)
+  notas            String?   @db.Text
+  aplicar_a_nuevos Boolean   @default(false) @map("aplicar_a_nuevos") // Si true, se aplica automáticamente a futuros empleados activos
 
   @@index([empleado_id], map: "idx_documentos_solicitados_empleado")
   @@index([estado], map: "idx_documentos_solicitados_estado")
@@ -405,17 +406,17 @@ model Fichaje {
 }
 
 model InspeccionesDocumentos {
-  id                String  @id @db.VarChar(50)
-  tipo_inspeccion   String? @db.VarChar(100)
-  codigo_empleado   String? @db.VarChar(50)
-  nombre_empleado   String? @db.VarChar(150)
+  id                String   @id @db.VarChar(50)
+  tipo_inspeccion   String?  @db.VarChar(100)
+  codigo_empleado   String?  @db.VarChar(50)
+  nombre_empleado   String?  @db.VarChar(150)
   archivo           Bytes?
-  nombre_archivo    String? @db.VarChar(255)
-  fecha_subida      String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
-  Nombre_Supervisor String? @map("Nombre Supervisor") @db.VarChar(200)
-  codigo_supervisor String? @map("codigo_supervisor") @db.VarChar(50)
-  Centro            String? @db.VarChar(300)
-  Locacion          String? @db.VarChar(500)
+  nombre_archivo    String?  @db.VarChar(255)
+  fecha_subida      String?  @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  Nombre_Supervisor String?  @map("Nombre Supervisor") @db.VarChar(200)
+  codigo_supervisor String?  @map("codigo_supervisor") @db.VarChar(50)
+  Centro            String?  @db.VarChar(300)
+  Locacion          String?  @db.VarChar(500)
   scor_total        Decimal? @map("scor_total") @db.Decimal(5, 2)
 }
 
@@ -502,14 +503,17 @@ model MutuaCasos {
 }
 
 model Nominas {
-  id           Int      @id @default(autoincrement()) @db.UnsignedInt
-  nombre       String?  @db.VarChar(255)
-  archivo      Bytes?
-  tipo_mime    String?  @db.VarChar(100)
-  fecha_subida DateTime @default(now()) @db.DateTime(0)
-  Mes          String?  @db.VarChar(100)
-  Ano          String?  @db.VarChar(100)
-  accesos      NominasAccesos[]
+  id              Int              @id @default(autoincrement()) @db.UnsignedInt
+  nombre          String?          @db.VarChar(255)
+  archivo         Bytes?
+  tipo_mime       String?          @db.VarChar(100)
+  fecha_subida    DateTime         @default(now()) @db.DateTime(0)
+  Mes             String?          @db.VarChar(100)
+  Ano             String?          @db.VarChar(100)
+  codigo_empleado String?          @map("codigo_empleado") @db.VarChar(50)
+  accesos         NominasAccesos[]
+
+  @@index([codigo_empleado], map: "idx_nominas_codigo_empleado")
 }
 
 model NominasAccesos {
@@ -684,21 +688,21 @@ model SignSessions {
 }
 
 model SolicitudesCambiosPersonales {
-  id                 String  @id @db.VarChar(55)
-  codigo             String? @db.VarChar(55)
-  NOMBRE             String? @db.VarChar(255)
-  campo              String? @db.Text
-  valoare_veche      String? @db.VarChar(255)
-  valoare_noua       String? @db.VarChar(255)
-  motiv              String? @db.VarChar(255)
-  status             String? @default("in asteptare") @db.VarChar(255)
-  data_creare        String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(255)
-  data_aprobare      String? @db.VarChar(255)
-  CORREO_ELECTRONICO String? @db.VarChar(200)
-  NOMBRE_SEPARADO    String? @db.VarChar(255)
-  APELLIDO1          String? @db.VarChar(120)
-  APELLIDO2          String? @db.VarChar(120)
-  NOMBRE_SPLIT_CONFIANZA Int? @db.TinyInt
+  id                     String  @id @db.VarChar(55)
+  codigo                 String? @db.VarChar(55)
+  NOMBRE                 String? @db.VarChar(255)
+  campo                  String? @db.Text
+  valoare_veche          String? @db.VarChar(255)
+  valoare_noua           String? @db.VarChar(255)
+  motiv                  String? @db.VarChar(255)
+  status                 String? @default("in asteptare") @db.VarChar(255)
+  data_creare            String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(255)
+  data_aprobare          String? @db.VarChar(255)
+  CORREO_ELECTRONICO     String? @db.VarChar(200)
+  NOMBRE_SEPARADO        String? @db.VarChar(255)
+  APELLIDO1              String? @db.VarChar(120)
+  APELLIDO2              String? @db.VarChar(120)
+  NOMBRE_SPLIT_CONFIANZA Int?    @db.TinyInt
 }
 
 model TareasDiaria {
@@ -866,10 +870,60 @@ model horaspermitidas {
   Horas_Mensuales String? @map("Horas Mensuales") @db.VarChar(100)
 }
 
+model horario_multicentro {
+  id         Int      @id @default(autoincrement())
+  CODIGO     String?  @db.VarChar(50)
+  EMAIL      String?  @db.VarChar(100)
+  NOMBRE     String?  @db.VarChar(100)
+  LUNA       String?  @db.VarChar(20)
+  CLIENTE    String?  @db.VarChar(255)
+  HORARIO    String?  @db.VarChar(100)
+  SERVICIO   String?  @db.VarChar(100)
+  ZI_1       String?  @db.VarChar(50)
+  ZI_2       String?  @db.VarChar(50)
+  ZI_3       String?  @db.VarChar(50)
+  ZI_4       String?  @db.VarChar(50)
+  ZI_5       String?  @db.VarChar(50)
+  ZI_6       String?  @db.VarChar(50)
+  ZI_7       String?  @db.VarChar(50)
+  ZI_8       String?  @db.VarChar(50)
+  ZI_9       String?  @db.VarChar(50)
+  ZI_10      String?  @db.VarChar(50)
+  ZI_11      String?  @db.VarChar(50)
+  ZI_12      String?  @db.VarChar(50)
+  ZI_13      String?  @db.VarChar(50)
+  ZI_14      String?  @db.VarChar(50)
+  ZI_15      String?  @db.VarChar(50)
+  ZI_16      String?  @db.VarChar(50)
+  ZI_17      String?  @db.VarChar(50)
+  ZI_18      String?  @db.VarChar(50)
+  ZI_19      String?  @db.VarChar(50)
+  ZI_20      String?  @db.VarChar(50)
+  ZI_21      String?  @db.VarChar(50)
+  ZI_22      String?  @db.VarChar(50)
+  ZI_23      String?  @db.VarChar(50)
+  ZI_24      String?  @db.VarChar(50)
+  ZI_25      String?  @db.VarChar(50)
+  ZI_26      String?  @db.VarChar(50)
+  ZI_27      String?  @db.VarChar(50)
+  ZI_28      String?  @db.VarChar(50)
+  ZI_29      String?  @db.VarChar(50)
+  ZI_30      String?  @db.VarChar(50)
+  ZI_31      String?  @db.VarChar(50)
+  TotalHoras String?  @db.VarChar(100)
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  updated_at DateTime @updatedAt @db.Timestamp(0)
+
+  @@unique([CODIGO, LUNA, CLIENTE, HORARIO], map: "unique_codigo_luna_cliente_horario")
+  @@index([CODIGO, LUNA], map: "idx_horario_multicentro_codigo_luna")
+  @@index([LUNA], map: "idx_horario_multicentro_luna")
+  @@index([CLIENTE], map: "idx_horario_multicentro_cliente")
+}
+
 model grupos_referencia {
-  id        Int      @id @default(autoincrement())
-  nombre    String   @unique @db.VarChar(200)
-  activo    Boolean  @default(true)
+  id         Int      @id @default(autoincrement())
+  nombre     String   @unique @db.VarChar(200)
+  activo     Boolean  @default(true)
   created_at DateTime @default(now()) @db.Timestamp(0)
   updated_at DateTime @updatedAt @db.Timestamp(0)
 
@@ -900,16 +954,25 @@ model retenciones_irpf {
 }
 
 model solicitudes {
-  id              String    @id @db.VarChar(20)
-  codigo          String?   @db.VarChar(50)
-  nombre          String?   @db.VarChar(150)
-  email           String?   @db.VarChar(255)
-  tipo            String?   @db.VarChar(100)
-  estado          String?   @db.VarChar(50)
-  fecha_inicio    DateTime? @db.Date
-  fecha_fin       String?   @db.VarChar(50)
-  motivo          String?   @db.Text
-  fecha_solicitud DateTime  @default(now()) @db.DateTime(0)
+  id                  String    @id @db.VarChar(20)
+  codigo              String?   @db.VarChar(50)
+  nombre              String?   @db.VarChar(150)
+  email               String?   @db.VarChar(255)
+  tipo                String?   @db.VarChar(100)
+  estado              String?   @db.VarChar(50)
+  fecha_inicio        DateTime? @db.Date
+  fecha_fin           String?   @db.VarChar(50)
+  motivo              String?   @db.Text
+  fecha_solicitud     DateTime  @default(now()) @db.DateTime(0)
+  origen              String?   @default("EMPLEADO") @db.VarChar(50)
+  fecha_efectiva      DateTime? @db.Date
+  comentario_empresa   String?   @db.Text
+  created_by_user_id  String?   @db.VarChar(50)
+  enviado_gestoria    Boolean?  @default(false)
+  fecha_envio_gestoria DateTime? @db.DateTime(0)
+  fecha_ultimo_dia_trabajo DateTime? @db.Date
+  dias_preaviso       Int?      @db.Int
+  cumple_preaviso_15  Boolean?  @default(false)
 }
 
 enum ChatRoomType {
@@ -957,21 +1020,21 @@ enum retenciones_irpf_categoria {
 }
 
 model SentEmail {
-  id                 String            @id @default(uuid()) @db.VarChar(36)
-  sender_id          String            @map("sender_id") @db.VarChar(50)
-  recipient_type     String            @map("recipient_type") @db.VarChar(50) // 'empleado', 'gestoria', 'grupo', 'toti'
-  recipient_id       String?           @map("recipient_id") @db.VarChar(50) // CODIGO sau null
-  recipient_email    String            @map("recipient_email") @db.VarChar(255)
-  recipient_name     String?           @map("recipient_name") @db.VarChar(255)
-  subject            String            @db.VarChar(500)
-  message            String            @db.Text
-  additional_message String?           @map("additional_message") @db.Text // Mesaj adițional pentru gestorie
-  status             String            @default("sent") @db.VarChar(20) // 'sent', 'failed'
-  error_message      String?           @map("error_message") @db.Text
-  scheduled_message_id String?         @map("scheduled_message_id") @db.VarChar(36) // ID-ul mesajului automat (dacă este trimis de cron)
-  created_at         DateTime          @default(now()) @map("created_at") @db.Timestamp(0)
-  sent_at            DateTime?         @map("sent_at") @db.Timestamp(0)
-  attachments        EmailAttachment[]
+  id                   String            @id @default(uuid()) @db.VarChar(36)
+  sender_id            String            @map("sender_id") @db.VarChar(50)
+  recipient_type       String            @map("recipient_type") @db.VarChar(50) // 'empleado', 'gestoria', 'grupo', 'toti'
+  recipient_id         String?           @map("recipient_id") @db.VarChar(50) // CODIGO sau null
+  recipient_email      String            @map("recipient_email") @db.VarChar(255)
+  recipient_name       String?           @map("recipient_name") @db.VarChar(255)
+  subject              String            @db.VarChar(500)
+  message              String            @db.Text
+  additional_message   String?           @map("additional_message") @db.Text // Mesaj adițional pentru gestorie
+  status               String            @default("sent") @db.VarChar(20) // 'sent', 'failed'
+  error_message        String?           @map("error_message") @db.Text
+  scheduled_message_id String?           @map("scheduled_message_id") @db.VarChar(36) // ID-ul mesajului automat (dacă este trimis de cron)
+  created_at           DateTime          @default(now()) @map("created_at") @db.Timestamp(0)
+  sent_at              DateTime?         @map("sent_at") @db.Timestamp(0)
+  attachments          EmailAttachment[]
 
   @@index([sender_id], map: "idx_sent_email_sender")
   @@index([recipient_type, recipient_id], map: "idx_sent_email_recipient")
@@ -983,36 +1046,36 @@ model SentEmail {
 }
 
 model EmailAttachment {
-  id          String     @id @default(uuid()) @db.VarChar(36)
-  email_id    String     @map("email_id") @db.VarChar(36)
-  filename    String     @db.VarChar(255)
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  email_id     String    @map("email_id") @db.VarChar(36)
+  filename     String    @db.VarChar(255)
   file_content Bytes     @map("file_content")
-  mime_type   String     @map("mime_type") @db.VarChar(100)
-  file_size   Int?       @map("file_size") // Size în bytes
-  created_at  DateTime   @default(now()) @map("created_at") @db.Timestamp(0)
-  email       SentEmail  @relation(fields: [email_id], references: [id], onDelete: Cascade, map: "fk_email_attachment_email")
+  mime_type    String    @map("mime_type") @db.VarChar(100)
+  file_size    Int?      @map("file_size") // Size în bytes
+  created_at   DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  email        SentEmail @relation(fields: [email_id], references: [id], onDelete: Cascade, map: "fk_email_attachment_email")
 
   @@index([email_id], map: "idx_email_attachment_email")
   @@map("email_attachments")
 }
 
 model ScheduledMessage {
-  id                String   @id @default(uuid()) @db.VarChar(36)
-  name              String   @db.VarChar(255) // Nume descriptiv pentru mesaj
-  recipient_type    String   @map("recipient_type") @db.VarChar(50) // 'empleado', 'toti', 'grupo', 'gestoria'
-  recipient_id      String?  @map("recipient_id") @db.VarChar(50) // CODIGO sau GRUPO
-  recipient_email   String?  @map("recipient_email") @db.VarChar(255) // Pentru gestoria
-  subject           String   @db.VarChar(500)
-  message           String   @db.Text
-  additional_message String? @map("additional_message") @db.Text
-  is_active         Boolean  @default(true) @map("is_active") // Dacă mesajul este activ
-  start_date        DateTime @map("start_date") @db.Date // Data de început
-  end_date          DateTime @map("end_date") @db.Date // Data de sfârșit (ex: 2025-01-01)
-  send_time         String   @map("send_time") @db.VarChar(10) // Ora de trimitere (ex: "09:00")
-  last_sent_at      DateTime? @map("last_sent_at") @db.Timestamp(0) // Ultima dată când a fost trimis
-  created_by        String   @map("created_by") @db.VarChar(50) // CODIGO utilizatorului care a creat
-  created_at        DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updated_at        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+  id                 String    @id @default(uuid()) @db.VarChar(36)
+  name               String    @db.VarChar(255) // Nume descriptiv pentru mesaj
+  recipient_type     String    @map("recipient_type") @db.VarChar(50) // 'empleado', 'toti', 'grupo', 'gestoria'
+  recipient_id       String?   @map("recipient_id") @db.VarChar(50) // CODIGO sau GRUPO
+  recipient_email    String?   @map("recipient_email") @db.VarChar(255) // Pentru gestoria
+  subject            String    @db.VarChar(500)
+  message            String    @db.Text
+  additional_message String?   @map("additional_message") @db.Text
+  is_active          Boolean   @default(true) @map("is_active") // Dacă mesajul este activ
+  start_date         DateTime  @map("start_date") @db.Date // Data de început
+  end_date           DateTime  @map("end_date") @db.Date // Data de sfârșit (ex: 2025-01-01)
+  send_time          String    @map("send_time") @db.VarChar(10) // Ora de trimitere (ex: "09:00")
+  last_sent_at       DateTime? @map("last_sent_at") @db.Timestamp(0) // Ultima dată când a fost trimis
+  created_by         String    @map("created_by") @db.VarChar(50) // CODIGO utilizatorului care a creat
+  created_at         DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([is_active, end_date], map: "idx_scheduled_message_active_end")
   @@index([start_date, end_date], map: "idx_scheduled_message_dates")
@@ -1021,26 +1084,26 @@ model ScheduledMessage {
 }
 
 model Convenios {
-  id        Int             @id @default(autoincrement())
-  nombre    String          @unique @db.VarChar(200)
-  activo    Boolean         @default(true)
-  created_at DateTime       @default(now()) @db.Timestamp(0)
-  updated_at DateTime       @updatedAt @db.Timestamp(0)
-  grupos    ConvenioGrupo[]
-  config    ConvenioConfig?
+  id         Int             @id @default(autoincrement())
+  nombre     String          @unique @db.VarChar(200)
+  activo     Boolean         @default(true)
+  created_at DateTime        @default(now()) @db.Timestamp(0)
+  updated_at DateTime        @updatedAt @db.Timestamp(0)
+  grupos     ConvenioGrupo[]
+  config     ConvenioConfig?
 
   @@index([activo], map: "idx_convenios_activo")
   @@map("convenios")
 }
 
 model ConvenioGrupo {
-  id          Int       @id @default(autoincrement())
-  convenio_id Int       @map("convenio_id")
-  grupo_nombre String   @map("grupo_nombre") @db.VarChar(200)
-  activo      Boolean   @default(true)
-  created_at  DateTime  @default(now()) @db.Timestamp(0)
-  updated_at  DateTime  @updatedAt @db.Timestamp(0)
-  convenio    Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_grupo_convenio")
+  id           Int       @id @default(autoincrement())
+  convenio_id  Int       @map("convenio_id")
+  grupo_nombre String    @map("grupo_nombre") @db.VarChar(200)
+  activo       Boolean   @default(true)
+  created_at   DateTime  @default(now()) @db.Timestamp(0)
+  updated_at   DateTime  @updatedAt @db.Timestamp(0)
+  convenio     Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_grupo_convenio")
 
   @@unique([grupo_nombre], map: "uq_convenio_grupo_nombre")
   @@index([convenio_id], map: "idx_convenio_grupo_convenio")
@@ -1049,33 +1112,33 @@ model ConvenioGrupo {
 }
 
 model ConvenioConfig {
-  id                        Int       @id @default(autoincrement())
-  convenio_id               Int       @unique @map("convenio_id")
-  dias_vacaciones_anuales    Int       @default(31) @map("dias_vacaciones_anuales")
-  dias_asuntos_propios_anuales Int    @default(0) @map("dias_asuntos_propios_anuales")
-  activo                    Boolean   @default(true)
-  created_at                DateTime  @default(now()) @db.Timestamp(0)
-  updated_at                DateTime  @updatedAt @db.Timestamp(0)
-  convenio                  Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_config_convenio")
+  id                           Int       @id @default(autoincrement())
+  convenio_id                  Int       @unique @map("convenio_id")
+  dias_vacaciones_anuales      Int       @default(31) @map("dias_vacaciones_anuales")
+  dias_asuntos_propios_anuales Int       @default(0) @map("dias_asuntos_propios_anuales")
+  activo                       Boolean   @default(true)
+  created_at                   DateTime  @default(now()) @db.Timestamp(0)
+  updated_at                   DateTime  @updatedAt @db.Timestamp(0)
+  convenio                     Convenios @relation(fields: [convenio_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_convenio_config_convenio")
 
   @@index([activo], map: "idx_convenio_config_activo")
   @@map("convenio_config")
 }
 
 model AssistantAuditLog {
-  id              BigInt   @id @default(autoincrement())
-  usuario_id      String   @map("usuario_id") @db.VarChar(50)
-  usuario_nombre  String?  @map("usuario_nombre") @db.VarChar(255)
-  usuario_rol     String?  @map("usuario_rol") @db.VarChar(100)
-  mensaje         String   @db.Text
-  intent_detectado String? @map("intent_detectado") @db.VarChar(100)
-  confianza       Decimal? @db.Decimal(3, 2)
-  respuesta       String?  @db.Text
-  escalado        Boolean  @default(false)
-  ticket_id       String?  @map("ticket_id") @db.VarChar(50)
-  datos_consultados String? @map("datos_consultados") @db.Text
-  error           String?  @db.Text
-  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  id                BigInt   @id @default(autoincrement())
+  usuario_id        String   @map("usuario_id") @db.VarChar(50)
+  usuario_nombre    String?  @map("usuario_nombre") @db.VarChar(255)
+  usuario_rol       String?  @map("usuario_rol") @db.VarChar(100)
+  mensaje           String   @db.Text
+  intent_detectado  String?  @map("intent_detectado") @db.VarChar(100)
+  confianza         Decimal? @db.Decimal(3, 2)
+  respuesta         String?  @db.Text
+  escalado          Boolean  @default(false)
+  ticket_id         String?  @map("ticket_id") @db.VarChar(50)
+  datos_consultados String?  @map("datos_consultados") @db.Text
+  error             String?  @db.Text
+  created_at        DateTime @default(now()) @map("created_at") @db.Timestamp(0)
 
   @@index([usuario_id], map: "idx_audit_usuario")
   @@index([intent_detectado], map: "idx_audit_intent")
@@ -1084,12 +1147,12 @@ model AssistantAuditLog {
 }
 
 model KbArticle {
-  id        Int      @id @default(autoincrement())
-  titulo    String   @db.VarChar(255)
-  contenido String   @db.Text
-  categoria String?  @db.VarChar(100)
-  tags      String?  @db.VarChar(500)
-  activo    Boolean  @default(true)
+  id         Int      @id @default(autoincrement())
+  titulo     String   @db.VarChar(255)
+  contenido  String   @db.Text
+  categoria  String?  @db.VarChar(100)
+  tags       String?  @db.VarChar(500)
+  activo     Boolean  @default(true)
   created_at DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   updated_at DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
@@ -1099,20 +1162,20 @@ model KbArticle {
 }
 
 model TicketAi {
-  id              String   @id @db.VarChar(50)
-  usuario_id      String   @map("usuario_id") @db.VarChar(50)
-  usuario_nombre  String?  @map("usuario_nombre") @db.VarChar(255)
-  usuario_rol     String?  @map("usuario_rol") @db.VarChar(100)
-  mensaje_original String  @map("mensaje_original") @db.Text
-  intent_detectado String? @map("intent_detectado") @db.VarChar(100)
-  contexto        String?  @db.Text
-  estado          String   @default("pendiente") @db.VarChar(50)
-  prioridad       String   @default("normal") @map("prioridad") @db.VarChar(20)
-  asignado_a      String?  @map("asignado_a") @db.VarChar(50)
-  respuesta_admin String?  @map("respuesta_admin") @db.Text
-  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updated_at      DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
-  resuelto_at     DateTime? @map("resuelto_at") @db.Timestamp(0)
+  id               String    @id @db.VarChar(50)
+  usuario_id       String    @map("usuario_id") @db.VarChar(50)
+  usuario_nombre   String?   @map("usuario_nombre") @db.VarChar(255)
+  usuario_rol      String?   @map("usuario_rol") @db.VarChar(100)
+  mensaje_original String    @map("mensaje_original") @db.Text
+  intent_detectado String?   @map("intent_detectado") @db.VarChar(100)
+  contexto         String?   @db.Text
+  estado           String    @default("pendiente") @db.VarChar(50)
+  prioridad        String    @default("normal") @map("prioridad") @db.VarChar(20)
+  asignado_a       String?   @map("asignado_a") @db.VarChar(50)
+  respuesta_admin  String?   @map("respuesta_admin") @db.Text
+  created_at       DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at       DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  resuelto_at      DateTime? @map("resuelto_at") @db.Timestamp(0)
 
   @@index([usuario_id], map: "idx_ticket_usuario")
   @@index([estado], map: "idx_ticket_estado")
@@ -1129,17 +1192,17 @@ model CostePersonal {
   empleado_encontrado     Boolean  @default(true) @map("empleado_encontrado")
   mes                     String   @map("mes") @db.VarChar(20)
   ano                     Int      @map("ano")
-  total                   Decimal  @map("total") @db.Decimal(10, 2) @default(0)
-  total_calculado         Decimal  @map("total_calculado") @db.Decimal(10, 2) @default(0)
-  neto                    Decimal  @map("neto") @db.Decimal(10, 2) @default(0)
-  aportaciones_trabajador Decimal  @map("aportaciones_trabajador") @db.Decimal(10, 2) @default(0)
-  irpf                    Decimal  @map("irpf") @db.Decimal(10, 2) @default(0)
-  enfermedad_devolucion   Decimal  @map("enfermedad_devolucion") @db.Decimal(10, 2) @default(0)
-  embargos                Decimal  @map("embargos") @db.Decimal(10, 2) @default(0)
-  anticipo                Decimal  @map("anticipo") @db.Decimal(10, 2) @default(0)
-  absentismo_laboral      Decimal  @map("absentismo_laboral") @db.Decimal(10, 2) @default(0)
-  seg_social_empresa      Decimal  @map("seg_social_empresa") @db.Decimal(10, 2) @default(0)
-  total_aportaciones      Decimal  @map("total_aportaciones") @db.Decimal(10, 2) @default(0)
+  total                   Decimal  @default(0) @map("total") @db.Decimal(10, 2)
+  total_calculado         Decimal  @default(0) @map("total_calculado") @db.Decimal(10, 2)
+  neto                    Decimal  @default(0) @map("neto") @db.Decimal(10, 2)
+  aportaciones_trabajador Decimal  @default(0) @map("aportaciones_trabajador") @db.Decimal(10, 2)
+  irpf                    Decimal  @default(0) @map("irpf") @db.Decimal(10, 2)
+  enfermedad_devolucion   Decimal  @default(0) @map("enfermedad_devolucion") @db.Decimal(10, 2)
+  embargos                Decimal  @default(0) @map("embargos") @db.Decimal(10, 2)
+  anticipo                Decimal  @default(0) @map("anticipo") @db.Decimal(10, 2)
+  absentismo_laboral      Decimal  @default(0) @map("absentismo_laboral") @db.Decimal(10, 2)
+  seg_social_empresa      Decimal  @default(0) @map("seg_social_empresa") @db.Decimal(10, 2)
+  total_aportaciones      Decimal  @default(0) @map("total_aportaciones") @db.Decimal(10, 2)
   created_at              DateTime @default(now()) @map("created_at") @db.Timestamp(0)
   updated_at              DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
@@ -1151,36 +1214,36 @@ model CostePersonal {
 }
 
 model FichajeRegularizacion {
-  id                  Int                         @id @default(autoincrement())
-  
+  id Int @id @default(autoincrement())
+
   // Workday identification (NOT calendar date)
-  employee_codigo     String                      @db.VarChar(50)
-  workday_date        DateTime                    @db.Date  // Shift start date (22:00-06:00 → date of 22:00)
-  
+  employee_codigo String   @db.VarChar(50)
+  workday_date    DateTime @db.Date // Shift start date (22:00-06:00 → date of 22:00)
+
   // Time window for this workday (covers all shifts, including night shifts)
-  window_start        DateTime                    @db.DateTime(0)  // First Entrada of workday
-  window_end          DateTime                    @db.DateTime(0)  // Last Salida of workday (may be next day)
-  
+  window_start DateTime @db.DateTime(0) // First Entrada of workday
+  window_end   DateTime @db.DateTime(0) // Last Salida of workday (may be next day)
+
   // Regularization data
-  fichaje_ids         String?                     @db.Text  // JSON array of fichaje IDs in this workday
+  fichaje_ids         String?                     @db.Text // JSON array of fichaje IDs in this workday
   regularization_type FichajeRegularizacionType
   status              FichajeRegularizacionStatus
-  
-  scheduled_minutes   Int                         // From cuadrante/horario for workday_date (sum multiple segments if split)
-  punched_minutes     Int                         // Sum of all durations in [window_start, window_end]
-  effective_minutes   Int?                        // Final minutes used in reports
-  
-  reason_code         String?                     @db.VarChar(100)
-  notes               String?                     @db.Text
-  
-  created_by          String                      @db.VarChar(50)  // employee/admin/system
-  created_at          DateTime                    @default(now()) @db.Timestamp(0)
-  confirmed_at        DateTime?                   @db.Timestamp(0)
-  reviewed_at         DateTime?                   @db.Timestamp(0)
-  reviewed_by         String?                     @db.VarChar(50)
-  
-  ip_address          String?                     @db.VarChar(100)
-  user_agent          String?                     @db.Text
+
+  scheduled_minutes Int // From cuadrante/horario for workday_date (sum multiple segments if split)
+  punched_minutes   Int // Sum of all durations in [window_start, window_end]
+  effective_minutes Int? // Final minutes used in reports
+
+  reason_code String? @db.VarChar(100)
+  notes       String? @db.Text
+
+  created_by   String    @db.VarChar(50) // employee/admin/system
+  created_at   DateTime  @default(now()) @db.Timestamp(0)
+  confirmed_at DateTime? @db.Timestamp(0)
+  reviewed_at  DateTime? @db.Timestamp(0)
+  reviewed_by  String?   @db.VarChar(50)
+
+  ip_address String? @db.VarChar(100)
+  user_agent String? @db.Text
 
   @@unique([employee_codigo, window_start], map: "uq_emp_window_start")
   @@index([employee_codigo, workday_date], map: "idx_emp_workday")
@@ -1190,33 +1253,33 @@ model FichajeRegularizacion {
 }
 
 model HallOfFameMensual {
-  id                          BigInt   @id @default(autoincrement())
-  empleado_codigo             String   @map("empleado_codigo") @db.VarChar(50)
-  mes                         String   @map("mes") @db.VarChar(7)
-  ano                         Int      @map("ano")
-  score_final                 Decimal  @map("score_final") @db.Decimal(5, 2)
-  score_indeplinire           Decimal  @map("score_indeplinire") @db.Decimal(5, 2)
-  score_calitate              Decimal  @map("score_calitate") @db.Decimal(5, 2)
-  score_punctualitate         Decimal  @map("score_punctualitate") @db.Decimal(5, 2)
-  score_uso_app               Decimal  @map("score_uso_app") @db.Decimal(5, 2)
+  id                            BigInt   @id @default(autoincrement())
+  empleado_codigo               String   @map("empleado_codigo") @db.VarChar(50)
+  mes                           String   @map("mes") @db.VarChar(7)
+  ano                           Int      @map("ano")
+  score_final                   Decimal  @map("score_final") @db.Decimal(5, 2)
+  score_indeplinire             Decimal  @map("score_indeplinire") @db.Decimal(5, 2)
+  score_calitate                Decimal  @map("score_calitate") @db.Decimal(5, 2)
+  score_punctualitate           Decimal  @map("score_punctualitate") @db.Decimal(5, 2)
+  score_uso_app                 Decimal  @map("score_uso_app") @db.Decimal(5, 2)
   score_responsabilidad_digital Decimal? @map("score_responsabilidad_digital") @db.Decimal(5, 2)
-  horas_pontate               Decimal  @map("horas_pontate") @db.Decimal(10, 2)
-  target_ajustat              Decimal  @map("target_ajustat") @db.Decimal(10, 2)
-  target_initial              Decimal  @map("target_initial") @db.Decimal(10, 2)
-  horas_neutre                Decimal  @map("horas_neutre") @db.Decimal(10, 2) @default(0)
-  dias_neutre                 Int      @map("dias_neutre") @default(0)
-  fichajes_incompleto         Int      @map("fichajes_incompleto") @default(0)
-  regularizaciones_confirmed  Int      @map("regularizaciones_confirmed") @default(0)
-  regularizaciones_pendiente  Int      @map("regularizaciones_pendiente") @default(0)
-  zile_punctuale              Int      @map("zile_punctuale") @default(0)
-  zile_cu_orar                Int      @map("zile_cu_orar") @default(0)
-  has_orar                    Boolean  @map("has_orar") @default(false)
-  acciones_totales            Decimal  @map("acciones_totales") @db.Decimal(10, 2) @default(0)
-  max_acciones_mes            Decimal  @map("max_acciones_mes") @db.Decimal(10, 2) @default(0)
-  breakdown_json              Json?    @map("breakdown_json")
-  ranking                     Int?     @map("ranking")
-  created_at                  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
-  updated_at                  DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  horas_pontate                 Decimal  @map("horas_pontate") @db.Decimal(10, 2)
+  target_ajustat                Decimal  @map("target_ajustat") @db.Decimal(10, 2)
+  target_initial                Decimal  @map("target_initial") @db.Decimal(10, 2)
+  horas_neutre                  Decimal  @default(0) @map("horas_neutre") @db.Decimal(10, 2)
+  dias_neutre                   Int      @default(0) @map("dias_neutre")
+  fichajes_incompleto           Int      @default(0) @map("fichajes_incompleto")
+  regularizaciones_confirmed    Int      @default(0) @map("regularizaciones_confirmed")
+  regularizaciones_pendiente    Int      @default(0) @map("regularizaciones_pendiente")
+  zile_punctuale                Int      @default(0) @map("zile_punctuale")
+  zile_cu_orar                  Int      @default(0) @map("zile_cu_orar")
+  has_orar                      Boolean  @default(false) @map("has_orar")
+  acciones_totales              Decimal  @default(0) @map("acciones_totales") @db.Decimal(10, 2)
+  max_acciones_mes              Decimal  @default(0) @map("max_acciones_mes") @db.Decimal(10, 2)
+  breakdown_json                Json?    @map("breakdown_json")
+  ranking                       Int?     @map("ranking")
+  created_at                    DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at                    DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@unique([empleado_codigo, mes], map: "uk_emp_mes")
   @@index([mes, ano], map: "idx_mes_ano")

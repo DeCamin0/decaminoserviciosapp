@@ -7,9 +7,13 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CuadrantesService } from '../services/cuadrantes.service';
+import { memoryStorage } from 'multer';
 
 @Controller('api/cuadrantes')
 @UseGuards(JwtAuthGuard) // Apply JwtAuthGuard to all routes in this controller
@@ -128,6 +132,78 @@ export class CuadrantesController {
       return result;
     } catch (error: any) {
       this.logger.error('❌ Error updating cuadrantes bulk:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * POST endpoint pentru upload Excel cu cuadrantes
+   * Acceptă multipart/form-data cu:
+   *   - file: Excel file (.xlsx, .xls)
+   *   - mes: luna în format "YYYY-MM" (ex: "2025-01")
+   *   - centro: centrul de lucru
+   */
+  @Post('upload-excel')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max
+      },
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+          'application/vnd.ms-excel', // .xls
+          'application/octet-stream', // Sometimes Excel files come as this
+        ];
+        if (allowedMimes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Solo se permiten archivos Excel (.xlsx, .xls)',
+            ),
+            false,
+          );
+        }
+      },
+    }),
+  )
+  async uploadExcel(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { mes?: string; centro?: string },
+  ) {
+    try {
+      if (!file) {
+        throw new BadRequestException('No se proporcionó ningún archivo');
+      }
+
+      const mes = body.mes;
+      const centro = body.centro;
+
+      if (!mes || !mes.match(/^\d{4}-\d{2}$/)) {
+        throw new BadRequestException(
+          'Mes inválido. Debe ser en formato YYYY-MM (ej: 2025-01)',
+        );
+      }
+
+      if (!centro || centro.trim() === '') {
+        throw new BadRequestException('Centro es requerido');
+      }
+
+      this.logger.log(
+        `📝 Upload Excel cuadrantes request - mes: ${mes}, centro: ${centro || 'N/A'}, file: ${file.originalname}`,
+      );
+
+      const result = await this.cuadrantesService.procesarCuadrantesExcel(
+        file.buffer,
+        mes,
+        centro,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error uploading Excel:', error);
       throw error;
     }
   }

@@ -741,6 +741,18 @@ export default function EmpleadosPage() {
     solo_activos: true, // Doar angajații activi
     aplicar_a_nuevos: false // Aplică la viitorii angajați activi
   });
+  
+  // State pentru modalul de Despido Improcedente (doar Admin)
+  const [showDespidoModal, setShowDespidoModal] = useState(false);
+  const [selectedUserForDespido, setSelectedUserForDespido] = useState(null);
+  const [despidoForm, setDespidoForm] = useState({
+    fecha_efectiva: '',
+    comentario_empresa: '',
+    confirmar: false,
+  });
+  const [despidoAttachments, setDespidoAttachments] = useState([]);
+  const [despidoLoading, setDespidoLoading] = useState(false);
+  const [despidoError, setDespidoError] = useState(null);
   const [documentoTodosLoading, setDocumentoTodosLoading] = useState(false);
   const [documentoTodosProgress, setDocumentoTodosProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const [documentoTodosError, setDocumentoTodosError] = useState(null);
@@ -1316,6 +1328,21 @@ export default function EmpleadosPage() {
         const fechaAlta = user['FECHA DE ALTA'] || user['FECHA_DE_ALTA'] || user.fechaAlta || '';
         return !fechaAlta || fechaAlta.toString().trim() === '';
       });
+    }
+
+    // Filtru special: "certificado_handicap" - arată doar angajații cu certificat de handicap confirmat
+    if (searchBy === 'certificado_handicap') {
+      const filtered = users.filter((user) => {
+        const certificado = user.certificado_handicap_confirmado;
+        const hasCertificado = certificado === true || certificado === 1;
+        // Debug logging pentru primii 3 utilizatori
+        if (users.indexOf(user) < 3) {
+          console.log('🔍 [Certificado Filter] User:', user.CODIGO, 'certificado:', certificado, 'hasCertificado:', hasCertificado);
+        }
+        return hasCertificado;
+      });
+      console.log(`🔍 [Certificado Filter] Total users: ${users.length}, Filtered: ${filtered.length}`);
+      return filtered;
     }
 
     // În primul rând aplicăm filtrul de căutare
@@ -1939,6 +1966,7 @@ export default function EmpleadosPage() {
                               searchBy === 'centro' ? 'Centro' :
                               searchBy === 'fecha_alta' ? 'Fecha Alta' :
                               searchBy === 'sin_fecha_alta' ? 'Sin Fecha Alta' :
+                              searchBy === 'certificado_handicap' ? 'Con Certificado Discapacidad' :
                               'Todos';
         filters.push(`${searchByLabel}: "${searchTerm}"`);
       }
@@ -2389,6 +2417,129 @@ export default function EmpleadosPage() {
     } finally {
       setDocumentoTodosLoading(false);
     }
+  };
+
+  // Funcții pentru Despido Improcedente (doar Admin)
+  const openDespidoModal = (user) => {
+    const grupo = authUser?.GRUPO || authUser?.grupo || '';
+    if (grupo !== 'Admin' && grupo !== 'Developer') {
+      setNotification({
+        type: 'error',
+        title: 'Acceso restringido',
+        message: 'Solo los administradores pueden crear despidos improcedentes.',
+        show: true
+      });
+      return;
+    }
+
+    setSelectedUserForDespido(user);
+    setDespidoForm({
+      fecha_efectiva: '',
+      comentario_empresa: '',
+      confirmar: false,
+    });
+    setDespidoAttachments([]);
+    setDespidoError(null);
+    setShowDespidoModal(true);
+  };
+
+  const handleDespidoSubmit = async (confirmar = false) => {
+    if (!selectedUserForDespido?.CODIGO) {
+      setDespidoError('No se ha identificado el empleado.');
+      return;
+    }
+
+    if (!despidoForm.fecha_efectiva) {
+      setDespidoError('La fecha efectiva del despido es obligatoria.');
+      return;
+    }
+
+    if (confirmar && !despidoForm.confirmar) {
+      setDespidoError('Debes confirmar la acción marcando la casilla de confirmación.');
+      return;
+    }
+
+    setDespidoLoading(true);
+    setDespidoError(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = import.meta.env.DEV
+        ? 'http://localhost:3000'
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+
+      const formData = new FormData();
+      formData.append('codigo', selectedUserForDespido.CODIGO);
+      formData.append('nombre', selectedUserForDespido['NOMBRE / APELLIDOS'] || selectedUserForDespido.NOMBRE || '');
+      formData.append('email', selectedUserForDespido['CORREO ELECTRONICO'] || selectedUserForDespido.CORREO_ELECTRONICO || '');
+      formData.append('fecha_efectiva', despidoForm.fecha_efectiva);
+      if (despidoForm.comentario_empresa) {
+        formData.append('comentario_empresa', despidoForm.comentario_empresa);
+      }
+      formData.append('confirmar', confirmar ? 'true' : 'false');
+
+      // Adaugă attachments
+      despidoAttachments.forEach((file) => {
+        formData.append('attachments', file);
+      });
+
+      const response = await fetch(`${baseUrl}/api/solicitudes/despido-improcedente`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setNotification({
+          type: 'success',
+          title: confirmar ? 'Despido confirmado' : 'Borrador guardado',
+          message: confirmar 
+            ? 'El despido ha sido confirmado y la notificación ha sido enviada a gestoria.'
+            : 'El borrador ha sido guardado correctamente.',
+          show: true
+        });
+
+        // Log activitate
+        await activityLogger.logAction('despido_improcedente_created', {
+          codigo: selectedUserForDespido.CODIGO,
+          nombre: selectedUserForDespido['NOMBRE / APELLIDOS'] || selectedUserForDespido.NOMBRE,
+          fecha_efectiva: despidoForm.fecha_efectiva,
+          confirmar,
+          user: getFormattedNombre(authUser) || authUser?.nombre,
+        });
+
+        // Închide modal-ul și resetează formularul
+        setShowDespidoModal(false);
+        setDespidoForm({
+          fecha_efectiva: '',
+          comentario_empresa: '',
+          confirmar: false,
+        });
+        setDespidoAttachments([]);
+        setSelectedUserForDespido(null);
+      } else {
+        throw new Error(result.message || 'Error al procesar el despido');
+      }
+    } catch (error) {
+      console.error('Error al procesar despido:', error);
+      setDespidoError(error.message || 'Error al procesar el despido');
+    } finally {
+      setDespidoLoading(false);
+    }
+  };
+
+  const handleDespidoFileChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 10) {
+      setDespidoError('Máximo 10 archivos permitidos.');
+      return;
+    }
+    setDespidoAttachments(files);
+    setDespidoError(null);
   };
 
   const handleSendEmail = async () => {
@@ -2849,11 +3000,13 @@ export default function EmpleadosPage() {
                         placeholder={
                           searchBy === 'sin_fecha_alta'
                             ? 'Mostrando solo empleados sin Fecha Alta...'
+                            : searchBy === 'certificado_handicap'
+                            ? 'Mostrando solo empleados con certificado de discapacidad confirmado...'
                             : searchBy === 'fecha_alta'
                             ? 'Buscar por fecha...'
                             : 'Buscar empleados...'
                         }
-                        disabled={searchBy === 'sin_fecha_alta'}
+                        disabled={searchBy === 'sin_fecha_alta' || searchBy === 'certificado_handicap'}
                         className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
                       />
                     </div>
@@ -2878,6 +3031,7 @@ export default function EmpleadosPage() {
                         <option value="centro">📍 Centro</option>
                         <option value="fecha_alta">📅 Fecha Alta</option>
                         <option value="sin_fecha_alta">⚠️ Sin Fecha Alta</option>
+                        <option value="certificado_handicap">♿ Con Certificado Discapacidad</option>
                         <option value="todos">🔍 Todos</option>
                       </select>
                     </div>
@@ -3213,6 +3367,19 @@ export default function EmpleadosPage() {
                                   filter: 'drop-shadow(0 2px 4px rgba(234, 179, 8, 0.4))',
                                 }}>📄</span>
                               </button>
+                              
+                              {/* Icon Despido Improcedente - SOLO ADMIN */}
+                              {(authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer') && (
+                                <button
+                                  onClick={() => openDespidoModal(user)}
+                                  className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
+                                  title="Despido improcedente (solo administradores)"
+                                >
+                                  <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
+                                    filter: 'drop-shadow(0 2px 4px rgba(220, 38, 38, 0.4))',
+                                  }}>🔴</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -5933,6 +6100,192 @@ export default function EmpleadosPage() {
           onCancel={() => setConfirmResetPassword(null)}
         />
       )}
+
+      {/* Modal Despido Improcedente - SOLO ADMIN */}
+      <Modal
+        isOpen={showDespidoModal}
+        onClose={() => {
+          setShowDespidoModal(false);
+          setDespidoForm({ fecha_efectiva: '', comentario_empresa: '', confirmar: false });
+          setDespidoAttachments([]);
+          setDespidoError(null);
+          setSelectedUserForDespido(null);
+        }}
+        title="🔴 Despido Improcedente"
+        size="md"
+      >
+        {selectedUserForDespido && (
+          <div className="space-y-6">
+            {/* Info angajat */}
+            <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center gap-3">
+                <div className="text-3xl">👤</div>
+                <div>
+                  <p className="font-bold text-gray-900">
+                    {selectedUserForDespido['NOMBRE / APELLIDOS'] || selectedUserForDespido.NOMBRE || 'N/A'}
+                  </p>
+                  <p className="text-sm text-gray-600">Código: {selectedUserForDespido.CODIGO}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <span className="text-2xl">⚠️</span>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-yellow-800">
+                    Acción iniciada por la empresa
+                  </p>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    Esta acción solo puede ser realizada por administradores.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Fecha efectiva */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Fecha efectiva del despido <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={despidoForm.fecha_efectiva}
+                onChange={(e) => setDespidoForm(prev => ({ ...prev, fecha_efectiva: e.target.value }))}
+                min={new Date().toISOString().split('T')[0]}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
+                required
+              />
+            </div>
+
+            {/* Comentario interno */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Comentario interno de la empresa (opcional)
+              </label>
+              <textarea
+                value={despidoForm.comentario_empresa}
+                onChange={(e) => setDespidoForm(prev => ({ ...prev, comentario_empresa: e.target.value }))}
+                placeholder="Añade un comentario interno sobre el despido..."
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-all duration-200"
+                rows={4}
+              />
+            </div>
+
+            {/* File upload */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Archivos adjuntos (opcional, máximo 10)
+              </label>
+              <input
+                type="file"
+                multiple
+                onChange={handleDespidoFileChange}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              />
+              {despidoAttachments.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600 mb-2">Archivos seleccionados:</p>
+                  <ul className="list-disc list-inside text-sm text-gray-700">
+                    {despidoAttachments.map((file, idx) => (
+                      <li key={idx}>{file.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Error message */}
+            {despidoError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p className="text-sm text-red-800">{despidoError}</p>
+              </div>
+            )}
+
+            {/* Checkbox confirmare (doar pentru "Confirmar y notificar") */}
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={despidoForm.confirmar}
+                  onChange={(e) => setDespidoForm(prev => ({ ...prev, confirmar: e.target.checked }))}
+                  className="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Confirmo que deseo proceder con esta acción
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1 ml-8">
+                Esta casilla debe estar marcada para confirmar y notificar a gestoria
+              </p>
+            </div>
+
+            {/* Butoane */}
+            <div className="flex gap-4 justify-center mt-8">
+              <Button
+                onClick={() => {
+                  setShowDespidoModal(false);
+                  setDespidoForm({ fecha_efectiva: '', comentario_empresa: '', confirmar: false });
+                  setDespidoAttachments([]);
+                  setDespidoError(null);
+                  setSelectedUserForDespido(null);
+                }}
+                variant="outline"
+                size="lg"
+                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+                disabled={despidoLoading}
+              >
+                <span className="mr-2">✖️</span>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => handleDespidoSubmit(false)}
+                variant="outline"
+                size="lg"
+                loading={despidoLoading}
+                disabled={despidoLoading || !despidoForm.fecha_efectiva}
+                className="px-8 py-3 border-2 border-blue-300 hover:border-blue-400 text-blue-700"
+              >
+                {despidoLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-2">💾</span>
+                    Guardar borrador
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => handleDespidoSubmit(true)}
+                variant="primary"
+                size="lg"
+                loading={despidoLoading}
+                disabled={despidoLoading || !despidoForm.fecha_efectiva || !despidoForm.confirmar}
+                className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg"
+              >
+                {despidoLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Procesando...
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-2">✅</span>
+                    Confirmar y notificar gestoria
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 } 

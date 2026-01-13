@@ -2402,26 +2402,20 @@ export class EmpleadosController {
   ) {
     try {
       const codigo =
-        user?.CODIGO ||
-        user?.userId ||
-        user?.empleadoId ||
-        user?.codigo;
+        user?.CODIGO || user?.userId || user?.empleadoId || user?.codigo;
 
       if (!codigo) {
         throw new BadRequestException('No se pudo identificar al usuario');
       }
 
       if (typeof body.tiene_certificado !== 'boolean') {
-        throw new BadRequestException(
-          'tiene_certificado debe ser un booleano',
-        );
+        throw new BadRequestException('tiene_certificado debe ser un booleano');
       }
 
-      const result =
-        await this.empleadosService.confirmarCertificadoHandicap(
-          codigo,
-          body.tiene_certificado,
-        );
+      const result = await this.empleadosService.confirmarCertificadoHandicap(
+        codigo,
+        body.tiene_certificado,
+      );
 
       return {
         success: true,
@@ -2431,10 +2425,7 @@ export class EmpleadosController {
         documentoCreado: result.documentoCreado,
       };
     } catch (error: any) {
-      this.logger.error(
-        '❌ Error confirmando certificado handicap:',
-        error,
-      );
+      this.logger.error('❌ Error confirmando certificado handicap:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }

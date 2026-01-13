@@ -53,6 +53,9 @@ const InicioPage = () => {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
   const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    return localStorage.getItem('bajaMedicaBannerDismissed') === 'true';
+  });
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -1079,12 +1082,65 @@ const InicioPage = () => {
     return () => clearTimeout(watchdog);
   }, [uiReady, loadingAvatar, loadingAlerts, loadingPermissions, user]);
 
+  // Verifică dacă banner-ul trebuie afișat (până pe 15 februarie 2026)
+  // IMPORTANT: Hook-ul trebuie să fie apelat ÎNAINTE de orice return condiționat
+  const shouldShowBajaMedicaBanner = useMemo(() => {
+    // Verifică dacă utilizatorul a închis banner-ul
+    if (bannerDismissed) {
+      return false;
+    }
+    
+    const today = new Date();
+    const endDate = new Date('2026-02-15');
+    endDate.setHours(23, 59, 59, 999); // Până la sfârșitul zilei de 15 februarie
+    return today <= endDate;
+  }, [bannerDismissed]);
+
   if (!uiReady) {
     return renderSkeleton();
   }
 
   return (
     <div className="space-y-6">
+      {/* Banner Recordatorio - Baja Médica */}
+      {shouldShowBajaMedicaBanner && (
+        <div className="bg-gradient-to-r from-rose-500 to-rose-600 rounded-xl shadow-lg border border-rose-300 p-4 md:p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0">
+              <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                <span className="text-2xl md:text-3xl">🩺</span>
+              </div>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg md:text-xl font-bold text-white mb-2">
+                Recordatorio importante
+              </h3>
+              <p className="text-sm md:text-base text-white/95 leading-relaxed mb-3">
+                En caso de baja médica, es <strong>obligatorio</strong> comunicarlo a la empresa lo antes posible a través de la aplicación.
+              </p>
+              <div className="flex items-center gap-2 text-xs md:text-sm text-white/90">
+                <span>📍</span>
+                <span>Puedes hacerlo desde la página <strong>Fichaje</strong> → botón <strong>&quot;Anunciar Baja Médica&quot;</strong></span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                // Permite închiderea banner-ului (salvat în localStorage)
+                localStorage.setItem('bajaMedicaBannerDismissed', 'true');
+                setBannerDismissed(true);
+                setNotification({
+                  type: 'info',
+                  message: 'Banner cerrado. Recuerda comunicar tu baja médica cuando sea necesario.',
+                });
+              }}
+              className="flex-shrink-0 text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded"
+              title="Cerrar banner"
+            >
+              <span className="text-2xl">×</span>
+            </button>
+          </div>
+        </div>
+      )}
       {/* Modal pentru trimiterea notificărilor */}
       <SendNotificationModal
         isOpen={showNotificationModal}

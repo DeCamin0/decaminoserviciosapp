@@ -2576,11 +2576,15 @@ ORDER BY f.d;
               score_uso_app: row.score_uso_app
                 ? Number(row.score_uso_app)
                 : null,
-              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
-                ? Number(row.score_responsabilidad_digital)
-                : breakdownJson?.score_responsabilidad_digital !== undefined && breakdownJson?.score_responsabilidad_digital !== null
-                  ? Number(breakdownJson.score_responsabilidad_digital)
-                  : null,
+              score_responsabilidad_digital:
+                row.score_responsabilidad_digital !== undefined &&
+                row.score_responsabilidad_digital !== null
+                  ? Number(row.score_responsabilidad_digital)
+                  : breakdownJson?.score_responsabilidad_digital !==
+                        undefined &&
+                      breakdownJson?.score_responsabilidad_digital !== null
+                    ? Number(breakdownJson.score_responsabilidad_digital)
+                    : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2635,11 +2639,15 @@ ORDER BY f.d;
               score_uso_app: row.score_uso_app
                 ? Number(row.score_uso_app)
                 : null,
-              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
-                ? Number(row.score_responsabilidad_digital)
-                : breakdownJson?.score_responsabilidad_digital !== undefined && breakdownJson?.score_responsabilidad_digital !== null
-                  ? Number(breakdownJson.score_responsabilidad_digital)
-                  : null,
+              score_responsabilidad_digital:
+                row.score_responsabilidad_digital !== undefined &&
+                row.score_responsabilidad_digital !== null
+                  ? Number(row.score_responsabilidad_digital)
+                  : breakdownJson?.score_responsabilidad_digital !==
+                        undefined &&
+                      breakdownJson?.score_responsabilidad_digital !== null
+                    ? Number(breakdownJson.score_responsabilidad_digital)
+                    : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2772,9 +2780,11 @@ ORDER BY f.d;
               score_calitate: row.score_calitate,
               score_punctualitate: row.score_punctualitate,
               score_uso_app: row.score_uso_app,
-              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
-                ? Number(row.score_responsabilidad_digital)
-                : null,
+              score_responsabilidad_digital:
+                row.score_responsabilidad_digital !== undefined &&
+                row.score_responsabilidad_digital !== null
+                  ? Number(row.score_responsabilidad_digital)
+                  : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -2817,9 +2827,11 @@ ORDER BY f.d;
               score_calitate: row.score_calitate,
               score_punctualitate: row.score_punctualitate,
               score_uso_app: row.score_uso_app,
-              score_responsabilidad_digital: row.score_responsabilidad_digital !== undefined && row.score_responsabilidad_digital !== null
-                ? Number(row.score_responsabilidad_digital)
-                : null,
+              score_responsabilidad_digital:
+                row.score_responsabilidad_digital !== undefined &&
+                row.score_responsabilidad_digital !== null
+                  ? Number(row.score_responsabilidad_digital)
+                  : null,
               horas_pontate: parseFloat(row.breakdown_json?.horas_pontate || 0),
               target_ajustat: parseFloat(
                 row.breakdown_json?.target_ajustat || 0,
@@ -4428,18 +4440,24 @@ inspecciones_score AS (
     CAST(de.CODIGO AS CHAR) AS empleadoId,
     CASE 
       -- Pentru supervizori: sistem progresiv de puncte bazat pe inspecții pe zi lucrătoare
-      -- Minimum: 2 inspecții/zi lucrătoare (ex: 20 inspecții pentru 10 zile)
+      -- Target: 2 inspecții/zi lucrătoare, dar acordă puncte parțiale pentru performanță sub target
       WHEN BINARY UPPER(TRIM(de.GRUPO)) = BINARY 'SUPERVISOR' THEN
         CASE 
           -- Dacă nu are zile lucrătoare în lună (ex: toată luna în vacanță), primește 4 puncte
           WHEN COALESCE(dlm.dias_laborables, 0) = 0 THEN 4
-          -- Sub minimum (2 inspecții/zi) → 0 puncte
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 2) THEN 0
-          -- 2-2.9 inspecții/zi (ex: 20-29 pentru 10 zile) → 2 puncte
+          -- Sub 0.5 inspecții/zi → 0 puncte
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 0.5) THEN 0
+          -- 0.5-1 inspecții/zi → 1 punct
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 1) THEN 1
+          -- 1-1.5 inspecții/zi → 1.5 puncte
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 1.5) THEN 1.5
+          -- 1.5-2 inspecții/zi → 2 puncte (aproape de target)
+          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 2) THEN 2
+          -- 2-2.9 inspecții/zi → 2 puncte (target atins)
           WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 3) THEN 2
-          -- 3-3.9 inspecții/zi (ex: 30-39 pentru 10 zile) → 3 puncte
+          -- 3-3.9 inspecții/zi → 3 puncte
           WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 4) THEN 3
-          -- 4+ inspecții/zi (ex: 40+ pentru 10 zile) → 4 puncte (maxim)
+          -- 4+ inspecții/zi → 4 puncte (maxim)
           ELSE 4
         END
       -- Pentru angajați normali: dacă nu are inspecții, primește 4 puncte

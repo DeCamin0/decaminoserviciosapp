@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react';
 import { Button, Input } from '../../components/ui';
 
 export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo = 'cliente' }) {
-  // Lista de țări pentru dropdown
+  // Lista de țări pentru dropdown (eliminăm duplicatele)
   const paises = [
     'España', 'Francia', 'Italia', 'Portugal', 'Alemania', 'Reino Unido', 'Irlanda', 'Países Bajos', 'Bélgica', 'Suiza', 'Austria', 'Suecia', 'Noruega', 'Dinamarca', 'Finlandia',
     'Polonia', 'República Checa', 'Eslovaquia', 'Hungría', 'Rumania', 'Bulgaria', 'Croacia', 'Eslovenia', 'Estonia', 'Letonia', 'Lituania', 'Grecia', 'Chipre', 'Malta', 'Luxemburgo',
-    'Marruecos', 'Argelia', 'Túnez', 'Egipto', 'Libia', 'Sudán', 'Etiopía', 'Kenia', 'Nigeria', 'Sudáfrica', 'Marruecos', 'Senegal', 'Ghana', 'Costa de Marfil', 'Mali',
+    'Marruecos', 'Argelia', 'Túnez', 'Egipto', 'Libia', 'Sudán', 'Etiopía', 'Kenia', 'Nigeria', 'Sudáfrica', 'Senegal', 'Ghana', 'Costa de Marfil', 'Mali',
     'Estados Unidos', 'Canadá', 'México', 'Brasil', 'Argentina', 'Chile', 'Colombia', 'Perú', 'Venezuela', 'Ecuador', 'Bolivia', 'Paraguay', 'Uruguay', 'Cuba', 'República Dominicana',
     'China', 'Japón', 'Corea del Sur', 'India', 'Tailandia', 'Vietnam', 'Filipinas', 'Indonesia', 'Malasia', 'Singapur', 'Taiwán', 'Hong Kong', 'Australia', 'Nueva Zelanda', 'Rusia',
     'Turquía', 'Israel', 'Emiratos Árabes Unidos', 'Arabia Saudí', 'Irán', 'Iraq', 'Afganistán', 'Pakistán', 'Bangladesh', 'Sri Lanka', 'Nepal', 'Bután', 'Myanmar', 'Laos', 'Camboya',
     'Otros'
-  ].sort();
+  ].filter((value, index, self) => self.indexOf(value) === index).sort();
 
   const [formData, setFormData] = useState({
     tipo: cliente?.tipo || tipo,

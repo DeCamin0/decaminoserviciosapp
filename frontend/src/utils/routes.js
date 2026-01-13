@@ -18,6 +18,11 @@ export const getN8nUrl = (endpoint) => {
 };
 
 export const routes = {
+  // Base URL pentru toate endpoint-urile
+  baseUrl: import.meta.env.DEV
+    ? 'http://localhost:3000'
+    : 'https://api.decaminoservicios.com',
+  
   // Authentication & Users
   login: import.meta.env.DEV 
     ? 'http://localhost:3000/api/auth/login'
@@ -244,6 +249,20 @@ export const routes = {
   updateCuadrantes: import.meta.env.DEV
     ? 'http://localhost:3000/api/cuadrantes/update'
     : 'https://api.decaminoservicios.com/api/cuadrantes/update',
+  uploadCuadrantesExcel: import.meta.env.DEV
+    ? 'http://localhost:3000/api/cuadrantes/upload-excel'
+    : 'https://api.decaminoservicios.com/api/cuadrantes/upload-excel',
+  
+  // Horarios Multicentro
+  getHorarioMulticentro: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horarios/multicentro'
+    : 'https://api.decaminoservicios.com/api/horarios/multicentro',
+  uploadHorarioMulticentroExcel: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horarios/upload-excel-multicentro'
+    : 'https://api.decaminoservicios.com/api/horarios/upload-excel-multicentro',
+  saveHorariosMulticentro: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horarios/save-multicentro'
+    : 'https://api.decaminoservicios.com/api/horarios/save-multicentro',
   
   // Solicitudes (Requests)
   // Folosește GET pentru listare, POST cu accion: 'create'/'update'/'delete' pentru modificări
@@ -284,6 +303,9 @@ export const routes = {
   createBajaMedicaManual: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas/manual'
     : 'https://api.decaminoservicios.com/api/bajas-medicas/manual',
+  createBajaMedicaEmpleado: import.meta.env.DEV
+    ? 'http://localhost:3000/api/bajas-medicas/empleado'
+    : 'https://api.decaminoservicios.com/api/bajas-medicas/empleado',
   resolveBajasMedicasConflicts: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas/resolve-conflicts'
     : 'https://api.decaminoservicios.com/api/bajas-medicas/resolve-conflicts',

@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import activityLogger from '../utils/activityLogger';
 import { Button, Card, Input, Select, Modal, Notification } from '../components/ui';
@@ -156,7 +157,6 @@ export default function CuadrantesPage() {
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
   
-  console.log('CuadrantesPage rendering, authUser:', authUser);
   
   // State pentru diferite secțiuni
   const [activeTab, setActiveTab] = useState('generar');
@@ -187,6 +187,32 @@ export default function CuadrantesPage() {
   const [notification, setNotification] = useState(null); // {type: 'success'|'error'|'warning', title: string, message: string}
   const [cuadrantesLista, setCuadrantesLista] = useState([]);
   const [error, setError] = useState('');
+  
+  // State pentru import Excel
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [excelPreviewData, setExcelPreviewData] = useState(null);
+  const [showExcelPreviewModal, setShowExcelPreviewModal] = useState(false);
+  const [savingExcel, setSavingExcel] = useState(false);
+  // State pentru checkbox-uri horario_multicentro în preview cuadrantes
+  const [selectedForHorarioMulticentro, setSelectedForHorarioMulticentro] = useState(new Set());
+  
+  // State pentru import Excel horario_multicentro
+  const [uploadingExcelMulticentro, setUploadingExcelMulticentro] = useState(false);
+  const [excelPreviewDataMulticentro, setExcelPreviewDataMulticentro] = useState(null);
+  const [showExcelPreviewModalMulticentro, setShowExcelPreviewModalMulticentro] = useState(false);
+  const [savingExcelMulticentro, setSavingExcelMulticentro] = useState(false);
+  const [excludeHorariosCon0Horas, setExcludeHorariosCon0Horas] = useState(true); // Exclude automat rândurile cu 0 ore
+  
+  // State pentru afișare horarios_multicentro
+  const [horariosMulticentroList, setHorariosMulticentroList] = useState([]);
+  const [loadingHorariosMulticentro, setLoadingHorariosMulticentro] = useState(false);
+  const [selectedMonthHorariosMulticentro, setSelectedMonthHorariosMulticentro] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [selectedEmpleadoHorariosMulticentro, setSelectedEmpleadoHorariosMulticentro] = useState('');
+  const [empleadoHorariosMulticentroSearch, setEmpleadoHorariosMulticentroSearch] = useState('');
+  const [showEmpleadoHorariosMulticentroDropdown, setShowEmpleadoHorariosMulticentroDropdown] = useState(false);
 
   const showToast = useCallback((arg1, arg2) => {
     const allowedTypes = new Set(['success', 'error', 'info', 'warning']);
@@ -202,9 +228,26 @@ export default function CuadrantesPage() {
   }, []);
 
   // Funcție pentru a edita o zi din cuadrante
-  const handleEditDay = (cuadranteIndex, dayNumber, currentValue) => {
-    const cuadrante = cuadrantesLista[cuadranteIndex];
-    if (!cuadrante) return;
+  const handleEditDay = (cuadranteIndex, dayNumber, currentValue, cuadranteData = null) => {
+    // Dacă avem datele cuadrante-ului direct, folosim-le (pentru a evita probleme cu indexul)
+    let cuadrante = cuadranteData;
+    
+    // Dacă nu avem datele directe, găsim cuadrante-ul din lista filtrată (pentru că indexul este din lista filtrată)
+    if (!cuadrante) {
+      const filteredList = cuadrantesLista.filter(c => !selectedMesAno || c.LUNA === selectedMesAno);
+      cuadrante = filteredList[cuadranteIndex];
+      
+      // Dacă tot nu găsim, încercăm să găsim în lista completă (fallback)
+      if (!cuadrante) {
+        cuadrante = cuadrantesLista[cuadranteIndex];
+      }
+    }
+    
+    if (!cuadrante) {
+      console.error('❌ [handleEditDay] Cuadrante not found for index:', cuadranteIndex, 'Total cuadrantes:', cuadrantesLista.length);
+      showToast('error', 'Error: No se encontró el cuadrante');
+      return;
+    }
 
     // Extraer turnurile unice din TOATE cuadrant-urile pentru luna respectivă
     const shifts = new Set();
@@ -231,29 +274,479 @@ export default function CuadrantesPage() {
     });
     
     setAvailableShifts(shiftsArray);
+    // Obține numele complet al angajatului (încearcă toate variantele)
+    const nombreCompleto = cuadrante['NOMBRE / APELLIDOS'] || cuadrante.NOMBRE || cuadrante.nombre || 'N/A';
+    
+    
+    // Găsește indexul real în lista completă pentru salvare
+    const realIndex = cuadrantesLista.findIndex(c => 
+      (c.CODIGO && cuadrante.CODIGO && c.CODIGO === cuadrante.CODIGO) ||
+      (c.EMAIL && cuadrante.EMAIL && c.EMAIL === cuadrante.EMAIL) ||
+      (c.NOMBRE && cuadrante.NOMBRE && c.NOMBRE === cuadrante.NOMBRE)
+    );
+    
+    const finalIndex = realIndex !== -1 ? realIndex : cuadranteIndex;
+    
     setEditingDay({
-      cuadranteIndex,
+      cuadranteIndex: finalIndex, // Folosește indexul real din lista completă
       dayNumber,
       currentValue: currentValue || '',
-      empleado: cuadrante.NOMBRE || cuadrante.nombre || 'N/A'
+      empleado: nombreCompleto,
+      codigo: cuadrante.CODIGO || '',
+      email: cuadrante.EMAIL || '',
+      nombre: cuadrante.NOMBRE || cuadrante.nombre || '',
+      centro: cuadrante.CENTRO || selectedCentro || '',
+      cuadranteOriginal: cuadrante // Păstrăm cuadrante-ul original pentru referință
     });
+    // Reset complet la deschiderea modalului pentru a evita confuzia între angajați
+    setSelectedEmpleadoForDay('');
+    setEmpleadoForDaySearch('');
+    setShowEmpleadoForDayDropdown(false);
     setShowEditModal(true);
   };
 
+  // Funcție helper pentru a transforma formatul complet în număr de ore (pentru horario multicentro)
+  const transformaZiValueInOre = (ziValue) => {
+    if (!ziValue || ziValue === '' || ziValue === 'LIBRE' || ziValue === '0' || ziValue === '0h') {
+      return null; // LIBRE rămâne LIBRE
+    }
+    
+    const ziStr = String(ziValue).trim();
+    
+    // Dacă este deja un număr (ex: "8", "8h", "8.0")
+    if (!isNaN(parseFloat(ziStr)) && isFinite(parseFloat(ziStr))) {
+      const hours = parseFloat(ziStr);
+      return hours > 0 ? String(hours) : null;
+    }
+    
+    // Format "T1 XX:XX-XX:XX", "T2 XX:XX-XX:XX", "T3 XX:XX-XX:XX"
+    let turnoMatch = ziStr.match(/^T[123]\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!turnoMatch) {
+      turnoMatch = ziStr.match(/^T[123](\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    }
+    if (!turnoMatch) {
+      turnoMatch = ziStr.match(/^T[123]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    }
+    
+    if (turnoMatch) {
+      const startHour = parseInt(turnoMatch[1], 10);
+      const startMin = parseInt(turnoMatch[2], 10);
+      let endHour = parseInt(turnoMatch[4], 10);
+      const endMin = parseInt(turnoMatch[5], 10);
+      
+      if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+        endHour += 24;
+      }
+      
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      const durationMinutes = endMinutes - startMinutes;
+      const durationHours = durationMinutes / 60;
+      
+      if (durationHours === Math.round(durationHours)) {
+        return String(Math.round(durationHours));
+      } else {
+        return String(Math.round(durationHours * 10) / 10);
+      }
+    }
+    
+    // Format "XX:XX-XX:XX"
+    const timeMatch = ziStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (timeMatch) {
+      const startHour = parseInt(timeMatch[1], 10);
+      const startMin = parseInt(timeMatch[2], 10);
+      let endHour = parseInt(timeMatch[4], 10);
+      const endMin = parseInt(timeMatch[5], 10);
+      
+      if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+        endHour += 24;
+      }
+      
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      const durationMinutes = endMinutes - startMinutes;
+      const durationHours = durationMinutes / 60;
+      
+      return String(Math.round(durationHours * 10) / 10);
+    }
+    
+    // Dacă este doar "T1", "T2", "T3" fără ore, presupunem 8 ore
+    if (ziStr.match(/^T[123]$/)) {
+      return '8';
+    }
+    
+    return null;
+  };
+
+  // Funcție helper pentru a obține identificatorul unic al unui cuadrante (consistent în toată aplicația)
+  const getCuadranteIdentificator = (cuadrante) => {
+    if (!cuadrante) return null;
+    // Prioritate: CODIGO > EMAIL > NOMBRE > nombre
+    // Folosim String() pentru a evita probleme cu null/undefined
+    return String(cuadrante.CODIGO || cuadrante.EMAIL || cuadrante.NOMBRE || cuadrante.nombre || '');
+  };
+
   // Funcție pentru a salva modificarea din modal
-  const handleSaveDayEdit = (newValue) => {
+  const handleSaveDayEdit = async (newValue) => {
     if (!editingDay) return;
     
-    const { cuadranteIndex, dayNumber } = editingDay;
-    const cuadranteKey = `${cuadranteIndex}_${dayNumber}`;
+    const { cuadranteIndex, dayNumber, codigo, email, nombre, centro, cuadranteOriginal } = editingDay;
     
-    setEditedCuadrantes(prev => ({
-      ...prev,
-      [cuadranteKey]: newValue
-    }));
-    setHasChanges(true);
+    // Găsește cuadrante-ul real din lista completă folosind identificatorul
+    const cuadranteReal = cuadrantesLista.find(c => 
+      (codigo && c.CODIGO === codigo) ||
+      (email && c.EMAIL === email) ||
+      (nombre && (c.NOMBRE === nombre || c.nombre === nombre))
+    ) || cuadranteOriginal || cuadrantesLista[cuadranteIndex];
+    
+    if (!cuadranteReal) {
+      console.error('❌ [handleSaveDayEdit] Cuadrante not found:', { codigo, email, nombre, cuadranteIndex });
+      showToast('error', 'Error: No se encontró el cuadrante');
+      return;
+    }
+    
+    // Folosește funcția helper pentru identificator consistent
+    const identificator = getCuadranteIdentificator(cuadranteReal);
+    if (!identificator) {
+      console.error('❌ [handleSaveDayEdit] No valid identificator found for cuadrante');
+      showToast('error', 'Error: No se pudo identificar el cuadrante');
+      return;
+    }
+    
+    const cuadranteKey = `${identificator}_${dayNumber}`;
+    
+    
+    // Dacă este selectat alt angajat și turnul nu este LIBRE, creează horario multicentro
+    
+    if (selectedEmpleadoForDay && selectedEmpleadoForDay !== codigo && newValue && newValue !== 'LIBRE' && newValue.trim() !== '') {
+      try {
+        // Găsește informațiile despre noul angajat (folosește lista completă sau fallback)
+        const listaCompleta = angajati.length > 0 ? angajati : angajatiFiltrati;
+        const nuevoEmpleado = listaCompleta.find(a => a.CODIGO === selectedEmpleadoForDay);
+        if (!nuevoEmpleado) {
+          showToast('error', 'Empleado no encontrado');
+          return;
+        }
+        
+        // Salvează horario multicentro
+        const token = localStorage.getItem('auth_token');
+        
+        // Verifică dacă ziua era deja atribuită altui angajat în multicentro
+        // Dacă da, actualizează marcajul în cuadrantul original al acelui angajat
+        const mesAnoCheck = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+        const clienteCentroCheck = centro || selectedCentro || 'N/A';
+        
+        try {
+          const getResponseCheck = await fetch(
+            `${routes.getHorarioMulticentro}?mes=${mesAnoCheck}`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          
+          if (getResponseCheck.ok) {
+            const getDataCheck = await getResponseCheck.json().catch(() => ({ horarios: [] }));
+            const horariosMulticentroCheck = Array.isArray(getDataCheck.horarios) ? getDataCheck.horarios : [];
+            
+            // Găsește horario_multicentro care au această zi atribuită și sunt din același centru
+            const horariosConEstaZiCheck = horariosMulticentroCheck.filter(h => {
+              return h.CLIENTE === clienteCentroCheck && 
+                     h[`ZI_${dayNumber}`] !== undefined && 
+                     h[`ZI_${dayNumber}`] !== null && 
+                     h[`ZI_${dayNumber}`] !== '' &&
+                     h.CODIGO !== codigo && // Nu este angajatul original
+                     h.CODIGO !== nuevoEmpleado.CODIGO; // Nu este noul angajat
+            });
+            
+            // Actualizează marcajul în cuadrantul original al angajaților care au avut ziua
+            horariosConEstaZiCheck.forEach(h => {
+              const cuadranteConEstaZiCheck = cuadrantesLista.find(c => {
+                const cIdentificator = getCuadranteIdentificator(c);
+                const hIdentificator = h.CODIGO || h.EMAIL || h.NOMBRE || '';
+                return cIdentificator === hIdentificator && c.LUNA === mesAnoCheck;
+              });
+              
+              if (cuadranteConEstaZiCheck) {
+                const identificatorConEstaZiCheck = getCuadranteIdentificator(cuadranteConEstaZiCheck);
+                const cuadranteKeyConEstaZiCheck = `${identificatorConEstaZiCheck}_${dayNumber}`;
+                
+                // Șterge marcajul vechi
+                setEditedCuadrantes(prev => ({
+                  ...prev,
+                  [cuadranteKeyConEstaZiCheck]: 'LIBRE'
+                }));
+              }
+            });
+          }
+        } catch (error) {
+          console.warn('⚠️ [handleSaveDayEdit] Error al verificar ziua anterioară:', error);
+        }
+        
+        // Determină HORARIO și SERVICIO din valoarea turnului
+        // Notă: horarioTipo și horarioCompleto nu sunt folosite în acest context
+        
+        // Transformă valoarea zilei în număr de ore
+        const oreValue = transformaZiValueInOre(newValue);
+        
+        // Construiește obiectul horario multicentro
+        const mesAno = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+        const clienteCentro = centro || selectedCentro || 'N/A';
+        // Folosim numele complet (NOMBRE / APELLIDOS) dacă există, altfel fallback la NOMBRE
+        const nombreCompleto = nuevoEmpleado['NOMBRE / APELLIDOS'] || nuevoEmpleado.NOMBRE_APELLIDOS || nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre || '';
+        
+        // Citește mai întâi orarul existent pentru acest angajat, lună și centru
+        let horarioExistente = [];
+        try {
+          const getResponse = await fetch(
+            `${routes.getHorarioMulticentro}?codigo=${nuevoEmpleado.CODIGO}&mes=${mesAno}`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          
+          if (getResponse.ok) {
+            const getData = await getResponse.json().catch(() => ({ horarios: [] }));
+            horarioExistente = Array.isArray(getData.horarios) ? getData.horarios : [];
+          }
+        } catch (error) {
+          console.warn('⚠️ [handleSaveDayEdit] Error al leer horarios existentes:', error);
+          // Continuăm cu crearea unui orar nou dacă nu putem citi cel existent
+        }
+        
+        // Găsește orarul existent pentru acest centru (fără să verificăm HORARIO, deoarece în multicentro salvăm doar orele)
+        // Folosim un HORARIO generic "MULTICENTRO" pentru toate zilele atribuite aceluiași angajat în același centru/lună
+        let horarioExistenteParaCentro = horarioExistente.find(
+          h => h.CLIENTE === clienteCentro
+        );
+        
+        // Construiește obiectul horario multicentro cu toate zilele
+        // HORARIO și SERVICIO sunt generice pentru multicentro (nu depind de tipul de turn specific)
+        const horarioMulticentro = {
+          CODIGO: nuevoEmpleado.CODIGO || '',
+          EMAIL: nuevoEmpleado['CORREO ELECTRONICO'] || nuevoEmpleado.EMAIL || '',
+          NOMBRE: nombreCompleto, // Folosim numele complet
+          LUNA: mesAno,
+          CLIENTE: clienteCentro,
+          HORARIO: 'MULTICENTRO', // Generic pentru toate zilele atribuite în multicentro
+          SERVICIO: 'MULTICENTRO', // Generic pentru toate zilele atribuite în multicentro
+        };
+        
+        // Dacă există un orar existent, păstrează toate zilele existente și actualizează doar ziua nouă
+        if (horarioExistenteParaCentro) {
+          // Copiază toate zilele existente
+          for (let i = 1; i <= 31; i++) {
+            const ziKey = `ZI_${i}`;
+            const ziValue = horarioExistenteParaCentro[ziKey];
+            if (ziValue !== undefined && ziValue !== null && ziValue !== '') {
+              // Dacă valoarea existentă este deja un număr (ore), o păstrăm așa
+              // Dacă este un format complet (ex: "T3 23:00-07:00"), o transformăm în ore
+              const ziValueStr = String(ziValue).trim();
+              if (!isNaN(parseFloat(ziValueStr)) && isFinite(parseFloat(ziValueStr))) {
+                // Este deja un număr, îl păstrăm
+                horarioMulticentro[ziKey] = ziValueStr;
+              } else {
+                // Este un format complet, îl transformăm în ore
+                const oreValueExistente = transformaZiValueInOre(ziValue);
+                horarioMulticentro[ziKey] = oreValueExistente || ziValueStr;
+              }
+            }
+          }
+          // Actualizează ziua nouă
+          horarioMulticentro[`ZI_${dayNumber}`] = oreValue || null;
+          
+          // Recalculează TotalHoras
+          let totalHoras = 0;
+          for (let i = 1; i <= 31; i++) {
+            const ziKey = `ZI_${i}`;
+            const ziValue = horarioMulticentro[ziKey];
+            if (ziValue && !isNaN(parseFloat(ziValue))) {
+              totalHoras += parseFloat(ziValue);
+            }
+          }
+          horarioMulticentro.TotalHoras = totalHoras > 0 ? totalHoras : null;
+        } else {
+          // Creează un orar nou cu doar ziua nouă
+          horarioMulticentro[`ZI_${dayNumber}`] = oreValue || null;
+          horarioMulticentro.TotalHoras = oreValue ? parseFloat(oreValue) : null;
+        }
+        
+        
+        const response = await fetch(routes.saveHorariosMulticentro, {
+          method: 'POST',
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            horarios: [horarioMulticentro],
+          }),
+        });
+        
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+          console.error('❌ [handleSaveDayEdit] Error response:', errorData);
+          throw new Error(errorData.message || 'Error al guardar horario multicentro');
+        }
+        
+        await response.json().catch(() => ({}));
+        
+        showToast('success', `Turno asignado a ${nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre} en horario multicentro`);
+        
+        // Setează ziua cu marcaj special "MC->[NUME_ANGAJAT]" în cuadrantele originale pentru a indica că este în multicentro
+        // Folosim "->" în loc de "→" pentru compatibilitate cu encoding-ul bazei de date
+        const nombreCorto = (nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre || '').split(' ').slice(0, 2).join(' '); // Primele 2 cuvinte din nume
+        const marcaMulticentro = `MC->${nombreCorto}`;
+        setEditedCuadrantes(prev => ({
+          ...prev,
+          [cuadranteKey]: marcaMulticentro
+        }));
+        setHasChanges(true);
+        
+        
+      } catch (error) {
+        console.error('❌ Error al guardar horario multicentro:', error);
+        showToast('error', `Error: ${error.message}`);
+        return;
+      }
+    } else {
+      // Comportament normal: actualizează cuadrantele (folosind identificatorul unic)
+      // DAR: dacă ziua a fost atribuită anterior unui alt angajat în multicentro, trebuie să o ștergem de acolo
+      const mesAno = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+      const clienteCentro = centro || selectedCentro || 'N/A';
+      const token = localStorage.getItem('auth_token');
+      
+      // Căutăm în toate horario_multicentro pentru acest centru și lună dacă există ziua atribuită altui angajat
+      try {
+        const getResponse = await fetch(
+          `${routes.getHorarioMulticentro}?mes=${mesAno}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : '',
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        if (getResponse.ok) {
+          const getData = await getResponse.json().catch(() => ({ horarios: [] }));
+          const horariosMulticentro = Array.isArray(getData.horarios) ? getData.horarios : [];
+          
+          // Găsește toate horario_multicentro care au această zi atribuită și sunt din același centru
+          const horariosConEstaZi = horariosMulticentro.filter(h => {
+            // Verifică dacă este din același centru și dacă ziua respectivă are o valoare
+            return h.CLIENTE === clienteCentro && 
+                   h[`ZI_${dayNumber}`] !== undefined && 
+                   h[`ZI_${dayNumber}`] !== null && 
+                   h[`ZI_${dayNumber}`] !== '' &&
+                   h.CODIGO !== codigo; // Nu este angajatul original
+          });
+          
+          // Dacă există horario_multicentro cu această zi atribuită, o ștergem
+          if (horariosConEstaZi.length > 0) {
+            
+            // Pentru fiecare horario_multicentro găsit, ștergem ziua respectivă
+            const horariosParaActualizar = horariosConEstaZi.map(h => {
+              const horarioActualizado = { ...h };
+              // Setăm ziua la NULL
+              horarioActualizado[`ZI_${dayNumber}`] = null;
+              
+              // Recalculăm TotalHoras
+              let totalHoras = 0;
+              for (let i = 1; i <= 31; i++) {
+                const ziKey = `ZI_${i}`;
+                const ziValue = horarioActualizado[ziKey];
+                if (ziValue !== undefined && ziValue !== null && ziValue !== '' && i !== dayNumber) {
+                  const ziValueNum = parseFloat(ziValue);
+                  if (!isNaN(ziValueNum)) {
+                    totalHoras += ziValueNum;
+                  }
+                }
+              }
+              horarioActualizado.TotalHoras = totalHoras > 0 ? totalHoras : null;
+              
+              return horarioActualizado;
+            });
+            
+            // Salvează horarios actualizados
+            const responseMulticentro = await fetch(routes.saveHorariosMulticentro, {
+              method: 'POST',
+              headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                horarios: horariosParaActualizar,
+              }),
+            });
+            
+            if (responseMulticentro.ok) {
+              
+              // Ștergem marcajul "MC->..." din cuadrantul original al angajaților care au avut ziua
+              // Căutăm în cuadrantesLista pentru a găsi cuadrantul acelor angajați
+              horariosConEstaZi.forEach(h => {
+                const cuadranteConEstaZi = cuadrantesLista.find(c => {
+                  const cIdentificator = getCuadranteIdentificator(c);
+                  const hIdentificator = h.CODIGO || h.EMAIL || h.NOMBRE || '';
+                  return cIdentificator === hIdentificator && c.LUNA === mesAno;
+                });
+                
+                if (cuadranteConEstaZi) {
+                  const identificatorConEstaZi = getCuadranteIdentificator(cuadranteConEstaZi);
+                  const cuadranteKeyConEstaZi = `${identificatorConEstaZi}_${dayNumber}`;
+                  
+                  // Verifică dacă ziua are marcajul "MC->..." și o ștergem
+                  const currentValue = editedCuadrantes[cuadranteKeyConEstaZi] || cuadranteConEstaZi[`ZI_${dayNumber}`] || '';
+                  if (String(currentValue).startsWith('MC->')) {
+                    setEditedCuadrantes(prev => ({
+                      ...prev,
+                      [cuadranteKeyConEstaZi]: 'LIBRE'
+                    }));
+                  }
+                }
+              });
+            } else {
+              console.warn('⚠️ [handleSaveDayEdit] Error al eliminar ziua de la horario_multicentro');
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ [handleSaveDayEdit] Error al verificar/eliminar ziua de la horario_multicentro:', error);
+        // Continuăm cu actualizarea cuadrantului chiar dacă nu putem șterge din multicentro
+      }
+      
+      // Dacă newValue este "LIBRE" sau gol, și ziua avea marcajul "MC->...", îl ștergem
+      const currentValue = editedCuadrantes[cuadranteKey] || cuadranteReal?.[`ZI_${dayNumber}`] || '';
+      if ((newValue === 'LIBRE' || newValue === '') && String(currentValue).startsWith('MC->')) {
+        // Ziua este returnată, ștergem marcajul
+        setEditedCuadrantes(prev => ({
+          ...prev,
+          [cuadranteKey]: newValue || 'LIBRE'
+        }));
+      } else {
+        setEditedCuadrantes(prev => ({
+          ...prev,
+          [cuadranteKey]: newValue
+        }));
+      }
+      setHasChanges(true);
+      
+    }
+    
     setShowEditModal(false);
     setEditingDay(null);
+    setSelectedEmpleadoForDay('');
+    setEmpleadoForDaySearch('');
+    setShowEmpleadoForDayDropdown(false);
   };
 
   // Funcție pentru a salva modificările
@@ -264,30 +757,99 @@ export default function CuadrantesPage() {
       // Construir payload cu SOLO los cuadrantes modificados
       const cuadrantesToSave = [];
       
-      // Agrupar modificările por cuadrante (index) și luna
+      // Agrupar modificările por cuadrante (folosim key unic: identificator_luna)
       const modificariPorCuadrante = {};
+      const lunaSelectata = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
       
       // Recopilar todas las modificaciones
       Object.keys(editedCuadrantes).forEach(key => {
-        const [indexStr, dayStr] = key.split('_');
-        const index = parseInt(indexStr, 10);
+        // Parsează key-ul corect: identificator_ziua
+        // Folosim lastIndexOf pentru a găsi ultimul '_' care separă identificatorul de ziua
+        // (pentru că identificatorul poate conține '_' în nume/email)
+        const lastUnderscoreIndex = key.lastIndexOf('_');
+        if (lastUnderscoreIndex === -1) {
+          console.warn('⚠️ [handleSaveChanges] Invalid key format:', key);
+          return;
+        }
+        
+        const identificadorStr = key.substring(0, lastUnderscoreIndex);
+        const dayStr = key.substring(lastUnderscoreIndex + 1);
         const day = parseInt(dayStr, 10);
         
-        if (!modificariPorCuadrante[index]) {
-          modificariPorCuadrante[index] = {
-            cuadrante: cuadrantesLista[index],
-            modificari: {}
-          };
+        if (isNaN(day) || day < 1 || day > 31) {
+          console.warn('⚠️ [handleSaveChanges] Invalid day number:', dayStr, 'from key:', key);
+          return;
         }
-        modificariPorCuadrante[index].modificari[day] = editedCuadrantes[key];
+        
+        // Încearcă să găsească cuadrante-ul după identificator (CODIGO, EMAIL, NOMBRE)
+        let cuadrante = null;
+        let index = -1;
+        
+        // Caută după identificator unic ȘI luna selectată folosind funcția helper
+        // IMPORTANT: Trebuie să găsim cuadrante-ul pentru luna selectată, nu primul care se potrivește
+        cuadrante = cuadrantesLista.find(c => {
+          const cIdentificator = getCuadranteIdentificator(c);
+          const cLuna = c.LUNA || '';
+          return cIdentificator && cIdentificator === identificadorStr && cLuna === lunaSelectata;
+        });
+        
+        // Dacă nu găsim cu luna, încercăm fără luna (fallback pentru compatibilitate)
+        if (!cuadrante) {
+          cuadrante = cuadrantesLista.find(c => {
+            const cIdentificator = getCuadranteIdentificator(c);
+            return cIdentificator && cIdentificator === identificadorStr;
+          });
+        }
+        
+        if (cuadrante) {
+          index = cuadrantesLista.findIndex(c => c === cuadrante);
+        } else {
+          // Fallback: încearcă să parseze ca index numeric (pentru compatibilitate cu key-uri vechi)
+          const indexNum = parseInt(identificadorStr, 10);
+          if (!isNaN(indexNum) && cuadrantesLista[indexNum]) {
+            cuadrante = cuadrantesLista[indexNum];
+            index = indexNum;
+          }
+        }
+        
+        if (cuadrante && index !== -1) {
+          // Folosim key unic: identificator_luna pentru a evita confuzia între cuadrantes diferite
+          const cuadranteKey = `${identificadorStr}_${lunaSelectata}`;
+          
+          if (!modificariPorCuadrante[cuadranteKey]) {
+            modificariPorCuadrante[cuadranteKey] = {
+              cuadrante: cuadrante,
+              modificari: {},
+              index: index // Păstrăm indexul pentru referință
+            };
+          }
+          modificariPorCuadrante[cuadranteKey].modificari[day] = editedCuadrantes[key];
+          
+          console.log('✅ [handleSaveChanges] Modificare găsită:', {
+            key,
+            identificadorStr,
+            day,
+            value: editedCuadrantes[key],
+            cuadranteIdentificator: getCuadranteIdentificator(cuadrante),
+            cuadranteCODIGO: cuadrante.CODIGO,
+            cuadranteLUNA: cuadrante.LUNA,
+            lunaSelectata: lunaSelectata,
+            matchLuna: cuadrante.LUNA === lunaSelectata
+          });
+        } else {
+          console.warn('⚠️ [handleSaveChanges] Cuadrante not found for key:', key, {
+            identificadorStr,
+            day,
+            totalCuadrantes: cuadrantesLista.length
+          });
+        }
       });
       
       // Construir solo los cuadrantes que tienen modificaciones
       // IMPORTANT: Construim un obiect NOU cu DOAR metadata și zilele modificate
       // Nu includem toate zilele din cuadrantele existente pentru a evita inversări
-      Object.keys(modificariPorCuadrante).forEach(indexStr => {
-        const index = parseInt(indexStr, 10);
-        const { cuadrante, modificari } = modificariPorCuadrante[index];
+      Object.keys(modificariPorCuadrante).forEach(cuadranteKey => {
+        const { cuadrante, modificari } = modificariPorCuadrante[cuadranteKey];
         
         if (!cuadrante) return;
         
@@ -295,7 +857,8 @@ export default function CuadrantesPage() {
         // IMPORTANT: Nu folosim cuadrante.LUNA pentru că poate fi din altă lună
         const lunaParaGuardar = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
         
-        // Construim un obiect NOU cu DOAR metadata și zilele modificate
+        // Construim un obiect cu TOATE zilele din cuadrante-ul original
+        // Aplicăm modificările peste zilele originale pentru a evita ștergerea zilelor nemodificate
         const cuadranteParaGuardar = {
           CODIGO: cuadrante.CODIGO || '',
           NOMBRE: cuadrante.NOMBRE || cuadrante.nombre || '',
@@ -304,10 +867,23 @@ export default function CuadrantesPage() {
           LUNA: lunaParaGuardar, // Folosim luna selectată, nu cea din cuadrantele existente
         };
         
-        // Adăugăm DOAR zilele modificate (nu toate zilele din cuadrantele existente)
-        Object.keys(modificari).forEach(day => {
-          cuadranteParaGuardar[`ZI_${day}`] = modificari[day];
-        });
+        // Adăugăm TOATE zilele din cuadrante-ul original (1-31)
+        // Aplicăm modificările peste zilele originale
+        for (let i = 1; i <= 31; i++) {
+          const ziKey = `ZI_${i}`;
+          // Dacă ziua a fost modificată, folosește valoarea modificată
+          // Altfel, folosește valoarea originală din cuadrante
+          if (modificari[i] !== undefined) {
+            cuadranteParaGuardar[ziKey] = modificari[i];
+          } else {
+            // Folosește valoarea originală din cuadrante (sau null dacă nu există)
+            const originalValue = cuadrante[ziKey];
+            cuadranteParaGuardar[ziKey] = (originalValue !== undefined && originalValue !== null && originalValue !== '') 
+              ? originalValue 
+              : null;
+          }
+        }
+        
         
         cuadrantesToSave.push(cuadranteParaGuardar);
       });
@@ -318,7 +894,6 @@ export default function CuadrantesPage() {
         return;
       }
 
-      console.log('💾 Salvando modificările:', cuadrantesToSave);
 
       // Add JWT token for authentication
       const token = localStorage.getItem('auth_token');
@@ -370,8 +945,11 @@ export default function CuadrantesPage() {
   const [editedCuadrantes, setEditedCuadrantes] = useState({}); // Para trackear modificările
   const [hasChanges, setHasChanges] = useState(false); // Para afișa butonul de salvare
   const [showEditModal, setShowEditModal] = useState(false); // Para modal de editare
-  const [editingDay, setEditingDay] = useState(null); // {cuadranteIndex, dayNumber, currentValue, empleado}
+  const [editingDay, setEditingDay] = useState(null); // {cuadranteIndex, dayNumber, currentValue, empleado, codigo, centro}
   const [availableShifts, setAvailableShifts] = useState([]); // Turnurile disponibile din cuadrante
+  const [selectedEmpleadoForDay, setSelectedEmpleadoForDay] = useState(''); // Angajatul selectat pentru asignare (opțional)
+  const [empleadoForDaySearch, setEmpleadoForDaySearch] = useState(''); // Search term pentru angajat
+  const [showEmpleadoForDayDropdown, setShowEmpleadoForDayDropdown] = useState(false); // Dropdown visibility
   const [angajati, setAngajati] = useState([]);
   const [angajatiFiltrati, setAngajatiFiltrati] = useState([]);
   const [centros, setCentros] = useState([]);
@@ -659,12 +1237,10 @@ export default function CuadrantesPage() {
   const fetchClientes = useCallback(async () => {
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchClientes in CuadrantesPage');
       return;
     }
 
     try {
-      console.log('📥 Fetching clientes from:', routes.getClientes);
       const response = await fetch(routes.getClientes);
       
       if (!response.ok) {
@@ -672,7 +1248,6 @@ export default function CuadrantesPage() {
       }
       
       const data = await response.json();
-      console.log('✅ Clientes data received:', data);
       
       const clientesData = Array.isArray(data) ? data : [];
       
@@ -683,8 +1258,6 @@ export default function CuadrantesPage() {
           .filter(nombre => nombre && nombre.trim() !== '' && nombre !== 'N/A')
       )].sort((a, b) => a.localeCompare(b, 'es'));
       
-      console.log('📍 Clientes únicos cargados:', clientesNombres.length);
-      console.log('📋 Lista clientes:', clientesNombres);
       
       setCentros(clientesNombres);
     } catch (error) {
@@ -739,12 +1312,6 @@ export default function CuadrantesPage() {
           }
 
           const raw = await response.json();
-          if (activeTab === 'festivos') {
-            console.log('📥 Festivos response from backend:', {
-              url: festivosUrl,
-              raw,
-            });
-          }
           const festivosList = Array.isArray(raw)
             ? raw
             : Array.isArray(raw?.data)
@@ -826,7 +1393,7 @@ export default function CuadrantesPage() {
         setFestivosLoading(false);
       }
     },
-    [activeTab],
+    [],
   );
 
   const handleCreateFestivoNextYear = useCallback((festivo) => {
@@ -945,7 +1512,6 @@ export default function CuadrantesPage() {
     const editUrl = `${endpointBase}?${params.toString()}`;
 
     try {
-      console.log('🔄 Enviando edición de festivo:', editUrl);
       
       // Add JWT token for authentication
       const token = localStorage.getItem('auth_token');
@@ -983,7 +1549,6 @@ export default function CuadrantesPage() {
         parsed[0] &&
         (parsed[0].success === true || parsed[0].success === 'true')
       ) {
-        console.log('✅ Festivo actualizado correctamente:', parsed);
         showToast('success', 'Festivo actualizado correctamente');
         if (festivoModalMode === 'create' && festivoForm) {
           setFestivoForm((prev) => (prev ? { ...prev, id: festivoId } : prev));
@@ -1045,7 +1610,6 @@ export default function CuadrantesPage() {
     const deleteUrl = `${DELETE_FESTIVO_ENDPOINT}?${params.toString()}`;
 
     try {
-      console.log('🗑️ Eliminando festivo:', deleteUrl);
       
       // Add JWT token for authentication
       const token = localStorage.getItem('auth_token');
@@ -1099,12 +1663,10 @@ export default function CuadrantesPage() {
   const fetchAngajati = useCallback(async () => {
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchAngajati in CuadrantesPage');
       return;
     }
 
     try {
-      console.log('📥 Fetching angajati from:', routes.getEmpleados);
       
       // Use same authenticated headers pattern as useAdminApi.getAllUsers
       const response = await fetch(routes.getEmpleados, {
@@ -1118,23 +1680,19 @@ export default function CuadrantesPage() {
         }
       });
       
-      console.log('Response status:', response.status);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('✅ Angajati data received:', data);
       
       const lista = Array.isArray(data) ? data : [data];
-      console.log('📊 Angajati lista length:', lista.length);
       
       setAngajati(lista);
       
       // Extrage grupurile unice
       const gruposUnicos = [...new Set(lista.map(a => a['GRUPO'] || '').filter(g => g))];
-      console.log('👥 Grupos unicos:', gruposUnicos);
       setGrupos(gruposUnicos);
       
       // Nu seta automat grupul - lasă utilizatorul să aleagă
@@ -1150,12 +1708,10 @@ export default function CuadrantesPage() {
   // Fetch angajați și clienți la mount
   useEffect(() => {
     if (!authUser) {
-      console.log('Nu există utilizator autentificat');
       return;
     }
 
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Using demo data instead of fetching from backend');
       setDemoData();
       return;
     }
@@ -1176,7 +1732,6 @@ export default function CuadrantesPage() {
   const loadHorariosData = useCallback(async () => {
     setHorariosLoading(true);
     try {
-      console.log('📋 Loading horarios data:', { centros, grupos });
       
       const centrosMapped = centros.map((centro, index) => ({
         id: index + 1,
@@ -1200,86 +1755,42 @@ export default function CuadrantesPage() {
 
   // Filtrează angajații după centru, grup și angajat selectat
   useEffect(() => {
-    console.log('🔍 Filtrare angajați:', { 
-      selectedCentro, 
-      selectedGrupo, 
-      selectedEmpleado,
-      angajatiLength: angajati.length, 
-      emailLogat, 
-      isManager 
-    });
-    
     if (selectedCentro) {
-      console.log('✅ Centro selectat:', selectedCentro);
-      
       // Debug: Arată toți centrele disponibile în date
-      const todosLosCentros = [...new Set(angajati.map(a => a['CENTRO TRABAJO']))];
-      console.log('📍 Todos los centros en data:', todosLosCentros);
+      // const todosLosCentros = [...new Set(angajati.map(a => a['CENTRO TRABAJO']))];
       
       const normalizedSelectedCentro = normalizeString(selectedCentro);
       let filtrati = angajati
         .filter(a => {
           const centroTrabajo = a['CENTRO TRABAJO'] || '';
           const centroMatch = normalizeString(centroTrabajo) === normalizedSelectedCentro;
-          if (!centroMatch) {
-            console.log(`❌ No match centro: "${centroTrabajo}" !== "${selectedCentro}" (norm: "${normalizeString(centroTrabajo)}" !== "${normalizedSelectedCentro}")`);
-          } else {
-            console.log(`✅ Match centro: "${centroTrabajo}" === "${selectedCentro}"`);
-          }
           return centroMatch;
         })
         .filter(a => {
           // Filtrează doar angajații activi
           const estado = (a['ESTADO'] || a.estado || '').toString().trim().toUpperCase();
           const isActivo = estado === 'ACTIVO';
-          if (!isActivo) {
-            console.log(`❌ Empleado inactivo excluido: ${a['NOMBRE / APELLIDOS']} (ESTADO: ${estado})`);
-          }
+          // Filtru pentru angajați activi
           return isActivo;
         })
         .filter(a => {
           // Pentru manageri nu excludem utilizatorul curent
           if (isManager) return true;
           const emailMatch = (a['CORREO ELECTRONICO'] || '').trim().toLowerCase() !== emailLogat.toLowerCase();
-          if (!emailMatch) {
-            console.log(`❌ Email excluido (es el usuario actual): ${a['CORREO ELECTRONICO']}`);
-          }
           return emailMatch;
         });
       
-      console.log('📊 Después de filtrar centro y email:', filtrati.length);
-      
       // Para managers, filtra también por grupo SOLO si está explícitamente seleccionado
       if (isManager && selectedGrupo && selectedGrupo !== 'Todos los grupos' && selectedGrupo !== '' && selectedGrupo !== 'Selecciona grupo') {
-        console.log('🔍 Filtrando también por grupo:', selectedGrupo);
         filtrati = filtrati.filter(a => (a['GRUPO'] || '') === selectedGrupo);
-        console.log('📊 Después de filtrar grupo:', filtrati.length);
       }
       
       // Filtrar por empleado específico si está seleccionado
       if (selectedEmpleado && selectedEmpleado !== '') {
-        console.log('🔍 Filtrando por empleado específico:', selectedEmpleado);
         filtrati = filtrati.filter(a => (a['CODIGO'] || a.id) === selectedEmpleado);
-        console.log('📊 Después de filtrar empleado:', filtrati.length);
       }
-      
-      console.log('✅ Angajați filtrați final:', filtrati.length);
-      console.log('👥 Lista completa filtrati:', filtrati.map(a => ({
-        nombre: a['NOMBRE / APELLIDOS'],
-        email: a['CORREO ELECTRONICO'],
-        centro: a['CENTRO TRABAJO'],
-        grupo: a['GRUPO']
-      })));
-      
-      // Debug: să vedem ce valori exacte au angajații pentru CENTRO TRABAJO
-      console.log('🔍 DEBUG CENTRO TRABAJO VALUES:');
-      const centrosUnicos = [...new Set(angajati.map(a => a['CENTRO TRABAJO']).filter(Boolean))];
-      console.log('📋 Centros únicos encontrados:', centrosUnicos);
-      console.log('🎯 Centro seleccionado:', selectedCentro);
-      console.log('🔍 Coincidencias exactas:', angajati.filter(a => a['CENTRO TRABAJO'] === selectedCentro).length);
       setAngajatiFiltrati(filtrati);
     } else {
-      console.log('⚠️ Nu este selectat centru - resetare lista');
       setAngajatiFiltrati([]);
     }
   }, [selectedCentro, selectedGrupo, selectedEmpleado, angajati, emailLogat, isManager]);
@@ -1412,14 +1923,6 @@ export default function CuadrantesPage() {
 
   // Generează cuadrantul pentru o lună
   const handleGenerar = async () => {
-    console.log('handleGenerar apelat cu:', {
-      selectedMonth,
-      selectedYear,
-      selectedCentro,
-      angajatiFiltratiLength: angajatiFiltrati.length,
-      settingsKeys: Object.keys(settings)
-    });
-    
     // Validare pentru selectedMonth și selectedYear
     if (isNaN(selectedMonth) || selectedMonth < 0 || selectedMonth > 11) {
       console.error('❌ Invalid selectedMonth:', selectedMonth);
@@ -1449,16 +1952,6 @@ export default function CuadrantesPage() {
       await verificaLunaExistenta();
       
       const daysInMonth = getDaysInMonth(selectedMonth, selectedYear);
-      console.log('Days in month calculated:', daysInMonth, 'for month:', selectedMonth, 'year:', selectedYear);
-      console.log('Generare cuadrante pentru:', {
-        daysInMonth,
-        angajatiFiltratiLength: angajatiFiltrati.length,
-        settingsKeys: Object.keys(settings),
-        t1Start,
-        t2Start,
-        t3Start,
-        turnoHours
-      });
       
       const parseSequence = (text) => {
         // "2xT1,2xT2,2xT3,2xLIBRE" => [{type:'T1',count:2},...]
@@ -1481,7 +1974,6 @@ export default function CuadrantesPage() {
 
       const result = angajatiFiltrati.map((a) => {
         const id = a['CODIGO'] || a.id;
-        console.log(`Processing employee ${a['NOMBRE / APELLIDOS']} with ID: ${id}`);
         const s = settings[id] || {
           zi1: 'M', // Default: Trabajo
           etapa: 1,
@@ -1495,14 +1987,9 @@ export default function CuadrantesPage() {
         if (!s.zi1) {
           s.zi1 = 'M';
         }
-        console.log(`Settings for ${id}:`, s);
-        console.log(`s.zi1 value: "${s.zi1}", type: ${typeof s.zi1}`);
-        console.log(`daysInMonth: ${daysInMonth}, selectedMonth: ${selectedMonth}, selectedYear: ${selectedYear}`);
         let zile = [];
 
         if (customSeq && customSeq.length) {
-          console.log(`Using custom sequence for ${id}, daysInMonth: ${daysInMonth}`);
-          console.log(`Using custom sequence for ${id}:`, customSeq);
           // Construiește după secvența personalizată
           const seqFlat = [];
           customSeq.forEach(({ count, type }) => {
@@ -1523,7 +2010,6 @@ export default function CuadrantesPage() {
             }
           }
         } else if (Object.values(weeklyPattern).some(v => v && v.length)) {
-          console.log(`Using weekly pattern for ${id}:`, weeklyPattern);
           // Pattern săptămânal: aplică T1/T2/T3/LIBRE în funcție de ziua săptămânii
           for (let zi = 1; zi <= daysInMonth; zi++) {
             const jsDay = new Date(selectedYear, selectedMonth, zi).getDay(); // 0=Sun..6=Sat
@@ -1541,17 +2027,12 @@ export default function CuadrantesPage() {
             }
           }
         } else {
-          console.log(`Using fallback rotation for ${id}:`, s.tipRotatie);
-          console.log(`daysInMonth for fallback: ${daysInMonth}, will loop from 1 to ${daysInMonth}`);
           // Fallback: rotație clasică trabajo/libre
           const rot = ROTATIONS.find(r => r.label === s.tipRotatie) || ROTATIONS[0];
           // Respectă setarea explicită din UI
           let etapa = s.etapa;
           // Respectă configurația utilizatorului pentru Día 1
           let mod = s.zi1 === 'M' ? 'work' : 'free';
-          console.log(`s.zi1: "${s.zi1}", setting mod to: ${mod}`);
-          
-          console.log(`Employee ${id} starting with etapa: ${etapa} (original: ${s.etapa}), mod: ${mod}, rot: ${JSON.stringify(rot)}`);
           
           if (isNaN(daysInMonth) || daysInMonth <= 0) {
             console.error(`❌ Invalid daysInMonth: ${daysInMonth} for employee ${id}`);
@@ -1613,23 +2094,17 @@ export default function CuadrantesPage() {
             }
             
             // Logica corectă de rotație
-            const oldMod = mod;
-            const oldEtapa = etapa;
             if (mod === 'work' && etapa >= rot.work) { 
               etapa = 1; 
               mod = 'free'; 
-              console.log(`  Day ${zi}: Switching from work to free (etapa ${oldEtapa} >= ${rot.work})`);
             } else if (mod === 'free' && etapa >= rot.free) { 
               etapa = 1; 
               mod = 'work'; 
-              console.log(`  Day ${zi}: Switching from free to work (etapa ${oldEtapa} >= ${rot.free})`);
             } else {
             etapa++;
-              console.log(`  Day ${zi}: Continuing ${oldMod}, etapa: ${oldEtapa} -> ${etapa}`);
             }
           }
           }
-          console.log(`Generated ${zile.length} days for employee ${id}, zile:`, zile);
         }
         
         if (zile.length === 0) {
@@ -1649,17 +2124,56 @@ export default function CuadrantesPage() {
           cuadranteObj[`ZI_${zi}`] = zile[zi - 1];
         }
         
-        console.log(`Generated cuadrante for ${id}:`, cuadranteObj);
+        // Calculăm TotalHoras sumând orele din toate zilele
+        const getHorasFromTurno = (turno) => {
+          if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+            return 0;
+          }
+          
+          // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
+          const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+          if (timeMatch) {
+            const startHour = parseInt(timeMatch[1], 10);
+            const startMin = parseInt(timeMatch[2], 10);
+            const endHour = parseInt(timeMatch[3], 10);
+            const endMin = parseInt(timeMatch[4], 10);
+            
+            let startMinutes = startHour * 60 + startMin;
+            let endMinutes = endHour * 60 + endMin;
+            
+            // Pentru ture nocturne (peste miezul nopții)
+            if (endMinutes < startMinutes) {
+              endMinutes += 24 * 60;
+            }
+            
+            const diffMinutes = endMinutes - startMinutes;
+            return diffMinutes / 60;
+          }
+          
+          // T1, T2, T3 fără ore = 8 ore standard
+          if (turno === 'T1' || turno === 'T2' || turno === 'T3') {
+            return 8;
+          }
+          
+          // Dacă turno conține "T1", "T2", "T3" dar fără ore
+          if (turno.includes('T1') && !turno.includes(':')) return 8;
+          if (turno.includes('T2') && !turno.includes(':')) return 8;
+          if (turno.includes('T3') && !turno.includes(':')) return 8;
+          
+          // Fallback: 8 ore
+          return 8;
+        };
+
+        let totalHoras = 0;
+        for (let zi = 1; zi <= daysInMonth; zi++) {
+          const turno = cuadranteObj[`ZI_${zi}`];
+          totalHoras += getHorasFromTurno(turno);
+        }
+        cuadranteObj.TotalHoras = totalHoras.toFixed(2);
+        
         return cuadranteObj;
       });
 
-      console.log('Generated result:', result);
-      console.log('Generated result length:', result.length);
-      if (result.length > 0) {
-        console.log('First cuadrante in result:', result[0]);
-        console.log('First cuadrante zile:', result[0].zile);
-        console.log('First cuadrante zile length:', result[0].zile?.length);
-      }
 
       // Verifică dacă result este gol sau nu are date
       if (!result || result.length === 0) {
@@ -1682,14 +2196,130 @@ export default function CuadrantesPage() {
         center: selectedCentro
       }, authUser);
 
-      console.log('Setting cuadrantePreview to:', result);
       setCuadrantePreview(result);
       setActiveTab('preview');
-      console.log('✅ Preview tab activated, cuadrantePreview set');
     } catch (error) {
       console.error('Error generating cuadrante:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Upload Excel pentru import horario_multicentro
+  const handleFileUploadMulticentro = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      showToast('error', 'Solo se permiten archivos Excel (.xlsx, .xls)');
+      return;
+    }
+
+    setUploadingExcelMulticentro(true);
+    setError(null);
+    setExcelPreviewDataMulticentro(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const formData = new FormData();
+      formData.append('file', file);
+      // mes este opțional - se detectează din Excel
+      if (selectedYear && selectedMonth !== null) {
+        formData.append('mes', `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`);
+      }
+
+      const response = await fetch(routes.uploadHorarioMulticentroExcel, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al procesar Excel');
+      }
+
+      const result = await response.json();
+      
+      // Afișăm preview înainte de salvare
+      if (result.horarios && result.horarios.length > 0) {
+        setExcelPreviewDataMulticentro(result);
+        setShowExcelPreviewModalMulticentro(true);
+      } else {
+        showToast('warning', 'No se encontraron horarios en el Excel');
+      }
+    } catch (err) {
+      console.error('Error uploading Excel horario_multicentro:', err);
+      showToast('error', err.message || 'Error al procesar Excel');
+    } finally {
+      setUploadingExcelMulticentro(false);
+      // Reset file input
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
+
+  // Upload Excel pentru import cuadrantes
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      showToast('error', 'Solo se permiten archivos Excel (.xlsx, .xls)');
+      return;
+    }
+
+    if (!selectedCentro) {
+      showToast('error', 'Por favor selecciona un centro antes de importar');
+      return;
+    }
+
+    setUploadingExcel(true);
+    setError(null);
+    setExcelPreviewData(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('mes', `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`);
+      formData.append('centro', selectedCentro);
+
+      const response = await fetch(routes.uploadCuadrantesExcel, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al procesar Excel');
+      }
+
+      const result = await response.json();
+      
+      // Afișăm preview înainte de salvare
+      if (result.cuadrantes && result.cuadrantes.length > 0) {
+        setExcelPreviewData(result);
+        setSelectedForHorarioMulticentro(new Set()); // Reset checkbox-uri la încărcare nouă
+        setShowExcelPreviewModal(true);
+      } else {
+        showToast('warning', 'No se encontraron cuadrantes en el Excel');
+      }
+    } catch (err) {
+      console.error('Error uploading Excel:', err);
+      showToast('error', err.message || 'Error al procesar Excel');
+    } finally {
+      setUploadingExcel(false);
+      // Reset file input
+      if (event.target) {
+        event.target.value = '';
+      }
     }
   };
 
@@ -2006,6 +2636,54 @@ export default function CuadrantesPage() {
               cuadranteObj[`ZI_${zi}`] = zile[zi - 1];
             }
             cuadranteObj.zile = zile;
+            
+            // Calculăm TotalHoras sumând orele din toate zilele
+            const getHorasFromTurnoAn = (turno) => {
+              if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+                return 0;
+              }
+              
+              // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
+              const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+              if (timeMatch) {
+                const startHour = parseInt(timeMatch[1], 10);
+                const startMin = parseInt(timeMatch[2], 10);
+                const endHour = parseInt(timeMatch[3], 10);
+                const endMin = parseInt(timeMatch[4], 10);
+                
+                let startMinutes = startHour * 60 + startMin;
+                let endMinutes = endHour * 60 + endMin;
+                
+                // Pentru ture nocturne (peste miezul nopții)
+                if (endMinutes < startMinutes) {
+                  endMinutes += 24 * 60;
+                }
+                
+                const diffMinutes = endMinutes - startMinutes;
+                return diffMinutes / 60;
+              }
+              
+              // T1, T2, T3 fără ore = 8 ore standard
+              if (turno === 'T1' || turno === 'T2' || turno === 'T3') {
+                return 8;
+              }
+              
+              // Dacă turno conține "T1", "T2", "T3" dar fără ore
+              if (turno.includes('T1') && !turno.includes(':')) return 8;
+              if (turno.includes('T2') && !turno.includes(':')) return 8;
+              if (turno.includes('T3') && !turno.includes(':')) return 8;
+              
+              // Fallback: 8 ore
+              return 8;
+            };
+
+            let totalHoras = 0;
+            for (let zi = 1; zi <= daysInMonth; zi++) {
+              const turno = cuadranteObj[`ZI_${zi}`];
+              totalHoras += getHorasFromTurnoAn(turno);
+            }
+            cuadranteObj.TotalHoras = totalHoras.toFixed(2);
+            
             result.push(cuadranteObj);
             console.log(`🔍 Employee ${id} - Luna ${MONTHS[luna]} FINAL: etapa=${etapa}, mod=${mod}`);
             stareStart[id] = { etapa, mod };
@@ -2604,6 +3282,16 @@ export default function CuadrantesPage() {
           >
             Festivos
           </button>
+          <button
+            onClick={() => setActiveTab('horario_multicentro')}
+            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
+              activeTab === 'horario_multicentro'
+                ? 'bg-red-600 text-white'
+                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
+            }`}
+          >
+            Horario Multicentro
+          </button>
         </div>
 
         {activeTab === 'generar' && (
@@ -2648,10 +3336,12 @@ export default function CuadrantesPage() {
                 </label>
                 <div className="relative">
                   <input
-                  id="generar-centro"
-                  name="centro"
+                    id="generar-centro"
+                    name="centro"
                     type="text"
                     value={centroSearchTerm}
+                    readOnly={false}
+                    disabled={false}
                     onChange={(e) => {
                       const newValue = e.target.value;
                       setCentroSearchTerm(newValue);
@@ -2666,7 +3356,7 @@ export default function CuadrantesPage() {
                       setTimeout(() => setCentroDropdownOpen(false), 200);
                     }}
                     placeholder="Buscar o escribir centro..."
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   />
                   {centroDropdownOpen && filteredCentros.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -2955,6 +3645,34 @@ export default function CuadrantesPage() {
               </div>
             </Card>
 
+            {/* Buton Import Excel - vizibil oricând */}
+            <div className="flex justify-end gap-3 mb-6">
+              <input
+                id="excel-upload-cuadrantes"
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleFileUpload}
+                disabled={uploadingExcel || !selectedCentro}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                disabled={uploadingExcel || !selectedCentro}
+                loading={uploadingExcel}
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                onClick={() => {
+                  const fileInput = document.getElementById('excel-upload-cuadrantes');
+                  if (fileInput && !uploadingExcel && selectedCentro) {
+                    fileInput.click();
+                  }
+                }}
+              >
+                {uploadingExcel ? 'Cargando...' : '📥 Importar desde Excel'}
+              </Button>
+            </div>
+
             {/* Setări pentru angajați */}
             {angajatiFiltrati.length > 0 ? (
               <div className="space-y-4">
@@ -3186,7 +3904,7 @@ export default function CuadrantesPage() {
                   );
                 })}
                 
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-3">
                   <Button
                     onClick={handleGenerar}
                     variant="primary"
@@ -3838,11 +4556,13 @@ export default function CuadrantesPage() {
                 </label>
                 <div className="relative">
                   <input
-                  id="lista-centro"
-                  name="listaCentro"
+                    id="lista-centro"
+                    name="listaCentro"
                     type="text"
                     value={centroSearchTermLista}
-                  onChange={(e) => {
+                    readOnly={false}
+                    disabled={false}
+                    onChange={(e) => {
                       const newValue = e.target.value;
                       setCentroSearchTermLista(newValue);
                       setCentroDropdownOpenLista(true);
@@ -3857,7 +4577,7 @@ export default function CuadrantesPage() {
                       setTimeout(() => setCentroDropdownOpenLista(false), 200);
                     }}
                     placeholder="Buscar o escribir centro..."
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   />
                   {centroDropdownOpenLista && filteredCentrosLista.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
@@ -4221,11 +4941,14 @@ export default function CuadrantesPage() {
                           {cuadrantesLista
                             .filter(cuadrante => !selectedMesAno || cuadrante.LUNA === selectedMesAno)
                             .map((cuadrante, index) => {
+                              // Folosește funcția helper pentru identificator consistent
+                              const identificator = getCuadranteIdentificator(cuadrante) || String(index);
+                              
                               // Construir array de zile din cuadrante
                               const zile = [];
                               for (let i = 1; i <= 31; i++) {
                                 const ziKey = `ZI_${i}`;
-                                const editKey = `${index}_${i}`;
+                                const editKey = `${identificator}_${i}`;
                                 // Folosește valoarea editată dacă există, altfel valoarea originală
                                 zile.push(editedCuadrantes[editKey] !== undefined ? editedCuadrantes[editKey] : (cuadrante[ziKey] || ''));
                               }
@@ -4243,8 +4966,11 @@ export default function CuadrantesPage() {
                                     </div>
                               </td>
                                   {zile.map((z, i) => {
-                                    const editKey = `${index}_${i + 1}`;
+                                    const editKey = `${identificator}_${i + 1}`;
                                     const isEdited = editedCuadrantes[editKey] !== undefined;
+                                    
+                                    // Verifică dacă ziua este marcată ca multicentro
+                                    const esMulticentro = z && String(z).startsWith('MC->');
                                     
                                     return (
                                       <td key={i} className="border border-gray-300 p-1 text-center text-xs">
@@ -4252,10 +4978,12 @@ export default function CuadrantesPage() {
                                           className={`px-1 py-1 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors block ${
                                             z === 'LIBRE' || z === '' 
                                               ? 'bg-gray-100 text-gray-600' 
+                                              : esMulticentro
+                                              ? 'bg-purple-100 text-purple-700 font-medium'
                                               : 'bg-green-100 text-green-700'
                                           } ${isEdited ? 'ring-1 ring-yellow-400' : ''}`}
-                                          title={`Click para editar ${cuadrante.NOMBRE} - día ${i + 1}: ${z || 'Sin datos'}`}
-                                          onClick={() => handleEditDay(index, i + 1, z)}
+                                          title={`Click para editar ${cuadrante.NOMBRE} - día ${i + 1}: ${z || 'Sin datos'}${esMulticentro ? ' (Multicentro)' : ''}`}
+                                          onClick={() => handleEditDay(index, i + 1, z, cuadrante)}
                                         >
                                           {z || '-'}
                                           {isEdited && <span className="text-yellow-600">*</span>}
@@ -4373,6 +5101,336 @@ export default function CuadrantesPage() {
                 }}
               />
             )}
+          </div>
+        )}
+
+        {activeTab === 'horario_multicentro' && (
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <h3 className="text-xl font-bold text-blue-900 mb-2">
+                📋 Horario Multicentro
+              </h3>
+              <p className="text-blue-800">
+                Importa horarios especiales para empleados que trabajan en múltiples centros.
+                Cada fila del Excel representa un centro diferente con su turno y horas por día.
+              </p>
+              <p className="text-sm text-blue-700 mt-2">
+                <strong>Formato Excel esperado:</strong> Nome empleado (Row 2), Luna (Row 3), 
+                Header: CLIENTE, HORARIO, SERVICIO, Nº DE HORAS, 1-31 (Row 4), 
+                Date: Centro + Turno + Ore pe zile (Row 5+)
+              </p>
+            </div>
+
+            {/* Selectori pentru Lună și Angajat */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div>
+                <label htmlFor="horario-multicentro-mes" className="block text-sm font-medium text-gray-700 mb-2">
+                  📅 Mes
+                </label>
+                <input
+                  id="horario-multicentro-mes"
+                  type="month"
+                  value={selectedMonthHorariosMulticentro}
+                  onChange={(e) => setSelectedMonthHorariosMulticentro(e.target.value)}
+                  className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div className="relative">
+                <label htmlFor="horario-multicentro-empleado" className="block text-sm font-medium text-gray-700 mb-2">
+                  👤 Empleado (opcional - puedes escribir o seleccionar)
+                </label>
+                <div className="relative">
+                  <input
+                    id="horario-multicentro-empleado"
+                    type="text"
+                    value={empleadoHorariosMulticentroSearch}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEmpleadoHorariosMulticentroSearch(value);
+                      setShowEmpleadoHorariosMulticentroDropdown(true);
+                      
+                      // Dacă utilizatorul șterge textul, resetează și codigo-ul
+                      if (!value) {
+                        setSelectedEmpleadoHorariosMulticentro('');
+                      }
+                    }}
+                    onFocus={() => setShowEmpleadoHorariosMulticentroDropdown(true)}
+                    onBlur={() => {
+                      // Delay pentru a permite click-ul pe dropdown
+                      setTimeout(() => setShowEmpleadoHorariosMulticentroDropdown(false), 200);
+                    }}
+                    placeholder="Escribe el nombre o código del empleado..."
+                    className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  
+                  {/* Dropdown cu sugestii */}
+                  {showEmpleadoHorariosMulticentroDropdown && empleadoHorariosMulticentroSearch && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {(() => {
+                        const searchLower = empleadoHorariosMulticentroSearch.toLowerCase();
+                        const filtered = angajati.filter(emp => {
+                          const nombre = (emp['NOMBRE / APELLIDOS'] || '').toLowerCase();
+                          const codigo = (emp.CODIGO || '').toLowerCase();
+                          return nombre.includes(searchLower) || codigo.includes(searchLower);
+                        });
+                        
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="px-4 py-3 text-gray-500 text-sm">
+                              No se encontraron empleados
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div className="p-2">
+                            {filtered.slice(0, 20).map((emp) => {
+                              const nombre = emp['NOMBRE / APELLIDOS'] || 'Sin nombre';
+                              const codigo = emp.CODIGO || '';
+                              return (
+                                <button
+                                  key={codigo}
+                                  type="button"
+                                  onClick={() => {
+                                    setEmpleadoHorariosMulticentroSearch(`${nombre} - ${codigo}`);
+                                    setSelectedEmpleadoHorariosMulticentro(codigo);
+                                    setShowEmpleadoHorariosMulticentroDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-blue-50 rounded-lg transition-colors"
+                                >
+                                  <div className="font-medium text-gray-900">{nombre}</div>
+                                  <div className="text-sm text-gray-600">{codigo}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  
+                  {/* Opțiune pentru a șterge selecția */}
+                  {empleadoHorariosMulticentroSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmpleadoHorariosMulticentroSearch('');
+                        setSelectedEmpleadoHorariosMulticentro('');
+                        setShowEmpleadoHorariosMulticentroDropdown(false);
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      title="Limpiar selección"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    if (!selectedMonthHorariosMulticentro) {
+                      showToast('error', 'Por favor selecciona un mes');
+                      return;
+                    }
+                    
+                    setLoadingHorariosMulticentro(true);
+                    try {
+                      const token = localStorage.getItem('auth_token');
+                      const params = new URLSearchParams({
+                        mes: selectedMonthHorariosMulticentro,
+                      });
+                      
+                      // Dacă utilizatorul a introdus text manual, încercăm să extragem codigo-ul
+                      // Altfel folosim codigo-ul selectat
+                      let codigoParaBuscar = selectedEmpleadoHorariosMulticentro;
+                      
+                      if (!codigoParaBuscar && empleadoHorariosMulticentroSearch) {
+                        // Încearcă să găsească codigo după nume sau text introdus
+                        const searchLower = empleadoHorariosMulticentroSearch.toLowerCase();
+                        const encontrado = angajati.find(emp => {
+                          const nombre = (emp['NOMBRE / APELLIDOS'] || '').toLowerCase();
+                          const codigo = (emp.CODIGO || '').toLowerCase();
+                          return nombre.includes(searchLower) || codigo.includes(searchLower);
+                        });
+                        if (encontrado && encontrado.CODIGO) {
+                          codigoParaBuscar = encontrado.CODIGO;
+                        }
+                      }
+                      
+                      if (codigoParaBuscar) {
+                        params.append('codigo', codigoParaBuscar);
+                      }
+                      
+                      const response = await fetch(`${routes.getHorarioMulticentro}?${params.toString()}`, {
+                        method: 'GET',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': token ? `Bearer ${token}` : '',
+                        },
+                      });
+                      
+                      if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                      }
+                      
+                      const data = await response.json();
+                      if (data.success && Array.isArray(data.horarios)) {
+                        setHorariosMulticentroList(data.horarios);
+                        showToast('success', `Se encontraron ${data.horarios.length} horarios multicentro`);
+                      } else {
+                        setHorariosMulticentroList([]);
+                        showToast('info', 'No se encontraron horarios multicentro para los filtros seleccionados');
+                      }
+                    } catch (error) {
+                      console.error('Error fetching horarios multicentro:', error);
+                      showToast('error', `Error al cargar horarios multicentro: ${error.message}`);
+                      setHorariosMulticentroList([]);
+                    } finally {
+                      setLoadingHorariosMulticentro(false);
+                    }
+                  }}
+                  disabled={loadingHorariosMulticentro || !selectedMonthHorariosMulticentro}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {loadingHorariosMulticentro ? 'Cargando...' : '🔍 Buscar Horarios'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Afișare Horarios Multicentro grupate după Centru */}
+            {horariosMulticentroList.length > 0 && (() => {
+              // Grupează după CLIENTE (Centro)
+              const groupedByCentro = horariosMulticentroList.reduce((acc, horario) => {
+                const centro = horario.CLIENTE || horario.cliente || 'Sin centro';
+                if (!acc[centro]) {
+                  acc[centro] = [];
+                }
+                acc[centro].push(horario);
+                return acc;
+              }, {});
+
+              return (
+                <div className="space-y-6">
+                  <h3 className="text-lg font-bold text-gray-800">
+                    📊 Horarios Multicentro agrupados por Centro ({Object.keys(groupedByCentro).length} centros)
+                  </h3>
+                  
+                  {Object.entries(groupedByCentro).map(([centro, horarios]) => (
+                    <div key={centro} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="bg-blue-600 text-white px-6 py-3 font-bold text-lg">
+                        🏢 {centro} ({horarios.length} horario{horarios.length !== 1 ? 's' : ''})
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2 text-left border border-gray-200">Empleado</th>
+                              <th className="px-3 py-2 text-left border border-gray-200">Código</th>
+                              <th className="px-3 py-2 text-left border border-gray-200">Horario</th>
+                              <th className="px-3 py-2 text-left border border-gray-200">Servicio</th>
+                              {Array.from({ length: 31 }, (_, i) => {
+                                const dayNumber = i + 1;
+                                return (
+                                  <th 
+                                    key={`day-header-${i + 1}`} 
+                                    className="px-1 py-2 text-center border border-gray-200 min-w-[40px]"
+                                  >
+                                    {dayNumber}
+                                  </th>
+                                );
+                              })}
+                              <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold">Total Horas</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {horarios.map((horario, idx) => {
+                              const horas = [];
+                              let totalHoras = 0;
+
+                              for (let i = 1; i <= 31; i++) {
+                                const horasStr = horario[`ZI_${i}`] || horario[`zi_${i}`] || '';
+                                let horasNum = 0;
+                                if (horasStr && horasStr !== '' && horasStr !== null) {
+                                  horasNum = parseFloat(String(horasStr));
+                                  if (isNaN(horasNum)) horasNum = 0;
+                                }
+                                horas.push(horasStr || '');
+                                totalHoras += horasNum;
+                              }
+
+                              return (
+                                <tr key={idx} className="hover:bg-gray-50">
+                                  <td className="px-3 py-2 border border-gray-200 font-medium">
+                                    {horario.NOMBRE || horario.nombre || 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 border border-gray-200 text-gray-600">
+                                    {horario.CODIGO || horario.codigo || 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 border border-gray-200">
+                                    {horario.HORARIO || horario.horario || 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 border border-gray-200">
+                                    {horario.SERVICIO || horario.servicio || 'N/A'}
+                                  </td>
+                                  {horas.map((h, dayIdx) => (
+                                    <td 
+                                      key={`day-${dayIdx + 1}`}
+                                      className={`px-1 py-2 text-center border border-gray-200 text-xs ${
+                                        h === '' || h === 'LIBRE' || h === '0' || h === '0h' 
+                                          ? 'bg-gray-50 text-gray-400' 
+                                          : 'bg-green-50 text-green-700 font-medium'
+                                      }`}
+                                    >
+                                      {h || '-'}
+                                    </td>
+                                  ))}
+                                  <td className="px-3 py-2 text-center border border-gray-200 font-bold bg-blue-50">
+                                    {totalHoras > 0 ? `${totalHoras.toFixed(1)}h` : '-'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Buton Import Excel */}
+            <div className="flex justify-end gap-3 mb-6 border-t pt-6">
+              <input
+                id="excel-upload-horario-multicentro"
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleFileUploadMulticentro}
+                disabled={uploadingExcelMulticentro}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                disabled={uploadingExcelMulticentro}
+                loading={uploadingExcelMulticentro}
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                onClick={() => {
+                  const fileInput = document.getElementById('excel-upload-horario-multicentro');
+                  if (fileInput && !uploadingExcelMulticentro) {
+                    fileInput.click();
+                  }
+                }}
+              >
+                {uploadingExcelMulticentro ? 'Cargando...' : '📥 Importar Horario Multicentro desde Excel'}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -4980,11 +6038,118 @@ export default function CuadrantesPage() {
               </select>
             </div>
             
+            <div className="mb-4">
+              <label
+                htmlFor="edit-cuadrante-empleado"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Asignar a otro empleado (opcional - puedes escribir o seleccionar):
+              </label>
+              <div className="relative">
+                <input
+                  id="edit-cuadrante-empleado"
+                  type="text"
+                  value={empleadoForDaySearch}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEmpleadoForDaySearch(value);
+                    setShowEmpleadoForDayDropdown(true);
+                    
+                    // Dacă utilizatorul șterge textul, resetează și codigo-ul
+                    if (!value) {
+                      setSelectedEmpleadoForDay('');
+                    }
+                  }}
+                  onFocus={() => setShowEmpleadoForDayDropdown(true)}
+                  onBlur={() => {
+                    // Delay pentru a permite click-ul pe dropdown
+                    setTimeout(() => setShowEmpleadoForDayDropdown(false), 200);
+                  }}
+                  placeholder={editingDay ? `Mantener en ${editingDay.empleado} o escribir para buscar...` : 'Escribir para buscar empleado...'}
+                  className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                />
+                
+                {/* Dropdown cu sugestii */}
+                {showEmpleadoForDayDropdown && empleadoForDaySearch && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {(() => {
+                      const searchLower = empleadoForDaySearch.toLowerCase();
+                      // Folosește lista completă de angajați (angajati) sau fallback la angajatiFiltrati dacă lista completă este goală
+                      const listaCompleta = angajati.length > 0 ? angajati : angajatiFiltrati;
+                      const filtered = listaCompleta.filter(emp => {
+                        // Exclude angajatul curent
+                        if (emp.CODIGO === editingDay.codigo) return false;
+                        
+                        const nombre = (emp['NOMBRE / APELLIDOS'] || emp.NOMBRE || emp.nombre || '').toLowerCase();
+                        const codigo = (emp.CODIGO || '').toLowerCase();
+                        return nombre.includes(searchLower) || codigo.includes(searchLower);
+                      });
+                      
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="px-4 py-3 text-gray-500 text-sm">
+                            No se encontraron empleados
+                          </div>
+                        );
+                      }
+                      
+                      return (
+                        <div>
+                          {filtered.slice(0, 20).map((emp) => {
+                            const nombre = emp['NOMBRE / APELLIDOS'] || emp.NOMBRE || emp.nombre || 'Sin nombre';
+                            const codigo = emp.CODIGO || '';
+                            return (
+                              <button
+                                key={codigo}
+                                type="button"
+                                onClick={() => {
+                                  setEmpleadoForDaySearch(`${nombre} - ${codigo}`);
+                                  setSelectedEmpleadoForDay(codigo);
+                                  setShowEmpleadoForDayDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-red-50 rounded-lg transition-colors"
+                              >
+                                <div className="font-medium text-gray-900">{nombre}</div>
+                                <div className="text-sm text-gray-600">{codigo}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+                
+                {/* Opțiune pentru a șterge selecția */}
+                {empleadoForDaySearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmpleadoForDaySearch('');
+                      setSelectedEmpleadoForDay('');
+                      setShowEmpleadoForDayDropdown(false);
+                    }}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {selectedEmpleadoForDay && (
+                <p className="mt-2 text-sm text-blue-600">
+                  ℹ️ Se creará un horario multicentro para el empleado seleccionado
+                </p>
+              )}
+            </div>
+            
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowEditModal(false);
                   setEditingDay(null);
+                  setSelectedEmpleadoForDay('');
+                  setEmpleadoForDaySearch('');
+                  setShowEmpleadoForDayDropdown(false);
                 }}
                 className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium"
               >
@@ -5009,6 +6174,934 @@ export default function CuadrantesPage() {
           message={notification.message}
           onClose={() => setNotification(null)}
         />
+      )}
+
+      {/* Modal Preview Excel Cuadrantes */}
+      {showExcelPreviewModal && excelPreviewData && createPortal(
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0,
+            margin: 0,
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowExcelPreviewModal(false);
+              setExcelPreviewData(null);
+              setSelectedForHorarioMulticentro(new Set());
+            }
+          }}
+        >
+          <div className="bg-white rounded-2xl max-w-[95vw] w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    📋 Verificación de Cuadrantes desde Excel
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Revisa los cuadrantes importados antes de confirmar la subida
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {excelPreviewData.cuadrantes?.length || 0} cuadrantes procesados
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1 font-medium">
+                    📅 Mes: {MONTHS[selectedMonth]} {selectedYear} | Centro: {selectedCentro || 'N/A'}
+                  </p>
+                </div>
+                <button
+                onClick={() => {
+                  setShowExcelPreviewModal(false);
+                  setExcelPreviewData(null);
+                  setSelectedForHorarioMulticentro(new Set());
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {excelPreviewData.cuadrantes && excelPreviewData.cuadrantes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left border border-gray-200" rowSpan={2}>Nombre</th>
+                        <th className="px-3 py-2 text-left border border-gray-200" rowSpan={2}>Código</th>
+                        <th className="px-3 py-2 text-left border border-gray-200" rowSpan={2}>Email</th>
+                        <th className="px-3 py-2 text-left border border-gray-200" rowSpan={2}>Centro</th>
+                        <th className="px-3 py-2 text-center border border-gray-200" rowSpan={2}>Estado</th>
+                        <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50" rowSpan={2} title="Guardar en Horario Multicentro">
+                          📋 Multicentro
+                        </th>
+                        {Array.from({ length: getDaysInMonth(selectedMonth, selectedYear) }, (_, i) => {
+                          const dayNumber = i + 1;
+                          const date = new Date(selectedYear, selectedMonth, dayNumber);
+                          const dayOfWeek = date.getDay();
+                          const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+                          
+                          return (
+                            <th 
+                              key={i + 1} 
+                              className="px-1 py-2 text-center border border-gray-200 min-w-[80px]"
+                              colSpan={2}
+                              title={`${dayNumber} ${dayNames[dayOfWeek]}`}
+                            >
+                              <div className="space-y-0.5">
+                                <div className="text-xs font-bold">{dayNumber}</div>
+                                <div className={`text-xs ${dayOfWeek === 0 || dayOfWeek === 6 ? 'text-red-600' : 'text-gray-600'}`}>
+                                  {dayNames[dayOfWeek]}
+                                </div>
+                              </div>
+                            </th>
+                          );
+                        })}
+                        <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold" rowSpan={2}>Total</th>
+                      </tr>
+                      <tr>
+                        {Array.from({ length: getDaysInMonth(selectedMonth, selectedYear) }, (_, i) => (
+                          <React.Fragment key={`day-header-${i}`}>
+                            <th className="px-1 py-1 text-center border border-gray-200 bg-gray-100 text-xs font-medium">
+                              Turno
+                            </th>
+                            <th className="px-1 py-1 text-center border border-gray-200 bg-gray-100 text-xs font-medium">
+                              Horas
+                            </th>
+                          </React.Fragment>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excelPreviewData.cuadrantes.map((cuadrante, idx) => {
+                        const zile = [];
+                        const horas = [];
+                        let totalHoras = 0;
+                        
+                        // Helper pentru calculul orelor dintr-un turno
+                        const getHorasFromTurno = (turno) => {
+                          if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+                            return 0;
+                          }
+                          
+                          // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
+                          const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+                          if (timeMatch) {
+                            const startHour = parseInt(timeMatch[1], 10);
+                            const startMin = parseInt(timeMatch[2], 10);
+                            const endHour = parseInt(timeMatch[3], 10);
+                            const endMin = parseInt(timeMatch[4], 10);
+                            
+                            let startMinutes = startHour * 60 + startMin;
+                            let endMinutes = endHour * 60 + endMin;
+                            
+                            // Pentru ture nocturne (peste miezul nopții)
+                            if (endMinutes < startMinutes) {
+                              endMinutes += 24 * 60;
+                            }
+                            
+                            const diffMinutes = endMinutes - startMinutes;
+                            return diffMinutes / 60;
+                          }
+                          
+                          // T1, T2, T3 fără ore = 8 ore standard
+                          if (turno === 'T1' || turno === 'T2' || turno === 'T3') {
+                            return 8;
+                          }
+                          
+                          // Dacă turno conține "T1", "T2", "T3" dar fără ore
+                          if (turno.includes('T1') && !turno.includes(':')) return 8;
+                          if (turno.includes('T2') && !turno.includes(':')) return 8;
+                          if (turno.includes('T3') && !turno.includes(':')) return 8;
+                          
+                          // Fallback: 8 ore
+                          return 8;
+                        };
+                        
+                        for (let i = 1; i <= getDaysInMonth(selectedMonth, selectedYear); i++) {
+                          const turno = cuadrante[`ZI_${i}`] || '';
+                          zile.push(turno);
+                          
+                          const horasDia = getHorasFromTurno(turno);
+                          horas.push(horasDia);
+                          totalHoras += horasDia;
+                        }
+                        
+                        return (
+                          <tr 
+                            key={idx} 
+                            className={`border-b border-gray-100 ${
+                              !cuadrante.empleado_encontrado ? 'bg-yellow-50' : ''
+                            }`}
+                          >
+                            <td className="px-3 py-2 border border-gray-200 font-medium">
+                              {cuadrante.NOMBRE || 'N/A'}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200">
+                              {cuadrante.CODIGO ? (
+                                <span className={!cuadrante.empleado_encontrado ? 'text-orange-600 font-semibold' : 'text-gray-900'}>
+                                  {cuadrante.CODIGO}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200 text-sm">
+                              {cuadrante.EMAIL ? (
+                                <span className="text-gray-700">{cuadrante.EMAIL}</span>
+                              ) : (
+                                <span className="text-gray-400 italic">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200 text-sm">
+                              {cuadrante.CENTRO ? (
+                                <span className="text-gray-700">{cuadrante.CENTRO}</span>
+                              ) : (
+                                <span className="text-gray-400 italic">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200 text-center">
+                              {cuadrante.empleado_encontrado ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                  ✅ {cuadrante.confianza ? `${cuadrante.confianza}%` : ''}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">
+                                  ⚠️ {cuadrante.confianza ? `${cuadrante.confianza}%` : 'No encontrado'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200 text-center bg-blue-50">
+                              <label className="flex items-center justify-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedForHorarioMulticentro.has(cuadrante.CODIGO || cuadrante.EMAIL || idx)}
+                                  onChange={(e) => {
+                                    const key = cuadrante.CODIGO || cuadrante.EMAIL || idx;
+                                    setSelectedForHorarioMulticentro(prev => {
+                                      const newSet = new Set(prev);
+                                      if (e.target.checked) {
+                                        newSet.add(key);
+                                      } else {
+                                        newSet.delete(key);
+                                      }
+                                      return newSet;
+                                    });
+                                  }}
+                                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                  title="Marcar para guardar en Horario Multicentro"
+                                />
+                              </label>
+                            </td>
+                            {zile.map((z, i) => (
+                              <React.Fragment key={`day-${idx}-${i}`}>
+                                <td 
+                                  className="px-1 py-2 text-center border border-gray-200 text-xs"
+                                >
+                                  {z && z !== '' && z !== null ? (
+                                    <span 
+                                      className={`inline-block px-1 py-0.5 rounded ${
+                                        z === 'LIBRE' 
+                                          ? 'bg-gray-100 text-gray-700' 
+                                          : 'bg-blue-100 text-blue-700'
+                                      }`}
+                                    >
+                                      {z}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-300">-</span>
+                                  )}
+                                </td>
+                                <td 
+                                  className="px-1 py-2 text-center border border-gray-200 text-xs font-medium"
+                                >
+                                  {horas[i] > 0 ? (
+                                    <span className="text-gray-700">{horas[i].toFixed(1)}h</span>
+                                  ) : (
+                                    <span className="text-gray-300">0h</span>
+                                  )}
+                                </td>
+                              </React.Fragment>
+                            ))}
+                            <td className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold text-blue-700">
+                              {totalHoras.toFixed(1)}h
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500">No hay cuadrantes para mostrar</p>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowExcelPreviewModal(false);
+                  setExcelPreviewData(null);
+                  setSelectedForHorarioMulticentro(new Set());
+                }}
+                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!excelPreviewData.cuadrantes || excelPreviewData.cuadrantes.length === 0) {
+                    showToast('warning', 'No hay cuadrantes para guardar');
+                    return;
+                  }
+
+                  setSavingExcel(true);
+                  try {
+                    const token = localStorage.getItem('auth_token');
+                    const mesAno = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+                    
+                    // Separăm cuadrantes normale de cele pentru horario_multicentro
+                    const cuadrantesNormales = excelPreviewData.cuadrantes.filter(c => {
+                      const key = c.CODIGO || c.EMAIL || excelPreviewData.cuadrantes.indexOf(c);
+                      return !selectedForHorarioMulticentro.has(key);
+                    });
+                    
+                    const cuadrantesMulticentro = excelPreviewData.cuadrantes.filter(c => {
+                      const key = c.CODIGO || c.EMAIL || excelPreviewData.cuadrantes.indexOf(c);
+                      return selectedForHorarioMulticentro.has(key);
+                    });
+                    
+                    // Salvează cuadrantes normale
+                    if (cuadrantesNormales.length > 0) {
+                      const response = await fetch(routes.updateCuadrantes, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': token ? `Bearer ${token}` : '',
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          cuadrantes: cuadrantesNormales.map(c => ({
+                            CODIGO: c.CODIGO,
+                            EMAIL: c.EMAIL,
+                            NOMBRE: c.NOMBRE,
+                            LUNA: c.LUNA,
+                            CENTRO: c.CENTRO,
+                            ...Object.fromEntries(
+                              Array.from({ length: 31 }, (_, i) => [
+                                `ZI_${i + 1}`,
+                                c[`ZI_${i + 1}`] || null
+                              ])
+                            ),
+                            TotalHoras: c.TotalHoras || null,
+                          })),
+                          centro: selectedCentro,
+                          mesAno: mesAno,
+                        }),
+                      });
+
+                      if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Error al guardar cuadrantes');
+                      }
+                    }
+                    
+                    // Salvează cuadrantes în horario_multicentro
+                    if (cuadrantesMulticentro.length > 0) {
+                      // Transformă cuadrantes în format horario_multicentro
+                      // Funcție helper pentru a transforma formatul complet în număr de ore
+                      const transformaZiValueInOre = (ziValue) => {
+                        if (!ziValue || ziValue === '' || ziValue === 'LIBRE' || ziValue === '0' || ziValue === '0h') {
+                          return null; // LIBRE rămâne LIBRE
+                        }
+                        
+                        const ziStr = String(ziValue).trim();
+                        
+                        // Dacă este deja un număr (ex: "8", "8h", "8.0")
+                        if (!isNaN(parseFloat(ziStr)) && isFinite(parseFloat(ziStr))) {
+                          const hours = parseFloat(ziStr);
+                          return hours > 0 ? String(hours) : null; // Returnează numărul de ore ca string
+                        }
+                        
+                        // PRIORITATE 1: Dacă este format "T1 XX:XX-XX:XX", "T2 XX:XX-XX:XX", "T3 XX:XX-XX:XX"
+                        // Încearcă mai multe variante de regex pentru a acoperi toate formatele posibile
+                        // Format cu spațiu: "T3 23:00-07:00" sau "T3 8:00:00 - 16:00:00"
+                        // Format fără spațiu: "T323:00-07:00"
+                        // Format cu secunde: "8:00:00 - 16:00:00" sau "T3 8:00:00 - 16:00:00"
+                        let turnoMatch = ziStr.match(/^T[123]\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                        if (!turnoMatch) {
+                          turnoMatch = ziStr.match(/^T[123](\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/); // Fără spațiu după T
+                        }
+                        if (!turnoMatch) {
+                          turnoMatch = ziStr.match(/^T[123]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/); // Spațiu opțional
+                        }
+                        
+                        if (turnoMatch) {
+                          const startHour = parseInt(turnoMatch[1], 10);
+                          const startMin = parseInt(turnoMatch[2], 10);
+                          // turnoMatch[3] este secunde (opțional) - ignorăm
+                          let endHour = parseInt(turnoMatch[4], 10);
+                          const endMin = parseInt(turnoMatch[5], 10);
+                          // turnoMatch[6] este secunde (opțional) - ignorăm
+                          
+                          // Pentru T3 (ture de noapte), ora de sfârșit este următoarea zi
+                          // De exemplu: T3 23:00-07:00 → 23:00 până la 07:00 următoarea zi = 8 ore
+                          if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+                            endHour += 24;
+                          }
+                          
+                          const startMinutes = startHour * 60 + startMin;
+                          const endMinutes = endHour * 60 + endMin;
+                          const durationMinutes = endMinutes - startMinutes;
+                          const durationHours = durationMinutes / 60;
+                          
+                          // Returnează numărul de ore ca string (fără zecimale dacă este întreg, altfel cu 1 zecimală)
+                          if (durationHours === Math.round(durationHours)) {
+                            return String(Math.round(durationHours));
+                          } else {
+                            return String(Math.round(durationHours * 10) / 10);
+                          }
+                        }
+                        
+                        // Dacă este format "XX:XX-XX:XX" sau "XX:XX:XX - XX:XX:XX" (fără T1/T2/T3, cu sau fără secunde)
+                        const timeMatch = ziStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                        if (timeMatch) {
+                          const startHour = parseInt(timeMatch[1], 10);
+                          const startMin = parseInt(timeMatch[2], 10);
+                          // timeMatch[3] este secunde (opțional) - ignorăm
+                          let endHour = parseInt(timeMatch[4], 10);
+                          const endMin = parseInt(timeMatch[5], 10);
+                          // timeMatch[6] este secunde (opțional) - ignorăm
+                          
+                          // Dacă ora de sfârșit este mai mică, înseamnă că este următoarea zi
+                          if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+                            endHour += 24;
+                          }
+                          
+                          const startMinutes = startHour * 60 + startMin;
+                          const endMinutes = endHour * 60 + endMin;
+                          const durationMinutes = endMinutes - startMinutes;
+                          const durationHours = durationMinutes / 60;
+                          
+                          return String(Math.round(durationHours * 10) / 10); // Returnează cu 1 zecimală
+                        }
+                        
+                        // Dacă este doar "T1", "T2", "T3" fără ore, presupunem 8 ore (standard)
+                        if (ziStr.match(/^T[123]$/)) {
+                          return '8';
+                        }
+                        
+                        // Fallback: Încercăm să extragem orice format de orar din string
+                        // Ex: "T3 23:00-07:00", "T323:00-07:00", "23:00-07:00", "8:00:00 - 16:00:00", etc.
+                        const anyTimeMatch = ziStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                        if (anyTimeMatch) {
+                          const startHour = parseInt(anyTimeMatch[1], 10);
+                          const startMin = parseInt(anyTimeMatch[2], 10);
+                          // anyTimeMatch[3] este secunde (opțional) - ignorăm
+                          let endHour = parseInt(anyTimeMatch[4], 10);
+                          const endMin = parseInt(anyTimeMatch[5], 10);
+                          // anyTimeMatch[6] este secunde (opțional) - ignorăm
+                          
+                          if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+                            endHour += 24;
+                          }
+                          
+                          const startMinutes = startHour * 60 + startMin;
+                          const endMinutes = endHour * 60 + endMin;
+                          const durationMinutes = endMinutes - startMinutes;
+                          const durationHours = durationMinutes / 60;
+                          
+                          if (durationHours === Math.round(durationHours)) {
+                            return String(Math.round(durationHours));
+                          } else {
+                            return String(Math.round(durationHours * 10) / 10);
+                          }
+                        }
+                        
+                        // Pentru alte formate necunoscute, returnăm null (va fi ignorat)
+                        console.warn(`⚠️ [transformaZiValueInOre] Nu s-a putut transforma valoarea: "${ziStr}"`);
+                        return null;
+                      };
+                      
+                      const horariosMulticentro = cuadrantesMulticentro.map(c => {
+                        // Notă: horarioTipo și horarioCompleto nu sunt folosite - se folosește 'MULTICENTRO' hardcodat în obiectul horario
+                        
+                        // Transformă toate valorile ZI_X în număr de ore
+                        const ziTransformed = Object.fromEntries(
+                          Array.from({ length: 31 }, (_, i) => {
+                            const ziKey = `ZI_${i + 1}`;
+                            // Încearcă mai multe variante de chei (ZI_1, zi_1, ZI_1, etc.)
+                            const ziValue = c[ziKey] || c[ziKey.toLowerCase()] || c[ziKey.toUpperCase()] || null;
+                            const oreValue = transformaZiValueInOre(ziValue);
+                            // Debug log pentru toate valorile care nu sunt null și nu sunt deja transformate
+                            if (ziValue && ziValue !== oreValue) {
+                              console.log(`🔍 [Transform ZI_${i + 1}] Original: "${ziValue}" (type: ${typeof ziValue}) → Transformat: "${oreValue}"`);
+                            }
+                            // Dacă transformarea nu a funcționat și valoarea originală este un format complet (ex: "T3 23:00-07:00"),
+                            // încercăm să o transformăm manual
+                            if (ziValue && !oreValue && String(ziValue).includes('T') && String(ziValue).includes('-')) {
+                              console.warn(`⚠️ [Transform ZI_${i + 1}] Transformare eșuată pentru: "${ziValue}"`);
+                            }
+                            return [ziKey, oreValue || null]; // Asigurăm că returnăm null dacă transformarea a eșuat
+                          })
+                        );
+                        
+                        const horario = {
+                          CODIGO: c.CODIGO,
+                          EMAIL: c.EMAIL,
+                          NOMBRE: c.NOMBRE,
+                          LUNA: c.LUNA || mesAno,
+                          CLIENTE: c.CENTRO || selectedCentro || 'N/A',
+                          // HORARIO și SERVICIO sunt generice pentru multicentro (toate zilele pentru același angajat/centru/lună)
+                          HORARIO: 'MULTICENTRO',
+                          SERVICIO: 'MULTICENTRO',
+                          // ZI_X sunt transformate în număr de ore
+                          ...ziTransformed,
+                          TotalHoras: c.TotalHoras || null,
+                        };
+                        return horario;
+                      });
+                      
+                      const responseMulticentro = await fetch(routes.saveHorariosMulticentro, {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': token ? `Bearer ${token}` : '',
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          horarios: horariosMulticentro,
+                        }),
+                      });
+
+                      if (!responseMulticentro.ok) {
+                        const errorData = await responseMulticentro.json();
+                        throw new Error(errorData.message || 'Error al guardar horarios multicentro');
+                      }
+                    }
+
+                    const mensaje = [];
+                    if (cuadrantesNormales.length > 0) {
+                      mensaje.push(`${cuadrantesNormales.length} cuadrante${cuadrantesNormales.length !== 1 ? 's' : ''} normal${cuadrantesNormales.length !== 1 ? 'es' : ''}`);
+                    }
+                    if (cuadrantesMulticentro.length > 0) {
+                      mensaje.push(`${cuadrantesMulticentro.length} horario${cuadrantesMulticentro.length !== 1 ? 's' : ''} multicentro`);
+                    }
+                    
+                    showToast('success', `✅ ${mensaje.join(' y ')} guardados correctamente`);
+                    setShowExcelPreviewModal(false);
+                    setExcelPreviewData(null);
+                    setSelectedForHorarioMulticentro(new Set());
+                    
+                    // Recărcăm lista de cuadrantes - doar dacă suntem pe tab-ul "lista"
+                    if (activeTab === 'lista') {
+                      // Re-trigger load pentru lista
+                      window.location.reload();
+                    }
+                  } catch (err) {
+                    console.error('Error saving cuadrantes:', err);
+                    showToast('error', err.message || 'Error al guardar cuadrantes');
+                  } finally {
+                    setSavingExcel(false);
+                  }
+                }}
+                disabled={savingExcel || !excelPreviewData.cuadrantes || excelPreviewData.cuadrantes.length === 0}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingExcel ? 'Guardando...' : `✅ Confirmar y Guardar (${excelPreviewData.cuadrantes?.length || 0})`}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Preview Excel Horario Multicentro */}
+      {showExcelPreviewModalMulticentro && excelPreviewDataMulticentro && createPortal(
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0,
+            margin: 0,
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowExcelPreviewModalMulticentro(false);
+              setExcelPreviewDataMulticentro(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-[95vw] max-h-[95vh] flex flex-col"
+            style={{ width: '95vw', height: '95vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    📋 Verificación de Horarios Multicentro desde Excel
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Revisa los horarios importados antes de confirmar la subida
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {excelPreviewDataMulticentro.horarios?.length || 0} horarios procesados
+                  </p>
+                  {excelPreviewDataMulticentro.horarios && excelPreviewDataMulticentro.horarios.length > 0 && (
+                    <>
+                      <p className="text-xs text-gray-600 mt-1 font-medium">
+                        📅 Mes: {excelPreviewDataMulticentro.horarios[0].LUNA || 'N/A'} | 
+                        Empleado: {excelPreviewDataMulticentro.horarios[0].NOMBRE || 'N/A'}
+                      </p>
+                      {(() => {
+                        const horariosCon0Horas = excelPreviewDataMulticentro.horarios.filter(h => {
+                          let totalHoras = 0;
+                          for (let i = 1; i <= 31; i++) {
+                            const horasStr = h[`ZI_${i}`];
+                            let horasNum = 0;
+                            if (horasStr && horasStr !== '' && horasStr !== null) {
+                              horasNum = parseFloat(String(horasStr));
+                              if (isNaN(horasNum)) horasNum = 0;
+                            }
+                            totalHoras += horasNum;
+                          }
+                          return totalHoras === 0;
+                        });
+                        const horariosAFiltrar = excludeHorariosCon0Horas ? excelPreviewDataMulticentro.horarios.filter(h => {
+                          let totalHoras = 0;
+                          for (let i = 1; i <= 31; i++) {
+                            const horasStr = h[`ZI_${i}`];
+                            let horasNum = 0;
+                            if (horasStr && horasStr !== '' && horasStr !== null) {
+                              horasNum = parseFloat(String(horasStr));
+                              if (isNaN(horasNum)) horasNum = 0;
+                            }
+                            totalHoras += horasNum;
+                          }
+                          return totalHoras > 0;
+                        }) : excelPreviewDataMulticentro.horarios;
+                        return (
+                          <div className="mt-2 flex items-center gap-3">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={excludeHorariosCon0Horas}
+                                onChange={(e) => setExcludeHorariosCon0Horas(e.target.checked)}
+                                className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                              />
+                              <span className="text-xs text-gray-700 font-medium">
+                                Excluir horarios con 0 horas ({horariosCon0Horas.length})
+                              </span>
+                            </label>
+                            <span className="text-xs text-gray-500">
+                              Se guardarán: {horariosAFiltrar.length} de {excelPreviewDataMulticentro.horarios.length}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setShowExcelPreviewModalMulticentro(false);
+                    setExcelPreviewDataMulticentro(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {excelPreviewDataMulticentro.horarios && excelPreviewDataMulticentro.horarios.length > 0 ? (() => {
+                // Filtrează rândurile cu 0 ore dacă opțiunea este activată
+                const horariosAFiltrar = excludeHorariosCon0Horas ? excelPreviewDataMulticentro.horarios.filter(h => {
+                  let totalHoras = 0;
+                  for (let i = 1; i <= 31; i++) {
+                    const horasStr = h[`ZI_${i}`];
+                    let horasNum = 0;
+                    if (horasStr && horasStr !== '' && horasStr !== null) {
+                      horasNum = parseFloat(String(horasStr));
+                      if (isNaN(horasNum)) horasNum = 0;
+                    }
+                    totalHoras += horasNum;
+                  }
+                  return totalHoras > 0;
+                }) : excelPreviewDataMulticentro.horarios;
+
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border-collapse">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left border border-gray-200">Centro</th>
+                          <th className="px-3 py-2 text-left border border-gray-200">Horario</th>
+                          <th className="px-3 py-2 text-left border border-gray-200">Servicio</th>
+                          <th className="px-3 py-2 text-left border border-gray-200">Estado</th>
+                          {Array.from({ length: 31 }, (_, i) => {
+                            const dayNumber = i + 1;
+                            return (
+                              <th 
+                                key={`day-header-${i + 1}`} 
+                                className="px-1 py-2 text-center border border-gray-200 min-w-[50px]"
+                              >
+                                {dayNumber}
+                              </th>
+                            );
+                          })}
+                          <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold">Total Horas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {horariosAFiltrar.map((horario, idx) => {
+                        const horas = [];
+                        let totalHoras = 0;
+
+                        for (let i = 1; i <= 31; i++) {
+                          const horasStr = horario[`ZI_${i}`];
+                          let horasNum = 0;
+                          if (horasStr && horasStr !== '' && horasStr !== null) {
+                            horasNum = parseFloat(String(horasStr));
+                            if (isNaN(horasNum)) horasNum = 0;
+                          }
+                          horas.push(horasNum);
+                          totalHoras += horasNum;
+                        }
+                        
+                        return (
+                          <tr 
+                            key={`horario-row-${idx}`} 
+                            className={`border-b border-gray-100 ${
+                              !horario.empleado_encontrado && !horario.cliente_encontrado ? 'bg-red-50' :
+                              !horario.empleado_encontrado || !horario.cliente_encontrado ? 'bg-yellow-50' : ''
+                            }`}
+                          >
+                            <td className="px-3 py-2 border border-gray-200 font-medium">
+                              {horario.CLIENTE || 'N/A'}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200">
+                              {horario.HORARIO || 'N/A'}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200">
+                              {horario.SERVICIO || '-'}
+                            </td>
+                            <td className="px-3 py-2 border border-gray-200 text-center">
+                              <div className="space-y-1">
+                                {/* Estado Empleado */}
+                                <div>
+                                  {horario.empleado_encontrado ? (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800" title="Empleado">
+                                      👤 {horario.confianza ? `${horario.confianza}%` : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800" title="Empleado">
+                                      👤 {horario.confianza ? `${horario.confianza}%` : 'No encontrado'}
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Estado Cliente */}
+                                <div>
+                                  {horario.cliente_encontrado ? (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800" title="Cliente">
+                                      🏢 {horario.cliente_confianza ? `${horario.cliente_confianza}%` : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800" title="Cliente">
+                                      🏢 {horario.cliente_confianza ? `${horario.cliente_confianza}%` : 'No encontrado'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            {horas.map((h, i) => (
+                              <td 
+                                key={`day-${idx}-${i}`} 
+                                className="px-1 py-2 text-center border border-gray-200 text-xs font-medium"
+                              >
+                                {h > 0 ? (
+                                  <span className="text-gray-700">{h}h</span>
+                                ) : (
+                                  <span className="text-gray-300">-</span>
+                                )}
+                              </td>
+                            ))}
+                            <td className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold text-blue-700">
+                              {totalHoras > 0 ? `${totalHoras}h` : '0h'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Row de total general */}
+                      {horariosAFiltrar && horariosAFiltrar.length > 0 && (() => {
+                        let totalGeneral = 0;
+                        const totalesPorDia = Array(31).fill(0);
+                        
+                        horariosAFiltrar.forEach((horario) => {
+                          for (let i = 1; i <= 31; i++) {
+                            const horasStr = horario[`ZI_${i}`];
+                            let horasNum = 0;
+                            if (horasStr && horasStr !== '' && horasStr !== null) {
+                              horasNum = parseFloat(String(horasStr));
+                              if (isNaN(horasNum)) horasNum = 0;
+                            }
+                            totalesPorDia[i - 1] += horasNum;
+                            totalGeneral += horasNum;
+                          }
+                        });
+                        
+                        return (
+                          <tr className="bg-gray-100 border-t-2 border-gray-400 font-bold">
+                            <td colSpan={4} className="px-3 py-3 text-right border border-gray-300">
+                              <span className="text-gray-800">TOTAL GENERAL:</span>
+                            </td>
+                            {totalesPorDia.map((totalDia, i) => (
+                              <td 
+                                key={`total-day-${i}`} 
+                                className="px-1 py-3 text-center border border-gray-300 text-xs font-bold text-gray-800"
+                              >
+                                {totalDia > 0 ? `${totalDia}h` : '-'}
+                              </td>
+                            ))}
+                            <td className="px-3 py-3 text-center border border-gray-300 bg-green-100 font-bold text-green-800 text-base">
+                              {totalGeneral > 0 ? `${totalGeneral}h` : '0h'}
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+                );
+              })() : (
+                <div className="text-center py-8 text-gray-500">
+                  No se encontraron horarios en el Excel
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowExcelPreviewModalMulticentro(false);
+                  setExcelPreviewDataMulticentro(null);
+                }}
+                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!excelPreviewDataMulticentro.horarios || excelPreviewDataMulticentro.horarios.length === 0) {
+                    showToast('warning', 'No hay horarios para guardar');
+                    return;
+                  }
+
+                  // Filtrează rândurile cu 0 ore dacă opțiunea este activată
+                  const horariosAFiltrar = excludeHorariosCon0Horas ? excelPreviewDataMulticentro.horarios.filter(h => {
+                    let totalHoras = 0;
+                    for (let i = 1; i <= 31; i++) {
+                      const horasStr = h[`ZI_${i}`];
+                      let horasNum = 0;
+                      if (horasStr && horasStr !== '' && horasStr !== null) {
+                        horasNum = parseFloat(String(horasStr));
+                        if (isNaN(horasNum)) horasNum = 0;
+                      }
+                      totalHoras += horasNum;
+                    }
+                    return totalHoras > 0;
+                  }) : excelPreviewDataMulticentro.horarios;
+
+                  if (horariosAFiltrar.length === 0) {
+                    showToast('warning', 'No hay horarios para guardar (todos tienen 0 horas)');
+                    return;
+                  }
+
+                  setSavingExcelMulticentro(true);
+                  try {
+                    const token = localStorage.getItem('auth_token');
+                    const response = await fetch(routes.saveHorariosMulticentro, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': token ? `Bearer ${token}` : '',
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        horarios: horariosAFiltrar.map(h => ({
+                          CODIGO: h.CODIGO,
+                          EMAIL: h.EMAIL,
+                          NOMBRE: h.NOMBRE,
+                          LUNA: h.LUNA,
+                          CLIENTE: h.CLIENTE,
+                          HORARIO: h.HORARIO,
+                          SERVICIO: h.SERVICIO,
+                          ...Object.fromEntries(
+                            Array.from({ length: 31 }, (_, i) => [
+                              `ZI_${i + 1}`,
+                              h[`ZI_${i + 1}`] || null
+                            ])
+                          ),
+                          TotalHoras: h.TotalHoras || null,
+                        })),
+                      }),
+                    });
+
+                    if (!response.ok) {
+                      const errorData = await response.json();
+                      throw new Error(errorData.message || 'Error al guardar horarios');
+                    }
+
+                    const result = await response.json();
+
+                    const horariosExcluidos = excelPreviewDataMulticentro.horarios.length - horariosAFiltrar.length;
+                    const mensaje = horariosExcluidos > 0 
+                      ? `✅ ${result.updated || horariosAFiltrar.length} horarios guardados correctamente (${horariosExcluidos} excluidos con 0 horas)`
+                      : `✅ ${result.updated || horariosAFiltrar.length} horarios guardados correctamente`;
+                    showToast('success', mensaje);
+                    setShowExcelPreviewModalMulticentro(false);
+                    setExcelPreviewDataMulticentro(null);
+                  } catch (err) {
+                    console.error('Error saving horarios_multicentro:', err);
+                    showToast('error', err.message || 'Error al guardar horarios');
+                  } finally {
+                    setSavingExcelMulticentro(false);
+                  }
+                }}
+                disabled={savingExcelMulticentro || !excelPreviewDataMulticentro.horarios || excelPreviewDataMulticentro.horarios.length === 0}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingExcelMulticentro ? 'Guardando...' : (() => {
+                  const horariosAFiltrar = excludeHorariosCon0Horas ? excelPreviewDataMulticentro.horarios.filter(h => {
+                    let totalHoras = 0;
+                    for (let i = 1; i <= 31; i++) {
+                      const horasStr = h[`ZI_${i}`];
+                      let horasNum = 0;
+                      if (horasStr && horasStr !== '' && horasStr !== null) {
+                        horasNum = parseFloat(String(horasStr));
+                        if (isNaN(horasNum)) horasNum = 0;
+                      }
+                      totalHoras += horasNum;
+                    }
+                    return totalHoras > 0;
+                  }) : excelPreviewDataMulticentro.horarios;
+                  return `✅ Confirmar y Guardar (${horariosAFiltrar.length}${excludeHorariosCon0Horas && excelPreviewDataMulticentro.horarios.length > horariosAFiltrar.length ? ` de ${excelPreviewDataMulticentro.horarios.length}` : ''})`;
+                })()}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -641,11 +641,129 @@ function MobileRegistroItem({ item, authUser, isManager, callApi, setNotificatio
 }
 
 // Componente para el fichaje personal (Mi Fichaje)
-function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, setNotification, horarioAsignado, loadingHorario, cuadranteAsignado, loadingCuadrante, isTimeWithinSchedule, getTimeRestrictionMessage }) {
+function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, setNotification, horarioAsignado, loadingHorario, cuadranteAsignado, loadingCuadrante, isTimeWithinSchedule, getTimeRestrictionMessage, horarioMulticentroAsignado = null }) {
   const { t } = useTranslation();
   const { user: authUser, isAuthenticated } = useAuth();
   const { callApi } = useApi();
   const { isMobile } = useBreakpoint();
+  
+  // Calculează orarul zilei curente (similar cu componenta părinte, dar folosind props-urile)
+  const currentDaySchedule = useMemo(() => {
+    if (cuadranteAsignado) {
+      const today = new Date().getDate();
+      const dayKey = `ZI_${today}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        if (daySchedule.includes(',')) {
+          const matches = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/g);
+          if (matches && matches.length > 0) {
+            return matches.map(match => match).join(' / ');
+          }
+        } else {
+          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+          if (match) {
+            return `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
+          }
+        }
+      }
+      return null;
+    } else if (horarioMulticentroAsignado) {
+      const today = new Date().getDate();
+      const dayKey = `ZI_${today}`;
+      const daySchedule = horarioMulticentroAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '' && daySchedule !== '0' && daySchedule !== '0h') {
+        if (typeof daySchedule === 'string' && daySchedule.includes('-')) {
+          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+          if (match) {
+            return `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
+          }
+        } else if (typeof daySchedule === 'string' && !isNaN(parseFloat(daySchedule))) {
+          const hours = parseFloat(daySchedule);
+          return `${hours}h`;
+        }
+      }
+      return null;
+    } else if (horarioAsignado && horarioAsignado.days) {
+      const today = new Date().getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+      const daySchedule = horarioAsignado.days[dayKey];
+      
+      if (!daySchedule) {
+        return null;
+      }
+      
+      const intervals = [];
+      const isValidTime = (time) => {
+        return typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
+      };
+      
+      if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
+        const in1 = daySchedule.in1.substring(0, 5);
+        const out1 = daySchedule.out1.substring(0, 5);
+        intervals.push(`${in1} - ${out1}`);
+      }
+      if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
+        const in2 = daySchedule.in2.substring(0, 5);
+        const out2 = daySchedule.out2.substring(0, 5);
+        intervals.push(`${in2} - ${out2}`);
+      }
+      if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
+        const in3 = daySchedule.in3.substring(0, 5);
+        const out3 = daySchedule.out3.substring(0, 5);
+        intervals.push(`${in3} - ${out3}`);
+      }
+      
+      if (intervals.length > 0) {
+        return intervals.join(' / ');
+      }
+      
+      return null;
+    }
+    return null;
+  }, [cuadranteAsignado, horarioMulticentroAsignado, horarioAsignado]);
+
+  // Funcție pentru a calcula orele zilnice din orarul curent
+  const getCurrentDayHours = () => {
+    if (cuadranteAsignado) {
+      const today = new Date().getDate();
+      const dayKey = `ZI_${today}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        // Folosește helper-ul comun pentru calculul orelor
+        const hours = calculateCuadranteHours(daySchedule);
+        return hours > 0 ? hours.toFixed(2) : '0.00';
+      }
+      return '0.00';
+    } else if (horarioMulticentroAsignado) {
+      const today = new Date().getDate();
+      const dayKey = `ZI_${today}`;
+      const daySchedule = horarioMulticentroAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '' && daySchedule !== '0' && daySchedule !== '0h') {
+        if (typeof daySchedule === 'string' && daySchedule.includes('-')) {
+          const hours = calculateCuadranteHours(daySchedule);
+          return hours > 0 ? hours.toFixed(2) : '0.00';
+        } else if (typeof daySchedule === 'string' && !isNaN(parseFloat(daySchedule))) {
+          const hours = parseFloat(daySchedule);
+          return hours > 0 ? hours.toFixed(2) : '0.00';
+        }
+      }
+      return '0.00';
+    } else if (horarioAsignado && horarioAsignado.days) {
+      const today = new Date().getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+      const daySchedule = horarioAsignado.days[dayKey];
+      
+      if (daySchedule) {
+        const hours = calculateHorarioHours(daySchedule);
+        return hours > 0 ? hours.toFixed(2) : '0.00';
+      }
+    }
+    return '0.00';
+  };
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = authUser?.isManager || false;
   const [logs, setLogs] = useState([]);
@@ -738,6 +856,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [bajasMedicas, setBajasMedicas] = useState([]);
   const [isOnBajaMedica, setIsOnBajaMedica] = useState(false);
   const [currentBajaMedica, setCurrentBajaMedica] = useState(null);
+  
+  // State pentru modal "Anunciar Baja Médica"
+  const [showBajaMedicaModal, setShowBajaMedicaModal] = useState(false);
+  const [bajaMedicaForm, setBajaMedicaForm] = useState({
+    fechaBaja: '',
+    fechaAlta: '',
+    tipo: '',
+    recaida: false,
+  });
+  const [bajaMedicaDocumento, setBajaMedicaDocumento] = useState(null); // Fișier pentru baja médica
+  const [submittingBajaMedica, setSubmittingBajaMedica] = useState(false);
   
   // State pentru festivos
   const [festivos, setFestivos] = useState([]);
@@ -2341,102 +2470,6 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     setFichajeTipo('');
   };
 
-  // Funcție pentru a obține orarul zilei curente
-
-  // Memoizează rezultatul pentru a evita recalculări la fiecare render
-  // Recalculează doar când se schimbă cuadranteAsignado sau horarioAsignado
-  const currentDaySchedule = useMemo(() => {
-    if (cuadranteAsignado) {
-      const today = new Date().getDate();
-      const dayKey = `ZI_${today}`;
-      const daySchedule = cuadranteAsignado[dayKey];
-      
-      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        // IMPORTANT: Suportă multiple ture în formatul "08:00-12:00,14:00-18:00,20:00-00:00"
-        if (daySchedule.includes(',')) {
-          // Multiple ture separate prin virgulă
-          const matches = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/g);
-          if (matches && matches.length > 0) {
-            return matches.map(match => match).join(' / ');
-          }
-        } else {
-          // O singură tură în formatul "T1 08:00-16:00" sau "08:00-16:00"
-          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-          if (match) {
-            return `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
-          }
-        }
-      }
-      return null;
-    } else if (horarioAsignado && horarioAsignado.days) {
-      const today = new Date().getDay();
-      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
-      const daySchedule = horarioAsignado.days[dayKey];
-      
-      // Eliminat log-urile excessive - se execută doar logica necesară
-      if (!daySchedule) {
-        return null; // Nu mai logăm cazurile comune de zile libere
-      }
-      
-      const intervals = [];
-      // Verifică că valorile sunt string-uri valide în format HH:MM
-      const isValidTime = (time) => {
-        return typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
-      };
-      
-      if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
-        // Extrage doar HH:MM dacă e în format HH:MM:SS
-        const in1 = daySchedule.in1.substring(0, 5);
-        const out1 = daySchedule.out1.substring(0, 5);
-        intervals.push(`${in1} - ${out1}`);
-      }
-      if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
-        const in2 = daySchedule.in2.substring(0, 5);
-        const out2 = daySchedule.out2.substring(0, 5);
-        intervals.push(`${in2} - ${out2}`);
-      }
-      if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
-        const in3 = daySchedule.in3.substring(0, 5);
-        const out3 = daySchedule.out3.substring(0, 5);
-        intervals.push(`${in3} - ${out3}`);
-      }
-      
-      if (intervals.length > 0) {
-        return intervals.join(' / ');
-      }
-      
-      return null; // Dacă daySchedule există dar nu are intervale valide
-    }
-    return null;
-  }, [cuadranteAsignado, horarioAsignado]);
-
-  // Funcție pentru a calcula orele zilnice din orarul curent
-  const getCurrentDayHours = () => {
-    if (cuadranteAsignado) {
-      const today = new Date().getDate();
-      const dayKey = `ZI_${today}`;
-      const daySchedule = cuadranteAsignado[dayKey];
-      
-      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        // Folosește helper-ul comun pentru calculul orelor
-        const hours = calculateCuadranteHours(daySchedule);
-        return hours > 0 ? hours.toFixed(2) : '0.00';
-      }
-      return '0.00';
-    } else if (horarioAsignado && horarioAsignado.days) {
-      const today = new Date().getDay();
-      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
-      const daySchedule = horarioAsignado.days[dayKey];
-      
-      if (daySchedule) {
-        // Folosește helper-ul comun pentru calculul orelor
-        const hours = calculateHorarioHours(daySchedule);
-        return hours > 0 ? hours.toFixed(2) : '0.00';
-      }
-    }
-    return '0.00';
-  };
-
   // Memoizează rezultatele pentru Entrada și Salida pentru a evita recalculări inutile
   // Recalculează doar când se schimbă horarioAsignado sau cuadranteAsignado
 
@@ -2951,16 +2984,52 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   })()}
                 </div>
               </div>
-            ) : (
-              <div className={`bg-yellow-50 border border-yellow-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
+            ) : horarioMulticentroAsignado ? (
+              // Afișează informații despre horario_multicentro dacă există
+              <div className={`bg-purple-50 border border-purple-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-yellow-600">⚠️</span>
-                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-yellow-800`}>Sin Horario Asignado</span>
+                  <span className="text-purple-600">📅</span>
+                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-purple-800`}>Horario Multicentro</span>
                 </div>
-                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-yellow-700`}>
-                  No se ha encontrado un horario específico para tu centro y grupo de trabajo.
+                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-purple-700 space-y-1`}>
+                  <div><strong>Cliente:</strong> {horarioMulticentroAsignado.CLIENTE || 'N/A'}</div>
+                  <div><strong>Horario:</strong> {horarioMulticentroAsignado.HORARIO || 'N/A'}</div>
+                  <div><strong>Mes:</strong> {horarioMulticentroAsignado.LUNA || 'N/A'}</div>
+                  {currentDaySchedule && (
+                    <div className="mt-2 pt-2 border-t border-purple-300">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-purple-800 rounded-md">
+                        <span className="text-xs">📅 Hoy:</span>
+                        <span className="text-xs font-semibold">{currentDaySchedule}</span>
+                      </div>
+                    </div>
+                  )}
+                  {(() => {
+                    // Folosește calculul din orarul curent
+                    return (
+                      <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
+                    );
+                  })()}
+                  {!currentDaySchedule && (
+                    <div className="mt-2 pt-2 border-t border-purple-300 text-yellow-700">
+                      <span className="text-xs">⚠️ No tienes horario asignado para hoy</span>
+                    </div>
+                  )}
                 </div>
               </div>
+            ) : (
+              // Afișează avertismentul doar dacă NU există orar pentru ziua CURENTĂ
+              // Verifică dacă există orar în cuadrante, horario_multicentro, sau horarios normal pentru ziua de astăzi
+              !currentDaySchedule ? (
+                <div className={`bg-yellow-50 border border-yellow-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-yellow-600">⚠️</span>
+                    <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-yellow-800`}>Sin Horario Asignado</span>
+                  </div>
+                  <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-yellow-700`}>
+                    No se ha encontrado un horario específico para hoy.
+                  </div>
+                </div>
+              ) : null
             )}
           </div>
           
@@ -3273,6 +3342,25 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>
                     {!hasCompletedCycle ? 'Completa ciclo primero' : 'Registro especial'}
                   </div>
+                </div>
+              </div>
+            </button>
+            
+            {/* Buton "Anunciar Baja Médica" */}
+            <button
+              onClick={() => setShowBajaMedicaModal(true)}
+              disabled={fichando}
+              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg hover:scale-105 hover:shadow-xl bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-rose-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none`}
+              title="Anunciar baja médica"
+            >
+              <div className="absolute inset-0 rounded-xl bg-rose-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+              <div className="relative flex items-center gap-3">
+                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
+                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>🩺</span>
+                </div>
+                <div className="text-left">
+                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>Anunciar Baja Médica</div>
+                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Registro médico</div>
                 </div>
               </div>
             </button>
@@ -3957,6 +4045,286 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         }}
         data={confirmarJornadaData}
       />
+
+      {/* Modal Anunciar Baja Médica */}
+      <Modal
+        isOpen={showBajaMedicaModal}
+        onClose={() => {
+          setShowBajaMedicaModal(false);
+          setBajaMedicaForm({
+            fechaBaja: '',
+            fechaAlta: '',
+            tipo: '',
+            recaida: false,
+          });
+        }}
+        title="🩺 Anunciar Baja Médica"
+        size="md"
+      >
+        <div className="space-y-5">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm text-rose-800">
+            <p className="font-semibold mb-2">Información importante:</p>
+            <p>Anuncia tu baja médica. El sistema registrará automáticamente tu ausencia por motivos médicos.</p>
+            <p className="mt-2 text-xs">Esta información será visible para los gestores y se sincronizará con el sistema de bajas médicas.</p>
+          </div>
+
+          <div>
+            <label htmlFor="baja-fecha-baja" className="block text-sm font-semibold text-gray-700 mb-2">
+              Fecha de baja <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="baja-fecha-baja"
+              type="date"
+              value={bajaMedicaForm.fechaBaja}
+              onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, fechaBaja: e.target.value })}
+              required
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="baja-fecha-alta" className="block text-sm font-semibold text-gray-700 mb-2">
+              Fecha de alta (opcional)
+            </label>
+            <input
+              id="baja-fecha-alta"
+              type="date"
+              value={bajaMedicaForm.fechaAlta}
+              onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, fechaAlta: e.target.value })}
+              min={bajaMedicaForm.fechaBaja}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+            />
+            <p className="text-xs text-gray-500 mt-1">Si no conoces la fecha de alta, déjala vacía</p>
+          </div>
+
+          <div>
+            <label htmlFor="baja-tipo" className="block text-sm font-semibold text-gray-700 mb-2">
+              Tipo de baja (opcional)
+            </label>
+            <input
+              id="baja-tipo"
+              type="text"
+              value={bajaMedicaForm.tipo}
+              onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, tipo: e.target.value })}
+              placeholder="Ej: Baja médica común, Accidente laboral..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              id="baja-recaida"
+              type="checkbox"
+              checked={bajaMedicaForm.recaida}
+              onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, recaida: e.target.checked })}
+              className="w-5 h-5 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+            />
+            <label htmlFor="baja-recaida" className="text-sm font-semibold text-gray-700">
+              Es una recaída
+            </label>
+          </div>
+
+          {/* Upload documento médico (opcional) */}
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+            <label htmlFor="baja-medica-documento" className="block text-sm font-semibold text-gray-700 mb-2">
+              📄 Foaie medicală (opțional)
+            </label>
+            <input
+              id="baja-medica-documento"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  // Verifică dimensiunea (max 10MB)
+                  if (file.size > 10 * 1024 * 1024) {
+                    setNotification({
+                      type: 'error',
+                      message: 'El archivo es demasiado grande. Máximo 10MB.',
+                    });
+                    return;
+                  }
+                  setBajaMedicaDocumento(file);
+                } else {
+                  setBajaMedicaDocumento(null);
+                }
+              }}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white text-sm"
+            />
+            {bajaMedicaDocumento && (
+              <div className="mt-2 text-xs text-gray-600 flex items-center gap-2">
+                <span>✅</span>
+                <span>{bajaMedicaDocumento.name} ({(bajaMedicaDocumento.size / 1024).toFixed(2)} KB)</span>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1">Puedes subir el documento médico si lo tienes disponible</p>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={() => {
+                setShowBajaMedicaModal(false);
+                setBajaMedicaForm({
+                  fechaBaja: '',
+                  fechaAlta: '',
+                  tipo: '',
+                  recaida: false,
+                });
+                setBajaMedicaDocumento(null);
+              }}
+              className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl transition-colors duration-200 font-medium"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={async () => {
+                if (!bajaMedicaForm.fechaBaja) {
+                  setNotification({
+                    type: 'error',
+                    message: 'La fecha de baja es obligatoria',
+                  });
+                  return;
+                }
+
+                setSubmittingBajaMedica(true);
+                try {
+                  const token = localStorage.getItem('auth_token');
+                  
+                  // 1. Creează baja médica
+                  const response = await fetch(routes.createBajaMedicaEmpleado, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token && { Authorization: `Bearer ${token}` }),
+                    },
+                    body: JSON.stringify({
+                      fechaBaja: bajaMedicaForm.fechaBaja,
+                      fechaAlta: bajaMedicaForm.fechaAlta || undefined,
+                      tipo: bajaMedicaForm.tipo || undefined,
+                      recaida: bajaMedicaForm.recaida || undefined,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || `HTTP ${response.status}`);
+                  }
+
+                  const result = await response.json();
+                  if (!result?.success) {
+                    throw new Error(result?.message || 'No se pudo crear la baja médica');
+                  }
+
+                  // 2. Dacă există document, îl încarcă
+                  if (bajaMedicaDocumento) {
+                    try {
+                      const codigoEmpleado = authUser?.['CODIGO'] || authUser?.codigo || '';
+                      if (codigoEmpleado) {
+                        const formData = new FormData();
+                        formData.append('archivo_0', bajaMedicaDocumento);
+                        formData.append('empleado_id', codigoEmpleado);
+                        formData.append('empleado_nombre', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || 'Sin nombre');
+                        formData.append('empleado_email', authUser?.['CORREO ELECTRONICO'] || authUser?.email || '');
+                        formData.append('tipo_documento', 'Baja Médica');
+                        formData.append('fecha_upload', new Date().toLocaleString('es-ES', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                          timeZone: 'Europe/Madrid'
+                        }));
+                        formData.append('archivo_0_nombre', bajaMedicaDocumento.name);
+                        formData.append('archivo_0_tamaño', bajaMedicaDocumento.size.toString());
+                        formData.append('archivo_0_tipo', bajaMedicaDocumento.type);
+
+                        const uploadResponse = await fetch(routes.uploadDocumento, {
+                          method: 'POST',
+                          headers: {
+                            ...(token && { Authorization: `Bearer ${token}` }),
+                          },
+                          body: formData,
+                        });
+
+                        if (!uploadResponse.ok) {
+                          // Nu aruncăm eroare dacă upload-ul eșuează, doar logăm
+                          warn('Error al subir el documento médico, pero la baja médica se creó correctamente');
+                        }
+                      }
+                    } catch (uploadError) {
+                      // Nu aruncăm eroare dacă upload-ul eșuează, doar logăm
+                      warn('Error al subir el documento médico:', uploadError);
+                    }
+                  }
+
+                  setNotification({
+                    type: 'success',
+                    message: result?.message || 'Baja médica anunciada correctamente',
+                  });
+
+                  setShowBajaMedicaModal(false);
+                  setBajaMedicaForm({
+                    fechaBaja: '',
+                    fechaAlta: '',
+                    tipo: '',
+                    recaida: false,
+                  });
+                  setBajaMedicaDocumento(null);
+
+                  // Reîncarcă bajas medicas pentru a actualiza status-ul
+                  // Reîncarcă bajas medicas folosind funcția locală
+                  const empleadoCodigo = String(authUser?.CODIGO || authUser?.codigo || '').trim();
+                  if (empleadoCodigo && routes.getBajasMedicas) {
+                    try {
+                      const token = localStorage.getItem('auth_token');
+                      const url = `${routes.getBajasMedicas}${routes.getBajasMedicas.includes('?') ? '&' : '?'}codigo=${encodeURIComponent(empleadoCodigo)}`;
+                      const headers = {
+                        'Content-Type': 'application/json',
+                      };
+                      if (token) {
+                        headers['Authorization'] = `Bearer ${token}`;
+                      }
+                      const response = await fetch(url, {
+                        method: 'GET',
+                        headers: headers,
+                      });
+                      if (response.ok) {
+                        const lista = await response.json();
+                        const listaArray = Array.isArray(lista) ? lista : [];
+                        setBajasMedicas(listaArray);
+                      }
+                    } catch (err) {
+                      warn('Error reloading bajas medicas:', err);
+                    }
+                  }
+                } catch (error) {
+                  setNotification({
+                    type: 'error',
+                    message: error.message || 'Error al anunciar la baja médica',
+                  });
+                } finally {
+                  setSubmittingBajaMedica(false);
+                }
+              }}
+              disabled={submittingBajaMedica || !bajaMedicaForm.fechaBaja}
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submittingBajaMedica ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  <span>Enviando...</span>
+                </>
+              ) : (
+                <>
+                  <span>🩺</span>
+                  <span>Anunciar Baja Médica</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -7201,6 +7569,10 @@ export default function FichajePage() {
   const [cuadranteAsignado, setCuadranteAsignado] = useState(null);
   const [loadingCuadrante, setLoadingCuadrante] = useState(false);
   
+  // State pentru horario_multicentro asignat
+  const [horarioMulticentroAsignado, setHorarioMulticentroAsignado] = useState(null);
+  const [loadingHorarioMulticentro, setLoadingHorarioMulticentro] = useState(false);
+  
   // State pentru datele complete ale utilizatorului
   const [userData, setUserData] = useState(null);
   
@@ -7209,6 +7581,9 @@ export default function FichajePage() {
   
   // Ref pentru a preveni re-apelurile inutile ale fetchCuadranteAsignado
   const lastCuadranteFetchRef = useRef({ codigo: null, month: null });
+  
+  // Ref pentru a preveni re-apelurile inutile ale fetchHorarioMulticentroAsignado
+  const lastHorarioMulticentroFetchRef = useRef({ codigo: null, month: null });
   
   // Folosim locația globală din LocationContext pentru funcțiile handleOpenIncidenciaModal și handleFicharIncidencia
   const locationContext = useLocation();
@@ -7360,6 +7735,160 @@ export default function FichajePage() {
     }
   }, [authUser, loadingCuadrante]);
 
+  // Funcție pentru a încărca horario_multicentro asignat
+  const fetchHorarioMulticentroAsignado = useCallback(async () => {
+    loggerDebug('🔍 fetchHorarioMulticentroAsignado - Apelat');
+    const codigoEmpleado = authUser?.CODIGO || authUser?.codigo || '';
+    if (!codigoEmpleado) {
+      loggerDebug('Nu există codigo pentru horario_multicentro');
+      setHorarioMulticentroAsignado(null);
+      return;
+    }
+
+    // Găsește horario_multicentro pentru luna curentă
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    
+    loggerDebug(`🔍 fetchHorarioMulticentroAsignado - CODIGO: ${codigoEmpleado}, LUNA: ${currentMonthFormatted}`);
+    
+    // Previne re-apelurile inutile dacă codigo și luna nu s-au schimbat
+    if (lastHorarioMulticentroFetchRef.current.codigo === codigoEmpleado && 
+        lastHorarioMulticentroFetchRef.current.month === currentMonthFormatted &&
+        !loadingHorarioMulticentro) {
+      return;
+    }
+    
+    lastHorarioMulticentroFetchRef.current = { codigo: codigoEmpleado, month: currentMonthFormatted };
+    
+    setLoadingHorarioMulticentro(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = `${routes.baseUrl}/api/horarios/multicentro?codigo=${encodeURIComponent(codigoEmpleado)}&mes=${currentMonthFormatted}`;
+      loggerDebug(`🔍 fetchHorarioMulticentroAsignado - URL: ${url}`);
+      loggerDebug(`🔍 fetchHorarioMulticentroAsignado - Token exists: ${!!token}`);
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      loggerDebug(`🔍 fetchHorarioMulticentroAsignado - Headers:`, headers);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+      });
+      loggerDebug(`🔍 fetchHorarioMulticentroAsignado - Response status: ${res.status}, statusText: ${res.statusText}`);
+
+      // Verifică dacă răspunsul este OK și este JSON
+      if (!res.ok) {
+        const text = await res.text();
+        logError(`❌ Error ${res.status} la fetchHorarioMulticentroAsignado: ${text.substring(0, 200)}`);
+        setHorarioMulticentroAsignado(null);
+        return;
+      }
+
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        logError(`❌ Răspunsul nu este JSON: ${contentType} - ${text.substring(0, 200)}`);
+        setHorarioMulticentroAsignado(null);
+        return;
+      }
+
+      const data = await res.json();
+      const lista = Array.isArray(data.horarios) ? data.horarios : [];
+      
+      loggerDebug('Horarios_multicentro primite din backend:', lista);
+      
+      if (lista.length > 0) {
+        // Pentru ziua curentă, combinăm toate horarios_multicentro într-un singur obiect
+        const today = new Date().getDate();
+        const dayKey = `ZI_${today}`;
+        
+        loggerDebug(`🔍 Căutăm orar pentru ziua ${today} (${dayKey}) în ${lista.length} horarios_multicentro`);
+        
+        // Găsește primul horario_multicentro care are orar pentru ziua curentă (nu LIBRE)
+        const horarioMatch = lista.find(horario => {
+          // Verifică toate variantele posibile de nume pentru câmp (lowercase/uppercase)
+          const daySchedule = horario[dayKey] || horario[dayKey.toLowerCase()] || horario[dayKey.toUpperCase()];
+          loggerDebug(`  - Verific ${horario.CLIENTE || 'N/A'} - ${horario.HORARIO || 'N/A'}: ZI_${today} = ${daySchedule} (type: ${typeof daySchedule}), exists: ${!!daySchedule}`);
+          // Listă toate cheile disponibile pentru debugging
+          const allKeys = Object.keys(horario).filter(k => k.toUpperCase().startsWith('ZI_'));
+          loggerDebug(`    All ZI keys in horario: ${allKeys.join(', ')}`);
+          if (daySchedule) {
+            const trimmed = String(daySchedule).trim();
+            const isValid = trimmed !== '' && trimmed !== 'LIBRE' && trimmed !== '0' && trimmed !== '0h';
+            loggerDebug(`    Valid? ${isValid} (trimmed: "${trimmed}")`);
+            return isValid;
+          }
+          return false;
+        });
+        
+        if (horarioMatch) {
+          loggerDebug(`✅ Horario_multicentro găsit pentru ziua ${today}: ${horarioMatch.CLIENTE} - ${horarioMatch.HORARIO} - ZI_${today} = ${horarioMatch[dayKey]}`);
+          success('Horario_multicentro găsit pentru luna curentă:', horarioMatch);
+          setHorarioMulticentroAsignado(horarioMatch);
+        } else {
+          // Dacă nu există orar pentru ziua curentă, dar există pentru luna curentă, nu setăm fallback
+          // pentru că ar genera confuzie - utilizatorul nu are orar pentru ziua de astăzi
+          loggerDebug(`⚠️ Nu s-a găsit horario_multicentro pentru ziua ${today} în ${lista.length} înregistrări disponibile`);
+          loggerDebug(`  Primele 3 înregistrări:`, lista.slice(0, 3).map(h => ({
+            cliente: h.CLIENTE,
+            horario: h.HORARIO,
+            [`ZI_${today}`]: h[dayKey]
+          })));
+          setHorarioMulticentroAsignado(null);
+        }
+      } else {
+        warn('Nu există horarios_multicentro pentru acest angajat');
+        setHorarioMulticentroAsignado(null);
+      }
+    } catch (error) {
+      logError('Eroare la încărcarea horario_multicentro asignat:', error);
+      setHorarioMulticentroAsignado(null);
+    } finally {
+      setLoadingHorarioMulticentro(false);
+    }
+  }, [authUser, loadingHorarioMulticentro]);
+
+  // State pentru verificarea existenței orarului (cuadrante, horario_multicentro, sau horarios normal)
+  const [hasAnySchedule, setHasAnySchedule] = useState(false);
+  
+  // Funcție pentru a verifica dacă angajatul are orar (orice tip)
+  // Returnează true/false direct pentru a fi folosit în callback-uri
+  const checkHasSchedule = useCallback(async () => {
+    if (!authUser?.CODIGO) {
+      setHasAnySchedule(false);
+      return false;
+    }
+    
+    try {
+      const token = localStorage.getItem('auth_token');
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      
+      const response = await fetch(`${routes.baseUrl}/api/horarios/has-schedule?codigo=${encodeURIComponent(authUser.CODIGO)}&mes=${currentMonth}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      const hasSchedule = result.hasSchedule || false;
+      setHasAnySchedule(hasSchedule);
+      return hasSchedule;
+    } catch (error) {
+      loggerDebug('Eroare la verificarea orarului:', error);
+      setHasAnySchedule(false);
+      return false;
+    }
+  }, [authUser?.CODIGO]);
+
   // Funcție pentru a încărca orarul asignat
   const fetchHorarioAsignado = useCallback(async () => {
     // Căutăm orarul care se potrivește cu centrul și grupul utilizatorului
@@ -7412,9 +7941,12 @@ export default function FichajePage() {
           loggerDebug('Orar găsit - Martes:', horarioMatch.days?.M);
           setHorarioAsignado(horarioMatch);
         } else {
-          // Afișează avertismentul doar dacă NU există cuadrante
-          // Dacă există cuadrante, nu este o problemă că nu există orar
-          if (!cuadranteAsignado) {
+          // Verifică dacă există cuadrante sau horario_multicentro
+          // Dacă există, nu afișăm avertismentul "Sin Horario Asignado"
+          const hasScheduleResult = await checkHasSchedule();
+          
+          // Afișează avertismentul doar dacă NU există nici cuadrante, nici horario_multicentro, nici horarios normal
+          if (!cuadranteAsignado && !hasScheduleResult) {
             warn('Nu s-a găsit orar pentru:', { centroUsuario, grupoUsuario });
             loggerDebug('Toate orarele disponibile:', response.data.map(h => ({
               nombre: h.nombre,
@@ -7422,7 +7954,7 @@ export default function FichajePage() {
               grupoNombre: h.grupoNombre
             })));
           } else {
-            loggerDebug('Orar nu găsit, dar există cuadrante - nu este o problemă');
+            loggerDebug('Orar nu găsit în horarios normal, dar există cuadrante sau horario_multicentro');
           }
           setHorarioAsignado(null);
         }
@@ -7433,7 +7965,7 @@ export default function FichajePage() {
     } finally {
       setLoadingHorario(false);
     }
-  }, [authUser, userData, loadingHorario, cuadranteAsignado]);
+  }, [authUser, userData, loadingHorario, cuadranteAsignado, checkHasSchedule]);
   
   // State pentru dialog de confirmare
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({
@@ -7458,12 +7990,30 @@ export default function FichajePage() {
     }
   }, [authUser, fetchCuadranteAsignado]); // fetchCuadranteAsignado este memoizat cu useCallback
 
+  // Verifică dacă există orar (cuadrante, horario_multicentro, sau horarios normal) când se încarcă utilizatorul
+  useEffect(() => {
+    if (authUser?.CODIGO && !authUser?.isDemo) {
+      checkHasSchedule();
+    }
+  }, [authUser?.CODIGO, authUser?.isDemo, checkHasSchedule]);
+
   // Încarcă orarul când se încarcă utilizatorul sau când se schimbă userData
   useEffect(() => {
     if (authUser && !authUser?.isDemo && userData) {
       fetchHorarioAsignado();
     }
   }, [authUser, userData, fetchHorarioAsignado]); // fetchHorarioAsignado este memoizat cu useCallback
+
+  // Încarcă horario_multicentro când se încarcă utilizatorul
+  useEffect(() => {
+    loggerDebug(`🔍 useEffect fetchHorarioMulticentroAsignado - authUser: ${!!authUser}, isDemo: ${authUser?.isDemo}`);
+    if (authUser && !authUser?.isDemo) {
+      loggerDebug('✅ Apelând fetchHorarioMulticentroAsignado...');
+      fetchHorarioMulticentroAsignado();
+    } else {
+      loggerDebug('❌ Nu apelăm fetchHorarioMulticentroAsignado - condiții neîndeplinite');
+    }
+  }, [authUser, fetchHorarioMulticentroAsignado]); // fetchHorarioMulticentroAsignado este memoizat cu useCallback
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru cuadrante
   // Memoizată pentru a evita recalculări inutile
@@ -8416,6 +8966,8 @@ export default function FichajePage() {
             loadingCuadrante={loadingCuadrante}
             isTimeWithinSchedule={isTimeWithinSchedule}
             getTimeRestrictionMessage={getTimeRestrictionMessage}
+            hasAnySchedule={hasAnySchedule}
+            horarioMulticentroAsignado={horarioMulticentroAsignado}
             onLogsUpdate={(logs) => {
               loggerDebug('onLogsUpdate - logs primit:', logs);
               setLogs(logs);
@@ -8572,6 +9124,8 @@ export default function FichajePage() {
               loadingCuadrante={loadingCuadrante}
               isTimeWithinSchedule={isTimeWithinSchedule}
               getTimeRestrictionMessage={getTimeRestrictionMessage}
+              hasAnySchedule={hasAnySchedule}
+              horarioMulticentroAsignado={horarioMulticentroAsignado}
               onLogsUpdate={(logs) => {
                 loggerDebug('onLogsUpdate - logs primit:', logs);
                 setLogs(logs);

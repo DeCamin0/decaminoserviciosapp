@@ -28,7 +28,7 @@ interface ConfirmJornadaDto {
 @Injectable()
 export class FichajeRegularizacionService {
   private readonly logger = new Logger(FichajeRegularizacionService.name);
-  private readonly MAX_WORKDAY_HOURS = 16; // Safety cap
+  private readonly MAX_WORKDAY_HOURS = 20; // Safety cap pentru două ture consecutive (dim + seara/noapte)
 
   constructor(
     private readonly prisma: PrismaService,
@@ -414,6 +414,142 @@ export class FichajeRegularizacionService {
         return minutes;
       }
 
+      // Fallback la horario_multicentro - caută pentru angajat în luna specificată
+      // Mai întâi verificăm dacă există înregistrări pentru acest angajat în această lună (pentru debugging)
+      const debugQuery = `
+        SELECT CODIGO, LUNA, HORARIO, CLIENTE, 
+               ZI_${dia} as zi_${dia}_val,
+               CASE WHEN ZI_${dia} IS NULL THEN 'NULL' 
+                    WHEN TRIM(ZI_${dia}) = '' THEN 'EMPTY'
+                    WHEN ZI_${dia} = '0' THEN 'ZERO'
+                    WHEN ZI_${dia} = '0h' THEN 'ZERO_H'
+                    ELSE ZI_${dia}
+               END as zi_${dia}_status
+        FROM horario_multicentro
+        WHERE CODIGO = ${this.escapeSql(employee_codigo)}
+          AND LUNA = ${this.escapeSql(mesStr)}
+        LIMIT 5
+      `;
+      const debugResult = await this.prisma.$queryRawUnsafe<any[]>(debugQuery);
+      if (debugResult && debugResult.length > 0) {
+        this.logger.debug(
+          `🔍 [DEBUG] horario_multicentro exists for ${employee_codigo}, LUNA=${mesStr}: ${debugResult.length} records. ZI_${dia} status: ${JSON.stringify(debugResult.map((r) => ({ cliente: r.CLIENTE, horario: r.HORARIO, zi_val: r[`zi_${dia}_val`], zi_status: r[`zi_${dia}_status`] })))}`,
+        );
+      } else {
+        this.logger.debug(
+          `🔍 [DEBUG] NO horario_multicentro records found for ${employee_codigo}, LUNA=${mesStr}`,
+        );
+      }
+
+      // Pentru horario_multicentro, trebuie să luăm în considerare că un angajat poate avea
+      // mai multe înregistrări pentru aceeași zi (ex: TURNO DIA și TURNO NOCHE)
+      // Dacă suntem într-un context de tură nocturnă (workday_date diferit de calendar date),
+      // priorităm TURNO NOCHE, altfel TURNO DIA
+      // Pentru a detecta dacă este tură nocturnă, verificăm dacă workday_date (data Entrada-ului)
+      // este diferită de data curentă (fechaStr) - aceasta indică o tură care începe într-o zi
+      // și se termină în următoarea
+
+      // Verifică dacă există mai multe înregistrări pentru aceeași zi
+      const checkMultipleQuery = `
+        SELECT HORARIO, ZI_${dia} as schedule_horas
+        FROM horario_multicentro
+        WHERE CODIGO = ${this.escapeSql(employee_codigo)}
+          AND LUNA = ${this.escapeSql(mesStr)}
+          AND ZI_${dia} IS NOT NULL
+          AND TRIM(ZI_${dia}) != ''
+          AND ZI_${dia} != '0'
+          AND ZI_${dia} != '0h'
+        ORDER BY 
+          CASE WHEN HORARIO LIKE '%NOCHE%' THEN 1 ELSE 2 END,
+          HORARIO
+        LIMIT 5
+      `;
+
+      const allMatches =
+        await this.prisma.$queryRawUnsafe<any[]>(checkMultipleQuery);
+
+      let horarioMulticentro: any[] = [];
+
+      if (allMatches && allMatches.length > 1) {
+        // Există multiple înregistrări - trebuie să determinăm care este corectă
+        // Pentru horario_multicentro, dacă un angajat are atât TURNO DIA (8h) cât și TURNO NOCHE (12h) în aceeași zi,
+        // priorităm TURNO NOCHE (12h) pentru că:
+        // 1. Are mai multe ore (12h vs 8h) - probabil este tura principală
+        // 2. Pentru turele nocturne, workday_date este deja setat la data Entrada-ului (ziua anterioară),
+        //    deci verificăm ZI_6 pentru tura care se termină pe 7 ianuarie dimineața
+        // 3. TURNO NOCHE indică explicit o tură nocturnă
+
+        // Prioritizează TURNO NOCHE dacă există (are 12h, care este pentru tură nocturnă)
+        const nocheMatch = allMatches.find(
+          (m) =>
+            m.HORARIO &&
+            (m.HORARIO.toUpperCase().includes('NOCHE') ||
+              m.HORARIO.toUpperCase().includes('T3')),
+        );
+
+        // Verifică și orele - dacă una dintre înregistrări are 12h, probabil este pentru tură nocturnă
+        const horarioWithMoreHours = allMatches.reduce((max, current) => {
+          const currentHours = this.parseScheduleToMinutes(
+            current.schedule_horas || '0',
+          );
+          const maxHours = this.parseScheduleToMinutes(
+            max.schedule_horas || '0',
+          );
+          return currentHours > maxHours ? current : max;
+        }, allMatches[0]);
+
+        // Dacă există TURNO NOCHE, îl folosim (are prioritate)
+        if (nocheMatch) {
+          horarioMulticentro = [nocheMatch];
+          this.logger.debug(
+            `🌙 Multiple horarios found - selecting TURNO NOCHE (${nocheMatch.schedule_horas}) for ${employee_codigo} on ${fechaStr} (day ${dia})`,
+          );
+        } else if (
+          horarioWithMoreHours &&
+          this.parseScheduleToMinutes(
+            horarioWithMoreHours.schedule_horas || '0',
+          ) >= 720
+        ) {
+          // Dacă nu există TURNO NOCHE explicit, dar există o înregistrare cu >= 12h (720 min),
+          // probabil este pentru tură nocturnă
+          horarioMulticentro = [horarioWithMoreHours];
+          this.logger.debug(
+            `🌙 Multiple horarios found - selecting horario with more hours (${horarioWithMoreHours.schedule_horas} = ${horarioWithMoreHours.HORARIO}) for ${employee_codigo} on ${fechaStr} (day ${dia})`,
+          );
+        } else {
+          // Dacă nu există TURNO NOCHE și nici o înregistrare cu >= 12h, folosim prima (TURNO DIA)
+          horarioMulticentro = [allMatches[0]];
+          this.logger.debug(
+            `☀️ Multiple horarios found - selecting first (${allMatches[0].HORARIO} = ${allMatches[0].schedule_horas}) for ${employee_codigo} on ${fechaStr} (day ${dia})`,
+          );
+        }
+      } else if (allMatches && allMatches.length === 1) {
+        // Există o singură înregistrare - folosim-o
+        horarioMulticentro = [allMatches[0]];
+      }
+
+      this.logger.debug(
+        `🔍 calculateScheduledMinutes - Checking horario_multicentro for ${employee_codigo} on ${fechaStr} (day ${dia}, month ${mesStr}): found ${horarioMulticentro?.length || 0} results`,
+      );
+
+      if (
+        horarioMulticentro &&
+        horarioMulticentro.length > 0 &&
+        horarioMulticentro[0].schedule_horas
+      ) {
+        const scheduleStr = horarioMulticentro[0].schedule_horas;
+
+        // parseScheduleToMinutes acum suportă automat atât formate cu timpi (T1 07:30-19:30) cât și numere simple (8, 12)
+        const minutes = this.parseScheduleToMinutes(scheduleStr);
+
+        if (minutes > 0) {
+          this.logger.debug(
+            `✅ calculateScheduledMinutes - Found horario_multicentro schedule: ${scheduleStr} (${horarioMulticentro[0].horario_tipo || 'N/A'}) = ${minutes} minutes`,
+          );
+          return minutes;
+        }
+      }
+
       // Fallback la horario - folosește CASE pentru ziua săptămânii
       // Folosește STR_TO_DATE pentru a converti string-ul la DATE și a evita timezone issues
       // Pentru datele din trecut, relaxăm condițiile vigente_hasta pentru a permite regularizări
@@ -612,8 +748,9 @@ export class FichajeRegularizacionService {
         return totalMinutes;
       }
 
-      // Fallback: Dacă nu există nici cuadrante nici horario, folosim orele din contract
+      // Fallback: Dacă nu există nici cuadrante, nici horario_multicentro, nici horario, folosim orele din contract
       // Calculează orele zilnice din contract (presupunem că contractul este pe săptămână)
+      // Ordinea verificării: 1. cuadrante, 2. horario_multicentro, 3. horario, 4. contract hours
       const contractQuery = `
         SELECT \`HORAS DE CONTRATO\` as horas_contrato
         FROM DatosEmpleados
@@ -649,7 +786,7 @@ export class FichajeRegularizacionService {
       }
 
       this.logger.debug(
-        `⚠️ No schedule found (cuadrante, horario, or contract) for ${employee_codigo} on ${fechaStr}`,
+        `⚠️ No schedule found (checked: cuadrante -> horario_multicentro -> horario -> contract hours) for ${employee_codigo} on ${fechaStr}`,
       );
       return 0; // Nu există schedule
     } catch (error: any) {
@@ -693,6 +830,61 @@ export class FichajeRegularizacionService {
         );
         if (timeRangeMatch) {
           return `${timeRangeMatch[1].padStart(2, '0')}:${timeRangeMatch[2]}`;
+        }
+      }
+
+      // Fallback la horario_multicentro - caută pentru angajat în luna specificată
+      // (mesStr și dia sunt deja declarate mai sus)
+      // Pentru getScheduledEntryTime, verificăm toate înregistrările și alegem prima care are un time range valid
+      const horarioMulticentroQuery = `
+        SELECT ZI_${dia} as schedule_horas, HORARIO as horario_tipo
+        FROM horario_multicentro
+        WHERE CODIGO = ${this.escapeSql(employee_codigo)}
+          AND LUNA = ${this.escapeSql(mesStr)}
+          AND ZI_${dia} IS NOT NULL
+          AND TRIM(ZI_${dia}) != ''
+          AND ZI_${dia} != '0'
+          AND ZI_${dia} != '0h'
+        ORDER BY 
+          CASE WHEN HORARIO LIKE '%DIA%' THEN 1 
+               WHEN HORARIO LIKE '%T1%' THEN 2
+               WHEN HORARIO LIKE '%T2%' THEN 3
+               WHEN HORARIO LIKE '%NOCHE%' THEN 4
+               WHEN HORARIO LIKE '%T3%' THEN 5
+               ELSE 6 END,
+          HORARIO
+        LIMIT 5
+      `;
+
+      const horarioMulticentro = await this.prisma.$queryRawUnsafe<any[]>(
+        horarioMulticentroQuery,
+      );
+
+      if (horarioMulticentro && horarioMulticentro.length > 0) {
+        // Încearcă să găsească prima înregistrare care are un time range valid (nu doar număr de ore)
+        for (const horario of horarioMulticentro) {
+          if (horario.schedule_horas) {
+            const scheduleStr = horario.schedule_horas;
+            // Parse "08:00-17:00" sau "T1 07:30-19:30" sau "T2 19:30-07:30" -> returnează "08:00", "07:30", sau "19:30"
+            // Suportăm atât "T1 07:30-19:30" (cu spațiu) cât și "T1:07:30-19:30" (cu două puncte)
+            const timeRangeMatch = scheduleStr.match(
+              /(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+            );
+            if (timeRangeMatch) {
+              this.logger.debug(
+                `✅ getScheduledEntryTime - Found horario_multicentro entry time: ${timeRangeMatch[1]}:${timeRangeMatch[2]} from ${scheduleStr} (${horario.horario_tipo || 'N/A'})`,
+              );
+              return `${timeRangeMatch[1].padStart(2, '0')}:${timeRangeMatch[2]}`;
+            }
+          }
+        }
+
+        // Dacă niciunul nu are time range valid, verificăm dacă avem doar număr de ore
+        const firstSchedule = horarioMulticentro[0].schedule_horas;
+        if (firstSchedule && firstSchedule.match(/^(\d+(?:\.\d+)?)(\s*h)?$/i)) {
+          this.logger.debug(
+            `⚠️ getScheduledEntryTime - horario_multicentro contains only hours (${firstSchedule}), cannot extract entry time`,
+          );
         }
       }
 
@@ -813,13 +1005,20 @@ export class FichajeRegularizacionService {
         const isMorningSalida = salidaHours < 12; // Salida înainte de 12:00 = dimineața
 
         if (isMorningSalida) {
-          // Verifică dacă există Entrada în ziua anterioară după 17:00
-          const fechaAnterior = new Date(fechaStr + 'T00:00:00');
-          fechaAnterior.setDate(fechaAnterior.getDate() - 1);
-          const fechaAnteriorStr = fechaAnterior.toISOString().split('T')[0];
+          // Verifică dacă există Entrada în ziua ANTERIOARĂ (ziua precedentă zilei Salida-ului) după 17:00
+          // Ex: pentru Salida pe 2026-01-07, verifică Entrada pe 2026-01-06 (nu 2026-01-05!)
+          // Folosim calcul manual pentru a evita probleme cu timezone
+          const [year, month, day] = fechaStr.split('-').map(Number);
+          const fechaAnteriorDate = new Date(
+            Date.UTC(year, month - 1, day, 0, 0, 0),
+          );
+          fechaAnteriorDate.setUTCDate(fechaAnteriorDate.getUTCDate() - 1);
+          const fechaAnteriorStr = fechaAnteriorDate
+            .toISOString()
+            .split('T')[0];
 
           this.logger.debug(
-            `🔍 Checking for night shift: Salida on ${fechaStr} at ${horaTime}, checking Entrada on ${fechaAnteriorStr}`,
+            `🔍 Checking for night shift: Salida on ${fechaStr} at ${horaTime}, checking Entrada on ${fechaAnteriorStr} (calculated from ${fechaStr})`,
           );
 
           const entradaQuery = `
@@ -853,7 +1052,8 @@ export class FichajeRegularizacionService {
             if (entradaHours >= 17) {
               // Este tură nocturnă: Entrada în ziua anterioară după 17:00, Salida în ziua următoare dimineața
               // workday_date = ziua de început (ziua Entrada-ului)
-              workday_date = fechaAnterior;
+              // Folosim fechaAnteriorDate pentru a seta workday_date corect
+              workday_date = new Date(fechaAnteriorDate);
               this.logger.debug(
                 `🌙 Detected night shift: Entrada on ${fechaAnteriorStr} at ${entradaHoraStr}, Salida on ${fechaStr} at ${horaTime}. Setting workday_date to ${fechaAnteriorStr}`,
               );
@@ -1429,8 +1629,11 @@ export class FichajeRegularizacionService {
       //    - Dacă punched_minutes = 0 (ex: "Olvidó fichar") → folosește scheduled_minutes
       //    - Dacă punched_minutes < scheduled_minutes (delta negativă) → folosește scheduled_minutes (8h, nu 7h38)
       //    - Altfel (delta pozitivă sau zero) → folosește punched_minutes
+      // 3. Dacă regularization_type = NO_PUNCH:
+      //    - Dacă reason_code = 'OLVIDO_FICHAR' și punched_minutes = 0 → folosește scheduled_minutes (8h, nu 0)
+      //    - Pentru alte reason_code-uri (VACACIONES, BAJA, PERMISO, AUSENCIA_INJUSTIFICADA) → rămâne 0
       this.logger.debug(
-        `🔍 approveRegularizacion: ID=${id}, regularization_type=${regularizacion.regularization_type}, punched_minutes=${regularizacion.punched_minutes}, scheduled_minutes=${regularizacion.scheduled_minutes}, current effective_minutes=${regularizacion.effective_minutes}`,
+        `🔍 approveRegularizacion: ID=${id}, regularization_type=${regularizacion.regularization_type}, reason_code=${regularizacion.reason_code}, punched_minutes=${regularizacion.punched_minutes}, scheduled_minutes=${regularizacion.scheduled_minutes}, current effective_minutes=${regularizacion.effective_minutes}`,
       );
 
       let effective_minutes = regularizacion.effective_minutes; // Păstrează valoarea existentă by default
@@ -1465,6 +1668,31 @@ export class FichajeRegularizacionService {
           effective_minutes = regularizacion.effective_minutes;
           this.logger.log(
             `📝 Approve regularizacion: DECLARES_EXTRA, keeping existing effective_minutes=${effective_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
+          );
+        }
+      } else if (
+        regularizacion.regularization_type ===
+        FichajeRegularizacionType.NO_PUNCH
+      ) {
+        // Pentru NO_PUNCH, verificăm reason_code pentru a determina effective_minutes
+        // Pentru OLVIDO_FICHAR, AUSENCIA_INJUSTIFICADA și OTRO cu punched_minutes = 0 → aprobă orele previste
+        if (
+          (regularizacion.reason_code === 'OLVIDO_FICHAR' ||
+            regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' ||
+            regularizacion.reason_code === 'OTRO') &&
+          regularizacion.punched_minutes === 0 &&
+          regularizacion.scheduled_minutes > 0
+        ) {
+          // "Olvidó fichar", "Ausencia injustificada" sau "Otro" → aprobă orele previste (scheduled_minutes) ca ore efective
+          effective_minutes = regularizacion.scheduled_minutes;
+          this.logger.log(
+            `📝 Approve regularizacion: NO_PUNCH with reason_code=${regularizacion.reason_code}, using scheduled_minutes=${regularizacion.scheduled_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
+          );
+        } else {
+          // Pentru VACACIONES, BAJA, PERMISO → rămâne 0
+          effective_minutes = regularizacion.effective_minutes || 0;
+          this.logger.log(
+            `📝 Approve regularizacion: NO_PUNCH with reason_code=${regularizacion.reason_code}, keeping effective_minutes=${effective_minutes} for employee ${regularizacion.employee_codigo}, date ${regularizacion.workday_date.toISOString().split('T')[0]}`,
           );
         }
       }
@@ -1584,16 +1812,21 @@ export class FichajeRegularizacionService {
         throw new BadRequestException('Regularizacion not found');
       }
 
+      // La respingere, setăm effective_minutes = 0 pentru toate tipurile de regularizări
       const updated = await this.prisma.fichajeRegularizacion.update({
         where: { id },
         data: {
           status: FichajeRegularizacionStatus.REJECTED,
-          effective_minutes: regularizacion.scheduled_minutes, // Folosește scheduled
+          effective_minutes: 0, // La respingere, setăm 0 ore efective
           reviewed_at: new Date(),
           reviewed_by,
           notes: notes || regularizacion.notes,
         },
       });
+
+      this.logger.log(
+        `📝 Reject regularizacion: ID=${id}, employee=${regularizacion.employee_codigo}, date=${regularizacion.workday_date.toISOString().split('T')[0]}, reason_code=${regularizacion.reason_code}, effective_minutes set to 0`,
+      );
 
       // IMPORTANT: Dacă create_ausencia este true, creăm automat o ausencia injustificada
       if (create_ausencia) {
@@ -1689,6 +1922,7 @@ export class FichajeRegularizacionService {
 
     // Format cu ture multiple separate prin "/" sau ",": "07:00-15:00 / 15:00-23:00 / 23:00-07:00"
     // Sau: "07:00-15:00, 15:00-23:00, 23:00-07:00"
+    // Sau: "T1 07:30-19:30 / T2 19:30-07:30"
     const separators = /[\/,]/;
     if (separators.test(s)) {
       // Split pe separator și calculează fiecare segment
@@ -1699,9 +1933,10 @@ export class FichajeRegularizacionService {
         const trimmed = segment.trim();
         if (!trimmed) continue;
 
-        // Format "08:00-17:00" sau "T1:08:00-17:00"
+        // Format "08:00-17:00" sau "T1 07:30-19:30" sau "T1:08:00-17:00"
+        // Suportăm atât "T1 07:30-19:30" (cu spațiu) cât și "T1:07:30-19:30" (cu două puncte)
         const timeRangeMatch = trimmed.match(
-          /(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+          /(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
         );
         if (timeRangeMatch) {
           const [, h1, m1, h2, m2] = timeRangeMatch;
@@ -1724,9 +1959,10 @@ export class FichajeRegularizacionService {
       }
     }
 
-    // Format "08:00-17:00" (un singur interval)
+    // Format "08:00-17:00" sau "T1 07:30-19:30" sau "T2 19:30-07:30" (un singur interval)
+    // Suportăm atât "T1 07:30-19:30" (cu spațiu) cât și "T1:07:30-19:30" (cu două puncte)
     const timeRangeMatch = s.match(
-      /(?:T\d+:)?(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+      /(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
     );
     if (timeRangeMatch) {
       const [, h1, m1, h2, m2] = timeRangeMatch;
@@ -1740,11 +1976,21 @@ export class FichajeRegularizacionService {
     }
 
     // Format "8h" sau "24h (3×8h)"
-    const hoursMatch = s.match(/(\d+)h/);
+    const hoursMatch = s.match(/(\d+(?:\.\d+)?)\s*h/i);
     if (hoursMatch) {
-      const minutes = parseInt(hoursMatch[1]) * 60;
+      const minutes = Math.round(parseFloat(hoursMatch[1]) * 60);
       this.logger.debug(
         `✅ parseScheduleToMinutes - Hours format: ${hoursMatch[1]}h = ${minutes} minutes`,
+      );
+      return minutes;
+    }
+
+    // Format număr simplu: "8", "12", "8.5" (număr de ore)
+    const numMatch = s.match(/^(\d+(?:\.\d+)?)$/);
+    if (numMatch) {
+      const minutes = Math.round(parseFloat(numMatch[1]) * 60);
+      this.logger.debug(
+        `✅ parseScheduleToMinutes - Simple number format: ${numMatch[1]} = ${minutes} minutes`,
       );
       return minutes;
     }

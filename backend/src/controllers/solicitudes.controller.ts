@@ -8,9 +8,16 @@ import {
   Logger,
   BadRequestException,
   Req,
+  UseInterceptors,
+  UploadedFiles,
+  Param,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { SolicitudesService } from '../services/solicitudes.service';
 
 @Controller('api/solicitudes')
@@ -100,6 +107,7 @@ export class SolicitudesController {
           fecha_inicio: body.fecha_inicio,
           fecha_fin: body.fecha_fin,
           ip: ip,
+          fecha_ultimo_dia_trabajo: body.fecha_ultimo_dia_trabajo,
         });
 
         return result;
@@ -136,6 +144,207 @@ export class SolicitudesController {
       }
     } catch (error: any) {
       this.logger.error('❌ Error in POST solicitud:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Creează o solicitare de despido improcedente (doar ADMIN)
+   * Suportă file upload pentru attachments
+   */
+  @Post('despido-improcedente')
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'attachments', maxCount: 10 }]),
+  )
+  async createDespidoImprocedente(
+    @CurrentUser() user: any,
+    @Body() body: any,
+    @UploadedFiles()
+    files?: {
+      attachments?: Express.Multer.File[];
+    },
+  ) {
+    try {
+      // Verifică permisiuni - doar ADMIN/Developer
+      const grupo = user?.GRUPO || user?.grupo || '';
+      const allowedGroups = ['Admin', 'Developer'];
+      if (!allowedGroups.includes(grupo)) {
+        throw new BadRequestException(
+          'Acceso restringido. Solo administradores pueden crear despidos improcedentes.',
+        );
+      }
+
+      // Validări
+      if (!body.codigo || !body.nombre || !body.fecha_efectiva) {
+        throw new BadRequestException(
+          'codigo, nombre și fecha_efectiva sunt obligatorii',
+        );
+      }
+
+      // Procesează attachments
+      const attachments =
+        files?.attachments && files.attachments.length > 0
+          ? files.attachments.map((file) => ({
+              filename: file.originalname || 'attachment',
+              content: file.buffer,
+              contentType: file.mimetype || 'application/octet-stream',
+            }))
+          : undefined;
+
+      // Obține created_by_user_id din user
+      const created_by_user_id =
+        user?.CODIGO || user?.codigo || user?.id || 'system';
+
+      this.logger.log(
+        `📝 Create despido improcedente request - codigo: ${body.codigo}, confirmar: ${body.confirmar || false}`,
+      );
+
+      const result = await this.solicitudesService.createDespidoImprocedente({
+        codigo: body.codigo,
+        nombre: body.nombre,
+        email: body.email,
+        fecha_efectiva: body.fecha_efectiva,
+        comentario_empresa: body.comentario_empresa,
+        created_by_user_id,
+        confirmar: body.confirmar === true || body.confirmar === 'true',
+        attachments,
+      });
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error creating despido improcedente:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Confirmă o solicitare de despido și trimite email către gestoria
+   */
+  @Post(':id/confirmar-gestoria')
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'attachments', maxCount: 10 }]),
+  )
+  async confirmarYNotificarGestoria(
+    @CurrentUser() user: any,
+    @Param('id') solicitudId: string,
+    @Body() body: any,
+    @UploadedFiles()
+    files?: {
+      attachments?: Express.Multer.File[];
+    },
+  ) {
+    try {
+      // Verifică permisiuni - doar ADMIN/Developer
+      const grupo = user?.GRUPO || user?.grupo || '';
+      const allowedGroups = ['Admin', 'Developer'];
+      if (!allowedGroups.includes(grupo)) {
+        throw new BadRequestException(
+          'Acceso restringido. Solo administradores pueden confirmar despidos.',
+        );
+      }
+
+      // Obține solicitarea pentru a verifica că este DESPIDO_IMPROCEDENTE
+      const solicitudes = await this.solicitudesService.getSolicitudes({
+        limit: 1000,
+      });
+      const solicitud = solicitudes.find((s) => s.id === solicitudId);
+
+      if (!solicitud) {
+        throw new BadRequestException('Solicitud no encontrada');
+      }
+
+      if (solicitud.tipo !== 'DESPIDO_IMPROCEDENTE') {
+        throw new BadRequestException(
+          'Este endpoint solo puede usarse para despidos improcedentes',
+        );
+      }
+
+      // Procesează attachments
+      const attachments =
+        files?.attachments && files.attachments.length > 0
+          ? files.attachments.map((file) => ({
+              filename: file.originalname || 'attachment',
+              content: file.buffer,
+              contentType: file.mimetype || 'application/octet-stream',
+            }))
+          : undefined;
+
+      this.logger.log(
+        `📝 Confirmar y notificar gestoria request - solicitud: ${solicitudId}`,
+      );
+
+      await this.solicitudesService.confirmarYNotificarGestoria(
+        solicitudId,
+        {
+          codigo: solicitud.codigo || '',
+          nombre: solicitud.nombre || '',
+          fecha_efectiva: body.fecha_efectiva || solicitud.fecha_inicio || '',
+          comentario_empresa: body.comentario_empresa || solicitud.motivo,
+          attachments,
+        },
+        solicitud.email,
+      );
+
+      return {
+        success: true,
+        message: 'Despido confirmado y notificación enviada a gestoria',
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error confirming despido:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generează PDF preview pentru Baja Voluntaria (fără aprobare)
+   */
+  @Get('baja-voluntaria/:id/preview-pdf')
+  async getBajaVoluntariaPreviewPdf(
+    @CurrentUser() user: any,
+    @Param('id') solicitudId: string,
+    @Res() res: Response,
+  ) {
+    try {
+      // Verifică permisiuni - doar manageri
+      const grupo = user?.GRUPO || user?.grupo || '';
+      const allowedGroups = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+      if (!allowedGroups.includes(grupo)) {
+        throw new BadRequestException(
+          'Acceso restringido. Solo managers pueden ver el preview del PDF.',
+        );
+      }
+
+      // Obține solicitarea
+      const solicitudes = await this.solicitudesService.getSolicitudes({
+        limit: 1000,
+      });
+      const solicitud = solicitudes.find((s) => s.id === solicitudId);
+
+      if (!solicitud) {
+        throw new BadRequestException('Solicitud no encontrada');
+      }
+
+      if (solicitud.tipo !== 'BAJA_VOLUNTARIA') {
+        throw new BadRequestException(
+          'Este endpoint solo puede usarse para bajas voluntarias',
+        );
+      }
+
+      // Generează PDF
+      const pdfBuffer =
+        await this.solicitudesService.generateBajaVoluntariaPreviewPDF(
+          solicitud,
+        );
+
+      // Returnează PDF ca response
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="Baja_Voluntaria_${solicitud.codigo}_preview.pdf"`,
+      );
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      this.logger.error('❌ Error generating preview PDF:', error);
       throw error;
     }
   }

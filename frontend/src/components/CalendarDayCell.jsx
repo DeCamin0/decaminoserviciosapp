@@ -47,13 +47,15 @@ const CalendarDayCell = memo(({
     let alertaFichaj = false;
     let durataMunca = '';
     
-    // LOG pentru ziua 1
-    if (cell.day === 1) {
-      console.log('🔍 [CELL DAY 1] CalendarDayCell useMemo start:', {
+    // LOG pentru ziua 1 și ziua 7
+      if (cell.day === 1 || cell.day === 7) {
+        console.log(`🔍 [CELL DAY ${cell.day}] CalendarDayCell useMemo start:`, {
         cellTip: cell.tip,
         dataZi,
         hasRegularizacion: regularizacionesConfirmadas?.get(dataZi),
-        loadingRegularizaciones
+          loadingRegularizaciones,
+          fichajesZiLength: fichajesZi.length,
+          fichajesZi: fichajesZi
       });
     }
     
@@ -138,8 +140,11 @@ const CalendarDayCell = memo(({
                      (selectedYear === currentYear && selectedMonth === currentMonth && cell.day < currentDay);
     
     // Pentru turele nocturne, regularizarea este pe workday_date (ziua de început)
-    // Verificăm regularizarea pe ziua curentă și pe ziua anterioară (pentru turele nocturne)
+    // Verificăm regularizarea pe ziua anterioară DOAR pentru turele nocturne (T2, T3)
+    // Pentru turele normale (T1), regularizarea pentru ziua anterioară NU afectează ziua curentă
     let hasRegularizacionAnterioara = false;
+    if (cell.tip === 'T2' || cell.tip === 'T3') {
+      // DOAR pentru turele nocturne verificăm regularizarea pentru ziua anterioară
     if (cell.day > 1) {
       const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth, cell.day - 1);
       hasRegularizacionAnterioara = regularizacionesConfirmadas?.get(dataZiAnterioara) === true;
@@ -148,6 +153,7 @@ const CalendarDayCell = memo(({
       const lastDayPrevMonth = new Date(selectedYear, selectedMonth - 1, 0).getDate();
       const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth - 1, lastDayPrevMonth);
       hasRegularizacionAnterioara = regularizacionesConfirmadas?.get(dataZiAnterioara) === true;
+      }
     }
     
     const hasRegularizacionFinal = hasRegularizacion || hasRegularizacionAnterioara;
@@ -263,27 +269,34 @@ const CalendarDayCell = memo(({
       // Nu așteptăm loadingRegularizaciones să devină false
       if (!hasRegularizacionFinal) {
         alertaFichaj = true;
-        if (cell.day === 1) {
-          console.log('⚠️ [CELL DAY 1] Setat alertaFichaj = true (nu este Fiesta, isPastDay, fără regularizare)');
+        if (cell.day === 1 || cell.day === 7) {
+          console.log(`⚠️ [CELL DAY ${cell.day}] Setat alertaFichaj = true:`, {
+            isFiesta,
+            isPastDay,
+            hasRegularizacionFinal,
+            hasEntradaCompleta,
+            hasSalidaCompleta,
+            entradasLength: entradas.length,
+            salidasLength: salidas.length
+          });
         }
       } else {
-        if (cell.day === 1) {
-          console.log('✅ [CELL DAY 1] Nu setat alertaFichaj (hasRegularizacionFinal = true)');
+        if (cell.day === 1 || cell.day === 7) {
+          console.log(`✅ [CELL DAY ${cell.day}] Nu setat alertaFichaj (hasRegularizacionFinal = true)`);
         }
       }
       // Dacă hasRegularizacionFinal este true (există regularizare în Map),
       // alertaFichaj rămâne false și durata se calculează din regularizare
     } else {
-      if (cell.day === 1) {
-        console.log('ℹ️ [CELL DAY 1] Nu setat alertaFichaj (condiții:', {
-          isFiesta: isFiesta,
-          cellTip: cell.tip,
-          cellPlanFuente: cell.planFuente,
-          isPastDay,
-          hasDuracionZiUrmatoare,
-          entradasLength: entradas.length,
-          salidasLength: salidas.length
-        }, ')');
+      if (cell.day === 1 || cell.day === 7) {
+        console.log(`ℹ️ [CELL DAY ${cell.day}] Nu setat alertaFichaj - Verificare condiții:`);
+        console.log(`  - isFiesta: ${isFiesta} (cell.tip=${cell.tip}, cell.planFuente=${cell.planFuente})`);
+        console.log(`  - isPastDay: ${isPastDay} (current: ${currentYear}-${currentMonth}-${currentDay}, selected: ${selectedYear}-${selectedMonth}-${cell.day})`);
+        console.log(`  - hasRegularizacionFinal: ${hasRegularizacionFinal} (hasRegularizacion: ${hasRegularizacion}, hasRegularizacionAnterioara: ${hasRegularizacionAnterioara})`);
+        console.log(`  - hasEntradaCompleta: ${hasEntradaCompleta} (entradas.length: ${entradas.length}, entradas:`, entradas, ')');
+        console.log(`  - hasSalidaCompleta: ${hasSalidaCompleta} (hasDuracionZiCurenta: ${hasDuracionZiCurenta}, hasDuracionZiUrmatoare: ${hasDuracionZiUrmatoare}, salidas.length: ${salidas.length}, salidas:`, salidas, ')');
+        console.log(`  - Condiție finală: !isFiesta=${!isFiesta} && isPastDay=${isPastDay} && !hasRegularizacionFinal=${!hasRegularizacionFinal} && (!hasEntradaCompleta || !hasSalidaCompleta)=${(!hasEntradaCompleta || !hasSalidaCompleta)}`);
+        console.log(`  - Rezultat: ${!isFiesta && isPastDay && !hasRegularizacionFinal && (!hasEntradaCompleta || !hasSalidaCompleta)}`);
       }
     }
     
@@ -449,6 +462,10 @@ const CalendarDayCell = memo(({
             durataMunca = `${ore}h ${minute}m`;
           }
         }
+        
+        // IMPORTANT: Pentru horario_multicentro, durataMunca se calculează DOAR din fichajes efective
+        // Dacă nu există fichajes, durataMunca rămâne goală și alertaFichaj va afișa "sin fichar"
+        // NU folosim orele programate din horario_multicentro pentru durataMunca
       }
     }
     

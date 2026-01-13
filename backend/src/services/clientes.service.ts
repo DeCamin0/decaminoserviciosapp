@@ -29,14 +29,37 @@ export class ClientesService {
    * Adaugă un client nou
    */
   async addCliente(data: any): Promise<{ success: true; mensaje: string }> {
+    // Normalizează NIF: trimite null dacă este gol sau undefined (pentru a permite mai multe NULL-uri cu constraint UNIQUE)
+    const nifValue = data.NIF || data.nif;
+    const nifNormalized =
+      nifValue && String(nifValue).trim() !== ''
+        ? String(nifValue).trim()
+        : null;
+
     try {
       this.logger.log(
         `📝 Adding new cliente: ${data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || 'N/A'}`,
       );
 
+      // Verificăm dacă există deja un client cu același NIF (doar dacă NIF nu este null)
+      if (nifNormalized) {
+        const existingCliente = await this.prisma.clientes.findUnique({
+          where: { NIF: nifNormalized },
+          select: { id: true, NOMBRE_O_RAZON_SOCIAL: true },
+        });
+
+        if (existingCliente) {
+          throw new BadRequestException(
+            `Ya existe un cliente con el NIF "${nifNormalized}" en la base de datos. ` +
+              `Cliente existente: "${existingCliente.NOMBRE_O_RAZON_SOCIAL || 'N/A'}" (ID: ${existingCliente.id}). ` +
+              `Por favor, usa la opción "Actualizar" en lugar de "Añadir".`,
+          );
+        }
+      }
+
       // Normalizează datele (acceptă atât câmpuri cu spații cât și cu underscore)
       const clienteData: any = {
-        NIF: data.NIF || data.nif || null,
+        NIF: nifNormalized,
         NOMBRE_O_RAZON_SOCIAL:
           data['NOMBRE O RAZON SOCIAL'] || data.NOMBRE_O_RAZON_SOCIAL || null,
         TIPO: data.TIPO || data.tipo || null,
@@ -100,13 +123,214 @@ export class ClientesService {
     } catch (error: any) {
       this.logger.error('❌ Error adding cliente:', error);
       if (error.code === 'P2002') {
-        // Unique constraint violation (probabil NIF duplicat)
-        throw new BadRequestException('El NIF ya existe en la base de datos.');
+        // Unique constraint violation
+        if (error.meta?.target?.includes('NIF')) {
+          throw new BadRequestException(
+            `El NIF "${nifNormalized || '(vacío)'}" ya existe en la base de datos. Por favor, verifica el NIF o déjalo vacío.`,
+          );
+        }
+        throw new BadRequestException(
+          `Ya existe un cliente con estos datos únicos en la base de datos.`,
+        );
       }
       throw new BadRequestException(
         `Error al añadir cliente: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Caută client după nume (potrivire flexibilă)
+   * Similar cu findEmpleadoFlexible din GestoriaService
+   */
+  async findClienteFlexible(nombreDetectado: string): Promise<{
+    id: number;
+    NOMBRE_O_RAZON_SOCIAL: string;
+    confianza: number;
+    matchType: string;
+  } | null> {
+    const nombreNormalized = nombreDetectado.trim().toUpperCase();
+    this.logger.log(
+      `🔍 [findClienteFlexible] Căutăm client: "${nombreDetectado}" -> normalizat: "${nombreNormalized}"`,
+    );
+
+    // 1. Potrivire exactă după nume complet
+    let clienteQuery = `
+      SELECT id, \`NOMBRE O RAZON SOCIAL\` AS NOMBRE_O_RAZON_SOCIAL
+      FROM Clientes
+      WHERE TRIM(UPPER(\`NOMBRE O RAZON SOCIAL\`)) = ${this.escapeSql(nombreNormalized)}
+      LIMIT 1
+    `;
+    let cliente =
+      await this.prisma.$queryRawUnsafe<
+        Array<{ id: number; NOMBRE_O_RAZON_SOCIAL: string }>
+      >(clienteQuery);
+
+    if (cliente.length > 0) {
+      this.logger.log(
+        `✅ [findClienteFlexible] Cliente găsit (potrivire exactă): "${cliente[0].NOMBRE_O_RAZON_SOCIAL}" (ID: ${cliente[0].id})`,
+      );
+      return { ...cliente[0], confianza: 100, matchType: 'exacta' };
+    }
+    this.logger.log(
+      `⚠️ [findClienteFlexible] Nu s-a găsit potrivire exactă pentru: "${nombreNormalized}"`,
+    );
+
+    // 2. Potrivire parțială (LIKE) - primele 10 caractere
+    if (nombreNormalized.length >= 10) {
+      const primerosCaracteres = nombreNormalized.substring(0, 10);
+      clienteQuery = `
+        SELECT id, \`NOMBRE O RAZON SOCIAL\` AS NOMBRE_O_RAZON_SOCIAL
+        FROM Clientes
+        WHERE TRIM(UPPER(\`NOMBRE O RAZON SOCIAL\`)) LIKE ${this.escapeSql(`${primerosCaracteres}%`)}
+        LIMIT 5
+      `;
+      cliente =
+        await this.prisma.$queryRawUnsafe<
+          Array<{ id: number; NOMBRE_O_RAZON_SOCIAL: string }>
+        >(clienteQuery);
+
+      if (cliente.length > 0) {
+        // Căutăm cea mai bună potrivire
+        const mejorMatch = cliente.find((c) => {
+          const nombreBd = c.NOMBRE_O_RAZON_SOCIAL?.trim().toUpperCase() || '';
+          return (
+            nombreBd.startsWith(nombreNormalized) ||
+            nombreNormalized.startsWith(
+              nombreBd.substring(0, nombreNormalized.length),
+            )
+          );
+        });
+
+        if (mejorMatch) {
+          const nombreBd =
+            mejorMatch.NOMBRE_O_RAZON_SOCIAL?.trim().toUpperCase() || '';
+          const similarity = this.calculateSimilarity(
+            nombreNormalized,
+            nombreBd,
+          );
+          this.logger.debug(
+            `✅ Cliente găsit (potrivire parțială): ${mejorMatch.NOMBRE_O_RAZON_SOCIAL} (${similarity}%)`,
+          );
+          return {
+            ...mejorMatch,
+            confianza: Math.round(similarity),
+            matchType: 'parcial',
+          };
+        }
+
+        // Dacă nu găsim o potrivire perfectă, luăm primul cu similaritate > 70%
+        this.logger.log(
+          `🔍 [findClienteFlexible] Verificăm ${cliente.length} clienți găsiți cu LIKE pentru similaritate...`,
+        );
+        for (const c of cliente) {
+          const nombreBd = c.NOMBRE_O_RAZON_SOCIAL?.trim().toUpperCase() || '';
+          const similarity = this.calculateSimilarity(
+            nombreNormalized,
+            nombreBd,
+          );
+          this.logger.log(
+            `  - "${c.NOMBRE_O_RAZON_SOCIAL}" -> similaritate: ${similarity}%`,
+          );
+          if (similarity >= 70) {
+            this.logger.log(
+              `✅ [findClienteFlexible] Cliente găsit (similaritate ${similarity}%): "${c.NOMBRE_O_RAZON_SOCIAL}" (ID: ${c.id})`,
+            );
+            return {
+              ...c,
+              confianza: Math.round(similarity),
+              matchType: 'similar',
+            };
+          }
+        }
+        this.logger.log(
+          `⚠️ [findClienteFlexible] Niciun client cu similaritate >= 70% din ${cliente.length} găsiți`,
+        );
+      }
+    }
+
+    // 3. Potrivire cu LIKE %nombre%
+    this.logger.log(
+      `🔍 [findClienteFlexible] Încercăm potrivire cu LIKE %nombre% pentru: "${nombreNormalized}"`,
+    );
+    clienteQuery = `
+      SELECT id, \`NOMBRE O RAZON SOCIAL\` AS NOMBRE_O_RAZON_SOCIAL
+      FROM Clientes
+      WHERE TRIM(UPPER(\`NOMBRE O RAZON SOCIAL\`)) LIKE ${this.escapeSql(`%${nombreNormalized}%`)}
+      LIMIT 10
+    `;
+    cliente =
+      await this.prisma.$queryRawUnsafe<
+        Array<{ id: number; NOMBRE_O_RAZON_SOCIAL: string }>
+      >(clienteQuery);
+
+    if (cliente.length > 0) {
+      this.logger.log(
+        `🔍 [findClienteFlexible] Găsiți ${cliente.length} clienți cu LIKE %nombre%, verificăm similaritatea...`,
+      );
+      // Căutăm cea mai bună potrivire după similaritate
+      let mejorMatch: { cliente: any; similarity: number } | null = null;
+
+      for (const c of cliente) {
+        const nombreBd = c.NOMBRE_O_RAZON_SOCIAL?.trim().toUpperCase() || '';
+        const similarity = this.calculateSimilarity(nombreNormalized, nombreBd);
+        this.logger.log(
+          `  - "${c.NOMBRE_O_RAZON_SOCIAL}" -> similaritate: ${similarity}%`,
+        );
+        if (!mejorMatch || similarity > mejorMatch.similarity) {
+          mejorMatch = { cliente: c, similarity };
+        }
+      }
+
+      if (mejorMatch && mejorMatch.similarity >= 60) {
+        this.logger.log(
+          `✅ [findClienteFlexible] Cliente găsit (similaritate ${mejorMatch.similarity}%): "${mejorMatch.cliente.NOMBRE_O_RAZON_SOCIAL}" (ID: ${mejorMatch.cliente.id})`,
+        );
+        return {
+          ...mejorMatch.cliente,
+          confianza: Math.round(mejorMatch.similarity),
+          matchType: 'similar',
+        };
+      }
+      this.logger.log(
+        `⚠️ [findClienteFlexible] Cea mai bună similaritate: ${mejorMatch?.similarity || 0}% (necesar >= 60%)`,
+      );
+    } else {
+      this.logger.log(
+        `⚠️ [findClienteFlexible] Nu s-au găsit clienți cu LIKE %nombre% pentru: "${nombreNormalized}"`,
+      );
+    }
+
+    this.logger.warn(
+      `❌ [findClienteFlexible] Cliente NU a fost găsit pentru: "${nombreDetectado}" (normalizat: "${nombreNormalized}")`,
+    );
+    return null;
+  }
+
+  /**
+   * Calculează similaritatea între două string-uri (Levenshtein-based)
+   */
+  private calculateSimilarity(str1: string, str2: string): number {
+    if (str1 === str2) return 100;
+    if (!str1 || !str2) return 0;
+
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+
+    if (longer.length === 0) return 100;
+
+    // Simplificat: verificăm câte caractere comune sunt
+    let commonChars = 0;
+    const shorterSet = new Set(shorter.split(''));
+    for (const char of longer.split('')) {
+      if (shorterSet.has(char)) {
+        commonChars++;
+      }
+    }
+
+    // Calculăm procentul de caractere comune
+    const similarity = (commonChars / longer.length) * 100;
+    return Math.min(similarity, 100);
   }
 
   /**

@@ -407,7 +407,8 @@ export class EmpleadosService {
         \`Fecha Antigüedad\`,
         \`Antigüedad\`,
         \`DerechoPedidos\`,
-        \`TrabajaFestivos\`
+        \`TrabajaFestivos\`,
+        certificado_handicap_confirmado
       FROM DatosEmpleados
       ORDER BY \`NOMBRE / APELLIDOS\` ASC
     `;

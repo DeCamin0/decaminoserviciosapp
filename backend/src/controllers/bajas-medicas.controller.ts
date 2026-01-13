@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { BajasMedicasService } from '../services/bajas-medicas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('api/bajas-medicas')
 @UseGuards(JwtAuthGuard)
@@ -118,6 +119,47 @@ export class BajasMedicasController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error creating manual baja médica:', error);
+      throw error;
+    }
+  }
+
+  @Post('empleado')
+  async createEmpleadoBaja(@CurrentUser() user: any, @Body() body: any) {
+    try {
+      // Obține codigoEmpleado din token-ul JWT
+      // JwtStrategy.validate() returnează { email, userId, role, grupo }
+      // userId este CODIGO-ul angajatului
+      const codigoEmpleado =
+        user?.userId || user?.CODIGO || user?.codigo || user?.id;
+      if (!codigoEmpleado) {
+        this.logger.error(
+          `❌ [createEmpleadoBaja] No se pudo obtener codigoEmpleado del token. User object: ${JSON.stringify(user)}`,
+        );
+        throw new BadRequestException(
+          'No se pudo obtener el código de empleado del token',
+        );
+      }
+
+      const { fechaBaja, fechaAlta, tipo, recaida } = body || {};
+
+      if (!fechaBaja || String(fechaBaja).trim() === '') {
+        throw new BadRequestException('fechaBaja es obligatoria (YYYY-MM-DD)');
+      }
+
+      const result = await this.bajasMedicasService.createEmpleadoBaja({
+        codigoEmpleado: String(codigoEmpleado).trim(),
+        fechaBaja: String(fechaBaja).trim(),
+        fechaAlta: fechaAlta ? String(fechaAlta).trim() : undefined,
+        tipo: tipo ? String(tipo).trim() : undefined,
+        recaida: recaida !== undefined ? Boolean(recaida) : undefined,
+      });
+
+      return {
+        success: true,
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error creating empleado baja médica:', error);
       throw error;
     }
   }

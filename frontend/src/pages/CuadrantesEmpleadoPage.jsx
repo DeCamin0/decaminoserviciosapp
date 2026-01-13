@@ -256,6 +256,12 @@ export default function CuadrantesEmpleadoPage() {
   // State pentru orarul asignat
   const [horarioAsignado, setHorarioAsignado] = useState(null);
   
+  // State pentru horario_multicentro asignat (toate înregistrările pentru luna selectată)
+  const [horarioMulticentroAsignado, setHorarioMulticentroAsignado] = useState(null);
+  const [horariosMulticentroLista, setHorariosMulticentroLista] = useState([]); // Toate horarios_multicentro pentru luna selectată
+  const [loadingHorarioMulticentro, setLoadingHorarioMulticentro] = useState(false);
+  const lastHorarioMulticentroFetchRef = useRef({ codigo: null, month: null });
+  
   // State pentru datele complete ale utilizatorului
   const [userData, setUserData] = useState(null);
   const lastBajasRequestKey = useRef('');
@@ -830,6 +836,152 @@ export default function CuadrantesEmpleadoPage() {
     }
   }, [authUser?.isDemo, centroUsuario, grupoUsuario, fetchHorarioAsignado]);
 
+  // Funcție pentru a încărca horario_multicentro asignat
+  const fetchHorarioMulticentroAsignado = useCallback(async () => {
+    if (authUser?.isDemo) {
+      setHorarioMulticentroAsignado(null);
+      return;
+    }
+
+    const codigoParaHorario = authUser?.CODIGO || authUser?.codigo || userData?.['CODIGO'] || '';
+    const emailParaHorario = authUser?.email || authUser?.EMAIL || authUser?.['CORREO ELECTRONICO'] || userData?.['CORREO ELECTRONICO'] || emailLogat || '';
+    
+    // Dacă nu avem nici codigo, nici email, nu putem căuta
+    if (!codigoParaHorario && !emailParaHorario) {
+      setHorarioMulticentroAsignado(null);
+      return;
+    }
+
+    // Găsește horario_multicentro pentru luna selectată
+    const selectedLunaNorm = typeof selectedLuna === 'number' 
+      ? excelDateToYYYYMM(selectedLuna)
+      : (typeof selectedLuna === 'string' 
+        ? (() => {
+            const [year, month] = selectedLuna.split('-');
+            return year && month ? `${year}-${month.padStart(2, '0')}` : selectedLuna;
+          })()
+        : (() => {
+            const currentDate = new Date();
+            return `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+          })());
+    
+    // Previne re-apelurile inutile dacă codigo/email și luna nu s-au schimbat
+    const identificatorActual = codigoParaHorario || emailParaHorario;
+    if (lastHorarioMulticentroFetchRef.current.codigo === identificatorActual && 
+        lastHorarioMulticentroFetchRef.current.month === selectedLunaNorm &&
+        !loadingHorarioMulticentro) {
+      return;
+    }
+    
+    lastHorarioMulticentroFetchRef.current = { codigo: identificatorActual, month: selectedLunaNorm };
+    
+    setLoadingHorarioMulticentro(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      // Construiește URL-ul cu codigo sau email
+      let url = `${routes.baseUrl}/api/horarios/multicentro?mes=${selectedLunaNorm}`;
+      if (codigoParaHorario) {
+        url += `&codigo=${encodeURIComponent(codigoParaHorario)}`;
+      } else if (emailParaHorario) {
+        url += `&email=${encodeURIComponent(emailParaHorario)}`;
+      }
+      
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: headers,
+      });
+
+      if (!res.ok) {
+        setHorarioMulticentroAsignado(null);
+        return;
+      }
+
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        setHorarioMulticentroAsignado(null);
+        return;
+      }
+
+      const data = await res.json();
+      const lista = Array.isArray(data.horarios) ? data.horarios : [];
+      
+      if (lista.length > 0) {
+        // Filtrează toate horarios_multicentro pentru luna selectată
+        const horariosForMonth = lista.filter(horario => {
+          const horarioLuna = horario.LUNA || horario.luna;
+          const horarioLunaNorm = typeof horarioLuna === 'number' 
+            ? excelDateToYYYYMM(horarioLuna)
+            : (typeof horarioLuna === 'string' 
+              ? (() => {
+                  const [year, month] = horarioLuna.split('-');
+                  return year && month ? `${year}-${month.padStart(2, '0')}` : horarioLuna;
+                })()
+              : '');
+          return horarioLunaNorm === selectedLunaNorm;
+        });
+        
+        if (horariosForMonth.length > 0) {
+          // Stochează toate horarios_multicentro pentru luna selectată
+          setHorariosMulticentroLista(horariosForMonth);
+          
+          // Găsește horario_multicentro care are orar pentru ziua curentă (dacă este luna curentă)
+          const currentDate = new Date();
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth() + 1;
+          const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+          
+          let horarioForCurrentDay = null;
+          if (selectedLunaNorm === currentMonthFormatted) {
+            const today = new Date().getDate();
+            const dayKey = `ZI_${today}`;
+            
+            // Găsește primul horario_multicentro care are orar pentru ziua curentă (nu LIBRE)
+            horarioForCurrentDay = horariosForMonth.find(horario => {
+              const daySchedule = horario[dayKey] || horario[dayKey.toLowerCase()] || horario[dayKey.toUpperCase()];
+              if (daySchedule) {
+                const trimmed = String(daySchedule).trim();
+                return trimmed !== '' && trimmed !== 'LIBRE' && trimmed !== '0' && trimmed !== '0h';
+              }
+              return false;
+            });
+          }
+          
+          // Folosește horario-ul pentru ziua curentă dacă există, altfel folosește primul din listă
+          setHorarioMulticentroAsignado(horarioForCurrentDay || horariosForMonth[0]);
+        } else {
+          setHorariosMulticentroLista([]);
+          setHorarioMulticentroAsignado(null);
+        }
+      } else {
+        setHorariosMulticentroLista([]);
+        setHorarioMulticentroAsignado(null);
+      }
+    } catch (error) {
+      console.error('Eroare la încărcarea horario_multicentro asignat:', error);
+      setHorarioMulticentroAsignado(null);
+    } finally {
+      setLoadingHorarioMulticentro(false);
+    }
+  }, [authUser, userData, selectedLuna, loadingHorarioMulticentro]);
+
+  // Încarcă horario_multicentro când se schimbă utilizatorul sau luna selectată
+  useEffect(() => {
+    if (authUser?.isDemo) return;
+    
+    const codigoParaHorario = authUser?.CODIGO || authUser?.codigo || userData?.['CODIGO'] || '';
+    const emailParaHorario = authUser?.email || authUser?.EMAIL || authUser?.['CORREO ELECTRONICO'] || userData?.['CORREO ELECTRONICO'] || emailLogat || '';
+    
+    // Dacă avem codigo sau email și luna selectată, încărcăm horario_multicentro
+    if (authUser && selectedLuna && (codigoParaHorario || emailParaHorario)) {
+      fetchHorarioMulticentroAsignado();
+    }
+  }, [authUser, userData, selectedLuna, emailLogat, fetchHorarioMulticentroAsignado]);
+
   // Fetch fichajes pentru angajatul curent
 
   useEffect(() => {
@@ -849,8 +1001,8 @@ export default function CuadrantesEmpleadoPage() {
 
 
     async function fetchFichajes() {
-
-      if (!codigoEmpleado || !selectedLuna) return;
+      const codigoParaFichajes = codigoEmpleado || authUser?.CODIGO || authUser?.codigo || userData?.['CODIGO'] || '';
+      if (!codigoParaFichajes || !selectedLuna) return;
 
       setLoadingFichajes(true);
 
@@ -888,7 +1040,7 @@ export default function CuadrantesEmpleadoPage() {
         const fichajesEndpoint = routes.getRegistros;
         // Backend-ul folosește CODIGO și MES (cu majuscule)
         const separator = fichajesEndpoint.includes('?') ? '&' : '?';
-        const fichajesUrl = `${fichajesEndpoint}${separator}CODIGO=${encodeURIComponent(codigoEmpleado)}&MES=${encodeURIComponent(selectedLunaNorm)}`;
+        const fichajesUrl = `${fichajesEndpoint}${separator}CODIGO=${encodeURIComponent(codigoParaFichajes)}&MES=${encodeURIComponent(selectedLunaNorm)}`;
         
         const token = localStorage.getItem('auth_token');
         const fetchHeaders = {};
@@ -1398,6 +1550,86 @@ export default function CuadrantesEmpleadoPage() {
 
   const luniDisponibileRaw = [...new Set([...luniDinCuadrantes, ...luniCurente])];
 
+  // Găsește horario_multicentro pentru ziua curentă și calculează orarul
+  const currentDayHorarioMulticentro = useMemo(() => {
+    if (!horariosMulticentroLista || horariosMulticentroLista.length === 0) return null;
+    
+    // Verifică dacă este luna curentă
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    
+    if (selectedLunaNorm !== currentMonthFormatted) {
+      return null;
+    }
+    
+    const today = new Date().getDate();
+    const dayKey = `ZI_${today}`;
+    
+    // Găsește horario_multicentro care are orar pentru ziua curentă
+    const horarioForToday = horariosMulticentroLista.find(horario => {
+      const daySchedule = horario[dayKey] || horario[dayKey.toLowerCase()] || horario[dayKey.toUpperCase()];
+      if (daySchedule) {
+        const trimmed = String(daySchedule).trim();
+        return trimmed !== '' && trimmed !== 'LIBRE' && trimmed !== '0' && trimmed !== '0h';
+      }
+      return false;
+    });
+    
+    return horarioForToday || null;
+  }, [horariosMulticentroLista, selectedLunaNorm]);
+  
+  // Calculează orarul zilei curente din horario_multicentro pentru ziua curentă
+  const currentDayScheduleFromHorarioMulticentro = useMemo(() => {
+    if (!currentDayHorarioMulticentro) return null;
+    
+    const today = new Date().getDate();
+    const dayKey = `ZI_${today}`;
+    const daySchedule = currentDayHorarioMulticentro[dayKey] || currentDayHorarioMulticentro[dayKey.toLowerCase()] || currentDayHorarioMulticentro[dayKey.toUpperCase()];
+    
+    if (!daySchedule) {
+      return null;
+    }
+    
+    const dayScheduleStr = String(daySchedule).trim();
+    
+    // Verifică dacă este LIBRE sau goală
+    if (dayScheduleStr === '' || dayScheduleStr.toUpperCase() === 'LIBRE' || dayScheduleStr === '0' || dayScheduleStr === '0h') {
+      return null;
+    }
+    
+    // Verifică dacă este un format cu timp (ex: "08:00-17:00" sau "T1 08:00-17:00")
+    if (dayScheduleStr.includes('-') && dayScheduleStr.match(/\d{1,2}:\d{2}/)) {
+      const match = dayScheduleStr.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+      if (match) {
+        return `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
+      }
+      // Dacă nu găsește match complet, returnează valoarea originală fără prefix T1/T2/T3
+      const cleaned = dayScheduleStr.replace(/^T[123]\s*/, '').trim();
+      if (cleaned && cleaned !== dayScheduleStr) {
+        return cleaned;
+      }
+      return dayScheduleStr;
+    }
+    
+    // Verifică dacă este un număr (ore)
+    if (!isNaN(parseFloat(dayScheduleStr))) {
+      const hours = parseFloat(dayScheduleStr);
+      return `${hours}h`;
+    }
+    
+    // Pentru orice alt format (ex: "TURNO DIA", "T1", etc.), returnează ca atare
+    // dar doar dacă nu este "LIBRE" sau goală
+    if (dayScheduleStr && dayScheduleStr.length > 0) {
+      // Dacă începe cu T1/T2/T3, returnează fără prefix
+      const cleaned = dayScheduleStr.replace(/^T[123]\s*/, '').trim();
+      return cleaned || dayScheduleStr;
+    }
+    
+    return null;
+  }, [currentDayHorarioMulticentro]);
+
   
 
   // Filtrez doar luniile relevante: ultimele 3 luni din anul anterior + toate lunile din anul curent
@@ -1715,6 +1947,9 @@ const getFirstValue = (record, keys) => {
       let motivoAusencia = '';
 
       let bajaCalendar = null;
+      
+      // Pentru horario_multicentro, adăugăm informația despre orele programate (ZI_X) pentru această zi
+      let horarioMulticentroHours = null;
 
 
 
@@ -1908,14 +2143,11 @@ const getFirstValue = (record, keys) => {
         continue; // Sărim peste restul logicii pentru această zi
       } else if (cuadrant) {
 
-        // Folosește cuadrante dacă nu există absențe
-
+        // Folosește cuadrante dacă nu există absențe - PRIORITATE ABSOLUTĂ
 
         const ziKey = `ZI_${day}`;
 
         const tipZi = cuadrant[ziKey] || cuadrant[`zi_${day}`];
-
-        
 
         if (tipZi) {
           const tipZiStr = String(tipZi).trim();
@@ -1979,9 +2211,166 @@ const getFirstValue = (record, keys) => {
             }
           }
         } else {
-          // Dacă nu există valoare pentru această zi, rămâne LIBRE (valoarea default)
+          // Dacă cuadrant există dar nu are valoare pentru această zi, rămâne LIBRE (valoarea default)
           tip = 'LIBRE';
           orar = '';
+        }
+
+      } else if (horariosMulticentroLista && horariosMulticentroLista.length > 0) {
+        // Folosește horario_multicentro DOAR dacă nu există cuadrant pentru luna respectivă
+        // Pentru fiecare zi, verifică toate horario_multicentro pentru acea zi specifică
+        const ziKey = `ZI_${day}`;
+        
+        // Pentru horario_multicentro, verificăm dacă există VREUN horario în listă pentru luna respectivă
+        // Dacă există horariosMulticentroLista, înseamnă că angajatul are horario_multicentro pentru luna respectivă
+        // Pentru fiecare zi, trebuie să verificăm ce valoare are în horario_multicentro
+        
+        // Găsește toate horario_multicentro care au o valoare (chiar și null/undefined/LIBRE) pentru această zi
+        // IMPORTANT: Pentru horario_multicentro, dacă există orice horario în listă, verificăm valoarea pentru acea zi
+        let horarioForDay = null;
+        let hasHorarioMulticentroForDay = false; // Flag pentru a ști dacă există vreun horario_multicentro care acoperă această zi
+        
+        for (const horario of horariosMulticentroLista) {
+          // Verifică toate variantele de caz (uppercase, lowercase, mixed)
+          const daySchedule = horario[ziKey] ?? horario[ziKey.toLowerCase()] ?? horario[ziKey.toUpperCase()] ?? null;
+          
+          // IMPORTANT: Dacă horario_multicentro există pentru luna respectivă, înseamnă că acoperă TOATE zilele lunii
+          // Chiar dacă pentru o zi specifică, ZI_X este null/undefined/LIBRE/gol/0/0h, înseamnă că acea zi este LIBRE din horario_multicentro
+          // Setăm hasHorarioMulticentroForDay = true pentru TOATE zilele, pentru că horario_multicentro acoperă întreaga lună
+          hasHorarioMulticentroForDay = true;
+          
+          // Găsește primul horario care are o valoare REALĂ (nu LIBRE/gol/0/0h/null) pentru această zi
+          if (daySchedule !== null && daySchedule !== undefined) {
+            const dayScheduleStr = String(daySchedule).trim();
+            if (dayScheduleStr !== '' && dayScheduleStr.toUpperCase() !== 'LIBRE' && dayScheduleStr !== '0' && dayScheduleStr !== '0h') {
+              horarioForDay = horario;
+              break; // Folosim primul horario găsit care nu este LIBRE
+            }
+          }
+        }
+        
+        // Dacă există cel puțin un horario_multicentro care acoperă această zi
+        if (hasHorarioMulticentroForDay) {
+          // Dacă găsim un horario cu orar real (nu LIBRE)
+          if (horarioForDay) {
+            const daySchedule = horarioForDay[ziKey] || horarioForDay[ziKey.toLowerCase()] || horarioForDay[ziKey.toUpperCase()];
+            const dayScheduleStr = String(daySchedule || '').trim();
+            
+            // Calculăm orele programate pentru horarioMulticentroHours (folosit mai târziu în CalendarDayCell)
+            if (!isNaN(parseFloat(dayScheduleStr)) && isFinite(dayScheduleStr)) {
+              horarioMulticentroHours = parseFloat(dayScheduleStr);
+            }
+            
+            // Verifică formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
+            if (dayScheduleStr.startsWith('T1') || dayScheduleStr.startsWith('T2') || dayScheduleStr.startsWith('T3')) {
+              if (planFuente === 'fiesta') {
+                tip = 'Fiesta';
+                orar = '';
+              } else {
+                // Extrage tipul (T1, T2, T3)
+                const turnMatch = dayScheduleStr.match(/^(T[123])\s*(.*)$/);
+                if (turnMatch) {
+                  tip = turnMatch[1]; // T1, T2 sau T3
+                  orar = turnMatch[2] || ''; // Orarul fără prefix
+                } else {
+                  tip = dayScheduleStr.startsWith('T1') ? 'T1' : dayScheduleStr.startsWith('T2') ? 'T2' : 'T3';
+                  orar = dayScheduleStr.replace(/^T[123]\s*/, '');
+                }
+              }
+            }
+            // Verifică dacă este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
+            else if (dayScheduleStr.match(/^\d{1,2}:\d{2}/)) {
+              if (planFuente === 'fiesta') {
+                tip = 'Fiesta';
+                orar = '';
+              } else {
+                tip = 'T1';
+                orar = dayScheduleStr;
+              }
+            }
+            // Dacă este un număr (ore), afișăm doar numărul de ore (ex: "8h")
+            else if (!isNaN(parseFloat(dayScheduleStr)) && isFinite(dayScheduleStr)) {
+              if (planFuente === 'fiesta') {
+                tip = 'Fiesta';
+                orar = '';
+              } else {
+                const hours = parseFloat(dayScheduleStr);
+                if (hours > 0) {
+                  tip = 'T1';
+                  // Pentru horario_multicentro, afișăm doar numărul de ore (ex: "8h" sau "12h")
+                  orar = `${hours}h`;
+                } else {
+                  tip = 'LIBRE';
+                  orar = '';
+                }
+              }
+            }
+            // Altfel, setează ca LIBRE sau Fiesta
+            else {
+              if (planFuente === 'fiesta') {
+                tip = 'Fiesta';
+                orar = '';
+              } else {
+                tip = 'LIBRE';
+                orar = '';
+              }
+            }
+          } else {
+            // Nu s-a găsit un horario cu orar real pentru această zi, dar există horario_multicentro care acoperă această zi
+            // Înseamnă că toate horario_multicentro pentru această zi sunt LIBRE/gol/0/0h/null
+            // Setăm explicit LIBRE (nu verificăm horarioAsignado!)
+            if (planFuente === 'fiesta') {
+              tip = 'Fiesta';
+              orar = '';
+            } else {
+              tip = 'LIBRE';
+              orar = '';
+            }
+          }
+        } else {
+          // Dacă nu există horario_multicentro pentru această zi, verifică horario normal
+          if (horarioAsignado) {
+            const dayOfWeek = new Date(year, month - 1, day).getDay();
+            const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][dayOfWeek];
+            const daySchedule = horarioAsignado.days?.[dayKey];
+            
+            if (daySchedule) {
+              const intervals = [];
+              if (daySchedule.in1 && daySchedule.out1) intervals.push({in: daySchedule.in1, out: daySchedule.out1});
+              if (daySchedule.in2 && daySchedule.out2) intervals.push({in: daySchedule.in2, out: daySchedule.out2});
+              if (daySchedule.in3 && daySchedule.out3) intervals.push({in: daySchedule.in3, out: daySchedule.out3});
+              
+              if (intervals.length > 0) {
+                if (planFuente !== 'fiesta') {
+                  tip = 'T1';
+                  orar = intervals.map(interval => `${interval.in}-${interval.out}`).join(', ');
+                } else {
+                  tip = 'Fiesta';
+                  orar = '';
+                }
+              } else {
+                tip = planFuente === 'fiesta' ? 'Fiesta' : 'LIBRE';
+                orar = '';
+              }
+            } else {
+              tip = planFuente === 'fiesta' ? 'Fiesta' : 'LIBRE';
+              orar = '';
+            }
+          } else {
+            // Default pentru lunile fără cuadrante și fără horario_multicentro: Luni-Vineri = T1, Sâmbătă-Duminică = LIBRE
+            if (planFuente === 'fiesta') {
+              tip = 'Fiesta';
+              orar = '';
+            } else {
+              const dayOfWeek = new Date(year, month - 1, day).getDay();
+              if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                tip = 'T1';
+                orar = '08:00-17:00';
+              } else {
+                tip = 'LIBRE';
+              }
+            }
+          }
         }
 
       } else {
@@ -2099,7 +2488,10 @@ const getFirstValue = (record, keys) => {
 
         bajaCalendar,
 
-        planFuente // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
+        planFuente, // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
+        
+        // Adăugăm informația despre orele programate din horario_multicentro pentru această zi
+        horarioMulticentroHours
 
       });
 
@@ -2119,6 +2511,7 @@ const getFirstValue = (record, keys) => {
     ausencias,
     bajasCalendar,
     horarioAsignado,
+    horariosMulticentroLista,
     planFuenteMap,
     detaliiZilnice
   ]);
@@ -2681,7 +3074,7 @@ const getFirstValue = (record, keys) => {
 
                 )}
 
-                {/* Afișează informațiile despre ce s-a găsit - cuadrant sau orar */}
+                {/* Afișează informațiile despre ce s-a găsit - cuadrant, horario_multicentro sau horario normal */}
                 {cuadrant ? (
                   <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <p className="text-green-800 text-sm font-medium">
@@ -2695,6 +3088,75 @@ const getFirstValue = (record, keys) => {
                     </p>
                     <p className="text-green-600 text-xs mt-1">
                       Fuente: Cuadrante generado
+                    </p>
+                  </div>
+                ) : horarioMulticentroAsignado ? (
+                  <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <p className="text-purple-800 text-sm font-medium">
+                      <span className="text-purple-600">🏢</span> Horario Multicentro asignado: {selectedLunaNorm}
+                    </p>
+                    {(() => {
+                      // Verifică dacă horario_multicentro este pentru luna curentă
+                      const currentDate = new Date();
+                      const currentYear = currentDate.getFullYear();
+                      const currentMonth = currentDate.getMonth() + 1;
+                      const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+                      
+                      const isCurrentMonth = selectedLunaNorm === currentMonthFormatted;
+                      
+                      // Dacă este luna curentă, verifică dacă există orar pentru ziua curentă
+                      if (isCurrentMonth) {
+                        // Dacă există horario pentru ziua curentă, afișează informațiile pentru acel horario
+                        if (currentDayHorarioMulticentro) {
+                          return (
+                            <>
+                              <p className="text-purple-700 text-xs mt-1">
+                                Cliente: <strong>{currentDayHorarioMulticentro.CLIENTE || 'N/A'}</strong>
+                              </p>
+                              <p className="text-purple-700 text-xs mt-1">
+                                Horario: <strong>{currentDayHorarioMulticentro.HORARIO || 'N/A'}</strong> | Servicio: {currentDayHorarioMulticentro.SERVICIO || 'N/A'}
+                              </p>
+                              {currentDayScheduleFromHorarioMulticentro ? (
+                                <div className="mt-2 pt-2 border-t border-purple-300">
+                                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-purple-800 rounded-md">
+                                    <span className="text-xs">📅 Hoy:</span>
+                                    <span className="text-xs font-semibold">{currentDayScheduleFromHorarioMulticentro}</span>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </>
+                          );
+                        } 
+                        // Dacă nu există orar pentru ziua curentă, afișează mesajul de avertisment la CLIENTE și HORARIO
+                        else {
+                          return (
+                            <>
+                              <p className="text-purple-700 text-xs mt-1">
+                                Cliente: <span className="text-yellow-700 font-semibold">⚠️ No tienes horario asignado para hoy</span>
+                              </p>
+                              <p className="text-purple-700 text-xs mt-1">
+                                Horario: <span className="text-yellow-700 font-semibold">⚠️ No tienes horario asignado para hoy</span>
+                              </p>
+                            </>
+                          );
+                        }
+                      }
+                      // Dacă nu este luna curentă, afișează primul horario din listă
+                      else {
+                        return (
+                          <>
+                            <p className="text-purple-700 text-xs mt-1">
+                              Cliente: {horarioMulticentroAsignado.CLIENTE || 'N/A'}
+                            </p>
+                            <p className="text-purple-700 text-xs mt-1">
+                              Horario: {horarioMulticentroAsignado.HORARIO || 'N/A'} | Servicio: {horarioMulticentroAsignado.SERVICIO || 'N/A'}
+                            </p>
+                          </>
+                        );
+                      }
+                    })()}
+                    <p className="text-purple-600 text-xs mt-1">
+                      Fuente: Horario Multicentro
                     </p>
                   </div>
                 ) : horarioAsignado ? (
@@ -3653,6 +4115,8 @@ const getFirstValue = (record, keys) => {
                     loadingRegularizaciones={loadingRegularizaciones}
 
                     fichajes={fichajes}
+
+                    horariosMulticentroLista={horariosMulticentroLista}
 
                   />
 

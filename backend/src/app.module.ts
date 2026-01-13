@@ -77,6 +77,8 @@ import { SentEmailsService } from './services/sent-emails.service';
 import { ScheduledMessagesController } from './controllers/scheduled-messages.controller';
 import { ScheduledMessagesService } from './services/scheduled-messages.service';
 import { ScheduledMessagesCronService } from './services/scheduled-messages-cron.service';
+import { DespidoAutomationCronService } from './services/despido-automation-cron.service';
+import { BajaVoluntariaPdfService } from './services/baja-voluntaria-pdf.service';
 import { GestoriaController } from './controllers/gestoria.controller';
 import { GestoriaService } from './services/gestoria.service';
 import { VacacionesModule } from './vacaciones/vacaciones.module';
@@ -179,6 +181,8 @@ import { HallOfFameService } from './services/hall-of-fame.service';
     ScheduledMessagesCronService,
     GestoriaService,
     MonitoringService,
+    DespidoAutomationCronService,
+    BajaVoluntariaPdfService,
   ],
 })
 export class AppModule {}

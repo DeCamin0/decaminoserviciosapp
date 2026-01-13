@@ -29,11 +29,16 @@ export class NominasController {
   constructor(private readonly nominasService: NominasService) {}
 
   @Get()
-  async getNominas(@Query('nombre') nombre?: string) {
+  async getNominas(
+    @Query('nombre') nombre?: string,
+    @Query('codigo') codigo?: string,
+  ) {
     try {
-      this.logger.log(`📝 Get nominas request - nombre: ${nombre || 'all'}`);
+      this.logger.log(
+        `📝 Get nominas request - nombre: ${nombre || 'all'}, codigo: ${codigo || 'none'}`,
+      );
 
-      const nominas = await this.nominasService.getNominas(nombre);
+      const nominas = await this.nominasService.getNominas(nombre, codigo);
 
       return nominas;
     } catch (error: any) {

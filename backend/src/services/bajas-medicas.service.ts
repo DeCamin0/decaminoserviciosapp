@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from './telegram.service';
 import * as ExcelJS from 'exceljs';
 import { sheetToJson } from '../utils/excel-helper';
 
@@ -34,7 +35,10 @@ type ConflictResolution = {
 export class BajasMedicasService {
   private readonly logger = new Logger(BajasMedicasService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegramService: TelegramService,
+  ) {}
 
   private parseISODateOnlyToUtc(value: string): Date | null {
     const s = String(value || '').trim();
@@ -209,13 +213,201 @@ export class BajasMedicasService {
     `);
 
     const row = rows?.[0] || null;
-    return {
+
+    // Log pentru debugging
+    this.logger.log(
+      `🔍 [getEmpleadoSnapshotByCodigo] Row found: ${JSON.stringify(row)}`,
+    );
+
+    const result = {
       codigoEmpleado: codigo,
-      nif: row?.NIF ? String(row.NIF) : null,
-      nass: row?.NASS ? String(row.NASS) : null,
-      nombre: row?.NOMBRE ? String(row.NOMBRE) : null,
-      empresa: row?.EMPRESA ? String(row.EMPRESA) : null,
+      nif: row?.NIF ? String(row.NIF).trim() : null,
+      nass: row?.NASS ? String(row.NASS).trim() : null,
+      nombre: row?.NOMBRE ? String(row.NOMBRE).trim() : null,
+      empresa: row?.EMPRESA ? String(row.EMPRESA).trim() : null,
     };
+
+    // Log pentru debugging
+    this.logger.log(
+      `🔍 [getEmpleadoSnapshotByCodigo] Result: ${JSON.stringify(result)}`,
+    );
+
+    return result;
+  }
+
+  async createEmpleadoBaja(input: ManualBajaInput): Promise<{
+    message: string;
+    idCaso: string;
+    idPosicion: string;
+  }> {
+    try {
+      const codigoEmpleado = this.normalizeCodigoEmpleado(input.codigoEmpleado);
+      if (!codigoEmpleado) {
+        throw new BadRequestException('codigoEmpleado es obligatorio');
+      }
+      if (!input.fechaBaja) {
+        throw new BadRequestException('fechaBaja es obligatoria (YYYY-MM-DD)');
+      }
+
+      const empleado = await this.getEmpleadoSnapshotByCodigo(codigoEmpleado);
+
+      const idCaso = this.generateManualIdCaso();
+      const idPosicion = '1';
+
+      const fechaBajaSQL = this.parseExcelDate(input.fechaBaja);
+      if (fechaBajaSQL === 'NULL') {
+        throw new BadRequestException(
+          'fechaBaja inválida. Usa YYYY-MM-DD (ej: 2026-01-07)',
+        );
+      }
+
+      const fechaAltaSQL = input.fechaAlta
+        ? this.parseExcelDate(input.fechaAlta)
+        : 'NULL';
+
+      // Only compute days if both dates are present and valid
+      const diasBaja =
+        input.fechaAlta && fechaAltaSQL !== 'NULL'
+          ? this.calculateInclusiveDays(input.fechaBaja, input.fechaAlta)
+          : null;
+      if (input.fechaAlta && fechaAltaSQL !== 'NULL' && diasBaja === null) {
+        throw new BadRequestException(
+          'fechaAlta inválida (o anterior a fechaBaja). Usa YYYY-MM-DD (ej: 2026-01-10)',
+        );
+      }
+
+      const situacion =
+        input.situacion && input.situacion.trim() !== ''
+          ? input.situacion.trim()
+          : fechaAltaSQL !== 'NULL'
+            ? 'Alta'
+            : 'Baja';
+
+      const query = `
+        INSERT INTO \`MutuaCasos\` (
+          \`Codigo_Empleado\`,
+          \`NIF\`,
+          \`NASS\`,
+          \`Trabajador\`,
+          \`Razón Social\`,
+          \`Tipo\`,
+          \`Recaída\`,
+          \`Fecha baja\`,
+          \`Fecha de alta\`,
+          \`Días de baja\`,
+          \`Situación\`,
+          \`Id.Caso\`,
+          \`Id.Posición\`,
+          \`fuente\`,
+          \`updated_at\`
+        ) VALUES (
+          ${this.escapeSql(empleado.codigoEmpleado)},
+          ${empleado.nif ? this.escapeSql(empleado.nif) : 'NULL'},
+          ${empleado.nass ? this.escapeSql(empleado.nass) : 'NULL'},
+          ${empleado.nombre ? this.escapeSql(empleado.nombre) : 'NULL'},
+          ${empleado.empresa ? this.escapeSql(empleado.empresa) : 'NULL'},
+          ${this.escapeSql(input.tipo || 'Baja Médica')},
+          ${input.recaida === undefined ? 'NULL' : input.recaida ? '1' : '0'},
+          ${fechaBajaSQL},
+          ${fechaAltaSQL},
+          ${diasBaja === null ? 'NULL' : String(diasBaja)},
+          ${this.escapeSql(situacion)},
+          ${this.escapeSql(idCaso)},
+          ${this.escapeSql(idPosicion)},
+          'EMPLEADO',
+          NOW()
+        )
+      `;
+
+      await this.prisma.$executeRawUnsafe(query);
+
+      // Trimite notificare Telegram către gestoria
+      try {
+        // Folosim escapeMarkdown pentru a evita erorile de parsing
+        const escapeMarkdown = (text: string): string => {
+          if (!text) return text;
+          return text
+            .replace(/\_/g, '\\_')
+            .replace(/\*/g, '\\*')
+            .replace(/\[/g, '\\[')
+            .replace(/\]/g, '\\]')
+            .replace(/\(/g, '\\(')
+            .replace(/\)/g, '\\)')
+            .replace(/\~/g, '\\~')
+            .replace(/\`/g, '\\`')
+            .replace(/\>/g, '\\>')
+            .replace(/\#/g, '\\#')
+            .replace(/\+/g, '\\+')
+            .replace(/\=/g, '\\=')
+            .replace(/\|/g, '\\|')
+            .replace(/\{/g, '\\{')
+            .replace(/\}/g, '\\}')
+            .replace(/\./g, '\\.')
+            .replace(/\!/g, '\\!');
+        };
+
+        const nombreEscaped = escapeMarkdown(empleado.nombre || 'N/A');
+        const codigoEscaped = escapeMarkdown(empleado.codigoEmpleado);
+        const empresaEscaped = escapeMarkdown(empleado.empresa || 'N/A');
+        const fechaBajaEscaped = escapeMarkdown(input.fechaBaja);
+        const fechaAltaEscaped = input.fechaAlta
+          ? escapeMarkdown(input.fechaAlta)
+          : null;
+        const tipoEscaped = escapeMarkdown(input.tipo || 'Baja Médica');
+        const recaidaText = input.recaida ? 'Sí' : 'No';
+        const situacionEscaped = escapeMarkdown(situacion);
+
+        const telegramMessage = `
+🩺 *Baja Médica Anunciada por Empleado*
+
+👤 *Empleado:* ${nombreEscaped}
+📋 *Código:* ${codigoEscaped}
+🏢 *Empresa:* ${empresaEscaped}
+
+📅 *Fecha de baja:* ${fechaBajaEscaped}
+${fechaAltaEscaped ? `📅 *Fecha de alta:* ${fechaAltaEscaped}` : ''}
+${diasBaja !== null ? `📊 *Días de baja:* ${diasBaja}` : ''}
+🏥 *Tipo:* ${tipoEscaped}
+🔄 *Recaída:* ${recaidaText}
+📝 *Situación:* ${situacionEscaped}
+
+*Fuente:* EMPLEADO \\(anunciado desde la aplicación\\)
+        `.trim();
+
+        this.logger.log(
+          `📱 [BAJA_MEDICA_EMPLEADO] Sending Telegram notification - codigo: ${empleado.codigoEmpleado}`,
+        );
+
+        this.telegramService
+          .sendMessage(telegramMessage)
+          .then(() => {
+            this.logger.log(
+              `✅ [BAJA_MEDICA_EMPLEADO] Telegram notification sent successfully - codigo: ${empleado.codigoEmpleado}`,
+            );
+          })
+          .catch((telegramError: any) => {
+            this.logger.error(
+              `❌ [BAJA_MEDICA_EMPLEADO] Error sending Telegram notification: ${telegramError.message}`,
+            );
+          });
+      } catch (telegramError: any) {
+        // Nu blochează procesul dacă Telegram eșuează
+        this.logger.error(
+          `❌ [BAJA_MEDICA_EMPLEADO] Error preparing Telegram notification (non-blocking): ${telegramError.message}`,
+        );
+      }
+
+      return {
+        message: 'Baja médica anunciada correctamente',
+        idCaso,
+        idPosicion,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error creating empleado baja médica:', error);
+      throw new BadRequestException(
+        `Error al anunciar baja médica: ${error.message}`,
+      );
+    }
   }
 
   async createManualBaja(input: ManualBajaInput): Promise<{

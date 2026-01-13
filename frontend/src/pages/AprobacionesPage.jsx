@@ -1648,20 +1648,83 @@ export default function AprobacionesPage() {
           // 1. Dacă regularization_type = NO_EXTRA → păstrează effective_minutes (deja setat la scheduled_minutes)
           // 2. Dacă regularization_type = DECLARES_EXTRA → păstrează effective_minutes (deja setat la punched_minutes)
           //    Excepție: dacă punched_minutes = 0 → folosește scheduled_minutes
-          let effectiveMinutes = regularizacionToApprove.effective_minutes; // Păstrează valoarea existentă by default
+          // 3. Dacă regularization_type = NO_PUNCH:
+          //    - Dacă reason_code = 'OLVIDO_FICHAR' și punched_minutes = 0 → folosește scheduled_minutes (8h, nu 0)
+          //    - Pentru alte reason_code-uri (VACACIONES, BAJA, PERMISO, AUSENCIA_INJUSTIFICADA) → rămâne 0
+          
+          // DEBUG: Log pentru a vedea valorile
+          console.log('🔍 [Approve Modal] Regularizacion data:', {
+            id: regularizacionToApprove.id,
+            regularization_type: regularizacionToApprove.regularization_type,
+            reason_code: regularizacionToApprove.reason_code,
+            punched_minutes: regularizacionToApprove.punched_minutes,
+            scheduled_minutes: regularizacionToApprove.scheduled_minutes,
+            effective_minutes: regularizacionToApprove.effective_minutes
+          });
+          
+          let effectiveMinutes = regularizacionToApprove.effective_minutes || 0; // Păstrează valoarea existentă by default
+          let willUseScheduledMinutes = false;
           
           if (regularizacionToApprove.regularization_type === 'NO_EXTRA') {
             // Când user a zis "No", păstrăm effective_minutes așa cum e (deja setat la scheduled_minutes)
-            effectiveMinutes = regularizacionToApprove.effective_minutes;
+            effectiveMinutes = regularizacionToApprove.effective_minutes || regularizacionToApprove.scheduled_minutes;
+            willUseScheduledMinutes = true;
           } else if (regularizacionToApprove.regularization_type === 'DECLARES_EXTRA') {
             // Când user a zis "Sí", păstrăm effective_minutes așa cum e (deja setat la punched_minutes)
             // Excepție: dacă punched_minutes = 0, folosim scheduled_minutes
             if (regularizacionToApprove.punched_minutes === 0 && regularizacionToApprove.scheduled_minutes > 0) {
               effectiveMinutes = regularizacionToApprove.scheduled_minutes;
+              willUseScheduledMinutes = true;
             } else {
-              effectiveMinutes = regularizacionToApprove.effective_minutes;
+              effectiveMinutes = regularizacionToApprove.effective_minutes || regularizacionToApprove.punched_minutes;
             }
+          } else if (regularizacionToApprove.regularization_type === 'NO_PUNCH') {
+            // Pentru NO_PUNCH, verificăm reason_code pentru a determina effective_minutes
+            console.log('🔍 [Approve Modal] NO_PUNCH detected:', {
+              reason_code: regularizacionToApprove.reason_code,
+              punched_minutes: regularizacionToApprove.punched_minutes,
+              scheduled_minutes: regularizacionToApprove.scheduled_minutes
+            });
+            
+            // Pentru OLVIDO_FICHAR, AUSENCIA_INJUSTIFICADA și OTRO cu punched_minutes = 0 → aprobă orele previste
+            const shouldUseScheduled = (
+              (regularizacionToApprove.reason_code === 'OLVIDO_FICHAR' ||
+               regularizacionToApprove.reason_code === 'AUSENCIA_INJUSTIFICADA' ||
+               regularizacionToApprove.reason_code === 'OTRO') &&
+              regularizacionToApprove.punched_minutes === 0 &&
+              regularizacionToApprove.scheduled_minutes > 0
+            );
+            
+            console.log('🔍 [Approve Modal] NO_PUNCH condition check:', {
+              reason_code: regularizacionToApprove.reason_code,
+              is_olvido: regularizacionToApprove.reason_code === 'OLVIDO_FICHAR',
+              is_ausencia: regularizacionToApprove.reason_code === 'AUSENCIA_INJUSTIFICADA',
+              is_otro: regularizacionToApprove.reason_code === 'OTRO',
+              punched_minutes: regularizacionToApprove.punched_minutes,
+              scheduled_minutes: regularizacionToApprove.scheduled_minutes,
+              shouldUseScheduled
+            });
+            
+            if (shouldUseScheduled) {
+              // "Olvidó fichar", "Ausencia injustificada" sau "Otro" → aprobă orele previste (scheduled_minutes) ca ore efective
+              effectiveMinutes = regularizacionToApprove.scheduled_minutes;
+              willUseScheduledMinutes = true;
+              console.log(`✅ [Approve Modal] NO_PUNCH with ${regularizacionToApprove.reason_code}: using scheduled_minutes =`, effectiveMinutes);
+            } else {
+              // Pentru VACACIONES, BAJA, PERMISO → rămâne 0
+              effectiveMinutes = 0;
+              console.log(`⚠️ [Approve Modal] NO_PUNCH with ${regularizacionToApprove.reason_code}: keeping effectiveMinutes = 0 (conditions not met)`);
+            }
+          } else {
+            console.log('⚠️ [Approve Modal] Unknown regularization_type:', regularizacionToApprove.regularization_type);
           }
+          
+          console.log('📊 [Approve Modal] Final calculation:', {
+            effectiveMinutes,
+            willUseScheduledMinutes,
+            scheduled_minutes: regularizacionToApprove.scheduled_minutes,
+            punched_minutes: regularizacionToApprove.punched_minutes
+          });
           
           return (
             <div className="space-y-4">
@@ -1670,9 +1733,11 @@ export default function AprobacionesPage() {
                   ⚠️ ¿Estás seguro que deseas aprobar esta regularización?
                 </p>
                 <p className="text-sm text-yellow-700">
-                  Se aprobarán {effectiveMinutes === regularizacionToApprove.scheduled_minutes 
-                    ? `las horas previstas (${formatMinutesToHoursMinutes(effectiveMinutes)})` 
-                    : `las horas fichadas (${formatMinutesToHoursMinutes(effectiveMinutes)})`} como horas efectivas trabajadas.
+                  {willUseScheduledMinutes 
+                    ? `Se aprobarán las horas previstas (${formatMinutesToHoursMinutes(effectiveMinutes)}) como horas efectivas trabajadas.`
+                    : effectiveMinutes > 0
+                      ? `Se aprobarán las horas fichadas (${formatMinutesToHoursMinutes(effectiveMinutes)}) como horas efectivas trabajadas.`
+                      : `Se aprobarán 0 horas efectivas trabajadas.`}
                 </p>
               </div>
             

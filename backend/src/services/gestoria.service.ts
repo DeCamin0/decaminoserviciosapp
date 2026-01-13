@@ -1882,6 +1882,10 @@ export class GestoriaService {
       }
 
       // Salvăm nómina DOAR dacă nu este preview mode
+      // Obținem codigo pentru a-l salva în tabel
+      const codigoParaSalvare =
+        codigo || (await this.obtenerCodigoPorNombre(nombreFinal));
+
       const insertQuery = `
         INSERT INTO \`Nominas\` (
           \`nombre\`,
@@ -1889,14 +1893,16 @@ export class GestoriaService {
           \`tipo_mime\`,
           \`fecha_subida\`,
           \`Mes\`,
-          \`Ano\`
+          \`Ano\`,
+          \`codigo_empleado\`
         ) VALUES (
           ${this.escapeSql(nombreFinalConTipo)},
           ${file.buffer ? `FROM_BASE64(${this.escapeSql(file.buffer.toString('base64'))})` : 'NULL'},
           ${this.escapeSql(file.mimetype || 'application/pdf')},
           NOW(),
           ${this.escapeSql(mes.toString())},
-          ${this.escapeSql(ano.toString())}
+          ${this.escapeSql(ano.toString())},
+          ${codigoParaSalvare ? this.escapeSql(codigoParaSalvare) : 'NULL'}
         )
       `;
 
@@ -2961,12 +2967,13 @@ export class GestoriaService {
                 SET 
                   \`archivo\` = FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
                   \`fecha_subida\` = NOW(),
-                  \`tipo_mime\` = 'application/pdf'
+                  \`tipo_mime\` = 'application/pdf',
+                  \`codigo_empleado\` = ${codigo ? this.escapeSql(codigo) : 'NULL'}
                 WHERE \`id\` = ${duplicate[0].id}
               `;
               await this.prisma.$executeRawUnsafe(updateQuery);
               this.logger.log(
-                `🔄 Nómina actualizată (forceReplace): ${nombreFinal} - ID: ${duplicate[0].id}`,
+                `🔄 Nómina actualizată (forceReplace): ${nombreFinal} - ID: ${duplicate[0].id}, codigo: ${codigo || 'NULL'}`,
               );
               inserted = true;
             } else if (!duplicate.length || shouldForceReplace) {
@@ -2978,19 +2985,24 @@ export class GestoriaService {
                   \`tipo_mime\`,
                   \`fecha_subida\`,
                   \`Mes\`,
-                  \`Ano\`
+                  \`Ano\`,
+                  \`codigo_empleado\`
                 ) VALUES (
                   ${this.escapeSql(nombreFinal)},
                   FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
                   'application/pdf',
                   NOW(),
                   ${this.escapeSql(mesNombre)},
-                  ${this.escapeSql(anoFinal.toString())}
+                  ${this.escapeSql(anoFinal.toString())},
+                  ${codigo ? this.escapeSql(codigo) : 'NULL'}
                 )
               `;
 
               await this.prisma.$executeRawUnsafe(insertQuery);
               inserted = true;
+              this.logger.log(
+                `✅ Nómina insertată: ${nombreFinal} - mes=${mesNombre}, ano=${anoFinal}, codigo: ${codigo || 'NULL'}`,
+              );
             }
 
             // Dacă este finiquito, actualizăm statusul angajatului la INACTIVO dacă este încă ACTIVO

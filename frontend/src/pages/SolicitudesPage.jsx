@@ -11,7 +11,6 @@ import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
 import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
-import { getEmployeeInitials } from '../utils/employeeNameHelper';
 
 const MONTHS = [
   'Todas las meses', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -503,7 +502,7 @@ function MobileBajaMedicaItem({ item, formatDate, formatDateTime, getSituacionCo
 }
 
 // Component pentru item-ul de ausencia pe mobile în "Todas las Solicitudes" (compact, similar cu MobileSolicitudItem)
-function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatDate, formatDateRange, formatFechaFlexible, getTipoColor, formatHora }) {
+function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatFechaFlexible, getTipoColor, formatHora }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const durationDisplay = getAusenciaDurationDisplay(item);
   
@@ -971,11 +970,14 @@ export default function SolicitudesPage() {
   const [tipo, setTipo] = useState('Asuntos Propios');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
+  const [fechaUltimoDiaTrabajo, setFechaUltimoDiaTrabajo] = useState('');
+  const [bajaVoluntariaDocumento, setBajaVoluntariaDocumento] = useState(null); // Fișier pentru BAJA_VOLUNTARIA
   const [motivo, setMotivo] = useState('');
   const [editingSolicitud, setEditingSolicitud] = useState(null); // ID-ul solicitării în curs de editare
   const [originalSolicitudData, setOriginalSolicitudData] = useState(null); // Datele originale ale solicitării în curs de editare
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, solicitudId: null }); // Modal de confirmare ștergere
   const [convertirConfirm, setConvertirConfirm] = useState({ isOpen: false, ausencia: null }); // Modal de confirmare conversie ausencia
+  const [bajaVoluntariaPreview, setBajaVoluntariaPreview] = useState({ isOpen: false, solicitud: null, pdfUrl: null }); // Modal preview PDF Baja Voluntaria
   // Loading states centralizate
   const { setOperationLoading, isOperationLoading } = useLoadingState();
   const [serverResp, setServerResp] = useState('');
@@ -987,6 +989,8 @@ export default function SolicitudesPage() {
   const [allUsers, setAllUsers] = useState([]);
   const [totalAsuntoPropioDays, setTotalAsuntoPropioDays] = useState(0);
   const [totalVacacionesDays, setTotalVacacionesDays] = useState(0);
+  // State pentru datele complete ale utilizatorului (inclusiv certificado_handicap_confirmado)
+  const [empleadoCompleto, setEmpleadoCompleto] = useState(null);
   
   // Estadísticas states
   const [estadisticas, setEstadisticas] = useState([]);
@@ -1002,8 +1006,10 @@ export default function SolicitudesPage() {
 
 
   // Filtros para managers
-  const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja'
+  const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja' | 'baja_voluntaria'
   const selectedStatus = 'Todos';
+  // Documentos asociados con BAJA_VOLUNTARIA: Map<solicitudId, documento>
+  const [bajaVoluntariaDocumentos, setBajaVoluntariaDocumentos] = useState(new Map());
   const [selectedMonth, setSelectedMonth] = useState(0);
   const [selectedTipoAusencia, setSelectedTipoAusencia] = useState('ALL'); // Filtrul de tip pentru ausencias
   const [selectedUser, setSelectedUser] = useState('ALL');
@@ -1559,6 +1565,41 @@ export default function SolicitudesPage() {
     updateFechaFromCalendar();
   }, [updateFechaFromCalendar]);
 
+  // Obține datele complete ale utilizatorului (inclusiv certificado_handicap_confirmado)
+  useEffect(() => {
+    const fetchEmpleadoCompleto = async () => {
+      if (!authUser?.CODIGO && !authUser?.email) {
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          return;
+        }
+
+        const res = await fetch(routes.getEmpleadoMe, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const empleado = data?.empleado || data?.data?.empleado || data;
+          if (empleado) {
+            setEmpleadoCompleto(empleado);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching empleado completo:', error);
+      }
+    };
+
+    fetchEmpleadoCompleto();
+  }, [authUser?.CODIGO, authUser?.email]);
+
   const navigateMonth = (direction) => {
     if (direction === 'prev') {
       if (calendarMonth === 0) {
@@ -2037,6 +2078,68 @@ export default function SolicitudesPage() {
     setTotalVacacionesDays(8); // 8 days from demo data
   }, []);
 
+  // Funcție pentru a încărca documentele asociate cu solicitările BAJA_VOLUNTARIA
+  const fetchBajaVoluntariaDocumentos = useCallback(async (solicitudes) => {
+    const bajasVoluntarias = solicitudes.filter(s => s.tipo === 'BAJA_VOLUNTARIA');
+    if (bajasVoluntarias.length === 0) {
+      setBajaVoluntariaDocumentos(new Map());
+      return;
+    }
+
+    const token = localStorage.getItem('auth_token');
+    const documentosMap = new Map();
+
+    await Promise.all(
+      bajasVoluntarias.map(async (solicitud) => {
+        try {
+          const codigo = solicitud.codigo || solicitud.CODIGO || '';
+          const email = solicitud.email || solicitud['CORREO ELECTRONICO'] || '';
+          
+          if (!codigo && !email) return;
+
+          // Caută documente cu tipo_documento = 'Baja Voluntaria' pentru acest angajat
+          const documentosUrl = `${routes.getDocumentos || (import.meta.env.DEV ? 'http://localhost:3000/api/documentos' : 'https://api.decaminoservicios.com/api/documentos')}${codigo ? `?empleadoId=${codigo}` : email ? `?email=${encodeURIComponent(email)}` : ''}`;
+          
+          const response = await fetch(documentosUrl, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const documentos = Array.isArray(data) ? data : (data.data || []);
+            
+            // Filtrează doar documentele cu tipo_documento = 'Baja Voluntaria'
+            // Caută cel mai recent document (sortat după fecha_creacion sau doc_id)
+            const bajaVoluntariaDocs = documentos.filter(doc => 
+              (doc.tipo_documento || '').toLowerCase() === 'baja voluntaria'
+            );
+            
+            if (bajaVoluntariaDocs.length > 0) {
+              // Sortează după doc_id (cel mai mare = cel mai recent) sau fecha_creacion
+              const sortedDocs = bajaVoluntariaDocs.sort((a, b) => {
+                if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+                if (b.fecha_creacion && a.fecha_creacion) {
+                  return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+                }
+                return 0;
+              });
+              // Folosește cel mai recent document
+              documentosMap.set(solicitud.id, sortedDocs[0]);
+            }
+          }
+        } catch (error) {
+          console.warn(`Error fetching documento for BAJA_VOLUNTARIA ${solicitud.id}:`, error);
+        }
+      })
+    );
+
+    setBajaVoluntariaDocumentos(documentosMap);
+  }, []);
+
   const fetchSolicitudes = useCallback(async () => {
     setOperationLoading('solicitudes', true);
     
@@ -2108,6 +2211,9 @@ export default function SolicitudesPage() {
           
           setSolicitudes(transformedData);
           
+          // Încarcă documentele asociate cu BAJA_VOLUNTARIA
+          await fetchBajaVoluntariaDocumentos(transformedData);
+          
           // Calculează totalul de zile pentru Asunto Propio și Vacaciones
           let totalAsuntoDays = 0;
           let totalVacacionesDays = 0;
@@ -2148,6 +2254,9 @@ export default function SolicitudesPage() {
           const data = Array.isArray(result.data) ? result.data : [result.data];
           setSolicitudes(data);
           
+          // Încarcă documentele asociate cu BAJA_VOLUNTARIA
+          await fetchBajaVoluntariaDocumentos(data);
+          
           // Calculează totalul de zile pentru Asunto Propio și Vacaciones
           let totalAsuntoDays = 0;
           let totalVacacionesDays = 0;
@@ -2176,7 +2285,7 @@ export default function SolicitudesPage() {
       console.error('Error fetching solicitudes/ausencias:', error);
     }
     setOperationLoading('solicitudes', false);
-  }, [authUser, email, callApi, setOperationLoading, activeTab]);
+  }, [authUser, email, callApi, setOperationLoading, activeTab, fetchBajaVoluntariaDocumentos]);
 
   const fetchAllSolicitudes = useCallback(async () => {
     setOperationLoading('allSolicitudes', true);
@@ -2194,12 +2303,14 @@ export default function SolicitudesPage() {
       if (result.success) {
         const data = Array.isArray(result.data) ? result.data : [result.data];
         setAllSolicitudes(data);
+        // Încarcă documentele asociate cu BAJA_VOLUNTARIA
+        await fetchBajaVoluntariaDocumentos(data);
       }
     } catch (error) {
       console.error('Error fetching all solicitudes:', error);
     }
     setOperationLoading('allSolicitudes', false);
-  }, [authUser, callApi, setOperationLoading]);
+  }, [authUser, callApi, setOperationLoading, fetchBajaVoluntariaDocumentos]);
 
   const fetchAllUsers = useCallback(async () => {
     // Skip real data fetch in DEMO mode
@@ -3370,7 +3481,8 @@ export default function SolicitudesPage() {
   };
 
   const validateDates = () => {
-    if (!fechaInicio || !fechaFin) {
+    // Pentru BAJA_VOLUNTARIA nu avem nevoie de fecha_inicio și fecha_fin
+    if (tipo !== 'BAJA_VOLUNTARIA' && (!fechaInicio || !fechaFin)) {
       setErrorMsg('Por favor, selecciona las fechas de inicio y fin');
       return false;
     }
@@ -3500,7 +3612,15 @@ export default function SolicitudesPage() {
           setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
           return false;
         }
-        if (![15, 30, 31].includes(diffZile)) {
+        
+        // Verifică dacă utilizatorul are certificat de handicap confirmat
+        // Dacă are, permite orice număr de zile (nu doar quincena sau luna întreagă)
+        const tieneCertificadoHandicap = empleadoCompleto?.certificado_handicap_confirmado === true ||
+                                         empleadoCompleto?.certificado_handicap_confirmado === 1 ||
+                                         authUser?.certificado_handicap_confirmado === true ||
+                                         authUser?.certificado_handicap_confirmado === 1;
+        
+        if (!tieneCertificadoHandicap && ![15, 30, 31].includes(diffZile)) {
           setErrorMsg('Solo puedes solicitar vacaciones por quincena (15 días) o mes entero.');
           return false;
         }
@@ -3522,6 +3642,143 @@ export default function SolicitudesPage() {
     return true;
   };
 
+  // Funcții pentru BAJA_VOLUNTARIA
+  const handlePreviewBajaVoluntaria = async (solicitud) => {
+    try {
+      setOperationLoading('preview', true);
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const response = await fetch(`${endpoint}/baja-voluntaria/${solicitud.id}/preview-pdf`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al generar el PDF');
+      }
+
+      const blob = await response.blob();
+      const pdfUrl = URL.createObjectURL(blob);
+      
+      setBajaVoluntariaPreview({
+        isOpen: true,
+        solicitud: solicitud,
+        pdfUrl: pdfUrl,
+      });
+    } catch (error) {
+      console.error('Error al generar preview PDF:', error);
+      setErrorMsg('Error al generar el preview del PDF');
+    } finally {
+      setOperationLoading('preview', false);
+    }
+  };
+
+  const handleApproveBajaVoluntaria = async (solicitud) => {
+    try {
+      setOperationLoading('approve', true);
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const data = {
+        accion: 'update',
+        id: solicitud.id,
+        estado: 'Aprobada',
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al aprobar la baja voluntaria');
+      }
+
+      const result = await response.json();
+      const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
+
+      if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
+        setSuccessMsg('Baja voluntaria aprobada y enviada a gestoria correctamente.');
+        // Reîncarcă listele
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg('No se pudo aprobar la baja voluntaria.');
+      }
+    } catch (error) {
+      console.error('Error al aprobar baja voluntaria:', error);
+      setErrorMsg('Error al aprobar la baja voluntaria');
+    } finally {
+      setOperationLoading('approve', false);
+    }
+  };
+
+  const handleRejectBajaVoluntaria = async (solicitud) => {
+    try {
+      setOperationLoading('reject', true);
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const data = {
+        accion: 'update',
+        id: solicitud.id,
+        estado: 'Rechazada',
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al rechazar la baja voluntaria');
+      }
+
+      const result = await response.json();
+      const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
+
+      if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
+        setSuccessMsg('Baja voluntaria rechazada correctamente.');
+        // Reîncarcă listele
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg('No se pudo rechazar la baja voluntaria.');
+      }
+    } catch (error) {
+      console.error('Error al rechazar baja voluntaria:', error);
+      setErrorMsg('Error al rechazar la baja voluntaria');
+    } finally {
+      setOperationLoading('reject', false);
+    }
+  };
+
   const handleAdd = async () => {
     setErrorMsg('');
     setSuccessMsg('');
@@ -3534,6 +3791,12 @@ export default function SolicitudesPage() {
     // Validare motivo obligatoriu când se editează
     if (editingSolicitud !== null && !motivo.trim()) {
       setErrorMsg('El motivo es obligatorio al editar una solicitud.');
+      return;
+    }
+
+    // Validare fecha_ultimo_dia_trabajo pentru BAJA_VOLUNTARIA
+    if (tipo === 'BAJA_VOLUNTARIA' && !fechaUltimoDiaTrabajo) {
+      setErrorMsg('El último día de trabajo es obligatorio para Baja Voluntaria.');
       return;
     }
 
@@ -3564,10 +3827,19 @@ export default function SolicitudesPage() {
       codigo: solicitudCodigo,
       nombre: solicitudNombre,
       tipo: tipoPayload,
-      estado: 'Aprobada',
+      estado: tipoPayload === 'BAJA_VOLUNTARIA' ? 'Pendiente' : 'Aprobada',
       motivo,
-      fecha_inicio: fechaInicio,
-      fecha_fin: fechaFin,
+      // Pentru BAJA_VOLUNTARIA, nu trimitem fecha_inicio și fecha_fin
+      ...(tipoPayload !== 'BAJA_VOLUNTARIA' ? {
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+      } : {
+        fecha_inicio: fechaUltimoDiaTrabajo, // Folosim fecha_ultimo_dia_trabajo ca fecha_inicio pentru compatibilitate
+        fecha_fin: fechaUltimoDiaTrabajo, // Folosim fecha_ultimo_dia_trabajo ca fecha_fin pentru compatibilitate
+      }),
+      ...(tipoPayload === 'BAJA_VOLUNTARIA' && fechaUltimoDiaTrabajo ? {
+        fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo
+      } : {}),
     };
 
     console.log('TRIMIT:', data);
@@ -3618,6 +3890,50 @@ export default function SolicitudesPage() {
         } else {
           await activityLogger.logSolicitudCreated(data, authUser);
           setSuccessMsg('Solicitud enviada correctamente.');
+          
+          // Dacă este BAJA_VOLUNTARIA și există document, încarcă-l
+          if (tipoPayload === 'BAJA_VOLUNTARIA' && bajaVoluntariaDocumento) {
+            try {
+              const codigoEmpleado = authUser?.['CODIGO'] || authUser?.codigo || '';
+              const token = localStorage.getItem('auth_token');
+              
+              const formData = new FormData();
+              formData.append('archivo_0', bajaVoluntariaDocumento);
+              formData.append('empleado_id', codigoEmpleado);
+              formData.append('empleado_nombre', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || 'Sin nombre');
+              formData.append('empleado_email', authUser?.['CORREO ELECTRONICO'] || authUser?.email || '');
+              formData.append('tipo_documento', 'Baja Voluntaria');
+              formData.append('fecha_upload', new Date().toLocaleString('es-ES', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZone: 'Europe/Madrid'
+              }));
+              formData.append('archivo_0_nombre', bajaVoluntariaDocumento.name);
+              formData.append('archivo_0_tamaño', bajaVoluntariaDocumento.size.toString());
+              formData.append('archivo_0_tipo', bajaVoluntariaDocumento.type);
+              
+              const uploadResponse = await fetch(routes.uploadDocumento, {
+                method: 'POST',
+                headers: {
+                  ...(token && { Authorization: `Bearer ${token}` }),
+                },
+                body: formData,
+              });
+              
+              if (uploadResponse.ok) {
+                console.log('✅ Documento de Baja Voluntaria subido correctamente');
+              } else {
+                console.warn('⚠️ No se pudo subir el documento de Baja Voluntaria:', await uploadResponse.text());
+              }
+            } catch (uploadError) {
+              console.error('❌ Error al subir documento de Baja Voluntaria:', uploadError);
+              // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+            }
+          }
         }
         setServerResp(`Status: ${responseData?.status || 'ok'} - Solicitud ${isEditing ? 'actualizada' : 'guardada'} exitosamente`);
         
@@ -3625,6 +3941,8 @@ export default function SolicitudesPage() {
         setTipo('Asuntos Propios');
         setFechaInicio('');
         setFechaFin('');
+        setFechaUltimoDiaTrabajo('');
+        setBajaVoluntariaDocumento(null);
         setMotivo('');
         setEditingSolicitud(null);
         setOriginalSolicitudData(null);
@@ -4683,6 +5001,8 @@ export default function SolicitudesPage() {
       filtered = filtered.filter(s => s.tipo === 'Vacaciones');
     } else if (selectedTab === 'baja') {
       filtered = filtered.filter(s => isBajaMedica(s.tipo));
+    } else if (selectedTab === 'baja_voluntaria') {
+      filtered = filtered.filter(s => s.tipo === 'BAJA_VOLUNTARIA');
     }
     if (selectedMonth > 0) {
       filtered = filtered.filter(s => {
@@ -5567,6 +5887,25 @@ export default function SolicitudesPage() {
                     <span>Bajas Médicas</span>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => setSelectedTab('baja_voluntaria')}
+                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+                    selectedTab === 'baja_voluntaria'
+                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
+                      : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                  }`}
+                >
+                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                    selectedTab === 'baja_voluntaria'
+                      ? 'bg-purple-400 opacity-25 blur-md animate-pulse'
+                      : 'bg-purple-400 opacity-0 group-hover:opacity-15 blur-md'
+                  }`}></div>
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-lg">🚪</span>
+                    <span>Bajas Voluntarias</span>
+                  </div>
+                </button>
               </div>
 
 
@@ -5800,8 +6139,6 @@ export default function SolicitudesPage() {
                             key={item.id || item.email}
                             item={item}
                             getAusenciaDurationDisplay={getAusenciaDurationDisplay}
-                            formatDate={formatDate}
-                            formatDateRange={formatDateRange}
                             formatFechaFlexible={formatFechaFlexible}
                             getTipoColor={getTipoColor}
                             formatHora={formatHora}
@@ -5945,6 +6282,8 @@ export default function SolicitudesPage() {
                                 ? '🚫'
                                 : selectedTab === 'baja' || isBajaMedica(item.tipo)
                                 ? '🩺'
+                                : selectedTab === 'baja_voluntaria' || item.tipo === 'BAJA_VOLUNTARIA'
+                                ? '🚪'
                                 : item.tipo === 'Vacaciones'
                                 ? '🏖️'
                                 : '📅'}
@@ -6085,21 +6424,52 @@ export default function SolicitudesPage() {
                         {/* Iconițe Edit și Delete */}
                         {selectedTab !== 'ausencias' && selectedTab !== 'baja' && (
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                              onClick={() => handleEdit(item)}
-                              className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
-                              title="Editar solicitud"
-                            >
-                              <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteClick(item.id)}
-                              disabled={isOperationLoading('delete')}
-                              className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Eliminar solicitud"
-                            >
-                              <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
-                            </button>
+                            {/* Butoane Preview/Aprobar/Rechazar pentru BAJA_VOLUNTARIA cu estado Pendiente */}
+                            {selectedTab === 'baja_voluntaria' && item.estado === 'Pendiente' && isManager ? (
+                              <>
+                                <button
+                                  onClick={() => handlePreviewBajaVoluntaria(item)}
+                                  className="group/preview relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                  title="Vista previa del PDF"
+                                >
+                                  <span className="text-2xl">👁️</span>
+                                </button>
+                                <button
+                                  onClick={() => handleApproveBajaVoluntaria(item)}
+                                  disabled={isOperationLoading('approve')}
+                                  className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Aprobar y enviar a gestoria"
+                                >
+                                  <span className="text-2xl">✅</span>
+                                </button>
+                                <button
+                                  onClick={() => handleRejectBajaVoluntaria(item)}
+                                  disabled={isOperationLoading('reject')}
+                                  className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Rechazar"
+                                >
+                                  <span className="text-2xl">❌</span>
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                  title="Editar solicitud"
+                                >
+                                  <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteClick(item.id)}
+                                  disabled={isOperationLoading('delete')}
+                                  className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Eliminar solicitud"
+                                >
+                                  <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -6301,6 +6671,95 @@ export default function SolicitudesPage() {
                                 Demora parte baja: {formatNumber(item.demoraParteBaja)} días
                               </p>
                             </div>
+                          </>
+                        ) : selectedTab === 'baja_voluntaria' || item.tipo === 'BAJA_VOLUNTARIA' ? (
+                          <>
+                            <div className="bg-blue-50 p-4 rounded-lg group-hover:bg-blue-100 transition-colors duration-300 border border-blue-200">
+                              <span className="block text-xs font-medium text-blue-700 mb-1">📅 Fecha Solicitud</span>
+                              <p className="text-sm font-bold text-blue-900">{formatDate(item.fecha_solicitud)}</p>
+                            </div>
+                            <div className="bg-purple-50 p-4 rounded-lg group-hover:bg-purple-100 transition-colors duration-300 border border-purple-200">
+                              <span className="block text-xs font-medium text-purple-700 mb-1">🚪 Último día de trabajo</span>
+                              <p className="text-sm font-bold text-purple-900">
+                                {formatDate(item.fecha_ultimo_dia_trabajo || item.fecha_inicio || item.fecha_fin)}
+                              </p>
+                            </div>
+                            <div className="bg-amber-50 p-4 rounded-lg group-hover:bg-amber-100 transition-colors duration-300 border border-amber-200">
+                              <span className="block text-xs font-medium text-amber-700 mb-1">📊 Días de preaviso</span>
+                              <p className="text-sm font-bold text-amber-900">
+                                {item.dias_preaviso !== null && item.dias_preaviso !== undefined && item.dias_preaviso !== '' 
+                                  ? `${item.dias_preaviso} días`
+                                  : 'N/A'}
+                              </p>
+                            </div>
+                            <div className={`p-4 rounded-lg group-hover:opacity-90 transition-colors duration-300 border ${
+                              item.cumple_preaviso_15 
+                                ? 'bg-green-50 border-green-200' 
+                                : 'bg-red-50 border-red-200'
+                            }`}>
+                              <span className="block text-xs font-medium mb-1" style={{
+                                color: item.cumple_preaviso_15 ? '#065f46' : '#991b1b'
+                              }}>
+                                ✅ Cumple preaviso de 15 días
+                              </span>
+                              <p className="text-sm font-bold" style={{
+                                color: item.cumple_preaviso_15 ? '#047857' : '#dc2626'
+                              }}>
+                                {item.cumple_preaviso_15 ? 'SÍ' : 'NO'}
+                              </p>
+                            </div>
+                            {/* Documento asociado - dacă există */}
+                            {(() => {
+                              const documento = bajaVoluntariaDocumentos.get(item.id);
+                              if (documento) {
+                                const downloadUrl = `${routes.downloadDocumento || (import.meta.env.DEV ? 'http://localhost:3000/api/documentos/download' : 'https://api.decaminoservicios.com/api/documentos/download')}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
+                                return (
+                                  <div className="bg-indigo-50 p-4 rounded-lg group-hover:bg-indigo-100 transition-colors duration-300 border border-indigo-200 col-span-full">
+                                    <span className="block text-xs font-medium text-indigo-700 mb-2">📄 Documento firmado</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm text-indigo-900 font-medium flex-1">{documento.nombre_archivo || 'Documento'}</span>
+                                      <a
+                                        href={downloadUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const token = localStorage.getItem('auth_token');
+                                          if (token) {
+                                            // Adaugă token-ul la URL pentru download
+                                            e.preventDefault();
+                                            fetch(downloadUrl, {
+                                              headers: {
+                                                Authorization: `Bearer ${token}`,
+                                              },
+                                            })
+                                              .then((res) => res.blob())
+                                              .then((blob) => {
+                                                const url = window.URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = documento.nombre_archivo || 'documento.pdf';
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                window.URL.revokeObjectURL(url);
+                                                document.body.removeChild(a);
+                                              })
+                                              .catch((err) => {
+                                                console.error('Error downloading documento:', err);
+                                                setErrorMsg('Error al descargar el documento');
+                                              });
+                                          }
+                                        }}
+                                        className="px-3 py-1.5 text-xs font-medium rounded bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-1"
+                                      >
+                                        📥 Descargar
+                                      </a>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </>
                         ) : (
                           <>
@@ -7098,6 +7557,15 @@ export default function SolicitudesPage() {
                     >
                       🏖️ Vacaciones {totalVacacionesDays >= 31 ? '(Límite alcanzado)' : ''}
                     </option>
+                    <option 
+                      value="BAJA_VOLUNTARIA"
+                      style={{ 
+                        color: '#dc2626',
+                        backgroundColor: 'transparent'
+                      }}
+                    >
+                      🚪 Baja Voluntaria
+                    </option>
                   </select>
                 </div>
 
@@ -7820,11 +8288,26 @@ export default function SolicitudesPage() {
                         </p>
                       </div>
                     )}
-                    {tipo === 'Vacaciones' && (
-                      <p className="text-sm text-green-700 mt-2 ml-11 font-medium">
-                        ℹ️ Solo quincena (15 días) o mes entero
-                      </p>
-                    )}
+                    {tipo === 'Vacaciones' && (() => {
+                      const tieneCertificadoHandicap = empleadoCompleto?.certificado_handicap_confirmado === true ||
+                                                         empleadoCompleto?.certificado_handicap_confirmado === 1 ||
+                                                         authUser?.certificado_handicap_confirmado === true ||
+                                                         authUser?.certificado_handicap_confirmado === 1;
+                      
+                      if (tieneCertificadoHandicap) {
+                        return (
+                          <p className="text-sm text-blue-700 mt-2 ml-11 font-medium">
+                            ℹ️ Puedes solicitar cualquier número de días (certificado de discapacidad confirmado)
+                          </p>
+                        );
+                      }
+                      
+                      return (
+                        <p className="text-sm text-green-700 mt-2 ml-11 font-medium">
+                          ℹ️ Solo quincena (15 días) o mes entero
+                        </p>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -7885,6 +8368,147 @@ export default function SolicitudesPage() {
                     }}
                   />
                 </div>
+
+                {/* Fecha último día de trabajo - Pentru BAJA_VOLUNTARIA */}
+                {tipo === 'BAJA_VOLUNTARIA' && (
+                  <div 
+                    className="relative group"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.05) 0%, rgba(185, 28, 28, 0.05) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '1rem',
+                      border: '1px solid rgba(220, 38, 38, 0.2)',
+                      boxShadow: '0 10px 30px rgba(220, 38, 38, 0.15)',
+                      padding: '1.5rem'
+                    }}
+                  >
+                    {/* Glow animado en hover */}
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-400 to-pink-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
+                    
+                    {/* Header con icono 3D */}
+                    <div className="relative flex items-center mb-4">
+                      <div 
+                        className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+                          boxShadow: '0 8px 20px rgba(220, 38, 38, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+                        }}
+                      >
+                        <span className="text-2xl">📅</span>
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900">
+                        Último día de trabajo <span className="text-sm font-normal text-red-600">(obligatorio)</span>
+                      </h3>
+                    </div>
+
+                    {/* Input date */}
+                    <input
+                      type="date"
+                      value={fechaUltimoDiaTrabajo}
+                      onChange={(e) => setFechaUltimoDiaTrabajo(e.target.value)}
+                      required
+                      className="relative w-full px-4 py-4 text-base font-medium rounded-xl border-2 transition-all duration-300 shadow-md hover:shadow-lg focus:shadow-xl"
+                      style={{
+                        background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
+                        borderColor: '#dc2626',
+                        color: '#374151',
+                        outline: 'none'
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = '#dc2626';
+                        e.target.style.boxShadow = '0 0 0 3px rgba(220, 38, 38, 0.2)';
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#dc2626';
+                        e.target.style.boxShadow = '';
+                      }}
+                    />
+                    <p className="text-sm text-gray-600 mt-2">
+                      ℹ️ Este será el último día que trabajarás en la empresa.
+                    </p>
+                  </div>
+                )}
+
+                {/* Upload documento - Pentru BAJA_VOLUNTARIA */}
+                {tipo === 'BAJA_VOLUNTARIA' && (
+                  <div 
+                    className="relative group"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '1rem',
+                      border: '1px solid rgba(139, 92, 246, 0.2)',
+                      boxShadow: '0 10px 30px rgba(139, 92, 246, 0.15)',
+                      padding: '1.5rem'
+                    }}
+                  >
+                    {/* Glow animado en hover */}
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-400 to-indigo-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
+                    
+                    {/* Header con icono 3D */}
+                    <div className="relative flex items-center mb-4">
+                      <div 
+                        className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                          boxShadow: '0 8px 20px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+                        }}
+                      >
+                        <span className="text-2xl">📄</span>
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900">
+                        Documento firmado <span className="text-sm font-normal text-purple-600">(opcional)</span>
+                      </h3>
+                    </div>
+
+                    {/* Input file */}
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          // Verifică dimensiunea (max 10MB)
+                          if (file.size > 10 * 1024 * 1024) {
+                            setErrorMsg('El archivo es demasiado grande. Máximo 10MB.');
+                            return;
+                          }
+                          setBajaVoluntariaDocumento(file);
+                          setErrorMsg('');
+                        }
+                      }}
+                      className="relative w-full px-4 py-4 text-base font-medium rounded-xl border-2 transition-all duration-300 shadow-md hover:shadow-lg focus:shadow-xl"
+                      style={{
+                        background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
+                        borderColor: '#8b5cf6',
+                        color: '#374151',
+                        outline: 'none'
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = '#8b5cf6';
+                        e.target.style.boxShadow = '0 0 0 3px rgba(139, 92, 246, 0.2)';
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = '#8b5cf6';
+                        e.target.style.boxShadow = '';
+                      }}
+                    />
+                    {bajaVoluntariaDocumento && (
+                      <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="text-purple-600">📎</span>
+                          <span className="text-sm text-gray-700 font-medium">{bajaVoluntariaDocumento.name}</span>
+                          <span className="text-xs text-gray-500">
+                            ({(bajaVoluntariaDocumento.size / 1024 / 1024).toFixed(2)} MB)
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-sm text-gray-600 mt-2">
+                      ℹ️ Puedes subir un documento firmado (por ejemplo, la solicitud de baja voluntaria firmada).
+                    </p>
+                  </div>
+                )}
 
                 {/* Botón Enviar - MEGA ULTRA WOW 3D integrado en card */}
                 <div 
@@ -8708,6 +9332,99 @@ export default function SolicitudesPage() {
                   <>
                     <span className="mr-2">📤</span>
                     Cargar Justificante
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Preview PDF Baja Voluntaria */}
+      <Modal
+        isOpen={bajaVoluntariaPreview.isOpen}
+        onClose={() => {
+          if (bajaVoluntariaPreview.pdfUrl) {
+            URL.revokeObjectURL(bajaVoluntariaPreview.pdfUrl);
+          }
+          setBajaVoluntariaPreview({ isOpen: false, solicitud: null, pdfUrl: null });
+        }}
+        title="Vista Previa - Baja Voluntaria"
+        size="lg"
+        className="max-w-4xl"
+      >
+        {bajaVoluntariaPreview.solicitud && (
+          <div className="space-y-4">
+            {/* Informații solicitare */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-semibold text-purple-700">Empleado:</span>
+                  <p className="text-purple-900">{bajaVoluntariaPreview.solicitud.nombre || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-purple-700">Código:</span>
+                  <p className="text-purple-900">{bajaVoluntariaPreview.solicitud.codigo || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-purple-700">Último día de trabajo:</span>
+                  <p className="text-purple-900">
+                    {formatDate(bajaVoluntariaPreview.solicitud.fecha_ultimo_dia_trabajo || bajaVoluntariaPreview.solicitud.fecha_inicio)}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-purple-700">Días de preaviso:</span>
+                  <p className="text-purple-900">
+                    {bajaVoluntariaPreview.solicitud.dias_preaviso !== null && bajaVoluntariaPreview.solicitud.dias_preaviso !== undefined 
+                      ? `${bajaVoluntariaPreview.solicitud.dias_preaviso} días`
+                      : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Preview PDF */}
+            {bajaVoluntariaPreview.pdfUrl && (
+              <div className="border-2 border-gray-200 rounded-lg overflow-hidden" style={{ height: '600px' }}>
+                <iframe
+                  src={bajaVoluntariaPreview.pdfUrl}
+                  className="w-full h-full"
+                  title="Preview PDF Baja Voluntaria"
+                />
+              </div>
+            )}
+
+            {/* Butoane */}
+            <div className="flex gap-4 justify-end pt-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  if (bajaVoluntariaPreview.pdfUrl) {
+                    URL.revokeObjectURL(bajaVoluntariaPreview.pdfUrl);
+                  }
+                  setBajaVoluntariaPreview({ isOpen: false, solicitud: null, pdfUrl: null });
+                }}
+                className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => {
+                  if (bajaVoluntariaPreview.solicitud) {
+                    handleApproveBajaVoluntaria(bajaVoluntariaPreview.solicitud);
+                  }
+                }}
+                disabled={isOperationLoading('approve')}
+                className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-semibold shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isOperationLoading('approve') ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    Aprobando...
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xl">✅</span>
+                    Aprobar y Enviar a Gestoria
                   </>
                 )}
               </button>
