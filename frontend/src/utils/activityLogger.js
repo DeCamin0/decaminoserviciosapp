@@ -435,6 +435,20 @@ class ActivityLogger {
     }, 50);
   }
 
+  async logBannerBajaMedicaDismissed(user) {
+    setTimeout(() => {
+      this.logAction('banner_baja_medica_dismissed', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role,
+        codigo: user.CODIGO || user.codigo
+      }).catch(error => {
+        console.error('Error logging banner baja medica dismissed:', error);
+      });
+    }, 50);
+  }
+
   // === APROBACIONES ===
   async logAprobacionFichajeViewed(user) {
     setTimeout(() => {

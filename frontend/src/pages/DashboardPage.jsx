@@ -32,6 +32,7 @@ import {
   normalizeDetalles,
   fetchMonthlyAlerts as fetchMonthlyAlertsData
 } from '../utils/monthlyAlerts';
+import activityLogger from '../utils/activityLogger';
 
 const InicioPage = () => {
   const { user } = useAuth();
@@ -53,9 +54,8 @@ const InicioPage = () => {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
   const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
-  const [bannerDismissed, setBannerDismissed] = useState(() => {
-    return localStorage.getItem('bajaMedicaBannerDismissed') === 'true';
-  });
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [bannerStatusLoading, setBannerStatusLoading] = useState(true);
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -1082,9 +1082,69 @@ const InicioPage = () => {
     return () => clearTimeout(watchdog);
   }, [uiReady, loadingAvatar, loadingAlerts, loadingPermissions, user]);
 
+  // Verifică starea banner-ului din baza de date
+  useEffect(() => {
+    const checkBannerStatus = async () => {
+      if (!user) {
+        setBannerStatusLoading(false);
+        return;
+      }
+
+      try {
+        const baseUrl = import.meta.env.DEV 
+          ? 'http://localhost:3000' 
+          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const token = localStorage.getItem('auth_token');
+        
+        const userEmail = user.email || user.CORREO_ELECTRONICO;
+        const userCodigo = user.CODIGO || user.codigo;
+
+        if (!userEmail && !userCodigo) {
+          setBannerStatusLoading(false);
+          return;
+        }
+
+        const queryParams = new URLSearchParams();
+        if (userEmail) queryParams.append('email', userEmail);
+        if (userCodigo) queryParams.append('codigo', userCodigo);
+
+        const response = await fetch(`${baseUrl}/api/monitoring/banner-baja-medica-status?${queryParams.toString()}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setBannerDismissed(data.dismissed || false);
+        } else {
+          // Dacă eșuează, folosește localStorage ca fallback
+          const localDismissed = localStorage.getItem('bajaMedicaBannerDismissed') === 'true';
+          setBannerDismissed(localDismissed);
+        }
+      } catch (error) {
+        console.error('Error checking banner status:', error);
+        // Fallback la localStorage
+        const localDismissed = localStorage.getItem('bajaMedicaBannerDismissed') === 'true';
+        setBannerDismissed(localDismissed);
+      } finally {
+        setBannerStatusLoading(false);
+      }
+    };
+
+    checkBannerStatus();
+  }, [user?.email, user?.CORREO_ELECTRONICO, user?.CODIGO, user?.codigo]);
+
   // Verifică dacă banner-ul trebuie afișat (până pe 15 februarie 2026)
   // IMPORTANT: Hook-ul trebuie să fie apelat ÎNAINTE de orice return condiționat
   const shouldShowBajaMedicaBanner = useMemo(() => {
+    // Așteaptă până se încarcă starea din BD
+    if (bannerStatusLoading) {
+      return false;
+    }
+    
     // Verifică dacă utilizatorul a închis banner-ul
     if (bannerDismissed) {
       return false;
@@ -1094,7 +1154,7 @@ const InicioPage = () => {
     const endDate = new Date('2026-02-15');
     endDate.setHours(23, 59, 59, 999); // Până la sfârșitul zilei de 15 februarie
     return today <= endDate;
-  }, [bannerDismissed]);
+  }, [bannerDismissed, bannerStatusLoading]);
 
   if (!uiReady) {
     return renderSkeleton();
@@ -1124,14 +1184,65 @@ const InicioPage = () => {
               </div>
             </div>
             <button
-              onClick={() => {
-                // Permite închiderea banner-ului (salvat în localStorage)
-                localStorage.setItem('bajaMedicaBannerDismissed', 'true');
+              onClick={async () => {
+                // Marchează banner-ul ca închis (se va salva în BD prin activityLogger)
                 setBannerDismissed(true);
+                // Fallback la localStorage pentru compatibilitate
+                localStorage.setItem('bajaMedicaBannerDismissed', 'true');
                 setNotification({
                   type: 'info',
                   message: 'Banner cerrado. Recuerda comunicar tu baja médica cuando sea necesario.',
                 });
+
+                // Log acțiunea
+                if (user) {
+                  try {
+                    await activityLogger.logBannerBajaMedicaDismissed(user);
+                  } catch (error) {
+                    console.error('Error logging banner dismissal:', error);
+                  }
+
+                  // Trimite email de confirmare către angajat (cu BCC la info@decaminoservicios.com)
+                  try {
+                    const baseUrl = import.meta.env.DEV 
+                      ? 'http://localhost:3000' 
+                      : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+                    const token = localStorage.getItem('auth_token');
+                    
+                    const userName = user['NOMBRE / APELLIDOS'] || user.NOMBRE_APELLIDOS || user.nombre || 'Usuario';
+                    const userEmail = user.email || user.CORREO_ELECTRONICO;
+                    const userGrupo = user.GRUPO || user.grupo || 'N/A';
+                    const userCodigo = user.CODIGO || user.codigo || 'N/A';
+
+                    // Doar dacă există email valid
+                    if (userEmail && userEmail.includes('@')) {
+                      const emailResponse = await fetch(`${baseUrl}/api/monitoring/banner-baja-medica-confirmation`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify({
+                          userEmail: userEmail,
+                          userName: userName,
+                          userCodigo: userCodigo,
+                          userGrupo: userGrupo,
+                        }),
+                      });
+
+                      if (!emailResponse.ok) {
+                        const errorText = await emailResponse.text();
+                        console.warn('Failed to send confirmation email:', errorText);
+                      } else {
+                        console.log('✅ Confirmation email sent successfully');
+                      }
+                    } else {
+                      console.warn('⚠️ No valid email found for employee, skipping email confirmation');
+                    }
+                  } catch (error) {
+                    console.error('Error sending confirmation email:', error);
+                  }
+                }
               }}
               className="flex-shrink-0 text-white/80 hover:text-white transition-colors p-1 hover:bg-white/10 rounded"
               title="Cerrar banner"
