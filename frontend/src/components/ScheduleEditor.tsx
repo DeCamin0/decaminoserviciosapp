@@ -87,6 +87,15 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
   // State pentru câmpul Centro searchable
   const [centroSearchTerm, setCentroSearchTerm] = useState('');
   const [centroDropdownOpen, setCentroDropdownOpen] = useState(false);
+  
+  // State pentru selecție multiplă de grupuri (doar pentru modul de creare)
+  const [selectedGrupoIds, setSelectedGrupoIds] = useState<number[]>(() => {
+    // În modul de editare, dacă există un grupoId, îl adăugăm în array
+    if (isEditMode && initialData?.grupoId) {
+      return [initialData.grupoId];
+    }
+    return [];
+  });
 
   // Helper pentru a normaliza datele ISO la format YYYY-MM-DD pentru input-uri de tip date
   const normalizeDateForInput = (date: string | null | undefined): string => {
@@ -115,8 +124,12 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
           setCentroSearchTerm(centro.nombre);
         }
       }
+      // Actualizează selectedGrupoIds pentru modul de editare
+      if (isEditMode && initialData.grupoId) {
+        setSelectedGrupoIds([initialData.grupoId]);
+      }
     }
-  }, [initialData, centros]);
+  }, [initialData, centros, isEditMode]);
   
   // Actualizează centroSearchTerm când se schimbă formData.centroId
   useEffect(() => {
@@ -193,8 +206,14 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
   const validateForm = (): boolean => {
     const validationErrors: string[] = [];
     
-    // Validează datele de bază
-    validationErrors.push(...validateScheduleData(formData));
+    // Validează datele de bază (folosim un formData temporar cu grupoId pentru validare)
+    const tempFormData = { ...formData, grupoId: selectedGrupoIds.length > 0 ? selectedGrupoIds[0] : null };
+    validationErrors.push(...validateScheduleData(tempFormData));
+    
+    // Validează că cel puțin un grup este selectat (doar pentru modul de creare)
+    if (!isEditMode && selectedGrupoIds.length === 0) {
+      validationErrors.push('Selecciona al menos un grupo');
+    }
     
     // Validează fiecare zi
     DAYS.forEach(day => {
@@ -275,37 +294,101 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
     setIsLoading(true);
     
     try {
-      // Adaugă numele centro/grupo în payload pentru backend (în loc de id-uri)
       const centroNombre = centros.find(c => c.id === formData.centroId)?.nombre || null;
-      const grupoNombre = grupos.find(g => g.id === formData.grupoId)?.nombre || null;
-
+      
       // Calculează totalul de minute/ore săptămânale (după descanso)
       const totalMinutes = Math.max(0, totalWeekMinutes - formData.weeklyBreakMinutes);
 
-      const payload: SchedulePayload = { 
-        ...formData, 
-        centroId: centroNombre, // trimite numele în loc de id
-        grupoId: grupoNombre,   // trimite numele în loc de id
-        centroNombre, 
-        grupoNombre,
-        totalWeekMinutes: totalMinutes,
-        totalWeekHours: Number((totalMinutes / 60).toFixed(2))
-      };
+      // Pentru modul de editare, folosim grupul existent
+      if (isEditMode) {
+        const grupoNombre = grupos.find(g => g.id === formData.grupoId)?.nombre || null;
+        const payload: SchedulePayload = { 
+          ...formData, 
+          centroId: centroNombre,
+          grupoId: grupoNombre,
+          centroNombre, 
+          grupoNombre,
+          totalWeekMinutes: totalMinutes,
+          totalWeekHours: Number((totalMinutes / 60).toFixed(2))
+        };
 
-      const result = isEditMode 
-        ? await updateSchedule(callApi, payload.id || payload.nombre || 'unknown', payload) 
-        : await createSchedule(callApi, payload);
-      
-      if (result.success) {
-        const backendData = result.data as BackendResponse | undefined;
-        const backendMsg = backendData?.message || result.message || (isEditMode ? 'Horario actualizado' : 'Horario creado');
-        const backendName = backendData?.nombre || payload.nombre || '';
-        showToastMessage('success', `✅ ${backendMsg}${backendName ? `: ${backendName}` : ''}`);
-        onSave?.(payload);
+        const result = await updateSchedule(callApi, payload.id || payload.nombre || 'unknown', payload);
+        
+        if (result.success) {
+          const backendData = result.data as BackendResponse | undefined;
+          const backendMsg = backendData?.message || result.message || 'Horario actualizado';
+          const backendName = backendData?.nombre || payload.nombre || '';
+          showToastMessage('success', `✅ ${backendMsg}${backendName ? `: ${backendName}` : ''}`);
+          onSave?.(payload);
+        } else {
+          const backendMsg = result.message || result.error || 'Error al actualizar el horario';
+          showToastMessage('error', `❌ ${backendMsg}`);
+          onError?.(backendMsg);
+        }
       } else {
-        const backendMsg = result.message || result.error || (isEditMode ? 'Error al actualizar el horario' : 'Error al guardar el horario');
-        showToastMessage('error', `❌ ${backendMsg}`);
-        onError?.(backendMsg);
+        // Pentru modul de creare, creăm un orar pentru fiecare grup selectat
+        const gruposToCreate = selectedGrupoIds.length > 0 
+          ? selectedGrupoIds 
+          : (formData.grupoId ? [formData.grupoId] : []);
+        
+        if (gruposToCreate.length === 0) {
+          showToastMessage('error', '❌ Selecciona al menos un grupo');
+          setIsLoading(false);
+          return;
+        }
+
+        const results: Array<{ grupo: string; success: boolean; message: string }> = [];
+        
+        // Creăm un orar pentru fiecare grup
+        for (const grupoId of gruposToCreate) {
+          const grupoNombre = grupos.find(g => g.id === grupoId)?.nombre || null;
+          
+          if (!grupoNombre) {
+            results.push({ grupo: `ID ${grupoId}`, success: false, message: 'Grupo no encontrado' });
+            continue;
+          }
+
+          const payload: SchedulePayload = { 
+            ...formData, 
+            centroId: centroNombre,
+            grupoId: grupoNombre,
+            centroNombre, 
+            grupoNombre,
+            totalWeekMinutes: totalMinutes,
+            totalWeekHours: Number((totalMinutes / 60).toFixed(2))
+          };
+
+          try {
+            const result = await createSchedule(callApi, payload);
+            
+            if (result.success) {
+              results.push({ grupo: grupoNombre, success: true, message: 'Creado' });
+            } else {
+              const backendMsg = result.message || result.error || 'Error al crear';
+              results.push({ grupo: grupoNombre, success: false, message: backendMsg });
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            results.push({ grupo: grupoNombre, success: false, message: errorMessage });
+          }
+        }
+
+        // Afișează rezultatele
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+        
+        if (successCount > 0 && failCount === 0) {
+          showToastMessage('success', `✅ ${successCount} horario(s) creado(s) exitosamente`);
+          onSave?.(formData);
+        } else if (successCount > 0 && failCount > 0) {
+          showToastMessage('error', `⚠️ ${successCount} creado(s), ${failCount} error(es). Revisa los detalles.`);
+          const failedGrupos = results.filter(r => !r.success).map(r => `${r.grupo}: ${r.message}`).join(', ');
+          onError?.(`Algunos horarios fallaron: ${failedGrupos}`);
+        } else {
+          const errorDetails = results.map(r => `${r.grupo}: ${r.message}`).join(', ');
+          showToastMessage('error', `❌ Error al crear horarios: ${errorDetails}`);
+          onError?.(errorDetails);
+        }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
@@ -488,22 +571,62 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
             htmlFor="schedule-grupo"
             className="block text-sm font-medium text-gray-700 mb-1"
           >
-            Grupo *
+            Grupo {isEditMode ? '*' : '(puedes seleccionar múltiples) *'}
           </label>
-          <select
-            id="schedule-grupo"
-            name="scheduleGrupo"
-            value={formData.grupoId || ''}
-            onChange={(e) => handleFieldChange('grupoId', e.target.value ? parseInt(e.target.value) : null)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
-          >
-            <option value="">Selecciona un grupo</option>
-            {grupos.map(grupo => (
-              <option key={grupo.id} value={grupo.id}>
-                {grupo.nombre}
-              </option>
-            ))}
-          </select>
+          {isEditMode ? (
+            // În modul de editare, folosim select simplu (comportament vechi)
+            <select
+              id="schedule-grupo"
+              name="scheduleGrupo"
+              value={formData.grupoId || ''}
+              onChange={(e) => handleFieldChange('grupoId', e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            >
+              <option value="">Selecciona un grupo</option>
+              {grupos.map(grupo => (
+                <option key={grupo.id} value={grupo.id}>
+                  {grupo.nombre}
+                </option>
+              ))}
+            </select>
+          ) : (
+            // În modul de creare, folosim checkbox-uri pentru selecție multiplă
+            <div className="w-full px-3 py-2 border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-red-500 focus-within:border-red-500 max-h-48 overflow-y-auto">
+              {grupos.length === 0 ? (
+                <p className="text-gray-500 text-sm">No hay grupos disponibles</p>
+              ) : (
+                <div className="space-y-2">
+                  {grupos.map(grupo => (
+                    <label
+                      key={grupo.id}
+                      className="flex items-center space-x-2 cursor-pointer hover:bg-red-50 p-1 rounded"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedGrupoIds.includes(grupo.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedGrupoIds([...selectedGrupoIds, grupo.id]);
+                          } else {
+                            setSelectedGrupoIds(selectedGrupoIds.filter(id => id !== grupo.id));
+                          }
+                        }}
+                        className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                      />
+                      <span className="text-sm text-gray-700">{grupo.nombre}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {selectedGrupoIds.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-gray-200">
+                  <p className="text-xs text-gray-600">
+                    {selectedGrupoIds.length} grupo(s) seleccionado(s)
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Vigente desde */}
@@ -725,6 +848,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
             });
             setCentroSearchTerm('');
             setCentroDropdownOpen(false);
+            setSelectedGrupoIds([]);
             setErrors([]);
           }}
           className="px-6 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"

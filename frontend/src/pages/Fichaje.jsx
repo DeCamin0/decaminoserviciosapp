@@ -2595,13 +2595,36 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       }
     }
     
+    // Pentru turnurile compartite (horarioAsignado cu mai multe intervale), nu folosim isShiftComplete global
+    // ci verificăm fiecare interval individual prin isTimeWithinSchedule
+    if (horarioAsignado && !cuadranteAsignado) {
+      const now = new Date();
+      const currentDay = now.getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][currentDay];
+      const daySchedule = horarioAsignado.days?.[dayKey];
+      
+      if (daySchedule) {
+        // Verifică câte intervale există
+        let intervalCount = 0;
+        if (daySchedule.in1 && daySchedule.out1) intervalCount++;
+        if (daySchedule.in2 && daySchedule.out2) intervalCount++;
+        if (daySchedule.in3 && daySchedule.out3) intervalCount++;
+        
+        // Dacă există mai mult de un interval (turn compartit), nu folosim isShiftComplete global
+        if (intervalCount > 1) {
+          return isTimeWithinSchedule('Salida');
+        }
+      }
+    }
+    
+    // Pentru ture simple sau cuadrante, folosim logica veche
     // Dacă tura este completă, Salida este dezactivată (tura s-a terminat)
     if (isShiftComplete) {
       return false;
     }
     // Dacă tura nu este completă, verifică programul normal
     return isTimeWithinSchedule('Salida');
-  }, [isTimeWithinSchedule, isShiftComplete, isTodayFestivo, authUser]);
+  }, [isTimeWithinSchedule, isShiftComplete, isTodayFestivo, authUser, horarioAsignado, cuadranteAsignado]);
 
   // Memoizează rezultatul calculului pentru mesajul informativ (evită recalculare la fiecare secundă)
   const timeRestrictionMessage = useMemo(() => {
@@ -8025,6 +8048,7 @@ export default function FichajePage() {
     const now = new Date();
     const currentDay = now.getDate(); // Ziua din lună (1-31)
     const currentTime = now.getHours() * 60 + now.getMinutes(); // Timpul curent în minute
+    const today = now.toISOString().split('T')[0];
     
     // Pentru Salida în ture nocturne, verifică și ziua de ieri pentru a găsi începutul turei
     let daySchedule = null;
@@ -8103,99 +8127,145 @@ export default function FichajePage() {
       return false;
     }
 
-    // Verifică fiecare interval - permite Entrada și Salida în orice interval
+    // Funcție helper pentru a verifica dacă un interval specific este completat
+    const isIntervalComplete = (intervalStart, intervalEnd) => {
+      const startTime = parseTimeToMinutes(intervalStart);
+      const endTime = parseTimeToMinutes(intervalEnd);
+      
+      // Caută Entrada pentru acest interval (în jurul timpului de intrare, ±30 min)
+      const hasEntradaForInterval = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Entrada') {
+          return false;
+        }
+        const logTime = log.hora || log.HORA || log.hora_fichaje;
+        if (!logTime) return false;
+        const logTimeMinutes = parseTimeToMinutes(logTime);
+        return Math.abs(logTimeMinutes - startTime) <= 30;
+      });
+      
+      // Caută Salida pentru acest interval (în jurul timpului de ieșire, ±30 min)
+      const hasSalidaForInterval = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Salida') {
+          return false;
+        }
+        const logTime = log.hora || log.HORA || log.hora_fichaje;
+        if (!logTime) return false;
+        const logTimeMinutes = parseTimeToMinutes(logTime);
+        return Math.abs(logTimeMinutes - endTime) <= 30;
+      });
+      
+      return hasEntradaForInterval && hasSalidaForInterval;
+    };
+
+    // Verifică fiecare interval individual pentru turnurile compartite
     for (const interval of intervals) {
       const startTime = parseTimeToMinutes(interval.start);
       let endTime = parseTimeToMinutes(interval.end);
       
       // Detectează dacă tură este nocturnă (peste miezul nopții)
       const isOvernightShift = endTime < startTime;
+      const isComplete = isIntervalComplete(interval.start, interval.end);
       
       if (tipo === 'Entrada') {
-        // Pentru Entrada: permite 10 minute înainte sau târziu
-        const marginBefore = 10; // 10 minute înainte
-        const marginAfter = 120; // 2 ore după pentru a permite Entrada târziu
-        let allowedStart = startTime - marginBefore;
-        let allowedEnd = startTime + marginAfter;
-        
-        if (isOvernightShift) {
-          // Pentru ture nocturne (ex: 19:30-07:30), Entrada se face seara
-          // Normalizează pentru cazul când allowedStart este negativ
-          if (allowedStart < 0) {
-            allowedStart = 0;
-          }
-          // Pentru ture nocturne, limitează la miezul nopții + câteva ore
-          if (allowedEnd >= 24 * 60) {
-            allowedEnd = 4 * 60; // Max 04:00 dimineața
-          }
+        // Pentru Entrada: permite dacă intervalul nu este completat și timpul este corect
+        if (!isComplete) {
+          const marginBefore = 10; // 10 minute înainte
+          const marginAfter = 120; // 2 ore după pentru a permite Entrada târziu
+          let allowedStart = startTime - marginBefore;
+          let allowedEnd = startTime + marginAfter;
           
-          // Dacă tura este completă (Entrada + Salida făcute), verifică doar intervalul corect
-          if (isShiftComplete) {
-            // Pentru ture nocturne, Entrada se face seara (19:30)
-            // Permite doar în intervalul permis: de la 19:20 (allowedStart) până la 04:00 (allowedEnd)
-            // Dacă este dimineața sau după-amiază (înainte de 19:20), NU permite
-            if (currentTime >= allowedStart) {
-              // După 19:20 seara - permite
+          if (isOvernightShift) {
+            // Pentru ture nocturne (ex: 19:30-07:30), Entrada se face seara
+            if (allowedStart < 0) {
+              allowedStart = 0;
+            }
+            if (allowedEnd >= 24 * 60) {
+              allowedEnd = 4 * 60; // Max 04:00 dimineața
+            }
+            
+            // Permite doar în intervalul permis
+            if (currentTime >= allowedStart && currentTime <= allowedEnd) {
               return true;
-            } else {
-              // Înainte de 19:20 (dimineața sau după-amiază) - NU permite
-              return false;
+            }
+            // Dacă este după timpul permis, permite pentru a putea ficha târziu
+            if (currentTime > allowedEnd) {
+              return true;
             }
           } else {
-            // Dacă tura NU este completă (nu s-a făcut încă Entrada sau Salida), permite oricând
-            // pentru a nu bloca utilizatorul dacă uită să ficheze
-            return true;
-          }
-        } else {
-          // Tură normală în aceeași zi
-          if (allowedStart < 0) {
-            allowedStart = 0;
-          }
-          if (allowedEnd >= 24 * 60) {
-            allowedEnd = 24 * 60 - 1;
-          }
-          
-          // Dacă tura este completă, verifică doar intervalul corect
-          if (isShiftComplete) {
-            // Permite doar în intervalul permis (în jurul orei de start)
-            return currentTime >= allowedStart && currentTime <= allowedEnd;
-          } else {
-            // Dacă tura NU este completă, permite oricând
-            return true;
+            // Tură normală în aceeași zi
+            if (allowedStart < 0) {
+              allowedStart = 0;
+            }
+            if (allowedEnd >= 24 * 60) {
+              allowedEnd = 24 * 60 - 1;
+            }
+            
+            // Permite dacă este în intervalul permis
+            if (currentTime >= allowedStart && currentTime <= allowedEnd) {
+              return true;
+            }
+            // Dacă este după timpul permis, permite pentru a putea ficha târziu
+            if (currentTime > allowedEnd) {
+              return true;
+            }
           }
         }
       } else if (tipo === 'Salida') {
-        // Pentru Salida: permite TĂRZIU (după timpul final) sau 10 minute înainte
+        // Pentru Salida: permite dacă timpul este în intervalul permis
+        // Verifică dacă există Entrada pentru acest interval (opțional - pentru validare)
+        const hasEntradaForInterval = logs.some(log => {
+          const logDate = log.data || log.FECHA || log.fecha;
+          if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Entrada') {
+            return false;
+          }
+          const logTime = log.hora || log.HORA || log.hora_fichaje;
+          if (!logTime) return false;
+          const logTimeMinutes = parseTimeToMinutes(logTime);
+          return Math.abs(logTimeMinutes - startTime) <= 30;
+        });
         
-        let allowedStart, allowedEnd;
+        // Verifică dacă există orice Entrada în ziua curentă (pentru cazuri când utilizatorul uită să ficheze Entrada exact la timp)
+        const hasAnyEntradaToday = logs.some(log => {
+          const logDate = log.data || log.FECHA || log.fecha;
+          return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+        });
         
-        if (isOvernightShift) {
-          // Pentru ture nocturne, Salida se face a doua zi
-          allowedStart = endTime - 10; // 10 minute înainte
-          allowedEnd = endTime; // Timpul sfârșitului turei
+        // Permite Salida dacă:
+        // 1. Intervalul nu este completat (nu există deja Salida pentru acest interval)
+        // 2. ȘI (există Entrada pentru acest interval SAU există orice Entrada în ziua curentă)
+        // 3. ȘI timpul curent este în intervalul permis
+        if (!isComplete && (hasEntradaForInterval || hasAnyEntradaToday)) {
+          let allowedStart, allowedEnd;
           
-          // Normalizare pentru cazuri edge
-          if (allowedStart < 0) allowedStart = 0;
-          if (allowedEnd >= 24 * 60) allowedEnd = 24 * 60 - 1;
-        } else {
-          // Tură normală în aceeași zi
-          allowedStart = endTime - 10; // 10 minute înainte
-          allowedEnd = endTime; // Timpul sfârșitului turei
-        }
-        
-        // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
-        if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          return true;
-        }
-        // Dacă este după timpul permis, permite pentru a putea ficha târziu
-        if (currentTime > allowedEnd) {
-          return true;
+          if (isOvernightShift) {
+            // Pentru ture nocturne, Salida se face a doua zi
+            allowedStart = endTime - 10; // 10 minute înainte
+            allowedEnd = endTime + 120; // 2 ore după pentru a permite Salida târziu
+            
+            if (allowedStart < 0) allowedStart = 0;
+            if (allowedEnd >= 24 * 60) allowedEnd = 24 * 60 - 1;
+          } else {
+            // Tură normală în aceeași zi
+            allowedStart = endTime - 10; // 10 minute înainte
+            allowedEnd = endTime + 120; // 2 ore după pentru a permite Salida târziu
+          }
+          
+          // Permite dacă este în intervalul permis
+          if (currentTime >= allowedStart && currentTime <= allowedEnd) {
+            return true;
+          }
+          // Dacă este după timpul permis, permite pentru a putea ficha târziu
+          if (currentTime > allowedEnd) {
+            return true;
+          }
         }
       }
     }
     
     return false;
-  }, [cuadranteAsignado]); // logs nu este folosit direct în funcție, isShiftComplete este parametru
+  }, [cuadranteAsignado, logs]); // Adăugat logs pentru a verifica intervalele individuale
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru orar
   // Memoizată pentru a evita recalculări inutile
@@ -8250,10 +8320,9 @@ export default function FichajePage() {
         }
       }
       
-      const isShiftCompleteLocal = (hasEntradaToday && hasSalidaToday) || 
-                                   (hasSalidaToday && hasEntradaYesterday && isOvernightShiftToday);
-      
-      return isTimeWithinCuadrante(tipo, isShiftCompleteLocal);
+      // Pentru turnurile compartite, nu folosim isShiftCompleteLocal global
+      // ci verificăm fiecare interval individual în isTimeWithinCuadrante
+      return isTimeWithinCuadrante(tipo, false);
     }
     
     // Dacă nu există nici cuadrante, nici horario, NU permite fichar (utilizatorul nu are program)
@@ -8290,38 +8359,82 @@ export default function FichajePage() {
       return false; // Nu permite fichar dacă nu există intervale valide pentru ziua curentă
     }
     
-    // Verifică fiecare interval - permite Entrada și Salida în orice interval
+    // Funcție helper pentru a verifica dacă un interval specific este completat
+    const isIntervalComplete = (intervalIn, intervalOut) => {
+      const today = new Date().toISOString().split('T')[0];
+      const inTime = parseTimeToMinutes(intervalIn);
+      const outTime = parseTimeToMinutes(intervalOut);
+      
+      // Caută Entrada pentru acest interval (în jurul timpului de intrare, ±30 min)
+      const hasEntradaForInterval = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Entrada') {
+          return false;
+        }
+        const logTime = log.hora || log.HORA || log.hora_fichaje;
+        if (!logTime) return false;
+        const logTimeMinutes = parseTimeToMinutes(logTime);
+        // Verifică dacă timpul este în jurul timpului programat (±30 min)
+        return Math.abs(logTimeMinutes - inTime) <= 30;
+      });
+      
+      // Caută Salida pentru acest interval (în jurul timpului de ieșire, ±30 min)
+      const hasSalidaForInterval = logs.some(log => {
+        const logDate = log.data || log.FECHA || log.fecha;
+        if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Salida') {
+          return false;
+        }
+        const logTime = log.hora || log.HORA || log.hora_fichaje;
+        if (!logTime) return false;
+        const logTimeMinutes = parseTimeToMinutes(logTime);
+        // Verifică dacă timpul este în jurul timpului programat (±30 min)
+        return Math.abs(logTimeMinutes - outTime) <= 30;
+      });
+      
+      return hasEntradaForInterval && hasSalidaForInterval;
+    };
+    
+    // Verifică fiecare interval individual pentru turnurile compartite
     for (const interval of intervals) {
       const inTime = parseTimeToMinutes(interval.in);
       const outTime = parseTimeToMinutes(interval.out);
+      const isComplete = isIntervalComplete(interval.in, interval.out);
       
       if (tipo === 'Entrada') {
-        // Pentru Entrada: permite TĂRZIU (după timpul inițial) sau 10 minute înainte
-        const marginBefore = 10; // 10 minute înainte
-        const allowedStart = inTime - marginBefore;
-        const allowedEnd = inTime; // Ultima dată permisă este la timpul inițial
-        
-        // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
-        if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          return true;
-        }
-        // Dacă este după timpul permis, permite pentru a putea ficha târziu
-        if (currentTime > allowedEnd) {
-          return true;
+        // Pentru Entrada: permite dacă intervalul nu este completat și timpul este corect
+        if (!isComplete) {
+          const marginBefore = 10; // 10 minute înainte
+          const marginAfter = 120; // 2 ore după pentru a permite Entrada târziu
+          const allowedStart = inTime - marginBefore;
+          const allowedEnd = inTime + marginAfter;
+          
+          // Permite dacă este în intervalul permis
+          if (currentTime >= allowedStart && currentTime <= allowedEnd) {
+            return true;
+          }
+          // Dacă este după timpul permis, permite pentru a putea ficha târziu
+          if (currentTime > allowedEnd) {
+            return true;
+          }
         }
       } else if (tipo === 'Salida') {
-        // Pentru Salida: permite TĂRZIU (după timpul final) sau 10 minute înainte
-        const marginBefore = 10; // 10 minute înainte
-        const allowedStart = outTime - marginBefore;
-        const allowedEnd = outTime; // Timpul sfârșitului turei
-        
-        // Permite dacă este în intervalul permis sau dacă este după timpul permis (târziu)
-        if (currentTime >= allowedStart && currentTime <= allowedEnd) {
-          return true;
-        }
-        // Dacă este după timpul permis, permite pentru a putea ficha târziu
-        if (currentTime > allowedEnd) {
-          return true;
+        // Pentru Salida: permite dacă timpul este în intervalul permis
+        // Pentru turnurile compartite, permitem Salida dacă intervalul nu este completat
+        // și timpul curent este în intervalul permis (chiar dacă nu găsim exact Entrada pentru acel interval)
+        if (!isComplete) {
+          const marginBefore = 10; // 10 minute înainte
+          const marginAfter = 120; // 2 ore după pentru a permite Salida târziu
+          const allowedStart = outTime - marginBefore;
+          const allowedEnd = outTime + marginAfter;
+          
+          // Permite dacă este în intervalul permis
+          if (currentTime >= allowedStart && currentTime <= allowedEnd) {
+            return true;
+          }
+          // Dacă este după timpul permis, permite pentru a putea ficha târziu
+          if (currentTime > allowedEnd) {
+            return true;
+          }
         }
       }
     }
