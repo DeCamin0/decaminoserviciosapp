@@ -50,22 +50,36 @@ Adaugă în `.env` sau `.env.production`:
 
 ```bash
 # Telegram Bot Configuration
+
+# Bot pentru gestoria (notificări despre ausencias, solicitudes, etc.)
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
 TELEGRAM_CHAT_ID=-1001234567890  # Chat ID sau grup ID
+
+# Bot general (pentru erori, notificări generale, monitoring, etc.)
+# Opțional: dacă nu e configurat, se folosește bot-ul de gestoria ca fallback
+TELEGRAM_BOT_TOKEN_GENERAL=987654321:XYZabcDEFghiJKLmnoPQRstuVWX
+TELEGRAM_CHAT_ID_GENERAL=-1009876543210  # Chat ID sau grup ID pentru bot-ul general
 
 # Enable Monitoring (opțional, default: false)
 MONITORING_ENABLED=true
 ```
 
-**Notă**: Chat ID-ul poate fi negativ pentru grupuri (ex: `-1001234567890`)
+**Notă**: 
+- Chat ID-ul poate fi negativ pentru grupuri (ex: `-1001234567890`)
+- Bot-ul general este opțional. Dacă nu e configurat, erorile și notificările generale vor fi trimise la bot-ul de gestoria
+- Recomandat: folosește bot-ul general pentru erori/monitoring și bot-ul de gestoria pentru notificări despre angajați
 
 ## 📋 Variabile de Mediu
 
 | Variabilă | Descriere | Exemplu | Obligatoriu |
 |-----------|-----------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Token-ul bot-ului Telegram | `123456789:ABC...` | ✅ Da |
-| `TELEGRAM_CHAT_ID` | ID-ul chat-ului pentru notificări | `-1001234567890` | ✅ Da |
+| `TELEGRAM_BOT_TOKEN` | Token-ul bot-ului Telegram (gestoria) | `123456789:ABC...` | ✅ Da |
+| `TELEGRAM_CHAT_ID` | ID-ul chat-ului pentru notificări (gestoria) | `-1001234567890` | ✅ Da |
+| `TELEGRAM_BOT_TOKEN_GENERAL` | Token-ul bot-ului Telegram general (erori, monitoring) | `987654321:XYZ...` | ❌ Nu (opțional) |
+| `TELEGRAM_CHAT_ID_GENERAL` | ID-ul chat-ului pentru bot-ul general | `-1009876543210` | ❌ Nu (opțional) |
 | `MONITORING_ENABLED` | Activează monitoring-ul automat | `true` / `false` | ❌ Nu (default: false) |
+
+**Notă**: Dacă `TELEGRAM_BOT_TOKEN_GENERAL` și `TELEGRAM_CHAT_ID_GENERAL` nu sunt configurate, erorile și notificările generale vor fi trimise la bot-ul de gestoria.
 
 ## 🚀 Funcționalități
 

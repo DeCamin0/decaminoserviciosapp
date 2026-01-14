@@ -4,13 +4,20 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private readonly logger = new Logger(TelegramService.name);
+  // Bot pentru gestoria (existent)
   private botToken: string | null = null;
   private chatId: string | null = null;
   private _isConfigured = false;
+  
+  // Bot pentru mesaje generale (erori, notificări, etc.)
+  private generalBotToken: string | null = null;
+  private generalChatId: string | null = null;
+  private _isGeneralConfigured = false;
 
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
+    // Configurare bot gestoria (existent)
     this.botToken =
       this.configService.get<string>('TELEGRAM_BOT_TOKEN') || null;
     // Default chat ID from n8n workflow (Cron absente.json)
@@ -20,40 +27,89 @@ export class TelegramService implements OnModuleInit {
     if (this.botToken && this.chatId) {
       this._isConfigured = true;
       this.logger.log(
-        `✅ Telegram service configured (chatId: ${this.chatId})`,
+        `✅ Telegram service configured (gestoria bot, chatId: ${this.chatId})`,
       );
     } else {
       this.logger.warn(
-        '⚠️ Telegram not configured. Set TELEGRAM_BOT_TOKEN in .env to enable notifications. Using default chat ID from n8n workflow.',
+        '⚠️ Telegram gestoria bot not configured. Set TELEGRAM_BOT_TOKEN in .env to enable notifications. Using default chat ID from n8n workflow.',
+      );
+    }
+
+    // Configurare bot general (nou)
+    this.generalBotToken =
+      this.configService.get<string>('TELEGRAM_BOT_TOKEN_GENERAL') || null;
+    this.generalChatId =
+      this.configService.get<string>('TELEGRAM_CHAT_ID_GENERAL') || null;
+
+    if (this.generalBotToken && this.generalChatId) {
+      this._isGeneralConfigured = true;
+      this.logger.log(
+        `✅ Telegram general bot configured (chatId: ${this.generalChatId})`,
+      );
+    } else {
+      this.logger.warn(
+        '⚠️ Telegram general bot not configured. Set TELEGRAM_BOT_TOKEN_GENERAL and TELEGRAM_CHAT_ID_GENERAL in .env to enable general notifications.',
       );
     }
   }
 
   /**
-   * Verifică dacă Telegram este configurat
+   * Verifică dacă Telegram este configurat (bot gestoria)
    */
   isConfigured(): boolean {
     return this._isConfigured;
   }
 
   /**
-   * Trimite un mesaj pe Telegram
+   * Verifică dacă bot-ul general este configurat
+   */
+  isGeneralConfigured(): boolean {
+    return this._isGeneralConfigured;
+  }
+
+  /**
+   * Trimite un mesaj pe Telegram (bot gestoria)
    */
   async sendMessage(message: string): Promise<void> {
     if (!this.isConfigured()) {
-      this.logger.warn('⚠️ Telegram not configured. Message not sent.');
+      this.logger.warn('⚠️ Telegram gestoria bot not configured. Message not sent.');
       return;
     }
 
+    await this._sendMessageInternal(this.botToken!, this.chatId!, message, 'gestoria');
+  }
+
+  /**
+   * Trimite un mesaj pe Telegram (bot general)
+   * Folosit pentru erori, notificări generale, etc.
+   */
+  async sendGeneralMessage(message: string): Promise<void> {
+    if (!this.isGeneralConfigured()) {
+      this.logger.warn('⚠️ Telegram general bot not configured. Message not sent.');
+      return;
+    }
+
+    await this._sendMessageInternal(this.generalBotToken!, this.generalChatId!, message, 'general');
+  }
+
+  /**
+   * Metodă internă pentru trimiterea mesajelor
+   */
+  private async _sendMessageInternal(
+    botToken: string,
+    chatId: string,
+    message: string,
+    botType: 'gestoria' | 'general',
+  ): Promise<void> {
     try {
-      const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+      const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chat_id: this.chatId,
+          chat_id: chatId,
           text: message,
           parse_mode: 'Markdown', // Folosim Markdown ca în n8n workflow (Cron absente.json)
         }),
@@ -69,7 +125,7 @@ export class TelegramService implements OnModuleInit {
       const result = await response.json();
       if (result.ok) {
         this.logger.log(
-          `✅ Telegram message sent successfully to chat ${this.chatId}`,
+          `✅ Telegram message sent successfully (${botType} bot, chatId: ${chatId})`,
         );
       } else {
         throw new Error(
@@ -77,7 +133,7 @@ export class TelegramService implements OnModuleInit {
         );
       }
     } catch (error: any) {
-      this.logger.error(`❌ Error sending Telegram message: ${error.message}`);
+      this.logger.error(`❌ Error sending Telegram message (${botType} bot): ${error.message}`);
       // Nu aruncăm eroarea pentru a nu opri flow-ul principal
       // doar logăm eroarea
     }

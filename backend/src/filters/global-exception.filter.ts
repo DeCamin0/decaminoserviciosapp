@@ -76,7 +76,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     method: string;
     stack?: string;
   }): Promise<void> {
-    if (!this.telegramService.isConfigured()) {
+    // Folosim bot-ul general pentru erori (dacă e configurat)
+    // Altfel folosim bot-ul de gestoria ca fallback
+    const useGeneralBot = this.telegramService.isGeneralConfigured();
+    if (!useGeneralBot && !this.telegramService.isConfigured()) {
       this.logger.warn(
         '⚠️ Telegram not configured - cannot send critical error alert',
       );
@@ -103,7 +106,11 @@ ${stackPreview}
 ⏰ *Timestamp:* ${new Date().toISOString()}
       `.trim();
 
-      await this.telegramService.sendMessage(message);
+      if (useGeneralBot) {
+        await this.telegramService.sendGeneralMessage(message);
+      } else {
+        await this.telegramService.sendMessage(message);
+      }
       this.logger.log('✅ Critical error alert sent to Telegram');
     } catch (error: any) {
       // Nu aruncăm eroarea pentru a nu bloca flow-ul

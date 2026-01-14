@@ -92,7 +92,9 @@ export class MonitoringService implements OnModuleInit {
    * Trimite alertă când baza de date este down
    */
   private async sendDatabaseDownAlert(error: Error): Promise<void> {
-    if (!this.telegramService.isConfigured()) {
+    // Folosim bot-ul general pentru monitoring (dacă e configurat)
+    const useGeneralBot = this.telegramService.isGeneralConfigured();
+    if (!useGeneralBot && !this.telegramService.isConfigured()) {
       return;
     }
 
@@ -107,7 +109,11 @@ export class MonitoringService implements OnModuleInit {
 ⚠️ *Acción requerida:* Verificar conexión a base de datos
       `.trim();
 
-      await this.telegramService.sendMessage(message);
+      if (useGeneralBot) {
+        await this.telegramService.sendGeneralMessage(message);
+      } else {
+        await this.telegramService.sendMessage(message);
+      }
       this.logger.log('✅ Database down alert sent to Telegram');
     } catch (alertError: any) {
       this.logger.error(
@@ -124,7 +130,9 @@ export class MonitoringService implements OnModuleInit {
     latency?: number;
     threshold?: number;
   }): Promise<void> {
-    if (!this.telegramService.isConfigured()) {
+    // Folosim bot-ul general pentru monitoring (dacă e configurat)
+    const useGeneralBot = this.telegramService.isGeneralConfigured();
+    if (!useGeneralBot && !this.telegramService.isConfigured()) {
       return;
     }
 
@@ -143,7 +151,11 @@ export class MonitoringService implements OnModuleInit {
       }
 
       if (message) {
-        await this.telegramService.sendMessage(message);
+        if (useGeneralBot) {
+          await this.telegramService.sendGeneralMessage(message);
+        } else {
+          await this.telegramService.sendMessage(message);
+        }
         this.logger.log('✅ Performance alert sent to Telegram');
       }
     } catch (error: any) {

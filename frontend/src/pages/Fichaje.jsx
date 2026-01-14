@@ -2256,29 +2256,69 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           warn('Error logging activity (non-blocking):', error);
         });
         
-        // Verifică dacă trebuie confirmare (doar pentru Salida)
-        if (tipo === 'Salida' && result.data?.auto_sent_for_review) {
-          setNotification({
-            type: 'success',
-            title: 'Enviado a aprobación',
-            message:
-              'La diferencia supera 15 minutos. Se ha enviado automáticamente para revisión.',
-            duration: 6000,
-          });
-        } else if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data && result.data?.confirmation_data?.scheduled_minutes > 0) {
-          setConfirmarJornadaData({
-            ...result.data.confirmation_data,
-            fecha: fechaMadrid,
-            employee_codigo: userCode,
-          });
-          setShowConfirmarJornadaModal(true);
-        } else if (tipo === 'Salida' && result.data?.confirmation_data?.scheduled_minutes === 0) {
-          // Nu există program prevăzut - nu se permite regularizarea
-          setNotification({
-            type: 'info',
-            title: 'No se puede regularizar',
-            message: 'No hay horario previsto para este día. No se puede regularizar.',
-          });
+        // ============================================================================
+        // ARCHIVED: Auto-regularizare și modal logic (commented for future use)
+        // ============================================================================
+        // PREVIOUS BEHAVIOR: Auto-send notification and modal for confirmation
+        // Both behaviors were removed. Now at Salida we only INFORM, we don't ask for action.
+        // Regularizarea is now exclusively on-demand, initiated by the employee.
+        //
+        // To re-enable auto-send notification, uncomment:
+        // if (tipo === 'Salida' && result.data?.auto_sent_for_review) {
+        //   setNotification({
+        //     type: 'success',
+        //     title: 'Enviado a aprobación',
+        //     message: 'La diferencia supera 15 minutos. Se ha enviado automáticamente para revisión.',
+        //     duration: 6000,
+        //   });
+        // }
+        //
+        // To re-enable modal, uncomment:
+        // if (tipo === 'Salida' && result.data?.needs_confirmation && result.data?.confirmation_data && result.data?.confirmation_data?.scheduled_minutes > 0) {
+        //   setConfirmarJornadaData({
+        //     ...result.data.confirmation_data,
+        //     fecha: fechaMadrid,
+        //     employee_codigo: userCode,
+        //   });
+        //   setShowConfirmarJornadaModal(true);
+        // }
+        // ============================================================================
+        // END ARCHIVED: Auto-regularizare și modal logic
+        // ============================================================================
+        
+        // CURRENT BEHAVIOR: At Salida, we only INFORM about the difference (if exists)
+        // No modal, no auto-send, just informational notification
+        // Regularizarea is now exclusively on-demand, initiated by the employee through a separate action
+        if (tipo === 'Salida' && result.data?.confirmation_data) {
+          const confData = result.data.confirmation_data;
+          const delta = confData.delta_minutes || 0;
+          const absDelta = Math.abs(delta);
+          
+          // Informăm doar dacă există o diferență semnificativă (> 15 min)
+          if (absDelta > 15 && confData.scheduled_minutes > 0) {
+            const formatMinutes = (mins) => {
+              const h = Math.floor(Math.abs(mins) / 60);
+              const m = Math.round(Math.abs(mins) % 60);
+              return h > 0 ? `${h}h ${m}m` : `${m}m`;
+            };
+            
+            const deltaFormatted = formatMinutes(delta);
+            const isPositive = delta > 0;
+            
+            const formatMinutesConsistent = (mins) => {
+              const h = Math.floor(Math.abs(mins) / 60);
+              const m = Math.round(Math.abs(mins) % 60);
+              // Afișăm întotdeauna formatul "Xh Ym" pentru consistență (chiar și "0h Ym" când sunt doar minute)
+              return `${h}h ${String(m).padStart(2, '0')}m`;
+            };
+            
+            setNotification({
+              type: 'info',
+              title: 'Diferencia de horas',
+              message: `Has registrado ${formatMinutesConsistent(confData.punched_minutes)} de ${formatMinutesConsistent(confData.scheduled_minutes)} previstas.\nDiferencia: ${isPositive ? '+' : '-'}${deltaFormatted}.\nSi corresponde, puedes solicitar una regularización desde Registros (botón "Regularizar").`,
+              duration: 8000,
+            });
+          }
         }
 
         // Verifică warning pentru Entrada tardía
@@ -8038,6 +8078,212 @@ export default function FichajePage() {
     }
   }, [authUser, fetchHorarioMulticentroAsignado]); // fetchHorarioMulticentroAsignado este memoizat cu useCallback
 
+  // ============================================
+  // Helper functions for WhatsApp error report
+  // ============================================
+  // NOTE: These are defined here (after all hooks) to have access to currentDaySchedule
+  
+  // Helper: escape safe strings
+  const safe = (v) => (v === null || v === undefined ? "" : String(v).trim());
+
+  // Helper: format date/time in Spanish (Europe/Madrid)
+  const formatDateTimeES = (d = new Date()) => {
+    try {
+      return new Intl.DateTimeFormat("es-ES", {
+        timeZone: "Europe/Madrid",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(d);
+    } catch {
+      // fallback
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  };
+
+  // Helper: format a fichaje row (logs use: tipo, hora, data)
+  const formatFichajeLine = (row) => {
+    if (!row) return null;
+
+    // Logs structure: { tipo, hora, data, codigo, ... }
+    const fecha = safe(row.data || row.FECHA || row.fecha || row.dia || row.date);
+    const hora = safe(row.hora || row.HORA || row.time);
+    const tipo = safe(row.tipo || row.TIPO || row.movimiento || row.evento);
+
+    const pieces = [fecha, hora, tipo].filter(Boolean);
+    return pieces.length ? `- ${pieces.join(" ")}` : null;
+  };
+
+  // Helper: format schedule for today (currentDaySchedule is already a formatted string or null)
+  const formatScheduleToday = (schedule) => {
+    // schedule is already calculated and formatted (e.g., "08:00 - 16:00" or "08:00 - 12:00 / 14:00 - 18:00")
+    if (!schedule) return "No hay horario asignado";
+    
+    // It's already a string, return as is
+    if (typeof schedule === "string") {
+      return schedule.trim() || "No hay horario asignado";
+    }
+
+    // Fallback: try to extract from object if needed
+    const inicio = safe(schedule.inicio || schedule.start || schedule.entrada || schedule.horaInicio);
+    const fin = safe(schedule.fin || schedule.end || schedule.salida || schedule.horaFin);
+
+    if (inicio && fin) return `${inicio} – ${fin}`;
+    if (inicio) return `Inicio: ${inicio}`;
+    if (fin) return `Fin: ${fin}`;
+
+    return "No hay horario asignado";
+  };
+
+  // Main function: build enriched WhatsApp error report message
+  // Defined as a regular function (not useCallback) to have access to currentDaySchedule from closure
+  // This is safe because it's only called on button click, not during render
+  const buildErrorReportMessage = () => {
+    const now = formatDateTimeES(new Date());
+
+    // User data (best effort - multiple fallbacks)
+    const codigo = safe(authUser?.CODIGO || authUser?.codigo || userData?.CODIGO || userData?.codigo);
+    const nombre = safe(
+      authUser?.['NOMBRE / APELLIDOS'] || 
+      authUser?.NOMBRE || 
+      authUser?.nombre || 
+      userData?.['NOMBRE / APELLIDOS'] || 
+      userData?.NOMBRE || 
+      userData?.nombre
+    ) || "—";
+    const centro = safe(
+      authUser?.['CENTRO TRABAJO'] || 
+      authUser?.CENTRO_TRABAJO || 
+      authUser?.centro || 
+      userData?.['CENTRO TRABAJO']
+    );
+    const grupo = safe(
+      authUser?.GRUPO || 
+      authUser?.grupo || 
+      userData?.GRUPO
+    );
+
+    // Last fichajes: take last 3 from logs (logs is already an array)
+    const last3 = Array.isArray(logs) ? logs.slice(0, 3) : [];
+    const lastLines = last3.map(formatFichajeLine).filter(Boolean);
+
+    // Calculate today's schedule directly (same logic as MiFichajeScreen)
+    let todaySchedule = null;
+    let scheduleInfo = null; // Info about cuadrante/horario asignado
+    
+    if (cuadranteAsignado) {
+      const cuadranteNombre = safe(cuadranteAsignado.NOMBRE || cuadranteAsignado.nombre);
+      const cuadranteMes = safe(cuadranteAsignado.LUNA || cuadranteAsignado.luna);
+      if (cuadranteNombre || cuadranteMes) {
+        scheduleInfo = `Cuadrante: ${cuadranteNombre || 'N/A'}${cuadranteMes ? ` (${cuadranteMes})` : ''}`;
+      }
+      
+      const today = new Date().getDate();
+      const dayKey = `ZI_${today}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        if (daySchedule.includes(',')) {
+          const matches = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/g);
+          if (matches && matches.length > 0) {
+            todaySchedule = matches.map(match => match).join(' / ');
+          }
+        } else {
+          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+          if (match) {
+            todaySchedule = `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
+          }
+        }
+      }
+    } else if (horarioMulticentroAsignado) {
+      const horarioNombre = safe(horarioMulticentroAsignado.nombre || horarioMulticentroAsignado.NOMBRE);
+      if (horarioNombre) {
+        scheduleInfo = `Horario Multicentro: ${horarioNombre}`;
+      }
+      
+      const today = new Date().getDate();
+      const dayKey = `ZI_${today}`;
+      const daySchedule = horarioMulticentroAsignado[dayKey];
+      
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '' && daySchedule !== '0' && daySchedule !== '0h') {
+        if (typeof daySchedule === 'string' && daySchedule.includes('-')) {
+          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+          if (match) {
+            todaySchedule = `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
+          }
+        } else if (typeof daySchedule === 'string' && !isNaN(parseFloat(daySchedule))) {
+          const hours = parseFloat(daySchedule);
+          todaySchedule = `${hours}h`;
+        }
+      }
+    } else if (horarioAsignado && horarioAsignado.days) {
+      const horarioNombre = safe(horarioAsignado.nombre || horarioAsignado.NOMBRE);
+      if (horarioNombre) {
+        scheduleInfo = `Horario: ${horarioNombre}`;
+      }
+      
+      const today = new Date().getDay();
+      const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
+      const daySchedule = horarioAsignado.days[dayKey];
+      
+      if (daySchedule) {
+        const intervals = [];
+        const isValidTime = (time) => {
+          return typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
+        };
+        
+        if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
+          const in1 = daySchedule.in1.substring(0, 5);
+          const out1 = daySchedule.out1.substring(0, 5);
+          intervals.push(`${in1} - ${out1}`);
+        }
+        if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
+          const in2 = daySchedule.in2.substring(0, 5);
+          const out2 = daySchedule.out2.substring(0, 5);
+          intervals.push(`${in2} - ${out2}`);
+        }
+        if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
+          const in3 = daySchedule.in3.substring(0, 5);
+          const out3 = daySchedule.out3.substring(0, 5);
+          intervals.push(`${in3} - ${out3}`);
+        }
+        
+        if (intervals.length > 0) {
+          todaySchedule = intervals.join(' / ');
+        }
+      }
+    }
+
+    const scheduleToday = formatScheduleToday(todaySchedule);
+    const url = window.location.href;
+
+    // Build message in Spanish, clear and concise
+    const msg = [
+      "Hola, tengo un problema con el sistema de registro de jornada.",
+      "",
+      `[EMPLEADO] ${nombre}${codigo ? ` (Código: ${codigo})` : ""}`,
+      `[FECHA] ${now}`,
+      `[PAGINA] Registro de Jornada`,
+      centro || grupo ? `[CENTRO] ${[centro, grupo].filter(Boolean).join(" / ")}` : null,
+      scheduleInfo ? `[ASIGNADO] ${scheduleInfo}` : null,
+      "",
+      "[HORARIO] Horario planificado para hoy:",
+      scheduleToday ? `  • ${scheduleToday}` : "  • No hay horario asignado",
+      "",
+      "[FICHAJES] Últimos fichajes recientes:",
+      lastLines.length ? lastLines.map(line => `  ${line}`).join("\n") : "  • No hay registros recientes",
+      "",
+      `[URL] ${url}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    return msg;
+  };
+
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru cuadrante
   // Memoizată pentru a evita recalculări inutile
   const isTimeWithinCuadrante = useCallback((tipo, isShiftComplete = false) => {
@@ -9058,7 +9304,58 @@ export default function FichajePage() {
       {/* Botón Reportar Error */}
       <div className="flex justify-end mb-4">
         <button 
-          onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de registro de jornada', '_blank')}
+          onClick={async () => {
+            const phone = "34635289087"; // Número de soporte
+            const message = buildErrorReportMessage();
+            const text = encodeURIComponent(message);
+            const whatsappUrl = `https://wa.me/${phone}?text=${text}`;
+            
+            // Trimite o copie pe Telegram (bot general) - non-blocking
+            const baseUrl = import.meta.env.DEV 
+              ? 'http://localhost:3000' 
+              : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+            
+            const token = localStorage.getItem('auth_token');
+            if (token) {
+              // Trimite pe Telegram în paralel (non-blocking)
+              fetch(`${baseUrl}/api/monitoring/telegram`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  message: message,
+                  botType: 'general', // Bot general pentru erori
+                }),
+              }).catch((error) => {
+                // Nu afișăm eroare utilizatorului, doar logăm
+                console.warn('Error sending to Telegram:', error);
+              });
+            }
+            
+            // Try WhatsApp Desktop protocol first (opens in app, not browser)
+            // This avoids opening a new browser tab
+            const whatsappDesktopUrl = `whatsapp://send?phone=${phone}&text=${text}`;
+            
+            // Create a temporary link to try WhatsApp Desktop
+            const link = document.createElement('a');
+            link.href = whatsappDesktopUrl;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Fallback to web WhatsApp after a delay
+            // If Desktop is installed, this won't execute
+            // If not, it opens in the same tab to avoid leaving a new tab open
+            setTimeout(() => {
+              // Check if we're still on the same page (Desktop didn't open)
+              if (document.hasFocus()) {
+                window.location.href = whatsappUrl;
+              }
+            }, 1000);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
         >
           <span className="text-base">📱</span>

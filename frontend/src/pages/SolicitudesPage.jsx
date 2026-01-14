@@ -11,6 +11,7 @@ import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
 import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 const MONTHS = [
   'Todas las meses', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -5213,7 +5214,30 @@ export default function SolicitudesPage() {
       {/* Botón Reportar Error */}
       <div className="flex justify-end mb-4">
         <button 
-          onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de solicitudes', '_blank')}
+          onClick={() => {
+            // Date relevante pentru pagina de solicitudes
+            const solicitudesActivas = solicitudes?.filter(s => 
+              s.estado === 'Pendiente' || s.estado === 'Aprobada'
+            ) || [];
+            const tiposSolicitudes = [...new Set(solicitudesActivas.map(s => s.tipo || s.TIPO))].filter(Boolean);
+            
+            const pageData = {
+              additionalInfo: [
+                solicitudesActivas.length > 0 ? `[SOLICITUDES] Total activas: ${solicitudesActivas.length}` : null,
+                tiposSolicitudes.length > 0 ? `[TIPOS] ${tiposSolicitudes.join(", ")}` : null,
+                allSolicitudes?.length > 0 ? `[TOTAL] ${allSolicitudes.length} solicitudes en total` : null,
+              ].filter(Boolean),
+            };
+            
+            const message = buildErrorReportMessage({
+              authUser,
+              userData: empleadoCompleto,
+              pageName: "Gestión de Solicitudes",
+              pageData,
+            });
+            
+            openWhatsAppErrorReport(message);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
         >
           <span className="text-base">📱</span>

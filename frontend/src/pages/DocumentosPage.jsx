@@ -6,6 +6,7 @@ import ContractSigner from '../components/ContractSigner';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 import { routes } from '../utils/routes.js';
 import activityLogger from '../utils/activityLogger';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 // Funcție pentru conversia Blob în Base64 (exact ca la MisInspeccionesPage)
 const blobToBase64 = (blob) => {
@@ -2240,7 +2241,30 @@ export default function DocumentosPage() {
       {/* Botón Reportar Error */}
       <div className="flex justify-end mb-4">
         <button 
-          onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de documentos', '_blank')}
+          onClick={() => {
+            // Date relevante pentru pagina de documentos
+            const tabNames = {
+              'nominas': 'Nóminas',
+              'mis-documentos': 'Mis Documentos',
+              'upload-documentos': 'Subir Documentos'
+            };
+            
+            const pageData = {
+              additionalInfo: [
+                `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
+                nominas?.length > 0 ? `[NÓMINAS] ${nominas.length} disponibles` : null,
+                documentos?.length > 0 ? `[DOCUMENTOS] ${documentos.length} disponibles` : null,
+              ].filter(Boolean),
+            };
+            
+            const message = buildErrorReportMessage({
+              authUser,
+              pageName: "Documentos",
+              pageData,
+            });
+            
+            openWhatsAppErrorReport(message);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
         >
           <span className="text-base">📱</span>

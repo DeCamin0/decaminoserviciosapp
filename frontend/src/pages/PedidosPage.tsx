@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import { Link } from 'react-router-dom';
 import { isDemoMode } from '../utils/demo';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 // ===== TIPURI TYPESCRIPT =====
 
@@ -272,7 +273,29 @@ const PedidosPage: React.FC = () => {
             <p className="text-gray-600">Gestiona pedidos y permisos de productos</p>
           </div>
           <button 
-            onClick={() => window.open('https://wa.me/34635289087?text=Hola, he encontrado un error en la sección de pedidos:', '_blank')}
+            onClick={() => {
+              // Date relevante pentru pagina de pedidos
+              const tabNames = {
+                'nuevo-pedido': 'Nuevo Pedido',
+                'permisos': 'Permisos',
+                'catalogo': 'Catálogo'
+              };
+              
+              const pageData = {
+                additionalInfo: [
+                  `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
+                  canAccessAllTabs ? '[PERMISOS] Acceso completo' : '[PERMISOS] Acceso limitado',
+                ].filter(Boolean),
+              };
+              
+              const message = buildErrorReportMessage({
+                authUser: user,
+                pageName: "Pedidos",
+                pageData,
+              });
+              
+              openWhatsAppErrorReport(message);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
           >
             <span className="text-lg">📱</span>

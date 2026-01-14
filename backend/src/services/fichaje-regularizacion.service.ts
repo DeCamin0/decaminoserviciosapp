@@ -2,6 +2,9 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { AusenciasService } from './ausencias.service';
+import { EmailService } from './email.service';
+import { SentEmailsService } from './sent-emails.service';
+import { EmpleadosService } from './empleados.service';
 import {
   FichajeRegularizacionType,
   FichajeRegularizacionStatus,
@@ -34,6 +37,9 @@ export class FichajeRegularizacionService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly ausenciasService: AusenciasService,
+    private readonly emailService: EmailService,
+    private readonly sentEmailsService: SentEmailsService,
+    private readonly empleadosService: EmpleadosService,
   ) {}
   private readonly MAX_GAP_HOURS = 6; // Gap between Salida and next Entrada
   private readonly CONFIRMATION_THRESHOLD_MINUTES = 15; // If abs(delta) > 15min => needs review/approval
@@ -1310,13 +1316,15 @@ export class FichajeRegularizacionService {
           : FichajeRegularizacionStatus.CONFIRMED;
 
         // Logica pentru effective_minutes în cazul NO_EXTRA:
-        // - reason='worked_less' (delta negativă, user confirmă că a lucrat mai puțin) → punched_minutes
+        // - reason='worked_less' sau 'auto_threshold_exceeded_negative' (delta negativă, user confirmă că a lucrat mai puțin sau auto-send) → punched_minutes
         // - reason='punch_error' (delta negativă, user zice că e eroare) → scheduled_minutes
         // - altfel (delta pozitivă, user zice că nu a lucrat mai mult) → scheduled_minutes
-        if (reason === 'worked_less') {
-          // User confirmă că a lucrat mai puțin → salvăm orele fichate
+        if (reason === 'worked_less' || reason === 'auto_threshold_exceeded_negative') {
+          // User confirmă că a lucrat mai puțin sau auto-send pentru delta negativă → salvăm orele fichate
           effective_minutes = punched_minutes;
-          reason_code = 'employee_confirmed_worked_less';
+          reason_code = reason === 'auto_threshold_exceeded_negative' 
+            ? 'employee_declares_less' 
+            : 'employee_confirmed_worked_less';
         } else if (reason === 'punch_error') {
           // User zice că e eroare de fichaje → salvăm orele prevăzute
           effective_minutes = scheduled_minutes;
@@ -1776,6 +1784,25 @@ export class FichajeRegularizacionService {
         }
       }
 
+      // Trimite email către angajat (dacă există email)
+      try {
+        await this.sendRegularizacionEmailToEmployee(
+          regularizacion.employee_codigo,
+          regularizacion.workday_date,
+          regularizacion.punched_minutes,
+          regularizacion.scheduled_minutes,
+          regularizacion.effective_minutes || effective_minutes,
+          regularizacion.reason_code,
+          'approved',
+          reviewed_by,
+        );
+      } catch (emailError: any) {
+        // Nu oprește procesul dacă email-ul eșuează
+        this.logger.warn(
+          `⚠️ Error sending email to employee ${regularizacion.employee_codigo} for approved regularizacion: ${emailError.message}`,
+        );
+      }
+
       this.logger.log(
         `✅ Regularizacion approved: ID=${id}, reviewed_by=${reviewed_by}`,
       );
@@ -1892,6 +1919,26 @@ export class FichajeRegularizacionService {
             `⚠️ Error creando ausencia al rechazar regularización ID=${id}: ${ausenciaError.message}`,
           );
         }
+      }
+
+      // Trimite email către angajat (dacă există email)
+      try {
+        await this.sendRegularizacionEmailToEmployee(
+          regularizacion.employee_codigo,
+          regularizacion.workday_date,
+          regularizacion.punched_minutes,
+          regularizacion.scheduled_minutes,
+          0, // effective_minutes = 0 la respingere
+          regularizacion.reason_code,
+          'rejected',
+          reviewed_by,
+          notes || regularizacion.notes,
+        );
+      } catch (emailError: any) {
+        // Nu oprește procesul dacă email-ul eșuează
+        this.logger.warn(
+          `⚠️ Error sending email to employee ${regularizacion.employee_codigo} for rejected regularizacion: ${emailError.message}`,
+        );
       }
 
       this.logger.log(
@@ -2512,6 +2559,187 @@ export class FichajeRegularizacionService {
       this.logger.error(`❌ Error declaring NO_PUNCH: ${error.message}`);
       throw new BadRequestException(
         `Error declaring NO_PUNCH: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Formatează HTML-ul pentru email-ul de aprobare/respingere regularizare
+   */
+  private formatRegularizacionEmailHtml(data: {
+    empleadoNombre: string;
+    fecha: string;
+    punchedMinutes: number;
+    scheduledMinutes: number;
+    effectiveMinutes: number;
+    reasonCode: string | null;
+    status: 'approved' | 'rejected';
+    reviewedBy: string;
+    notes?: string | null;
+  }): { subject: string; html: string } {
+    const formatMinutes = (mins: number) => {
+      const h = Math.floor(Math.abs(mins) / 60);
+      const m = Math.round(Math.abs(mins) % 60);
+      return `${h}h ${String(m).padStart(2, '0')}m`;
+    };
+
+    const deltaMinutes = data.punchedMinutes - data.scheduledMinutes;
+    const deltaFormatted = formatMinutes(Math.abs(deltaMinutes));
+    const isPositive = deltaMinutes > 0;
+
+    const statusText = data.status === 'approved' ? 'Aprobada' : 'Rechazada';
+    const statusColor = data.status === 'approved' ? '#10B981' : '#EF4444';
+    const statusIcon = data.status === 'approved' ? '✅' : '❌';
+
+    const reasonText = data.reasonCode
+      ? {
+          employee_confirmed_no_extra: 'Empleado confirmó: No trabajó de más',
+          employee_confirmed_punch_error: 'Empleado confirmó: Error de fichaje',
+          employee_confirmed_worked_less: 'Empleado confirmó: Trabajó de menos',
+          employee_declares_extra: 'Empleado declara: Trabajó de más',
+          employee_declares_less: 'Empleado declara: Trabajó de menos',
+          AUSENCIA_INJUSTIFICADA: 'Ausencia injustificada',
+          OLVIDO_FICHAR: 'Olvidó fichar',
+          OTRO: 'Otro motivo',
+        }[data.reasonCode] || data.reasonCode
+      : 'Sin motivo especificado';
+
+    const subject = `Regularización de jornada ${statusText.toLowerCase()} - ${data.fecha}`;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: ${statusColor}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h2 style="margin: 0; font-size: 24px;">${statusIcon} Regularización ${statusText}</h2>
+        </div>
+        
+        <div style="background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+          <div style="background-color: white; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+            <p style="margin: 5px 0;"><strong>Empleado:</strong> ${data.empleadoNombre}</p>
+            <p style="margin: 5px 0;"><strong>Fecha:</strong> ${data.fecha}</p>
+            <p style="margin: 5px 0;"><strong>Estado:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusText}</span></p>
+          </div>
+
+          <div style="background-color: white; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+            <h3 style="margin-top: 0; color: #374151;">Detalles de la jornada:</h3>
+            <p style="margin: 5px 0;"><strong>Horas registradas:</strong> ${formatMinutes(data.punchedMinutes)}</p>
+            <p style="margin: 5px 0;"><strong>Horas previstas:</strong> ${formatMinutes(data.scheduledMinutes)}</p>
+            <p style="margin: 5px 0;"><strong>Diferencia:</strong> <span style="color: ${isPositive ? '#F59E0B' : '#EF4444'}; font-weight: bold;">${isPositive ? '+' : '-'}${deltaFormatted}</span></p>
+            ${data.status === 'approved' ? `<p style="margin: 5px 0;"><strong>Horas efectivas aprobadas:</strong> <span style="color: ${statusColor}; font-weight: bold;">${formatMinutes(data.effectiveMinutes)}</span></p>` : ''}
+          </div>
+
+          <div style="background-color: white; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+            <p style="margin: 5px 0;"><strong>Motivo:</strong> ${reasonText}</p>
+            ${data.notes ? `<p style="margin: 5px 0;"><strong>Notas:</strong> ${data.notes}</p>` : ''}
+          </div>
+
+          <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; border-left: 4px solid ${statusColor};">
+            <p style="margin: 0; color: #6B7280; font-size: 12px;">
+              ${data.status === 'approved' 
+                ? `Tu regularización ha sido aprobada. Las horas efectivas (${formatMinutes(data.effectiveMinutes)}) se aplicarán en el cálculo de tus horas trabajadas.` 
+                : `Tu regularización ha sido rechazada. Las horas efectivas se mantienen en 0. Si tienes dudas, contacta con tu supervisor.`}
+            </p>
+          </div>
+
+          <p style="color: #6B7280; font-size: 12px; margin-top: 20px; text-align: center;">
+            Revisado por: ${data.reviewedBy}<br>
+            Fecha: ${new Date().toLocaleString('es-ES')}
+          </p>
+        </div>
+      </div>
+    `.trim();
+
+    return { subject, html };
+  }
+
+  /**
+   * Trimite email către angajat când regularizarea este aprobată/respinsă
+   */
+  private async sendRegularizacionEmailToEmployee(
+    employee_codigo: string,
+    workday_date: Date,
+    punched_minutes: number,
+    scheduled_minutes: number,
+    effective_minutes: number,
+    reason_code: string | null,
+    status: 'approved' | 'rejected',
+    reviewed_by: string,
+    notes?: string | null,
+  ): Promise<void> {
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn(
+        `⚠️ Email service not configured. Email notification not sent to employee ${employee_codigo} for ${status} regularizacion`,
+      );
+      return;
+    }
+
+    // Obține datele angajatului
+    let empleadoEmail: string | null = null;
+    let empleadoNombre: string = employee_codigo;
+
+    try {
+      const empleado = await this.empleadosService.getEmpleadoByCodigo(
+        employee_codigo,
+      );
+      empleadoEmail =
+        empleado?.['CORREO ELECTRONICO'] ||
+        empleado?.CORREO_ELECTRONICO ||
+        null;
+      empleadoNombre =
+        empleado?.['NOMBRE / APELLIDOS'] ||
+        empleado?.NOMBRE_APELLIDOS ||
+        employee_codigo;
+    } catch (error: any) {
+      this.logger.warn(
+        `⚠️ Could not fetch empleado data for ${employee_codigo}: ${error.message}`,
+      );
+    }
+
+    if (!empleadoEmail || empleadoEmail.trim() === '') {
+      this.logger.warn(
+        `⚠️ No email found for empleado ${employee_codigo}, skipping email notification`,
+      );
+      return;
+    }
+
+    try {
+      const fechaStr = workday_date.toISOString().split('T')[0];
+      const { subject, html } = this.formatRegularizacionEmailHtml({
+        empleadoNombre,
+        fecha: fechaStr,
+        punchedMinutes: punched_minutes,
+        scheduledMinutes: scheduled_minutes,
+        effectiveMinutes: effective_minutes,
+        reasonCode: reason_code,
+        status,
+        reviewedBy: reviewed_by,
+        notes,
+      });
+
+      await this.emailService.sendEmail(empleadoEmail, subject, html);
+      this.logger.log(
+        `✅ Email notification sent to ${empleadoEmail} for ${status} regularizacion (employee: ${employee_codigo}, fecha: ${fechaStr})`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: reviewed_by || 'system',
+          recipientType: 'empleado',
+          recipientId: employee_codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: empleadoNombre,
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ Error saving email to DB: ${saveError.message}`,
+        );
+      }
+    } catch (emailError: any) {
+      this.logger.warn(
+        `⚠️ Error sending email to ${empleadoEmail}: ${emailError.message}`,
       );
     }
   }

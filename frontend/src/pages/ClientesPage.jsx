@@ -9,6 +9,7 @@ import ClienteForm from '../components/clientes/ClienteForm';
 import { routes } from '../utils/routes';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { TableLoading } from '../components/ui/LoadingStates';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 export default function ClientesPage() {
   const { user: authUser } = useAuth();
@@ -600,7 +601,28 @@ export default function ClientesPage() {
             </div>
             <div className="flex items-center space-x-3">
               <button 
-                onClick={() => window.open('https://wa.me/34635289087?text=Hola, he encontrado un error en la sección de clientes/proveedores:', '_blank')}
+                onClick={() => {
+                  // Date relevante pentru pagina de clientes/proveedores
+                  const pageData = {
+                    additionalInfo: [
+                      `[TAB ACTIVO] ${activeTab === 'clientes' ? 'Clientes' : 'Proveedores'}`,
+                      activeTab === 'clientes' && clientes?.length > 0 
+                        ? `[CLIENTES] ${clientes.length} clientes disponibles` 
+                        : null,
+                      activeTab === 'proveedores' && proveedores?.length > 0 
+                        ? `[PROVEEDORES] ${proveedores.length} proveedores disponibles` 
+                        : null,
+                    ].filter(Boolean),
+                  };
+                  
+                  const message = buildErrorReportMessage({
+                    authUser,
+                    pageName: activeTab === 'clientes' ? "Clientes" : "Proveedores",
+                    pageData,
+                  });
+                  
+                  openWhatsAppErrorReport(message);
+                }}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
               >
                 <span>Reportar error</span>

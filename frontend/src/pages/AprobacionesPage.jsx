@@ -7,6 +7,7 @@ import { API_ENDPOINTS } from '../utils/constants';
 import { useAdminApi } from '../hooks/useAdminApi';
 import activityLogger from '../utils/activityLogger';
 import { routes } from '../utils/routes';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 
 export default function AprobacionesPage() {
@@ -955,7 +956,28 @@ export default function AprobacionesPage() {
         
         {/* Buton Reportar error */}
         <button
-          onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de aprobaciones', '_blank')}
+          onClick={() => {
+            // Date relevante pentru pagina de aprobaciones
+            const pageData = {
+              additionalInfo: [
+                `[TAB ACTIVO] ${activeTab === 'cambios' ? 'Cambios de Datos' : 'Regularizaciones'}`,
+                pendingCambios?.length > 0 ? `[CAMBIOS PENDIENTES] ${pendingCambios.length}` : null,
+                activeTab === 'regularizaciones' ? (
+                  activeRegularizacionSubtab === 'pending' 
+                    ? (pendingRegularizaciones?.length > 0 ? `[REGULARIZACIONES PENDIENTES] ${pendingRegularizaciones.length}` : null)
+                    : (confirmedRegularizaciones?.length > 0 ? `[REGULARIZACIONES CONFIRMADAS] ${confirmedRegularizaciones.length}` : null)
+                ) : null,
+              ].filter(Boolean),
+            };
+            
+            const message = buildErrorReportMessage({
+              authUser,
+              pageName: "Aprobaciones",
+              pageData,
+            });
+            
+            openWhatsAppErrorReport(message);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
           title="Reportar error"
         >
@@ -1242,11 +1264,13 @@ export default function AprobacionesPage() {
                                   <span className="ml-2 text-blue-700 font-semibold">
                                     {regularizacion.reason_code === 'employee_confirmed_no_extra' && '✅ Empleado confirmó: No trabajó de más'}
                                     {regularizacion.reason_code === 'employee_confirmed_punch_error' && '✅ Empleado confirmó: Error de fichaje'}
+                                    {regularizacion.reason_code === 'employee_confirmed_worked_less' && '✅ Empleado confirmó: Trabajó de menos'}
                                     {regularizacion.reason_code === 'employee_declares_extra' && '⚠️ Empleado declara: Trabajó de más'}
+                                    {regularizacion.reason_code === 'employee_declares_less' && '⚠️ Empleado declara: Trabajó de menos'}
                                     {regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' && '❌ Ausencia injustificada'}
                                     {regularizacion.reason_code === 'OLVIDO_FICHAR' && '⚠️ Olvidó fichar'}
                                     {regularizacion.reason_code === 'OTRO' && '📝 Otro motivo'}
-                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_declares_extra', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
+                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_confirmed_worked_less', 'employee_declares_extra', 'employee_declares_less', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
                                   </span>
                                 </div>
                               )}
@@ -1361,11 +1385,13 @@ export default function AprobacionesPage() {
                                   <span className="ml-2 text-blue-700 font-semibold">
                                     {regularizacion.reason_code === 'employee_confirmed_no_extra' && '✅ Empleado confirmó: No trabajó de más'}
                                     {regularizacion.reason_code === 'employee_confirmed_punch_error' && '✅ Empleado confirmó: Error de fichaje'}
+                                    {regularizacion.reason_code === 'employee_confirmed_worked_less' && '✅ Empleado confirmó: Trabajó de menos'}
                                     {regularizacion.reason_code === 'employee_declares_extra' && '⚠️ Empleado declara: Trabajó de más'}
+                                    {regularizacion.reason_code === 'employee_declares_less' && '⚠️ Empleado declara: Trabajó de menos'}
                                     {regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' && '❌ Ausencia injustificada'}
                                     {regularizacion.reason_code === 'OLVIDO_FICHAR' && '⚠️ Olvidó fichar'}
                                     {regularizacion.reason_code === 'OTRO' && '📝 Otro motivo'}
-                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_declares_extra', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
+                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_confirmed_worked_less', 'employee_declares_extra', 'employee_declares_less', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
                                   </span>
                                 </div>
                               )}

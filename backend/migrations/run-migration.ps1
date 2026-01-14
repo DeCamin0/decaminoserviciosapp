@@ -1,7 +1,7 @@
 # Script PowerShell pentru rularea migrației SQL
 # Rulează: .\run-migration.ps1
 
-$sqlFile = "migrations/run-migration.sql"
+$sqlFile = "run-migration.sql"
 $host = "217.154.102.115"
 $user = "facturacion_user"
 $database = "decamino_db"

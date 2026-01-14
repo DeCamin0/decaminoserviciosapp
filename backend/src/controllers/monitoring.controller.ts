@@ -38,7 +38,10 @@ export class MonitoringController {
       timestamp?: string;
     },
   ) {
-    if (!this.telegramService.isConfigured()) {
+    // Folosim bot-ul general pentru erori (dacă e configurat)
+    // Altfel folosim bot-ul de gestoria ca fallback
+    const useGeneralBot = this.telegramService.isGeneralConfigured();
+    if (!useGeneralBot && !this.telegramService.isConfigured()) {
       return { success: false, message: 'Telegram not configured' };
     }
 
@@ -58,7 +61,11 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
 ⏰ *Timestamp:* ${errorData.timestamp || new Date().toISOString()}
       `.trim();
 
-      await this.telegramService.sendMessage(message);
+      if (useGeneralBot) {
+        await this.telegramService.sendGeneralMessage(message);
+      } else {
+        await this.telegramService.sendMessage(message);
+      }
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -77,24 +84,40 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
   /**
    * Endpoint pentru trimiterea mesajelor pe Telegram
    * Folosit pentru notificări importante (ex: banner baja médica închis)
+   * @param botType - 'gestoria' (default) sau 'general' pentru a alege bot-ul
    */
   @Post('telegram')
   async sendTelegramMessage(
     @Body()
     data: {
       message: string;
+      botType?: 'gestoria' | 'general'; // Nou: permite alegerea bot-ului
       userId?: string;
       userName?: string;
       userEmail?: string;
       userGrupo?: string;
     },
   ) {
-    if (!this.telegramService.isConfigured()) {
-      return { success: false, message: 'Telegram not configured' };
+    const botType = data.botType || 'gestoria';
+    
+    // Verifică configurarea bot-ului ales
+    const isConfigured = botType === 'general' 
+      ? this.telegramService.isGeneralConfigured()
+      : this.telegramService.isConfigured();
+    
+    if (!isConfigured) {
+      return { 
+        success: false, 
+        message: `Telegram ${botType} bot not configured` 
+      };
     }
 
     try {
-      await this.telegramService.sendMessage(data.message);
+      if (botType === 'general') {
+        await this.telegramService.sendGeneralMessage(data.message);
+      } else {
+        await this.telegramService.sendMessage(data.message);
+      }
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };

@@ -7,6 +7,7 @@ import { routes } from '../utils/routes';
 import ChartsSection from '../components/analytics/ChartsSection';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 export default function EstadisticasPage() {
   const { user: authUser } = useAuth();
@@ -585,9 +586,31 @@ export default function EstadisticasPage() {
         <div className="flex justify-end mb-8">
           <button
             onClick={() => {
-              // Funcionalidad para reportar error - puedes implementar según necesites
-              console.log('Reportar error clicked');
-              // Aquí puedes abrir un modal, enviar email, etc.
+              // Date relevante pentru pagina de estadisticas
+              const periodNames = {
+                'mensual': 'Mensual',
+                'anual': 'Anual',
+                'personalizado': 'Personalizado'
+              };
+              
+              const pageData = {
+                additionalInfo: [
+                  `[PERIODO] ${periodNames[selectedPeriod] || selectedPeriod}`,
+                  selectedPeriod === 'mensual' ? `[MES] ${selectedMonth}/${selectedYear}` : null,
+                  selectedPeriod === 'anual' ? `[AÑO] ${selectedYear}` : null,
+                  selectedCentro !== 'todos' ? `[CENTRO] ${selectedCentro}` : null,
+                  stats?.totalEmpleados > 0 ? `[EMPLEADOS] ${stats.totalEmpleados} total` : null,
+                  stats?.totalFichajes > 0 ? `[FICHAJES] ${stats.totalFichajes} total` : null,
+                ].filter(Boolean),
+              };
+              
+              const message = buildErrorReportMessage({
+                authUser,
+                pageName: "Estadísticas",
+                pageData,
+              });
+              
+              openWhatsAppErrorReport(message);
             }}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors duration-200 shadow-sm hover:shadow-md"
           >

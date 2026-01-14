@@ -12,6 +12,7 @@ import CalendarDayCell from '../components/CalendarDayCell.jsx';
 import DeclararNoPunchModal from '../components/DeclararNoPunchModal.jsx';
 
 import { routes } from '../utils/routes.js';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 
 
@@ -3254,7 +3255,29 @@ const getFirstValue = (record, keys) => {
         {/* Botón Reportar Error */}
         <div className="flex justify-end mb-4">
           <button 
-            onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de cuadrantes', '_blank')}
+            onClick={() => {
+              // Date relevante pentru pagina de cuadrantes
+              const cuadranteActual = cuadrantesUser?.find(c => c.LUNA === selectedLuna) || cuadrantesUser?.[0];
+              const horarioInfo = horarioAsignado?.nombre || horarioMulticentroAsignado?.nombre || null;
+              
+              const pageData = {
+                additionalInfo: [
+                  selectedLuna ? `[MES] ${selectedLuna}` : null,
+                  cuadrantesUser?.length > 0 ? `[CUADRANTES] ${cuadrantesUser.length} cuadrantes disponibles` : null,
+                  cuadranteActual ? `[CUADRANTE ACTUAL] ${cuadranteActual.LUNA || 'N/A'}` : null,
+                  horarioInfo ? `[HORARIO] ${horarioInfo}` : null,
+                ].filter(Boolean),
+              };
+              
+              const message = buildErrorReportMessage({
+                authUser,
+                userData,
+                pageName: "Cuadrantes Empleado",
+                pageData,
+              });
+              
+              openWhatsAppErrorReport(message);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
           >
             <span className="text-base">📱</span>

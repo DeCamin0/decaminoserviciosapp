@@ -771,7 +771,7 @@ export class FichajesService {
               }
             }
           } else if (fichajeData.tipo === 'Salida') {
-            // Verifică dacă trebuie confirmare pentru Salida
+            // Verifică diferența pentru informare (nu pentru acțiune)
             const checkResult =
               await this.regularizacionService.checkNeedsConfirmation(
                 fichajeData.codigo,
@@ -783,42 +783,51 @@ export class FichajesService {
               ] ?? 15;
             const delta = Number(checkResult.delta_minutes) || 0;
 
-            // Business rule:
-            // - abs(delta) <= 15 => auto OK (no modal, no approvals)
-            // - abs(delta)  > 15 => auto send to approvals (NEEDS_REVIEW), no modal
-            if (Math.abs(delta) > threshold) {
-              try {
-                await this.regularizacionService.confirmJornada({
-                  employee_codigo: fichajeData.codigo,
-                  fecha: fichajeData.data,
-                  decision: 'worked_more',
-                  reason: 'auto_threshold_exceeded',
-                  created_by: fichajeData.codigo,
-                  ip_address: undefined,
-                  user_agent: undefined,
-                });
-                this.logger.log(
-                  `✅ Auto-sent jornada to review (NEEDS_REVIEW): codigo=${fichajeData.codigo}, fecha=${fichajeData.data}, delta_minutes=${delta}`,
-                );
-                // Do not open modal in frontend
-                needs_confirmation = false;
-                confirmation_data = null;
-                return {
-                  success: true,
-                  id: fichajeData.id,
-                  needs_confirmation: false,
-                  auto_sent_for_review: true,
-                };
-              } catch (autoErr: any) {
-                // If auto-send fails, fall back to old behavior (modal) so user isn't blocked
-                this.logger.warn(
-                  `⚠️ Auto-send to review failed, falling back to modal: ${autoErr?.message || autoErr}`,
-                );
-                needs_confirmation = true;
-              }
-            } else {
-              needs_confirmation = false;
-            }
+            // ============================================================================
+            // ARCHIVED: Auto-regularizare și modal logic (commented for future use)
+            // ============================================================================
+            // PREVIOUS BEHAVIOR 1: Auto-send to approvals without modal when |delta| > 15 min
+            // PREVIOUS BEHAVIOR 2: Show modal for employee confirmation when |delta| > 15 min
+            // 
+            // Both behaviors were removed. Now at Salida we only INFORM, we don't ask for action.
+            // Regularizarea is now exclusively on-demand, initiated by the employee.
+            //
+            // To re-enable auto-send, uncomment:
+            // if (Math.abs(delta) > threshold) {
+            //   try {
+            //     const isDeltaPositive = delta > 0;
+            //     await this.regularizacionService.confirmJornada({
+            //       employee_codigo: fichajeData.codigo,
+            //       fecha: fichajeData.data,
+            //       decision: isDeltaPositive ? 'worked_more' : 'no_extra',
+            //       reason: isDeltaPositive ? 'auto_threshold_exceeded' : 'auto_threshold_exceeded_negative',
+            //       created_by: fichajeData.codigo,
+            //       ip_address: undefined,
+            //       user_agent: undefined,
+            //     });
+            //     needs_confirmation = false;
+            //     confirmation_data = null;
+            //     return { success: true, id: fichajeData.id, needs_confirmation: false, auto_sent_for_review: true };
+            //   } catch (autoErr: any) {
+            //     this.logger.warn(`⚠️ Auto-send to review failed, falling back to modal: ${autoErr?.message || autoErr}`);
+            //     needs_confirmation = true;
+            //   }
+            // }
+            //
+            // To re-enable modal, uncomment:
+            // if (Math.abs(delta) > threshold) {
+            //   needs_confirmation = true;
+            // } else {
+            //   needs_confirmation = false;
+            // }
+            // ============================================================================
+            // END ARCHIVED: Auto-regularizare și modal logic
+            // ============================================================================
+            
+            // CURRENT BEHAVIOR: At Salida, we only INFORM about the difference, we don't ask for action
+            // Regularizarea is now exclusively on-demand, initiated by the employee through a separate action
+            // No modal, no auto-send, just information
+            needs_confirmation = false;
             confirmation_data = {
               delta_minutes: checkResult.delta_minutes,
               punched_minutes: checkResult.punched_minutes,

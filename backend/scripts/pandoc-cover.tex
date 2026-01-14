@@ -1,0 +1,69 @@
+% Header para página de portada del manual
+% Este archivo se incluye antes del contenido del manual
+% Logo como fondo de la portada
+
+% Necesitamos geometry para márgenes personalizados (más compacto)
+\newgeometry{left=3cm,right=3cm,top=2cm,bottom=2cm}
+
+% Portada centrada (parte superior)
+\begin{titlepage}
+% Agregar logo como fondo (centrado, con opacidad)
+\AddToShipoutPictureBG*{%
+  \AtPageCenter{%
+    \begin{tikzpicture}[remember picture,overlay]
+      \node[opacity=0.15] at (0,0) {%
+        \includegraphics[width=0.6\textwidth]{../../frontend/public/logo.png}%
+      };
+    \end{tikzpicture}%
+  }%
+}
+
+\centering
+
+% Espacio superior reducido
+\vspace*{0.5cm}
+
+% Título principal
+{\Huge\bfseries Manual de Usuario\par}
+\vspace{0.4cm}
+{\Large\bfseries \mbox{De~Camino~Servicios~Auxiliares}\par}
+\vspace{0.2cm}
+{\large Guía para Empleados\par}
+
+\vspace{1cm}
+
+% Línea separadora
+\rule{0.8\textwidth}{0.4pt}
+
+\vspace{0.4cm}
+
+% Información de la empresa (más compacta)
+{\large\bfseries \mbox{De~Camino~Servicios~Auxiliares~S.L.}\par}
+\vspace{0.15cm}
+{\normalsize CIF: B-85524536\par}
+\vspace{0.1cm}
+{\normalsize Avda. Euzkadi 14, Local 5\par}
+{\normalsize 28702 San Sebastián de los Reyes, Madrid, España\par}
+\vspace{0.15cm}
+{\normalsize info@decaminoservicios.com | www.decaminoservicios.com\par}
+
+\vspace{0.5cm}
+
+% Información del documento (más compacta)
+\rule{0.8\textwidth}{0.4pt}
+\vspace{0.2cm}
+{\small Versión: 1.0 | Fecha: Enero 2026\par}
+
+\vspace*{\fill}
+
+\end{titlepage}
+
+% Restaurar márgenes normales para el resto del documento
+\restoregeometry
+\newpage
+
+% Ahora incluimos el índice en una página separada
+% Cambiamos el título del índice a español
+\renewcommand{\contentsname}{Contenido}
+\tableofcontents
+\newpage

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../components/ui';
 import InspectionForm from '../components/inspections/InspectionForm';
 import InspectionList from '../components/inspections/InspectionList'; // Updated import
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { routes } from '../utils/routes';
 import { API_ENDPOINTS } from '../utils/constants';
 import Back3DButton from '../components/Back3DButton.jsx';
@@ -131,7 +132,25 @@ export default function InspeccionesPage() {
             
             {/* Buton Reportar error */}
             <button
-              onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de inspecciones', '_blank')}
+              onClick={() => {
+                // Date relevante pentru pagina de inspecciones
+                const pageData = {
+                  additionalInfo: [
+                    selectedType ? `[TIPO SELECCIONADO] ${selectedType}` : null,
+                    centrosStats && Object.keys(centrosStats).length > 0 
+                      ? `[CENTROS] ${Object.keys(centrosStats).length} centros con inspecciones` 
+                      : null,
+                  ].filter(Boolean),
+                };
+                
+                const message = buildErrorReportMessage({
+                  authUser,
+                  pageName: "Inspecciones",
+                  pageData,
+                });
+                
+                openWhatsAppErrorReport(message);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
               title="Reportar error"
             >

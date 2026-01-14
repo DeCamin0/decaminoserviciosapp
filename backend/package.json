@@ -22,7 +22,11 @@
     "db:create-push-subscriptions": "node scripts/create-push-subscriptions-table.js",
     "db:create-grupos-referencia": "node scripts/create-grupos-referencia-table.js",
     "db:create-fichaje-regularizacion": "node scripts/run-fichaje-regularizacion-migration.js",
-    "db:add-no-punch-type": "node scripts/run-no-punch-migration.js"
+    "db:add-no-punch-type": "node scripts/run-no-punch-migration.js",
+    "pdf:manual-empleados": "node scripts/generate-manual-empleados-pdf.js",
+    "pdf:manual-empleados-pandoc": "node scripts/generate-manual-empleados-pdf-pandoc.js",
+    "pdf:manual-empleados-pandoc-simple": "node scripts/generate-manual-empleados-pdf-pandoc-simple.js",
+    "pdf:manual-empleados-pdfmake": "node scripts/generate-manual-empleados-pdf-pdfmake.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.11",
@@ -49,7 +53,7 @@
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.17.2",
-    "pdfmake": "^0.3.0",
+    "pdfmake": "^0.3.2",
     "qs": "^6.14.1",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",

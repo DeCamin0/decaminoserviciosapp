@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getFormattedNombre } from '../utils/employeeNameHelper';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Card, Button, Input, Modal } from '../components/ui';
@@ -37,6 +37,8 @@ export default function MensajesEnviadosPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [currentOffset, setCurrentOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  // Ref pentru a preveni re-executarea simultană
+  const isLoadingRef = useRef(false);
   const [filters, setFilters] = useState({
     recipientType: '',
     status: '',
@@ -155,12 +157,24 @@ export default function MensajesEnviadosPage() {
   // Încarcă istoricul mesajelor
   const loadSentEmails = useCallback(async (loadMore = false) => {
     if (!canManageEmails) return;
+    
+    // Previne re-executarea simultană
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
 
     // Dacă încărcăm mai multe, folosim loadingMore, altfel loadingEmails
     if (loadMore) {
-      if (loadingMore || !hasMore) return;
+      if (loadingMore || !hasMore) {
+        isLoadingRef.current = false;
+        return;
+      }
       setLoadingMore(true);
     } else {
+      // Previne re-încărcarea dacă deja se încarcă
+      if (loadingEmails) {
+        isLoadingRef.current = false;
+        return;
+      }
       setLoadingEmails(true);
       setCurrentOffset(0);
       setSentEmails([]);
@@ -169,7 +183,15 @@ export default function MensajesEnviadosPage() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      if (!token) return;
+      if (!token) {
+        isLoadingRef.current = false;
+        if (loadMore) {
+          setLoadingMore(false);
+        } else {
+          setLoadingEmails(false);
+        }
+        return;
+      }
 
       const baseUrl = import.meta.env.DEV 
         ? 'http://localhost:3000' 
@@ -183,8 +205,21 @@ export default function MensajesEnviadosPage() {
       if (filters.status) queryParams.append('status', filters.status);
       if (filters.startDate) queryParams.append('startDate', filters.startDate);
       if (filters.endDate) queryParams.append('endDate', filters.endDate);
-      queryParams.append('limit', '50');
-      queryParams.append('offset', loadMore ? currentOffset.toString() : '0');
+      queryParams.append('limit', '100');
+      
+      // Pentru loadMore, folosim offset-ul din state-ul curent
+      // Folosim funcțional update pentru a obține valoarea curentă
+      if (loadMore) {
+        // Obținem offset-ul din state folosind funcțional update
+        let offsetValue = 0;
+        setSentEmails(prev => {
+          offsetValue = prev.length;
+          return prev; // Nu modificăm state-ul, doar citim valoarea
+        });
+        queryParams.append('offset', offsetValue.toString());
+      } else {
+        queryParams.append('offset', '0');
+      }
 
       const response = await fetch(`${baseUrl}/api/sent-emails?${queryParams}`, {
         headers: {
@@ -216,65 +251,77 @@ export default function MensajesEnviadosPage() {
     } catch (error) {
       console.error('Error loading sent emails:', error);
     } finally {
+      isLoadingRef.current = false;
       if (loadMore) {
         setLoadingMore(false);
       } else {
         setLoadingEmails(false);
       }
     }
-  }, [canManageEmails, loadingMore, hasMore, filters.recipientType, filters.status, filters.startDate, filters.endDate, currentOffset]);
+  // Eliminăm sentEmails din dependențe pentru a preveni re-crearea funcției la fiecare modificare
+  // Folosim sentEmails.length direct în funcție, care va fi actualizat la fiecare render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageEmails, loadingMore, loadingEmails, hasMore, filters.recipientType, filters.status, filters.startDate, filters.endDate]);
 
   useEffect(() => {
-    if (activeTab === 'historial') {
+    if (activeTab === 'historial' && canManageEmails) {
       // Resetează când se schimbă filtrele sau tab-ul
+      // Folosim un flag pentru a preveni re-executarea dacă deja se încarcă
+      if (loadingEmails) return;
+      
       setCurrentOffset(0);
       setSentEmails([]);
       setHasMore(true);
-      loadSentEmails();
+      loadSentEmails(false);
     } else if (activeTab === 'automaticos') {
       loadScheduledMessages();
     }
-  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails, loadSentEmails]);
+    // Eliminăm loadSentEmails din dependențe pentru a preveni loop-ul infinit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails]);
 
-  // Infinite scroll - detectează când utilizatorul ajunge jos
+  // Infinite scroll - detectează când utilizatorul ajunge jos (opțional - funcționează în background)
   useEffect(() => {
+    // Dezactivăm infinite scroll automat, folosim doar butonul "Cargar más"
+    // Dacă vrei să reactivezi infinite scroll, decomentează codul de mai jos
+    return;
+    
     if (activeTab !== 'historial' || !hasMore || loadingMore || loadingEmails) return;
 
-    const sentinel = document.getElementById('email-sentinel');
-    if (!sentinel) {
-      // Dacă sentinel-ul nu există încă, încearcă din nou după un scurt delay
-      const timeout = setTimeout(() => {
-        const retrySentinel = document.getElementById('email-sentinel');
-        if (retrySentinel) {
-          const observer = new IntersectionObserver(
-            (entries) => {
-              if (entries[0].isIntersecting && hasMore && !loadingMore && !loadingEmails) {
-                loadSentEmails(true);
-              }
-            },
-            { threshold: 0.1 }
-          );
-          observer.observe(retrySentinel);
-          return () => observer.disconnect();
+    const setupObserver = () => {
+      const sentinel = document.getElementById('email-sentinel');
+      if (!sentinel) {
+        // Dacă sentinel-ul nu există încă, încearcă din nou după un scurt delay
+        const timeout = setTimeout(setupObserver, 200);
+        return () => clearTimeout(timeout);
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting && hasMore && !loadingMore && !loadingEmails) {
+            loadSentEmails(true);
+          }
+        },
+        { threshold: 0.1, rootMargin: '50px' }
+      );
+
+      try {
+        observer.observe(sentinel);
+      } catch (error) {
+        console.warn('IntersectionObserver error:', error);
+      }
+
+      return () => {
+        try {
+          observer.disconnect();
+        } catch (error) {
+          // Ignoră erorile la disconnect
         }
-      }, 100);
-      return () => clearTimeout(timeout);
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore && !loadingEmails) {
-          loadSentEmails(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-
-    return () => {
-      observer.disconnect();
+      };
     };
+
+    const cleanup = setupObserver();
+    return cleanup;
   }, [activeTab, hasMore, loadingMore, loadingEmails, loadSentEmails]);
 
   // Încarcă mesajele automate
@@ -1141,14 +1188,24 @@ export default function MensajesEnviadosPage() {
                       ))}
                     </tbody>
                   </table>
-                  {/* Sentinel pentru infinite scroll */}
-                  <div id="email-sentinel" className="h-10 flex items-center justify-center py-4">
+                  {/* Buton "Cargar más" */}
+                  <div className="flex flex-col items-center justify-center py-4 gap-2">
+                    {hasMore && !loadingMore && (
+                      <button
+                        onClick={() => loadSentEmails(true)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      >
+                        Cargar más mensajes
+                      </button>
+                    )}
                     {loadingMore && (
                       <div className="text-gray-500 text-sm">Cargando más mensajes...</div>
                     )}
                     {!hasMore && sentEmails.length > 0 && (
                       <div className="text-gray-500 text-sm">No hay más mensajes</div>
                     )}
+                    {/* Sentinel pentru infinite scroll (ascuns, folosit doar dacă se reactivează infinite scroll) */}
+                    <div id="email-sentinel" className="h-10 w-full opacity-0 pointer-events-none"></div>
                   </div>
                 </div>
               )}

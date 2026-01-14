@@ -1,0 +1,27 @@
+% Header simplificado para PDF generado con Pandoc
+% Folosim doar pachete standard care vin cu MiKTeX (fără microtype, lastpage, titlesec)
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+
+% Colores personalizados
+\definecolor{decaminoRed}{RGB}{229, 57, 53}
+\definecolor{decaminoGray}{RGB}{102, 102, 102}
+
+% Configuración simplificada de header y footer (fără lastpage)
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{gray}{\small \mbox{De~Camino~Servicios~Auxiliares~S.L.}}}
+\fancyhead[R]{\textcolor{gray}{\small Manual de Usuario}}
+\fancyfoot[C]{\textcolor{gray}{\small \mbox{De~Camino~Servicios~Auxiliares~S.L.} | CIF: B-87654321 | Madrid, España}}
+\fancyfoot[R]{\textcolor{gray}{\small Página \thepage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Estilo para primera página
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyfoot[C]{\textcolor{gray}{\small \mbox{De~Camino~Servicios~Auxiliares~S.L.} | CIF: B-87654321 | Madrid, España}}
+  \fancyfoot[R]{\textcolor{gray}{\small Página \thepage}}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}

@@ -8,6 +8,7 @@ import ActivityLog from '../components/admin/ActivityLog';
 import PushSubscribersList from '../components/admin/PushSubscribersList';
 import EmpleadosStatusList from '../components/admin/EmpleadosStatusList';
 // ServerMonitor eliminat
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 export default function AdminDashboard() {
   const { user: authUser } = useAuth();
@@ -86,7 +87,31 @@ export default function AdminDashboard() {
         {/* Botón Reportar Error */}
         <div className="flex justify-end mb-4">
           <button 
-            onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el panel de administración', '_blank')}
+            onClick={() => {
+              // Date relevante pentru pagina de admin
+              const tabNames = {
+                'stats': 'Estadísticas',
+                'permissions': 'Permisos',
+                'activity': 'Activity Logs',
+                'push': 'Push Subscribers',
+                'empleados': 'Estado Empleados'
+              };
+              
+              const pageData = {
+                additionalInfo: [
+                  `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
+                  isAdmin ? '[ROL] Admin' : isDeveloper ? '[ROL] Developer' : null,
+                ].filter(Boolean),
+              };
+              
+              const message = buildErrorReportMessage({
+                authUser,
+                pageName: "Panel de Administración",
+                pageData,
+              });
+              
+              openWhatsAppErrorReport(message);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
           >
             <span className="text-base">📱</span>

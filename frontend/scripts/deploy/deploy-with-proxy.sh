@@ -15,7 +15,7 @@ npm run build
 
 # 3. Iniciar el proxy server
 echo "🌐 Iniciando proxy server..."
-node proxy-server.js &
+node ../proxy-server.js &
 
 # 4. Servir la aplicación estática
 echo "📁 Sirviendo archivos estáticos..."

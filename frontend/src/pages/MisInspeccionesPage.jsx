@@ -6,6 +6,7 @@ import { routes } from '../utils/routes.js';
 import { API_ENDPOINTS } from '../utils/constants';
 import activityLogger from '../utils/activityLogger';
 import Back3DButton from '../components/Back3DButton.jsx';
+import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 // Funcție pentru conversia Blob în Base64
 const blobToBase64 = (blob) => {
@@ -526,7 +527,22 @@ export default function MisInspeccionesPage() {
         <div className="flex gap-3">
           {/* Buton Reportar error */}
           <button
-            onClick={() => window.open('https://wa.me/34635289087?text=Hola, tengo un problema con el sistema de inspecciones', '_blank')}
+            onClick={() => {
+              // Date relevante pentru pagina de inspecciones
+              const pageData = {
+                additionalInfo: [
+                  inspections?.length > 0 ? `[INSPECCIONES] ${inspections.length} inspecciones disponibles` : null,
+                ].filter(Boolean),
+              };
+              
+              const message = buildErrorReportMessage({
+                authUser,
+                pageName: "Mis Inspecciones",
+                pageData,
+              });
+              
+              openWhatsAppErrorReport(message);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
             title="Reportar error"
           >

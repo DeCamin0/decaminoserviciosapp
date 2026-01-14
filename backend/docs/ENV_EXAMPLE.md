@@ -37,8 +37,15 @@ SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>
 
 # Telegram (pentru notificări pe Telegram)
 # IMPORTANT: Configurează aceste variabile pentru a trimite notificări Telegram!
+
+# Bot pentru gestoria (notificări despre ausencias, solicitudes, etc.)
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
 TELEGRAM_CHAT_ID=-4990173907
+
+# Bot general (pentru erori, notificări generale, monitoring, etc.)
+# Opțional: dacă nu e configurat, se folosește bot-ul de gestoria ca fallback
+TELEGRAM_BOT_TOKEN_GENERAL=your-general-telegram-bot-token-here
+TELEGRAM_CHAT_ID_GENERAL=your-general-chat-id-here
 
 # Monitoring (pentru alerting automat pe Telegram)
 # IMPORTANT: Setează MONITORING_ENABLED=true pentru a activa monitoring-ul
