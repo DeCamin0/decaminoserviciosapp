@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.01.14.1837",
+  "version": "2026.01.15.1311",
   "type": "module",
   "scripts": {
     "dev": "vite",

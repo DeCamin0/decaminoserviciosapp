@@ -173,9 +173,13 @@ const formatDate = (date: Date): string => {
 const EmpleadoPedidosPage: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  // Counter pentru a asigura ID-uri unice pentru toasts
+  const toastIdCounter = React.useRef(0);
+
   // Funcție pentru adăugarea de notificări
   const addToast = (type: ToastType, title: string, message: string, duration?: number) => {
-    const id = Date.now().toString();
+    toastIdCounter.current += 1;
+    const id = `${Date.now()}-${toastIdCounter.current}-${Math.random().toString(36).substr(2, 9)}`;
     const newToast: Toast = { id, type, title, message, duration };
     setToasts(prev => [...prev, newToast]);
   };
@@ -220,6 +224,12 @@ const EmpleadoPedidosPage: React.FC = () => {
 };
 
 // ===== TAB NUEVO PEDIDO =====
+// ✅ Helper: Obține centrul de lucru din user object (din AuthContext sau din /api/me)
+const getCentroTrabajoFromUser = (u: any): string | null => {
+  if (!u) return null;
+  return u['CENTRO TRABAJO'] || u['CENTRO_TRABAJO'] || u['CENTRO'] || u['CENTRO DE TRABAJO'] || null;
+};
+
 const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
   const { user } = useAuth();
   
@@ -235,21 +245,44 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   
   // Nu mai avem nevoie de state pentru dropdown - comunitatea se selectează automat
 
+  // Protecție pentru duplicate requests
+  const isLoadingComunidadRef = React.useRef(false);
+  const lastComunidadIdRef = React.useRef<number | null>(null);
+  const lastCallTimeRef = React.useRef<number>(0);
+
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = useCallback(async (comunidadId: number) => {
+    // Debounce: previne request-uri duplicate în mai puțin de 500ms
+    const now = Date.now();
+    if (now - lastCallTimeRef.current < 500) {
+      console.log('⏭️ Skipping duplicate request (debounce) for comunidad:', comunidadId);
+      return;
+    }
+    lastCallTimeRef.current = now;
+
+    // Previne request-urile duplicate pentru aceeași comunitate
+    if (isLoadingComunidadRef.current || lastComunidadIdRef.current === comunidadId) {
+      console.log('⏭️ Skipping duplicate request for comunidad:', comunidadId);
+      return;
+    }
+
+    isLoadingComunidadRef.current = true;
+    lastComunidadIdRef.current = comunidadId;
     setComunidadSeleccionada(comunidadId);
     
     try {
-      // NU schimbăm numele comunității - folosim numele corect din comunidadDetalles
-      let nombreComunidad = comunidadDetalles?.nombre || 'Comunidad no encontrada';
+      // ✅ Obține numele comunității din lista de comunități sau din comunidadDetalles
+      const comunidad = comunidades.find(c => c.id === comunidadId);
+      let nombreComunidad = comunidad?.nombre || comunidad?.['NOMBRE O RAZON SOCIAL'] || comunidadDetalles?.nombre || 'Comunidad no encontrada';
       
-      // Verifică dacă numele este corect
-      if (nombreComunidad === 'Comunidad no encontrada') {
-        // Încearcă să găsești în lista de comunități
-        const comunidad = comunidades.find(c => c.id === comunidadId);
-        if (comunidad) {
-          nombreComunidad = comunidad.nombre || comunidad['NOMBRE O RAZON SOCIAL'] || 'Comunidad no encontrada';
-        }
+      // ✅ Setează inmediatamente comunidadDetalles cu numele corect pentru a evita "Comunidad no encontrada"
+      if (comunidad && !comunidadDetalles) {
+        setComunidadDetalles({
+          id: comunidad.id,
+          nombre: comunidad.nombre,
+          datosCompletos: comunidad.datosCompletos,
+          productos: []
+        });
       }
       
       // Cargando detalles para la comunidad
@@ -330,17 +363,35 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         // Actualizează produsele cu permisiunile lor
         setProductos(productosConPermisos);
         
-        // NU schimbăm numele comunității - păstrăm numele corect
-        setComunidadDetalles(prev => ({
-          ...prev,
-          id: comunidadId,
-          nombre: nombreComunidad,
-          productos: productosConPermisos
-        }));
+        // ✅ Actualizează comunidadDetalles cu numele corect (nu "Comunidad no encontrada")
+        const comunidadEncontrada = comunidades.find(c => c.id === comunidadId);
+        const nombreFinal = comunidadEncontrada?.nombre || comunidadEncontrada?.['NOMBRE O RAZON SOCIAL'] || nombreComunidad;
+        
+        // Nu folosim "Comunidad no encontrada" dacă avem numele din lista de comunități
+        if (nombreFinal !== 'Comunidad no encontrada' || comunidadEncontrada) {
+          setComunidadDetalles({
+            id: comunidadId,
+            nombre: nombreFinal,
+            datosCompletos: comunidadEncontrada?.datosCompletos || null,
+            productos: productosConPermisos
+          });
+        } else {
+          // Fallback: păstrăm numele existent dacă este valid
+          setComunidadDetalles(prev => prev ? {
+            ...prev,
+            productos: productosConPermisos
+          } : {
+            id: comunidadId,
+            nombre: nombreComunidad,
+            productos: productosConPermisos
+          });
+        }
       }
     } catch (error) {
       console.error('❌ Error loading comunidad detalles:', error);
       addToast('error', 'Error', 'No se pudieron cargar los detalles de la comunidad.');
+    } finally {
+      isLoadingComunidadRef.current = false;
     }
   }, [comunidadDetalles, comunidades, addToast]);
 
@@ -403,10 +454,13 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
             found = users.find(u => (u[8] || '').trim().toLowerCase() === normEmail);
           }
           
-          if (found) {
-            const centroTrabajo = found['CENTRO TRABAJO'];
-            
-            if (centroTrabajo) {
+          // ✅ Încearcă să obțină centrul de lucru din user object (din AuthContext) sau din found
+          const centroTrabajoFromUser = getCentroTrabajoFromUser(user);
+          const centroTrabajoFromFound = found ? (found['CENTRO TRABAJO'] || found['CENTRO_TRABAJO'] || found['CENTRO'] || found['CENTRO DE TRABAJO']) : null;
+          const centroTrabajo = centroTrabajoFromUser || centroTrabajoFromFound;
+          
+          // ✅ Folosește centrul de lucru din user sau found pentru auto-selectare
+          if (centroTrabajo) {
               const comunidadEncontrada = centrosFromClientes.find(com => {
                 const matchExactNombre = com.nombre === centroTrabajo;
                 const matchExactDatos = com.datosCompletos?.['NOMBRE O RAZON SOCIAL'] === centroTrabajo;
@@ -462,7 +516,6 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
               }
             }
           }
-        }
       } catch (error) {
         console.error('Error loading comunidades and user data:', error);
       }
@@ -470,45 +523,11 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
     loadComunidadesAndUserData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routes.getClientes, user, addToast, handleComunidadChange]);
+  }, [routes.getClientes, user?.email]);
 
-  // Încarcă produsele din API
-  useEffect(() => {
-    const loadProductos = async () => {
-      setLoadingProductos(true);
-      try {
-        const response = await fetch(CATALOGO_API_URL, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-App-Source': 'DeCamino-Web-App',
-            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        // Productos cargados exitosamente
-        
-        if (data && Array.isArray(data)) {
-          // ✅ Backend-ul returnează deja datele în formatul corect (id, numero, descripcion, precio, imagen)
-          // Nu mai trebuie să facem conversie de buffer, backend-ul returnează deja base64
-          setProductos(data);
-        }
-      } catch (error) {
-        console.error('❌ Error loading productos:', error);
-        addToast('error', 'Error', 'No se pudieron cargar los productos.');
-      } finally {
-        setLoadingProductos(false);
-      }
-    };
-
-    loadProductos();
-  }, [addToast]);
+  // ✅ Produsele se încarcă DOAR în handleComunidadChange când se selectează o comunitate
+  // Nu mai încărcăm produsele la mount - ele se încarcă automat când se selectează comunitatea
+  // Aceasta asigură că produsele au permisiunile corecte pentru comunitatea selectată
 
   // Nu mai avem nevoie de filtrare - comunitatea se selectează automat
 
@@ -603,7 +622,6 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const calcularIVA = () => {
     const subtotal = calcularSubtotal();
     const iva = subtotal * 0.21;
-    console.log('🔍 IVA Calculation:', { subtotal, iva, percentage: (iva / subtotal) * 100 });
     return iva;
   };
 
@@ -720,10 +738,11 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
   // Informații utilizator curent
   const usuarioActual: Usuario = {
-    id: user?.CODIGO || user?.id || 'N/A',
-    nombre: user?.['NOMBRE / APELLIDOS'] || user?.NOMBRE || user?.nombre || 'Usuario',
-    comunidad: user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || user?.CENTRO || 'Sin centro'
-  };
+  id: user?.CODIGO || user?.id || 'N/A',
+  nombre: user?.['NOMBRE / APELLIDOS'] || user?.NOMBRE || user?.nombre || 'Usuario',
+  comunidad: getCentroTrabajoFromUser(user) || 'Sin centro'
+};
+
 
   return (
     <div className="space-y-6">

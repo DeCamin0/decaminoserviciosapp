@@ -73,18 +73,21 @@ export class CatalogoService {
         `📦 Fetching catalogo with permisos for cliente_id=${clienteId}, nombre=${clienteNombre || 'N/A'}`,
       );
 
-      // Query SQL pentru a obține produsele cu permisiunile lor
-      // Folosim LEFT JOIN pentru a include toate produsele, chiar dacă nu au permisiuni setate
+      // Query SQL pentru a obține DOAR produsele cu permisiuni setate (permitido = 1)
+      // Folosim INNER JOIN pentru a include DOAR produsele care au permisiuni explicate pentru această comunitate
       const query = `
         SELECT 
           cp.id AS producto_id,
           cp.\`Número de artículo\` AS numero_articulo,
           cp.\`Descripción de artículo\` AS descripcion,
           cp.\`Precio por unidad\` AS precio,
-          COALESCE(pp.permitido, 0) AS permitido,
+          pp.permitido,
+          pp.cliente_id AS permiso_cliente_id,
+          pp.producto_id AS permiso_producto_id,
           cp.fotoproducto
         FROM CatologoProductos cp
-        LEFT JOIN PermisosProductos pp ON cp.id = pp.producto_id AND pp.cliente_id = ${clienteId}
+        INNER JOIN PermisosProductos pp ON cp.id = pp.producto_id AND pp.cliente_id = ${clienteId}
+        WHERE pp.permitido = 1
         ORDER BY cp.id ASC
       `;
 
@@ -110,15 +113,21 @@ export class CatalogoService {
           }
         }
 
+        // ✅ Toate produsele din query au deja permitido = 1 (filtrate în WHERE)
+        // Nu mai trebuie să verificăm, dar păstrăm logica pentru siguranță
+        const permitidoRaw = row.permitido;
+        const permitidoProcessed = 
+          permitidoRaw === 1 ||
+          permitidoRaw === true ||
+          permitidoRaw === '1' ||
+          permitidoRaw === 1n; // BigInt support
+
         return {
           producto_id: row.producto_id,
           numero_articulo: row.numero_articulo || '',
           descripcion: row.descripcion || '',
           precio: Number(row.precio) || 0,
-          permitido:
-            row.permitido === 1 ||
-            row.permitido === true ||
-            row.permitido === '1',
+          permitido: permitidoProcessed, // Ar trebui să fie întotdeauna true
           imagen_base64: imagenBase64, // Frontend așteaptă imagen_base64 (fără prefix data:image)
         };
       });

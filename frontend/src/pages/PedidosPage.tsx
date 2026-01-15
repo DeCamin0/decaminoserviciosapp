@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, Button, Input } from '../components/ui';
 import { useAuth } from '../contexts/AuthContextBase';
+import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes';
 import { Link } from 'react-router-dom';
 import { isDemoMode } from '../utils/demo';
@@ -224,8 +225,55 @@ const getDemoProductos = () => [
 // ===== COMPONENTA PRINCIPAL =====
 const PedidosPage: React.FC = () => {
   const { user } = useAuth();
+  const { getPermissions } = useAdminApi();
   const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'permisos' | 'catalogo'>('nuevo-pedido');
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [userPermissions, setUserPermissions] = useState<any>(null);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
+
+  const userGrupo = useMemo(() => user?.GRUPO || user?.grupo || 'Empleado', [user?.GRUPO, user?.grupo]);
+
+  // Helper pentru verificarea permisiunilor
+  const findGrupoKey = useCallback((grupo: string, permissions: any) => {
+    if (!grupo || !permissions) return null;
+    const grupoStr = String(grupo).trim();
+    if (permissions[grupoStr]) return grupoStr;
+    const exactMatch = Object.keys(permissions).find(key => 
+      key.toLowerCase() === grupoStr.toLowerCase()
+    );
+    if (exactMatch) return exactMatch;
+    const firstWord = grupoStr.split(/\s+/)[0];
+    if (permissions[firstWord]) return firstWord;
+    return null;
+  }, []);
+
+  const hasPermission = useCallback((module: string) => {
+    if (!userPermissions || !userGrupo) return false;
+    const grupoKey = findGrupoKey(userGrupo, userPermissions);
+    if (!grupoKey) return false;
+    const grupoPermissions = userPermissions[grupoKey];
+    return grupoPermissions && grupoPermissions[module] === true;
+  }, [userPermissions, userGrupo, findGrupoKey]);
+
+  // Încarcă permisiunile din backend
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!userGrupo || user?.isDemo) {
+        setLoadingPermissions(false);
+        return;
+      }
+      try {
+        const permissions = await getPermissions(userGrupo);
+        setUserPermissions(permissions);
+      } catch (error) {
+        console.error('Error loading permissions:', error);
+        setUserPermissions(null);
+      } finally {
+        setLoadingPermissions(false);
+      }
+    };
+    loadPermissions();
+  }, [userGrupo, user?.isDemo, getPermissions]);
 
   // Verifică rolul utilizatorului pentru restricționarea tab-urilor
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
@@ -233,8 +281,17 @@ const PedidosPage: React.FC = () => {
   const isAdmin = user?.GRUPO === 'Admin' || user?.grupo === 'Admin';
   const isDeveloper = user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
   
-  // Doar managerii, adminii și developerii pot accesa toate tab-urile
-  const canAccessAllTabs = isManager || isAdmin || isDeveloper;
+  // ✅ Verifică permisiunile din backend (permissos) pentru acces complet
+  const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+  const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
+  const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
+  const shouldUseBackend = useBackendPermissions && grupoKeyExists;
+  
+  // Verifică permisiunea 'pedidos' din backend (DOAR 'pedidos', NU 'dashboard')
+  const hasBackendPedidosPermission = shouldUseBackend ? hasPermission('pedidos') : false;
+  
+  // Doar managerii, adminii, developerii sau utilizatorii cu permisiunea 'pedidos' din backend pot accesa toate tab-urile
+  const canAccessAllTabs = isManager || isAdmin || isDeveloper || hasBackendPedidosPermission;
 
   // Funcție pentru adăugarea de notificări
   const addToast = (type: ToastType, title: string, message: string, duration?: number) => {
@@ -373,13 +430,13 @@ const PedidosPage: React.FC = () => {
 
         {/* Content */}
         {activeTab === 'nuevo-pedido' ? (
-          <TabNuevoPedido addToast={addToast} />
+          <TabNuevoPedido addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
         ) : canAccessAllTabs && activeTab === 'permisos' ? (
           <TabPermisosComunidad addToast={addToast} />
         ) : canAccessAllTabs && activeTab === 'catalogo' ? (
           <TabCatalogo addToast={addToast} />
         ) : (
-          <TabNuevoPedido addToast={addToast} />
+          <TabNuevoPedido addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
         )}
       </div>
       
@@ -390,7 +447,10 @@ const PedidosPage: React.FC = () => {
 };
 
 // ===== TAB NUEVO PEDIDO =====
-const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
+const TabNuevoPedido: React.FC<{ 
+  addToast: (type: ToastType, title: string, message: string, duration?: number) => void;
+  canAccessAllTabs?: boolean;
+}> = ({ addToast, canAccessAllTabs = false }) => {
   const { user } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -448,7 +508,69 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
         
         setComunidades(centrosFromClientes);
-        console.log('✅ Comunidades cargadas:', centrosFromClientes.length);
+        
+        // ✅ AUTO-SELECT: Pentru angajații normali (fără permisiunea 'pedidos' pe grup), 
+        // auto-selectează centrul lor de lucru
+        if (!canAccessAllTabs && user) {
+          const centroTrabajo = user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || user?.CENTRO;
+          
+          if (centroTrabajo) {
+            
+            // Caută comunitatea care se potrivește cu centrul de lucru
+            const comunidadEncontrada = centrosFromClientes.find(com => {
+              const matchExactNombre = com.nombre === centroTrabajo;
+              const matchExactDatos = com.datosCompletos?.['NOMBRE O RAZON SOCIAL'] === centroTrabajo;
+              const matchCaseInsensitiveNombre = com.nombre?.toLowerCase() === centroTrabajo?.toLowerCase();
+              const matchCaseInsensitiveDatos = com.datosCompletos?.['NOMBRE O RAZON SOCIAL']?.toLowerCase() === centroTrabajo?.toLowerCase();
+              
+              return matchExactNombre || matchExactDatos || matchCaseInsensitiveNombre || matchCaseInsensitiveDatos;
+            });
+            
+            if (comunidadEncontrada) {
+              setComunidadSeleccionada(comunidadEncontrada.id);
+              setComunidadSearchTerm(comunidadEncontrada.nombre); // ✅ Setează numele în câmp
+              setComunidadDetalles({
+                id: comunidadEncontrada.id,
+                nombre: comunidadEncontrada.nombre,
+                datosCompletos: comunidadEncontrada.datosCompletos,
+                productos: []
+              });
+              
+              // Încarcă detaliile comunității după un mic delay
+              setTimeout(() => {
+                handleComunidadChange(comunidadEncontrada.id);
+              }, 100);
+            } else {
+              // Încercare căutare parțială
+              const comunidadParcial = centrosFromClientes.find(com => {
+                const nombre = com.nombre?.toLowerCase() || '';
+                const datosNombre = com.datosCompletos?.['NOMBRE O RAZON SOCIAL']?.toLowerCase() || '';
+                const centroLower = centroTrabajo?.toLowerCase() || '';
+                
+                return nombre.includes(centroLower) || centroLower.includes(nombre) ||
+                       datosNombre.includes(centroLower) || centroLower.includes(datosNombre);
+              });
+              
+              if (comunidadParcial) {
+                setComunidadSeleccionada(comunidadParcial.id);
+                setComunidadSearchTerm(comunidadParcial.nombre); // ✅ Setează numele în câmp
+                setComunidadDetalles({
+                  id: comunidadParcial.id,
+                  nombre: comunidadParcial.nombre,
+                  datosCompletos: comunidadParcial.datosCompletos,
+                  productos: []
+                });
+                addToast('info', 'Centro encontrado parcialmente', `Se encontró una comunidad similar: "${comunidadParcial.nombre}"`);
+                
+                setTimeout(() => {
+                  handleComunidadChange(comunidadParcial.id);
+                }, 100);
+              } else {
+                addToast('warning', 'Centro no encontrado', `No se encontró la comunidad "${centroTrabajo}" en la lista.`);
+              }
+            }
+          }
+        }
       } catch (error) {
         console.error('Error loading comunidades:', error);
       } finally {
@@ -458,7 +580,14 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
     loadComunidades();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Execută doar o dată la mount
+  }, [canAccessAllTabs, user?.['CENTRO TRABAJO'], user?.CENTRO_TRABAJO, user?.CENTRO]); // Re-execută când se schimbă permisiunile sau centrul de lucru
+
+  // ✅ Asigură-te că numele comunității este afișat în câmp când se selectează
+  useEffect(() => {
+    if (comunidadDetalles && comunidadDetalles.nombre && !canAccessAllTabs) {
+      setComunidadSearchTerm(comunidadDetalles.nombre);
+    }
+  }, [comunidadDetalles, canAccessAllTabs]);
 
   // Nu încarcă produsele la început - doar când se selectează o comunitate
   // Produsele se vor încărca în handleComunidadChange
@@ -470,21 +599,65 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     comunidad: user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || user?.CENTRO || 'Sin centro'
   };
 
+  // ✅ Pentru angajații normali (fără permisiunea 'pedidos' pe grup), 
+  // filtrează lista să arate doar centrul lor de lucru
+  const comunidadesDisponibles = useMemo(() => {
+    if (canAccessAllTabs) {
+      // Managerii/Adminii pot vedea toate comunitățile
+      return comunidades;
+    }
+    
+    // Angajații normali pot vedea doar centrul lor de lucro
+    const centroTrabajo = user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || user?.CENTRO;
+    if (!centroTrabajo) {
+      return comunidades; // Fallback: dacă nu găsește centrul, arată toate (nu ar trebui să se întâmple)
+    }
+    
+    const comunidadDelCentro = comunidades.find(com => {
+      const matchExactNombre = com.nombre === centroTrabajo;
+      const matchExactDatos = com.datosCompletos?.['NOMBRE O RAZON SOCIAL'] === centroTrabajo;
+      const matchCaseInsensitiveNombre = com.nombre?.toLowerCase() === centroTrabajo?.toLowerCase();
+      const matchCaseInsensitiveDatos = com.datosCompletos?.['NOMBRE O RAZON SOCIAL']?.toLowerCase() === centroTrabajo?.toLowerCase();
+      
+      return matchExactNombre || matchExactDatos || matchCaseInsensitiveNombre || matchCaseInsensitiveDatos;
+    });
+    
+    if (comunidadDelCentro) {
+      return [comunidadDelCentro]; // Doar centrul lor de lucru
+    }
+    
+    // Fallback: dacă nu găsește exact, caută parțial
+    const comunidadParcial = comunidades.find(com => {
+      const nombre = com.nombre?.toLowerCase() || '';
+      const datosNombre = com.datosCompletos?.['NOMBRE O RAZON SOCIAL']?.toLowerCase() || '';
+      const centroLower = centroTrabajo?.toLowerCase() || '';
+      
+      return nombre.includes(centroLower) || centroLower.includes(nombre) ||
+             datosNombre.includes(centroLower) || centroLower.includes(datosNombre);
+    });
+    
+    return comunidadParcial ? [comunidadParcial] : comunidades; // Fallback
+  }, [comunidades, canAccessAllTabs, user?.['CENTRO TRABAJO'], user?.CENTRO_TRABAJO, user?.CENTRO]);
+
   // Flag pentru a preveni request-urile duplicate în handleComunidadChange
   const isLoadingComunidadRef = React.useRef(false);
   const lastComunidadIdRef = React.useRef<number | null>(null);
+  const lastCallTimeRef = React.useRef<number>(0);
 
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = async (comunidadId: number) => {
-    // Previne request-urile duplicate pentru aceeași comunitate
-    if (isLoadingComunidadRef.current || lastComunidadIdRef.current === comunidadId) {
-      console.log('⏭️ Skipping duplicate request for comunidad:', comunidadId);
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCallTimeRef.current;
+    
+    // Previne request-urile duplicate pentru aceeași comunitate sau apeluri prea rapide (< 500ms)
+    if (isLoadingComunidadRef.current || (lastComunidadIdRef.current === comunidadId && timeSinceLastCall < 500)) {
+      console.log('⏭️ Skipping duplicate request for comunidad:', comunidadId, 'timeSinceLastCall:', timeSinceLastCall);
       return;
     }
 
-    console.log('🎯 handleComunidadChange called with:', comunidadId);
     isLoadingComunidadRef.current = true;
     lastComunidadIdRef.current = comunidadId;
+    lastCallTimeRef.current = now;
     setComunidadSeleccionada(comunidadId);
     
     try {
@@ -492,10 +665,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       const comunidad = comunidades.find(c => c.id === comunidadId);
       const nombreComunidad = comunidad?.nombre || comunidad?.['NOMBRE O RAZON SOCIAL'] || 'Comunidad no encontrada';
       
-      console.log('🔍 Cargando detalles para:', { id: comunidadId, nombre: nombreComunidad });
-      console.log('🏢 Comunidad encontrada:', comunidad);
-      console.log('📋 Comunidades disponibles:', comunidades.length);
-      console.log('🔗 routes.getClientes:', routes.getClientes);
+      // ✅ Setează numele în câmp imediat
+      if (nombreComunidad && nombreComunidad !== 'Comunidad no encontrada') {
+        setComunidadSearchTerm(nombreComunidad);
+      }
       
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
@@ -527,10 +700,8 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       }
 
       const data = await response.json();
-      console.log('✅ Detalles cargados:', data);
       
       // Procesează răspunsul (obiect sau array de produse cu permisiuni)
-      console.log('🔍 Tipo de respuesta:', typeof data, Array.isArray(data));
       
       if (data && (Array.isArray(data) || typeof data === 'object')) {
         let productosConPermisos;
@@ -555,15 +726,9 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
             // Folosește imagen_base64 direct din backend
             let imagenBase64 = '';
             if (item.imagen_base64) {
-              console.log('🖼️ Procesando imagen para producto:', item.numero_articulo);
               imagenBase64 = `data:image/jpeg;base64,${item.imagen_base64}`;
-              console.log('✅ Imagen base64 directa:', imagenBase64.substring(0, 50) + '...');
             } else if (item.fotoproducto && item.fotoproducto.data && Array.isArray(item.fotoproducto.data)) {
-              console.log('🖼️ Procesando imagen Buffer para producto:', item.numero_articulo);
               imagenBase64 = bufferToBase64(item.fotoproducto.data);
-              console.log('✅ Imagen convertida din Buffer:', imagenBase64.substring(0, 50) + '...');
-            } else {
-              console.log('❌ No hay imagen para producto:', item.numero_articulo);
             }
             
             return {
@@ -579,15 +744,9 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           // Dacă este obiect singular, creează array cu un singur element
           let imagenBase64 = '';
           if (data.imagen_base64) {
-            console.log('🖼️ Procesando imagen para producto singular:', data.numero_articulo);
             imagenBase64 = `data:image/jpeg;base64,${data.imagen_base64}`;
-            console.log('✅ Imagen base64 directa:', imagenBase64.substring(0, 50) + '...');
           } else if (data.fotoproducto && data.fotoproducto.data && Array.isArray(data.fotoproducto.data)) {
-            console.log('🖼️ Procesando imagen Buffer para producto singular:', data.numero_articulo);
             imagenBase64 = bufferToBase64(data.fotoproducto.data);
-            console.log('✅ Imagen convertida din Buffer:', imagenBase64.substring(0, 50) + '...');
-          } else {
-            console.log('❌ No hay imagen para producto singular:', data.numero_articulo);
           }
           
           productosConPermisos = [{
@@ -642,14 +801,14 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     }
   };
 
-  // Filtrare comunități pentru searchable dropdown
+  // Filtrare comunități pentru searchable dropdown (folosește comunidadesDisponibles)
   const comunidadesFiltradas = useMemo(() => {
-    if (!comunidadSearchTerm) return comunidades.slice(0, 10); // Primele 10 dacă nu se caută
-    return comunidades.filter(com => 
+    if (!comunidadSearchTerm) return comunidadesDisponibles.slice(0, 10); // Primele 10 dacă nu se caută
+    return comunidadesDisponibles.filter(com => 
       com.nombre.toLowerCase().includes(comunidadSearchTerm.toLowerCase()) ||
       com.id.toString().includes(comunidadSearchTerm)
     ).slice(0, 20); // Maxim 20 rezultate
-  }, [comunidades, comunidadSearchTerm]);
+  }, [comunidadesDisponibles, comunidadSearchTerm]);
 
   // Filtrare produse
   const productosFiltrados = useMemo(() => {
@@ -746,21 +905,30 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
               <p className="text-lg font-semibold text-gray-900">{usuarioActual.nombre}</p>
             </div>
             <div>
-              <label htmlFor="comunidad-search" className="block text-sm font-medium text-gray-700 mb-1">Comunidad</label>
+              <label htmlFor="comunidad-search" className="block text-sm font-medium text-gray-700 mb-1">
+                Comunidad
+                {!canAccessAllTabs && (
+                  <span className="ml-2 text-xs text-gray-500">(Solo tu centro de trabajo)</span>
+                )}
+              </label>
               <div className="relative">
                 <input
                   id="comunidad-search"
                   name="comunidad-search"
                   type="text"
-                  placeholder="Escribe para buscar comunidad..."
+                  placeholder={canAccessAllTabs ? "Escribe para buscar comunidad..." : "Tu centro de trabajo está seleccionado"}
                   value={comunidadSearchTerm}
-                  onChange={(e) => setComunidadSearchTerm(e.target.value)}
-                  onFocus={() => setShowComunidadDropdown(true)}
+                  onChange={(e) => canAccessAllTabs && setComunidadSearchTerm(e.target.value)}
+                  onFocus={() => canAccessAllTabs && setShowComunidadDropdown(true)}
                   onBlur={() => setTimeout(() => setShowComunidadDropdown(false), 200)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={!canAccessAllTabs}
+                  readOnly={!canAccessAllTabs}
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                    !canAccessAllTabs ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
                   aria-label="Buscar comunidad"
                 />
-                {showComunidadDropdown && (
+                {showComunidadDropdown && canAccessAllTabs && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {comunidadesFiltradas.map(com => (
                       <div
@@ -1152,7 +1320,6 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
         
         setComunidades(centrosFromClientes);
-        console.log('✅ Comunidades cargadas:', centrosFromClientes.length);
       } catch (error) {
         console.error('Error loading comunidades:', error);
       } finally {
@@ -1249,9 +1416,20 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Flag pentru a preveni request-urile duplicate în handleComunidadChange
+  const isLoadingComunidadRef = React.useRef(false);
+  const lastComunidadIdRef = React.useRef<number | null>(null);
+
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = async (comunidadId: number) => {
-    console.log('🎯 handleComunidadChange called with:', comunidadId);
+    // Previne request-urile duplicate pentru aceeași comunitate
+    if (isLoadingComunidadRef.current || lastComunidadIdRef.current === comunidadId) {
+      console.log('⏭️ Skipping duplicate request for comunidad:', comunidadId);
+      return;
+    }
+
+    isLoadingComunidadRef.current = true;
+    lastComunidadIdRef.current = comunidadId;
     setComunidadSeleccionada(comunidadId);
     
     try {
@@ -1259,7 +1437,6 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       const comunidad = comunidades.find(c => c.id === comunidadId);
       const nombreComunidad = comunidad?.nombre || comunidad?.['NOMBRE O RAZON SOCIAL'] || 'Comunidad no encontrada';
       
-      console.log('🔍 Cargando permisos para:', { id: comunidadId, nombre: nombreComunidad });
       
       // Construiește URL-ul pentru încărcarea permisiunilor
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
@@ -1288,7 +1465,6 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       }
 
       const data = await response.json();
-      console.log('✅ Permisos cargados:', data);
       
       // Procesează permisiunile din baza de date
       if (data && Array.isArray(data)) {
@@ -1345,6 +1521,8 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
         nuevosPermisos[comunidadId] = {};
       }
       setPermisos(nuevosPermisos);
+    } finally {
+      isLoadingComunidadRef.current = false;
     }
   };
 
@@ -1365,7 +1543,6 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
   const obtenerPermiso = useCallback((productoId: number): boolean => {
     if (!comunidadSeleccionada) return false;
     const permiso = permisos[comunidadSeleccionada]?.[productoId] || false;
-    console.log(`🔍 Verificando permiso para producto ${productoId} en comunidad ${comunidadSeleccionada}: ${permiso ? 'PERMITIDO' : 'DENEGADO'}`);
     return permiso;
   }, [comunidadSeleccionada, permisos]);
 
@@ -1428,7 +1605,6 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       }
 
       const responseData = await response.json();
-      console.log('✅ Permisos guardados:', responseData);
 
       addToast('success', 'Permisos guardados', `Los permisos de la comunidad se han guardado correctamente (${productos.length} productos)`);
     } catch (error) {
@@ -1848,7 +2024,6 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
     };
 
       console.log('📤 Payload editare:', payload);
-      console.log('🖼️ Imagen incluida:', !!editingImagePreview);
 
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
@@ -1876,7 +2051,6 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       }
 
       const responseData = await response.json();
-      console.log('✅ Producto editado:', responseData);
 
       // Actualizează produsul local
       setProductos(prev => prev.map(p => 
@@ -1922,7 +2096,6 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       };
 
       console.log('📤 Payload adăugare:', payload);
-      console.log('🖼️ Imagen incluida:', !!newImagePreview);
 
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
@@ -2023,7 +2196,6 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       }
 
       const responseData = await response.json();
-      console.log('✅ Producto eliminado:', responseData);
 
       // Elimină produsul local
       setProductos(prev => prev.filter(p => p.id !== productId));

@@ -123,84 +123,6 @@ const InicioPage = () => {
   const isAdmin = useMemo(() => user?.GRUPO === 'Admin' || user?.grupo === 'Admin', [user?.GRUPO, user?.grupo]);
   const isDeveloper = useMemo(() => user?.GRUPO === 'Developer' || user?.grupo === 'Developer', [user?.GRUPO, user?.grupo]);
 
-  const pedidosAccess = useMemo(() => {
-    const empleado = empleadoCompleto || user || {};
-    const grupo = empleado?.GRUPO || user?.GRUPO;
-
-    const checkField = (value) => {
-      if (!value) return false;
-      const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
-      if (typeof normalized === 'boolean') {
-        return normalized;
-      }
-      if (typeof normalized === 'number') {
-        return normalized === 1;
-      }
-      if (typeof normalized === 'string') {
-        return ['s', 'si', 'sí', '1', 'y', 'yes', 'true'].includes(normalized);
-      }
-      return false;
-    };
-
-    const pedidosFields = [
-      'derechopedido',
-      'DERECHO_PEDIDO',
-      'pedidos_permitido',
-      'canMakePedidos',
-      'PEDIDOS_PERMITIDO',
-      'DERECHO_PEDIDOS',
-      'PEDIDOS_ACCESO',
-      'ACCESO_PEDIDOS',
-      'PEDIDOS_HABILITADO',
-      'HABILITADO_PEDIDOS',
-      'PEDIDOS_ACTIVO',
-      'ACTIVO_PEDIDOS',
-      'DerechoPedidos',
-      'derechoPedidos',
-      'derecho_pedidos',
-    ];
-
-    const hasFieldPermission = pedidosFields.some((field) =>
-      checkField(empleado?.[field]),
-    );
-
-    const hasGenericPermission = Object.keys(empleado || {}).some(
-      (key) =>
-        key.toLowerCase().includes('pedido') && checkField(empleado[key]),
-    );
-
-    const allowedRoles = [
-      'Admin',
-      'Developer',
-      'Manager',
-      'Supervisor',
-      'Operario',
-      'Auxiliar',
-    ];
-
-    const hasRolePermission = grupo ? allowedRoles.includes(grupo) : false;
-    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
-
-    const canAccess =
-      hasFieldPermission ||
-      hasGenericPermission ||
-      hasRolePermission ||
-      hasSpecialAccess;
-
-    const hint = hasSpecialAccess
-      ? 'Gestionar pedidos y permisos de productos'
-      : canAccess
-        ? 'Crear nuevos pedidos'
-        : 'No tienes permisos para crear pedidos';
-
-    return {
-      canAccess,
-      hint,
-      href: hasSpecialAccess ? '/pedidos' : '/empleado-pedidos',
-      role: hasSpecialAccess ? 'manager' : undefined,
-    };
-  }, [empleadoCompleto, user, isManager, isAdmin, isDeveloper]);
-
   // Funcție helper pentru a găsi cheia corectă în permisiuni bazat pe numele grupului
   const findGrupoKey = useCallback((grupo, permissions) => {
     if (!grupo || !permissions) return null;
@@ -302,6 +224,184 @@ const InicioPage = () => {
     }
     return hasAccess;
   }, [userPermissions, userGrupo, findGrupoKey]);
+
+  // Calculează accesul la pedidos (după definirea funcțiilor helper)
+  const pedidosAccess = useMemo(() => {
+    const empleado = empleadoCompleto || user || {};
+    const grupo = empleado?.GRUPO || user?.GRUPO;
+
+    // 🔍 LOG: Datele din DatosEmpleados
+    console.log('🔍 [DashboardPage] ===== PEDIDOS ACCESS DEBUG =====');
+    console.log('📋 [DashboardPage] User object (DatosEmpleados):', {
+      CODIGO: empleado?.CODIGO,
+      GRUPO: empleado?.GRUPO || grupo,
+      NOMBRE: empleado?.['NOMBRE / APELLIDOS'] || empleado?.NOMBRE,
+      isManager: empleado?.isManager,
+      isDemo: empleado?.isDemo,
+      // Câmpuri relevante pentru pedidos
+      derechopedido: empleado?.derechopedido,
+      DERECHO_PEDIDO: empleado?.DERECHO_PEDIDO,
+      pedidos_permitido: empleado?.pedidos_permitido,
+      canMakePedidos: empleado?.canMakePedidos,
+      PEDIDOS_PERMITIDO: empleado?.PEDIDOS_PERMITIDO,
+      DERECHO_PEDIDOS: empleado?.DERECHO_PEDIDOS,
+      PEDIDOS_ACCESO: empleado?.PEDIDOS_ACCESO,
+      ACCESO_PEDIDOS: empleado?.ACCESO_PEDIDOS,
+      PEDIDOS_HABILITADO: empleado?.PEDIDOS_HABILITADO,
+      HABILITADO_PEDIDOS: empleado?.HABILITADO_PEDIDOS,
+      PEDIDOS_ACTIVO: empleado?.PEDIDOS_ACTIVO,
+      ACTIVO_PEDIDOS: empleado?.ACTIVO_PEDIDOS,
+      DerechoPedidos: empleado?.DerechoPedidos,
+      derechoPedidos: empleado?.derechoPedidos,
+      derecho_pedidos: empleado?.derecho_pedidos,
+      // Toate câmpurile care conțin "pedido"
+      allPedidoFields: Object.keys(empleado || {}).filter(key => 
+        key.toLowerCase().includes('pedido')
+      ).reduce((acc, key) => {
+        acc[key] = empleado[key];
+        return acc;
+      }, {}),
+    });
+    
+    // 🔍 LOG: Datele din Permisos
+    console.log('🔐 [DashboardPage] Permissions object (Permisos table):', {
+      userPermissions,
+      loadingPermissions,
+      userGrupo,
+      hasBackendPermissions: userPermissions && Object.keys(userPermissions).length > 0,
+      permissionsKeys: userPermissions ? Object.keys(userPermissions) : [],
+    });
+
+    const checkField = (value) => {
+      if (!value) return false;
+      const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+      if (typeof normalized === 'boolean') {
+        return normalized;
+      }
+      if (typeof normalized === 'number') {
+        return normalized === 1;
+      }
+      if (typeof normalized === 'string') {
+        return ['s', 'si', 'sí', '1', 'y', 'yes', 'true'].includes(normalized);
+      }
+      return false;
+    };
+
+    const pedidosFields = [
+      'derechopedido',
+      'DERECHO_PEDIDO',
+      'pedidos_permitido',
+      'canMakePedidos',
+      'PEDIDOS_PERMITIDO',
+      'DERECHO_PEDIDOS',
+      'PEDIDOS_ACCESO',
+      'ACCESO_PEDIDOS',
+      'PEDIDOS_HABILITADO',
+      'HABILITADO_PEDIDOS',
+      'PEDIDOS_ACTIVO',
+      'ACTIVO_PEDIDOS',
+      'DerechoPedidos',
+      'derechoPedidos',
+      'derecho_pedidos',
+    ];
+
+    const hasFieldPermission = pedidosFields.some((field) =>
+      checkField(empleado?.[field]),
+    );
+
+    const hasGenericPermission = Object.keys(empleado || {}).some(
+      (key) =>
+        key.toLowerCase().includes('pedido') && checkField(empleado[key]),
+    );
+
+    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
+
+    // ✅ Verifică permisiunile din backend (permissos)
+    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+    const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
+    const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
+    const shouldUseBackend = useBackendPermissions && grupoKeyExists;
+    
+    // ✅ CORECTAT: 'dashboard' verifică INDIVIDUAL (din DatosEmpleados), nu pe grup
+    // Dacă are 'dashboard: true', verifică dacă utilizatorul are 'DerechoPedidos' în datele personale
+    // Dacă are 'pedidos: true', are acces complet (manager-level)
+    const hasDashboardPermission = shouldUseBackend ? hasPermission('dashboard') : false;
+    const hasPedidosPermission = shouldUseBackend ? hasPermission('pedidos') : false;
+    
+    // Dacă are 'dashboard', verifică individual (din DatosEmpleados)
+    const hasIndividualPedidosAccess = hasDashboardPermission && (hasFieldPermission || hasGenericPermission);
+    
+    // Acces complet dacă are 'pedidos' în permisiuni
+    const hasBackendPedidosPermission = hasPedidosPermission || hasIndividualPedidosAccess;
+    
+    // 🔍 LOG: Rezultatele verificărilor
+    const grupoKey = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) : null;
+    const grupoPermissions = grupoKey && userPermissions ? userPermissions[grupoKey] : null;
+    console.log('🔍 [DashboardPage] Permission checks:', {
+      hasSpecialAccess,
+      isManager,
+      isAdmin,
+      isDeveloper,
+      hasBackendPermissions,
+      useBackendPermissions,
+      grupoKeyExists,
+      grupoKey,
+      grupoPermissions: grupoPermissions ? {
+        ...grupoPermissions,
+        // Log explicit pentru pedidos și dashboard
+        pedidos: grupoPermissions.pedidos,
+        dashboard: grupoPermissions.dashboard,
+        // Toate cheile disponibile
+        allKeys: Object.keys(grupoPermissions),
+      } : null,
+      shouldUseBackend,
+      hasDashboardPermission,
+      hasPedidosPermission,
+      hasIndividualPedidosAccess,
+      hasBackendPedidosPermission,
+      hasFieldPermission,
+      hasGenericPermission,
+      backendSystemExists: userPermissions !== null || loadingPermissions === true,
+    });
+
+    // ✅ CORECTAT STRICT: Pentru angajații normali, verificăm DOAR permisiunile din backend
+    // Managerii/Adminii/Developerii au acces complet (hasSpecialAccess)
+    // Fallback-ul este doar pentru cazuri în care sistemul de permisiuni backend nu există deloc
+    // (de exemplu, dacă userPermissions este null și loadingPermissions este false - sistemul nu a încercat să încarce permisiuni)
+    const backendSystemExists = userPermissions !== null || loadingPermissions === true;
+    const canAccess =
+      hasSpecialAccess || // Manager/Admin/Developer au acces complet
+      hasBackendPedidosPermission || // Sau au permisiunea 'pedidos' în backend
+      (!backendSystemExists && hasFieldPermission) || // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
+      (!backendSystemExists && hasGenericPermission); // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
+
+    // 🔍 LOG: Rezultatul final
+    console.log('✅ [DashboardPage] Final decision:', {
+      canAccess,
+      reason: hasSpecialAccess ? 'hasSpecialAccess (Manager/Admin/Developer)' :
+               hasPedidosPermission ? 'hasPedidosPermission (permisiune pedidos pe grup)' :
+               hasIndividualPedidosAccess ? 'hasIndividualPedidosAccess (dashboard + DerechoPedidos individual)' :
+               (!backendSystemExists && hasFieldPermission) ? 'Fallback: hasFieldPermission (câmpuri în DatosEmpleados)' :
+               (!backendSystemExists && hasGenericPermission) ? 'Fallback: hasGenericPermission (câmpuri generice)' :
+               'NO ACCESS',
+      href: (hasSpecialAccess || hasPedidosPermission) ? '/pedidos' : '/empleado-pedidos',
+      role: (hasSpecialAccess || hasPedidosPermission) ? 'manager' : undefined,
+    });
+    console.log('🔍 [DashboardPage] ===== END PEDIDOS ACCESS DEBUG =====\n');
+
+    const hint = hasSpecialAccess || hasPedidosPermission
+      ? 'Gestionar pedidos y permisos de productos'
+      : canAccess
+        ? 'Crear nuevos pedidos'
+        : 'No tienes permisos para crear pedidos';
+
+    return {
+      canAccess,
+      hint,
+      href: (hasSpecialAccess || hasPedidosPermission) ? '/pedidos' : '/empleado-pedidos',
+      role: (hasSpecialAccess || hasPedidosPermission) ? 'manager' : undefined,
+    };
+  }, [empleadoCompleto, user, isManager, isAdmin, isDeveloper, userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission]);
 
   // Încarcă permisiunile din backend
   useEffect(() => {
