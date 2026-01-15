@@ -99,16 +99,17 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
     },
   ) {
     const botType = data.botType || 'gestoria';
-    
+
     // Verifică configurarea bot-ului ales
-    const isConfigured = botType === 'general' 
-      ? this.telegramService.isGeneralConfigured()
-      : this.telegramService.isConfigured();
-    
+    const isConfigured =
+      botType === 'general'
+        ? this.telegramService.isGeneralConfigured()
+        : this.telegramService.isConfigured();
+
     if (!isConfigured) {
-      return { 
-        success: false, 
-        message: `Telegram ${botType} bot not configured` 
+      return {
+        success: false,
+        message: `Telegram ${botType} bot not configured`,
       };
     }
 
@@ -127,7 +128,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
   /**
    * Endpoint pentru trimiterea email-ului de confirmare către angajat
    * când închide banner-ul despre baja médica
-   * Trimite email către angajat + BCC la info@decaminoservicios.com
+   * Trimite email către angajat + BCC la app@decaminoservicios.com
    */
   @Post('banner-baja-medica-confirmation')
   async sendBannerConfirmationEmail(
@@ -202,9 +203,9 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
 </html>
       `.trim();
 
-      // Trimite email către angajat cu BCC la info@decaminoservicios.com
+      // Trimite email către angajat cu BCC la app@decaminoservicios.com
       await this.emailService.sendEmail(data.userEmail, subject, html, {
-        bcc: ['info@decaminoservicios.com'],
+        bcc: ['app@decaminoservicios.com'],
       });
 
       // Salvează email-ul în BD
@@ -221,9 +222,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
         });
       } catch (saveError: any) {
         // Nu aruncăm eroarea dacă salvarea eșuează, email-ul a fost trimis
-        console.warn(
-          `⚠️ Error saving email to database: ${saveError.message}`,
-        );
+        console.warn(`⚠️ Error saving email to database: ${saveError.message}`);
       }
 
       return { success: true, message: 'Email sent successfully' };
@@ -241,7 +240,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
           status: 'failed',
           errorMessage: error.message || String(error),
         });
-      } catch (saveError: any) {
+      } catch {
         // Ignorăm eroarea de salvare
       }
 
@@ -255,7 +254,10 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
    */
   @Get('banner-baja-medica-status')
   @UseGuards(JwtAuthGuard)
-  async getBannerStatus(@Query('email') email?: string, @Query('codigo') codigo?: string) {
+  async getBannerStatus(
+    @Query('email') email?: string,
+    @Query('codigo') codigo?: string,
+  ) {
     try {
       if (!email && !codigo) {
         return { dismissed: false, message: 'email or codigo required' };
@@ -285,7 +287,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
             // (dar ActivityLog nu stochează codigo direct, doar email)
             return { dismissed: false };
           }
-        } catch (error) {
+        } catch {
           return { dismissed: false };
         }
       }
@@ -299,8 +301,8 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
         dismissed: !!log,
         dismissedAt: log?.timestamp || null,
       };
-    } catch (error: any) {
-      return { dismissed: false, error: error.message };
+    } catch (err: any) {
+      return { dismissed: false, error: err.message };
     }
   }
 }

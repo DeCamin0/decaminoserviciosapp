@@ -68,21 +68,17 @@ export const buildErrorReportMessage = ({
     userData?.GRUPO
   );
 
-  const url = window.location.href;
-
   // Build message in Spanish, clear and concise
   const msg = [
     "Hola, tengo un problema con el sistema.",
     "",
-    `[EMPLEADO] ${nombre}${codigo ? ` (Código: ${codigo})` : ""}`,
-    `[FECHA] ${now}`,
-    `[PAGINA] ${pageName}`,
-    centro || grupo ? `[CENTRO] ${[centro, grupo].filter(Boolean).join(" / ")}` : null,
+    `📋 PAGINA: ${pageName}`,
+    `👤 EMPLEADO: ${nombre}${codigo ? ` (Código: ${codigo})` : ""}`,
+    `📅 FECHA: ${now}`,
+    centro || grupo ? `🏢 CENTRO: ${[centro, grupo].filter(Boolean).join(" / ")}` : null,
     "",
     // Page-specific data
     ...(pageData.additionalInfo || []),
-    "",
-    `[URL] ${url}`,
   ]
     .filter(Boolean)
     .join("\n");

@@ -777,18 +777,16 @@ export class FichajesService {
                 fichajeData.codigo,
                 fichajeData.data,
               );
-            const threshold =
-              (this.regularizacionService as any)[
-                'CONFIRMATION_THRESHOLD_MINUTES'
-              ] ?? 15;
-            const delta = Number(checkResult.delta_minutes) || 0;
+            // Note: threshold and delta were used in archived auto-regularizare logic
+            // const threshold = (this.regularizacionService as any)['CONFIRMATION_THRESHOLD_MINUTES'] ?? 15;
+            // const delta = Number(checkResult.delta_minutes) || 0;
 
             // ============================================================================
             // ARCHIVED: Auto-regularizare și modal logic (commented for future use)
             // ============================================================================
             // PREVIOUS BEHAVIOR 1: Auto-send to approvals without modal when |delta| > 15 min
             // PREVIOUS BEHAVIOR 2: Show modal for employee confirmation when |delta| > 15 min
-            // 
+            //
             // Both behaviors were removed. Now at Salida we only INFORM, we don't ask for action.
             // Regularizarea is now exclusively on-demand, initiated by the employee.
             //
@@ -823,7 +821,7 @@ export class FichajesService {
             // ============================================================================
             // END ARCHIVED: Auto-regularizare și modal logic
             // ============================================================================
-            
+
             // CURRENT BEHAVIOR: At Salida, we only INFORM about the difference, we don't ask for action
             // Regularizarea is now exclusively on-demand, initiated by the employee through a separate action
             // No modal, no auto-send, just information

@@ -1135,6 +1135,7 @@ const InicioPage = () => {
     };
 
     checkBannerStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email, user?.CORREO_ELECTRONICO, user?.CODIGO, user?.codigo]);
 
   // Verifică dacă banner-ul trebuie afișat (până pe 15 februarie 2026)

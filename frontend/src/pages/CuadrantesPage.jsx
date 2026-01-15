@@ -950,6 +950,114 @@ export default function CuadrantesPage() {
   const [selectedEmpleadoForDay, setSelectedEmpleadoForDay] = useState(''); // Angajatul selectat pentru asignare (opțional)
   const [empleadoForDaySearch, setEmpleadoForDaySearch] = useState(''); // Search term pentru angajat
   const [showEmpleadoForDayDropdown, setShowEmpleadoForDayDropdown] = useState(false); // Dropdown visibility
+  const [showShiftsEditor, setShowShiftsEditor] = useState(false); // Pentru afișarea editorului de ture
+  const [editingShift, setEditingShift] = useState(null); // Tura curentă în editare {shift: "T1 07:00-15:00", newStart: "08:00", newEnd: "16:00"}
+  
+  // Funcție pentru a extrage toate turele unice din cuadrantele încărcate
+  const getAllUniqueShifts = useMemo(() => {
+    const shifts = new Set();
+    const shiftCounts = new Map(); // Pentru a număra aparițiile
+    
+    // Parcurge toate cuadrantele (inclusiv modificările din editedCuadrantes)
+    cuadrantesLista.forEach(cuadrante => {
+      for (let i = 1; i <= 31; i++) {
+        const ziKey = `ZI_${i}`;
+        const identificator = getCuadranteIdentificator(cuadrante);
+        const editKey = `${identificator}_${i}`;
+        
+        // Folosește valoarea editată dacă există, altfel valoarea originală
+        const value = editedCuadrantes[editKey] !== undefined 
+          ? editedCuadrantes[editKey] 
+          : (cuadrante[ziKey] || '');
+        
+        if (value && value !== 'LIBRE' && value.trim() !== '' && !value.startsWith('MC->')) {
+          const shiftValue = value.trim();
+          shifts.add(shiftValue);
+          shiftCounts.set(shiftValue, (shiftCounts.get(shiftValue) || 0) + 1);
+        }
+      }
+    });
+    
+    // Returnează array sortat cu informații despre fiecare tură
+    return Array.from(shifts).map(shift => {
+      // Extrage tipul turei (T1, T2, T3) și orele
+      const match = shift.match(/^(T[123])\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      if (match) {
+        return {
+          shift,
+          type: match[1], // T1, T2, sau T3
+          start: `${match[2]}:${match[3]}`,
+          end: `${match[4]}:${match[5]}`,
+          count: shiftCounts.get(shift) || 0
+        };
+      }
+      // Dacă nu are format complet, încercă să extragă doar tipul
+      const typeMatch = shift.match(/^(T[123])/);
+      return {
+        shift,
+        type: typeMatch ? typeMatch[1] : 'OTRO',
+        start: null,
+        end: null,
+        count: shiftCounts.get(shift) || 0
+      };
+    }).sort((a, b) => {
+      // Sortează: T1, T2, T3, apoi altele
+      if (a.type !== b.type) {
+        if (a.type === 'T1') return -1;
+        if (b.type === 'T1') return 1;
+        if (a.type === 'T2') return -1;
+        if (b.type === 'T2') return 1;
+        if (a.type === 'T3') return -1;
+        if (b.type === 'T3') return 1;
+      }
+      return a.shift.localeCompare(b.shift);
+    });
+  }, [cuadrantesLista, editedCuadrantes]);
+  
+  // Funcție pentru a actualiza toate aparițiile unei ture cu noile ore
+  const handleUpdateShiftHours = (oldShift, newStart, newEnd) => {
+    if (!oldShift || !newStart || !newEnd) return;
+    
+    // Extrage tipul turei (T1, T2, T3)
+    const typeMatch = oldShift.match(/^(T[123])/);
+    if (!typeMatch) return;
+    
+    const shiftType = typeMatch[1]; // T1, T2, sau T3
+    const newShift = `${shiftType} ${newStart}-${newEnd}`;
+    
+    // Actualizează toate aparițiile în editedCuadrantes
+    const updated = { ...editedCuadrantes };
+    let updatedCount = 0;
+    
+    // Parcurge toate cuadrantele și actualizează turele
+    cuadrantesLista.forEach(cuadrante => {
+      const identificator = getCuadranteIdentificator(cuadrante);
+      
+      for (let i = 1; i <= 31; i++) {
+        const editKey = `${identificator}_${i}`;
+        const currentValue = updated[editKey] !== undefined 
+          ? updated[editKey] 
+          : (cuadrante[`ZI_${i}`] || '');
+        
+        // Dacă valoarea curentă se potrivește cu tura veche, actualizează-o
+        if (currentValue && currentValue.trim() === oldShift.trim()) {
+          updated[editKey] = newShift;
+          updatedCount++;
+        }
+      }
+    });
+    
+    if (updatedCount > 0) {
+      setEditedCuadrantes(updated);
+      setHasChanges(true);
+      showToast('success', `✅ Actualizadas ${updatedCount} apariții de "${oldShift}" → "${newShift}"`);
+    } else {
+      showToast('warning', '⚠️ No se encontraron apariții para actualizar');
+    }
+    
+    setEditingShift(null);
+  };
+  
   const [angajati, setAngajati] = useState([]);
   const [angajatiFiltrati, setAngajatiFiltrati] = useState([]);
   const [centros, setCentros] = useState([]);
@@ -4865,6 +4973,146 @@ export default function CuadrantesPage() {
                     Cuadrantes encontrados: {selectedMesAno ? cuadrantesLista.filter(c => c.LUNA === selectedMesAno).length : cuadrantesLista.length}
                     {selectedMesAno && ` (filtrados por ${selectedMesAno})`}
                   </h3>
+                  
+                  {/* Secțiune pentru gestionarea turelor */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-600 text-lg">🕐</span>
+                        <h4 className="text-md font-bold text-gray-800">
+                          Gestionar Turnos (T1, T2, T3)
+                        </h4>
+                        <span className="text-sm text-gray-600">
+                          ({getAllUniqueShifts.length} turnos únicos encontrados)
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setShowShiftsEditor(!showShiftsEditor)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm"
+                      >
+                        {showShiftsEditor ? 'Ocultar' : 'Mostrar'} Turnos
+                      </button>
+                    </div>
+                    
+                    {showShiftsEditor && (
+                      <div className="mt-4 space-y-3">
+                        {getAllUniqueShifts.length === 0 ? (
+                          <p className="text-gray-600 text-sm">No hay turnos para mostrar</p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {getAllUniqueShifts.map((shiftInfo, idx) => (
+                              <div key={idx} className="bg-white border border-gray-300 rounded-lg p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                      shiftInfo.type === 'T1' ? 'bg-blue-100 text-blue-700' :
+                                      shiftInfo.type === 'T2' ? 'bg-green-100 text-green-700' :
+                                      shiftInfo.type === 'T3' ? 'bg-purple-100 text-purple-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    }`}>
+                                      {shiftInfo.type}
+                                    </span>
+                                    <span className="text-xs text-gray-500">
+                                      ({shiftInfo.count} apariții)
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      if (shiftInfo.start && shiftInfo.end) {
+                                        setEditingShift({
+                                          shift: shiftInfo.shift,
+                                          type: shiftInfo.type,
+                                          start: shiftInfo.start,
+                                          end: shiftInfo.end
+                                        });
+                                      } else {
+                                        // Dacă nu are ore, permite adăugarea
+                                        setEditingShift({
+                                          shift: shiftInfo.shift,
+                                          type: shiftInfo.type,
+                                          start: '08:00',
+                                          end: '16:00'
+                                        });
+                                      }
+                                    }}
+                                    className="px-2 py-1 bg-yellow-500 text-white rounded text-xs hover:bg-yellow-600"
+                                  >
+                                    ✏️ Editar
+                                  </button>
+                                </div>
+                                <div className="text-sm text-gray-700">
+                                  {shiftInfo.start && shiftInfo.end ? (
+                                    <span>{shiftInfo.start} - {shiftInfo.end}</span>
+                                  ) : (
+                                    <span className="text-gray-400 italic">Sin horas definidas</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1 font-mono">
+                                  {shiftInfo.shift}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Modal pentru editarea orelor turei */}
+                  {editingShift && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-bold mb-4">
+                          Editar Horas del Turno: {editingShift.type}
+                        </h3>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Hora Inicio:
+                            </label>
+                            <input
+                              type="time"
+                              value={editingShift.start}
+                              onChange={(e) => setEditingShift({...editingShift, start: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Hora Fin:
+                            </label>
+                            <input
+                              type="time"
+                              value={editingShift.end}
+                              onChange={(e) => setEditingShift({...editingShift, end: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            />
+                          </div>
+                          <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                            <strong>Turno actual:</strong> {editingShift.shift}
+                            <br />
+                            <strong>Nuevo turno:</strong> {editingShift.type} {editingShift.start}-{editingShift.end}
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => setEditingShift(null)}
+                              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleUpdateShiftHours(editingShift.shift, editingShift.start, editingShift.end);
+                              }}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                            >
+                              Aplicar a Todas las Apariții
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Buton de salvare (apare când sunt modificări) */}
                   {hasChanges && (

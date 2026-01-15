@@ -35,6 +35,9 @@ export default function MensajesEnviadosPage() {
   const [totalEmails, setTotalEmails] = useState(0);
   const [loadingEmails, setLoadingEmails] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Note: currentOffset is set but not read - offset is calculated from sentEmails.length
+  // setCurrentOffset is used to track offset, but the value itself is not read
+  // eslint-disable-next-line no-unused-vars
   const [currentOffset, setCurrentOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   // Ref pentru a preveni re-executarea simultană
@@ -260,7 +263,6 @@ export default function MensajesEnviadosPage() {
     }
   // Eliminăm sentEmails din dependențe pentru a preveni re-crearea funcției la fiecare modificare
   // Folosim sentEmails.length direct în funcție, care va fi actualizat la fiecare render
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageEmails, loadingMore, loadingEmails, hasMore, filters.recipientType, filters.status, filters.startDate, filters.endDate]);
 
   useEffect(() => {
@@ -286,42 +288,43 @@ export default function MensajesEnviadosPage() {
     // Dacă vrei să reactivezi infinite scroll, decomentează codul de mai jos
     return;
     
-    if (activeTab !== 'historial' || !hasMore || loadingMore || loadingEmails) return;
+    // ARCHIVED: Infinite scroll logic (commented to avoid unreachable code)
+    // if (activeTab !== 'historial' || !hasMore || loadingMore || loadingEmails) return;
 
-    const setupObserver = () => {
-      const sentinel = document.getElementById('email-sentinel');
-      if (!sentinel) {
-        // Dacă sentinel-ul nu există încă, încearcă din nou după un scurt delay
-        const timeout = setTimeout(setupObserver, 200);
-        return () => clearTimeout(timeout);
-      }
+    // const setupObserver = () => {
+    //   const sentinel = document.getElementById('email-sentinel');
+    //   if (!sentinel) {
+    //     // Dacă sentinel-ul nu există încă, încearcă din nou după un scurt delay
+    //     const timeout = setTimeout(setupObserver, 200);
+    //     return () => clearTimeout(timeout);
+    //   }
 
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting && hasMore && !loadingMore && !loadingEmails) {
-            loadSentEmails(true);
-          }
-        },
-        { threshold: 0.1, rootMargin: '50px' }
-      );
+    //   const observer = new IntersectionObserver(
+    //     (entries) => {
+    //       if (entries[0]?.isIntersecting && hasMore && !loadingMore && !loadingEmails) {
+    //         loadSentEmails(true);
+    //       }
+    //     },
+    //     { threshold: 0.1, rootMargin: '50px' }
+    //   );
 
-      try {
-        observer.observe(sentinel);
-      } catch (error) {
-        console.warn('IntersectionObserver error:', error);
-      }
+    //   try {
+    //     observer.observe(sentinel);
+    //   } catch (error) {
+    //     console.warn('IntersectionObserver error:', error);
+    //   }
 
-      return () => {
-        try {
-          observer.disconnect();
-        } catch (error) {
-          // Ignoră erorile la disconnect
-        }
-      };
-    };
+    //   return () => {
+    //     try {
+    //       observer.disconnect();
+    //     } catch (error) {
+    //       // Ignoră erorile la disconnect
+    //     }
+    //   };
+    // };
 
-    const cleanup = setupObserver();
-    return cleanup;
+    // const cleanup = setupObserver();
+    // return cleanup;
   }, [activeTab, hasMore, loadingMore, loadingEmails, loadSentEmails]);
 
   // Încarcă mesajele automate

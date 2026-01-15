@@ -8258,25 +8258,22 @@ export default function FichajePage() {
     }
 
     const scheduleToday = formatScheduleToday(todaySchedule);
-    const url = window.location.href;
 
     // Build message in Spanish, clear and concise
     const msg = [
       "Hola, tengo un problema con el sistema de registro de jornada.",
       "",
-      `[EMPLEADO] ${nombre}${codigo ? ` (Código: ${codigo})` : ""}`,
-      `[FECHA] ${now}`,
-      `[PAGINA] Registro de Jornada`,
-      centro || grupo ? `[CENTRO] ${[centro, grupo].filter(Boolean).join(" / ")}` : null,
-      scheduleInfo ? `[ASIGNADO] ${scheduleInfo}` : null,
+      `📋 PAGINA: Registro de Jornada`,
+      `👤 EMPLEADO: ${nombre}${codigo ? ` (Código: ${codigo})` : ""}`,
+      `📅 FECHA: ${now}`,
+      centro || grupo ? `🏢 CENTRO: ${[centro, grupo].filter(Boolean).join(" / ")}` : null,
+      scheduleInfo ? `📌 ASIGNADO: ${scheduleInfo}` : null,
       "",
-      "[HORARIO] Horario planificado para hoy:",
+      "⏰ HORARIO planificado para hoy:",
       scheduleToday ? `  • ${scheduleToday}` : "  • No hay horario asignado",
       "",
-      "[FICHAJES] Últimos fichajes recientes:",
+      "📝 Últimos FICHAJES recientes:",
       lastLines.length ? lastLines.map(line => `  ${line}`).join("\n") : "  • No hay registros recientes",
-      "",
-      `[URL] ${url}`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -8286,7 +8283,7 @@ export default function FichajePage() {
 
   // Funcție pentru a verifica dacă timpul curent este în intervalul permis pentru cuadrante
   // Memoizată pentru a evita recalculări inutile
-  const isTimeWithinCuadrante = useCallback((tipo, isShiftComplete = false) => {
+  const isTimeWithinCuadrante = useCallback((tipo) => {
     if (!cuadranteAsignado) {
       return true;
     }
@@ -8520,55 +8517,59 @@ export default function FichajePage() {
     if (cuadranteAsignado) {
       // Folosește isShiftComplete calculat anterior (verifică corect și pentru ture nocturne)
       // Trebuie să-l calculez aici pentru că useCallback nu poate accesa useMemo direct
-      const today = new Date().toISOString().split('T')[0];
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      // Note: today and yesterdayStr were used in archived logic
+      // const today = new Date().toISOString().split('T')[0];
+      // const yesterday = new Date();
+      // yesterday.setDate(yesterday.getDate() - 1);
+      // const yesterdayStr = yesterday.toISOString().split('T')[0];
       
-      const hasEntradaToday = logs.some(log => {
-        const logDate = log.data || log.FECHA || log.fecha;
-        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
-      });
-      const hasSalidaToday = logs.some(log => {
-        const logDate = log.data || log.FECHA || log.fecha;
-        return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
-      });
-      const hasEntradaYesterday = logs.some(log => {
-        const logDate = log.data || log.FECHA || log.fecha;
-        return logDate && logDate.startsWith(yesterdayStr) && (log.tipo || log.TIPO) === 'Entrada';
-      });
+      // Note: These variables were used in archived logic
+      // const hasEntradaToday = logs.some(log => {
+      //   const logDate = log.data || log.FECHA || log.fecha;
+      //   return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Entrada';
+      // });
+      // const hasSalidaToday = logs.some(log => {
+      //   const logDate = log.data || log.FECHA || log.fecha;
+      //   return logDate && logDate.startsWith(today) && (log.tipo || log.TIPO) === 'Salida';
+      // });
+      // const hasEntradaYesterday = logs.some(log => {
+      //   const logDate = log.data || log.FECHA || log.fecha;
+      //   return logDate && logDate.startsWith(yesterdayStr) && (log.tipo || log.TIPO) === 'Entrada';
+      // });
       
-      // Verifică dacă este tură nocturnă
-      let isOvernightShiftToday = false;
+      // Verifică dacă este tură nocturnă (archived logic)
+      // let isOvernightShiftToday = false;
       const currentDay = new Date().getDate();
       const dayKey = `ZI_${currentDay}`;
       const daySchedule = cuadranteAsignado[dayKey];
       
+      // Note: intervals calculation was used in archived logic for isOvernightShiftToday
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        let intervals = [];
-        if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
-          const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
-          if (match) {
-            intervals = [{ start: match[1], end: match[2] }];
-          }
-        } else {
-          intervals = daySchedule.split(',').map(interval => {
-            const [start, end] = interval.trim().split('-');
-            return { start: start?.trim(), end: end?.trim() };
-          }).filter(interval => interval.start && interval.end);
-        }
+        // let intervals = [];
+        // if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
+        //   const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+        //   if (match) {
+        //     intervals = [{ start: match[1], end: match[2] }];
+        //   }
+        // } else {
+        //   intervals = daySchedule.split(',').map(interval => {
+        //     const [start, end] = interval.trim().split('-');
+        //     return { start: start?.trim(), end: end?.trim() };
+        //   }).filter(interval => interval.start && interval.end);
+        // }
         
-        if (intervals.length > 0) {
-          const firstInterval = intervals[0];
-          const startTime = (parseInt(firstInterval.start.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.start.split(':')[1]) || 0);
-          const endTime = (parseInt(firstInterval.end.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.end.split(':')[1]) || 0);
-          isOvernightShiftToday = endTime < startTime;
-        }
+        // Note: isOvernightShiftToday calculation was used in archived logic
+        // if (intervals.length > 0) {
+        //   const firstInterval = intervals[0];
+        //   const startTime = (parseInt(firstInterval.start.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.start.split(':')[1]) || 0);
+        //   const endTime = (parseInt(firstInterval.end.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.end.split(':')[1]) || 0);
+        //   isOvernightShiftToday = endTime < startTime;
+        // }
       }
       
       // Pentru turnurile compartite, nu folosim isShiftCompleteLocal global
       // ci verificăm fiecare interval individual în isTimeWithinCuadrante
-      return isTimeWithinCuadrante(tipo, false);
+      return isTimeWithinCuadrante(tipo);
     }
     
     // Dacă nu există nici cuadrante, nici horario, NU permite fichar (utilizatorul nu are program)

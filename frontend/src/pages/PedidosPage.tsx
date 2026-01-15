@@ -457,7 +457,8 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     };
 
     loadComunidades();
-  }, [user?.isDemo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Execută doar o dată la mount
 
   // Nu încarcă produsele la început - doar când se selectează o comunitate
   // Produsele se vor încărca în handleComunidadChange
@@ -469,9 +470,21 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     comunidad: user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || user?.CENTRO || 'Sin centro'
   };
 
+  // Flag pentru a preveni request-urile duplicate în handleComunidadChange
+  const isLoadingComunidadRef = React.useRef(false);
+  const lastComunidadIdRef = React.useRef<number | null>(null);
+
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = async (comunidadId: number) => {
+    // Previne request-urile duplicate pentru aceeași comunitate
+    if (isLoadingComunidadRef.current || lastComunidadIdRef.current === comunidadId) {
+      console.log('⏭️ Skipping duplicate request for comunidad:', comunidadId);
+      return;
+    }
+
     console.log('🎯 handleComunidadChange called with:', comunidadId);
+    isLoadingComunidadRef.current = true;
+    lastComunidadIdRef.current = comunidadId;
     setComunidadSeleccionada(comunidadId);
     
     try {
@@ -624,6 +637,8 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       // Nu afișa notificarea - doar golește lista de produse
       setProductos([]);
       setComunidadDetalles(null);
+    } finally {
+      isLoadingComunidadRef.current = false;
     }
   };
 
@@ -1146,11 +1161,22 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
     };
 
     loadComunidades();
-  }, [user?.isDemo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Execută doar o dată la mount
+
+  // Flag pentru a preveni request-urile duplicate
+  const isLoadingRef = React.useRef(false);
+  const productosLoadedRef = React.useRef(false);
 
   // Încarcă produsele din API sau demo
   useEffect(() => {
+    // Previne request-urile duplicate
+    if (isLoadingRef.current || productosLoadedRef.current) {
+      return;
+    }
+
     const loadProductos = async () => {
+      isLoadingRef.current = true;
       setLoadingProductos(true);
       
       // Skip real data fetch in DEMO mode
@@ -1159,6 +1185,8 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
         const demoProductos = getDemoProductos();
         setProductos(demoProductos);
         setLoadingProductos(false);
+        isLoadingRef.current = false;
+        productosLoadedRef.current = true;
         return;
       }
       
@@ -1193,6 +1221,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
         const productosMapeados = Array.isArray(data) ? data : [data];
         
         setProductos(productosMapeados);
+        productosLoadedRef.current = true;
         
         // Log pentru imagini
         const productosConImagen = productosMapeados.filter(p => p.imagen).length;
@@ -1209,13 +1238,16 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
           { id: 6, numero: "F-660", descripcion: "Lijadora orbital", precio: 45.7 }
         ];
         setProductos(productosMock);
+        productosLoadedRef.current = true;
       } finally {
         setLoadingProductos(false);
+        isLoadingRef.current = false;
       }
     };
 
     loadProductos();
-  }, [user?.isDemo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = async (comunidadId: number) => {
@@ -1662,9 +1694,19 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
   const [newImage, setNewImage] = useState<File | null>(null);
   const [newImagePreview, setNewImagePreview] = useState<string | null>(null);
 
+  // Flag pentru a preveni request-urile duplicate
+  const isLoadingRef = React.useRef(false);
+  const productosLoadedRef = React.useRef(false);
+
   // Încarcă produsele din API sau demo
   useEffect(() => {
+    // Previne request-urile duplicate
+    if (isLoadingRef.current || productosLoadedRef.current) {
+      return;
+    }
+
     const loadProductos = async () => {
+      isLoadingRef.current = true;
       setLoadingProductos(true);
       
       // Skip real data fetch in DEMO mode
@@ -1673,6 +1715,8 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
         const demoProductos = getDemoProductos();
         setProductos(demoProductos);
         setLoadingProductos(false);
+        isLoadingRef.current = false;
+        productosLoadedRef.current = true;
         return;
       }
       
@@ -1707,6 +1751,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
         const productosMapeados = Array.isArray(data) ? data : [data];
         
         setProductos(productosMapeados);
+        productosLoadedRef.current = true;
         
         // Log pentru imagini
         const productosConImagen = productosMapeados.filter(p => p.imagen).length;
@@ -1723,13 +1768,16 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
           { id: 6, numero: "F-660", descripcion: "Lijadora orbital", precio: 45.7 }
         ];
         setProductos(productosMock);
+        productosLoadedRef.current = true;
       } finally {
         setLoadingProductos(false);
+        isLoadingRef.current = false;
       }
     };
 
     loadProductos();
-  }, [user?.isDemo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filtrare produse
   const productosFiltrados = useMemo(() => {

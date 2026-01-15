@@ -8,7 +8,7 @@ export class TelegramService implements OnModuleInit {
   private botToken: string | null = null;
   private chatId: string | null = null;
   private _isConfigured = false;
-  
+
   // Bot pentru mesaje generale (erori, notificări, etc.)
   private generalBotToken: string | null = null;
   private generalChatId: string | null = null;
@@ -23,6 +23,14 @@ export class TelegramService implements OnModuleInit {
     // Default chat ID from n8n workflow (Cron absente.json)
     this.chatId =
       this.configService.get<string>('TELEGRAM_CHAT_ID') || '-4990173907';
+
+    // Log pentru debugging
+    const tokenPreview = this.botToken
+      ? `${this.botToken.substring(0, 10)}...`
+      : 'NULL';
+    this.logger.debug(
+      `🔍 Telegram gestoria bot config check: token=${!!this.botToken} (${tokenPreview}), chatId=${this.chatId}`,
+    );
 
     if (this.botToken && this.chatId) {
       this._isConfigured = true;
@@ -40,6 +48,14 @@ export class TelegramService implements OnModuleInit {
       this.configService.get<string>('TELEGRAM_BOT_TOKEN_GENERAL') || null;
     this.generalChatId =
       this.configService.get<string>('TELEGRAM_CHAT_ID_GENERAL') || null;
+
+    // Log pentru debugging
+    const generalTokenPreview = this.generalBotToken
+      ? `${this.generalBotToken.substring(0, 10)}...`
+      : 'NULL';
+    this.logger.debug(
+      `🔍 Telegram general bot config check: token=${!!this.generalBotToken} (${generalTokenPreview}), chatId=${this.generalChatId || 'NULL'}`,
+    );
 
     if (this.generalBotToken && this.generalChatId) {
       this._isGeneralConfigured = true;
@@ -72,11 +88,18 @@ export class TelegramService implements OnModuleInit {
    */
   async sendMessage(message: string): Promise<void> {
     if (!this.isConfigured()) {
-      this.logger.warn('⚠️ Telegram gestoria bot not configured. Message not sent.');
+      this.logger.warn(
+        '⚠️ Telegram gestoria bot not configured. Message not sent.',
+      );
       return;
     }
 
-    await this._sendMessageInternal(this.botToken!, this.chatId!, message, 'gestoria');
+    await this._sendMessageInternal(
+      this.botToken!,
+      this.chatId!,
+      message,
+      'gestoria',
+    );
   }
 
   /**
@@ -85,11 +108,18 @@ export class TelegramService implements OnModuleInit {
    */
   async sendGeneralMessage(message: string): Promise<void> {
     if (!this.isGeneralConfigured()) {
-      this.logger.warn('⚠️ Telegram general bot not configured. Message not sent.');
+      this.logger.warn(
+        '⚠️ Telegram general bot not configured. Message not sent.',
+      );
       return;
     }
 
-    await this._sendMessageInternal(this.generalBotToken!, this.generalChatId!, message, 'general');
+    await this._sendMessageInternal(
+      this.generalBotToken!,
+      this.generalChatId!,
+      message,
+      'general',
+    );
   }
 
   /**
@@ -102,24 +132,50 @@ export class TelegramService implements OnModuleInit {
     botType: 'gestoria' | 'general',
   ): Promise<void> {
     try {
+      // Log pentru debugging (fără token complet pentru securitate)
+      const tokenPreview = botToken
+        ? `${botToken.substring(0, 10)}...`
+        : 'NULL';
+      this.logger.debug(
+        `📤 Attempting to send Telegram message (${botType} bot, token: ${tokenPreview}, chatId: ${chatId}, message length: ${message.length})`,
+      );
+
+      if (!botToken || !chatId) {
+        throw new Error(
+          `Missing configuration: botToken=${!!botToken}, chatId=${!!chatId}`,
+        );
+      }
+
       const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+      this.logger.debug(
+        `📡 Telegram API URL: ${url.replace(botToken, tokenPreview)}`,
+      );
+
+      const requestBody = {
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'Markdown', // Folosim Markdown ca în n8n workflow (Cron absente.json)
+      };
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: message,
-          parse_mode: 'Markdown', // Folosim Markdown ca în n8n workflow (Cron absente.json)
-        }),
+        body: JSON.stringify(requestBody),
       });
+
+      this.logger.debug(
+        `📥 Telegram API response status: ${response.status} ${response.statusText}`,
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Telegram API error: ${response.status} - ${JSON.stringify(errorData)}`,
+        const errorMessage = `Telegram API error: ${response.status} - ${JSON.stringify(errorData)}`;
+        this.logger.error(
+          `❌ ${errorMessage} (${botType} bot, chatId: ${chatId})`,
         );
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -128,12 +184,20 @@ export class TelegramService implements OnModuleInit {
           `✅ Telegram message sent successfully (${botType} bot, chatId: ${chatId})`,
         );
       } else {
-        throw new Error(
-          `Telegram API returned error: ${JSON.stringify(result)}`,
+        const errorMessage = `Telegram API returned error: ${JSON.stringify(result)}`;
+        this.logger.error(
+          `❌ ${errorMessage} (${botType} bot, chatId: ${chatId})`,
         );
+        throw new Error(errorMessage);
       }
     } catch (error: any) {
-      this.logger.error(`❌ Error sending Telegram message (${botType} bot): ${error.message}`);
+      // Log detaliat pentru debugging pe VPS
+      this.logger.error(
+        `❌ Error sending Telegram message (${botType} bot, chatId: ${chatId}): ${error.message}`,
+      );
+      this.logger.error(
+        `❌ Error stack: ${error.stack || 'No stack trace available'}`,
+      );
       // Nu aruncăm eroarea pentru a nu opri flow-ul principal
       // doar logăm eroarea
     }

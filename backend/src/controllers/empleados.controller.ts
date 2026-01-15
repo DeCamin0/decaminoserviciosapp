@@ -271,17 +271,54 @@ export class EmpleadosController {
             const nombreEmpleado =
               this.empleadosService.getFormattedNombre(empleadoData) ||
               'Sin Nombre';
-            const subject = `ALTA OPERARIA/O: ${nombreEmpleado}`;
+            const subject = `📋 ALTA OPERARIA/O: ${nombreEmpleado}`;
             const html = `
-              <html>
-                <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-                  <p>Hola,</p>
-                  <p>Te anexo los datos correspondientes a <strong>${nombreEmpleado}</strong>.</p>
-                  <br>
-                  <p>Un saludo,<br>
-                  <em>Feliz día 🌞</em></p>
-                </body>
-              </html>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+    .content { background-color: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
+    .info-box { background-color: #f8f9fa; border-left: 4px solid #4CAF50; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .highlight { color: #4CAF50; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #888; font-size: 12px; text-align: center; }
+    .signature { margin-top: 30px; color: #555; }
+    .additional-message { background-color: #e8f4f8; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin: 0; font-size: 24px;">📋 DE CAMINO SERVICIOS AUXILIARES SL</h1>
+  </div>
+  
+  <div class="content">
+    <h2 style="color: #4CAF50; margin-top: 0;">Alta de Nuevo Empleado</h2>
+    
+    <p>Hola,</p>
+    
+    <p>Te anexo los datos correspondientes al nuevo empleado <strong class="highlight">${nombreEmpleado}</strong>.</p>
+    
+    <div class="info-box">
+      <p style="margin: 0;">Se adjunta la ficha del empleado con toda la información correspondiente.</p>
+    </div>
+    
+    <p>Un saludo,<br>
+    <em>Feliz día 🌞</em></p>
+    
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">Sistema de Gestión de Empleados</p>
+    </div>
+    
+    <div class="footer">
+      <p>Este es un mensaje automático del sistema. Por favor, no responda a este correo.</p>
+      <p>Fecha de alta: ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'long', timeStyle: 'short' })}</p>
+    </div>
+  </div>
+</body>
+</html>
             `;
 
             const pdfFileName =
@@ -337,12 +374,13 @@ export class EmpleadosController {
             let htmlFinal = html;
             if (mensajeAdicional && mensajeAdicional.trim() !== '') {
               htmlFinal = html.replace(
-                '</body>',
-                `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;">
-                  <strong>Mensaje adicional:</strong><br>
-                  <div style="white-space: pre-wrap;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
-                </div>
-                </body>`,
+                '</div>\n  </div>\n</body>',
+                `    <div class="additional-message">
+      <h3 style="margin-top: 0; color: #2196F3;">💬 Mensaje adicional:</h3>
+      <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
+    </div>
+  </div>
+</body>`,
               );
             }
 
@@ -1246,34 +1284,70 @@ export class EmpleadosController {
         );
 
         let htmlEmail = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #0066CC;">Actualización de Datos del Empleado</h2>
-            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <p style="margin: 5px 0;"><strong>Empleado:</strong> ${this.empleadosService.getFormattedNombre(empleadoData) || body.CODIGO || 'N/A'}</p>
-              <p style="margin: 5px 0;"><strong>Código:</strong> ${body.CODIGO || 'N/A'}</p>
-              <p style="margin: 5px 0;"><strong>Email:</strong> ${empleadoData['CORREO ELECTRONICO'] || 'N/A'}</p>
-            </div>
-            <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
-              <pre style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${emailBody.replace(/\n/g, '<br>')}</pre>
-            </div>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+    .content { background-color: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
+    .info-box { background-color: #f8f9fa; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .employee-info { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .highlight { color: #2196F3; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #888; font-size: 12px; text-align: center; }
+    .signature { margin-top: 30px; color: #555; }
+    .additional-message { background-color: #e8f4f8; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; border-radius: 4px; }
+    pre { white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin: 0; font-size: 24px;">📋 DE CAMINO SERVICIOS AUXILIARES SL</h1>
+  </div>
+  
+  <div class="content">
+    <h2 style="color: #2196F3; margin-top: 0;">Actualización de Datos del Empleado</h2>
+    
+    <div class="employee-info">
+      <p style="margin: 5px 0;"><strong>Empleado:</strong> ${this.empleadosService.getFormattedNombre(empleadoData) || body.CODIGO || 'N/A'}</p>
+      <p style="margin: 5px 0;"><strong>Código:</strong> ${body.CODIGO || 'N/A'}</p>
+      <p style="margin: 5px 0;"><strong>Email:</strong> ${empleadoData['CORREO ELECTRONICO'] || 'N/A'}</p>
+    </div>
+    
+    <div class="info-box">
+      <h3 style="margin-top: 0; color: #2196F3;">📝 Detalles de la actualización:</h3>
+      <pre>${emailBody.replace(/\n/g, '<br>')}</pre>
+    </div>
         `;
 
         // Adaugă mesajul adițional dacă există
         if (mensajeAdicional && mensajeAdicional.trim()) {
           htmlEmail += `
-            <div style="background-color: #e8f4f8; padding: 15px; border-left: 4px solid #007bff; margin: 20px 0;">
-              <strong>Mensaje adicional:</strong><br>
-              <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
-            </div>
+    <div class="additional-message">
+      <h3 style="margin-top: 0; color: #2196F3;">💬 Mensaje adicional:</h3>
+      <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${mensajeAdicional.replace(/\n/g, '<br>')}</div>
+    </div>
           `;
         }
 
         htmlEmail += `
-            <p style="color: #666; font-size: 12px; margin-top: 20px;">
-              Actualizado por: ${body.updatedBy || 'Sistema'}<br>
-              Fecha: ${new Date().toLocaleString('es-ES')}
-            </p>
-          </div>
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>Actualizado por:</strong> ${body.updatedBy || 'Sistema'}</p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">Fecha: ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'long', timeStyle: 'short' })}</p>
+    </div>
+    
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">Sistema de Gestión de Empleados</p>
+    </div>
+    
+    <div class="footer">
+      <p>Este es un mensaje automático del sistema. Por favor, no responda a este correo.</p>
+    </div>
+  </div>
+</body>
+</html>
         `;
 
         try {
@@ -1447,19 +1521,57 @@ export class EmpleadosController {
       if (this.emailService.isConfigured() && body.CORREO_ELECTRONICO) {
         try {
           const subject =
-            'Tu solicitud de actualización ha sido registrada correctamente';
+            '📋 Tu solicitud de actualización ha sido registrada correctamente';
           const html = `
-            <p>¡Hola!</p>
-            <p>
-              Hemos recibido tu solicitud para modificar el campo <strong>"${body.CAMPO_MODIFICADO || ''}"</strong>.<br>
-              <strong>Valor actual:</strong> ${body.VALOR_ANTERIOR || ''}<br>
-              <strong>Nuevo valor solicitado:</strong> ${body.VALOR_NUEVO || ''}
-            </p>
-            <p>Un supervisor revisará tu solicitud en breve.</p>
-            <p>Gracias,<br>
-            Equipo de Recursos Humanos</p>
-            <p>DE CAMINO Servicios Auxiliares SL</p>
-          `;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+    .content { background-color: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
+    .info-box { background-color: #f8f9fa; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .employee-info { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .highlight { color: #2196F3; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #888; font-size: 12px; text-align: center; }
+    .signature { margin-top: 30px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin: 0; font-size: 24px;">📋 DE CAMINO SERVICIOS AUXILIARES SL</h1>
+  </div>
+  
+  <div class="content">
+    <p>Estimado/a <strong>${body.NOMBRE || body.nombre || 'Empleado'}</strong>,</p>
+    
+    <p>Hemos recibido su solicitud de <strong class="highlight">actualización de datos</strong> y ha sido registrada correctamente en nuestro sistema.</p>
+    
+    <div class="info-box">
+      <h3 style="margin-top: 0; color: #2196F3;">📝 Detalles de la solicitud:</h3>
+      <p style="margin-bottom: 10px;"><strong>Campo a modificar:</strong> ${body.CAMPO_MODIFICADO || 'N/A'}</p>
+      <p style="margin-bottom: 10px;"><strong>Valor actual:</strong> ${body.VALOR_ANTERIOR || 'N/A'}</p>
+      <p style="margin: 0;"><strong>Nuevo valor solicitado:</strong> ${body.VALOR_NUEVO || 'N/A'}</p>
+    </div>
+    
+    <p>Un supervisor revisará su solicitud en breve. Recibirá una notificación cuando se apruebe o rechace su solicitud.</p>
+    
+    <p>Si tiene alguna pregunta o necesita asistencia, no dude en contactarnos.</p>
+    
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">Sistema de Gestión de Empleados</p>
+    </div>
+    
+    <div class="footer">
+      <p>Este es un mensaje automático del sistema. Por favor, no responda a este correo.</p>
+      <p>Fecha de registro: ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'long', timeStyle: 'short' })}</p>
+    </div>
+  </div>
+</body>
+</html>
+          `.trim();
 
           await this.emailService.sendEmail(
             body.CORREO_ELECTRONICO,
@@ -1503,7 +1615,7 @@ export class EmpleadosController {
 
   @Post('approve-cambio')
   @UseGuards(JwtAuthGuard)
-  async approveCambio(@Body() body: any) {
+  async approveCambio(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log(
         `✅ Aprobare cambio pentru empleado: ${body?.codigo || body?.CODIGO || 'unknown'}, cambio ID: ${body?.id || body?.ID || 'unknown'}`,
@@ -1565,49 +1677,139 @@ export class EmpleadosController {
             body.campo || body.CAMPO_MODIFICADO || 'el campo solicitado';
           const valorNuevo = body.valor || body.VALOR_NUEVO || 'N/A';
 
-          const subject = 'Tu solicitud de cambio ha sido aprobada';
+          const subject = '✅ Tu solicitud de cambio ha sido aprobada';
           const htmlEmail = `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #0066CC;">Solicitud de Cambio Aprobada</h2>
-              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || 'N/A'}</p>
-                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
-              </div>
-              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #0066CC; margin: 20px 0;">
-                <p>¡Hola!</p>
-                <p>
-                  Tu solicitud para modificar el campo <strong>"${campoModificado}"</strong> ha sido aprobada y actualizada.
-                </p>
-                <p><strong>Nuevo valor:</strong> ${valorNuevo}</p>
-                <p style="margin-top: 15px;">
-                  Los cambios ya están reflejados en tu perfil. Puedes verificar tu información actualizada en la aplicación.
-                </p>
-              </div>
-              <p style="color: #666; font-size: 12px; margin-top: 20px;">
-                Gracias,<br>
-                Equipo de Recursos Humanos<br>
-                DE CAMINO Servicios Auxiliares SL
-              </p>
-            </div>
-          `;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+    .content { background-color: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
+    .info-box { background-color: #f8f9fa; border-left: 4px solid #4CAF50; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .employee-info { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .highlight { color: #4CAF50; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #888; font-size: 12px; text-align: center; }
+    .signature { margin-top: 30px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin: 0; font-size: 24px;">✅ DE CAMINO SERVICIOS AUXILIARES SL</h1>
+  </div>
+  
+  <div class="content">
+    <p>Estimado/a <strong>${body.nombre || body.NOMBRE || 'Empleado'}</strong>,</p>
+    
+    <p>Le informamos que su solicitud de cambio de datos ha sido <strong class="highlight">aprobada y actualizada</strong> en nuestro sistema.</p>
+    
+    <div class="employee-info">
+      <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || 'N/A'}</p>
+      <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
+    </div>
+    
+    <div class="info-box">
+      <h3 style="margin-top: 0; color: #4CAF50;">📋 Detalles de la solicitud aprobada:</h3>
+      <p style="margin-bottom: 10px;"><strong>Campo modificado:</strong> ${campoModificado}</p>
+      <p style="margin: 0;"><strong>Nuevo valor:</strong> ${valorNuevo}</p>
+    </div>
+    
+    <p>Los cambios ya están reflejados en su perfil. Puede verificar su información actualizada en la aplicación.</p>
+    
+    <p>Si tiene alguna pregunta o necesita asistencia, no dude en contactarnos.</p>
+    
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">Sistema de Gestión de Empleados</p>
+    </div>
+    
+    <div class="footer">
+      <p>Este es un mensaje automático del sistema. Por favor, no responda a este correo.</p>
+      <p>Fecha de aprobación: ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'long', timeStyle: 'short' })}</p>
+    </div>
+  </div>
+</body>
+</html>
+          `.trim();
 
-          // Trimite către angajat cu BCC la info@decaminoservicios.com
+          // Trimite către angajat cu BCC la app@decaminoservicios.com
           await this.emailService.sendEmail(
             emailDestinatario,
             subject,
             htmlEmail,
             {
-              bcc: ['info@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
+              bcc: ['app@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
             },
           );
 
           this.logger.log(
             `✅ Email de aprobare trimis către ${emailDestinatario} pentru cambio ${body.id || body.ID}`,
           );
+
+          // Salvează email-ul în BD
+          try {
+            const senderId = String(
+              user?.CODIGO ||
+                user?.codigo ||
+                user?.userId ||
+                body.updatedBy ||
+                'system',
+            );
+            const recipientCodigo =
+              body.codigo || body.CODIGO || cambioData?.codigo || '';
+            const recipientNombre =
+              body.nombre || body.NOMBRE || cambioData?.nombre || 'Empleado';
+
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: 'empleado',
+              recipientId: recipientCodigo,
+              recipientEmail: emailDestinatario,
+              recipientName: recipientNombre,
+              subject,
+              message: htmlEmail,
+              status: 'sent',
+            });
+          } catch (saveError: any) {
+            // Nu aruncăm eroarea dacă salvarea eșuează, email-ul a fost trimis
+            this.logger.warn(
+              `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+            );
+          }
         } catch (emailError: any) {
           this.logger.error(
             `❌ Eroare la trimiterea email-ului de aprobare către angajat: ${emailError.message}`,
           );
+
+          // Salvează și email-urile eșuate în BD
+          try {
+            const senderId = String(
+              user?.CODIGO ||
+                user?.codigo ||
+                user?.userId ||
+                body.updatedBy ||
+                'system',
+            );
+            const recipientCodigo =
+              body.codigo || body.CODIGO || cambioData?.codigo || '';
+            const recipientNombre =
+              body.nombre || body.NOMBRE || cambioData?.nombre || 'Empleado';
+
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: 'empleado',
+              recipientId: recipientCodigo,
+              recipientEmail: emailEmpleado,
+              recipientName: recipientNombre,
+              subject: 'Tu solicitud de cambio ha sido aprobada',
+              message: '',
+              status: 'failed',
+              errorMessage: emailError.message || String(emailError),
+            });
+          } catch {
+            // Ignorăm eroarea de salvare
+          }
           // Nu aruncăm eroare aici, pentru că aprobarea a reușit
         }
       }
@@ -1726,7 +1928,7 @@ export class EmpleadosController {
 
   @Post('reject-cambio')
   @UseGuards(JwtAuthGuard)
-  async rejectCambio(@Body() body: any) {
+  async rejectCambio(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log(
         `❌ Respingere cambio ID: ${body?.id || body?.ID || 'unknown'}`,
@@ -1756,46 +1958,127 @@ export class EmpleadosController {
             body.rejectReason ||
             'No se ha especificado un motivo';
 
-          const subject = 'Tu solicitud de cambio ha sido rechazada';
+          const subject = '❌ Tu solicitud de cambio ha sido rechazada';
           const htmlEmail = `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #CC0000;">Solicitud de Cambio Rechazada</h2>
-              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || 'N/A'}</p>
-                <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
-              </div>
-              <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #CC0000; margin: 20px 0;">
-                <p>¡Hola!</p>
-                <p>
-                  Tu solicitud para modificar el campo <strong>"${campoModificado}"</strong> ha sido rechazada.
-                </p>
-                ${motivoRechazo ? `<p><strong>Motivo del rechazo:</strong><br>${motivoRechazo.replace(/\n/g, '<br>')}</p>` : ''}
-              </div>
-              <p style="color: #666; font-size: 12px; margin-top: 20px;">
-                Gracias,<br>
-                Equipo de Recursos Humanos<br>
-                DE CAMINO Servicios Auxiliares SL
-              </p>
-            </div>
-          `;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #E53935 0%, #C62828 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+    .content { background-color: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
+    .info-box { background-color: #f8f9fa; border-left: 4px solid #E53935; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .employee-info { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    .highlight { color: #E53935; font-weight: bold; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #888; font-size: 12px; text-align: center; }
+    .signature { margin-top: 30px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin: 0; font-size: 24px;">❌ DE CAMINO SERVICIOS AUXILIARES SL</h1>
+  </div>
+  
+  <div class="content">
+    <p>Estimado/a <strong>${body.nombre || body.NOMBRE || 'Empleado'}</strong>,</p>
+    
+    <p>Le informamos que su solicitud de cambio de datos ha sido <strong class="highlight">rechazada</strong>.</p>
+    
+    <div class="employee-info">
+      <p style="margin: 5px 0;"><strong>Empleado:</strong> ${body.nombre || body.NOMBRE || 'N/A'}</p>
+      <p style="margin: 5px 0;"><strong>Código:</strong> ${body.codigo || body.CODIGO || 'N/A'}</p>
+    </div>
+    
+    <div class="info-box">
+      <h3 style="margin-top: 0; color: #E53935;">📋 Detalles de la solicitud:</h3>
+      <p style="margin-bottom: 10px;"><strong>Campo solicitado:</strong> ${campoModificado}</p>
+      ${motivoRechazo ? `<p style="margin: 0;"><strong>Motivo del rechazo:</strong><br>${motivoRechazo.replace(/\n/g, '<br>')}</p>` : '<p style="margin: 0;">No se ha especificado un motivo.</p>'}
+    </div>
+    
+    <p>Si considera que hay un error o desea proporcionar información adicional, puede volver a enviar una nueva solicitud a través de la aplicación.</p>
+    
+    <p>Si tiene alguna pregunta o necesita asistencia, no dude en contactarnos.</p>
+    
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">Sistema de Gestión de Empleados</p>
+    </div>
+    
+    <div class="footer">
+      <p>Este es un mensaje automático del sistema. Por favor, no responda a este correo.</p>
+      <p>Fecha de rechazo: ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'long', timeStyle: 'short' })}</p>
+    </div>
+  </div>
+</body>
+</html>
+          `.trim();
 
-          // Trimite către angajat cu BCC la info@decaminoservicios.com
+          // Trimite către angajat cu BCC la app@decaminoservicios.com
           await this.emailService.sendEmail(
             emailDestinatario,
             subject,
             htmlEmail,
             {
-              bcc: ['info@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
+              bcc: ['app@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
             },
           );
 
           this.logger.log(
             `✅ Email de respingere trimis către ${emailDestinatario} pentru cambio ${body.id || body.ID}`,
           );
+
+          // Salvează email-ul în BD
+          try {
+            const senderId = String(
+              user?.CODIGO || user?.codigo || user?.userId || 'system',
+            );
+            const recipientCodigo = body.codigo || body.CODIGO || '';
+            const recipientNombre = body.nombre || body.NOMBRE || 'Empleado';
+
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: 'empleado',
+              recipientId: recipientCodigo,
+              recipientEmail: emailDestinatario,
+              recipientName: recipientNombre,
+              subject,
+              message: htmlEmail,
+              status: 'sent',
+            });
+          } catch (saveError: any) {
+            // Nu aruncăm eroarea dacă salvarea eșuează, email-ul a fost trimis
+            this.logger.warn(
+              `⚠️ Eroare la salvarea email-ului în BD: ${saveError.message}`,
+            );
+          }
         } catch (emailError: any) {
           this.logger.error(
             `❌ Eroare la trimiterea email-ului de respingere: ${emailError.message}`,
           );
+
+          // Salvează și email-urile eșuate în BD
+          try {
+            const senderId = String(
+              user?.CODIGO || user?.codigo || user?.userId || 'system',
+            );
+            const recipientCodigo = body.codigo || body.CODIGO || '';
+            const recipientNombre = body.nombre || body.NOMBRE || 'Empleado';
+
+            await this.sentEmailsService.saveSentEmail({
+              senderId,
+              recipientType: 'empleado',
+              recipientId: recipientCodigo,
+              recipientEmail: body.email || body.CORREO_ELECTRONICO,
+              recipientName: recipientNombre,
+              subject: 'Tu solicitud de cambio ha sido rechazada',
+              message: '',
+              status: 'failed',
+              errorMessage: emailError.message || String(emailError),
+            });
+          } catch {
+            // Ignorăm eroarea de salvare
+          }
           // Nu aruncăm eroare aici, pentru că respingerea a reușit
         }
       } else {

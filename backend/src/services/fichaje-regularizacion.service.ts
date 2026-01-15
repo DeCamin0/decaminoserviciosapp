@@ -1319,12 +1319,16 @@ export class FichajeRegularizacionService {
         // - reason='worked_less' sau 'auto_threshold_exceeded_negative' (delta negativă, user confirmă că a lucrat mai puțin sau auto-send) → punched_minutes
         // - reason='punch_error' (delta negativă, user zice că e eroare) → scheduled_minutes
         // - altfel (delta pozitivă, user zice că nu a lucrat mai mult) → scheduled_minutes
-        if (reason === 'worked_less' || reason === 'auto_threshold_exceeded_negative') {
+        if (
+          reason === 'worked_less' ||
+          reason === 'auto_threshold_exceeded_negative'
+        ) {
           // User confirmă că a lucrat mai puțin sau auto-send pentru delta negativă → salvăm orele fichate
           effective_minutes = punched_minutes;
-          reason_code = reason === 'auto_threshold_exceeded_negative' 
-            ? 'employee_declares_less' 
-            : 'employee_confirmed_worked_less';
+          reason_code =
+            reason === 'auto_threshold_exceeded_negative'
+              ? 'employee_declares_less'
+              : 'employee_confirmed_worked_less';
         } else if (reason === 'punch_error') {
           // User zice că e eroare de fichaje → salvăm orele prevăzute
           effective_minutes = scheduled_minutes;
@@ -2634,9 +2638,11 @@ export class FichajeRegularizacionService {
 
           <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; border-left: 4px solid ${statusColor};">
             <p style="margin: 0; color: #6B7280; font-size: 12px;">
-              ${data.status === 'approved' 
-                ? `Tu regularización ha sido aprobada. Las horas efectivas (${formatMinutes(data.effectiveMinutes)}) se aplicarán en el cálculo de tus horas trabajadas.` 
-                : `Tu regularización ha sido rechazada. Las horas efectivas se mantienen en 0. Si tienes dudas, contacta con tu supervisor.`}
+              ${
+                data.status === 'approved'
+                  ? `Tu regularización ha sido aprobada. Las horas efectivas (${formatMinutes(data.effectiveMinutes)}) se aplicarán en el cálculo de tus horas trabajadas.`
+                  : `Tu regularización ha sido rechazada. Las horas efectivas se mantienen en 0. Si tienes dudas, contacta con tu supervisor.`
+              }
             </p>
           </div>
 
@@ -2677,9 +2683,8 @@ export class FichajeRegularizacionService {
     let empleadoNombre: string = employee_codigo;
 
     try {
-      const empleado = await this.empleadosService.getEmpleadoByCodigo(
-        employee_codigo,
-      );
+      const empleado =
+        await this.empleadosService.getEmpleadoByCodigo(employee_codigo);
       empleadoEmail =
         empleado?.['CORREO ELECTRONICO'] ||
         empleado?.CORREO_ELECTRONICO ||
@@ -2733,9 +2738,7 @@ export class FichajeRegularizacionService {
           status: 'sent',
         });
       } catch (saveError: any) {
-        this.logger.warn(
-          `⚠️ Error saving email to DB: ${saveError.message}`,
-        );
+        this.logger.warn(`⚠️ Error saving email to DB: ${saveError.message}`);
       }
     } catch (emailError: any) {
       this.logger.warn(
