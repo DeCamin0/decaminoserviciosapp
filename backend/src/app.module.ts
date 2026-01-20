@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from './config/config.module';
@@ -92,6 +94,24 @@ import { HallOfFameService } from './services/hall-of-fame.service';
   imports: [
     ConfigModule,
     ScheduleModule.forRoot(), // Pentru cron jobs
+    // Rate limiting: 100 request-uri pe minut per IP (foarte generos pentru utilizatori normali)
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 10000, // 10 secunde
+        limit: 20, // 20 request-uri pe 10 secunde (protecție anti-spam rapid)
+      },
+      {
+        name: 'medium',
+        ttl: 60000, // 1 minut
+        limit: 100, // 100 request-uri pe minut (limita principală - foarte generoasă)
+      },
+      {
+        name: 'long',
+        ttl: 3600000, // 1 oră
+        limit: 1000, // 1000 request-uri pe oră (protecție împotriva atacurilor prelungite)
+      },
+    ]),
     AuthModule,
     NotificationsModule,
     PrismaModule,
@@ -142,6 +162,11 @@ import { HallOfFameService } from './services/hall-of-fame.service';
     // AssistantController se importa din AssistantModule
   ],
   providers: [
+    // Rate limiting global - aplicat automat la toate endpoint-urile
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     AppService,
     N8nProxyService,
     MeService,

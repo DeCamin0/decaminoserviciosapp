@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.01.15.1311",
+  "version": "2026.01.15.1448",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -109,6 +109,9 @@
     "vite-plugin-node-polyfills": "^0.24.0",
     "vite-plugin-pwa": "^1.0.3",
     "workbox-window": "^7.3.0"
+  },
+  "overrides": {
+    "tar": "^7.5.3"
   },
   "msw": {
     "workerDirectory": [

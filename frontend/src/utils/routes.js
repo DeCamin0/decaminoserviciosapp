@@ -594,6 +594,33 @@ export const routes = {
   savePedido: import.meta.env.DEV
     ? 'http://localhost:3000/api/pedidos'
     : 'https://api.decaminoservicios.com/api/pedidos',
+  getPedidos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/pedidos'
+    : 'https://api.decaminoservicios.com/api/pedidos',
+  getPedidoByUid: (uid) => {
+    const encodedUid = encodeURIComponent(uid);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/pedidos/${encodedUid}`
+      : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}`;
+  },
+  updatePedidoEstado: (uid) => {
+    const encodedUid = encodeURIComponent(uid);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/pedidos/${encodedUid}/estado`
+      : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/estado`;
+  },
+  updatePedidoItems: (uid) => {
+    const encodedUid = encodeURIComponent(uid);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/pedidos/${encodedUid}/items`
+      : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/items`;
+  },
+  enviarPedidosAprobados: import.meta.env.DEV
+    ? 'http://localhost:3000/api/pedidos/enviar-aprobados'
+    : 'https://api.decaminoservicios.com/api/pedidos/enviar-aprobados',
+  generarExcelPedidos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/pedidos/generar-excel'
+    : 'https://api.decaminoservicios.com/api/pedidos/generar-excel',
   
   // Sent Emails (Mensajes Enviados)
   getSentEmails: import.meta.env.DEV

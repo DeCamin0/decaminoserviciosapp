@@ -37,6 +37,7 @@
     "@nestjs/platform-express": "^11.1.11",
     "@nestjs/platform-socket.io": "^11.1.11",
     "@nestjs/schedule": "^6.1.0",
+    "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.11",
     "@prisma/client": "^5.22.0",
     "@types/nodemailer": "^7.0.4",
@@ -94,7 +95,9 @@
   "overrides": {
     "glob": "^11.0.0",
     "tmp": "^0.2.4",
-    "inquirer": "^10.2.2"
+    "inquirer": "^10.2.2",
+    "tar": "^7.5.3",
+    "diff": "^8.0.3"
   },
   "jest": {
     "moduleFileExtensions": [

@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -9,6 +10,7 @@ export class DbHealthController {
     private readonly configService: ConfigService,
   ) {}
 
+  @SkipThrottle() // Health checks nu trebuie să fie rate-limited
   @Get('health')
   async getHealth() {
     const started = Date.now();

@@ -387,6 +387,25 @@ const PedidosPage: React.FC = () => {
             {canAccessAllTabs && (
               <>
                 <button
+                  onClick={() => setActiveTab('gestionar-pedidos')}
+                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                    activeTab === 'gestionar-pedidos'
+                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
+                      : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                  }`}
+                >
+                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                    activeTab === 'gestionar-pedidos' 
+                      ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
+                      : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
+                  }`}></div>
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-xl">📋</span>
+                    <span>Gestionar Pedidos</span>
+                  </div>
+                </button>
+                
+                <button
                   onClick={() => setActiveTab('permisos')}
                   className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
                     activeTab === 'permisos'
@@ -431,6 +450,8 @@ const PedidosPage: React.FC = () => {
         {/* Content */}
         {activeTab === 'nuevo-pedido' ? (
           <TabNuevoPedido addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
+        ) : canAccessAllTabs && activeTab === 'gestionar-pedidos' ? (
+          <TabGestionarPedidos addToast={addToast} />
         ) : canAccessAllTabs && activeTab === 'permisos' ? (
           <TabPermisosComunidad addToast={addToast} />
         ) : canAccessAllTabs && activeTab === 'catalogo' ? (
@@ -455,8 +476,6 @@ const TabNuevoPedido: React.FC<{
   
   const [searchTerm, setSearchTerm] = useState('');
   const [lineasPedido, setLineasPedido] = useState<LineaPedido[]>([]);
-  const [descuentoGlobal, setDescuentoGlobal] = useState(0);
-  const [impuestos, setImpuestos] = useState(0);
   const [notas, setNotas] = useState('');
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
   const [comunidadSeleccionada, setComunidadSeleccionada] = useState<number | null>(null);
@@ -825,7 +844,7 @@ const TabNuevoPedido: React.FC<{
       producto_id: producto.id,
       cantidad: 1,
       precio_unitario: producto.precio,
-      descuento_linea: 0,
+      descuento_linea: 0, // Păstrăm în structură pentru compatibilitate, dar nu se mai folosește
       iva_porcentaje: 21
     };
     setLineasPedido([...lineasPedido, nuevaLinea]);
@@ -846,13 +865,11 @@ const TabNuevoPedido: React.FC<{
   // Calcule pentru fiecare linie
   const calcularLinea = (linea: LineaPedido) => {
     const subtotalLinea = linea.cantidad * linea.precio_unitario;
-    const descuentoAplicado = linea.descuento_linea;
-    const ivaCalculat = (subtotalLinea - descuentoAplicado) * (linea.iva_porcentaje / 100);
-    const totalLinea = subtotalLinea - descuentoAplicado + ivaCalculat;
+    const ivaCalculat = subtotalLinea * (linea.iva_porcentaje / 100);
+    const totalLinea = subtotalLinea + ivaCalculat;
     
     return {
       subtotal: subtotalLinea,
-      descuento: descuentoAplicado,
       iva: ivaCalculat,
       total: totalLinea
     };
@@ -864,33 +881,129 @@ const TabNuevoPedido: React.FC<{
     return sum + calc.subtotal;
   }, 0);
 
-  const total = subtotal - descuentoGlobal + impuestos;
+  // Calculează automat impuestos (IVA) din toate produsele
+  const impuestosCalculados = lineasPedido.reduce((sum, linea) => {
+    const calc = calcularLinea(linea);
+    return sum + calc.iva;
+  }, 0);
+
+  const total = subtotal + impuestosCalculados;
 
   // Guardar borrador
-  const guardarBorrador = () => {
+  const guardarBorrador = async () => {
     if (!comunidadSeleccionada) {
-      alert("Por favor, selecciona una comunidad primero");
+      addToast('warning', 'Selecciona comunidad', 'Por favor selecciona una comunidad primero');
+      return;
+    }
+
+    if (lineasPedido.length === 0) {
+      addToast('warning', 'Sin productos', 'Por favor añade al menos un producto al pedido');
       return;
     }
 
     const comunidadNombre = comunidades.find(c => c.id === comunidadSeleccionada)?.nombre || 'Sin comunidad';
+    const comunidadDetalle = comunidades.find(c => c.id === comunidadSeleccionada);
     
     const payload = {
-      empleado_id: usuarioActual.id,
-      empleado_nombre: usuarioActual.nombre,
-      comunidad_id: comunidadSeleccionada,
-      comunidad_nombre: comunidadNombre,
-      fecha: formatDate(),
-      moneda: "EUR",
-      descuento_global: descuentoGlobal,
-      impuestos: impuestos,
-      notas: notas,
-      items: lineasPedido,
-      total_preview: total
+      // Datele angajatului
+      empleado: {
+        id: usuarioActual.id,
+        nombre: usuarioActual.nombre,
+        email: user?.email || user?.['CORREO ELECTRONICO'] || 'N/A',
+        centro_trabajo: usuarioActual.comunidad
+      },
+      
+      // Datele comunității
+      comunidad: {
+        id: comunidadSeleccionada,
+        nombre: comunidadNombre,
+        direccion: comunidadDetalle?.datosCompletos?.DIRECCION || 'N/A',
+        codigo_postal: comunidadDetalle?.datosCompletos?.['CODIGO POSTAL'] || 'N/A',
+        localidad: comunidadDetalle?.datosCompletos?.LOCALIDAD || comunidadDetalle?.datosCompletos?.POBLACION || 'N/A',
+        provincia: comunidadDetalle?.datosCompletos?.PROVINCIA || 'N/A',
+        telefono: comunidadDetalle?.datosCompletos?.TELEFONO || 'N/A',
+        email: comunidadDetalle?.datosCompletos?.EMAIL || 'N/A',
+        nif: comunidadDetalle?.datosCompletos?.NIF || 'N/A',
+        limite_gasto: 0
+      },
+      
+      // Comanda cerută
+      pedido: {
+        fecha: new Date().toISOString(),
+        moneda: 'EUR',
+        descuento_global: 0,
+        impuestos: impuestosCalculados,
+        notas: notas,
+        subtotal: subtotal,
+        iva_total: impuestosCalculados,
+        total: total,
+        limite_excedido: false,
+        exceso_limite: 0,
+        estado: 'pendiente',
+        items: lineasPedido.map(linea => {
+          const producto = productos.find(p => p.id === linea.producto_id);
+          const subtotalLinea = linea.cantidad * linea.precio_unitario;
+          const ivaLinea = subtotalLinea * (linea.iva_porcentaje / 100);
+          return {
+            producto_id: linea.producto_id,
+            numero_articulo: producto?.numero || 'N/A',
+            descripcion: producto?.descripcion || 'N/A',
+            cantidad: linea.cantidad,
+            precio_unitario: linea.precio_unitario,
+            subtotal_linea: subtotalLinea,
+            descuento_linea: linea.descuento_linea,
+            iva_porcentaje: linea.iva_porcentaje,
+            iva_linea: ivaLinea,
+            total_linea: subtotalLinea + ivaLinea
+          };
+        })
+      }
     };
-    
-    console.log('Payload borrador:', payload);
-    addToast('success', 'Borrador guardado', 'El borrador del pedido se ha preparado correctamente');
+
+    try {
+      // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.savePedido, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const responseData = await response.json();
+        console.log('📡 Backend response:', responseData);
+        
+        if (responseData.status === 'ok') {
+          addToast('success', 'Pedido guardado', 
+            `Pedido ${responseData.pedido_uid} guardado correctamente. Está pendiente de aprobación.`
+          );
+          
+          // Resetează comanda după salvarea cu succes
+          setLineasPedido([]);
+          setNotas('');
+        } else {
+          addToast('warning', 'Pedido guardado con advertencias', responseData.message || 'El pedido se guardó pero con algunas advertencias.');
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+    } catch (error) {
+      console.error('Error guardando borrador:', error);
+      addToast('error', 'Error', 'No se pudo guardar el borrador. Inténtalo de nuevo.');
+    }
   };
 
   return (
@@ -1116,7 +1229,6 @@ const TabNuevoPedido: React.FC<{
                     <th className="text-left p-2">Producto</th>
                     <th className="text-left p-2">Cantidad</th>
                     <th className="text-left p-2">Precio Unit.</th>
-                    <th className="text-left p-2">Desc. Línea</th>
                     <th className="text-left p-2">IVA %</th>
                     <th className="text-left p-2">Total Línea</th>
                     <th className="text-left p-2">Acción</th>
@@ -1148,18 +1260,6 @@ const TabNuevoPedido: React.FC<{
                           />
                         </td>
                         <td className="p-2">{formatMoney(linea.precio_unitario)}</td>
-                        <td className="p-2">
-                          <label htmlFor={`descuento-${index}`} className="sr-only">Descuento línea</label>
-                          <Input
-                            id={`descuento-${index}`}
-                            name={`descuento-${index}`}
-                            type="number"
-                            value={linea.descuento_linea}
-                            onChange={(e) => actualizarLinea(index, 'descuento_linea', Number(e.target.value))}
-                            className="w-20"
-                            aria-label={`Descuento línea para ${producto?.numero || 'producto'}`}
-                          />
-                        </td>
                         <td className="p-2">
                           <label htmlFor={`iva-${index}`} className="sr-only">IVA porcentaje</label>
                           <Input
@@ -1197,25 +1297,8 @@ const TabNuevoPedido: React.FC<{
       {lineasPedido.length > 0 && (
         <Card>
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Resumen</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Descuento Global (EUR)</label>
-                  <Input
-                    type="number"
-                    value={descuentoGlobal}
-                    onChange={(e) => setDescuentoGlobal(Number(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Impuestos (EUR)</label>
-                  <Input
-                    type="number"
-                    value={impuestos}
-                    onChange={(e) => setImpuestos(Number(e.target.value))}
-                  />
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
                   <textarea
@@ -1234,12 +1317,8 @@ const TabNuevoPedido: React.FC<{
                   <span>{formatMoney(subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Descuento Global:</span>
-                  <span>-{formatMoney(descuentoGlobal)}</span>
-                </div>
-                <div className="flex justify-between">
                   <span>Impuestos:</span>
-                  <span>{formatMoney(impuestos)}</span>
+                  <span>{formatMoney(impuestosCalculados)}</span>
                 </div>
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
                   <span>TOTAL:</span>
@@ -1260,6 +1339,1178 @@ const TabNuevoPedido: React.FC<{
             </div>
           </div>
         </Card>
+      )}
+    </div>
+  );
+};
+
+// ===== TAB GESTIONAR PEDIDOS =====
+const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
+  const [pedidos, setPedidos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [filtroEstado, setFiltroEstado] = useState<string>('all');
+  const [pedidoSeleccionado, setPedidoSeleccionado] = useState<string | null>(null);
+  const [pedidoEditando, setPedidoEditando] = useState<string | null>(null);
+  const [mostrarAgregarProducto, setMostrarAgregarProducto] = useState<string | null>(null);
+  const [productosDisponibles, setProductosDisponibles] = useState<Producto[]>([]);
+  const [buscandoProductos, setBuscandoProductos] = useState(false);
+  const [searchProductoTerm, setSearchProductoTerm] = useState('');
+  const [fechasEnvio, setFechasEnvio] = useState<Record<string, string>>({});
+  const [mostrarPreviewEnvio, setMostrarPreviewEnvio] = useState(false);
+  const [pedidosParaEnviar, setPedidosParaEnviar] = useState<any[]>([]);
+  const [mostrarModalExcel, setMostrarModalExcel] = useState(false);
+  const [excelBlob, setExcelBlob] = useState<Blob | null>(null);
+  const [mensajeProveedor, setMensajeProveedor] = useState('');
+  const [enviandoProveedor, setEnviandoProveedor] = useState(false);
+  const [mostrarModalConfirmacionEnvio, setMostrarModalConfirmacionEnvio] = useState(false);
+  const [excelBlobUrl, setExcelBlobUrl] = useState<string | null>(null);
+  const [generandoExcel, setGenerandoExcel] = useState(false);
+
+  // Funcție pentru formatarea banilor
+  const formatMoney = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined) return '0,00 €';
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(num)) return '0,00 €';
+    return `${num.toFixed(2).replace('.', ',')} €`;
+  };
+
+  // Funcție pentru formatarea datei
+  const formatDate = (date: string | Date | null | undefined) => {
+    if (!date) return 'N/A';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return d.toLocaleDateString('es-ES', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Încarcă comenzile
+  const loadPedidos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const url = filtroEstado !== 'all' 
+        ? `${routes.getPedidos}?estado=${filtroEstado}`
+        : routes.getPedidos;
+
+      console.log('📡 [Frontend] Fetching pedidos from:', url);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+
+      console.log('📡 [Frontend] Response status:', response.status);
+      console.log('📡 [Frontend] Response ok?', response.ok);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Frontend] Response error:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('📦 [Frontend] Pedidos loaded:', data);
+      console.log('📦 [Frontend] Is array?', Array.isArray(data));
+      console.log('📦 [Frontend] Data length:', Array.isArray(data) ? data.length : 'N/A');
+      console.log('📦 [Frontend] Data type:', typeof data);
+      
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        console.warn('⚠️ [Frontend] Data is object but not array, keys:', Object.keys(data));
+      }
+      
+      setPedidos(Array.isArray(data) ? data : []);
+      
+      if (!Array.isArray(data) || data.length === 0) {
+        console.warn('⚠️ No pedidos found or invalid response format');
+      }
+    } catch (error) {
+      console.error('❌ Error loading pedidos:', error);
+      addToast('error', 'Error', 'No se pudieron cargar los pedidos.');
+      setPedidos([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filtroEstado, addToast]);
+
+  useEffect(() => {
+    loadPedidos();
+  }, [loadPedidos]);
+
+  // Încarcă produsele pentru o comunitate specifică
+  const loadProductosParaComunidad = async (comunidadId: number) => {
+    setBuscandoProductos(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const url = `${routes.getCatalogo}?cliente_id=${comunidadId}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const productosArray = Array.isArray(data) ? data : [data];
+      
+      const productosMapeados = productosArray.map((item: any) => ({
+        id: item.producto_id,
+        numero: item.numero_articulo,
+        descripcion: item.descripcion,
+        precio: parseFloat(item.precio) || 0,
+        permitido: item.permitido === 1 || item.permitido === true,
+      }));
+
+      setProductosDisponibles(productosMapeados);
+    } catch (error) {
+      console.error('Error loading productos:', error);
+      addToast('error', 'Error', 'No se pudieron cargar los productos.');
+      setProductosDisponibles([]);
+    } finally {
+      setBuscandoProductos(false);
+    }
+  };
+
+  // Adaugă un produs nou la comandă și salvează direct în baza de date
+  const agregarProductoAPedido = async (pedidoUid: string, producto: Producto) => {
+    const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
+    if (!pedido) return;
+
+    // Verifică dacă produsul există deja în comandă
+    const productoExistente = pedido.items?.find((item: any) => item.numero_articulo === producto.numero);
+    if (productoExistente) {
+      addToast('warning', 'Producto ya existe', 'Este producto ya está en el pedido. Puedes modificar la cantidad.');
+      return;
+    }
+
+    // Creează un nou item
+    const nuevoItem = {
+      numero_articulo: producto.numero,
+      descripcion: producto.descripcion,
+      cantidad: 1,
+      precio_unitario: producto.precio,
+      subtotal_linea: producto.precio,
+      descuento_linea: 0,
+      iva_porcentaje: 21,
+      iva_linea: producto.precio * 0.21,
+      total_linea: producto.precio * 1.21,
+      producto_id: producto.id,
+    };
+
+    // Actualizează lista local
+    const newItems = [...(pedido.items || []), nuevoItem];
+    const nuevoSubtotal = newItems.reduce((sum: number, item: any) => sum + (item.subtotal_linea || 0), 0);
+    const nuevoIvaTotal = newItems.reduce((sum: number, item: any) => sum + (item.iva_linea || 0), 0);
+    const nuevoTotal = nuevoSubtotal + nuevoIvaTotal;
+
+    // Salvează direct în baza de date
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      console.log('📡 [Frontend] Updating pedido items:', { pedidoUid, itemsCount: newItems.length });
+      
+      const response = await fetch(routes.updatePedidoItems(pedidoUid), {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          items: newItems,
+          subtotal: nuevoSubtotal,
+          iva_total: nuevoIvaTotal,
+          total: nuevoTotal,
+        }),
+      });
+
+      console.log('📡 [Frontend] Update response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Frontend] Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      // Recargar pedidos pentru a obține datele actualizate din baza de date
+      await loadPedidos();
+      
+      addToast('success', 'Producto añadido', `${producto.numero} - ${producto.descripcion} añadido y guardado en el pedido.`);
+      setMostrarAgregarProducto(null);
+      setSearchProductoTerm('');
+    } catch (error) {
+      console.error('Error adding producto to pedido:', error);
+      addToast('error', 'Error', 'No se pudo guardar el producto. Inténtalo de nuevo.');
+    }
+  };
+
+  // Salvează modificările făcute la o comandă (items modificate, șterse, etc.)
+  const guardarCambios = async (pedidoUid: string) => {
+    const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
+    if (!pedido || !pedido.items) {
+      addToast('error', 'Error', 'No se encontró el pedido o no tiene items.');
+      return;
+    }
+
+    try {
+      // Calculează totalurile din items-urile modificate
+      const nuevoSubtotal = pedido.items.reduce((sum: number, item: any) => sum + (item.subtotal_linea || 0), 0);
+      const nuevoIvaTotal = pedido.items.reduce((sum: number, item: any) => sum + (item.iva_linea || 0), 0);
+      const nuevoTotal = nuevoSubtotal + nuevoIvaTotal;
+
+      console.log('💾 [Frontend] Guardando cambios para pedido:', { 
+        pedidoUid, 
+        itemsCount: pedido.items.length,
+        nuevoSubtotal,
+        nuevoIvaTotal,
+        nuevoTotal
+      });
+
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.updatePedidoItems(pedidoUid), {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          items: pedido.items,
+          subtotal: nuevoSubtotal,
+          iva_total: nuevoIvaTotal,
+          total: nuevoTotal,
+        }),
+      });
+
+      console.log('💾 [Frontend] Guardar cambios response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Frontend] Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      // Recargar pedidos pentru a obține datele actualizate din baza de date
+      await loadPedidos();
+      
+      addToast('success', 'Cambios guardados', `Los cambios del pedido ${pedidoUid} se han guardado correctamente.`);
+      setPedidoEditando(null);
+    } catch (error) {
+      console.error('Error guardando cambios:', error);
+      addToast('error', 'Error', 'No se pudieron guardar los cambios. Inténtalo de nuevo.');
+    }
+  };
+
+  // Salvează doar fecha_envio fără să schimbe statusul
+  const guardarFechaEnvio = async (pedidoUid: string) => {
+    if (!fechasEnvio[pedidoUid]) {
+      addToast('warning', 'Fecha requerida', 'Debes seleccionar una fecha de envío.');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Actualizează doar fecha_envio, păstrând statusul actual
+      const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
+      const estadoActual = pedido?.estado || 'pendiente';
+
+      const response = await fetch(routes.updatePedidoEstado(pedidoUid), {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ 
+          estado: estadoActual,
+          fecha_envio: fechasEnvio[pedidoUid]
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      addToast('success', 'Fecha guardada', 'La fecha de envío se ha guardado correctamente.');
+      
+      // Recargar pedidos pentru a actualiza fecha_envio în UI
+      await loadPedidos();
+    } catch (error) {
+      console.error('Error guardando fecha_envio:', error);
+      addToast('error', 'Error', 'No se pudo guardar la fecha de envío.');
+    }
+  };
+
+  // Actualizează statusul comenzii
+  const updateEstado = async (pedidoUid: string, nuevoEstado: string) => {
+    try {
+      // Dacă se aprobă, verifică dacă există fecha_envio (fie în state, fie deja salvată în pedido)
+      const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
+      const tieneFechaEnvio = fechasEnvio[pedidoUid] || pedido?.fecha_envio;
+      
+      if (nuevoEstado === 'aprobado' && !tieneFechaEnvio) {
+        addToast('warning', 'Fecha de envío requerida', 'Debes seleccionar y guardar una fecha de envío antes de aprobar el pedido.');
+        return;
+      }
+
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const body: { estado: string; fecha_envio?: string } = { estado: nuevoEstado };
+      // Folosește fecha_envio din state dacă există, altfel folosește cea salvată în pedido
+      if (fechasEnvio[pedidoUid]) {
+        body.fecha_envio = fechasEnvio[pedidoUid];
+      } else if (pedido?.fecha_envio) {
+        body.fecha_envio = new Date(pedido.fecha_envio).toISOString();
+      }
+
+      const response = await fetch(routes.updatePedidoEstado(pedidoUid), {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const estadoTexto = nuevoEstado === 'aprobado' ? 'aprobado' : nuevoEstado === 'rechazado' ? 'rechazado' : 'pendiente';
+      addToast('success', 'Estado actualizado', `El pedido ha sido ${estadoTexto} correctamente.`);
+      
+      // Șterge fecha_envio din state dacă s-a salvat cu succes
+      if (fechasEnvio[pedidoUid]) {
+        setFechasEnvio(prev => {
+          const newState = { ...prev };
+          delete newState[pedidoUid];
+          return newState;
+        });
+      }
+      
+      // Recargar pedidos
+      await loadPedidos();
+    } catch (error) {
+      console.error('Error updating estado:', error);
+      addToast('error', 'Error', 'No se pudo actualizar el estado del pedido.');
+    }
+  };
+
+  const getEstadoColor = (estado: string) => {
+    switch (estado) {
+      case 'aprobado':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'rechazado':
+        return 'bg-red-100 text-red-800 border-red-300';
+      case 'pendiente':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'enviado':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300';
+    }
+  };
+
+  const getEstadoTexto = (estado: string) => {
+    switch (estado) {
+      case 'aprobado':
+        return '✅ Aprobado';
+      case 'rechazado':
+        return '❌ Rechazado';
+      case 'pendiente':
+        return '⏳ Pendiente';
+      case 'enviado':
+        return '📦 Enviado';
+      default:
+        return estado;
+    }
+  };
+
+  // Deschide modalul de preview pentru comenzile aprobate
+  const abrirPreviewEnvio = () => {
+    const pedidosAprobados = pedidos.filter(p => p.estado === 'aprobado');
+    
+    if (pedidosAprobados.length === 0) {
+      addToast('info', 'Sin pedidos aprobados', 'No hay pedidos aprobados para enviar.');
+      return;
+    }
+
+    setPedidosParaEnviar(pedidosAprobados);
+    setMostrarPreviewEnvio(true);
+  };
+
+  // Generează Excel-ul și deschide modalul pentru preview și trimitere
+  const confirmarEnvioPedidos = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      console.log('📤 [Frontend] Generando Excel para:', pedidosParaEnviar.length, 'pedidos');
+
+      // Generează Excel-ul (fără să marcheze ca enviado încă)
+      const response = await fetch(routes.generarExcelPedidos, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          pedidos: pedidosParaEnviar.map(p => p.pedido_uid)
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Frontend] Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      // Verifică dacă răspunsul este Excel (blob)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')) {
+        const blob = await response.blob();
+        setExcelBlob(blob);
+        
+        // Închide modalul de preview și deschide modalul Excel
+        setMostrarPreviewEnvio(false);
+        setMostrarModalExcel(true);
+      } else {
+        throw new Error('Respuesta no es un archivo Excel válido');
+      }
+    } catch (error) {
+      console.error('Error generando Excel:', error);
+      addToast('error', 'Error', 'No se pudo generar el Excel. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Descarcă Excel-ul
+  const descargarExcel = () => {
+    if (!excelBlob) return;
+    
+    const url = window.URL.createObjectURL(excelBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fecha = new Date().toISOString().split('T')[0].replace(/-/g, '.');
+    a.download = `PEDIDOS ${fecha}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    addToast('success', 'Excel descargado', 'El archivo Excel ha sido descargado correctamente.');
+  };
+
+  // Trimite mesajul la provider și marchează comenzile ca enviado
+  const enviarProveedor = async () => {
+    if (!excelBlob) return;
+
+    try {
+      setEnviandoProveedor(true);
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      console.log('📤 [Frontend] Enviando a proveedor:', pedidosParaEnviar.length, 'pedidos', mensajeProveedor ? 'con mensaje' : 'sin mensaje');
+
+      // Trimite mesajul și marchează comenzile ca enviado
+      const response = await fetch(routes.enviarPedidosAprobados, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          pedidos: pedidosParaEnviar.map(p => p.pedido_uid),
+          mensaje: mensajeProveedor.trim() || undefined,
+          enviarProveedor: true
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Frontend] Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ [Frontend] Pedidos enviados a proveedor:', result);
+
+      addToast('success', 'Pedidos enviados', `${result.enviados || pedidosParaEnviar.length} pedido(s) han sido enviados al proveedor${mensajeProveedor.trim() ? ' con mensaje' : ''} y marcados como "enviado".`);
+      
+      // Închide modalul și resetează state-ul
+      setMostrarModalExcel(false);
+      if (excelBlob) {
+        window.URL.revokeObjectURL(window.URL.createObjectURL(excelBlob));
+      }
+      setExcelBlob(null);
+      setMensajeProveedor('');
+      setPedidosParaEnviar([]);
+      
+      // Recargar pedidos pentru a actualiza statusurile
+      await loadPedidos();
+    } catch (error) {
+      console.error('Error enviando a proveedor:', error);
+      addToast('error', 'Error', 'No se pudieron enviar los pedidos al proveedor. Inténtalo de nuevo.');
+    } finally {
+      setEnviandoProveedor(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filtre și header */}
+      <Card>
+        <div className="p-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <h2 className="text-2xl font-bold text-gray-800">Gestionar Pedidos</h2>
+            
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="text-sm font-medium text-gray-700">Filtrar por estado:</label>
+              <select
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="all">Todos</option>
+                <option value="pendiente">Pendientes</option>
+                <option value="aprobado">Aprobados</option>
+                <option value="rechazado">Rechazados</option>
+                <option value="enviado">Enviados</option>
+              </select>
+              
+              <Button
+                onClick={loadPedidos}
+                variant="primary"
+                disabled={loading}
+              >
+                {loading ? '🔄 Cargando...' : '🔄 Actualizar'}
+              </Button>
+
+              {pedidos.filter(p => p.estado === 'aprobado').length > 0 && (
+                <Button
+                  onClick={abrirPreviewEnvio}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={loading}
+                  title="Ver preview y enviar todas las órdenes aprobadas. Se generará un Excel y se marcarán como 'enviado'."
+                >
+                  📤 Enviar Todos los Aprobados ({pedidos.filter(p => p.estado === 'aprobado').length})
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Lista de pedidos */}
+      {loading ? (
+        <Card>
+          <div className="p-12 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Cargando pedidos...</p>
+          </div>
+        </Card>
+      ) : pedidos.length === 0 ? (
+        <Card>
+          <div className="p-12 text-center">
+            <div className="text-6xl mb-4">📦</div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No hay pedidos</h3>
+            <p className="text-gray-500">No se encontraron pedidos con los filtros seleccionados.</p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {pedidos.map((pedido) => (
+            <Card key={pedido.pedido_uid} className="overflow-hidden">
+              <div className="p-6">
+                {/* Header del pedido */}
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4 pb-4 border-b">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-bold text-gray-800">Pedido: {pedido.pedido_uid}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getEstadoColor(pedido.estado)}`}>
+                        {getEstadoTexto(pedido.estado)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
+                      <div><strong>Empleado:</strong> {pedido.empleado?.nombre || 'N/A'}</div>
+                      <div><strong>Comunidad:</strong> {pedido.comunidad?.nombre || 'N/A'}</div>
+                      <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
+                      <div><strong>Total:</strong> <span className="font-bold text-purple-600">{formatMoney(pedido.total)}</span></div>
+                      {pedido.fecha_envio && (
+                        <div><strong>Fecha de Envío:</strong> {formatDate(pedido.fecha_envio)}</div>
+                      )}
+                    </div>
+                    {pedido.notas && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        <strong>Notas:</strong> {pedido.notas}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Butoane de acțiune */}
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      onClick={() => {
+                        setPedidoEditando(pedidoEditando === pedido.pedido_uid ? null : pedido.pedido_uid);
+                        // Deschide și detaliile dacă nu sunt deja deschise
+                        if (pedidoSeleccionado !== pedido.pedido_uid) {
+                          setPedidoSeleccionado(pedido.pedido_uid);
+                        }
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      size="sm"
+                    >
+                      {pedidoEditando === pedido.pedido_uid ? '❌ Cancelar Edición' : '✏️ Editar'}
+                    </Button>
+                    {pedido.estado === 'pendiente' && (
+                      <>
+                        <div className="mb-2">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Fecha de Envío:
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="datetime-local"
+                              value={fechasEnvio[pedido.pedido_uid] || pedido.fecha_envio ? new Date(pedido.fecha_envio).toISOString().slice(0, 16) : ''}
+                              onChange={(e) => {
+                                setFechasEnvio(prev => ({
+                                  ...prev,
+                                  [pedido.pedido_uid]: e.target.value
+                                }));
+                              }}
+                              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                              min={new Date().toISOString().slice(0, 16)}
+                            />
+                            <Button
+                              onClick={() => guardarFechaEnvio(pedido.pedido_uid)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white whitespace-nowrap"
+                              size="sm"
+                              disabled={!fechasEnvio[pedido.pedido_uid] && !pedido.fecha_envio}
+                            >
+                              💾 Guardar
+                            </Button>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => updateEstado(pedido.pedido_uid, 'aprobado')}
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                          size="sm"
+                        >
+                          ✅ Aprobar
+                        </Button>
+                        <Button
+                          onClick={() => updateEstado(pedido.pedido_uid, 'rechazado')}
+                          className="bg-red-600 hover:bg-red-700 text-white"
+                          size="sm"
+                        >
+                          ❌ Rechazar
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      onClick={() => setPedidoSeleccionado(
+                        pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid
+                      )}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {pedidoSeleccionado === pedido.pedido_uid ? '👁️ Ocultar' : '👁️ Ver Detalles'}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Detalii produse (expandable) */}
+                {pedidoSeleccionado === pedido.pedido_uid && (
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-gray-700">Productos ({pedido.num_items || pedido.items?.length || 0}):</h4>
+                      {pedidoEditando === pedido.pedido_uid && (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => {
+                              setMostrarAgregarProducto(mostrarAgregarProducto === pedido.pedido_uid ? null : pedido.pedido_uid);
+                              if (mostrarAgregarProducto !== pedido.pedido_uid && pedido.comunidad?.id) {
+                                loadProductosParaComunidad(pedido.comunidad.id);
+                              }
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            size="sm"
+                          >
+                            ➕ Añadir Producto
+                          </Button>
+                          <Button
+                            onClick={() => guardarCambios(pedido.pedido_uid)}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            size="sm"
+                          >
+                            💾 Guardar Cambios
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Formular pentru adăugare produs nou */}
+                    {pedidoEditando === pedido.pedido_uid && mostrarAgregarProducto === pedido.pedido_uid && (
+                      <Card className="mb-4 bg-blue-50 border-blue-200">
+                        <div className="p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h5 className="font-semibold text-gray-700">Añadir Nuevo Producto</h5>
+                            <Button
+                              onClick={() => setMostrarAgregarProducto(null)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              ✕ Cerrar
+                            </Button>
+                          </div>
+                          <Input
+                            label="Buscar producto por número o descripción"
+                            value={searchProductoTerm}
+                            onChange={(e) => setSearchProductoTerm(e.target.value)}
+                            placeholder="Ej: 70000123 o AMBIENTADOR"
+                            className="mb-3"
+                          />
+                          {buscandoProductos ? (
+                            <div className="text-center py-4">
+                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                              <p className="text-sm text-gray-600">Buscando productos...</p>
+                            </div>
+                          ) : productosDisponibles.length > 0 ? (
+                            <div className="max-h-48 overflow-y-auto border rounded-lg bg-white">
+                              {productosDisponibles
+                                .filter(p => 
+                                  !searchProductoTerm || 
+                                  p.numero.toLowerCase().includes(searchProductoTerm.toLowerCase()) ||
+                                  p.descripcion.toLowerCase().includes(searchProductoTerm.toLowerCase())
+                                )
+                                .map(producto => (
+                                  <div 
+                                    key={producto.id} 
+                                    className="flex items-center justify-between p-3 border-b hover:bg-gray-50 cursor-pointer"
+                                    onClick={() => agregarProductoAPedido(pedido.pedido_uid, producto)}
+                                  >
+                                    <div className="flex-1">
+                                      <div className="font-medium text-gray-900">{producto.numero}</div>
+                                      <div className="text-sm text-gray-600">{producto.descripcion}</div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="font-semibold text-blue-600">{formatMoney(producto.precio)}</div>
+                                      <Button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          agregarProductoAPedido(pedido.pedido_uid, producto);
+                                        }}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white mt-1"
+                                        size="sm"
+                                      >
+                                        ➕ Añadir
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-4 text-gray-500">
+                              No se encontraron productos. Asegúrate de que la comunidad tenga productos asignados.
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-gray-50">
+                            <th className="text-left p-2">Artículo</th>
+                            <th className="text-left p-2">Descripción</th>
+                            <th className="text-right p-2">Cantidad</th>
+                            <th className="text-right p-2">Precio Unit.</th>
+                            <th className="text-right p-2">Subtotal</th>
+                            <th className="text-right p-2">IVA</th>
+                            <th className="text-right p-2">Total</th>
+                            <th className="text-left p-2">Fecha de Envío</th>
+                            {pedidoEditando === pedido.pedido_uid && (
+                              <th className="text-center p-2">Acción</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pedido.items?.map((item: any, index: number) => (
+                            <tr key={index} className="border-b hover:bg-gray-50">
+                              <td className="p-2 font-medium">{item.numero_articulo}</td>
+                              <td className="p-2">{item.descripcion}</td>
+                              <td className="p-2 text-right">
+                                {pedidoEditando === pedido.pedido_uid ? (
+                                  <Input
+                                    type="number"
+                                    value={item.cantidad}
+                                    onChange={(e) => {
+                                      // TODO: Actualizar cantidad en el estado
+                                      const newItems = [...pedido.items];
+                                      newItems[index].cantidad = parseFloat(e.target.value) || 0;
+                                      // Recalcular subtotal, IVA și total pentru acest item
+                                      const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
+                                      const iva = subtotal * 0.21;
+                                      newItems[index].subtotal_linea = subtotal;
+                                      newItems[index].iva_linea = iva;
+                                      newItems[index].total_linea = subtotal + iva;
+                                      
+                                      // Actualizar pedido în lista
+                                      const updatedPedidos = pedidos.map(p => 
+                                        p.pedido_uid === pedido.pedido_uid 
+                                          ? { ...p, items: newItems }
+                                          : p
+                                      );
+                                      setPedidos(updatedPedidos);
+                                    }}
+                                    className="w-20 text-right"
+                                    min="0"
+                                    step="0.01"
+                                  />
+                                ) : (
+                                  item.cantidad
+                                )}
+                              </td>
+                              <td className="p-2 text-right">
+                                {pedidoEditando === pedido.pedido_uid ? (
+                                  <Input
+                                    type="number"
+                                    value={item.precio_unitario}
+                                    onChange={(e) => {
+                                      // TODO: Actualizar precio en el estado
+                                      const newItems = [...pedido.items];
+                                      newItems[index].precio_unitario = parseFloat(e.target.value) || 0;
+                                      // Recalcular subtotal, IVA și total pentru acest item
+                                      const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
+                                      const iva = subtotal * 0.21;
+                                      newItems[index].subtotal_linea = subtotal;
+                                      newItems[index].iva_linea = iva;
+                                      newItems[index].total_linea = subtotal + iva;
+                                      
+                                      // Actualizar pedido în lista
+                                      const updatedPedidos = pedidos.map(p => 
+                                        p.pedido_uid === pedido.pedido_uid 
+                                          ? { ...p, items: newItems }
+                                          : p
+                                      );
+                                      setPedidos(updatedPedidos);
+                                    }}
+                                    className="w-24 text-right"
+                                    min="0"
+                                    step="0.01"
+                                  />
+                                ) : (
+                                  formatMoney(item.precio_unitario)
+                                )}
+                              </td>
+                              <td className="p-2 text-right">{formatMoney(item.subtotal_linea)}</td>
+                              <td className="p-2 text-right">{formatMoney(item.iva_linea)}</td>
+                              <td className="p-2 text-right font-semibold">{formatMoney(item.total_linea)}</td>
+                              <td className="p-2 text-left">
+                                {pedido.fecha_envio ? formatDate(pedido.fecha_envio) : 'No asignada'}
+                              </td>
+                              {pedidoEditando === pedido.pedido_uid && (
+                                <td className="p-2 text-center">
+                                  <Button
+                                    onClick={() => {
+                                      // Eliminar item
+                                      const newItems = pedido.items.filter((_: any, i: number) => i !== index);
+                                      const updatedPedidos = pedidos.map(p => 
+                                        p.pedido_uid === pedido.pedido_uid 
+                                          ? { ...p, items: newItems, num_items: newItems.length }
+                                          : p
+                                      );
+                                      setPedidos(updatedPedidos);
+                                    }}
+                                    className="bg-red-600 hover:bg-red-700 text-white"
+                                    size="sm"
+                                  >
+                                    🗑️
+                                  </Button>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-gray-50 font-semibold">
+                            <td colSpan={4} className="p-2 text-right">Total:</td>
+                            <td className="p-2 text-right">
+                              {formatMoney(pedido.items?.reduce((sum: number, item: any) => sum + (item.subtotal_linea || 0), 0) || pedido.subtotal)}
+                            </td>
+                            <td className="p-2 text-right">
+                              {formatMoney(pedido.items?.reduce((sum: number, item: any) => sum + (item.iva_linea || 0), 0) || pedido.iva_total)}
+                            </td>
+                            <td className="p-2 text-right text-purple-600">
+                              {formatMoney(pedido.items?.reduce((sum: number, item: any) => sum + (item.total_linea || 0), 0) || pedido.total)}
+                            </td>
+                            <td></td>
+                            {pedidoEditando === pedido.pedido_uid && <td></td>}
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Modal de Preview pentru Envio */}
+      {mostrarPreviewEnvio && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 pb-4 border-b">
+              <h2 className="text-2xl font-bold text-gray-800">
+                Preview - Enviar Pedidos Aprobados ({pedidosParaEnviar.length})
+              </h2>
+              <Button
+                onClick={() => {
+                  setMostrarPreviewEnvio(false);
+                  setPedidosParaEnviar([]);
+                }}
+                variant="outline"
+                size="sm"
+              >
+                ✕ Cerrar
+              </Button>
+            </div>
+
+            {/* Preview pentru fiecare comandă */}
+            <div className="flex-1 overflow-y-auto">
+              {pedidosParaEnviar.map((pedido, index) => (
+                <div key={pedido.pedido_uid} className="mb-6 border-b pb-6 last:border-b-0">
+                  <h3 className="text-lg font-semibold mb-3 text-gray-800">
+                    {pedido.comunidad?.nombre || `Pedido ${index + 1}`}
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                      <div><strong>Pedido UID:</strong> {pedido.pedido_uid}</div>
+                      <div><strong>Empleado:</strong> {pedido.empleado?.nombre || 'N/A'}</div>
+                      <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
+                      <div><strong>Fecha Envío:</strong> {formatDate(pedido.fecha_envio) || 'No asignada'}</div>
+                      <div><strong>Total:</strong> {formatMoney(pedido.total)}</div>
+                      <div><strong>Items:</strong> {pedido.items?.length || 0}</div>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border-collapse">
+                        <thead>
+                          <tr className="bg-gray-200">
+                            <th className="border p-2 text-left">Nº Artículo</th>
+                            <th className="border p-2 text-left">Descripción</th>
+                            <th className="border p-2 text-right">Cantidad</th>
+                            <th className="border p-2 text-right">Precio Unit.</th>
+                            <th className="border p-2 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pedido.items?.map((item: any, itemIndex: number) => (
+                            <tr key={itemIndex}>
+                              <td className="border p-2">{item.numero_articulo}</td>
+                              <td className="border p-2">{item.descripcion}</td>
+                              <td className="border p-2 text-right">{item.cantidad}</td>
+                              <td className="border p-2 text-right">{formatMoney(item.precio_unitario)}</td>
+                              <td className="border p-2 text-right">{formatMoney(item.total_linea)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-gray-100 font-semibold">
+                            <td colSpan={4} className="border p-2 text-right">Total:</td>
+                            <td className="border p-2 text-right">{formatMoney(pedido.total)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Butoane de acțiune */}
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t">
+              <Button
+                onClick={() => {
+                  setMostrarPreviewEnvio(false);
+                  setPedidosParaEnviar([]);
+                }}
+                variant="outline"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={confirmarEnvioPedidos}
+                className="bg-green-600 hover:bg-green-700 text-white"
+                disabled={loading}
+              >
+                {loading ? '⏳ Enviando...' : '📤 Enviar y Generar Excel'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pentru Excel și trimitere la provider */}
+      {mostrarModalExcel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 pb-4 border-b">
+              <h2 className="text-2xl font-bold text-gray-800">
+                Excel Generado - Enviar a Proveedor
+              </h2>
+              <Button
+                onClick={() => {
+                  setMostrarModalExcel(false);
+                  setExcelBlob(null);
+                  setMensajeProveedor('');
+                }}
+                variant="outline"
+                size="sm"
+              >
+                ✕ Cerrar
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto mb-4">
+              <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                <h3 className="font-semibold mb-2">Resumen:</h3>
+                <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+                  <li><strong>Pedidos:</strong> {pedidosParaEnviar.length}</li>
+                  <li><strong>Total items:</strong> {pedidosParaEnviar.reduce((sum, p) => sum + (p.items?.length || 0), 0)}</li>
+                  <li><strong>Total valor:</strong> {formatMoney(pedidosParaEnviar.reduce((sum, p) => sum + (p.total || 0), 0))}</li>
+                </ul>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mensaje para el proveedor (opcional):
+                </label>
+                <textarea
+                  value={mensajeProveedor}
+                  onChange={(e) => setMensajeProveedor(e.target.value)}
+                  placeholder="Escribe un mensaje que se enviará junto con el pedido al proveedor..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  rows={4}
+                />
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>📋 Nota:</strong> El Excel ha sido generado con éxito. Puedes descargarlo para verificar antes de enviarlo al proveedor.
+                  {mensajeProveedor && (
+                    <span className="block mt-2">
+                      <strong>Mensaje que se enviará:</strong> "{mensajeProveedor}"
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Butoane de acțiune */}
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button
+                onClick={descargarExcel}
+                variant="outline"
+                disabled={!excelBlob}
+              >
+                📥 Descargar Excel
+              </Button>
+              <Button
+                onClick={() => {
+                  setMostrarModalExcel(false);
+                  setExcelBlob(null);
+                  setMensajeProveedor('');
+                  setMostrarPreviewEnvio(true);
+                }}
+                variant="outline"
+              >
+                ← Volver
+              </Button>
+              <Button
+                onClick={enviarProveedor}
+                className="bg-green-600 hover:bg-green-700 text-white"
+                disabled={enviandoProveedor || !excelBlob}
+              >
+                {enviandoProveedor ? '⏳ Enviando...' : '📤 Enviar a Proveedor y Marcar como Enviado'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

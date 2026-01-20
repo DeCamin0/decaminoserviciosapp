@@ -531,13 +531,13 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
   // Nu mai avem nevoie de filtrare - comunitatea se selectează automat
 
-  // Filtrare produse pentru căutare
+  // Filtrare produse pentru căutare (fără limitare - afișează toate produsele)
   const productosFiltrados = useMemo(() => {
-    if (!searchTerm) return productos.slice(0, 20);
+    if (!searchTerm) return productos; // ✅ Afișează toate produsele când nu există căutare
     return productos.filter(producto => 
       producto.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
       producto.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 20);
+    ); // ✅ Afișează toate produsele găsite la căutare (fără limitare)
   }, [productos, searchTerm]);
 
   // Funcție pentru a obține limita de cheltuieli a comunității
@@ -666,13 +666,14 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         fecha: new Date().toISOString(),
         moneda: 'EUR',
         descuento_global: 0,
-        impuestos: 0,
+        impuestos: calcularIVA(),
         notas: notas,
         subtotal: calcularSubtotal(),
         iva_total: calcularIVA(),
         total: calcularTotal(),
         limite_excedido: getLimiteGasto() ? calcularSubtotal() > getLimiteGasto() : false,
         exceso_limite: getLimiteGasto() ? (calcularSubtotal() > getLimiteGasto() ? 1 : 0) : 0,
+        estado: 'pendiente', // Status pentru aprobare de către supervizor
         items: lineasPedido.map(linea => {
           const producto = productos.find(p => p.id === linea.producto_id);
           return {
@@ -717,7 +718,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         
         if (responseData.status === 'ok') {
           addToast('success', 'Pedido guardado', 
-            `Pedido ${responseData.pedido_uid} guardado correctamente.`
+            `Pedido ${responseData.pedido_uid} guardado correctamente. Está pendiente de aprobación por un supervisor.`
           );
           
           // Resetează comanda după salvarea cu succes
@@ -995,16 +996,15 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       {lineasPedido.length > 0 && (
         <Card>
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4 text-orange-900">Resumen</h3>
             <div className="mt-4">
-              <label htmlFor="notas" className="block text-sm font-medium text-gray-700 mb-1">Horario Entrega</label>
+              <label htmlFor="notas" className="block text-sm font-medium text-gray-700 mb-1">Nota (horario o otros detalles)</label>
               <textarea
                 id="notas"
                 value={notas}
                 onChange={(e) => setNotas(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 rows={3}
-                placeholder="Especifica el horario de entrega deseado..."
+                placeholder="Especifica el horario de entrega u otros detalles..."
               />
             </div>
             {getLimiteGasto() && calcularSubtotal() > getLimiteGasto() ? (

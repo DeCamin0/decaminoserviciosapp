@@ -602,6 +602,8 @@ model PedidosTodos {
   iva_porcentaje          Decimal?  @db.Decimal(5, 2)
   iva_linea               Decimal?  @db.Decimal(10, 3)
   total_linea             Decimal?  @db.Decimal(10, 3)
+  estado                  String?   @default("pendiente") @db.VarChar(50)
+  fecha_envio             DateTime? @db.DateTime(0)
   creado_en               DateTime  @default(now()) @db.Timestamp(0)
 }
 

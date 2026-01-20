@@ -480,10 +480,34 @@ const InicioPage = () => {
 
     fetchDocumentosSolicitadosCount();
     
-    // Reîncarcă la fiecare 30 de secunde pentru a actualiza badge-ul
-    const interval = setInterval(fetchDocumentosSolicitadosCount, 30000);
+    // Reîncarcă la fiecare 60 de secunde pentru a actualiza badge-ul (optimizat pentru a reduce traficul)
+    // Oprește polling-ul când tab-ul nu este activ
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return; // Nu face polling când tab-ul este inactiv
+      interval = setInterval(() => {
+        if (!document.hidden) { // Verifică din nou înainte de fiecare request
+          fetchDocumentosSolicitadosCount();
+        }
+      }, 60000); // 60 secunde în loc de 30
+    };
     
-    return () => clearInterval(interval);
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        fetchDocumentosSolicitadosCount(); // Reîncarcă imediat când tab-ul devine activ
+        startPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.CODIGO, user?.isDemo]);
 
   const quickAccessItems = useMemo(() => {
@@ -1159,9 +1183,34 @@ const InicioPage = () => {
     };
 
     loadUnreadCount();
-    // Reîncarcă la fiecare 30 de secunde pentru a actualiza badge-ul
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
+    // Reîncarcă la fiecare 60 de secunde pentru a actualiza badge-ul (optimizat pentru a reduce traficul)
+    // Oprește polling-ul când tab-ul nu este activ
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return; // Nu face polling când tab-ul este inactiv
+      interval = setInterval(() => {
+        if (!document.hidden) { // Verifică din nou înainte de fiecare request
+          loadUnreadCount();
+        }
+      }, 60000); // 60 secunde în loc de 30
+    };
+    
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        loadUnreadCount(); // Reîncarcă imediat când tab-ul devine activ
+        startPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.userId, user?.CODIGO, getUnreadCount]);
 
   // Watchdog + logging pentru state-urile de gating

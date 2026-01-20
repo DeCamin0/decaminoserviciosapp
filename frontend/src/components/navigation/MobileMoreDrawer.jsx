@@ -95,8 +95,34 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
       }
     };
     loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
+    // Reîncarcă la fiecare 60 de secunde (optimizat pentru a reduce traficul)
+    // Oprește polling-ul când tab-ul nu este activ
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          loadUnreadCount();
+        }
+      }, 60000); // 60 secunde în loc de 30
+    };
+    
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        loadUnreadCount();
+        startPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.userId, user?.CODIGO, getUnreadCount]);
 
   // Obține numărul de documente solicitate
@@ -129,8 +155,34 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
       }
     };
     fetchDocumentosSolicitadosCount();
-    const interval = setInterval(fetchDocumentosSolicitadosCount, 30000);
-    return () => clearInterval(interval);
+    // Reîncarcă la fiecare 60 de secunde (optimizat pentru a reduce traficul)
+    // Oprește polling-ul când tab-ul nu este activ
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          fetchDocumentosSolicitadosCount();
+        }
+      }, 60000); // 60 secunde în loc de 30
+    };
+    
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        fetchDocumentosSolicitadosCount();
+        startPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user?.CODIGO, user?.isDemo]);
 
   // Calculează pedidosAccess

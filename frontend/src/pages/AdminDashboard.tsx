@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Link } from 'react-router-dom';
 import Back3DButton from '../components/Back3DButton.jsx';
@@ -9,24 +9,117 @@ import PushSubscribersList from '../components/admin/PushSubscribersList';
 import EmpleadosStatusList from '../components/admin/EmpleadosStatusList';
 // ServerMonitor eliminat
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import { useAdminApi } from '../hooks/useAdminApi';
 
 export default function AdminDashboard() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
+  const { getPermissions } = useAdminApi();
   const [activeTab, setActiveTab] = useState('stats');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [userPermissions, setUserPermissions] = useState(null);
+  const [loadingPermissions, setLoadingPermissions] = useState(true);
 
-  // Verifică dacă utilizatorul este admin
+  // Verifică dacă utilizatorul este admin (fallback pentru cazuri vechi)
   const isAdmin = authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin';
   const isDeveloper = authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer';
+  const isManager = authUser?.isManager || false;
+  const userGrupo = authUser?.GRUPO || authUser?.grupo || '';
+
+  // Funcție helper pentru a găsi cheia corectă a grupului în permisiuni
+  const findGrupoKey = useCallback((grupo, permissions) => {
+    if (!grupo || !permissions) return null;
+    const grupoLower = grupo.toLowerCase();
+    for (const key of Object.keys(permissions)) {
+      if (key.toLowerCase() === grupoLower) return key;
+    }
+    return null;
+  }, []);
+
+  // Funcție helper pentru a verifica permisiunile din backend
+  const hasPermission = useCallback((module) => {
+    if (!userPermissions || !userGrupo) {
+      return false;
+    }
+    
+    const grupoKey = findGrupoKey(userGrupo, userPermissions);
+    if (!grupoKey) {
+      return false;
+    }
+    
+    const grupoPermissions = userPermissions[grupoKey];
+    if (!grupoPermissions) {
+      return false;
+    }
+    
+    return grupoPermissions[module] === true;
+  }, [userPermissions, userGrupo, findGrupoKey]);
+
+  // Încarcă permisiunile din backend
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!userGrupo || authUser?.isDemo) {
+        setLoadingPermissions(false);
+        return;
+      }
+      try {
+        const permissions = await getPermissions(userGrupo);
+        setUserPermissions(permissions);
+      } catch (error) {
+        console.error('Error loading permissions:', error);
+        setUserPermissions(null);
+      } finally {
+        setLoadingPermissions(false);
+      }
+    };
+    loadPermissions();
+  }, [userGrupo, authUser?.isDemo, getPermissions]);
+
+  // Verifică dacă utilizatorul are acces (din GRUPO sau din permisiuni backend)
+  const hasAdminAccess = useMemo(() => {
+    // Verifică dacă sistemul de permisiuni backend există
+    const backendSystemExists = userPermissions !== null || loadingPermissions === true;
+    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+    const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
+    const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
+    const shouldUseBackend = useBackendPermissions && grupoKeyExists;
+
+    // Dacă sistemul de permisiuni backend există, verifică permisiunea 'admin'
+    if (shouldUseBackend) {
+      return hasPermission('admin');
+    }
+
+    // Fallback: verifică GRUPO (pentru cazuri vechi sau când backend-ul nu returnează permisiuni)
+    return isAdmin || isDeveloper || isManager;
+  }, [userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission, isAdmin, isDeveloper, isManager]);
 
   useEffect(() => {
-    if (!isAdmin && !isDeveloper) {
-      setError('Acceso restringido. Solo los administradores pueden acceder a esta página.');
+    // Așteaptă până când authUser este încărcat complet
+    if (authLoading) {
       return;
     }
+
+    // Așteaptă până când permisiunile sunt încărcate (sau s-a determinat că nu există sistem backend)
+    if (loadingPermissions) {
+      return;
+    }
+
+    // După ce authUser este încărcat, verifică permisiunile
+    if (!authUser) {
+      setError('No se pudo cargar la información del usuario.');
+      setLoading(false);
+      return;
+    }
+
+    if (!hasAdminAccess) {
+      setError('Acceso restringido. Solo los administradores pueden acceder a esta página.');
+      setLoading(false);
+      return;
+    }
+    
+    // Dacă are permisiuni, oprește loading-ul
     setLoading(false);
-  }, [isAdmin, isDeveloper]);
+  }, [authUser, authLoading, loadingPermissions, hasAdminAccess]);
 
   if (loading) {
     return (
