@@ -40,6 +40,16 @@ export class ClientesController {
           c.NOMBRE_O_RAZON_SOCIAL ?? c['NOMBRE O RAZON SOCIAL'] ?? null,
         // Păstrăm și varianta cu underscore pentru compatibilitate
         NOMBRE_O_RAZON_SOCIAL: c.NOMBRE_O_RAZON_SOCIAL ?? null,
+        // Frontend-ul așteaptă 'CODIGO POSTAL' (cu spațiu) în loc de CODIGO_POSTAL (cu underscore)
+        'CODIGO POSTAL': c.CODIGO_POSTAL ?? c['CODIGO POSTAL'] ?? null,
+        // Păstrăm și varianta cu underscore pentru compatibilitate
+        CODIGO_POSTAL: c.CODIGO_POSTAL ?? null,
+        // Servicio entrega
+        'SERVICIO ENTREGA': c.SERVICIO_ENTREGA ?? c['SERVICIO ENTREGA'] ?? null,
+        SERVICIO_ENTREGA: c.SERVICIO_ENTREGA ?? null,
+        // Telefon entrega
+        'TELEFON ENTREGA': c.TELEFONO_ENTREGA ?? c['TELEFON ENTREGA'] ?? null,
+        TELEFONO_ENTREGA: c.TELEFONO_ENTREGA ?? null,
       }));
 
       return mapped;

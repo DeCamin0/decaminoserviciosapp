@@ -78,7 +78,6 @@ export default function AdminDashboard() {
   // Verifică dacă utilizatorul are acces (din GRUPO sau din permisiuni backend)
   const hasAdminAccess = useMemo(() => {
     // Verifică dacă sistemul de permisiuni backend există
-    const backendSystemExists = userPermissions !== null || loadingPermissions === true;
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
     const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
     const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;

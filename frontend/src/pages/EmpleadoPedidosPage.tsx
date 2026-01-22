@@ -66,11 +66,44 @@ type LineaPedido = {
   precio_unitario: number;
   descuento_linea: number;
   iva_porcentaje: number;
+  numero_articulo?: string;
+  descripcion?: string;
+  subtotal_linea?: number;
+  iva_linea?: number;
+  total_linea?: number;
+};
+
+type Pedido = {
+  pedido_uid: string;
+  empleado?: {
+    id?: string;
+    nombre?: string;
+    email?: string;
+  };
+  comunidad?: {
+    id?: number | string;
+    nombre?: string;
+    direccion?: string;
+    codigo_postal?: string;
+    localidad?: string;
+    provincia?: string;
+    telefono?: string;
+  };
+  fecha?: string;
+  estado?: string;
+  items?: LineaPedido[];
+  fecha_envio?: string;
+  aprobado_por?: string;
+  aprobado_en?: string;
+  rechazado_por?: string;
+  rechazado_en?: string;
+  notas?: string;
+  [key: string]: unknown;
 };
 
 // ===== API ENDPOINT PENTRU PRODUSE =====
 // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
-const CATALOGO_API_URL = routes.getCatalogo;
+// const CATALOGO_API_URL = routes.getCatalogo; // Folosit direct routes.getCatalogo
 
 // ===== SISTEM DE NOTIFICĂRI MODERNE =====
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -171,6 +204,7 @@ const formatDate = (date: Date): string => {
 
 // ===== COMPONENTA PRINCIPAL =====
 const EmpleadoPedidosPage: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'mis-pedidos'>('nuevo-pedido');
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Counter pentru a asigura ID-uri unice pentru toasts
@@ -208,13 +242,60 @@ const EmpleadoPedidosPage: React.FC = () => {
           </Link>
           
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">🛒 Nuevo Pedido</h1>
-            <p className="text-gray-600">Crea un nuevo pedido para tu centro de trabajo</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">🛒 Pedidos</h1>
+            <p className="text-gray-600">Gestiona tus pedidos</p>
           </div>
         </div>
 
+        {/* Tabs */}
+        <Card className="mb-6">
+          <div className="flex flex-wrap gap-3 p-4">
+            <button
+              onClick={() => setActiveTab('nuevo-pedido')}
+              className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                activeTab === 'nuevo-pedido'
+                  ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
+                  : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
+              }`}
+            >
+              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                activeTab === 'nuevo-pedido' 
+                  ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
+                  : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
+              }`}></div>
+              <div className="relative flex items-center gap-2">
+                <span className="text-xl">🛒</span>
+                <span>Nuevo Pedido</span>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('mis-pedidos')}
+              className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                activeTab === 'mis-pedidos'
+                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
+                  : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+              }`}
+            >
+              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                activeTab === 'mis-pedidos' 
+                  ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
+                  : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
+              }`}></div>
+              <div className="relative flex items-center gap-2">
+                <span className="text-xl">📋</span>
+                <span>Mis Pedidos</span>
+              </div>
+            </button>
+          </div>
+        </Card>
+
         {/* Content */}
-        <TabNuevoPedido addToast={addToast} />
+        {activeTab === 'nuevo-pedido' ? (
+          <TabNuevoPedido addToast={addToast} />
+        ) : (
+          <TabMisPedidos addToast={addToast} />
+        )}
       </div>
       
       {/* Container pentru notificări */}
@@ -225,9 +306,9 @@ const EmpleadoPedidosPage: React.FC = () => {
 
 // ===== TAB NUEVO PEDIDO =====
 // ✅ Helper: Obține centrul de lucru din user object (din AuthContext sau din /api/me)
-const getCentroTrabajoFromUser = (u: any): string | null => {
+const getCentroTrabajoFromUser = (u: Record<string, unknown> | null | undefined): string | null => {
   if (!u) return null;
-  return u['CENTRO TRABAJO'] || u['CENTRO_TRABAJO'] || u['CENTRO'] || u['CENTRO DE TRABAJO'] || null;
+  return (u['CENTRO TRABAJO'] || u['CENTRO_TRABAJO'] || u['CENTRO'] || u['CENTRO DE TRABAJO'] || null) as string | null;
 };
 
 const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
@@ -240,7 +321,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const [comunidadSeleccionada, setComunidadSeleccionada] = useState<number | null>(null);
   const [comunidadDetalles, setComunidadDetalles] = useState<ComunidadDetalle | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [loadingProductos, setLoadingProductos] = useState(false);
+  const [loadingProductos] = useState(false); // Nu este setat în acest tab
   const [cantidadesProductos, setCantidadesProductos] = useState<{[key: number]: number}>({});
   
   // Nu mai avem nevoie de state pentru dropdown - comunitatea se selectează automat
@@ -273,7 +354,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     try {
       // ✅ Obține numele comunității din lista de comunități sau din comunidadDetalles
       const comunidad = comunidades.find(c => c.id === comunidadId);
-      let nombreComunidad = comunidad?.nombre || comunidad?.['NOMBRE O RAZON SOCIAL'] || comunidadDetalles?.nombre || 'Comunidad no encontrada';
+      const nombreComunidad = comunidad?.nombre || comunidad?.['NOMBRE O RAZON SOCIAL'] || comunidadDetalles?.nombre || 'Comunidad no encontrada';
       
       // ✅ Setează inmediatamente comunidadDetalles cu numele corect pentru a evita "Comunidad no encontrada"
       if (comunidad && !comunidadDetalles) {
@@ -417,8 +498,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         const centrosFromClientes = clientesArray
           .map((cliente, index) => {
             const nombre = cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre || 'Sin nombre';
+            // Folosește ID-ul real din baza de date, nu index + 1
+            const clienteId = cliente.id || cliente.ID || (index + 1);
             return {
-              id: index + 1,
+              id: clienteId,
               nombre: nombre,
               datosCompletos: cliente // Păstrăm datele complete ale clientului
             };
@@ -648,7 +731,8 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       
       // Datele comunității
       comunidad: {
-        id: comunidadDetalles?.id || 'N/A',
+        // Folosește ID-ul real din datosCompletos dacă există, altfel folosește id-ul din comunidadDetalles
+        id: comunidadDetalles?.datosCompletos?.id || comunidadDetalles?.id || 'N/A',
         nombre: comunidadDetalles?.nombre || 'Comunidad no encontrada',
         direccion: comunidadDetalles?.datosCompletos?.DIRECCION || 'N/A',
         codigo_postal: comunidadDetalles?.datosCompletos?.['CODIGO POSTAL'] || 'N/A',
@@ -1043,6 +1127,670 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
             </div>
           </div>
         </Card>
+      )}
+    </div>
+  );
+};
+
+// ===== TAB MIS PEDIDOS =====
+const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
+  const { user } = useAuth();
+  const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [pedidoSeleccionado, setPedidoSeleccionado] = useState<string | null>(null);
+  const [pedidoEditando, setPedidoEditando] = useState<string | null>(null);
+  const [productosDisponibles, setProductosDisponibles] = useState<Producto[]>([]);
+  const [productosNuevos, setProductosNuevos] = useState<LineaPedido[]>([]);
+  const [loadingProductos, setLoadingProductos] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  // Funcție pentru formatarea banilor
+  const formatMoney = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined) return '0,00 €';
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(num)) return '0,00 €';
+    return `${num.toFixed(2).replace('.', ',')} €`;
+  };
+
+  // Funcție pentru formatarea datei
+  const formatDate = (date: string | Date | null | undefined) => {
+    if (!date) return 'N/A';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return d.toLocaleDateString('es-ES', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Funcții pentru stilizarea stării
+  const getEstadoColor = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'aprobado':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'rechazado':
+        return 'bg-red-100 text-red-800 border-red-300';
+      case 'pendiente':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-300';
+    }
+  };
+
+  const getEstadoTexto = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'aprobado':
+        return '✅ Aprobado';
+      case 'rechazado':
+        return '❌ Rechazado';
+      case 'pendiente':
+        return '⏳ Pendiente';
+      default:
+        return estado || 'Desconocido';
+    }
+  };
+
+  // Încarcă comenzile utilizatorului curent
+  const loadPedidos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const url = routes.getPedidos;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const pedidosArray = Array.isArray(data) ? data : [];
+
+      // Obține numele comunității utilizatorului curent
+      const userComunidadNombre = getCentroTrabajoFromUser(user);
+      
+      console.log('🔍 [TabMisPedidos] User info:', {
+        comunidad_nombre: userComunidadNombre,
+        user: user
+      });
+      console.log('🔍 [TabMisPedidos] Total pedidos received:', pedidosArray.length);
+      
+      // Filtrează comenzile după comunitate (nu după angajat)
+      const pedidosFiltrados = pedidosArray.filter((pedido: Pedido) => {
+        const pedidoComunidadNombre = pedido.comunidad?.nombre || '';
+        
+        // Compară numele comunității (case-insensitive, trim whitespace)
+        const match = userComunidadNombre && pedidoComunidadNombre && (
+          String(userComunidadNombre).trim().toLowerCase() === String(pedidoComunidadNombre).trim().toLowerCase()
+        );
+        
+        if (!match && pedidosArray.length > 0 && pedidosArray.indexOf(pedido) === 0) {
+          console.log('🔍 [TabMisPedidos] First pedido filtered out:', {
+            pedido_uid: pedido.pedido_uid,
+            pedido_comunidad_nombre: pedidoComunidadNombre,
+            user_comunidad_nombre: userComunidadNombre,
+            match
+          });
+        }
+        return match;
+      });
+
+      console.log('✅ [TabMisPedidos] Pedidos filtrados:', pedidosFiltrados.length);
+      if (pedidosFiltrados.length === 0 && pedidosArray.length > 0) {
+        console.warn('⚠️ [TabMisPedidos] No pedidos matched comunidad filter. User comunidad:', userComunidadNombre, 'Sample pedido comunidad:', pedidosArray[0]?.comunidad?.nombre);
+      }
+      setPedidos(pedidosFiltrados);
+    } catch (error) {
+      console.error('❌ Error loading pedidos:', error);
+      addToast('error', 'Error', 'No se pudieron cargar los pedidos.');
+      setPedidos([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, addToast]);
+
+  // Funcție pentru a deschide modalul de editare
+  const abrirEditarPedido = async (pedido: Pedido) => {
+    if (pedido.estado?.toLowerCase() !== 'pendiente') {
+      addToast('warning', 'No se puede editar', 'Solo se pueden editar pedidos con estado "Pendiente"');
+      return;
+    }
+
+    setPedidoEditando(pedido.pedido_uid);
+    setProductosNuevos([]);
+    
+    // Încarcă produsele disponibile pentru comunitate
+    if (pedido.comunidad?.id) {
+      setLoadingProductos(true);
+      try {
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        };
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const url = `${routes.getCatalogo}?cliente_id=${pedido.comunidad.id}&cliente_nombre=${encodeURIComponent(pedido.comunidad.nombre || '')}`;
+        const response = await fetch(url, { method: 'GET', headers });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const productosArray = Array.isArray(data) ? data as ProductoApiItem[] : [];
+        // Map ProductoApiItem to Producto
+        const productosMapped: Producto[] = productosArray.map((item: ProductoApiItem) => {
+          let imagenBase64 = '';
+          if (item.imagen_base64) {
+            imagenBase64 = `data:image/jpeg;base64,${item.imagen_base64}`;
+          } else if (item.fotoproducto?.data && Array.isArray(item.fotoproducto.data)) {
+            imagenBase64 = bufferToBase64(item.fotoproducto.data);
+          }
+          return {
+            id: item.producto_id || 0,
+            numero: item.numero_articulo || '',
+            descripcion: item.descripcion || '',
+            precio: parseFloat(String(item.precio || 0)),
+            permitido: item.permitido === 1 || item.permitido === true || item.permitido === '1',
+            imagen: imagenBase64 || undefined
+          };
+        });
+        setProductosDisponibles(productosMapped);
+      } catch (error) {
+        console.error('❌ Error loading productos:', error);
+        addToast('error', 'Error', 'No se pudieron cargar los productos disponibles.');
+      } finally {
+        setLoadingProductos(false);
+      }
+    }
+  };
+
+  // Funcție pentru a adăuga un produs nou
+  const agregarProductoNuevo = (producto: Producto) => {
+    const productoId = producto.id || producto.producto_id;
+    const numeroArticulo = producto.numero || producto.numero_articulo || '';
+    
+    // Verifică dacă produsul există deja în lista de produse noi
+    const productoExistenteIndex = productosNuevos.findIndex(
+      (item) => (item.producto_id === productoId || item.numero_articulo === numeroArticulo) && productoId && numeroArticulo
+    );
+    
+    if (productoExistenteIndex >= 0) {
+      // Actualizează cantitatea produsului existent
+      const nuevos = [...productosNuevos];
+      const item = nuevos[productoExistenteIndex];
+      item.cantidad = (item.cantidad || 0) + 1;
+      item.subtotal_linea = item.precio_unitario * item.cantidad;
+      item.iva_linea = item.subtotal_linea * 0.21;
+      item.total_linea = item.subtotal_linea + item.iva_linea;
+      setProductosNuevos(nuevos);
+      addToast('info', 'Cantidad actualizada', `Se ha incrementado la cantidad de "${numeroArticulo}"`);
+    } else {
+      // Adaugă produsul nou
+      const nuevoItem: LineaPedido = {
+        producto_id: productoId,
+        numero_articulo: numeroArticulo,
+        descripcion: producto.descripcion || '',
+        cantidad: 1,
+        precio_unitario: parseFloat(String(producto.precio || 0)),
+        subtotal_linea: parseFloat(String(producto.precio || 0)),
+        descuento_linea: 0,
+        iva_porcentaje: 21,
+        iva_linea: parseFloat(String(producto.precio || 0)) * 0.21,
+        total_linea: parseFloat(String(producto.precio || 0)) * 1.21,
+      };
+      setProductosNuevos([...productosNuevos, nuevoItem]);
+    }
+  };
+
+  // Funcție pentru a actualiza cantitatea unui produs nou
+  const actualizarCantidadProducto = (index: number, nuevaCantidad: number) => {
+    if (nuevaCantidad < 1) return;
+    const nuevos = [...productosNuevos];
+    const item = nuevos[index];
+    item.cantidad = nuevaCantidad;
+    item.subtotal_linea = item.precio_unitario * nuevaCantidad;
+    item.iva_linea = item.subtotal_linea * 0.21;
+    item.total_linea = item.subtotal_linea + item.iva_linea;
+    setProductosNuevos(nuevos);
+  };
+
+  // Funcție pentru a elimina un produs nou
+  const eliminarProductoNuevo = (index: number) => {
+    setProductosNuevos(productosNuevos.filter((_, i) => i !== index));
+  };
+
+  // Funcție pentru a salva modificările
+  const guardarEdicionPedido = async () => {
+    if (!pedidoEditando || productosNuevos.length === 0) {
+      addToast('warning', 'Sin productos', 'Debes agregar al menos un producto nuevo');
+      return;
+    }
+
+    setGuardando(true);
+    try {
+      const pedido = pedidos.find(p => p.pedido_uid === pedidoEditando);
+      if (!pedido) {
+        throw new Error('Pedido no encontrado');
+      }
+
+      // Combină items-urile existente cu cele noi, actualizând cantitatea pentru produsele duplicate
+      const itemsExistentes: LineaPedido[] = [...(pedido.items || [])];
+      const itemsNuevosSinDuplicados: LineaPedido[] = [];
+      
+      // Procesează fiecare produs nou
+      productosNuevos.forEach((productoNuevo: LineaPedido) => {
+        const productoId = productoNuevo.producto_id;
+        const numeroArticulo = productoNuevo.numero_articulo;
+        
+        // Caută dacă produsul există deja în items-urile existente
+        const itemExistenteIndex = itemsExistentes.findIndex(
+          (item: LineaPedido) => 
+            (item.producto_id === productoId || item.numero_articulo === numeroArticulo) && 
+            (productoId || numeroArticulo)
+        );
+        
+        if (itemExistenteIndex >= 0) {
+          // Actualizează cantitatea produsului existent
+          const itemExistente = itemsExistentes[itemExistenteIndex];
+          itemExistente.cantidad = (itemExistente.cantidad || 0) + (productoNuevo.cantidad || 1);
+          itemExistente.subtotal_linea = itemExistente.precio_unitario * itemExistente.cantidad;
+          itemExistente.iva_linea = itemExistente.subtotal_linea * 0.21;
+          itemExistente.total_linea = itemExistente.subtotal_linea + itemExistente.iva_linea;
+        } else {
+          // Adaugă produsul nou (care nu există deja)
+          itemsNuevosSinDuplicados.push(productoNuevo);
+        }
+      });
+      
+      // Combină items-urile existente (actualizate) cu cele noi (care nu există deja)
+      const todosItems = [...itemsExistentes, ...itemsNuevosSinDuplicados];
+
+      // Calculează totalurile
+      const subtotal = todosItems.reduce((sum, item) => sum + (item.subtotal_linea || 0), 0);
+      const iva_total = todosItems.reduce((sum, item) => sum + (item.iva_linea || 0), 0);
+      const total = subtotal + iva_total;
+
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Decodează UID-ul dacă este encodat
+      const pedidoUid = pedidoEditando.startsWith('=') ? pedidoEditando.substring(1) : pedidoEditando;
+      const encodedUid = encodeURIComponent(pedidoUid);
+      
+      const url = import.meta.env.DEV
+        ? `http://localhost:3000/api/pedidos/${encodedUid}/items`
+        : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/items`;
+
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          items: todosItems,
+          subtotal,
+          iva_total,
+          total,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      addToast('success', 'Pedido actualizado', 'Los productos se han agregado correctamente al pedido');
+      setPedidoEditando(null);
+      setProductosNuevos([]);
+      setProductosDisponibles([]);
+      
+      // Reîncarcă comenzile
+      await loadPedidos();
+    } catch (error: unknown) {
+      console.error('❌ Error saving pedido:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo actualizar el pedido';
+      addToast('error', 'Error', errorMessage);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPedidos();
+  }, [loadPedidos]);
+
+  return (
+    <div className="space-y-6">
+      {/* Buton de actualizare */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => loadPedidos()}
+          className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+          title="Actualizar pedidos"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Lista de pedidos */}
+      {loading ? (
+        <Card>
+          <div className="p-12 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Cargando pedidos...</p>
+          </div>
+        </Card>
+      ) : pedidos.length === 0 ? (
+        <Card>
+          <div className="p-12 text-center">
+            <div className="text-6xl mb-4">📦</div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No hay pedidos</h3>
+            <p className="text-gray-500">No se encontraron pedidos con los filtros seleccionados.</p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {pedidos.map((pedido: Pedido) => (
+            <Card key={pedido.pedido_uid} className="overflow-hidden">
+              <div className="p-6">
+                {/* Header del pedido */}
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4 pb-4 border-b">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-bold text-gray-800">Pedido: {pedido.pedido_uid}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getEstadoColor(pedido.estado)}`}>
+                        {getEstadoTexto(pedido.estado)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
+                      <div><strong>Comunidad:</strong> {pedido.comunidad?.nombre || 'N/A'}</div>
+                      <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
+                      {pedido.fecha_envio && (
+                        <div><strong>Fecha de Envío:</strong> {formatDate(pedido.fecha_envio)}</div>
+                      )}
+                      {pedido.aprobado_por && (
+                        <div className="text-green-600">
+                          <strong>✅ Aprobado por:</strong> {pedido.aprobado_por}
+                          {pedido.aprobado_en && ` el ${formatDate(pedido.aprobado_en)}`}
+                        </div>
+                      )}
+                      {pedido.rechazado_por && (
+                        <div className="text-red-600">
+                          <strong>❌ Rechazado por:</strong> {pedido.rechazado_por}
+                          {pedido.rechazado_en && ` el ${formatDate(pedido.rechazado_en)}`}
+                        </div>
+                      )}
+                    </div>
+                    {pedido.notas && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        <strong>Notas:</strong> {pedido.notas}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Detalii produse */}
+                {pedidoSeleccionado === pedido.pedido_uid && pedido.items && pedido.items.length > 0 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <h4 className="font-semibold text-gray-700 mb-3">Productos:</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50">
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Artículo</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Descripción</th>
+                            <th className="px-3 py-2 text-right font-semibold text-gray-700">Cantidad</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pedido.items.map((item: LineaPedido, index: number) => (
+                            <tr key={index} className="border-b hover:bg-gray-50">
+                              <td className="px-3 py-2">{item.numero_articulo || 'N/A'}</td>
+                              <td className="px-3 py-2">{item.descripcion || 'N/A'}</td>
+                              <td className="px-3 py-2 text-right">{item.cantidad || 0}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Butoane pentru a vedea/ascunde detalii și editare */}
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    onClick={() => {
+                      setPedidoSeleccionado(pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid);
+                    }}
+                    className="bg-gray-600 hover:bg-gray-700 text-white"
+                    size="sm"
+                  >
+                    {pedidoSeleccionado === pedido.pedido_uid ? '👁️ Ocultar Detalles' : '👁️ Ver Detalles'}
+                  </Button>
+                  {pedido.estado?.toLowerCase() === 'pendiente' && (
+                    <Button
+                      onClick={() => abrirEditarPedido(pedido)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      size="sm"
+                    >
+                      ✏️ Editar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Modal de editare pentru comenzile pendiente */}
+      {pedidoEditando && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">✏️ Editar Pedido: {pedidoEditando}</h2>
+                <button
+                  onClick={() => {
+                    setPedidoEditando(null);
+                    setProductosNuevos([]);
+                    setProductosDisponibles([]);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Produse existente */}
+              {(() => {
+                const pedido = pedidos.find(p => p.pedido_uid === pedidoEditando);
+                if (!pedido) return null;
+                return (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-700 mb-3">Productos existentes:</h3>
+                    {pedido.items && pedido.items.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border border-gray-200">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Artículo</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Descripción</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-700 border-b">Cantidad</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-700 border-b">Precio</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-700 border-b">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pedido.items.map((item: LineaPedido, index: number) => (
+                              <tr key={index} className="border-b">
+                                <td className="px-3 py-2">{item.numero_articulo || 'N/A'}</td>
+                                <td className="px-3 py-2">{item.descripcion || 'N/A'}</td>
+                                <td className="px-3 py-2 text-right">{item.cantidad || 0}</td>
+                                <td className="px-3 py-2 text-right">{formatMoney(item.precio_unitario)}</td>
+                                <td className="px-3 py-2 text-right font-semibold">{formatMoney(item.total_linea || 0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-sm">No hay productos existentes</p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Produse noi de adăugat */}
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-700 mb-3">Agregar productos nuevos:</h3>
+                
+                {loadingProductos ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-gray-600">Cargando productos...</p>
+                  </div>
+                ) : productosDisponibles.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No hay productos disponibles</p>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+                    {productosDisponibles.map((producto) => (
+                      <div
+                        key={producto.id || producto.producto_id}
+                        className="flex items-center justify-between p-3 border-b hover:bg-gray-50 cursor-pointer"
+                        onClick={() => agregarProductoNuevo(producto)}
+                      >
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{producto.numero || producto.numero_articulo || 'N/A'}</div>
+                          <div className="text-sm text-gray-600">{producto.descripcion || 'N/A'}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-blue-600">{formatMoney(producto.precio || 0)}</div>
+                          <button className="mt-1 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                            + Agregar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Lista produselor noi adăugate */}
+              {productosNuevos.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-3">Productos nuevos a agregar:</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border border-gray-200">
+                      <thead>
+                        <tr className="bg-gray-50">
+                          <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Artículo</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Descripción</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-700 border-b">Cantidad</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-700 border-b">Precio</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-700 border-b">Total</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-700 border-b">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productosNuevos.map((item, index) => (
+                          <tr key={index} className="border-b">
+                            <td className="px-3 py-2">{item.numero_articulo || 'N/A'}</td>
+                            <td className="px-3 py-2">{item.descripcion || 'N/A'}</td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.cantidad}
+                                onChange={(e) => actualizarCantidadProducto(index, parseInt(e.target.value) || 1)}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">{formatMoney(item.precio_unitario)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{formatMoney(item.total_linea)}</td>
+                            <td className="px-3 py-2 text-center">
+                              <button
+                                onClick={() => eliminarProductoNuevo(index)}
+                                className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-4 text-right">
+                    <div className="text-lg font-semibold text-gray-800">
+                      Total nuevos productos: {formatMoney(productosNuevos.reduce((sum, item) => sum + item.total_linea, 0))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Butoane de acțiune */}
+              <div className="flex justify-end gap-3 mt-6">
+                <Button
+                  onClick={() => {
+                    setPedidoEditando(null);
+                    setProductosNuevos([]);
+                    setProductosDisponibles([]);
+                  }}
+                  className="bg-gray-600 hover:bg-gray-700 text-white"
+                  size="sm"
+                  disabled={guardando}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={guardarEdicionPedido}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  size="sm"
+                  disabled={guardando || productosNuevos.length === 0}
+                >
+                  {guardando ? 'Guardando...' : '💾 Guardar Cambios'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

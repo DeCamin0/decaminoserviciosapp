@@ -25,16 +25,85 @@ type Comunidad = {
 
 type LineaPedido = {
   producto_id: number;
+  numero_articulo?: string;
+  descripcion?: string;
   cantidad: number;
   precio_unitario: number;
   descuento_linea: number;
   iva_porcentaje: number;
+  subtotal_linea?: number;
+  iva_linea?: number;
+  total_linea?: number;
 };
 
 type PermisosState = {
   [comunidadId: number]: {
     [productoId: number]: boolean;
   };
+};
+
+type UserPermissions = Record<string, unknown> | null;
+
+type Pedido = {
+  pedido_uid: string;
+  empleado?: {
+    nombre?: string;
+    email?: string;
+  };
+  comunidad?: {
+    id?: number;
+    nombre?: string;
+    direccion?: string;
+    codigo_postal?: string;
+    localidad?: string;
+    provincia?: string;
+    telefono?: string;
+    email?: string;
+    nif?: string;
+  };
+  fecha?: string;
+  fecha_envio?: string;
+  direccion_envio?: string;
+  codigo_postal_envio?: string;
+  localidad_envio?: string;
+  provincia_envio?: string;
+  aprobado_por?: string;
+  aprobado_en?: string;
+  rechazado_por?: string;
+  rechazado_en?: string;
+  total?: number;
+  estado?: string;
+  items?: LineaPedido[];
+  [key: string]: unknown;
+};
+
+type ProductoAPI = {
+  producto_id?: number;
+  numero_articulo?: string;
+  descripcion?: string;
+  precio?: number | string;
+  permitido?: boolean | number;
+  imagen?: string;
+  imagen_base64?: string;
+  fotoproducto?: {
+    data?: number[];
+  };
+};
+
+type Cliente = {
+  id?: number;
+  ID?: number;
+  NIF?: string;
+  'NOMBRE O RAZON SOCIAL'?: string;
+  'NOMBRE O RAZÓN SOCIAL'?: string;
+  NOMBRE_O_RAZON_SOCIAL?: string;
+  DIRECCION?: string;
+  'CODIGO POSTAL'?: string;
+  LOCALIDAD?: string;
+  PROVINCIA?: string;
+  TELEFONO?: string;
+  EMAIL?: string;
+  [key: string]: unknown;
 };
 
 type ComunidadDetalle = {
@@ -228,13 +297,13 @@ const PedidosPage: React.FC = () => {
   const { getPermissions } = useAdminApi();
   const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'permisos' | 'catalogo'>('nuevo-pedido');
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [userPermissions, setUserPermissions] = useState<any>(null);
+  const [userPermissions, setUserPermissions] = useState<UserPermissions>(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
   const userGrupo = useMemo(() => user?.GRUPO || user?.grupo || 'Empleado', [user?.GRUPO, user?.grupo]);
 
   // Helper pentru verificarea permisiunilor
-  const findGrupoKey = useCallback((grupo: string, permissions: any) => {
+  const findGrupoKey = useCallback((grupo: string, permissions: UserPermissions) => {
     if (!grupo || !permissions) return null;
     const grupoStr = String(grupo).trim();
     if (permissions[grupoStr]) return grupoStr;
@@ -518,11 +587,15 @@ const TabNuevoPedido: React.FC<{
         
         // Extrage centrele de trabajo din clienți cu datele complete
         const centrosFromClientes = clientesArray
-          .map((cliente, index) => ({
-            id: index + 1,
-            nombre: cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre || 'Sin nombre',
-            datosCompletos: cliente // Păstrăm datele complete ale clientului
-          }))
+          .map((cliente, index) => {
+            // Folosește ID-ul real din baza de date, nu index + 1
+            const clienteId = cliente.id || cliente.ID || (index + 1);
+            return {
+              id: clienteId,
+              nombre: cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre || 'Sin nombre',
+              datosCompletos: cliente // Păstrăm datele complete ale clientului
+            };
+          })
           .filter(centro => centro.nombre && centro.nombre.trim() !== '' && centro.nombre.length > 3)
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
         
@@ -656,7 +729,7 @@ const TabNuevoPedido: React.FC<{
     });
     
     return comunidadParcial ? [comunidadParcial] : comunidades; // Fallback
-  }, [comunidades, canAccessAllTabs, user?.['CENTRO TRABAJO'], user?.CENTRO_TRABAJO, user?.CENTRO]);
+  }, [comunidades, canAccessAllTabs, user]);
 
   // Flag pentru a preveni request-urile duplicate în handleComunidadChange
   const isLoadingComunidadRef = React.useRef(false);
@@ -742,9 +815,13 @@ const TabNuevoPedido: React.FC<{
         if (Array.isArray(data)) {
           // Dacă este array, mapează toate produsele
           productosConPermisos = data.map((item: ProductoAPI) => {
-            // Folosește imagen_base64 direct din backend
+            // Folosește imagen_base64 sau imagen direct din backend
             let imagenBase64 = '';
-            if (item.imagen_base64) {
+            // Verifică dacă există deja imagen cu prefix (din getCatalogo)
+            if (item.imagen && item.imagen.trim() !== '') {
+              imagenBase64 = item.imagen;
+            } else if (item.imagen_base64 && item.imagen_base64 !== null && item.imagen_base64.trim() !== '') {
+              // Backend returnează base64 fără prefix, adăugăm prefixul
               imagenBase64 = `data:image/jpeg;base64,${item.imagen_base64}`;
             } else if (item.fotoproducto && item.fotoproducto.data && Array.isArray(item.fotoproducto.data)) {
               imagenBase64 = bufferToBase64(item.fotoproducto.data);
@@ -761,20 +838,23 @@ const TabNuevoPedido: React.FC<{
           });
         } else {
           // Dacă este obiect singular, creează array cu un singur element
-          let imagenBase64 = '';
-          if (data.imagen_base64) {
-            imagenBase64 = `data:image/jpeg;base64,${data.imagen_base64}`;
+          // Verifică dacă există deja imagen cu prefix (din getCatalogo)
+          let imagenBase64Single = '';
+          if (data.imagen && data.imagen.trim() !== '') {
+            imagenBase64Single = data.imagen;
+          } else if (data.imagen_base64 && data.imagen_base64 !== null && data.imagen_base64.trim() !== '') {
+            imagenBase64Single = `data:image/jpeg;base64,${data.imagen_base64}`;
           } else if (data.fotoproducto && data.fotoproducto.data && Array.isArray(data.fotoproducto.data)) {
-            imagenBase64 = bufferToBase64(data.fotoproducto.data);
+            imagenBase64Single = bufferToBase64(data.fotoproducto.data);
           }
           
           productosConPermisos = [{
-            id: data.producto_id,
-            numero: data.numero_articulo,
+            id: data.producto_id || data.id,
+            numero: data.numero_articulo || data.numero,
             descripcion: data.descripcion,
             precio: parseFloat(data.precio),
-            permitido: data.permitido === 1 || data.permitido === true,
-            imagen: imagenBase64 || undefined
+            permitido: data.permitido === 1 || data.permitido === true || true, // Dacă vine din getCatalogo, toate sunt permise
+            imagen: imagenBase64Single || undefined
           }];
         }
         
@@ -915,7 +995,8 @@ const TabNuevoPedido: React.FC<{
       
       // Datele comunității
       comunidad: {
-        id: comunidadSeleccionada,
+        // Folosește ID-ul real din datosCompletos dacă există, altfel folosește comunidadSeleccionada
+        id: comunidadDetalle?.datosCompletos?.id || comunidadSeleccionada,
         nombre: comunidadNombre,
         direccion: comunidadDetalle?.datosCompletos?.DIRECCION || 'N/A',
         codigo_postal: comunidadDetalle?.datosCompletos?.['CODIGO POSTAL'] || 'N/A',
@@ -1167,8 +1248,8 @@ const TabNuevoPedido: React.FC<{
           ) : (
             <div className="max-h-64 overflow-y-auto border rounded-lg">
               {productosFiltrados.length > 0 ? (
-                productosFiltrados.map(producto => (
-                  <div key={producto.id} className="flex items-center gap-3 p-3 border-b hover:bg-gray-50">
+                productosFiltrados.map((producto, index) => (
+                  <div key={producto.id || `producto-${index}`} className="flex items-center gap-3 p-3 border-b hover:bg-gray-50">
                     {/* Imagine produs - mică în listă */}
                     <div className="w-16 h-16 bg-gray-50 rounded-lg flex-shrink-0 flex items-center justify-center">
                       {producto.imagen ? (
@@ -1238,9 +1319,11 @@ const TabNuevoPedido: React.FC<{
                   {lineasPedido.map((linea, index) => {
                     const producto = productos.find(p => p.id === linea.producto_id);
                     const calc = calcularLinea(linea);
+                    // Folosim un key unic bazat pe producto_id și index pentru a evita conflictele
+                    const uniqueKey = `${linea.producto_id}-${index}-${linea.cantidad}`;
                     
                     return (
-                      <tr key={index} className="border-b">
+                      <tr key={uniqueKey} className="border-b">
                         <td className="p-2">
                           <div>
                             <div className="font-medium">{producto?.numero}</div>
@@ -1346,7 +1429,7 @@ const TabNuevoPedido: React.FC<{
 
 // ===== TAB GESTIONAR PEDIDOS =====
 const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
-  const [pedidos, setPedidos] = useState<any[]>([]);
+  const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState<string>('all');
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<string | null>(null);
@@ -1356,15 +1439,22 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
   const [buscandoProductos, setBuscandoProductos] = useState(false);
   const [searchProductoTerm, setSearchProductoTerm] = useState('');
   const [fechasEnvio, setFechasEnvio] = useState<Record<string, string>>({});
+  const [direccionesEnvio, setDireccionesEnvio] = useState<Record<string, {
+    direccion_envio?: string;
+    codigo_postal_envio?: string;
+    localidad_envio?: string;
+    provincia_envio?: string;
+  }>>({});
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [loadingClientes, setLoadingClientes] = useState(false);
+  const [clienteSearchTerms, setClienteSearchTerms] = useState<Record<string, string>>({});
+  const [showClienteDropdowns, setShowClienteDropdowns] = useState<Record<string, boolean>>({});
   const [mostrarPreviewEnvio, setMostrarPreviewEnvio] = useState(false);
-  const [pedidosParaEnviar, setPedidosParaEnviar] = useState<any[]>([]);
+  const [pedidosParaEnviar, setPedidosParaEnviar] = useState<Pedido[]>([]);
   const [mostrarModalExcel, setMostrarModalExcel] = useState(false);
   const [excelBlob, setExcelBlob] = useState<Blob | null>(null);
   const [mensajeProveedor, setMensajeProveedor] = useState('');
   const [enviandoProveedor, setEnviandoProveedor] = useState(false);
-  const [mostrarModalConfirmacionEnvio, setMostrarModalConfirmacionEnvio] = useState(false);
-  const [excelBlobUrl, setExcelBlobUrl] = useState<string | null>(null);
-  const [generandoExcel, setGenerandoExcel] = useState(false);
 
   // Funcție pentru formatarea banilor
   const formatMoney = (value: number | string | null | undefined) => {
@@ -1388,6 +1478,23 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
       });
     } catch {
       return 'N/A';
+    }
+  };
+
+  // Funcție pentru a converti o dată în format pentru input datetime-local (fără conversie UTC)
+  const formatDateForInput = (date: string | Date | null | undefined): string => {
+    if (!date) return '';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      // Folosim getFullYear, getMonth, etc. pentru a obține valorile în timezone local
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    } catch {
+      return '';
     }
   };
 
@@ -1455,6 +1562,56 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     loadPedidos();
   }, [loadPedidos]);
 
+  // Încarcă lista de clienți pentru selector
+  useEffect(() => {
+    const loadClientes = async () => {
+      setLoadingClientes(true);
+      try {
+        const token = localStorage.getItem('auth_token');
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        };
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(routes.getClientes, {
+          method: 'GET',
+          headers,
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const clientesArray = Array.isArray(data) ? data : [data];
+        
+        // Filtrează doar clienții care au adresă completă
+        const clientesConDireccion = clientesArray.filter((cliente: Cliente) => {
+          const direccion = cliente.DIRECCION || cliente.direccion || '';
+          const codigoPostal = cliente['CODIGO POSTAL'] || cliente.CODIGO_POSTAL || cliente.codigo_postal || '';
+          const localidad = cliente.LOCALIDAD || cliente.localidad || '';
+          const provincia = cliente.PROVINCIA || cliente.provincia || '';
+          return direccion || codigoPostal || localidad || provincia;
+        });
+        
+        setClientes(clientesConDireccion);
+      } catch (error) {
+        console.error('Error loading clientes:', error);
+        setClientes([]);
+      } finally {
+        setLoadingClientes(false);
+      }
+    };
+
+    loadClientes();
+  }, []);
+
   // Încarcă produsele pentru o comunitate specifică
   const loadProductosParaComunidad = async (comunidadId: number) => {
     setBuscandoProductos(true);
@@ -1484,7 +1641,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
       const data = await response.json();
       const productosArray = Array.isArray(data) ? data : [data];
       
-      const productosMapeados = productosArray.map((item: any) => ({
+      const productosMapeados = productosArray.map((item: ProductoAPI) => ({
         id: item.producto_id,
         numero: item.numero_articulo,
         descripcion: item.descripcion,
@@ -1508,7 +1665,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     if (!pedido) return;
 
     // Verifică dacă produsul există deja în comandă
-    const productoExistente = pedido.items?.find((item: any) => item.numero_articulo === producto.numero);
+    const productoExistente = pedido.items?.find((item: LineaPedido) => item.numero_articulo === producto.numero);
     if (productoExistente) {
       addToast('warning', 'Producto ya existe', 'Este producto ya está en el pedido. Puedes modificar la cantidad.');
       return;
@@ -1530,8 +1687,8 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
 
     // Actualizează lista local
     const newItems = [...(pedido.items || []), nuevoItem];
-    const nuevoSubtotal = newItems.reduce((sum: number, item: any) => sum + (item.subtotal_linea || 0), 0);
-    const nuevoIvaTotal = newItems.reduce((sum: number, item: any) => sum + (item.iva_linea || 0), 0);
+    const nuevoSubtotal = newItems.reduce((sum: number, item: LineaPedido) => sum + (item.subtotal_linea || 0), 0);
+    const nuevoIvaTotal = newItems.reduce((sum: number, item: LineaPedido) => sum + (item.iva_linea || 0), 0);
     const nuevoTotal = nuevoSubtotal + nuevoIvaTotal;
 
     // Salvează direct în baza de date
@@ -1591,8 +1748,8 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
 
     try {
       // Calculează totalurile din items-urile modificate
-      const nuevoSubtotal = pedido.items.reduce((sum: number, item: any) => sum + (item.subtotal_linea || 0), 0);
-      const nuevoIvaTotal = pedido.items.reduce((sum: number, item: any) => sum + (item.iva_linea || 0), 0);
+      const nuevoSubtotal = pedido.items.reduce((sum: number, item: LineaPedido) => sum + (item.subtotal_linea || 0), 0);
+      const nuevoIvaTotal = pedido.items.reduce((sum: number, item: LineaPedido) => sum + (item.iva_linea || 0), 0);
       const nuevoTotal = nuevoSubtotal + nuevoIvaTotal;
 
       console.log('💾 [Frontend] Guardando cambios para pedido:', { 
@@ -1689,6 +1846,47 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     } catch (error) {
       console.error('Error guardando fecha_envio:', error);
       addToast('error', 'Error', 'No se pudo guardar la fecha de envío.');
+    }
+  };
+
+  // Guarda dirección de envío
+  const guardarDireccionEnvio = async (pedidoUid: string) => {
+    const direccion = direccionesEnvio[pedidoUid];
+    if (!direccion || (!direccion.direccion_envio && !direccion.codigo_postal_envio && !direccion.localidad_envio && !direccion.provincia_envio)) {
+      addToast('warning', 'Datos requeridos', 'Debes completar al menos un campo de dirección de envío.');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.updatePedidoDireccionEnvio(pedidoUid), {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(direccion),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      addToast('success', 'Dirección guardada', 'La dirección de envío se ha guardado correctamente.');
+      
+      // Recargar pedidos pentru a actualiza dirección de envío în UI
+      await loadPedidos();
+    } catch (error) {
+      console.error('Error guardando dirección de envío:', error);
+      addToast('error', 'Error', 'No se pudo guardar la dirección de envío.');
     }
   };
 
@@ -2005,11 +2203,44 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
                       <div><strong>Empleado:</strong> {pedido.empleado?.nombre || 'N/A'}</div>
-                      <div><strong>Comunidad:</strong> {pedido.comunidad?.nombre || 'N/A'}</div>
+                      <div>
+                        <strong>Comunidad:</strong> {pedido.comunidad?.nombre || 'N/A'}
+                        {pedido.comunidad?.direccion && (
+                          <div className="mt-1 text-xs text-gray-500">
+                            📍 {pedido.comunidad.direccion}
+                            {pedido.comunidad.codigo_postal && `, ${pedido.comunidad.codigo_postal}`}
+                            {pedido.comunidad.localidad && `, ${pedido.comunidad.localidad}`}
+                            {pedido.comunidad.provincia && `, ${pedido.comunidad.provincia}`}
+                          </div>
+                        )}
+                      </div>
                       <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
                       <div><strong>Total:</strong> <span className="font-bold text-purple-600">{formatMoney(pedido.total)}</span></div>
                       {pedido.fecha_envio && (
                         <div><strong>Fecha de Envío:</strong> {formatDate(pedido.fecha_envio)}</div>
+                      )}
+                      {pedido.aprobado_por && (
+                        <div className="text-green-600">
+                          <strong>✅ Aprobado por:</strong> {pedido.aprobado_por}
+                          {pedido.aprobado_en && ` el ${formatDate(pedido.aprobado_en)}`}
+                        </div>
+                      )}
+                      {pedido.rechazado_por && (
+                        <div className="text-red-600">
+                          <strong>❌ Rechazado por:</strong> {pedido.rechazado_por}
+                          {pedido.rechazado_en && ` el ${formatDate(pedido.rechazado_en)}`}
+                        </div>
+                      )}
+                      {(pedido.direccion_envio || pedido.codigo_postal_envio || pedido.localidad_envio || pedido.provincia_envio) && (
+                        <div className="md:col-span-2">
+                          <strong>📍 Dirección de Envío:</strong>
+                          <div className="mt-1 text-xs text-blue-600 font-medium">
+                            {pedido.direccion_envio || ''}
+                            {pedido.codigo_postal_envio && `, ${pedido.codigo_postal_envio}`}
+                            {pedido.localidad_envio && `, ${pedido.localidad_envio}`}
+                            {pedido.provincia_envio && `, ${pedido.provincia_envio}`}
+                          </div>
+                        </div>
                       )}
                     </div>
                     {pedido.notas && (
@@ -2043,7 +2274,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                           <div className="flex gap-2">
                             <input
                               type="datetime-local"
-                              value={fechasEnvio[pedido.pedido_uid] || pedido.fecha_envio ? new Date(pedido.fecha_envio).toISOString().slice(0, 16) : ''}
+                              value={fechasEnvio[pedido.pedido_uid] || formatDateForInput(pedido.fecha_envio)}
                               onChange={(e) => {
                                 setFechasEnvio(prev => ({
                                   ...prev,
@@ -2051,7 +2282,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                                 }));
                               }}
                               className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                              min={new Date().toISOString().slice(0, 16)}
+                              min={formatDateForInput(new Date())}
                             />
                             <Button
                               onClick={() => guardarFechaEnvio(pedido.pedido_uid)}
@@ -2060,6 +2291,178 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                               disabled={!fechasEnvio[pedido.pedido_uid] && !pedido.fecha_envio}
                             >
                               💾 Guardar
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="mb-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <label className="block text-xs font-medium text-gray-700 mb-2">
+                            📍 Dirección de Envío (Opcional):
+                          </label>
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Seleccionar Cliente (para cargar dirección automáticamente):
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  placeholder="Escribe para buscar cliente..."
+                                  value={clienteSearchTerms[pedido.pedido_uid] || ''}
+                                  onChange={(e) => {
+                                    setClienteSearchTerms(prev => ({
+                                      ...prev,
+                                      [pedido.pedido_uid]: e.target.value
+                                    }));
+                                    setShowClienteDropdowns(prev => ({
+                                      ...prev,
+                                      [pedido.pedido_uid]: true
+                                    }));
+                                  }}
+                                  onFocus={() => {
+                                    setShowClienteDropdowns(prev => ({
+                                      ...prev,
+                                      [pedido.pedido_uid]: true
+                                    }));
+                                  }}
+                                  onBlur={() => {
+                                    setTimeout(() => {
+                                      setShowClienteDropdowns(prev => ({
+                                        ...prev,
+                                        [pedido.pedido_uid]: false
+                                      }));
+                                    }, 200);
+                                  }}
+                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                  disabled={loadingClientes}
+                                />
+                                {showClienteDropdowns[pedido.pedido_uid] && (
+                                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                    {(() => {
+                                      const searchTerm = (clienteSearchTerms[pedido.pedido_uid] || '').toLowerCase();
+                                      const clientesFiltrados = clientes.filter((cliente: Cliente) => {
+                                        const nombre = (cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.NOMBRE_O_RAZON_SOCIAL || '').toLowerCase();
+                                        return nombre.includes(searchTerm);
+                                      }).slice(0, 20); // Limitează la 20 rezultate
+                                      
+                                      return clientesFiltrados.length > 0 ? (
+                                        clientesFiltrados.map((cliente: Cliente, index: number) => {
+                                          const nombre = cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.NOMBRE_O_RAZON_SOCIAL || `Cliente ${index + 1}`;
+                                          const clienteId = cliente.id || cliente.NIF || `cliente-${index}`;
+                                          
+                                          return (
+                                            <div
+                                              key={clienteId}
+                                              onClick={() => {
+                                                const direccion = cliente.DIRECCION || cliente.direccion || '';
+                                                const codigoPostal = cliente['CODIGO POSTAL'] || cliente.CODIGO_POSTAL || cliente.codigo_postal || '';
+                                                const localidad = cliente.LOCALIDAD || cliente.localidad || cliente.POBLACION || '';
+                                                const provincia = cliente.PROVINCIA || cliente.provincia || '';
+                                                
+                                                setDireccionesEnvio(prev => ({
+                                                  ...prev,
+                                                  [pedido.pedido_uid]: {
+                                                    ...prev[pedido.pedido_uid],
+                                                    direccion_envio: direccion,
+                                                    codigo_postal_envio: codigoPostal,
+                                                    localidad_envio: localidad,
+                                                    provincia_envio: provincia,
+                                                  }
+                                                }));
+                                                
+                                                setClienteSearchTerms(prev => ({
+                                                  ...prev,
+                                                  [pedido.pedido_uid]: nombre
+                                                }));
+                                                setShowClienteDropdowns(prev => ({
+                                                  ...prev,
+                                                  [pedido.pedido_uid]: false
+                                                }));
+                                              }}
+                                              className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                                            >
+                                              <div className="font-medium text-gray-900">{nombre}</div>
+                                              {cliente.DIRECCION && (
+                                                <div className="text-xs text-gray-500">{cliente.DIRECCION}</div>
+                                              )}
+                                            </div>
+                                          );
+                                        })
+                                      ) : (
+                                        <div className="px-3 py-2 text-gray-500 text-sm">No se encontraron clientes</div>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Dirección"
+                              value={direccionesEnvio[pedido.pedido_uid]?.direccion_envio || pedido.direccion_envio || ''}
+                              onChange={(e) => {
+                                setDireccionesEnvio(prev => ({
+                                  ...prev,
+                                  [pedido.pedido_uid]: {
+                                    ...prev[pedido.pedido_uid],
+                                    direccion_envio: e.target.value
+                                  }
+                                }));
+                              }}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <div className="grid grid-cols-3 gap-2">
+                              <input
+                                type="text"
+                                placeholder="Código Postal"
+                                value={direccionesEnvio[pedido.pedido_uid]?.codigo_postal_envio || pedido.codigo_postal_envio || ''}
+                                onChange={(e) => {
+                                  setDireccionesEnvio(prev => ({
+                                    ...prev,
+                                    [pedido.pedido_uid]: {
+                                      ...prev[pedido.pedido_uid],
+                                      codigo_postal_envio: e.target.value
+                                    }
+                                  }));
+                                }}
+                                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Localidad"
+                                value={direccionesEnvio[pedido.pedido_uid]?.localidad_envio || pedido.localidad_envio || ''}
+                                onChange={(e) => {
+                                  setDireccionesEnvio(prev => ({
+                                    ...prev,
+                                    [pedido.pedido_uid]: {
+                                      ...prev[pedido.pedido_uid],
+                                      localidad_envio: e.target.value
+                                    }
+                                  }));
+                                }}
+                                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                              <input
+                                type="text"
+                                placeholder="Provincia"
+                                value={direccionesEnvio[pedido.pedido_uid]?.provincia_envio || pedido.provincia_envio || ''}
+                                onChange={(e) => {
+                                  setDireccionesEnvio(prev => ({
+                                    ...prev,
+                                    [pedido.pedido_uid]: {
+                                      ...prev[pedido.pedido_uid],
+                                      provincia_envio: e.target.value
+                                    }
+                                  }));
+                                }}
+                                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            <Button
+                              onClick={() => guardarDireccionEnvio(pedido.pedido_uid)}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                              size="sm"
+                            >
+                              💾 Guardar Dirección de Envío
                             </Button>
                           </div>
                         </div>
@@ -2207,7 +2610,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                           </tr>
                         </thead>
                         <tbody>
-                          {pedido.items?.map((item: any, index: number) => (
+                          {pedido.items?.map((item: LineaPedido, index: number) => (
                             <tr key={index} className="border-b hover:bg-gray-50">
                               <td className="p-2 font-medium">{item.numero_articulo}</td>
                               <td className="p-2">{item.descripcion}</td>
@@ -2286,7 +2689,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                                   <Button
                                     onClick={() => {
                                       // Eliminar item
-                                      const newItems = pedido.items.filter((_: any, i: number) => i !== index);
+                                      const newItems = pedido.items.filter((_item: LineaPedido, i: number) => i !== index);
                                       const updatedPedidos = pedidos.map(p => 
                                         p.pedido_uid === pedido.pedido_uid 
                                           ? { ...p, items: newItems, num_items: newItems.length }
@@ -2308,13 +2711,13 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                           <tr className="bg-gray-50 font-semibold">
                             <td colSpan={4} className="p-2 text-right">Total:</td>
                             <td className="p-2 text-right">
-                              {formatMoney(pedido.items?.reduce((sum: number, item: any) => sum + (item.subtotal_linea || 0), 0) || pedido.subtotal)}
+                              {formatMoney(pedido.items?.reduce((sum: number, item: LineaPedido) => sum + (item.subtotal_linea || 0), 0) || pedido.subtotal)}
                             </td>
                             <td className="p-2 text-right">
-                              {formatMoney(pedido.items?.reduce((sum: number, item: any) => sum + (item.iva_linea || 0), 0) || pedido.iva_total)}
+                              {formatMoney(pedido.items?.reduce((sum: number, item: LineaPedido) => sum + (item.iva_linea || 0), 0) || pedido.iva_total)}
                             </td>
                             <td className="p-2 text-right text-purple-600">
-                              {formatMoney(pedido.items?.reduce((sum: number, item: any) => sum + (item.total_linea || 0), 0) || pedido.total)}
+                              {formatMoney(pedido.items?.reduce((sum: number, item: LineaPedido) => sum + (item.total_linea || 0), 0) || pedido.total)}
                             </td>
                             <td></td>
                             {pedidoEditando === pedido.pedido_uid && <td></td>}
@@ -2365,6 +2768,28 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                       <div><strong>Fecha Envío:</strong> {formatDate(pedido.fecha_envio) || 'No asignada'}</div>
                       <div><strong>Total:</strong> {formatMoney(pedido.total)}</div>
                       <div><strong>Items:</strong> {pedido.items?.length || 0}</div>
+                      {pedido.aprobado_por && (
+                        <div><strong>Inspector:</strong> {pedido.aprobado_por}</div>
+                      )}
+                      <div className="col-span-2">
+                        <strong>📍 Dirección de Envío:</strong>{' '}
+                        {(pedido.direccion_envio || pedido.codigo_postal_envio || pedido.localidad_envio || pedido.provincia_envio) ? (
+                          <span>
+                            {pedido.direccion_envio || ''}
+                            {pedido.codigo_postal_envio && `, ${pedido.codigo_postal_envio}`}
+                            {pedido.localidad_envio && `, ${pedido.localidad_envio}`}
+                            {pedido.provincia_envio && `, ${pedido.provincia_envio}`}
+                          </span>
+                        ) : (
+                          <span>
+                            {pedido.comunidad?.direccion || ''}
+                            {pedido.comunidad?.codigo_postal && `, ${pedido.comunidad.codigo_postal}`}
+                            {pedido.comunidad?.localidad && `, ${pedido.comunidad.localidad}`}
+                            {pedido.comunidad?.provincia && `, ${pedido.comunidad.provincia}`}
+                            {(!pedido.comunidad?.direccion && !pedido.comunidad?.codigo_postal && !pedido.comunidad?.localidad && !pedido.comunidad?.provincia) && 'No especificada'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="overflow-x-auto">
@@ -2379,7 +2804,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                           </tr>
                         </thead>
                         <tbody>
-                          {pedido.items?.map((item: any, itemIndex: number) => (
+                          {pedido.items?.map((item: LineaPedido, itemIndex: number) => (
                             <tr key={itemIndex}>
                               <td className="border p-2">{item.numero_articulo}</td>
                               <td className="border p-2">{item.descripcion}</td>
@@ -2474,7 +2899,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
                   <strong>📋 Nota:</strong> El Excel ha sido generado con éxito. Puedes descargarlo para verificar antes de enviarlo al proveedor.
                   {mensajeProveedor && (
                     <span className="block mt-2">
-                      <strong>Mensaje que se enviará:</strong> "{mensajeProveedor}"
+                      <strong>Mensaje que se enviará:</strong> &quot;{mensajeProveedor}&quot;
                     </span>
                   )}
                 </p>
@@ -2562,11 +2987,15 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
         
         // Extrage centrele de trabajo din clienți cu datele complete
         const centrosFromClientes = clientesArray
-          .map((cliente, index) => ({
-            id: index + 1,
-            nombre: cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre || 'Sin nombre',
-            datosCompletos: cliente // Păstrăm datele complete ale clientului
-          }))
+          .map((cliente, index) => {
+            // Folosește ID-ul real din baza de date, nu index + 1
+            const clienteId = cliente.id || cliente.ID || (index + 1);
+            return {
+              id: clienteId,
+              nombre: cliente['NOMBRE O RAZON SOCIAL'] || cliente['NOMBRE O RAZÓN SOCIAL'] || cliente.nombre || 'Sin nombre',
+              datosCompletos: cliente // Păstrăm datele complete ale clientului
+            };
+          })
           .filter(centro => centro.nombre && centro.nombre.trim() !== '' && centro.nombre.length > 3)
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
         
@@ -2855,7 +3284,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const responseData = await response.json();
+      await response.json();
 
       addToast('success', 'Permisos guardados', `Los permisos de la comunidad se han guardado correctamente (${productos.length} productos)`);
     } catch (error) {

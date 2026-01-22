@@ -33,11 +33,13 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
     longitud: cliente?.longitud || '',
     contacto_nombre: cliente?.contacto_nombre || '',
     contacto_telefono: cliente?.contacto_telefono || '',
+    telefon_entrega: cliente?.telefon_entrega || cliente?.['TELEFON ENTREGA'] || cliente?.TELEFONO_ENTREGA || '',
     tipo_servicio: cliente?.tipo_servicio || '',
     notas: cliente?.notas || '',
     cuentas_bancarias: cliente?.cuentas_bancarias || '',
     fecha_ultima_renovacion: cliente?.fecha_ultima_renovacion || '',
     fecha_proxima_renovacion: cliente?.fecha_proxima_renovacion || '',
+    servicio_entrega: cliente?.servicio_entrega || cliente?.['SERVICIO ENTREGA'] || cliente?.SERVICIO_ENTREGA || '',
     activo: cliente?.activo || 'Sí'
   });
 
@@ -64,11 +66,13 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
         longitud: cliente.longitud ?? '',
         contacto_nombre: cliente.contacto_nombre ?? '',
         contacto_telefono: cliente.contacto_telefono ?? '',
+        telefon_entrega: cliente.telefon_entrega ?? cliente['TELEFON ENTREGA'] ?? cliente.TELEFONO_ENTREGA ?? '',
         tipo_servicio: cliente.tipo_servicio ?? '',
         notas: cliente.notas ?? '',
         cuentas_bancarias: cliente.cuentas_bancarias ?? '',
         fecha_ultima_renovacion: cliente.fecha_ultima_renovacion ?? '',
         fecha_proxima_renovacion: cliente.fecha_proxima_renovacion ?? '',
+        servicio_entrega: cliente.servicio_entrega ?? cliente['SERVICIO ENTREGA'] ?? cliente.SERVICIO_ENTREGA ?? '',
         activo: cliente.activo ?? 'Sí'
       });
     }
@@ -91,6 +95,13 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
     }
     if (formData.fax && !/^[\d\s\-+()]+$/.test(formData.fax)) {
       newErrors.fax = 'Fax inválido';
+    }
+    if (formData.telefon_entrega) {
+      // Permite 2 numere separate prin virgulă (cu sau fără spații)
+      const telefonPattern = /^[\d\s\-+()]+(,\s*[\d\s\-+()]+)?$/;
+      if (!telefonPattern.test(formData.telefon_entrega)) {
+        newErrors.telefon_entrega = 'Teléfono entrega inválido (puede agregar 2 números separados por coma)';
+      }
     }
     if (formData.descuento_por_defecto && isNaN(Number(String(formData.descuento_por_defecto).replace(',', '.')))) {
       newErrors.descuento_por_defecto = 'Descuento inválido';
@@ -273,6 +284,19 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
               placeholder="+34 600 000 000"
             />
           </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Teléfono entrega <span className="text-xs text-gray-500">(puede agregar 2 números separados por coma)</span>
+            </label>
+            <Input
+              type="tel"
+              value={formData.telefon_entrega}
+              onChange={(e) => handleChange('telefon_entrega', e.target.value)}
+              placeholder="+34 600 000 000, +34 700 000 000"
+              error={errors.telefon_entrega}
+            />
+          </div>
         </div>
       </div>
 
@@ -430,6 +454,42 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
               onChange={(e) => handleChange('limite_gasto', e.target.value)}
               placeholder="0.00"
             />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Servicio Entrega
+            </label>
+            <select
+              value={formData.servicio_entrega === 'Servicio 24 horas' ? 'Servicio 24 horas' : 'custom'}
+              onChange={(e) => {
+                if (e.target.value === 'Servicio 24 horas') {
+                  handleChange('servicio_entrega', 'Servicio 24 horas');
+                } else {
+                  // Când schimbă la "Personalizado", păstrează valoarea existentă dacă nu e "Servicio 24 horas", altfel setează gol
+                  const currentValue = formData.servicio_entrega;
+                  handleChange('servicio_entrega', currentValue === 'Servicio 24 horas' ? '' : currentValue || '');
+                }
+              }}
+              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 mb-2"
+            >
+              <option value="custom">Personalizado</option>
+              <option value="Servicio 24 horas">Servicio 24 horas</option>
+            </select>
+            {formData.servicio_entrega !== 'Servicio 24 horas' && (
+              <Input
+                type="text"
+                value={formData.servicio_entrega || ''}
+                onChange={(e) => handleChange('servicio_entrega', e.target.value)}
+                placeholder="Ej: Lunes a Viernes 9:00-18:00"
+              />
+            )}
+            {formData.servicio_entrega === 'Servicio 24 horas' && (
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+                ✓ Servicio 24 horas seleccionado
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1">Se usará en Excel para el campo SERVICIO</p>
           </div>
           
           <div className="md:col-span-2">

@@ -284,6 +284,8 @@ model Clientes {
   ESTADO                   String?             @db.VarChar(100)
   CONTRACTO                Bytes?
   CuantoPuedeGastar        String?             @db.VarChar(100)
+  SERVICIO_ENTREGA         String?             @map("SERVICIO ENTREGA") @db.VarChar(255)
+  TELEFONO_ENTREGA         String?             @map("TELEFON ENTREGA") @db.VarChar(100)
   ContratosClientes        ContratosClientes[]
   PermisosProductos        PermisosProductos[]
 }
@@ -604,6 +606,14 @@ model PedidosTodos {
   total_linea             Decimal?  @db.Decimal(10, 3)
   estado                  String?   @default("pendiente") @db.VarChar(50)
   fecha_envio             DateTime? @db.DateTime(0)
+  direccion_envio         String?   @map("direccion_envio") @db.VarChar(500)
+  codigo_postal_envio     String?   @map("codigo_postal_envio") @db.VarChar(20)
+  localidad_envio         String?   @map("localidad_envio") @db.VarChar(200)
+  provincia_envio         String?   @map("provincia_envio") @db.VarChar(200)
+  aprobado_por            String?   @map("aprobado_por") @db.VarChar(255)
+  aprobado_en             DateTime? @map("aprobado_en") @db.DateTime(0)
+  rechazado_por           String?   @map("rechazado_por") @db.VarChar(255)
+  rechazado_en             DateTime? @map("rechazado_en") @db.DateTime(0)
   creado_en               DateTime  @default(now()) @db.Timestamp(0)
 }
 

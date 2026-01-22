@@ -70,6 +70,7 @@ export class EmailService {
     pdfFileName: string,
     options?: {
       from?: string;
+      cc?: string[];
       bcc?: string[];
     },
   ): Promise<void> {
@@ -87,6 +88,7 @@ export class EmailService {
     const mailOptions = {
       from: fromEmail,
       to: to,
+      cc: options?.cc || [],
       bcc: options?.bcc || [],
       subject: subject,
       html: html,
@@ -101,9 +103,11 @@ export class EmailService {
 
     try {
       const info = await this.transporter.sendMail(mailOptions);
+      const ccList = options?.cc?.join(', ') || 'none';
       const bccList = options?.bcc?.join(', ') || 'none';
       this.logger.log(`✅ Email sent successfully:`);
       this.logger.log(`   TO: ${to}`);
+      this.logger.log(`   CC: ${ccList}`);
       this.logger.log(`   BCC: ${bccList}`);
       this.logger.log(`   MessageId: ${info.messageId}`);
     } catch (error: any) {

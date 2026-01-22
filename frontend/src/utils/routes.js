@@ -609,6 +609,12 @@ export const routes = {
       ? `http://localhost:3000/api/pedidos/${encodedUid}/estado`
       : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/estado`;
   },
+  updatePedidoDireccionEnvio: (uid) => {
+    const encodedUid = encodeURIComponent(uid);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/pedidos/${encodedUid}/direccion-envio`
+      : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/direccion-envio`;
+  },
   updatePedidoItems: (uid) => {
     const encodedUid = encodeURIComponent(uid);
     return import.meta.env.DEV

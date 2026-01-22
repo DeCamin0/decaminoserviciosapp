@@ -352,6 +352,8 @@ export default function ClientesPage() {
         'CUENTAS BANCARIAS': d.cuentas_bancarias ?? '',
         'Fecha Ultima Renovacion': d.fecha_ultima_renovacion ?? '',
         'Fecha Proxima Renovacion': d.fecha_proxima_renovacion ?? '',
+        'SERVICIO ENTREGA': d.servicio_entrega ?? '',
+        'TELEFON ENTREGA': d.telefon_entrega ?? '',
         'ESTADO': d.activo ?? ''
       };
 
@@ -435,6 +437,8 @@ export default function ClientesPage() {
         'CUENTAS BANCARIAS': d.cuentas_bancarias ?? '',
         'Fecha Ultima Renovacion': d.fecha_ultima_renovacion ?? '',
         'Fecha Proxima Renovacion': d.fecha_proxima_renovacion ?? '',
+        'SERVICIO ENTREGA': d.servicio_entrega ?? '',
+        'TELEFON ENTREGA': d.telefon_entrega ?? '',
         'ESTADO': d.activo ?? ''
       };
 
@@ -538,6 +542,8 @@ export default function ClientesPage() {
     cuentas_bancarias: row['CUENTAS BANCARIAS'] || '',
     fecha_ultima_renovacion: row['Fecha Ultima Renovacion'] || '',
     fecha_proxima_renovacion: row['Fecha Proxima Renovacion'] || '',
+    servicio_entrega: row['SERVICIO ENTREGA'] || row.SERVICIO_ENTREGA || '',
+    telefon_entrega: row['TELEFON ENTREGA'] || row.TELEFONO_ENTREGA || '',
     activo: row.ESTADO === null ? 'Sí' : row.ESTADO
   });
 

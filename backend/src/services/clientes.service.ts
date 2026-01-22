@@ -105,6 +105,16 @@ export class ClientesService {
           data.CuantoPuedeGastar ||
           data.limite_gasto ||
           null,
+        SERVICIO_ENTREGA:
+          data['SERVICIO ENTREGA'] ||
+          data.SERVICIO_ENTREGA ||
+          data.servicio_entrega ||
+          null,
+        TELEFONO_ENTREGA:
+          data['TELEFON ENTREGA'] ||
+          data.TELEFONO_ENTREGA ||
+          data.telefon_entrega ||
+          null,
       };
 
       // Folosim Prisma pentru INSERT
@@ -461,6 +471,42 @@ export class ClientesService {
       ) {
         updateData.ESTADO = data.ESTADO || data.estado || data.activo || null;
       }
+      // SERVICIO ENTREGA - verificăm dacă există în payload (chiar dacă e string gol)
+      const servicioValue =
+        data['SERVICIO ENTREGA'] !== undefined
+          ? data['SERVICIO ENTREGA']
+          : data.SERVICIO_ENTREGA !== undefined
+            ? data.SERVICIO_ENTREGA
+            : data.servicio_entrega !== undefined
+              ? data.servicio_entrega
+              : undefined;
+
+      if (servicioValue !== undefined) {
+        // Trimitem string gol ca null pentru a permite ștergerea valorii
+        updateData.SERVICIO_ENTREGA =
+          servicioValue && String(servicioValue).trim() !== ''
+            ? String(servicioValue).trim()
+            : null;
+      }
+
+      // TELEFON ENTREGA - verificăm dacă există în payload
+      const telefonEntregaValue =
+        data['TELEFON ENTREGA'] !== undefined
+          ? data['TELEFON ENTREGA']
+          : data.TELEFONO_ENTREGA !== undefined
+            ? data.TELEFONO_ENTREGA
+            : data.telefon_entrega !== undefined
+              ? data.telefon_entrega
+              : undefined;
+
+      if (telefonEntregaValue !== undefined) {
+        // Trimitem string gol ca null pentru a permite ștergerea valorii
+        updateData.TELEFONO_ENTREGA =
+          telefonEntregaValue && String(telefonEntregaValue).trim() !== ''
+            ? String(telefonEntregaValue).trim()
+            : null;
+      }
+
       if (data.CONTRACTO !== undefined || data.contrato !== undefined)
         updateData.CONTRACTO = data.CONTRACTO || data.contrato || null;
       if (
@@ -471,6 +517,7 @@ export class ClientesService {
           data.CuantoPuedeGastar || data.limite_gasto || null;
       }
 
+      // Folosim Prisma pentru UPDATE
       await this.prisma.clientes.update({
         where: { id },
         data: updateData,

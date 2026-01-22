@@ -1,0 +1,3 @@
+-- Add SERVICIO ENTREGA field to Clientes table
+ALTER TABLE `Clientes` 
+ADD COLUMN `SERVICIO ENTREGA` VARCHAR(255) NULL AFTER `CuantoPuedeGastar`;

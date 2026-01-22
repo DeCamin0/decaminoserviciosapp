@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CatalogoService } from '../services/catalogo.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('api/catalogo')
 export class CatalogoController {
@@ -17,9 +18,11 @@ export class CatalogoController {
   constructor(private readonly catalogoService: CatalogoService) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   async getCatalogo(
     @Query('cliente_id') clienteId?: string,
     @Query('cliente_nombre') clienteNombre?: string,
+    @CurrentUser() user?: any,
   ) {
     // Dacă există cliente_id, returnează produsele cu permisiunile pentru comunitate
     if (clienteId) {
@@ -28,21 +31,50 @@ export class CatalogoController {
         throw new Error('Invalid cliente_id parameter');
       }
 
-      this.logger.log(
-        `📦 GET /api/catalogo?cliente_id=${clienteId} - Fetching catalog with permisos`,
-      );
-      try {
-        const productos = await this.catalogoService.getCatalogoConPermisos(
-          clienteIdNum,
-          clienteNombre,
-        );
+      // Verifică dacă utilizatorul este Developer/Admin/Administrativ
+      const isDeveloper =
+        user?.GRUPO === 'Developer' ||
+        user?.grupo === 'Developer' ||
+        user?.GRUPO === 'Administrativ' ||
+        user?.grupo === 'Administrativ';
+
+      // Verifică dacă comunitatea are permisiuni generate
+      const tienePermisos =
+        await this.catalogoService.tienePermisosGenerados(clienteIdNum);
+
+      if (isDeveloper && !tienePermisos) {
+        // Developer/Admin vede tot catalogul dacă nu există permisiuni generate
         this.logger.log(
-          `✅ Returning ${productos.length} products with permisos`,
+          `📦 GET /api/catalogo?cliente_id=${clienteId} - Admin/Developer: No permisos found, returning ALL products`,
         );
-        return productos;
-      } catch (error: any) {
-        this.logger.error('❌ Error in getCatalogo con permisos:', error);
-        throw error;
+        try {
+          const productos = await this.catalogoService.getCatalogo();
+          this.logger.log(
+            `✅ Admin/Developer: Returning ${productos.length} products (all catalog - no permisos)`,
+          );
+          return productos;
+        } catch (error: any) {
+          this.logger.error('❌ Error in getCatalogo (admin):', error);
+          throw error;
+        }
+      } else {
+        // Angajații sau admin-ul când există permisiuni: văd doar produsele cu permisiuni
+        this.logger.log(
+          `📦 GET /api/catalogo?cliente_id=${clienteId} - Fetching catalog with permisos`,
+        );
+        try {
+          const productos = await this.catalogoService.getCatalogoConPermisos(
+            clienteIdNum,
+            clienteNombre,
+          );
+          this.logger.log(
+            `✅ Returning ${productos.length} products with permisos`,
+          );
+          return productos;
+        } catch (error: any) {
+          this.logger.error('❌ Error in getCatalogo con permisos:', error);
+          throw error;
+        }
       }
     }
 

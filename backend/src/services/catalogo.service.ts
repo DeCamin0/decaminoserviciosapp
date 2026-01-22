@@ -15,37 +15,49 @@ export class CatalogoService {
     try {
       this.logger.log('📦 Fetching catalogo products...');
 
-      const productos = await this.prisma.catologoProductos.findMany({
-        orderBy: {
-          id: 'asc',
-        },
-      });
+      // Folosim query SQL cu TO_BASE64 pentru a converti direct fotoproducto în base64
+      const query = `
+        SELECT 
+          id AS producto_id,
+          \`Número de artículo\` AS numero_articulo,
+          \`Descripción de artículo\` AS descripcion,
+          \`Precio por unidad\` AS precio,
+          CASE 
+            WHEN fotoproducto IS NOT NULL AND LENGTH(fotoproducto) > 0 
+            THEN TO_BASE64(fotoproducto)
+            ELSE NULL
+          END AS imagen_base64
+        FROM CatologoProductos
+        ORDER BY id ASC
+      `;
 
-      this.logger.log(`✅ Found ${productos.length} products in catalog`);
+      const resultados = await this.prisma.$queryRawUnsafe<any[]>(query);
+      this.logger.log(`✅ Found ${resultados.length} products in catalog`);
+
+      // Debug: verifică dacă există imagini
+      const productosConImagen = resultados.filter(
+        (r: any) => r.imagen_base64,
+      ).length;
+      this.logger.log(
+        `📸 Products with imagen_base64: ${productosConImagen}/${resultados.length}`,
+      );
 
       // Transformă produsele pentru frontend
-      const productosFormateados = productos.map((producto) => {
-        // Convertește fotoproducto (Buffer) în base64 dacă există
-        let imagenBase64 = null;
-        if (producto.fotoproducto) {
-          try {
-            // Prisma returnează Bytes ca Buffer
-            const buffer = Buffer.from(producto.fotoproducto);
-            imagenBase64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
-          } catch (error) {
-            this.logger.warn(
-              `⚠️ Error converting image for product ${producto.id}:`,
-              error,
-            );
-          }
-        }
+      const productosFormateados = resultados.map((row: any) => {
+        // imagen_base64 este deja convertit în base64 de MySQL (TO_BASE64)
+        const imagenBase64 = row.imagen_base64
+          ? `data:image/jpeg;base64,${row.imagen_base64}`
+          : null;
 
         return {
-          id: producto.id,
-          numero: producto.N_mero_de_art_culo || '',
-          descripcion: producto.Descripci_n_de_art_culo || '',
-          precio: Number(producto.Precio_por_unidad) || 0,
+          id: row.producto_id,
+          producto_id: row.producto_id, // Pentru compatibilitate
+          numero: row.numero_articulo || '',
+          numero_articulo: row.numero_articulo || '', // Pentru compatibilitate
+          descripcion: row.descripcion || '',
+          precio: Number(row.precio) || 0,
           imagen: imagenBase64,
+          imagen_base64: row.imagen_base64 || null, // Pentru compatibilitate cu getCatalogoConPermisos
         };
       });
 
@@ -75,6 +87,7 @@ export class CatalogoService {
 
       // Query SQL pentru a obține DOAR produsele cu permisiuni setate (permitido = 1)
       // Folosim INNER JOIN pentru a include DOAR produsele care au permisiuni explicate pentru această comunitate
+      // Folosim TO_BASE64() pentru a converti direct fotoproducto (Bytes) în base64 în MySQL
       const query = `
         SELECT 
           cp.id AS producto_id,
@@ -84,7 +97,11 @@ export class CatalogoService {
           pp.permitido,
           pp.cliente_id AS permiso_cliente_id,
           pp.producto_id AS permiso_producto_id,
-          cp.fotoproducto
+          CASE 
+            WHEN cp.fotoproducto IS NOT NULL AND LENGTH(cp.fotoproducto) > 0 
+            THEN TO_BASE64(cp.fotoproducto)
+            ELSE NULL
+          END AS imagen_base64
         FROM CatologoProductos cp
         INNER JOIN PermisosProductos pp ON cp.id = pp.producto_id AND pp.cliente_id = ${clienteId}
         WHERE pp.permitido = 1
@@ -96,27 +113,29 @@ export class CatalogoService {
         `✅ Found ${resultados.length} products with permisos for cliente ${clienteId}`,
       );
 
+      // Debug: verifică dacă există imagini
+      const productosConImagen = resultados.filter(
+        (r: any) => r.imagen_base64,
+      ).length;
+      this.logger.log(
+        `📸 Products with imagen_base64: ${productosConImagen}/${resultados.length}`,
+      );
+
       // Transformă rezultatele pentru frontend
       const productosConPermisos = resultados.map((row: any) => {
-        // Convertește fotoproducto (Buffer) în base64 dacă există
-        let imagenBase64 = null;
-        if (row.fotoproducto) {
-          try {
-            // Prisma returnează Bytes ca Buffer
-            const buffer = Buffer.from(row.fotoproducto);
-            imagenBase64 = buffer.toString('base64');
-          } catch (error) {
-            this.logger.warn(
-              `⚠️ Error converting image for product ${row.producto_id}:`,
-              error,
-            );
-          }
+        // imagen_base64 este deja convertit în base64 de MySQL (TO_BASE64)
+        const imagenBase64 = row.imagen_base64 || null;
+
+        if (imagenBase64) {
+          this.logger.debug(
+            `✅ Image found for product ${row.producto_id}, base64 length: ${imagenBase64.length}`,
+          );
         }
 
         // ✅ Toate produsele din query au deja permitido = 1 (filtrate în WHERE)
         // Nu mai trebuie să verificăm, dar păstrăm logica pentru siguranță
         const permitidoRaw = row.permitido;
-        const permitidoProcessed = 
+        const permitidoProcessed =
           permitidoRaw === 1 ||
           permitidoRaw === true ||
           permitidoRaw === '1' ||
@@ -136,6 +155,29 @@ export class CatalogoService {
     } catch (error: any) {
       this.logger.error('❌ Error fetching catalogo con permisos:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Verifică dacă o comunitate are permisiuni generate
+   * @param clienteId - ID-ul comunității/clientului
+   * @returns true dacă există cel puțin un permiso pentru această comunitate
+   */
+  async tienePermisosGenerados(clienteId: number): Promise<boolean> {
+    try {
+      const count = await this.prisma.permisosProductos.count({
+        where: {
+          cliente_id: clienteId,
+        },
+      });
+      return count > 0;
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error checking permisos for cliente ${clienteId}:`,
+        error,
+      );
+      // În caz de eroare, presupunem că nu există permisiuni pentru siguranță
+      return false;
     }
   }
 
