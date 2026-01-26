@@ -1876,6 +1876,160 @@ export default function EmpleadosPage() {
     }
   };
 
+  const handleExportEmployeeZIP = async (empleado) => {
+    try {
+      if (!empleado || !empleado.CODIGO) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'No se pudo identificar al empleado',
+        });
+        return;
+      }
+
+      setNotification({
+        type: 'info',
+        title: 'Generando ZIP...',
+        message: `Exportando documentos de ${empleado['NOMBRE / APELLIDOS'] || empleado.CODIGO}`,
+      });
+
+      const codigo = empleado.CODIGO;
+      const url = routes.exportEmployeeDocuments(codigo);
+      
+      // Obține token-ul de autentificare (folosim auth_token ca în restul aplicației)
+      const token = authToken || localStorage.getItem('auth_token');
+      if (!token) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'No se encontró token de autenticación',
+        });
+        return;
+      }
+
+      // Face request-ul pentru a obține ZIP-ul
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
+      }
+
+      // Obține numele fișierului din header-ul Content-Disposition sau generează unul
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `empleado_${codigo}_${new Date().toISOString().split('T')[0]}.zip`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // Descarcă fișierul
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      setNotification({
+        type: 'success',
+        title: 'Exportación exitosa',
+        message: `ZIP generado correctamente para ${empleado['NOMBRE / APELLIDOS'] || empleado.CODIGO}`,
+      });
+    } catch (error) {
+      console.error('Error exporting employee ZIP:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error al exportar',
+        message: error.message || 'Error al generar el archivo ZIP',
+      });
+    }
+  };
+
+  const handleExportAllEmployeesZIP = async () => {
+    try {
+      setNotification({
+        type: 'info',
+        title: 'Generando ZIP...',
+        message: 'Exportando documentos de todos los empleados. Esto puede tardar varios minutos.',
+      });
+
+      const url = routes.exportAllEmployeesDocuments;
+      
+      // Obține token-ul de autentificare
+      const token = authToken || localStorage.getItem('auth_token');
+      if (!token) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'No se encontró token de autenticación',
+        });
+        return;
+      }
+
+      // Face request-ul pentru a obține ZIP-ul
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
+      }
+
+      // Obține numele fișierului din header-ul Content-Disposition sau generează unul
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `todos_empleados_${new Date().toISOString().split('T')[0]}.zip`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // Descarcă fișierul
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      setNotification({
+        type: 'success',
+        title: 'Exportación exitosa',
+        message: 'ZIP generado correctamente con todos los documentos de todos los empleados',
+      });
+    } catch (error) {
+      console.error('Error exporting all employees ZIP:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error al exportar',
+        message: error.message || 'Error al generar el archivo ZIP',
+      });
+    }
+  };
+
   const handleExportPDF = async () => {
     try {
       // Încarcă pdfMake dinamic
@@ -3185,6 +3339,48 @@ export default function EmpleadosPage() {
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
                   </button>
 
+                  {/* Exportar Todos ZIP - GREEN */}
+                  <button
+                    onClick={handleExportAllEmployeesZIP}
+                    className="group relative overflow-hidden flex-1 min-w-[140px] transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.1) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid rgba(34, 197, 94, 0.25)',
+                      boxShadow: '0 4px 12px rgba(34, 197, 94, 0.15)',
+                      padding: '0.75rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(34, 197, 94, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.15)';
+                    }}
+                  >
+                    {/* Glow sutil en hover */}
+                    <div className="absolute inset-0 rounded-xl bg-green-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                    
+                    {/* Contenido */}
+                    <div className="relative flex items-center gap-2 justify-center">
+                      <div 
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                          boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)'
+                        }}
+                      >
+                        <span className="text-base">📦</span>
+                      </div>
+                      <span className="text-sm font-bold text-green-800">Exportar Todos ZIP</span>
+                    </div>
+                    
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  </button>
+
                   {/* Solicitar Documento a Todos - ORANGE */}
                   <button
                     onClick={openSolicitarDocumentoTodosModal}
@@ -3366,6 +3562,17 @@ export default function EmpleadosPage() {
                                 <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
                                   filter: 'drop-shadow(0 2px 4px rgba(234, 179, 8, 0.4))',
                                 }}>📄</span>
+                              </button>
+                              
+                              {/* Icon Export ZIP */}
+                              <button
+                                onClick={() => handleExportEmployeeZIP(user)}
+                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
+                                title="Exportar todos los documentos (ZIP)"
+                              >
+                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
+                                  filter: 'drop-shadow(0 2px 4px rgba(34, 197, 94, 0.4))',
+                                }}>📦</span>
                               </button>
                               
                               {/* Icon Despido Improcedente - SOLO ADMIN */}

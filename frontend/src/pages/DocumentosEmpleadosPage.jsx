@@ -3,11 +3,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 
 import ContractSigner from '../components/ContractSigner';
+import PDFViewerAndroid from '../components/PDFViewerAndroid';
 
 import { Link } from 'react-router-dom';
 
 import Back3DButton from '../components/Back3DButton.jsx';
 import ChangeEmployee3DButton from '../components/ChangeEmployee3DButton.jsx';
+import EmailIngestionButton from '../components/EmailIngestionButton';
+import FolderIngestionButton from '../components/FolderIngestionButton';
 
 import { Button, Card, LoadingSpinner } from '../components/ui';
 
@@ -159,7 +162,29 @@ const formatPeriodo = (mes, año) => {
 
 };
 
+// Funcție helper pentru calcularea antiguedad
+function calculateAntiguedad(fechaAlta) {
+  if (!fechaAlta) return 'Sin fecha';
 
+  try {
+    const altaDate = new Date(fechaAlta);
+    const now = new Date();
+    const diffTime = Math.abs(now - altaDate);
+    const diffYears = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
+    const diffMonths = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
+
+    if (diffYears > 0) {
+      return `${diffYears} año${diffYears !== 1 ? 's' : ''}${diffMonths > 0 ? ` y ${diffMonths} mes${diffMonths !== 1 ? 'es' : ''}` : ''}`;
+    } else if (diffMonths > 0) {
+      return `${diffMonths} mes${diffMonths !== 1 ? 'es' : ''}`;
+    } else {
+      return 'Menos de 1 mes';
+    }
+  } catch (error) {
+    console.error('Error calculating antigüedad:', error);
+    return 'Sin fecha';
+  }
+}
 
 export default function DocumentosEmpleadosPage() {
 
@@ -3297,6 +3322,7 @@ export default function DocumentosEmpleadosPage() {
             status: 'disponible',
             // Câmpuri suplimentare din backend - păstrăm toate câmpurile originale
             correo_electronico: doc.correo_electronico,
+            permisso_para_empleado: doc.permisso_para_empleado || null, // Câmp pentru vizibilitate
             // Adăugăm și alte câmpuri care pot fi utile
             originalData: doc // Păstrăm întregul obiect original pentru debugging
           };
@@ -3333,18 +3359,25 @@ export default function DocumentosEmpleadosPage() {
 
         
 
-        // Sincronizar documentos oficiales con empleadoDocumentos para que aparezcan en el contador
-
+        // NU sincronizăm documentos oficiales con empleadoDocumentos
+        // Documentele oficiale rămân doar în documentosOficiales și sunt afișate doar în tab-ul "documentos-empresa"
+        // Eliminăm orice documente oficiale care ar putea fi în empleadoDocumentos pentru a preveni duplicarea
         setEmpleadoDocumentos(prev => {
-
-          // Filtrar documentos existentes que nu sunt documentos oficiales
-
-          const documentosNoOficiales = prev.filter(doc => doc.tipo !== 'Documento Oficial');
-
-          // Adăugăm documentos oficiales ordenados la lista de documente
-
-          return [...documentosNoOficiales, ...documentosOficialesOrdenados];
-
+          // Eliminăm doar documentele oficiale din empleadoDocumentos (nu documentele normale din CarpetasDocumentos)
+          return prev.filter(doc => {
+            const tipo = doc.tipo || doc.tipo_documento || '';
+            // Verificăm dacă este document oficial: tipuri specifice (sello, alta, contrato) sau originalData
+            // NU excludem ficha_empleado care este un document normal
+            const isDocumentoOficial = 
+              tipo === 'Documento Oficial' || 
+              (tipo.toLowerCase() === 'sello') ||
+              (tipo.toLowerCase() === 'alta') ||
+              (tipo.toLowerCase() === 'contrato') ||
+              (tipo.toLowerCase() === 'liquidacion') ||
+              (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
+              (doc.originalData && doc.originalData.tipo_documento); // Documentele oficiale au originalData cu tipo_documento
+            return !isDocumentoOficial;
+          });
         });
 
       } else if (data.success && data.documentos) {
@@ -3366,6 +3399,7 @@ export default function DocumentosEmpleadosPage() {
 
           // Câmpuri suplimentare din backend - păstrăm toate câmpurile originale
           correo_electronico: doc.correo_electronico,
+          permisso_para_empleado: doc.permisso_para_empleado || null, // Câmp pentru vizibilitate
           // Adăugăm și alte câmpuri care pot fi utile
           originalData: doc // Păstrăm întregul obiect original pentru debugging
         }));
@@ -3402,18 +3436,25 @@ export default function DocumentosEmpleadosPage() {
 
         
 
-        // Sincronizar documentos oficiales con empleadoDocumentos para que aparezcan en el contador
-
+        // NU sincronizăm documentos oficiales con empleadoDocumentos
+        // Documentele oficiale rămân doar în documentosOficiales și sunt afișate doar în tab-ul "documentos-empresa"
+        // Eliminăm orice documente oficiale care ar putea fi în empleadoDocumentos pentru a preveni duplicarea
         setEmpleadoDocumentos(prev => {
-
-          // Filtrar documentos existentes que nu sunt documentos oficiales
-
-          const documentosNoOficiales = prev.filter(doc => doc.tipo !== 'Documento Oficial');
-
-          // Adăugăm documentos oficiales ordenados la lista de documente
-
-          return [...documentosNoOficiales, ...documentosOficialesOrdenados];
-
+          // Eliminăm doar documentele oficiale din empleadoDocumentos (nu documentele normale din CarpetasDocumentos)
+          return prev.filter(doc => {
+            const tipo = doc.tipo || doc.tipo_documento || '';
+            // Verificăm dacă este document oficial: tipuri specifice (sello, alta, contrato) sau originalData
+            // NU excludem ficha_empleado care este un document normal
+            const isDocumentoOficial = 
+              tipo === 'Documento Oficial' || 
+              (tipo.toLowerCase() === 'sello') ||
+              (tipo.toLowerCase() === 'alta') ||
+              (tipo.toLowerCase() === 'contrato') ||
+              (tipo.toLowerCase() === 'liquidacion') ||
+              (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
+              (doc.originalData && doc.originalData.tipo_documento); // Documentele oficiale au originalData cu tipo_documento
+            return !isDocumentoOficial;
+          });
         });
 
       } else {
@@ -4123,6 +4164,7 @@ export default function DocumentosEmpleadosPage() {
 
 
   return (
+    <>
     <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-red-50 via-white to-red-50">
       {/* Background Effects ULTRA WOW */}
       <div className="absolute inset-0 overflow-hidden">
@@ -4214,8 +4256,13 @@ export default function DocumentosEmpleadosPage() {
                 </div>
               </div>
 
-              {/* Empty space to balance layout */}
-              <div className="w-16"></div>
+              {/* Email Ingestion Button (Admin only) - Right Side */}
+              {(isManager || authUser?.GRUPO === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.GRUPO === 'Supervisor') && (
+                <div className="flex items-center gap-3 relative" style={{ zIndex: 10000 }}>
+                  <EmailIngestionButton />
+                  <FolderIngestionButton />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -4682,12 +4729,24 @@ export default function DocumentosEmpleadosPage() {
 
               {/* Estadísticas para documentos normales */}
               {(() => {
-                // Filtrar solo documentos normales (no nóminas ni justificantes)
-                // Incluir documentos que no tengan tipo o que no sean nóminas/justificantes
+                // Filtrar solo documentos normales (no nóminas ni justificantes ni documentos oficiales)
                 const documentosNormales = empleadoDocumentos.filter(doc => {
                   const tipo = doc.tipo || doc.tipo_documento || '';
-                  // Incluir si no tiene tipo o si tiene tipo pero no es Nómina ni justificantes
-                  return !tipo || (tipo !== 'Nómina' && !tipo.toLowerCase().includes('justificantes'));
+                  // Excluir Nómina și justificantes
+                  if (tipo === 'Nómina' || tipo.toLowerCase().includes('justificantes')) {
+                    return false;
+                  }
+                  // Excluir documentele oficiale: verificăm dacă sunt din DocumentosOficiales
+                  // Documentele oficiale au tipuri specifice: sello, alta, contrato (dar NU ficha_empleado care este normal)
+                  const isDocumentoOficial = 
+                    tipo === 'Documento Oficial' || 
+                    (tipo.toLowerCase() === 'sello') ||
+                    (tipo.toLowerCase() === 'alta') ||
+                    (tipo.toLowerCase() === 'contrato') ||
+                    (tipo.toLowerCase() === 'liquidacion') ||
+                    (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
+                    (doc.originalData && doc.originalData.tipo_documento); // Documentele oficiale au originalData cu tipo_documento
+                  return !isDocumentoOficial;
                 });
 
                 return (
@@ -4719,11 +4778,25 @@ export default function DocumentosEmpleadosPage() {
               {/* Lista de documentos normales */}
               {(() => {
                 // Filtrar solo documentos normales para la lista
-                // Incluir documentos que no tengan tipo o que no sean nóminas/justificantes
+                // Excluir nóminas, justificantes și documentos oficiales
                 const documentosNormales = empleadoDocumentos.filter(doc => {
                   const tipo = doc.tipo || doc.tipo_documento || '';
-                  // Incluir si no tiene tipo o si tiene tipo pero no es Nómina ni justificantes
-                  return !tipo || (tipo !== 'Nómina' && !tipo.toLowerCase().includes('justificantes'));
+                  // Excluir Nómina și justificantes
+                  if (tipo === 'Nómina' || tipo.toLowerCase().includes('justificantes')) {
+                    return false;
+                  }
+                  // Excluir documentele oficiale: verificăm dacă sunt din DocumentosOficiales
+                  // Documentele oficiale au tipuri specifice: sello, alta, contrato (dar NU ficha_empleado care este normal)
+                  // De asemenea, documentele oficiale au originalData sau sunt din documentosOficiales
+                  const isDocumentoOficial = 
+                    tipo === 'Documento Oficial' || 
+                    (tipo.toLowerCase() === 'sello') ||
+                    (tipo.toLowerCase() === 'alta') ||
+                    (tipo.toLowerCase() === 'contrato') ||
+                    (tipo.toLowerCase() === 'liquidacion') ||
+                    (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
+                    (doc.originalData && doc.originalData.tipo_documento); // Documentele oficiale au originalData cu tipo_documento
+                  return !isDocumentoOficial;
                 });
                 
                 console.log('🔍 [DocumentosEmpleados] Documentos totales:', empleadoDocumentos.length);
@@ -5305,6 +5378,57 @@ export default function DocumentosEmpleadosPage() {
                           )}
                         </div>
 
+                        {/* Checkbox para visibilidad del empleado */}
+                        <div className="flex items-center gap-2 mb-3 p-2 bg-white/50 rounded-lg border border-purple-200">
+                          <input
+                            type="checkbox"
+                            id={`visible-${documento.doc_id}`}
+                            checked={documento.permisso_para_empleado === 'SI' || documento.permisso_para_empleado === 'YES'}
+                            onChange={async (e) => {
+                              try {
+                                const token = localStorage.getItem('auth_token');
+                                const headers = {
+                                  'Content-Type': 'application/json',
+                                };
+                                if (token) {
+                                  headers['Authorization'] = `Bearer ${token}`;
+                                }
+                                const response = await fetch(`${routes.updateDocumentoOficialVisibility}/${documento.doc_id}/visible`, {
+                                  method: 'POST',
+                                  headers,
+                                  body: JSON.stringify({ visible: e.target.checked }),
+                                });
+                                if (!response.ok) {
+                                  throw new Error(`Error HTTP: ${response.status}`);
+                                }
+                                const result = await response.json();
+                                if (result.success) {
+                                  // Actualizar el estado local inmediatamente para feedback visual
+                                  setDocumentosOficiales(prev => prev.map(doc => 
+                                    doc.doc_id === documento.doc_id 
+                                      ? { ...doc, permisso_para_empleado: e.target.checked ? 'SI' : null }
+                                      : doc
+                                  ));
+                                  showNotification('success', 'Visibilidad actualizada', 'La visibilidad del documento se ha actualizado correctamente');
+                                  
+                                  // Reîncarcă lista din backend pentru a fi siguri că avem datele corecte
+                                  if (selectedEmpleado) {
+                                    setTimeout(() => {
+                                      fetchDocumentosOficiales(selectedEmpleado);
+                                    }, 500); // Mic delay pentru a permite backend-ului să proceseze
+                                  }
+                                }
+                              } catch (error) {
+                                console.error('Error actualizando visibilidad:', error);
+                                showNotification('error', 'Error', 'No se pudo actualizar la visibilidad del documento');
+                              }
+                            }}
+                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                          />
+                          <label htmlFor={`visible-${documento.doc_id}`} className="text-xs text-gray-700 cursor-pointer">
+                            Visible para el empleado
+                          </label>
+                        </div>
 
                         {/* Action Buttons - Responsive */}
                         <div className="flex flex-wrap gap-2">
@@ -5383,8 +5507,6 @@ export default function DocumentosEmpleadosPage() {
                 />
 
               </div>
-
-
 
               <div className="bg-gray-50 rounded-lg p-8 text-center">
 
@@ -6096,19 +6218,21 @@ export default function DocumentosEmpleadosPage() {
                     ) ? (
 
                       <div className="pdf-preview-container">
-
-                        <ContractSigner
-
-                          pdfUrl={previewDocument?.previewUrl || ''}
-
-                          docId={previewDocument?.id || ''}
-
-                          originalFileName={previewDocument?.fileName || ''}
-
-                          onClose={handleClosePreview}
-
-                        />
-
+                        {/* Pentru telefon: folosim PDFViewerAndroid (ca în DocumentosPage) */}
+                        {/* Pentru desktop: folosim ContractSigner (pentru semnare) */}
+                        {isAndroid || isIOS ? (
+                          <PDFViewerAndroid 
+                            pdfUrl={previewDocument?.previewUrl || ''} 
+                            className="w-full h-full"
+                          />
+                        ) : (
+                          <ContractSigner
+                            pdfUrl={previewDocument?.previewUrl || ''}
+                            docId={previewDocument?.id || ''}
+                            originalFileName={previewDocument?.fileName || ''}
+                            onClose={handleClosePreview}
+                          />
+                        )}
                       </div>
 
                     ) : previewDocument?.fileName?.toLowerCase().match(/\.(doc|docx)$/i) ? (
@@ -6867,28 +6991,6 @@ export default function DocumentosEmpleadosPage() {
         onClose={hideNotification}
       />
     </div>
+    </>
   );
-} 
-
-function calculateAntiguedad(fechaAlta) {
-  if (!fechaAlta) return 'Sin fecha';
-
-  try {
-    const altaDate = new Date(fechaAlta);
-    const now = new Date();
-    const diffTime = Math.abs(now - altaDate);
-    const diffYears = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
-    const diffMonths = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
-
-    if (diffYears > 0) {
-      return `${diffYears} año${diffYears !== 1 ? 's' : ''}${diffMonths > 0 ? ` y ${diffMonths} mes${diffMonths !== 1 ? 'es' : ''}` : ''}`;
-    } else if (diffMonths > 0) {
-      return `${diffMonths} mes${diffMonths !== 1 ? 'es' : ''}`;
-    } else {
-      return 'Menos de 1 mes';
-    }
-  } catch (error) {
-    console.error('Error calculating antigüedad:', error);
-    return 'Sin fecha';
-  }
 }

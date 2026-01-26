@@ -449,11 +449,16 @@ export default function DocumentosPage() {
       }
       
       // Procesar solo los documentos oficiales válidos
+      // Filtrar solo los documentos visibles para el empleado (Permisso_Para_Empleado = 'SI')
+      const documentosVisibles = documentosOficialesValidos.filter(doc => 
+        doc.permisso_para_empleado === 'SI' || doc.permisso_para_empleado === 'YES' || doc.permisso_para_empleado === '1'
+      );
+      
       let documentosOficialesProcesados = [];
       
       if (Array.isArray(data)) {
         // Si la respuesta es directamente un array
-        documentosOficialesProcesados = documentosOficialesValidos.map((doc, idx) => ({
+        documentosOficialesProcesados = documentosVisibles.map((doc, idx) => ({
           id: doc.id || `doc_oficial_${idx}`,
           doc_id: doc.doc_id,
           fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
@@ -466,7 +471,7 @@ export default function DocumentosPage() {
         }));
       } else if (data.success && data.documentos) {
         // Si la respuesta tiene estructura {success: true, documentos: [...]}
-        documentosOficialesProcesados = documentosOficialesValidos.map((doc, idx) => ({
+        documentosOficialesProcesados = documentosVisibles.map((doc, idx) => ({
           id: doc.id || `doc_oficial_${idx}`,
           doc_id: doc.doc_id,
           fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
@@ -3014,24 +3019,17 @@ export default function DocumentosPage() {
                     </div>
                   </button>
                 </div>
-              ) : documentosOficiales.filter(documento => {
-                  const tipo = (documento.tipo || '').toLowerCase();
-                  return tipo.includes('contrato') || tipo.includes('certificado');
-                }).length === 0 ? (
+              ) : documentosOficiales.length === 0 ? (
                 <div className="text-center py-12">
                   <div className="text-gray-300 text-8xl mb-6">📋</div>
                   <h3 className="text-2xl font-bold text-gray-600 mb-3">No se encontraron documentos oficiales</h3>
-                  <p className="text-gray-500 text-lg mb-2">No hay documentos de tipo contrato o certificado disponibles</p>
+                  <p className="text-gray-500 text-lg mb-2">No hay documentos oficiales disponibles para ti</p>
                   <p className="text-gray-400 text-sm">Los documentos oficiales aparecerán aquí cuando estén disponibles</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
 
                     {documentosOficiales
-                      .filter(documento => {
-                        const tipo = (documento.tipo || '').toLowerCase();
-                        return tipo.includes('contrato') || tipo.includes('certificado');
-                      })
                       .map((documento, idx) => (
                       <div key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} 
                            className="group relative bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-purple-300 overflow-hidden">

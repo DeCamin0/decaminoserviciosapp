@@ -45,6 +45,12 @@ export const routes = {
   getEstadisticasEmpleados: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/estadisticas'
     : 'https://api.decaminoservicios.com/api/empleados/estadisticas',
+  exportEmployeeDocuments: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/empleados/${codigo}/export`
+    : `https://api.decaminoservicios.com/api/empleados/${codigo}/export`,
+  exportAllEmployeesDocuments: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/export-all'
+    : 'https://api.decaminoservicios.com/api/empleados/export-all',
   getHallOfFame: import.meta.env.DEV
     ? 'http://localhost:3000/api/hall-of-fame'
     : 'https://api.decaminoservicios.com/api/hall-of-fame',
@@ -239,6 +245,36 @@ export const routes = {
     ? 'http://localhost:3000/api/registros/no-punch/declare'
     : 'https://api.decaminoservicios.com/api/registros/no-punch/declare',
   
+  // Email Ingestion (Admin only)
+  ingestEmails: import.meta.env.DEV
+    ? 'http://localhost:3000/admin/documents/ingest-emails'
+    : 'https://api.decaminoservicios.com/admin/documents/ingest-emails',
+  previewEmails: import.meta.env.DEV
+    ? 'http://localhost:3000/admin/documents/preview-emails'
+    : 'https://api.decaminoservicios.com/admin/documents/preview-emails',
+  saveSelectedDocuments: import.meta.env.DEV
+    ? 'http://localhost:3000/admin/documents/save-selected'
+    : 'https://api.decaminoservicios.com/admin/documents/save-selected',
+  // Folder Ingestion (Admin only)
+  previewFolder: import.meta.env.DEV
+    ? 'http://localhost:3000/admin/documents/preview-folder'
+    : 'https://api.decaminoservicios.com/admin/documents/preview-folder',
+  saveFolderDocuments: import.meta.env.DEV
+    ? 'http://localhost:3000/admin/documents/save-folder-documents'
+    : 'https://api.decaminoservicios.com/admin/documents/save-folder-documents',
+  getPendingDocuments: import.meta.env.DEV
+    ? 'http://localhost:3000/admin/documents/pending'
+    : 'https://api.decaminoservicios.com/admin/documents/pending',
+  approveDocument: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/admin/documents/${id}/approve`
+    : `https://api.decaminoservicios.com/admin/documents/${id}/approve`,
+  rejectDocument: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/admin/documents/${id}/reject`
+    : `https://api.decaminoservicios.com/admin/documents/${id}/reject`,
+  reassignDocument: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/admin/documents/${id}/reassign`
+    : `https://api.decaminoservicios.com/admin/documents/${id}/reassign`,
+
   // Cuadrantes (Schedules)
   getCuadrantes: import.meta.env.DEV
     ? 'http://localhost:3000/api/cuadrantes'
@@ -347,6 +383,9 @@ export const routes = {
   deleteDocumentoOficial: import.meta.env.DEV
     ? 'http://localhost:3000/api/documentos-oficiales/delete'
     : 'https://api.decaminoservicios.com/api/documentos-oficiales/delete',
+  updateDocumentoOficialVisibility: import.meta.env.DEV
+    ? 'http://localhost:3000/api/documentos-oficiales'
+    : 'https://api.decaminoservicios.com/api/documentos-oficiales',
   deleteDocumento: import.meta.env.DEV
     ? 'http://localhost:3000/api/documentos/delete'
     : 'https://api.decaminoservicios.com/api/documentos/delete',

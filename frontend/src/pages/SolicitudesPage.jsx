@@ -992,6 +992,11 @@ export default function SolicitudesPage() {
   const [totalVacacionesDays, setTotalVacacionesDays] = useState(0);
   // State pentru datele complete ale utilizatorului (inclusiv certificado_handicap_confirmado)
   const [empleadoCompleto, setEmpleadoCompleto] = useState(null);
+  // State pentru saldo-ul real de vacanțe (din backend)
+  const [vacacionesSaldo, setVacacionesSaldo] = useState({
+    dias_anuales: 31, // Default fallback
+    dias_restantes_ano_anterior: 0,
+  });
   
   // Estadísticas states
   const [estadisticas, setEstadisticas] = useState([]);
@@ -2332,6 +2337,49 @@ export default function SolicitudesPage() {
     }
   }, [authUser, callApi]);
 
+  // Funcție pentru încărcarea saldo-ului real de vacanțe din backend
+  const fetchVacacionesSaldo = useCallback(async () => {
+    // Skip real data fetch in DEMO mode
+    if (authUser?.isDemo) {
+      console.log('🎭 DEMO mode: Skipping fetchVacacionesSaldo');
+      return;
+    }
+
+    try {
+      const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
+      if (!userCode) {
+        console.warn('⚠️ No user code available for fetching vacaciones saldo');
+        return;
+      }
+
+      const token = localStorage.getItem('auth_token');
+      const saldoUrl = routes.getVacacionesSaldoEmpleado(userCode);
+      
+      const response = await fetch(saldoUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.vacaciones) {
+          setVacacionesSaldo({
+            dias_anuales: data.vacaciones.dias_anuales || 31,
+            dias_restantes_ano_anterior: data.vacaciones.dias_restantes_ano_anterior || 0,
+          });
+          console.log('✅ Saldo vacaciones loaded:', data.vacaciones);
+        }
+      } else {
+        console.warn('⚠️ Error fetching vacaciones saldo:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching vacaciones saldo:', error);
+    }
+  }, [authUser]);
+
   const fetchAllAusencias = useCallback(async () => {
     if (!isManager) return; // Doar managers pot vedea toate ausencias-urile
     
@@ -2492,6 +2540,7 @@ export default function SolicitudesPage() {
     }
 
     fetchSolicitudes();
+    fetchVacacionesSaldo(); // Încarcă saldo-ul real de vacanțe
 
     if (isManager) {
       fetchAllSolicitudes();
@@ -2501,7 +2550,7 @@ export default function SolicitudesPage() {
     }
 
     activityLogger.logPageAccess('solicitudes', authUser);
-  }, [authUser, isManager, activeTab, fetchSolicitudes, fetchAllSolicitudes, fetchAllUsers, fetchAllAusencias, fetchBajasMedicas, setDemoSolicitudes, setOperationLoading]);
+  }, [authUser, isManager, activeTab, fetchSolicitudes, fetchVacacionesSaldo, fetchAllSolicitudes, fetchAllUsers, fetchAllAusencias, fetchBajasMedicas, setDemoSolicitudes, setOperationLoading]);
   useEffect(() => {
     if (selectedTab === 'baja' && isManager) {
       fetchBajasMedicas();
@@ -3556,8 +3605,11 @@ export default function SolicitudesPage() {
           return false;
         }
         
+        // Normalizăm orele la 00:00:00 pentru a evita probleme de timezone
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
         const diffStart = (start - today) / (1000 * 60 * 60 * 24);
-        const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
+        const diffZile = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
         if (diffStart < 5) {
           setErrorMsg('No es posible solicitar un día de asunto propio con menos de 5 días de antelación.');
@@ -3579,7 +3631,10 @@ export default function SolicitudesPage() {
         }
       } else {
         // La editare, doar verificăm că datele sunt valide (fecha fin >= fecha inicio)
-        const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
+        // Normalizăm orele la 00:00:00 pentru consistență
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        const diffZile = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
         if (diffZile < 1) {
           setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
           return false;
@@ -3601,13 +3656,20 @@ export default function SolicitudesPage() {
           ? totalVacacionesDays - originalDays 
           : totalVacacionesDays;
         
-        // Verifică dacă s-a ajuns la limita de 31 zile
-        if (adjustedTotal >= 31) {
-          setErrorMsg('Has alcanzado el límite de 31 días de Vacaciones para este mes. No puedes solicitar más días de este tipo.');
+        // Calculează limita maximă reală: zile anuale + zile din anul trecut
+        const limitaMaxima = (vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0);
+        
+        // Verifică dacă s-a ajuns la limita maximă
+        if (adjustedTotal >= limitaMaxima) {
+          setErrorMsg(`Has alcanzado el límite de ${limitaMaxima} días de Vacaciones (${vacacionesSaldo.dias_anuales || 31} días anuales + ${vacacionesSaldo.dias_restantes_ano_anterior || 0} días del año anterior). No puedes solicitar más días de este tipo.`);
           return false;
         }
         
-        const diffZile = (end - start) / (1000 * 60 * 60 * 24) + 1;
+        // Folosim același calcul ca în calculateDays pentru consistență
+        // Normalizăm orele la 00:00:00 pentru a evita probleme de timezone
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        const diffZile = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
         
         if ((end - start) < 0) {
           setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
@@ -3626,9 +3688,9 @@ export default function SolicitudesPage() {
           return false;
         }
         
-        // Verifică dacă noua solicitare nu depășește limita de 31 zile (folosind totalul ajustat)
-        if (adjustedTotal + diffZile > 31) {
-          setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Vacaciones.`);
+        // Verifică dacă noua solicitare nu depășește limita maximă reală (folosind totalul ajustat)
+        if (adjustedTotal + diffZile > limitaMaxima) {
+          setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Vacaciones. El límite máximo es de ${limitaMaxima} días (${vacacionesSaldo.dias_anuales || 31} días anuales + ${vacacionesSaldo.dias_restantes_ano_anterior || 0} días del año anterior).`);
           return false;
         }
       } else {
@@ -7572,14 +7634,14 @@ export default function SolicitudesPage() {
                       );
                     })()}
                     <option 
-                      value="Vacaciones" 
-                      disabled={totalVacacionesDays >= 31}
+                      value="Vacaciones"
+                      disabled={totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0))}
                       style={{ 
-                        color: totalVacacionesDays >= 31 ? '#9ca3af' : '#0891b2',
-                        backgroundColor: totalVacacionesDays >= 31 ? '#f3f4f6' : 'transparent'
+                        color: totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0)) ? '#9ca3af' : '#0891b2',
+                        backgroundColor: totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0)) ? '#f3f4f6' : 'transparent'
                       }}
                     >
-                      🏖️ Vacaciones {totalVacacionesDays >= 31 ? '(Límite alcanzado)' : ''}
+                      🏖️ Vacaciones {totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0)) ? '(Límite alcanzado)' : ''}
                     </option>
                     <option 
                       value="BAJA_VOLUNTARIA"
