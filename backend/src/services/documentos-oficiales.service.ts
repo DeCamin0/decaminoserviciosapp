@@ -38,10 +38,15 @@ export class DocumentosOficialesService {
       }
 
       // Construim condițiile WHERE
+      // IMPORTANT: Verificăm atât `id` cât și `detected_empleado_id` pentru că documentele
+      // din folder ingestion pot fi salvate cu `id = 'PENDING'` dacă angajatul nu a fost identificat corect
       const conditions: string[] = [];
 
       if (codigo) {
-        conditions.push(`\`id\` = ${this.escapeSql(codigo)}`);
+        // Căutăm în ambele câmpuri: id (pentru documente salvate manual) și detected_empleado_id (pentru documente din ingestion)
+        conditions.push(
+          `(\`id\` = ${this.escapeSql(codigo)} OR \`detected_empleado_id\` = ${this.escapeSql(codigo)})`,
+        );
       }
 
       if (nombre) {
@@ -59,7 +64,9 @@ export class DocumentosOficialesService {
           nombre_archivo,
           nombre_empleado,
           fecha_creacion,
-          \`Permisso Para Empleado\` as permisso_para_empleado
+          \`Permisso Para Empleado\` as permisso_para_empleado,
+          detected_empleado_id,
+          status
         FROM \`DocumentosOficiales\`
         WHERE ${whereClause}
         ORDER BY fecha_creacion DESC
@@ -661,6 +668,91 @@ export class DocumentosOficialesService {
       }
       throw new BadRequestException(
         `Error al guardar el documento firmado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Actualizează câmpul Permisso_Para_Empleado pentru un document oficial
+   * @param docId - doc_id din tabela DocumentosOficiales
+   * @param permissoParaEmpleado - valoarea pentru Permisso_Para_Empleado ('SI' sau 'NO' sau null)
+   */
+  async updatePermissoParaEmpleado(
+    docId: number | string,
+    permissoParaEmpleado: string | null,
+  ): Promise<{ success: true; message: string; affectedRows: number }> {
+    try {
+      // Validate docId
+      const docIdNumber =
+        typeof docId === 'string' ? parseInt(docId, 10) : docId;
+      if (isNaN(docIdNumber) || docIdNumber <= 0) {
+        throw new BadRequestException(`Parámetro "docId" inválido: ${docId}`);
+      }
+
+      // Validate permissoParaEmpleado (acceptă 'SI', 'NO', null, sau string gol)
+      let permissoValue: string | null = null;
+      if (permissoParaEmpleado !== null && permissoParaEmpleado !== undefined) {
+        const trimmed = String(permissoParaEmpleado).trim().toUpperCase();
+        if (
+          trimmed === 'SI' ||
+          trimmed === 'YES' ||
+          trimmed === '1' ||
+          trimmed === 'TRUE'
+        ) {
+          permissoValue = 'SI';
+        } else if (
+          trimmed === 'NO' ||
+          trimmed === '0' ||
+          trimmed === 'FALSE' ||
+          trimmed === ''
+        ) {
+          permissoValue = null; // null înseamnă "nu este vizibil"
+        } else {
+          // Dacă este alt string, îl acceptăm ca atare
+          permissoValue = trimmed;
+        }
+      }
+
+      // Build UPDATE query
+      const query = `
+        UPDATE \`DocumentosOficiales\`
+        SET \`Permisso Para Empleado\` = ${permissoValue ? this.escapeSql(permissoValue) : 'NULL'}
+        WHERE doc_id = ${docIdNumber}
+        LIMIT 1
+      `;
+
+      this.logger.log(
+        `🔄 Update Permisso_Para_Empleado request - doc_id: ${docIdNumber}, permisso: ${permissoValue || 'NULL'}`,
+      );
+
+      const result = await this.prisma.$executeRawUnsafe(query);
+      const affectedRows = Number(result) || 0;
+
+      if (affectedRows === 0) {
+        throw new NotFoundException(
+          `Documento oficial no encontrado para doc_id=${docIdNumber}`,
+        );
+      }
+
+      this.logger.log(
+        `✅ Permisso_Para_Empleado actualizado: doc_id=${docIdNumber}, permisso=${permissoValue || 'NULL'}`,
+      );
+
+      return {
+        success: true,
+        message: 'Permisso_Para_Empleado actualizado correctamente.',
+        affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error updating Permisso_Para_Empleado:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar Permisso_Para_Empleado: ${error.message}`,
       );
     }
   }

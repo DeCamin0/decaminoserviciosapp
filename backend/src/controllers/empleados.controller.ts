@@ -22,6 +22,7 @@ import { EmpleadosStatsService } from '../services/empleados-stats.service';
 import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { NotificationsService } from '../services/notifications.service';
 import { SentEmailsService } from '../services/sent-emails.service';
+import { EmployeeExportService } from '../services/employee-export.service';
 
 @Controller('api/empleados')
 export class EmpleadosController {
@@ -34,6 +35,7 @@ export class EmpleadosController {
     private readonly notificationsGateway: NotificationsGateway,
     private readonly notificationsService: NotificationsService,
     private readonly sentEmailsService: SentEmailsService,
+    private readonly employeeExportService: EmployeeExportService,
   ) {}
 
   @Get('me')
@@ -2715,6 +2717,75 @@ export class EmpleadosController {
       throw new BadRequestException(
         `Error al confirmar certificado: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * GET /api/empleados/export-all
+   * Exportă toate documentele pentru toți angajații într-un ZIP
+   */
+  @Get('export-all')
+  @UseGuards(JwtAuthGuard)
+  async exportAllEmployeesDocuments(@Res() res: any) {
+    try {
+      this.logger.log(`📦 Export request for all employees`);
+
+      const { stream, filename } =
+        await this.employeeExportService.exportAllEmployeesDocuments();
+
+      // Setează headers pentru descărcare
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
+
+      // Pipe stream-ul către response
+      stream.pipe(res);
+
+      this.logger.log(`✅ Export completed for all employees`);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error exporting all employees documents: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * GET /api/empleados/:codigo/export
+   * Exportă toate documentele unui angajat într-un ZIP
+   */
+  @Get(':codigo/export')
+  @UseGuards(JwtAuthGuard)
+  async exportEmployeeDocuments(
+    @Param('codigo') codigo: string,
+    @Res() res: any,
+  ) {
+    try {
+      this.logger.log(`📦 Export request for empleado: ${codigo}`);
+
+      const { stream, filename } =
+        await this.employeeExportService.exportEmployeeDocuments(codigo);
+
+      // Setează headers pentru descărcare
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
+
+      // Pipe stream-ul către response
+      stream.pipe(res);
+
+      this.logger.log(`✅ Export completed for empleado: ${codigo}`);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error exporting employee documents: ${error.message}`,
+        error.stack,
+      );
+      throw error;
     }
   }
 }

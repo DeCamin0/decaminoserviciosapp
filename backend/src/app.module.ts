@@ -89,6 +89,8 @@ import { MonitoringService } from './services/monitoring.service';
 import { MonitoringController } from './controllers/monitoring.controller';
 import { HallOfFameController } from './controllers/hall-of-fame.controller';
 import { HallOfFameService } from './services/hall-of-fame.service';
+import { EmailIngestionModule } from './email-ingestion/email-ingestion.module';
+import { EmployeeExportService } from './services/employee-export.service';
 
 @Module({
   imports: [
@@ -118,6 +120,7 @@ import { HallOfFameService } from './services/hall-of-fame.service';
     ComunicadosModule,
     VacacionesModule,
     AssistantModule,
+    EmailIngestionModule,
   ],
   controllers: [
     AppController,
@@ -208,6 +211,7 @@ import { HallOfFameService } from './services/hall-of-fame.service';
     MonitoringService,
     DespidoAutomationCronService,
     BajaVoluntariaPdfService,
+    EmployeeExportService,
   ],
 })
 export class AppModule {}

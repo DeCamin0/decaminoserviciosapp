@@ -158,10 +158,11 @@ export class NominasService {
           });
         }
 
-        // Dacă nu am găsit după codigo, continuăm cu fallback pe nume
+        // Dacă am furnizat codigo și nu am găsit nimic, returnăm array gol (nu toate nóminas-urile)
         this.logger.log(
-          `⚠️ No nominas found by codigo_empleado, falling back to nombre search`,
+          `⚠️ No nominas found by codigo_empleado ${codigo}, returning empty array`,
         );
+        return [];
       }
 
       // Fallback: căutăm după nume (dacă nu am găsit după codigo sau nu există codigo)
@@ -280,6 +281,7 @@ export class NominasService {
       }
 
       // Construiește query-ul SQL (similar cu n8n)
+      // Acceptă atât numele exact cât și cu prefix "FINIQUITO - " (pentru finiquitos salvate automat)
       const query = `
         SELECT
           id,
@@ -291,12 +293,16 @@ export class NominasService {
           Ano
         FROM Nominas
         WHERE id = ${id}
-          AND LOWER(nombre) = LOWER(${this.escapeSql(nombreTrimmed)})
+          AND (
+            LOWER(nombre) = LOWER(${this.escapeSql(nombreTrimmed)})
+            OR LOWER(nombre) = LOWER(${this.escapeSql(`FINIQUITO - ${nombreTrimmed}`)})
+            OR LOWER(TRIM(REPLACE(REPLACE(nombre, 'FINIQUITO -', ''), 'FINIQUITO-', ''))) = LOWER(${this.escapeSql(nombreTrimmed)})
+          )
         LIMIT 1;
       `.trim();
 
       this.logger.log(
-        `📝 Download nomina query: WHERE id = ${id} AND LOWER(nombre) = LOWER(${nombreTrimmed})`,
+        `📝 Download nomina query: WHERE id = ${id} AND (nombre = ${nombreTrimmed} OR nombre = FINIQUITO - ${nombreTrimmed} OR nombre without prefix = ${nombreTrimmed})`,
       );
 
       const result = await this.prisma.$queryRawUnsafe<any[]>(query);

@@ -1106,4 +1106,35 @@ export class FichajesService {
       );
     }
   }
+
+  /**
+   * Obține lista de luni (YYYY-MM) în care un angajat are fichajes
+   * @param codigo - Codigo angajatului
+   * @returns Array de string-uri în format YYYY-MM
+   */
+  async getMonthsWithFichajes(codigo: string): Promise<string[]> {
+    try {
+      if (!codigo || codigo.trim() === '') {
+        throw new BadRequestException('CODIGO is required');
+      }
+
+      const codigoClean = codigo.trim();
+
+      const query = `
+        SELECT DISTINCT
+          DATE_FORMAT(FECHA, '%Y-%m') AS mes
+        FROM Fichaje
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+        ORDER BY mes DESC
+      `;
+
+      const rows =
+        await this.prisma.$queryRawUnsafe<Array<{ mes: string }>>(query);
+
+      return rows.map((row) => row.mes);
+    } catch (error) {
+      this.logger.error('Error getting months with fichajes:', error);
+      throw new BadRequestException('Error al obtener los meses con fichajes');
+    }
+  }
 }

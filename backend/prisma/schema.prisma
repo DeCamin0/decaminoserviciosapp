@@ -327,15 +327,37 @@ model CuadernoIncidencias {
 }
 
 model DocumentosOficiales {
-  doc_id                 Int     @id @default(autoincrement())
-  id                     String  @db.VarChar(50)
-  correo_electronico     String? @db.VarChar(255)
-  tipo_documento         String? @db.VarChar(255)
-  nombre_archivo         String? @db.VarChar(255)
-  nombre_empleado        String? @db.VarChar(500)
-  fecha_creacion         String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  doc_id                 Int      @id @default(autoincrement())
+  id                     String   @db.VarChar(50)
+  correo_electronico     String?  @db.VarChar(255)
+  tipo_documento         String?  @db.VarChar(255)
+  nombre_archivo         String?  @db.VarChar(255)
+  nombre_empleado        String?  @db.VarChar(500)
+  fecha_creacion         String?  @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
   archivo                Bytes?
-  Permisso_Para_Empleado String? @map("Permisso Para Empleado") @db.VarChar(50)
+  Permisso_Para_Empleado String?  @map("Permisso Para Empleado") @db.VarChar(50)
+  
+  // Email ingestion fields
+  status                 String?  @default("SENT") @db.VarChar(50) // PENDING_REVIEW, APPROVED, SENT, ARCHIVED, REJECTED
+  source_message_id      String?  @db.VarChar(255)
+  source_attachment_id   String?  @db.VarChar(255)
+  source_mailbox         String?  @db.VarChar(255)
+  idempotency_key        String?  @db.VarChar(255)
+  detected_empleado_id   String?  @db.VarChar(50)
+  detected_tipo_documento String? @db.VarChar(255)
+  confirmed_empleado_id  String?  @db.VarChar(50)
+  confirmed_tipo_documento String? @db.VarChar(255)
+  action                 String?  @db.VarChar(50) // send, archive, reject
+  rejection_reason       String?  @db.Text
+  approved_by            String?  @db.VarChar(50)
+  approved_at            DateTime? @db.Timestamp(0)
+  distributed_at         DateTime? @db.Timestamp(0)
+  ingestion_metadata     Json?
+
+  @@index([status], map: "idx_documentos_oficiales_status")
+  @@index([idempotency_key], map: "idx_documentos_oficiales_idempotency")
+  @@index([source_message_id], map: "idx_documentos_oficiales_source_message")
+  @@index([status, fecha_creacion], map: "idx_documentos_oficiales_pending_review")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.

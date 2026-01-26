@@ -254,6 +254,56 @@ export class DocumentosOficialesController {
   }
 
   /**
+   * Endpoint pentru actualizarea vizibilității documentului pentru angajat
+   * POST /api/documentos-oficiales/:docId/visible
+   * Body: { visible: boolean | string | number }
+   * IMPORTANT: Această rută trebuie definită înainte de rutele cu parametri mai generali (ex: @Delete(':id'))
+   */
+  @Post(':docId/visible')
+  async updateDocumentVisibility(
+    @Param('docId') docId: string,
+    @Body() body: { visible: boolean | string | number },
+  ) {
+    try {
+      const visible =
+        body.visible === true ||
+        String(body.visible).toLowerCase() === 'true' ||
+        body.visible === 1;
+      const permissoValue = visible ? 'SI' : null;
+
+      this.logger.log(
+        `🔄 Update document visibility request - docId: ${docId}, visible: ${visible}`,
+      );
+
+      const result =
+        await this.documentosOficialesService.updatePermissoParaEmpleado(
+          docId,
+          permissoValue,
+        );
+
+      return {
+        success: true,
+        message: result.message,
+        affectedRows: result.affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error in DocumentosOficialesController.updateDocumentVisibility:',
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar la visibilidad del documento: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Endpoint pentru ștergerea unui documento oficial
    * POST /api/documentos-oficiales/delete (pentru compatibilitate cu n8n)
    * Accepts body: { id: number, nombre_archivo?: string, filename?: string, fileName?: string }

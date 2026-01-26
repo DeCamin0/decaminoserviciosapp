@@ -35,6 +35,17 @@ SMTP_USER=info@decaminoservicios.com
 SMTP_PASSWORD=your-password-here
 SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>
 
+# IMAP (pentru extragerea email-urilor și documentelor)
+# Folosește aceleași credențiale ca SMTP (SMTP_USER și SMTP_PASSWORD)
+# Opțional: poți seta IMAP_HOST și IMAP_PORT dacă diferă de default-uri
+IMAP_HOST=imap.serviciodecorreo.es
+IMAP_PORT=993
+IMAP_SECURE=true
+IMAP_MAILBOX=INBOX
+# NOTĂ: IMAP_USER și IMAP_PASSWORD sunt opționale - se folosesc SMTP_USER și SMTP_PASSWORD dacă nu sunt setate
+# Folder unde se mută mesajele procesate (după ce documentele sunt salvate cu succes)
+IMAP_PROCESSED_MAILBOX=Extrase
+
 # Telegram (pentru notificări pe Telegram)
 # IMPORTANT: Configurează aceste variabile pentru a trimite notificări Telegram!
 

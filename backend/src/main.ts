@@ -115,10 +115,12 @@ async function bootstrap() {
     next(error);
   });
 
-  // Increase body size limit for file uploads
-  app.use(json({ limit: '50mb' }));
+  // Increase body size limit for file uploads and folder ingestion (base64 content can be large)
+  // Base64 encoding increases size by ~33%, so for multiple large files we need a high limit
+  // For folder ingestion with many files, we may need up to 500MB
+  app.use(json({ limit: '500mb' }));
   // Parse URL-encoded bodies
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '500mb' }));
 
   // Enable CORS for frontend communication
   // Suport pentru multiple origins (development și producție)
