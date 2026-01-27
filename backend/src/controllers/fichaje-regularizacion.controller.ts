@@ -9,6 +9,7 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { FichajeRegularizacionService } from '../services/fichaje-regularizacion.service';
@@ -201,6 +202,10 @@ export class FichajeRegularizacionController {
    * GET /api/registros/check-confirmation/:codigo/:fecha
    * Verifică dacă trebuie să se afișeze confirmare
    */
+  @Throttle({
+    short: { ttl: 10000, limit: 100 }, // 100 request-uri pe 10 secunde
+    medium: { ttl: 60000, limit: 500 }, // 500 request-uri pe minut
+  })
   @Get('check-confirmation/:codigo/:fecha')
   @UseGuards(JwtAuthGuard)
   async checkConfirmation(
