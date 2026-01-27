@@ -119,4 +119,80 @@ export class InspeccionesController {
       throw new BadRequestException('Error al descargar la inspección');
     }
   }
+
+  /**
+   * GET endpoint pentru obținerea documentelor materialelor pentru o inspecție
+   * GET /api/inspecciones/materiales?inspeccion_id=xxx
+   */
+  @Get('materiales')
+  async getMaterialesDocumentos(@Query('inspeccion_id') inspeccionId: string) {
+    try {
+      this.logger.log(
+        `📦 Get materiales documentos request - inspeccion_id: ${inspeccionId}`,
+      );
+
+      const documentos =
+        await this.inspeccionesService.getMaterialesDocumentos(inspeccionId);
+
+      return documentos;
+    } catch (error: any) {
+      this.logger.error(
+        'Error in InspeccionesController.getMaterialesDocumentos:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        'Error al obtener los documentos de materiales',
+      );
+    }
+  }
+
+  /**
+   * GET endpoint pentru descărcarea unui document de material
+   * GET /api/inspecciones/materiales/download?doc_id=xxx
+   */
+  @Get('materiales/download')
+  async downloadMaterialDocumento(
+    @Query('doc_id') docId: string,
+    @Res() res: Response,
+  ) {
+    try {
+      this.logger.log(`📥 Download material document request - doc_id: ${docId}`);
+
+      const docIdNumber = parseInt(docId, 10);
+      if (isNaN(docIdNumber)) {
+        throw new BadRequestException('doc_id debe ser un número válido');
+      }
+
+      const { archivo, tipo_mime, nombre_archivo } =
+        await this.inspeccionesService.downloadMaterialDocumento(docIdNumber);
+
+      // Setează headers pentru download
+      res.setHeader('Content-Type', tipo_mime);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${nombre_archivo}"`,
+      );
+      res.setHeader('Content-Length', archivo.length.toString());
+
+      // Trimite buffer-ul ca răspuns
+      res.send(archivo);
+    } catch (error: any) {
+      this.logger.error(
+        'Error in InspeccionesController.downloadMaterialDocumento:',
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        'Error al descargar el documento de material',
+      );
+    }
+  }
 }

@@ -290,6 +290,77 @@ export class InspeccionesService {
 
       await this.prisma.$executeRawUnsafe(query);
 
+      // Dacă este "Entrega de Materiales", salvează documentele materialelor
+      if (tipoInspeccion === 'entrega-materiales' && body.puncte && Array.isArray(body.puncte)) {
+        this.logger.log(
+          `📦 Processing ${body.puncte.length} material documents for inspeccion ${inspeccionId}`,
+        );
+
+        for (let index = 0; index < body.puncte.length; index++) {
+          const material = body.puncte[index];
+          
+          // Verifică dacă materialul are document (albarán/factura)
+          if (material.documentoBase64 || material.documento) {
+            try {
+              const documentoBase64 = material.documentoBase64 || material.documento;
+              // Remove data: prefix if present
+              const base64Data = documentoBase64.includes(',')
+                ? documentoBase64.split(',')[1]
+                : documentoBase64;
+              const documentoBuffer = Buffer.from(base64Data, 'base64');
+
+              // Determină tipul documentului din nume sau tip
+              let tipoDocumento = 'albaran'; // default
+              const nombreArchivo = material.documentoNombre || material.documento?.name || `material_${index + 1}.pdf`;
+              if (nombreArchivo.toLowerCase().includes('factura') || 
+                  material.documentoType?.toLowerCase().includes('factura')) {
+                tipoDocumento = 'factura';
+              }
+
+              // Descrierea materialului
+              const descripcionMaterial = material.descripcion || material.desc || material.text || null;
+
+              // Salvează documentul în MaterialesDocumentos
+              const materialQuery = `
+                INSERT INTO MaterialesDocumentos (
+                  inspeccion_id,
+                  material_index,
+                  tipo_documento,
+                  nombre_archivo,
+                  archivo,
+                  fecha_creacion,
+                  codigo_empleado,
+                  nombre_empleado,
+                  descripcion_material
+                ) VALUES (
+                  ${this.escapeSql(inspeccionId)},
+                  ${index},
+                  ${this.escapeSql(tipoDocumento)},
+                  ${this.escapeSql(nombreArchivo)},
+                  ${documentoBuffer ? `0x${documentoBuffer.toString('hex')}` : 'NULL'},
+                  ${this.escapeSql(timestamp)},
+                  ${this.escapeSql(codigoEmpleado)},
+                  ${this.escapeSql(empleadoNombre)},
+                  ${descripcionMaterial ? this.escapeSql(descripcionMaterial) : 'NULL'}
+                )
+              `;
+
+              await this.prisma.$executeRawUnsafe(materialQuery);
+
+              this.logger.log(
+                `✅ Material document ${index + 1} saved: ${nombreArchivo} (${tipoDocumento})`,
+              );
+            } catch (materialError: any) {
+              this.logger.error(
+                `❌ Error saving material document ${index + 1}:`,
+                materialError,
+              );
+              // Continuă cu următorul material chiar dacă unul eșuează
+            }
+          }
+        }
+      }
+
       this.logger.log(
         `✅ Inspeccion created successfully with ID: ${inspeccionId}`,
       );
@@ -306,6 +377,150 @@ export class InspeccionesService {
       }
       throw new BadRequestException(
         `Error al crear la inspección: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Get material documents for an inspection
+   * @param inspeccionId - Inspeccion ID (string)
+   */
+  async getMaterialesDocumentos(inspeccionId: string): Promise<
+    Array<{
+      doc_id: number;
+      material_index: number;
+      tipo_documento: string | null;
+      nombre_archivo: string | null;
+      fecha_creacion: string | null;
+      descripcion_material: string | null;
+    }>
+  > {
+    try {
+      if (!inspeccionId || inspeccionId.trim() === '') {
+        throw new BadRequestException('Se requiere "inspeccionId"');
+      }
+
+      this.logger.log(
+        `📦 Get materiales documentos request - inspeccionId: ${inspeccionId}`,
+      );
+
+      const escapedId = this.escapeSql(inspeccionId.trim());
+
+      // Query pentru a obține documentele materialelor (fără archivo pentru performanță)
+      const query = `
+        SELECT 
+          doc_id,
+          material_index,
+          tipo_documento,
+          nombre_archivo,
+          fecha_creacion,
+          descripcion_material
+        FROM MaterialesDocumentos
+        WHERE inspeccion_id = ${escapedId}
+        ORDER BY material_index ASC
+      `;
+
+      const result =
+        await this.prisma.$queryRawUnsafe<Array<{
+          doc_id: number;
+          material_index: number;
+          tipo_documento: string | null;
+          nombre_archivo: string | null;
+          fecha_creacion: string | null;
+          descripcion_material: string | null;
+        }>>(query);
+
+      this.logger.log(
+        `✅ Found ${result.length} material documents for inspeccion ${inspeccionId}`,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting materiales documentos:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener los documentos de materiales: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Download material document by doc_id
+   * @param docId - Document ID (number)
+   */
+  async downloadMaterialDocumento(docId: number): Promise<{
+    archivo: Buffer;
+    tipo_mime: string;
+    nombre_archivo: string;
+  }> {
+    try {
+      if (!docId || docId <= 0) {
+        throw new BadRequestException('Se requiere "docId" válido');
+      }
+
+      this.logger.log(`📥 Download material document request - docId: ${docId}`);
+
+      // Query pentru a obține documentul
+      const query = `
+        SELECT 
+          nombre_archivo,
+          archivo
+        FROM MaterialesDocumentos
+        WHERE doc_id = ${docId}
+        LIMIT 1
+      `;
+
+      const result = await this.prisma.$queryRawUnsafe<Array<{
+        nombre_archivo: string | null;
+        archivo: Buffer | null;
+      }>>(query);
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException(
+          `Documento de material con doc_id ${docId} no encontrado`,
+        );
+      }
+
+      const documento = result[0];
+
+      if (!documento.archivo) {
+        throw new NotFoundException(
+          `El archivo del documento ${docId} está vacío`,
+        );
+      }
+
+      const nombreArchivo =
+        documento.nombre_archivo || `material_document_${docId}.pdf`;
+
+      // Determină tipul MIME din extensie
+      let tipoMime = 'application/pdf';
+      if (nombreArchivo.toLowerCase().endsWith('.jpg') || nombreArchivo.toLowerCase().endsWith('.jpeg')) {
+        tipoMime = 'image/jpeg';
+      } else if (nombreArchivo.toLowerCase().endsWith('.png')) {
+        tipoMime = 'image/png';
+      }
+
+      this.logger.log(
+        `✅ Material document downloaded: ${nombreArchivo} (${tipoMime})`,
+      );
+
+      return {
+        archivo: documento.archivo,
+        tipo_mime: tipoMime,
+        nombre_archivo: nombreArchivo,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error downloading material document:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al descargar el documento de material: ${error.message}`,
       );
     }
   }

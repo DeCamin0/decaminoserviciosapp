@@ -121,10 +121,24 @@ export default function EmpleadosPage() {
   const [estadisticas, setEstadisticas] = useState([]);
   const [loadingEstadisticas, setLoadingEstadisticas] = useState(false);
   const [errorEstadisticas, setErrorEstadisticas] = useState(null);
+  const [mesSeleccionado, setMesSeleccionado] = useState(() => {
+    // Default: luna curentă (YYYY-MM)
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   
   // State pentru sortare
   const [sortColumn, setSortColumn] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc'); // 'asc' sau 'desc'
+  
+  // State pentru filtru (click pe card-uri) - pentru cuadrante/horario
+  const [filtroActivo, setFiltroActivo] = useState(null); // null, 'sin_cuadrante_ni_horario', 'con_cuadrante', 'con_horario', 'con_ambos'
+  
+  // State pentru filtre multiple pe coloane (estado, grupo, centro, etc.)
+  const [filtrosColumnas, setFiltrosColumnas] = useState({}); // { estado: 'ACTIVO', grupo: 'Limpiador', centro: '...', etc. }
+  
+  // State pentru dropdown-uri de filtrare
+  const [filtroDropdownAbierto, setFiltroDropdownAbierto] = useState(null); // null sau numele coloanei (ex: 'estado', 'grupo')
   
   // State pentru editare inline
   const [editingCell, setEditingCell] = useState(null); // { codigo, field }
@@ -153,12 +167,15 @@ export default function EmpleadosPage() {
   }, [clientes]);
 
   // Funcție pentru a obține estadísticas
-  const fetchEstadisticas = useCallback(async () => {
+  const fetchEstadisticas = useCallback(async (mes) => {
     setLoadingEstadisticas(true);
     setErrorEstadisticas(null);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(routes.getEstadisticasEmpleados, {
+      const url = mes 
+        ? `${routes.getEstadisticasEmpleados}?mes=${encodeURIComponent(mes)}`
+        : routes.getEstadisticasEmpleados;
+      const response = await fetch(url, {
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',
         },
@@ -198,10 +215,54 @@ export default function EmpleadosPage() {
     }
   }, []); // Eliminăm clientes din dependențe pentru a preveni loop-ul
 
+  // Funcție helper pentru a obține luna curentă
+  const getCurrentMonth = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // Funcție helper pentru a obține luna următoare
+  const getNextMonth = () => {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // Funcție pentru a formata luna pentru afișare (ex: "2026-01" -> "Enero 2026")
+  const formatMonth = (mes) => {
+    if (!mes) return '';
+    const [year, month] = mes.split('-');
+    const monthNames = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    return `${monthNames[parseInt(month) - 1]} ${year}`;
+  };
+
+  // Funcție pentru a genera lista de luni (ultimele 12 luni)
+  const getMonthsList = () => {
+    const months = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mes = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      months.push(mes);
+    }
+    return months;
+  };
+
+  // Handler pentru schimbarea lunii
+  const handleMesChange = (mes) => {
+    setMesSeleccionado(mes);
+    fetchEstadisticas(mes);
+  };
+
   const handleExportEstadisticasExcel = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const url = routes.exportEstadisticasEmpleadosExcel;
+      const url = mesSeleccionado
+        ? `${routes.exportEstadisticasEmpleadosExcel}?mes=${encodeURIComponent(mesSeleccionado)}`
+        : routes.exportEstadisticasEmpleadosExcel;
       
       const response = await fetch(url, {
         method: 'GET',
@@ -238,7 +299,9 @@ export default function EmpleadosPage() {
   const handleExportEstadisticasPDF = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const url = routes.exportEstadisticasEmpleadosPDF;
+      const url = mesSeleccionado
+        ? `${routes.exportEstadisticasEmpleadosPDF}?mes=${encodeURIComponent(mesSeleccionado)}`
+        : routes.exportEstadisticasEmpleadosPDF;
       
       const response = await fetch(url, {
         method: 'GET',
@@ -1438,10 +1501,10 @@ export default function EmpleadosPage() {
     }
     
     if (activeTab === 'estadisticas') {
-      fetchEstadisticas();
+      fetchEstadisticas(mesSeleccionado);
       fetchGruposForEdit(); // Încarcă lista de grupuri pentru editare
     }
-  }, [activeTab, authUser, fetchEstadisticas]);
+  }, [activeTab, authUser, fetchEstadisticas, mesSeleccionado]);
 
   // Cargar avatares para los empleados visibles
   useEffect(() => {
@@ -2778,7 +2841,12 @@ export default function EmpleadosPage() {
   };
 
   // Funcție pentru sortare
-  const handleSort = (column) => {
+  const handleSort = (column, event) => {
+    // Dacă click-ul e pe iconița de filtru, nu face sortare
+    if (event && (event.target.closest('.filter-icon') || event.target.closest('.filter-dropdown'))) {
+      return;
+    }
+    
     if (sortColumn === column) {
       // Dacă coloana e deja sortată, schimbă direcția
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -2786,6 +2854,16 @@ export default function EmpleadosPage() {
       // Dacă e o coloană nouă, setează-o ca sortată ascendent
       setSortColumn(column);
       setSortDirection('asc');
+    }
+  };
+  
+  // Handler pentru a deschide/închide dropdown-ul de filtrare
+  const toggleFiltroDropdown = (columna, event) => {
+    event.stopPropagation();
+    if (filtroDropdownAbierto === columna) {
+      setFiltroDropdownAbierto(null);
+    } else {
+      setFiltroDropdownAbierto(columna);
     }
   };
 
@@ -2809,9 +2887,13 @@ export default function EmpleadosPage() {
       case 'cuadrante':
         return emp.cuadrante === 'Sí' || emp.cuadrante === true ? 1 : 0;
       case 'horario':
+        // Sortare: No = 0, Normal = 1, Multicentro = 2, Ambele = 3
+        if (emp.horario === 'No' || !emp.horario) return 0;
+        if (emp.horario === 'Normal') return 1;
+        if (emp.horario === 'Multicentro') return 2;
+        if (emp.horario === 'Ambele') return 3;
+        // Fallback pentru valori vechi (Sí/Si)
         return emp.horario === 'Si' || emp.horario === 'Sí' || emp.horario === true ? 1 : 0;
-      case 'centro_2':
-        return emp.centro_2 === 'Si' || emp.centro_2 === 'Sí' || emp.centro_2 === true ? 1 : 0;
       case 'detalles_faltantes':
         return (emp.detalles_faltantes || '').toLowerCase();
       default:
@@ -2819,13 +2901,84 @@ export default function EmpleadosPage() {
     }
   };
 
-  // Date sortate
+  // Date filtrate și sortate
   const sortedEstadisticas = useMemo(() => {
+    // Aplică filtrul dacă există
+    let filtered = estadisticas;
+    
+    if (filtroActivo) {
+      switch (filtroActivo) {
+        case 'sin_cuadrante_ni_horario':
+          filtered = estadisticas.filter(
+            emp => (emp.tiene_cuadrante === 'No' || !emp.tiene_cuadrante) 
+                && (emp.tiene_horario === 'No' || !emp.tiene_horario || emp.tiene_horario === null)
+          );
+          break;
+        case 'con_cuadrante':
+          filtered = estadisticas.filter(emp => emp.tiene_cuadrante === 'Sí');
+          break;
+        case 'con_horario':
+          filtered = estadisticas.filter(
+            emp => emp.tiene_horario && 
+                   emp.tiene_horario !== 'No' && 
+                   emp.tiene_horario !== null &&
+                   emp.tiene_horario !== ''
+          );
+          break;
+        case 'con_ambos':
+          filtered = estadisticas.filter(
+            emp => emp.tiene_cuadrante === 'Sí' 
+                && emp.tiene_horario && 
+                emp.tiene_horario !== 'No' && 
+                emp.tiene_horario !== null &&
+                emp.tiene_horario !== ''
+          );
+          break;
+        default:
+          filtered = estadisticas;
+      }
+    }
+    
+    // Aplică filtrele pe coloane (dacă există)
+    if (Object.keys(filtrosColumnas).length > 0) {
+      filtered = filtered.filter((emp) => {
+        // Verifică fiecare filtru pe coloană
+        for (const [columna, valor] of Object.entries(filtrosColumnas)) {
+          let empValue = '';
+          switch (columna) {
+            case 'estado':
+              empValue = (emp.estado || '').toString().trim();
+              break;
+            case 'grupo':
+              empValue = (emp.grupo || '').toString().trim();
+              break;
+            case 'centro':
+              empValue = (emp.centro || '').toString().trim();
+              break;
+            case 'cuadrante':
+              empValue = (emp.tiene_cuadrante || '').toString().trim();
+              break;
+            case 'horario':
+              empValue = (emp.tiene_horario || '').toString().trim();
+              break;
+            default:
+              empValue = '';
+          }
+          // Dacă valoarea nu se potrivește, exclude angajatul
+          if (empValue !== valor) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+    
+    // Aplică sortarea
     if (!sortColumn) {
-      return estadisticas;
+      return filtered;
     }
 
-    return [...estadisticas].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const aValue = getSortValue(a, sortColumn);
       const bValue = getSortValue(b, sortColumn);
 
@@ -2843,7 +2996,66 @@ export default function EmpleadosPage() {
       }
       return 0;
     });
-  }, [estadisticas, sortColumn, sortDirection]);
+  }, [estadisticas, sortColumn, sortDirection, filtroActivo, filtrosColumnas]);
+  
+  // Funcție pentru a obține valorile unice dintr-o coloană (pentru dropdown-uri)
+  const getValoresUnicosColumna = useCallback((columna) => {
+    const valores = new Set();
+    estadisticas.forEach((emp) => {
+      let valor = '';
+      switch (columna) {
+        case 'estado':
+          valor = (emp.estado || '').toString().trim();
+          break;
+        case 'grupo':
+          valor = (emp.grupo || '').toString().trim();
+          break;
+        case 'centro':
+          valor = (emp.centro || '').toString().trim();
+          break;
+        default:
+          valor = '';
+      }
+      if (valor && valor !== '-' && valor !== '') {
+        valores.add(valor);
+      }
+    });
+    return Array.from(valores).sort();
+  }, [estadisticas]);
+  
+  // Handler pentru a seta/unseta un filtru pe o coloană
+  const handleFiltroColumna = (columna, valor) => {
+    setFiltrosColumnas((prev) => {
+      const nuevo = { ...prev };
+      if (valor === null || valor === '' || valor === 'TODOS') {
+        delete nuevo[columna];
+      } else {
+        nuevo[columna] = valor;
+      }
+      return nuevo;
+    });
+    setFiltroDropdownAbierto(null);
+  };
+  
+  // Handler pentru a reseta toate filtrele pe coloane
+  const limpiarTodosFiltrosColumnas = () => {
+    setFiltrosColumnas({});
+    setFiltroDropdownAbierto(null);
+  };
+  
+  // Închide dropdown-urile când se face click în afara lor
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.filter-dropdown') && !event.target.closest('.filter-icon')) {
+        setFiltroDropdownAbierto(null);
+      }
+    };
+    
+    if (filtroDropdownAbierto) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [filtroDropdownAbierto]);
 
   return (
     <div className="space-y-6">
@@ -4272,7 +4484,49 @@ export default function EmpleadosPage() {
         ) : activeTab === 'estadisticas' && canManageEmployees ? (
           // Tab pentru estadísticas empleados
           <div className="p-6 w-full">
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">📊 Estadísticas de Empleados</h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">📊 Estadísticas de Empleados</h2>
+              
+              {/* Selector de lună */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Butoane rapide */}
+                <button
+                  onClick={() => handleMesChange(getCurrentMonth())}
+                  className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+                    mesSeleccionado === getCurrentMonth()
+                      ? 'bg-blue-500 text-white shadow-lg'
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                  }`}
+                >
+                  🔵 {formatMonth(getCurrentMonth())}
+                </button>
+                <button
+                  onClick={() => handleMesChange(getNextMonth())}
+                  className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+                    mesSeleccionado === getNextMonth()
+                      ? 'bg-green-500 text-white shadow-lg'
+                      : 'bg-green-100 text-green-700 hover:bg-green-200'
+                  }`}
+                >
+                  🟢 {formatMonth(getNextMonth())}
+                </button>
+                
+                {/* Dropdown pentru alte luni */}
+                <div className="relative">
+                  <select
+                    value={mesSeleccionado}
+                    onChange={(e) => handleMesChange(e.target.value)}
+                    className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 font-semibold text-sm cursor-pointer hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {getMonthsList().map((mes) => (
+                      <option key={mes} value={mes}>
+                        {formatMonth(mes)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
             
             {loadingEstadisticas ? (
               <TableLoading columns={10} rows={5} className="p-4" />
@@ -4281,7 +4535,182 @@ export default function EmpleadosPage() {
             ) : estadisticas.length === 0 ? (
               <div className="text-center text-gray-500 py-8">No hay estadísticas disponibles</div>
             ) : (
-              <div className="overflow-x-auto w-full">
+              <>
+                {/* Statistici rapide */}
+                {(() => {
+                  // Sin cuadrante NI horario (niciunul dintre ele)
+                  const sinCuadranteNiHorario = estadisticas.filter(
+                    emp => (emp.tiene_cuadrante === 'No' || !emp.tiene_cuadrante) 
+                        && (emp.tiene_horario === 'No' || !emp.tiene_horario || emp.tiene_horario === null)
+                  ).length;
+                  
+                  // Con cuadrante (indiferent de horario)
+                  const conCuadrante = estadisticas.filter(
+                    emp => emp.tiene_cuadrante === 'Sí'
+                  ).length;
+                  
+                  // Con horario (indiferent de cuadrante) - orice tip: Normal, Multicentro, Ambele
+                  const conHorario = estadisticas.filter(
+                    emp => emp.tiene_horario && 
+                           emp.tiene_horario !== 'No' && 
+                           emp.tiene_horario !== null &&
+                           emp.tiene_horario !== ''
+                  ).length;
+                  
+                  // Total angajați
+                  const totalEmpleados = estadisticas.length;
+                  
+                  // Con ambele (cuadrante ȘI horario)
+                  const conAmbele = estadisticas.filter(
+                    emp => emp.tiene_cuadrante === 'Sí' 
+                        && emp.tiene_horario && 
+                        emp.tiene_horario !== 'No' && 
+                        emp.tiene_horario !== null &&
+                        emp.tiene_horario !== ''
+                  ).length;
+                  
+                  return (
+                    <div className="mb-4">
+                      {/* Butoane pentru a reseta filtrele */}
+                      {(filtroActivo || Object.keys(filtrosColumnas).length > 0) && (
+                        <div className="mb-3 flex items-center gap-2 flex-wrap">
+                          {filtroActivo && (
+                            <button
+                              onClick={() => setFiltroActivo(null)}
+                              className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm font-medium flex items-center gap-2 transition-all"
+                            >
+                              <span>✕</span>
+                              <span>Limpiar filtro cuadrante/horario</span>
+                            </button>
+                          )}
+                          {Object.keys(filtrosColumnas).length > 0 && (
+                            <>
+                              <button
+                                onClick={limpiarTodosFiltrosColumnas}
+                                className="px-3 py-1.5 bg-blue-200 text-blue-700 rounded-lg hover:bg-blue-300 text-sm font-medium flex items-center gap-2 transition-all"
+                              >
+                                <span>✕</span>
+                                <span>Limpiar filtros columnas ({Object.keys(filtrosColumnas).length})</span>
+                              </button>
+                              {/* Afișează filtrele active pe coloane */}
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {Object.entries(filtrosColumnas).map(([columna, valor]) => (
+                                  <span
+                                    key={columna}
+                                    className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-1"
+                                  >
+                                    {columna}: {valor}
+                                    <button
+                                      onClick={() => handleFiltroColumna(columna, null)}
+                                      className="text-blue-600 hover:text-blue-800"
+                                    >
+                                      ✕
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          <span className="text-sm text-gray-600">
+                            Mostrando {sortedEstadisticas.length} de {totalEmpleados} empleados
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Card: Sin cuadrante ni horario */}
+                        <div 
+                          onClick={() => setFiltroActivo(filtroActivo === 'sin_cuadrante_ni_horario' ? null : 'sin_cuadrante_ni_horario')}
+                          className={`bg-red-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
+                            filtroActivo === 'sin_cuadrante_ni_horario'
+                              ? 'border-red-500 shadow-lg ring-2 ring-red-300'
+                              : 'border-red-200 hover:border-red-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-red-700 mb-1">⚠️ Sin Cuadrante ni Horario</p>
+                              <p className="text-3xl font-bold text-red-800">{sinCuadranteNiHorario}</p>
+                              <p className="text-xs text-red-600 mt-1">de {totalEmpleados} empleados</p>
+                            </div>
+                            <div className="text-4xl">🚨</div>
+                          </div>
+                          {filtroActivo === 'sin_cuadrante_ni_horario' && (
+                            <div className="mt-2 text-xs text-red-700 font-semibold">✓ Filtro activo</div>
+                          )}
+                        </div>
+                        
+                        {/* Card: Con cuadrante */}
+                        <div 
+                          onClick={() => setFiltroActivo(filtroActivo === 'con_cuadrante' ? null : 'con_cuadrante')}
+                          className={`bg-green-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
+                            filtroActivo === 'con_cuadrante'
+                              ? 'border-green-500 shadow-lg ring-2 ring-green-300'
+                              : 'border-green-200 hover:border-green-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-green-700 mb-1">✅ Con Cuadrante</p>
+                              <p className="text-3xl font-bold text-green-800">{conCuadrante}</p>
+                              <p className="text-xs text-green-600 mt-1">de {totalEmpleados} empleados</p>
+                            </div>
+                            <div className="text-4xl">📅</div>
+                          </div>
+                          {filtroActivo === 'con_cuadrante' && (
+                            <div className="mt-2 text-xs text-green-700 font-semibold">✓ Filtro activo</div>
+                          )}
+                        </div>
+                        
+                        {/* Card: Con horario */}
+                        <div 
+                          onClick={() => setFiltroActivo(filtroActivo === 'con_horario' ? null : 'con_horario')}
+                          className={`bg-blue-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
+                            filtroActivo === 'con_horario'
+                              ? 'border-blue-500 shadow-lg ring-2 ring-blue-300'
+                              : 'border-blue-200 hover:border-blue-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-blue-700 mb-1">⏰ Con Horario</p>
+                              <p className="text-3xl font-bold text-blue-800">{conHorario}</p>
+                              <p className="text-xs text-blue-600 mt-1">de {totalEmpleados} empleados</p>
+                          </div>
+                            <div className="text-4xl">🕐</div>
+                          </div>
+                          {filtroActivo === 'con_horario' && (
+                            <div className="mt-2 text-xs text-blue-700 font-semibold">✓ Filtro activo</div>
+                          )}
+                        </div>
+                        
+                        {/* Card: Con ambele */}
+                        <div 
+                          onClick={() => setFiltroActivo(filtroActivo === 'con_ambos' ? null : 'con_ambos')}
+                          className={`bg-purple-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
+                            filtroActivo === 'con_ambos'
+                              ? 'border-purple-500 shadow-lg ring-2 ring-purple-300'
+                              : 'border-purple-200 hover:border-purple-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-purple-700 mb-1">✨ Con Ambele</p>
+                              <p className="text-3xl font-bold text-purple-800">{conAmbele}</p>
+                              <p className="text-xs text-purple-600 mt-1">cuadrante + horario</p>
+                            </div>
+                            <div className="text-4xl">⭐</div>
+                          </div>
+                          {filtroActivo === 'con_ambos' && (
+                            <div className="mt-2 text-xs text-purple-700 font-semibold">✓ Filtro activo</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                <div className="overflow-x-auto w-full">
                 <table className="w-full bg-white border border-gray-200 rounded-lg shadow-sm" style={{ minWidth: '1520px' }}>
                   <thead className="bg-gray-50">
                     <tr>
@@ -4328,18 +4757,55 @@ export default function EmpleadosPage() {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none relative" 
                         style={{ width: '100px' }}
-                        onClick={() => handleSort('estado')}
+                        onClick={(e) => handleSort('estado', e)}
                       >
-                        <div className="flex items-center gap-1">
-                          estado
-                          {sortColumn === 'estado' && (
-                            <span className="text-blue-600">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-1 justify-between">
+                          <div className="flex items-center gap-1">
+                            estado
+                            {sortColumn === 'estado' && (
+                              <span className="text-blue-600">
+                                {sortDirection === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                            {filtrosColumnas.estado && (
+                              <span className="text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5" title={`Filtro: ${filtrosColumnas.estado}`}>
+                                🔽
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="filter-icon text-gray-400 hover:text-blue-600 p-0.5"
+                            onClick={(e) => toggleFiltroDropdown('estado', e)}
+                            title="Filtrar por estado"
+                          >
+                            🔍
+                          </button>
                         </div>
+                        {filtroDropdownAbierto === 'estado' && (
+                          <div className="filter-dropdown absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[150px] max-h-[200px] overflow-y-auto">
+                            <div className="p-2">
+                              <button
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded"
+                                onClick={() => handleFiltroColumna('estado', null)}
+                              >
+                                Todos
+                              </button>
+                              {getValoresUnicosColumna('estado').map((valor) => (
+                                <button
+                                  key={valor}
+                                  className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                    filtrosColumnas.estado === valor ? 'bg-blue-100 font-semibold' : ''
+                                  }`}
+                                  onClick={() => handleFiltroColumna('estado', valor)}
+                                >
+                                  {valor}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </th>
                       <th 
                         className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
@@ -4356,74 +4822,244 @@ export default function EmpleadosPage() {
                         </div>
                       </th>
                       <th 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none relative" 
                         style={{ width: '250px' }}
-                        onClick={() => handleSort('centro')}
+                        onClick={(e) => handleSort('centro', e)}
                       >
-                        <div className="flex items-center gap-1">
-                          centro
-                          {sortColumn === 'centro' && (
-                            <span className="text-blue-600">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-1 justify-between">
+                          <div className="flex items-center gap-1">
+                            centro
+                            {sortColumn === 'centro' && (
+                              <span className="text-blue-600">
+                                {sortDirection === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                            {filtrosColumnas.centro && (
+                              <span className="text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5" title={`Filtro: ${filtrosColumnas.centro}`}>
+                                🔽
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="filter-icon text-gray-400 hover:text-blue-600 p-0.5"
+                            onClick={(e) => toggleFiltroDropdown('centro', e)}
+                            title="Filtrar por centro"
+                          >
+                            🔍
+                          </button>
                         </div>
+                        {filtroDropdownAbierto === 'centro' && (
+                          <div className="filter-dropdown absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[250px] max-h-[200px] overflow-y-auto">
+                            <div className="p-2">
+                              <input
+                                type="text"
+                                placeholder="Buscar centro..."
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded mb-2"
+                                onChange={() => {
+                                  // Funcționalitate de căutare poate fi adăugată aici în viitor
+                                  // Momentan, dropdown-ul afișează primele 20 centre
+                                }}
+                                autoFocus
+                              />
+                              <button
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded"
+                                onClick={() => handleFiltroColumna('centro', null)}
+                              >
+                                Todos
+                              </button>
+                              {getValoresUnicosColumna('centro').slice(0, 20).map((valor) => (
+                                <button
+                                  key={valor}
+                                  className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                    filtrosColumnas.centro === valor ? 'bg-blue-100 font-semibold' : ''
+                                  }`}
+                                  onClick={() => handleFiltroColumna('centro', valor)}
+                                >
+                                  {valor}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </th>
                       <th 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none relative" 
                         style={{ width: '150px' }}
-                        onClick={() => handleSort('grupo')}
+                        onClick={(e) => handleSort('grupo', e)}
                       >
-                        <div className="flex items-center gap-1">
-                          grupo
-                          {sortColumn === 'grupo' && (
-                            <span className="text-blue-600">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-1 justify-between">
+                          <div className="flex items-center gap-1">
+                            grupo
+                            {sortColumn === 'grupo' && (
+                              <span className="text-blue-600">
+                                {sortDirection === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                            {filtrosColumnas.grupo && (
+                              <span className="text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5" title={`Filtro: ${filtrosColumnas.grupo}`}>
+                                🔽
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="filter-icon text-gray-400 hover:text-blue-600 p-0.5"
+                            onClick={(e) => toggleFiltroDropdown('grupo', e)}
+                            title="Filtrar por grupo"
+                          >
+                            🔍
+                          </button>
                         </div>
+                        {filtroDropdownAbierto === 'grupo' && (
+                          <div className="filter-dropdown absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[180px] max-h-[200px] overflow-y-auto">
+                            <div className="p-2">
+                              <button
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded"
+                                onClick={() => handleFiltroColumna('grupo', null)}
+                              >
+                                Todos
+                              </button>
+                              {getValoresUnicosColumna('grupo').map((valor) => (
+                                <button
+                                  key={valor}
+                                  className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                    filtrosColumnas.grupo === valor ? 'bg-blue-100 font-semibold' : ''
+                                  }`}
+                                  onClick={() => handleFiltroColumna('grupo', valor)}
+                                >
+                                  {valor}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </th>
                       <th 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none relative" 
                         style={{ width: '60px' }}
-                        onClick={() => handleSort('cuadrante')}
+                        onClick={(e) => handleSort('cuadrante', e)}
                       >
-                        <div className="flex items-center gap-1">
-                          cuadrante
-                          {sortColumn === 'cuadrante' && (
-                            <span className="text-blue-600">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-1 justify-between">
+                          <div className="flex items-center gap-1">
+                            cuadrante
+                            {sortColumn === 'cuadrante' && (
+                              <span className="text-blue-600">
+                                {sortDirection === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                            {filtrosColumnas.cuadrante && (
+                              <span className="text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5" title={`Filtro: ${filtrosColumnas.cuadrante}`}>
+                                🔽
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="filter-icon text-gray-400 hover:text-blue-600 p-0.5"
+                            onClick={(e) => toggleFiltroDropdown('cuadrante', e)}
+                            title="Filtrar por cuadrante"
+                          >
+                            🔍
+                          </button>
                         </div>
+                        {filtroDropdownAbierto === 'cuadrante' && (
+                          <div className="filter-dropdown absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[120px]">
+                            <div className="p-2">
+                              <button
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded"
+                                onClick={() => handleFiltroColumna('cuadrante', null)}
+                              >
+                                Todos
+                              </button>
+                              <button
+                                className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                  filtrosColumnas.cuadrante === 'Sí' ? 'bg-blue-100 font-semibold' : ''
+                                }`}
+                                onClick={() => handleFiltroColumna('cuadrante', 'Sí')}
+                              >
+                                Sí
+                              </button>
+                              <button
+                                className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                  filtrosColumnas.cuadrante === 'No' ? 'bg-blue-100 font-semibold' : ''
+                                }`}
+                                onClick={() => handleFiltroColumna('cuadrante', 'No')}
+                              >
+                                No
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </th>
                       <th 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none relative" 
                         style={{ width: '60px' }}
-                        onClick={() => handleSort('horario')}
+                        onClick={(e) => handleSort('horario', e)}
                       >
-                        <div className="flex items-center gap-1">
-                          horario
-                          {sortColumn === 'horario' && (
-                            <span className="text-blue-600">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-1 justify-between">
+                          <div className="flex items-center gap-1">
+                            horario
+                            {sortColumn === 'horario' && (
+                              <span className="text-blue-600">
+                                {sortDirection === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                            {filtrosColumnas.horario && (
+                              <span className="text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5" title={`Filtro: ${filtrosColumnas.horario}`}>
+                                🔽
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="filter-icon text-gray-400 hover:text-blue-600 p-0.5"
+                            onClick={(e) => toggleFiltroDropdown('horario', e)}
+                            title="Filtrar por horario"
+                          >
+                            🔍
+                          </button>
                         </div>
-                      </th>
-                      <th 
-                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
-                        style={{ width: '50px' }}
-                        onClick={() => handleSort('centro_2')}
-                      >
-                        <div className="flex items-center gap-1">
-                          centro
-                          {sortColumn === 'centro_2' && (
-                            <span className="text-blue-600">
-                              {sortDirection === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
-                        </div>
+                        {filtroDropdownAbierto === 'horario' && (
+                          <div className="filter-dropdown absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[140px]">
+                            <div className="p-2">
+                              <button
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded"
+                                onClick={() => handleFiltroColumna('horario', null)}
+                              >
+                                Todos
+                              </button>
+                              <button
+                                className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                  filtrosColumnas.horario === 'No' ? 'bg-blue-100 font-semibold' : ''
+                                }`}
+                                onClick={() => handleFiltroColumna('horario', 'No')}
+                              >
+                                No
+                              </button>
+                              <button
+                                className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                  filtrosColumnas.horario === 'Normal' ? 'bg-blue-100 font-semibold' : ''
+                                }`}
+                                onClick={() => handleFiltroColumna('horario', 'Normal')}
+                              >
+                                Normal
+                              </button>
+                              <button
+                                className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                  filtrosColumnas.horario === 'Multicentro' ? 'bg-blue-100 font-semibold' : ''
+                                }`}
+                                onClick={() => handleFiltroColumna('horario', 'Multicentro')}
+                              >
+                                Multicentro
+                              </button>
+                              <button
+                                className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-100 rounded ${
+                                  filtrosColumnas.horario === 'Ambele' ? 'bg-blue-100 font-semibold' : ''
+                                }`}
+                                onClick={() => handleFiltroColumna('horario', 'Ambele')}
+                              >
+                                Ambele
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </th>
                       <th 
                         className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b cursor-pointer hover:bg-gray-100 select-none" 
@@ -4684,20 +5320,19 @@ export default function EmpleadosPage() {
                         </td>
                         <td className="px-3 py-3 text-sm">
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                            emp.tiene_horario === 'Sí' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
+                            emp.tiene_horario === 'No' || !emp.tiene_horario
+                              ? 'bg-red-100 text-red-800'
+                              : emp.tiene_horario === 'Normal'
+                              ? 'bg-blue-100 text-blue-800'
+                              : emp.tiene_horario === 'Multicentro'
+                              ? 'bg-purple-100 text-purple-800'
+                              : emp.tiene_horario === 'Ambele'
+                              ? 'bg-green-100 text-green-800'
+                              : emp.tiene_horario === 'Sí' || emp.tiene_horario === 'Si' // Fallback pentru valori vechi
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
                           }`}>
                             {emp.tiene_horario || '-'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                            emp.tiene_centro === 'Sí' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {emp.tiene_centro || '-'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-sm text-gray-600">
@@ -4733,7 +5368,8 @@ export default function EmpleadosPage() {
                     <span>Exportar PDF</span>
                   </button>
                 </div>
-              </div>
+                </div>
+              </>
             )}
           </div>
         ) : activeTab === 'corregir-nombres' && canManageEmployees ? (

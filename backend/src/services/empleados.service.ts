@@ -56,8 +56,19 @@ export class EmpleadosService {
    * Obtiene estadísticas completas de empleados (cuadrante, horario, centro)
    * Nota: Acest endpoint este accesibil doar pentru manageri (protejat în frontend cu canManageEmployees)
    */
-  async getEstadisticasEmpleados(): Promise<any[]> {
+  async getEstadisticasEmpleados(mes?: string): Promise<any[]> {
     // Nu aplicăm RBAC aici - doar managerii pot accesa tab-ul în frontend
+    // Validăm și normalizăm parametrul mes (format: YYYY-MM)
+    let mesParam = mes?.trim();
+    if (!mesParam || !/^\d{4}-\d{2}$/.test(mesParam)) {
+      // Dacă nu e valid, folosim luna curentă
+      const now = new Date();
+      mesParam = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    // Escape SQL pentru siguranță
+    const mesEscaped = this.escapeSql(mesParam);
+
     const query = `
       SELECT
         CAST(de.CODIGO AS CHAR) AS CODIGO,
@@ -71,7 +82,7 @@ export class EmpleadosService {
           WHEN EXISTS (
             SELECT 1 FROM cuadrante c 
             WHERE CAST(c.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
-              AND c.LUNA = DATE_FORMAT(NOW(), '%Y-%m')
+              AND c.LUNA = ${mesEscaped}
           ) THEN 'Sí'
           ELSE 'No'
         END AS tiene_cuadrante,
@@ -80,7 +91,21 @@ export class EmpleadosService {
             SELECT 1 FROM horarios h
             WHERE h.centro_nombre = de.\`CENTRO TRABAJO\`
               AND h.grupo_nombre = de.\`GRUPO\`
-          ) THEN 'Sí'
+          ) AND EXISTS (
+            SELECT 1 FROM horario_multicentro hm
+            WHERE CAST(hm.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
+              AND hm.LUNA = ${mesEscaped}
+          ) THEN 'Ambele'
+          WHEN EXISTS (
+            SELECT 1 FROM horarios h
+            WHERE h.centro_nombre = de.\`CENTRO TRABAJO\`
+              AND h.grupo_nombre = de.\`GRUPO\`
+          ) THEN 'Normal'
+          WHEN EXISTS (
+            SELECT 1 FROM horario_multicentro hm
+            WHERE CAST(hm.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
+              AND hm.LUNA = ${mesEscaped}
+          ) THEN 'Multicentro'
           ELSE 'No'
         END AS tiene_horario,
         CASE 
@@ -120,9 +145,9 @@ export class EmpleadosService {
     }
   }
 
-  async exportEstadisticasEmpleadosExcel(): Promise<Buffer> {
+  async exportEstadisticasEmpleadosExcel(mes?: string): Promise<Buffer> {
     try {
-      const estadisticas = await this.getEstadisticasEmpleados();
+      const estadisticas = await this.getEstadisticasEmpleados(mes);
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Estadísticas Empleados');
@@ -181,9 +206,9 @@ export class EmpleadosService {
     }
   }
 
-  async exportEstadisticasEmpleadosPDF(): Promise<Buffer> {
+  async exportEstadisticasEmpleadosPDF(mes?: string): Promise<Buffer> {
     try {
-      const estadisticas = await this.getEstadisticasEmpleados();
+      const estadisticas = await this.getEstadisticasEmpleados(mes);
 
       return new Promise((resolve, reject) => {
         const doc = new PDFDocument({

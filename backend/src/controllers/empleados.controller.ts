@@ -8,6 +8,7 @@ import {
   UploadedFiles,
   Body,
   Param,
+  Query,
   Req,
   BadRequestException,
   Logger,
@@ -81,12 +82,14 @@ export class EmpleadosController {
 
   @Get('estadisticas')
   @UseGuards(JwtAuthGuard)
-  async getEstadisticasEmpleados() {
+  async getEstadisticasEmpleados(@Query('mes') mes?: string) {
     try {
-      this.logger.log('📊 Get estadísticas empleados request');
+      this.logger.log(
+        `📊 Get estadísticas empleados request${mes ? ` for mes: ${mes}` : ' (current month)'}`,
+      );
       // Nu trebuie să verificăm RBAC aici - doar managerii pot accesa tab-ul în frontend
       const estadisticas =
-        await this.empleadosService.getEstadisticasEmpleados();
+        await this.empleadosService.getEstadisticasEmpleados(mes);
       return { success: true, estadisticas };
     } catch (error: any) {
       this.logger.error('❌ Error getting estadísticas empleados:', error);
@@ -98,16 +101,19 @@ export class EmpleadosController {
 
   @Get('estadisticas/export-excel')
   @UseGuards(JwtAuthGuard)
-  async exportEstadisticasExcel(@Res() res: any) {
+  async exportEstadisticasExcel(@Query('mes') mes: string, @Res() res: any) {
     try {
-      this.logger.log('📊 Export estadísticas empleados Excel request');
+      this.logger.log(
+        `📊 Export estadísticas empleados Excel request${mes ? ` for mes: ${mes}` : ''}`,
+      );
       const buffer =
-        await this.empleadosService.exportEstadisticasEmpleadosExcel();
+        await this.empleadosService.exportEstadisticasEmpleadosExcel(mes);
 
+      const mesSuffix = mes ? `_${mes}` : '';
       res.set({
         'Content-Type':
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename=Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.xlsx`,
+        'Content-Disposition': `attachment; filename=Estadisticas_Empleados${mesSuffix}_${new Date().toISOString().split('T')[0]}.xlsx`,
         'Content-Length': buffer.length,
       });
 
@@ -122,15 +128,18 @@ export class EmpleadosController {
 
   @Get('estadisticas/export-pdf')
   @UseGuards(JwtAuthGuard)
-  async exportEstadisticasPDF(@Res() res: any) {
+  async exportEstadisticasPDF(@Query('mes') mes: string, @Res() res: any) {
     try {
-      this.logger.log('📊 Export estadísticas empleados PDF request');
+      this.logger.log(
+        `📊 Export estadísticas empleados PDF request${mes ? ` for mes: ${mes}` : ''}`,
+      );
       const buffer =
-        await this.empleadosService.exportEstadisticasEmpleadosPDF();
+        await this.empleadosService.exportEstadisticasEmpleadosPDF(mes);
 
+      const mesSuffix = mes ? `_${mes}` : '';
       res.set({
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename=Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.pdf`,
+        'Content-Disposition': `attachment; filename=Estadisticas_Empleados${mesSuffix}_${new Date().toISOString().split('T')[0]}.pdf`,
         'Content-Length': buffer.length,
       });
 

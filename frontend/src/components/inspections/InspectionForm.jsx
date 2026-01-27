@@ -355,6 +355,7 @@ const InspectionForm = ({ type }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [errorNotification, setErrorNotification] = useState(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [signatureType, setSignatureType] = useState('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
@@ -374,7 +375,10 @@ const InspectionForm = ({ type }) => {
   const [newPointData, setNewPointData] = useState({
     descriere: '',
     tip: 'obligatoriu', // obligatoriu sau opcional
-    observatii: ''
+    observatii: '',
+    cantitate: '', // Pentru materiale
+    precio: '', // Pentru materiale
+    documento: null // Pentru materiale - factură/albarán (File object)
   });
   const [signatureDraft, setSignatureDraft] = useState('');
   
@@ -437,7 +441,8 @@ const InspectionForm = ({ type }) => {
     const minutes = String(now.getMinutes()).padStart(2, '0');
 
     const typePrefix = type === 'limpieza' ? 'LIMP' :
-                      type === 'servicios' ? 'SERV' : 'PERS';
+                      type === 'servicios' ? 'SERV' :
+                      type === 'entrega-materiales' ? 'ENTR' : 'PERS';
     const timestamp = `${year}${month}${day}-${hours}${minutes}`;
 
     return `${typePrefix}-${timestamp}`;
@@ -522,15 +527,17 @@ const InspectionForm = ({ type }) => {
       try {
         const response = await fetch(url, options);
         
-        if (response.status === 409) {
-          // Duplicate - nu retrimiteți
-          throw new Error('Duplicate inspection');
+        // Pentru erori 4xx (client errors), nu retry - returnează direct
+        // pentru ca handler-ul principal să gestioneze mesajele specifice
+        if (response.status >= 400 && response.status < 500) {
+          return response;
         }
         
+        // Pentru erori 5xx (server errors), retry cu backoff
         if (response.status >= 500) {
-          // Server error - retry cu backoff
           if (i < maxRetries - 1) {
             const delay = Math.pow(2, i) * 1000; // Exponential backoff
+            console.log(`⚠️ Server error ${response.status}, retrying in ${delay}ms... (attempt ${i + 1}/${maxRetries})`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
@@ -538,9 +545,15 @@ const InspectionForm = ({ type }) => {
         
         return response;
       } catch (error) {
-        if (i === maxRetries - 1) throw error;
-        const delay = Math.pow(2, i) * 1000;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        // Pentru erori de rețea, retry
+        if (i < maxRetries - 1) {
+          const delay = Math.pow(2, i) * 1000;
+          console.log(`⚠️ Network error, retrying in ${delay}ms... (attempt ${i + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        // Dacă toate retry-urile au eșuat, aruncă eroarea
+        throw error;
       }
     }
   };
@@ -649,7 +662,7 @@ const InspectionForm = ({ type }) => {
       zones = ZONES_LIMPIEZA;
     } else if (type === 'servicios') {
       zones = ZONES_SERVICIOS;
-    } else if (type === 'personalizada') {
+    } else if (type === 'personalizada' || type === 'entrega-materiales') {
       zones = ZONES_PERSONALIZADA; // Va fi gol inițial, se vor adăuga manual
     }
 
@@ -749,10 +762,13 @@ const InspectionForm = ({ type }) => {
     }));
   };
 
-  // Funcție pentru adăugarea unui punct personalizat
+  // Funcție pentru adăugarea unui punct personalizat sau material
   const handleAddCustomPoint = () => {
     if (!newPointData.descriere.trim()) {
-      alert('Por favor, introduce una descripción para el punto de inspección.');
+      const message = type === 'entrega-materiales' 
+        ? 'Por favor, introduce una descripción para el material.'
+        : 'Por favor, introduce una descripción para el punto de inspección.';
+      alert(message);
       return;
     }
 
@@ -764,7 +780,13 @@ const InspectionForm = ({ type }) => {
       rango: 3,
       calidad: 3,
       tip: newPointData.tip,
-      isCustom: true // Marchează că este un punct personalizat
+      isCustom: true, // Marchează că este un punct personalizat
+      // Câmpuri specifice pentru materiale
+      ...(type === 'entrega-materiales' && {
+        cantitate: newPointData.cantitate.trim() || '',
+        precio: newPointData.precio.trim() || '',
+        documento: newPointData.documento || null // Fișier factură/albarán
+      })
     };
 
     setFormData(prev => ({
@@ -772,11 +794,14 @@ const InspectionForm = ({ type }) => {
       puncte: [...prev.puncte, newPoint]
     }));
 
-    // Reset formularul pentru noul punct
+    // Reset formularul pentru noul punct/material
     setNewPointData({
       descriere: '',
       tip: 'obligatoriu',
-      observatii: ''
+      observatii: '',
+      cantitate: '',
+      precio: '',
+      documento: null
     });
 
     setShowAddPointModal(false);
@@ -887,7 +912,7 @@ const InspectionForm = ({ type }) => {
               
                              {/* Header */}
                <View style={styles.header}>
-                 <Text style={styles.title}>Inspección de {type === 'limpieza' ? 'Limpieza' : type === 'servicios' ? 'Servicios Auxiliares' : 'Personalizada'}</Text>
+                 <Text style={styles.title}>Inspección de {type === 'limpieza' ? 'Limpieza' : type === 'servicios' ? 'Servicios Auxiliares' : type === 'entrega-materiales' ? 'Entrega de Materiales' : 'Personalizada'}</Text>
                  <Text style={styles.inspectionNumber}>Número: {safeText(formData.nr)}</Text>
                  <Text style={styles.date}>Fecha: {safeText(formData.data)}</Text>
                  <Text style={styles.location}>Ubicación: {safeText(formData.locatie)}</Text>
@@ -944,6 +969,29 @@ const InspectionForm = ({ type }) => {
                           <Text style={styles.pointDetail}>Status: {safeText(punct.status)}</Text>
                           <Text style={styles.pointDetail}>Rango: {punct.rango || 0}/5</Text>
                           <Text style={styles.pointDetail}>Calidad: {punct.calidad || 0}/5</Text>
+                          {punct.observatii && punct.observatii.trim() !== '' && (
+                            <Text style={styles.pointDetail}>Observaciones: {punct.observatii}</Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })
+                ) : type === 'entrega-materiales' ? (
+                  // Entrega de Materiales: afișează materialele cu cantitate, preț și document
+                  formData.puncte.map((punct) => {
+                    return (
+                      <View key={punct.id} style={styles.point}>
+                        <Text style={styles.pointTitle}>{safeText(punct.descriere)}</Text>
+                        <View style={styles.pointDetails}>
+                          {punct.cantitate && punct.cantitate.trim() !== '' && (
+                            <Text style={styles.pointDetail}>Cantidad: {safeText(punct.cantitate)}</Text>
+                          )}
+                          {punct.precio && punct.precio.trim() !== '' && (
+                            <Text style={styles.pointDetail}>Precio: {parseFloat(punct.precio).toFixed(2)} €</Text>
+                          )}
+                          {punct.documento && (
+                            <Text style={styles.pointDetail}>Documento: {punct.documento.name || 'Adjunto'}</Text>
+                          )}
                           {punct.observatii && punct.observatii.trim() !== '' && (
                             <Text style={styles.pointDetail}>Observaciones: {punct.observatii}</Text>
                           )}
@@ -1182,9 +1230,31 @@ const InspectionForm = ({ type }) => {
           scorTotal = totalScoruri / (formData.puncte.length * 2);
         }
         
+        // Convertește documentele (facturi/albaranes) în base64 pentru materiale
+        const puncteConDocumentos = await Promise.all(
+          formData.puncte.map(async (punct) => {
+            if (type === 'entrega-materiales' && punct.documento && punct.documento instanceof File) {
+              try {
+                const documentoBase64 = await blobToBase64(punct.documento);
+                return {
+                  ...punct,
+                  documentoBase64: documentoBase64,
+                  documentoNombre: punct.documento.name,
+                  documentoType: punct.documento.type
+                };
+              } catch (error) {
+                console.error('Error converting document to base64:', error);
+                return punct; // Returnează punctul fără document dacă conversia eșuează
+              }
+            }
+            return punct;
+          })
+        );
+        
         // Salvează datele pentru previzualizare
         setPdfPreviewData({
           ...formData,
+          puncte: puncteConDocumentos,
           pdfBase64: base64,
           scor_total: Math.round(scorTotal * 100) / 100 // Rotunjire la 2 zecimale
         });
@@ -1225,16 +1295,123 @@ const InspectionForm = ({ type }) => {
     }
   };
 
+  // Funcție helper pentru a extrage mesajul de eroare din răspuns
+  const extractErrorMessage = async (response) => {
+    try {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        // Backend-ul returnează erori în formatul: { message: "...", statusCode: 400 }
+        return errorData.message || errorData.error || JSON.stringify(errorData);
+      } else {
+        const errorText = await response.text();
+        return errorText || response.statusText;
+      }
+    } catch (parseError) {
+      console.warn('⚠️ Error parsing error response:', parseError);
+      return response.statusText || 'Error desconocido';
+    }
+  };
+
+  // Funcție helper pentru a determina mesajul utilizatorului bazat pe eroare
+  const getUserFriendlyMessage = (statusCode, backendMessage, error) => {
+    // Verifică status code-ul
+    if (statusCode === 401) {
+      return {
+        title: 'Sesión expirada',
+        message: 'Tu sesión ha expirado. Por favor, cierra sesión y vuelve a iniciar sesión.',
+        type: 'auth'
+      };
+    }
+
+    if (statusCode === 413 || (backendMessage && backendMessage.toLowerCase().includes('too large'))) {
+      return {
+        title: 'Archivo demasiado grande',
+        message: 'El PDF de la inspección es demasiado grande. El tamaño máximo es de 5MB. Por favor, intenta reducir el tamaño del PDF o comprimirlo.',
+        type: 'size'
+      };
+    }
+
+    // Verifică mesajele specifice din backend
+    if (backendMessage) {
+      const lowerMessage = backendMessage.toLowerCase();
+      
+      if (lowerMessage.includes('ya existe') || lowerMessage.includes('already exists') || lowerMessage.includes('duplicate')) {
+        return {
+          title: 'Inspección duplicada',
+          message: 'Esta inspección ya fue enviada anteriormente. No es necesario enviarla de nuevo.',
+          type: 'duplicate'
+        };
+      }
+
+      if (lowerMessage.includes('se requiere') || lowerMessage.includes('required') || lowerMessage.includes('missing')) {
+        if (lowerMessage.includes('pdf') || lowerMessage.includes('pdfbase64')) {
+          return {
+            title: 'PDF faltante',
+            message: 'No se pudo generar el PDF de la inspección. Por favor, intenta generar el PDF nuevamente.',
+            type: 'validation'
+          };
+        }
+        if (lowerMessage.includes('nr') || lowerMessage.includes('inspeccionid') || lowerMessage.includes('id')) {
+          return {
+            title: 'ID faltante',
+            message: 'Falta el identificador de la inspección. Por favor, intenta generar el PDF nuevamente.',
+            type: 'validation'
+          };
+        }
+        return {
+          title: 'Datos incompletos',
+          message: `Faltan datos requeridos: ${backendMessage}`,
+          type: 'validation'
+        };
+      }
+
+      if (lowerMessage.includes('timeout') || lowerMessage.includes('timed out')) {
+        return {
+          title: 'Tiempo de espera agotado',
+          message: 'La operación tardó demasiado tiempo. Por favor, verifica tu conexión e intenta de nuevo.',
+          type: 'timeout'
+        };
+      }
+
+      if (lowerMessage.includes('connection') || lowerMessage.includes('network') || lowerMessage.includes('fetch')) {
+        return {
+          title: 'Error de conexión',
+          message: 'No se pudo conectar con el servidor. Por favor, verifica tu conexión a internet e intenta de nuevo.',
+          type: 'network'
+        };
+      }
+    }
+
+    // Mesaj generic cu detalii pentru debugging
+    return {
+      title: 'Error al enviar la inspección',
+      message: backendMessage 
+        ? `Error: ${backendMessage}\n\nPor favor, intenta de nuevo. Si el problema persiste, contacta al administrador.`
+        : 'Ocurrió un error inesperado al enviar la inspección. Por favor, intenta de nuevo.',
+      type: 'generic',
+      details: error?.message || 'Error desconocido'
+    };
+  };
+
   // Funcție separată pentru trimiterea efectivă
   const handleSendInspection = async () => {
     if (!pdfPreviewData) return;
 
     setLoading(true);
+    let response = null;
+    let statusCode = null;
+    let backendMessage = null;
+
     try {
       // Curăță payload-ul - elimină câmpurile undefined
       const cleanPayload = JSON.parse(JSON.stringify(pdfPreviewData, (key, value) => 
         value === undefined ? undefined : value
       ));
+
+      // Calculează dimensiunea aproximativă a PDF-ului pentru logging
+      const pdfSize = cleanPayload.pdfBase64 || cleanPayload.pdf;
+      const pdfSizeMB = pdfSize ? (pdfSize.length * 3 / 4 / 1024 / 1024).toFixed(2) : 'N/A';
 
       // Add JWT token for backend API calls
       const token = localStorage.getItem('auth_token');
@@ -1250,15 +1427,26 @@ const InspectionForm = ({ type }) => {
         fetchHeaders['Authorization'] = `Bearer ${token}`;
       }
 
+      // Log detaliat pentru debugging
+      console.log('📤 Enviando inspección:', {
+        inspeccionId: cleanPayload.nr || cleanPayload.inspeccionId || 'N/A',
+        tipo: cleanPayload.type || 'N/A',
+        pdfSize: `${pdfSizeMB} MB`,
+        hasPdf: !!(cleanPayload.pdfBase64 || cleanPayload.pdf),
+        hasToken: !!token
+      });
+
       // Trimite totul ca JSON simplu cu header-uri speciale
-      const response = await fetchWithRetry(routes.addInspeccion, {
+      response = await fetchWithRetry(routes.addInspeccion, {
         method: 'POST',
         headers: fetchHeaders,
         body: JSON.stringify(cleanPayload)
       });
 
-              if (response.ok) {
-          // const responseText = await response.text();
+      statusCode = response.status;
+
+      if (response.ok) {
+        console.log('✅ Inspección enviada exitosamente');
         
         setSuccess(true);
         
@@ -1279,16 +1467,52 @@ const InspectionForm = ({ type }) => {
         setShowPdfPreview(false);
         setPdfPreviewData(null);
       } else {
-        const errorText = await response.text();
-        console.error('❌ Server error:', errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+        // Extrage mesajul de eroare din backend
+        backendMessage = await extractErrorMessage(response);
+        
+        // Log detaliat pentru debugging
+        console.error('❌ Server error:', {
+          status: statusCode,
+          statusText: response.statusText,
+          message: backendMessage,
+          inspeccionId: cleanPayload.nr || cleanPayload.inspeccionId || 'N/A',
+          pdfSize: `${pdfSizeMB} MB`
+        });
+
+        throw new Error(`HTTP ${statusCode}: ${backendMessage}`);
       }
     } catch (error) {
-      console.error('❌ Error submitting inspection:', error);
-      if (error.message === 'Duplicate inspection') {
-        alert('Esta inspección ya fue enviada anteriormente.');
+      // Log detaliat pentru debugging
+      console.error('❌ Error submitting inspection:', {
+        error: error.message,
+        statusCode: statusCode || 'N/A',
+        backendMessage: backendMessage || 'N/A',
+        stack: error.stack
+      });
+
+      // Determină mesajul utilizatorului
+      const userMessage = getUserFriendlyMessage(statusCode, backendMessage, error);
+
+      // Afișează mesajul specific
+      if (userMessage.type === 'auth') {
+        // Pentru erori de autentificare, sugestie de reconectare
+        if (confirm(`${userMessage.title}\n\n${userMessage.message}\n\n¿Deseas cerrar sesión ahora?`)) {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/login';
+        }
       } else {
-        alert('Error al enviar la inspección. Inténtalo de nuevo.');
+        // Afișează toast notification în loc de alert
+        setErrorNotification({
+          title: userMessage.title,
+          message: userMessage.message,
+          type: userMessage.type,
+          details: userMessage.details
+        });
+        
+        // Auto-închide după 8 secunde
+        setTimeout(() => {
+          setErrorNotification(null);
+        }, 8000);
       }
     } finally {
       setLoading(false);
@@ -1326,8 +1550,8 @@ const InspectionForm = ({ type }) => {
       zones = ZONES_LIMPIEZA;
     } else if (type === 'servicios') {
       zones = ZONES_SERVICIOS;
-    } else if (type === 'personalizada') {
-      zones = ZONES_PERSONALIZADA; // Va fi gol pentru personalizada
+    } else if (type === 'personalizada' || type === 'entrega-materiales') {
+      zones = ZONES_PERSONALIZADA; // Va fi gol pentru personalizada/entrega-materiales
     }
     
     const initialPoints = zones.map((zone) => ({
@@ -1363,6 +1587,50 @@ const InspectionForm = ({ type }) => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-2 sm:px-4 lg:px-6">
+      {/* Error Toast Notification */}
+      {errorNotification && (
+        <div className="fixed top-20 right-4 z-50 animate-slide-in-right">
+          <div
+            className="p-4 rounded-xl shadow-2xl backdrop-blur-xl bg-gradient-to-r from-red-500 to-rose-500 text-white"
+            style={{
+              minWidth: '350px',
+              maxWidth: '500px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="text-2xl flex-shrink-0">
+                {errorNotification.type === 'duplicate' ? '⚠️' : 
+                 errorNotification.type === 'auth' ? '🔒' :
+                 errorNotification.type === 'size' ? '📦' :
+                 errorNotification.type === 'timeout' ? '⏱️' :
+                 errorNotification.type === 'network' ? '🌐' : '❌'}
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-lg mb-1">
+                  {errorNotification.title}
+                </div>
+                <div className="text-sm opacity-90 whitespace-pre-line">
+                  {errorNotification.message}
+                </div>
+                {errorNotification.details && (
+                  <div className="text-xs opacity-75 mt-2 pt-2 border-t border-white/20">
+                    Detalles técnicos: {errorNotification.details}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setErrorNotification(null)}
+                className="text-white/80 hover:text-white transition-colors flex-shrink-0"
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header ULTRA MODERN con Glassmorphism */}
       <div className="relative group">
         {/* Glow effect */}
@@ -1662,35 +1930,48 @@ const InspectionForm = ({ type }) => {
                 ? 'bg-gradient-to-br from-amber-500 to-orange-600'
                 : type === 'servicios'
                 ? 'bg-gradient-to-br from-teal-500 to-cyan-600'
+                : type === 'entrega-materiales'
+                ? 'bg-gradient-to-br from-orange-500 to-amber-600'
                 : 'bg-gradient-to-br from-purple-500 to-purple-600'
             }`}>
-              <span className="text-2xl">✅</span>
+              <span className="text-2xl">{type === 'entrega-materiales' ? '📦' : '✅'}</span>
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-black text-gray-900">
-                Puntos de Inspección
+                {type === 'entrega-materiales' ? 'Materiales' : 'Puntos de Inspección'}
         </h2>
               <p className="text-xs sm:text-sm text-gray-600 font-medium">
-                {type === 'limpieza' ? 'Limpieza' : type === 'servicios' ? 'Servicios Auxiliares' : 'Personalizada'} - {formData.puncte.length} zonas
+                {type === 'limpieza' ? 'Limpieza' : 
+                 type === 'servicios' ? 'Servicios Auxiliares' : 
+                 type === 'entrega-materiales' ? `${formData.puncte.length} material${formData.puncte.length !== 1 ? 'es' : ''}` :
+                 'Personalizada'} - {type !== 'entrega-materiales' ? `${formData.puncte.length} zonas` : ''}
               </p>
             </div>
           </div>
           
-          {/* Add Point Button for Personalizada */}
-          {type === 'personalizada' && (
+          {/* Add Point/Material Button for Personalizada and Entrega de Materiales */}
+          {(type === 'personalizada' || type === 'entrega-materiales') && (
             <div className="mb-6">
               <button
                 onClick={() => setShowAddPointModal(true)}
                 className="group relative w-full px-6 py-4 rounded-2xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
                 style={{
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                  boxShadow: '0 8px 20px rgba(139, 92, 246, 0.3)'
+                  background: type === 'entrega-materiales' 
+                    ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)'
+                    : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                  boxShadow: type === 'entrega-materiales'
+                    ? '0 8px 20px rgba(249, 115, 22, 0.3)'
+                    : '0 8px 20px rgba(139, 92, 246, 0.3)'
                 }}
               >
-                <div className="absolute inset-0 bg-purple-400 opacity-0 group-hover:opacity-30 transition-opacity"></div>
+                <div className={`absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity ${
+                  type === 'entrega-materiales' ? 'bg-orange-400' : 'bg-purple-400'
+                }`}></div>
                 <div className="relative flex items-center justify-center gap-3">
                   <span className="text-2xl">➕</span>
-                  <span className="text-lg">Añadir Punto de Inspección</span>
+                  <span className="text-lg">
+                    {type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto de Inspección'}
+                  </span>
                 </div>
               </button>
             </div>
@@ -1698,40 +1979,66 @@ const InspectionForm = ({ type }) => {
           
           <div className="space-y-3 sm:space-y-4">
           {formData.puncte.map((point, index) => (
-              <div key={point.id} className={`group/point relative border-2 rounded-2xl p-3 sm:p-4 transition-all duration-300 hover:shadow-lg ${
+              <div key={point.id}               className={`group/point relative border-2 rounded-2xl p-3 sm:p-4 transition-all duration-300 hover:shadow-lg ${
                 type === 'limpieza'
                   ? 'border-red-200 bg-gradient-to-br from-red-50/50 to-orange-50/30 hover:border-red-300'
                   : type === 'servicios'
                   ? 'border-blue-200 bg-gradient-to-br from-blue-50/50 to-cyan-50/30 hover:border-blue-300'
+                  : type === 'entrega-materiales'
+                  ? 'border-orange-200 bg-gradient-to-br from-orange-50/50 to-amber-50/30 hover:border-orange-300'
                   : 'border-purple-200 bg-gradient-to-br from-purple-50/50 to-violet-50/30 hover:border-purple-300'
               }`}>
-                {/* Número de zona destacado */}
+                {/* Número de zona/material destacado */}
                 <div className={`absolute -top-3 left-4 px-3 py-1 rounded-full text-xs font-black shadow-md ${
                   type === 'limpieza'
                     ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white'
                     : type === 'servicios'
                     ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
+                    : type === 'entrega-materiales'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white'
                     : 'bg-gradient-to-r from-purple-500 to-violet-500 text-white'
                 }`}>
-                    Zona {index + 1}
+                    {type === 'entrega-materiales' ? `Material ${index + 1}` : `Zona ${index + 1}`}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mt-2">
                   {/* Descripción */}
                   <div className="sm:col-span-2 lg:col-span-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm sm:text-base font-bold text-gray-900">{point.descriere}</p>
-                      {type === 'personalizada' && point.isCustom && (
+                      <div className="flex-1">
+                        <p className="text-sm sm:text-base font-bold text-gray-900">{point.descriere}</p>
+                        {/* Afișează cantitatea, prețul și documentul pentru materiale */}
+                        {type === 'entrega-materiales' && (
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2">
+                            {point.cantitate && (
+                              <span className="text-xs sm:text-sm text-orange-700 font-semibold bg-orange-100 px-2 py-1 rounded-lg">
+                                📦 Cantidad: {point.cantitate}
+                              </span>
+                            )}
+                            {point.precio && (
+                              <span className="text-xs sm:text-sm text-green-700 font-semibold bg-green-100 px-2 py-1 rounded-lg">
+                                💰 Precio: {parseFloat(point.precio).toFixed(2)} €
+                              </span>
+                            )}
+                            {point.documento && (
+                              <span className="text-xs sm:text-sm text-blue-700 font-semibold bg-blue-100 px-2 py-1 rounded-lg flex items-center gap-1">
+                                📄 {point.documento.name || 'Documento adjunto'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {(type === 'personalizada' || type === 'entrega-materiales') && point.isCustom && (
                         <button
                           onClick={() => handleRemovePoint(point.id)}
                           className="ml-2 p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors"
-                          title="Eliminar punto"
+                          title={type === 'entrega-materiales' ? 'Eliminar material' : 'Eliminar punto'}
                         >
                           <span className="text-lg">🗑️</span>
                         </button>
                       )}
                     </div>
-                    {point.tip && (
+                    {point.tip && type !== 'entrega-materiales' && (
                       <p className="text-xs text-purple-600 font-medium mt-1">
                         Tipo: {point.tip === 'obligatoriu' ? 'Obligatorio' : 'Opcional'}
                       </p>
@@ -2024,39 +2331,109 @@ const InspectionForm = ({ type }) => {
         </div>
       </Modal>
 
-      {/* Modal pentru adăugarea punctelor personalizate */}
+      {/* Modal pentru adăugarea punctelor personalizate/materialelor */}
       <Modal
         isOpen={showAddPointModal}
         onClose={() => setShowAddPointModal(false)}
-        title="Añadir Punto de Inspección"
+        title={type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto de Inspección'}
       >
         <div className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-bold text-gray-800 mb-2">
-              Descripción del Punto *
+              {type === 'entrega-materiales' ? 'Descripción del Material *' : 'Descripción del Punto *'}
             </label>
             <input
               type="text"
               value={newPointData.descriere}
               onChange={(e) => setNewPointData(prev => ({ ...prev, descriere: e.target.value }))}
-              placeholder="Ej: Estado de las puertas, Limpieza de ventanas..."
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-md focus:shadow-xl focus:shadow-purple-500/20 font-medium"
+              placeholder={type === 'entrega-materiales' 
+                ? 'Ej: Material de limpieza, Suministros de oficina, Herramientas...'
+                : 'Ej: Estado de las puertas, Limpieza de ventanas...'}
+              className={`w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium ${
+                type === 'entrega-materiales'
+                  ? 'focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 focus:shadow-orange-500/20'
+                  : 'focus:ring-purple-500 focus:border-purple-500 hover:border-purple-300 focus:shadow-purple-500/20'
+              }`}
             />
           </div>
           
-          <div>
-            <label className="block text-sm font-bold text-gray-800 mb-2">
-              Tipo de Punto
-            </label>
-            <select
-              value={newPointData.tip}
-              onChange={(e) => setNewPointData(prev => ({ ...prev, tip: e.target.value }))}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-md focus:shadow-xl focus:shadow-purple-500/20 font-medium cursor-pointer"
-            >
-              <option value="obligatoriu">Obligatorio</option>
-              <option value="opcional">Opcional</option>
-            </select>
-          </div>
+          {/* Câmpuri specifice pentru materiale */}
+          {type === 'entrega-materiales' && (
+            <>
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-2">
+                  Cantidad *
+                </label>
+                <input
+                  type="text"
+                  value={newPointData.cantitate}
+                  onChange={(e) => setNewPointData(prev => ({ ...prev, cantitate: e.target.value }))}
+                  placeholder="Ej: 3, 5 unidades, 10 kg..."
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-2">
+                  Precio (€)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={newPointData.precio}
+                  onChange={(e) => setNewPointData(prev => ({ ...prev, precio: e.target.value }))}
+                  placeholder="Ej: 25.50, 100.00..."
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-2">
+                  Factura/Albarán (Opcional)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setNewPointData(prev => ({ ...prev, documento: file }));
+                  }}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium text-sm cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                />
+                {newPointData.documento && (
+                  <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                    <span>✅</span>
+                    <span>Archivo seleccionado: {newPointData.documento.name}</span>
+                    <button
+                      onClick={() => setNewPointData(prev => ({ ...prev, documento: null }))}
+                      className="ml-2 text-red-500 hover:text-red-700"
+                      title="Eliminar archivo"
+                    >
+                      ✕
+                    </button>
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+          
+          {/* Tipo de Punto - doar pentru inspecții personalizate (nu pentru materiale) */}
+          {type !== 'entrega-materiales' && (
+            <div>
+              <label className="block text-sm font-bold text-gray-800 mb-2">
+                Tipo de Punto
+              </label>
+              <select
+                value={newPointData.tip}
+                onChange={(e) => setNewPointData(prev => ({ ...prev, tip: e.target.value }))}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-md focus:shadow-xl focus:shadow-purple-500/20 font-medium cursor-pointer"
+              >
+                <option value="obligatoriu">Obligatorio</option>
+                <option value="opcional">Opcional</option>
+              </select>
+            </div>
+          )}
           
           <div>
             <label className="block text-sm font-bold text-gray-800 mb-2">
@@ -2065,9 +2442,15 @@ const InspectionForm = ({ type }) => {
             <textarea
               value={newPointData.observatii}
               onChange={(e) => setNewPointData(prev => ({ ...prev, observatii: e.target.value }))}
-              placeholder="Observaciones iniciales para este punto..."
+              placeholder={type === 'entrega-materiales'
+                ? 'Observaciones iniciales para este material...'
+                : 'Observaciones iniciales para este punto...'}
               rows={3}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-md focus:shadow-xl focus:shadow-purple-500/20 font-medium resize-none"
+              className={`w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium resize-none ${
+                type === 'entrega-materiales'
+                  ? 'focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 focus:shadow-orange-500/20'
+                  : 'focus:ring-purple-500 focus:border-purple-500 hover:border-purple-300 focus:shadow-purple-500/20'
+              }`}
             />
           </div>
           
@@ -2080,9 +2463,13 @@ const InspectionForm = ({ type }) => {
             </button>
             <button
               onClick={handleAddCustomPoint}
-              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition-colors"
+              className={`px-6 py-3 text-white font-bold rounded-xl transition-colors ${
+                type === 'entrega-materiales'
+                  ? 'bg-orange-600 hover:bg-orange-700'
+                  : 'bg-purple-600 hover:bg-purple-700'
+              }`}
             >
-              Añadir Punto
+              {type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto'}
             </button>
           </div>
         </div>

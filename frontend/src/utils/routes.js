@@ -462,6 +462,12 @@ export const routes = {
   downloadInspectionDocument: import.meta.env.DEV
     ? 'http://localhost:3000/api/inspecciones/download'
     : 'https://api.decaminoservicios.com/api/inspecciones/download',
+  getMaterialesDocumentos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/inspecciones/materiales'
+    : 'https://api.decaminoservicios.com/api/inspecciones/materiales',
+  downloadMaterialDocumento: import.meta.env.DEV
+    ? 'http://localhost:3000/api/inspecciones/materiales/download'
+    : 'https://api.decaminoservicios.com/api/inspecciones/materiales/download',
   
   // Clientes (Clients)
   getClientes: import.meta.env.DEV

@@ -161,7 +161,7 @@ export default function InspeccionesPage() {
         </div>
 
         {/* SUPER WOW 3D Selection Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 perspective-1000">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-8 perspective-1000">
           {/* Card 1 - Limpieza con efectos 3D ULTRA */}
           <div
             onClick={() => setSelectedType('limpieza')}
@@ -327,7 +327,62 @@ export default function InspeccionesPage() {
             </div>
           </div>
 
-          {/* Card 4 - Lista Inspecciones MEGA 3D */}
+          {/* Card 4 - Entrega de Materiales ULTRA 3D */}
+          <div
+            onClick={() => setSelectedType('entrega-materiales')}
+            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
+            style={{ transformStyle: 'preserve-3d' }}
+          >
+            {/* Glow effect ultra potente */}
+            <div className="absolute -inset-4 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
+            
+            {/* Card principal con glassmorphism */}
+            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-orange-100 overflow-hidden transition-all duration-700 group-hover:border-orange-300 group-hover:shadow-orange-500/50"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.4) 0%, rgba(253, 230, 138, 0.3) 50%, rgba(251, 191, 36, 0.2) 100%)',
+                   backdropFilter: 'blur(20px)',
+                   boxShadow: '0 20px 60px rgba(251, 191, 36, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
+                 }}>
+              
+              {/* Shimmer effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              
+              {/* Icon 3D con múltiples capas */}
+              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
+                   style={{ transformStyle: 'preserve-3d' }}>
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                <div className="relative w-24 h-24 bg-gradient-to-br from-orange-500 to-orange-700 rounded-full flex items-center justify-center shadow-2xl"
+                     style={{
+                       boxShadow: '0 15px 35px rgba(251, 191, 36, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
+                     }}>
+                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">📦</span>
+                </div>
+              </div>
+              
+              <h2 className="text-2xl font-black text-orange-600 mb-3 group-hover:text-orange-500 transition-colors">
+                Entrega de Materiales
+              </h2>
+              <p className="text-gray-700 mb-4 font-medium">
+                Registra la entrega de materiales y suministros a los centros de trabajo.
+              </p>
+              <div className="space-y-2 text-sm text-gray-600 font-medium">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                  <span>Puntos personalizables</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                  <span>Configuración flexible</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                  <span>Firmas digitales</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 5 - Lista Inspecciones MEGA 3D */}
           <div
             onClick={() => setSelectedType('pdf-generator')}
             className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
@@ -481,7 +536,8 @@ export default function InspeccionesPage() {
               <h1 className="text-3xl sm:text-4xl font-black bg-gradient-to-r from-red-600 via-red-500 to-orange-500 bg-clip-text text-transparent">
                 {selectedType === 'limpieza' ? 'Inspección de Limpieza' : 
                  selectedType === 'servicios' ? 'Inspección de Servicios Auxiliares' : 
-                 selectedType === 'personalizada' ? 'Inspección Personalizada' : 'Inspección'}
+                 selectedType === 'personalizada' ? 'Inspección Personalizada' : 
+                 selectedType === 'entrega-materiales' ? 'Entrega de Materiales' : 'Inspección'}
               </h1>
               <p className="text-gray-600 text-sm sm:text-base font-medium">
                 Completa todos los campos y envía la inspección

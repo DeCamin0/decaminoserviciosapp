@@ -444,6 +444,23 @@ model InspeccionesDocumentos {
   scor_total        Decimal? @map("scor_total") @db.Decimal(5, 2)
 }
 
+model MaterialesDocumentos {
+  doc_id              Int     @id @default(autoincrement())
+  inspeccion_id       String  @db.VarChar(50)
+  material_index      Int
+  tipo_documento      String? @db.VarChar(50)
+  nombre_archivo      String? @db.VarChar(255)
+  archivo             Bytes?
+  fecha_creacion      String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  codigo_empleado     String? @db.VarChar(50)
+  nombre_empleado     String? @db.VarChar(150)
+  descripcion_material String? @db.VarChar(500)
+
+  @@index([inspeccion_id], map: "idx_materiales_inspeccion")
+  @@index([codigo_empleado], map: "idx_materiales_empleado")
+  @@map("MaterialesDocumentos")
+}
+
 model LeadsDigitalizacion {
   id                    Int      @id @default(autoincrement())
   source                String   @db.VarChar(50)

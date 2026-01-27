@@ -39,13 +39,18 @@ const InspectionList = ({ onBackToSelection }) => {
   const [centros, setCentros] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   
+  // State pentru documentele materialelor (pentru fiecare inspecție)
+  const [materialesDocumentos, setMaterialesDocumentos] = useState({});
+  
   // State pentru searchbar-uri
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [centroSearchTerm, setCentroSearchTerm] = useState('');
+  const [inspectorSearchTerm, setInspectorSearchTerm] = useState('');
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [showCentroDropdown, setShowCentroDropdown] = useState(false);
   const [sortBy, setSortBy] = useState('fecha'); // fecha, tipo, inspector, trabajador, centro
   const [sortOrder, setSortOrder] = useState('desc'); // asc, desc
+  const [selectedMonthYear, setSelectedMonthYear] = useState('all'); // Format: 'YYYY-MM' sau 'all'
   
   // State pentru preview modal
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -304,10 +309,13 @@ const InspectionList = ({ onBackToSelection }) => {
           (inspection.id || inspection.id_inspeccion) // Acceptă ambele structuri
                 ).map(inspection => {
           // Mapare proprietăți spaniole la engleză cu mai multe variante
+          // Salvează data originală înainte de formatare pentru a putea fi folosită în filtre
+          const rawDate = inspection.date || inspection.fecha || inspection.fecha_subida;
           const mappedInspection = {
             id: inspection.id || inspection.id_inspeccion,
             type: inspection.type || inspection.tipo_inspeccion,
-            date: formatDate(inspection.date || inspection.fecha || inspection.fecha_subida),
+            date: formatDate(rawDate),
+            dateRaw: rawDate, // Data originală pentru filtrare și sortare
             inspector: inspection.inspector || inspection.inspector_nombre || inspection.Nombre_Supervisor || inspection['Nombre Supervisor'] || 'N/A',
             trabajador: inspection.trabajador || inspection.nombre_empleado || 'N/A',
             employeeCode: inspection.employeeCode || inspection.codigo_empleado || 'N/A',
@@ -408,6 +416,44 @@ const InspectionList = ({ onBackToSelection }) => {
     }
   ];
 
+  // Generează lista de luni/an disponibile din inspecții
+  const getAvailableMonths = () => {
+    const monthSet = new Set();
+    inspections.forEach(inspection => {
+      // Folosește dateRaw dacă există (data originală), altfel încearcă să parseze date formatat
+      const dateToUse = inspection.dateRaw || inspection.date;
+      
+      if (dateToUse && dateToUse !== 'N/A') {
+        try {
+          let date;
+          
+          // Dacă este dateRaw (ISO string sau timestamp), folosește direct
+          if (inspection.dateRaw) {
+            date = new Date(inspection.dateRaw);
+          } else {
+            // Dacă este date formatat (DD/MM/YYYY), parsează manual
+            const dateStr = inspection.date;
+            if (dateStr.includes('/')) {
+              const [day, month, year] = dateStr.split('/');
+              date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            } else {
+              date = new Date(dateStr);
+            }
+          }
+          
+          if (!isNaN(date.getTime())) {
+            const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            monthSet.add(yearMonth);
+          }
+        } catch (e) {
+          // Ignoră date invalide
+          console.warn('Error parsing date for month filter:', dateToUse, e);
+        }
+      }
+    });
+    return Array.from(monthSet).sort().reverse(); // Sortate descrescător (cel mai recent primul)
+  };
+
   const filteredInspections = inspections.filter(inspection => {
     // Validare că inspecția are toate proprietățile necesare
     if (!inspection || typeof inspection !== 'object') {
@@ -415,11 +461,14 @@ const InspectionList = ({ onBackToSelection }) => {
     }
     
     const matchesSearch = (inspection.id?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                         (inspection.inspector?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (inspection.trabajador?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (inspection.location?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     
     const matchesFilter = filterType === 'all' || inspection.type === filterType;
+    
+    // Filtrul pentru inspector - dacă există un termen de căutare, filtrează după inspector
+    const matchesInspector = !inspectorSearchTerm || 
+                            (inspection.inspector?.toLowerCase() || '').includes(inspectorSearchTerm.toLowerCase());
     
     // Filtrul pentru empleado - dacă este selectat un angajat, afișează DOAR inspecțiile lui
     const matchesEmployee = !selectedEmployee || 
@@ -431,7 +480,43 @@ const InspectionList = ({ onBackToSelection }) => {
                          (inspection.centro && inspection.centro === selectedCentro) ||
                          (inspection.employeeCode && employees.find(emp => emp.code === inspection.employeeCode)?.centro === selectedCentro);
     
-    return matchesSearch && matchesFilter && matchesEmployee && matchesCentro;
+    // Filtrul pentru lună/an - dacă este selectată o lună, afișează DOAR inspecțiile din acea lună
+    let matchesMonth = true;
+    if (selectedMonthYear !== 'all') {
+      const dateToUse = inspection.dateRaw || inspection.date;
+      if (dateToUse && dateToUse !== 'N/A') {
+        try {
+          let date;
+          
+          // Dacă este dateRaw (ISO string sau timestamp), folosește direct
+          if (inspection.dateRaw) {
+            date = new Date(inspection.dateRaw);
+          } else {
+            // Dacă este date formatat (DD/MM/YYYY), parsează manual
+            const dateStr = inspection.date;
+            if (dateStr.includes('/')) {
+              const [day, month, year] = dateStr.split('/');
+              date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            } else {
+              date = new Date(dateStr);
+            }
+          }
+          
+          if (!isNaN(date.getTime())) {
+            const inspectionYearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            matchesMonth = inspectionYearMonth === selectedMonthYear;
+          } else {
+            matchesMonth = false;
+          }
+        } catch (e) {
+          matchesMonth = false;
+        }
+      } else {
+        matchesMonth = false;
+      }
+    }
+    
+    return matchesSearch && matchesFilter && matchesInspector && matchesEmployee && matchesCentro && matchesMonth;
   });
 
   const handlePreview = async (inspection) => {
@@ -622,6 +707,74 @@ const InspectionList = ({ onBackToSelection }) => {
     }
   };
 
+  // Funcție pentru a încărca documentele materialelor pentru o inspecție
+  const fetchMaterialesDocumentos = useCallback(async (inspeccionId) => {
+    if (!inspeccionId || materialesDocumentos[inspeccionId]) {
+      return; // Deja încărcat sau ID invalid
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Accept': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(
+        `${routes.getMaterialesDocumentos}?inspeccion_id=${encodeURIComponent(inspeccionId)}`,
+        { headers }
+      );
+
+      if (response.ok) {
+        const documentos = await response.json();
+        setMaterialesDocumentos(prev => ({
+          ...prev,
+          [inspeccionId]: documentos
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching materiales documentos:', error);
+    }
+  }, [materialesDocumentos]);
+
+  // Funcție pentru a descărca un document de material
+  const handleDownloadMaterialDocumento = async (docId, nombreArchivo) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Accept': 'application/pdf, application/json, image/*',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(
+        `${routes.downloadMaterialDocumento}?doc_id=${docId}`,
+        { headers }
+      );
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nombreArchivo || `material_document_${docId}.pdf`;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        alert('Error al descargar el documento');
+      }
+    } catch (error) {
+      console.error('Error downloading material document:', error);
+      alert('Error al descargar el documento');
+    }
+  };
+
   // Funcția de sortare pentru inspecții
   const sortInspections = (inspectionsList) => {
     return [...inspectionsList].sort((a, b) => {
@@ -629,8 +782,26 @@ const InspectionList = ({ onBackToSelection }) => {
       
       switch (sortBy) {
         case 'fecha':
-          aValue = new Date(a.date || '1900-01-01');
-          bValue = new Date(b.date || '1900-01-01');
+          // Folosește dateRaw dacă există pentru sortare corectă
+          if (a.dateRaw) {
+            aValue = new Date(a.dateRaw);
+          } else if (a.date && a.date.includes('/')) {
+            // Parsează formatul DD/MM/YYYY
+            const [day, month, year] = a.date.split('/');
+            aValue = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          } else {
+            aValue = new Date(a.date || '1900-01-01');
+          }
+          
+          if (b.dateRaw) {
+            bValue = new Date(b.dateRaw);
+          } else if (b.date && b.date.includes('/')) {
+            // Parsează formatul DD/MM/YYYY
+            const [day, month, year] = b.date.split('/');
+            bValue = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          } else {
+            bValue = new Date(b.date || '1900-01-01');
+          }
           break;
         case 'tipo':
           aValue = a.type || '';
@@ -665,11 +836,28 @@ const InspectionList = ({ onBackToSelection }) => {
   };
 
   const getTypeLabel = (type) => {
-    return type === 'limpieza' ? 'Limpieza' : 'Servicios Auxiliares';
+    if (type === 'limpieza') return 'Limpieza';
+    if (type === 'servicios') return 'Servicios Auxiliares';
+    if (type === 'entrega-materiales') return 'Entrega de Materiales';
+    if (type === 'personalizada') return 'Personalizada';
+    return type || 'Desconocido';
   };
 
   // Aplică sortarea la inspecțiile filtrate
   const sortedAndFilteredInspections = sortInspections(filteredInspections);
+
+  // Încarcă automat documentele materialelor pentru inspecțiile "Entrega de Materiales"
+  useEffect(() => {
+    if (authUser?.isDemo) return;
+    
+    filteredInspections.forEach(inspection => {
+      if (inspection.type === 'entrega-materiales' && 
+          inspection.id && 
+          !materialesDocumentos[inspection.id]) {
+        fetchMaterialesDocumentos(inspection.id);
+      }
+    });
+  }, [filteredInspections, materialesDocumentos, fetchMaterialesDocumentos, authUser?.isDemo]);
 
   if (loading) {
     return (
@@ -777,8 +965,8 @@ const InspectionList = ({ onBackToSelection }) => {
                 </div>
               </div>
               
-              {/* Fila 2: Filtros principales en 3 columnas */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Fila 2: Filtros principales en 4 columnas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Tipo de Inspección ULTRA */}
                 <div className="group/field">
                   <label htmlFor="filter-type" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
@@ -795,7 +983,36 @@ const InspectionList = ({ onBackToSelection }) => {
                     <option value="all">Todos los tipos</option>
                     <option value="limpieza">🧹 Limpieza</option>
                     <option value="servicios">🛡️ Servicios Auxiliares</option>
+                    <option value="entrega-materiales">📦 Entrega de Materiales</option>
+                    <option value="personalizada">⚙️ Personalizada</option>
                   </select>
+                </div>
+
+                {/* Inspector ULTRA - Searchbar */}
+                <div className="group/field relative">
+                  <label htmlFor="inspector-search" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                    <span className="text-base">👨‍💼</span>
+                    <span>Inspector</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="inspector-search"
+                      name="inspector-search"
+                      type="text"
+                      placeholder="👨‍💼 Buscar inspector..."
+                      value={inspectorSearchTerm}
+                      onChange={(e) => setInspectorSearchTerm(e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-gradient-to-br from-white to-indigo-50/30 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300 hover:border-indigo-300 shadow-md focus:shadow-xl focus:shadow-indigo-500/20 font-medium"
+                    />
+                    {inspectorSearchTerm && (
+                      <button
+                        onClick={() => setInspectorSearchTerm('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-gray-200 hover:bg-red-500 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110"
+                      >
+                        <span className="text-xs font-bold text-gray-600 hover:text-white">✕</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Empleado ULTRA - Searchbar */}
@@ -946,8 +1163,8 @@ const InspectionList = ({ onBackToSelection }) => {
                 </div>
               </div>
               
-              {/* Fila 3: Sorting + Reset en 3 columnas */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Fila 3: Sorting + Reset en 3-4 columnas (4 când sortBy === 'fecha') */}
+              <div className={`grid grid-cols-1 gap-4 ${sortBy === 'fecha' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
                 {/* Ordenar por ULTRA */}
                 <div className="group/field">
                   <label htmlFor="sort-by" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
@@ -958,7 +1175,13 @@ const InspectionList = ({ onBackToSelection }) => {
                     id="sort-by"
                     name="sort-by"
                     value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
+                    onChange={(e) => {
+                      setSortBy(e.target.value);
+                      // Resetează filtrul de lună când nu mai sortează după dată
+                      if (e.target.value !== 'fecha') {
+                        setSelectedMonthYear('all');
+                      }
+                    }}
                     className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-gradient-to-br from-white to-orange-50/30 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium cursor-pointer"
                   >
                     <option value="fecha">📅 Fecha</option>
@@ -986,6 +1209,35 @@ const InspectionList = ({ onBackToSelection }) => {
                     <option value="asc">⬆️ Ascendente</option>
                   </select>
                 </div>
+
+                {/* Filtro por Mes/Año - Apare doar când sortBy === 'fecha' */}
+                {sortBy === 'fecha' && (
+                  <div className="group/field">
+                    <label htmlFor="month-year-filter" className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                      <span className="text-base">📆</span>
+                      <span>Mes/Año</span>
+                    </label>
+                    <select
+                      id="month-year-filter"
+                      name="month-year-filter"
+                      value={selectedMonthYear}
+                      onChange={(e) => setSelectedMonthYear(e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-gradient-to-br from-white to-purple-50/30 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-md focus:shadow-xl focus:shadow-purple-500/20 font-medium cursor-pointer"
+                    >
+                      <option value="all">📅 Todos los meses</option>
+                      {getAvailableMonths().map(monthYear => {
+                        const [year, month] = monthYear.split('-');
+                        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                        const monthName = monthNames[parseInt(month) - 1];
+                        return (
+                          <option key={monthYear} value={monthYear}>
+                            {monthName} {year}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
           
                 {/* Botón Reset MEGA WOW */}
                 <div className="group/field">
@@ -1000,10 +1252,12 @@ const InspectionList = ({ onBackToSelection }) => {
                       setSelectedCentro('');
                       setEmployeeSearchTerm('');
                       setCentroSearchTerm('');
+                      setInspectorSearchTerm('');
                       setShowEmployeeDropdown(false);
                       setShowCentroDropdown(false);
                       setSortBy('fecha');
                       setSortOrder('desc');
+                      setSelectedMonthYear('all');
                     }}
                     className="group relative w-full px-6 py-3 rounded-2xl font-black transition-all duration-700 transform hover:scale-110 hover:-translate-y-2 hover:rotate-3 shadow-2xl hover:shadow-purple-500/50 overflow-hidden"
                     style={{
@@ -1100,14 +1354,22 @@ const InspectionList = ({ onBackToSelection }) => {
                 <div className={`absolute -inset-2 rounded-2xl opacity-0 group-hover:opacity-25 blur-xl transition-all duration-500 ${
                   inspection.type === 'limpieza' 
                     ? 'bg-gradient-to-br from-red-400 to-pink-500' 
-                    : 'bg-gradient-to-br from-blue-400 to-cyan-500'
+                    : inspection.type === 'servicios'
+                    ? 'bg-gradient-to-br from-blue-400 to-cyan-500'
+                    : inspection.type === 'entrega-materiales'
+                    ? 'bg-gradient-to-br from-orange-400 to-amber-500'
+                    : 'bg-gradient-to-br from-purple-400 to-violet-500'
                 }`}></div>
                 
                 {/* Card principal con glassmorphism */}
                 <div className={`relative backdrop-blur-xl rounded-2xl border overflow-hidden shadow-xl group-hover:shadow-2xl transition-all duration-500 ${
                   inspection.type === 'limpieza'
                     ? 'bg-gradient-to-br from-red-50/90 to-pink-50/80 border-red-200/50 group-hover:border-red-300'
-                    : 'bg-gradient-to-br from-blue-50/90 to-cyan-50/80 border-blue-200/50 group-hover:border-blue-300'
+                    : inspection.type === 'servicios'
+                    ? 'bg-gradient-to-br from-blue-50/90 to-cyan-50/80 border-blue-200/50 group-hover:border-blue-300'
+                    : inspection.type === 'entrega-materiales'
+                    ? 'bg-gradient-to-br from-orange-50/90 to-amber-50/80 border-orange-200/50 group-hover:border-orange-300'
+                    : 'bg-gradient-to-br from-purple-50/90 to-violet-50/80 border-purple-200/50 group-hover:border-purple-300'
                 }`}
                      style={{ backdropFilter: 'blur(20px)' }}>
                   
@@ -1118,20 +1380,36 @@ const InspectionList = ({ onBackToSelection }) => {
                   <div className={`relative p-4 border-b ${
                     inspection.type === 'limpieza' 
                       ? 'bg-gradient-to-r from-red-500/10 to-pink-500/10 border-red-200' 
-                      : 'bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-blue-200'
+                      : inspection.type === 'servicios'
+                      ? 'bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-blue-200'
+                      : inspection.type === 'entrega-materiales'
+                      ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10 border-orange-200'
+                      : 'bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-purple-200'
                   }`}>
                     <div className="flex items-center gap-2 mb-2">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 ${
                         inspection.type === 'limpieza'
                           ? 'bg-gradient-to-br from-red-500 to-red-700'
-                          : 'bg-gradient-to-br from-blue-500 to-blue-700'
+                          : inspection.type === 'servicios'
+                          ? 'bg-gradient-to-br from-blue-500 to-blue-700'
+                          : inspection.type === 'entrega-materiales'
+                          ? 'bg-gradient-to-br from-orange-500 to-orange-700'
+                          : 'bg-gradient-to-br from-purple-500 to-purple-700'
                       }`}
                            style={{
                              boxShadow: inspection.type === 'limpieza' 
                                ? '0 8px 20px rgba(239, 68, 68, 0.4)' 
-                               : '0 8px 20px rgba(59, 130, 246, 0.4)'
+                               : inspection.type === 'servicios'
+                               ? '0 8px 20px rgba(59, 130, 246, 0.4)'
+                               : inspection.type === 'entrega-materiales'
+                               ? '0 8px 20px rgba(251, 191, 36, 0.4)'
+                               : '0 8px 20px rgba(139, 92, 246, 0.4)'
                            }}>
-                        <span className="text-xl">{inspection.type === 'limpieza' ? '🧹' : '🛡️'}</span>
+                        <span className="text-xl">
+                          {inspection.type === 'limpieza' ? '🧹' : 
+                           inspection.type === 'servicios' ? '🛡️' :
+                           inspection.type === 'entrega-materiales' ? '📦' : '⚙️'}
+                        </span>
                       </div>
                       <h4 className="text-base font-bold text-gray-900 truncate flex-1">
                         {inspection.id}
@@ -1199,6 +1477,53 @@ const InspectionList = ({ onBackToSelection }) => {
                         <span className="text-gray-600 ml-1">{inspection.centro}</span>
                       </div>
                     </div>
+                    
+                    {/* Documentos de Materiales - doar pentru "Entrega de Materiales" */}
+                    {inspection.type === 'entrega-materiales' && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-base">📦</span>
+                        <div className="flex-1">
+                          <span className="font-bold text-gray-700">Documentos:</span>
+                          <div className="mt-2 space-y-2">
+                            {materialesDocumentos[inspection.id] && materialesDocumentos[inspection.id].length > 0 ? (
+                              materialesDocumentos[inspection.id].map((doc) => (
+                                <button
+                                  key={doc.doc_id}
+                                  onClick={() => handleDownloadMaterialDocumento(doc.doc_id, doc.nombre_archivo || '')}
+                                  className="w-full flex items-center justify-between px-3 py-2 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-all duration-200 hover:shadow-md group"
+                                >
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <span className="text-lg">
+                                      {doc.tipo_documento === 'factura' ? '🧾' : '📄'}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium text-gray-800 truncate">
+                                        {doc.nombre_archivo || `Documento ${doc.material_index + 1}`}
+                                      </div>
+                                      {doc.descripcion_material && (
+                                        <div className="text-xs text-gray-500 truncate">
+                                          {doc.descripcion_material}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="text-orange-600 group-hover:text-orange-700 text-sm font-medium">
+                                    ⬇️ Descargar
+                                  </span>
+                                </button>
+                              ))
+                            ) : (
+                              <button
+                                onClick={() => fetchMaterialesDocumentos(inspection.id)}
+                                className="w-full px-3 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600 hover:text-gray-800 transition-all duration-200"
+                              >
+                                📦 Cargar documentos
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Butoane de acțiune ULTRA MODERN */}
