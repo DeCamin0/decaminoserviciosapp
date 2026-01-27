@@ -7,6 +7,7 @@ import { EmpleadosService } from './empleados.service';
 import { NominasService } from './nominas.service';
 import { DocumentosOficialesService } from './documentos-oficiales.service';
 import { DocumentosService } from './documentos.service';
+import { InspeccionesService } from './inspecciones.service';
 import PDFDocument from 'pdfkit';
 import archiver from 'archiver';
 import { Readable } from 'stream';
@@ -24,6 +25,7 @@ export class EmployeeExportService {
     private readonly nominasService: NominasService,
     private readonly documentosOficialesService: DocumentosOficialesService,
     private readonly documentosService: DocumentosService,
+    private readonly inspeccionesService: InspeccionesService,
   ) {}
 
   /**
@@ -368,6 +370,34 @@ export class EmployeeExportService {
         } catch (error: any) {
           this.logger.warn(
             `⚠️ Error generating PDF for ${mes}: ${error.message}`,
+          );
+        }
+      }
+
+      // 5. Inspecciones (organizate pe tip de inspecție)
+      const inspecciones =
+        await this.inspeccionesService.getMisInspecciones(codigo);
+      this.logger.log(`🔍 Found ${inspecciones.length} Inspecciones`);
+
+      for (const inspeccion of inspecciones) {
+        try {
+          const { archivo, nombre_archivo } =
+            await this.inspeccionesService.downloadInspeccion(inspeccion.id);
+          // Organizăm pe tip de inspecție
+          const tipoInspeccion =
+            inspeccion.tipo_inspeccion &&
+            inspeccion.tipo_inspeccion.trim() !== ''
+              ? inspeccion.tipo_inspeccion
+                  .trim()
+                  .replace(/[^a-zA-Z0-9\s]/g, '')
+                  .replace(/\s+/g, '_')
+              : 'SinTipo';
+          archive.append(archivo, {
+            name: `Inspecciones/${tipoInspeccion}/${nombre_archivo}`,
+          });
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ Error downloading Inspeccion ${inspeccion.id}: ${error.message}`,
           );
         }
       }

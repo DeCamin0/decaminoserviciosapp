@@ -1009,6 +1009,9 @@ export default function SolicitudesPage() {
   const [selectedDates, setSelectedDates] = useState([]);
   const [occupiedDates, setOccupiedDates] = useState([]);
   const [dateAvailability, setDateAvailability] = useState({}); // { date: { available: 5, total: 10, group: 'Limpiador' } }
+  // Cache pentru request-urile de disponibilitate (evită request-uri duplicate)
+  const occupiedDatesCacheRef = useRef(new Map()); // { "2026-10-Vacaciones": { data, timestamp } }
+  const loadOccupiedDatesTimeoutRef = useRef(null);
 
 
   // Filtros para managers
@@ -1685,24 +1688,43 @@ export default function SolicitudesPage() {
 
   // Load occupied dates from backend - enhanced for all users
   const loadOccupiedDates = useCallback(async (year, month) => {
-    setOperationLoading('occupiedDates', true);
-    try {
-      const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
-      
-      // For managers: get all requests for the month
-      // For employees: get their own requests plus approved ones from others
-      let url;
-      if (isManager) {
-        // Managers can see all requests
-        url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&limit=1000`;
-      } else {
-        // Employees see their own requests plus all approved ones
-        const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
-        url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&codigo=${encodeURIComponent(userCode)}&limit=1000`;
-      }
-      
-      console.log('🔍 Loading occupied dates from:', url);
-      const result = await callApi(url);
+    // Debounce: anulează request-ul anterior dacă se schimbă rapid
+    if (loadOccupiedDatesTimeoutRef.current) {
+      clearTimeout(loadOccupiedDatesTimeoutRef.current);
+    }
+    
+    // Cache key pentru această lună și tip
+    const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const cacheKey = `${monthStr}-${tipo}`;
+    const cached = occupiedDatesCacheRef.current.get(cacheKey);
+    const CACHE_DURATION = 30000; // 30 secunde cache
+    
+    // Verifică cache (doar dacă nu e editare - la editare vrem date fresh)
+    if (cached && editingSolicitud === null && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+      console.log('✅ Using cached occupied dates for:', cacheKey);
+      setOccupiedDates(cached.occupiedDates);
+      setDateAvailability(cached.dateAvailability);
+      return;
+    }
+    
+    // Debounce request-ul cu 300ms pentru a evita request-uri prea frecvente
+    loadOccupiedDatesTimeoutRef.current = setTimeout(async () => {
+      setOperationLoading('occupiedDates', true);
+      try {
+        // For managers: get all requests for the month
+        // For employees: get their own requests plus approved ones from others
+        let url;
+        if (isManager) {
+          // Managers can see all requests
+          url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&limit=1000`;
+        } else {
+          // Employees see their own requests plus all approved ones
+          const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
+          url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&codigo=${encodeURIComponent(userCode)}&limit=1000`;
+        }
+        
+        console.log('🔍 Loading occupied dates from:', url);
+        const result = await callApi(url);
       
       if (result.success) {
         let data = Array.isArray(result.data) ? result.data : [result.data];
@@ -1925,9 +1947,26 @@ export default function SolicitudesPage() {
                                     authUser?.['departamento'] ||
                                     '';
             console.log('🔍 Current user group:', currentUserGroup, 'center:', currentUserCenter);
+            
+            // Salvează în cache după ce toate datele sunt setate (doar dacă nu e editare)
+            if (editingSolicitud === null) {
+              occupiedDatesCacheRef.current.set(cacheKey, {
+                occupiedDates: Array.from(occupiedDatesSet),
+                dateAvailability: availability,
+                timestamp: Date.now()
+              });
+            }
           }
         } else {
           setDateAvailability({});
+          // Salvează în cache și pentru cazul când nu există disponibilitate
+          if (editingSolicitud === null) {
+            occupiedDatesCacheRef.current.set(cacheKey, {
+              occupiedDates: Array.from(occupiedDatesSet),
+              dateAvailability: {},
+              timestamp: Date.now()
+            });
+          }
         }
       } else {
         console.log('🔍 Failed to load occupied dates');
@@ -1939,7 +1978,8 @@ export default function SolicitudesPage() {
     } finally {
       setOperationLoading('occupiedDates', false);
     }
-  }, [setOperationLoading, isManager, tipo, authUser, callApi, allUsers, calculateDateAvailability, getApprovedRequests]);
+    }, 300); // Debounce 300ms
+  }, [setOperationLoading, isManager, tipo, authUser, callApi, allUsers, calculateDateAvailability, getApprovedRequests, editingSolicitud]);
 
 
 
@@ -2232,7 +2272,8 @@ export default function SolicitudesPage() {
             if (fechaInicio && fechaFin) {
               const start = new Date(fechaInicio);
               const end = new Date(fechaFin);
-              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              const diffMs = end.getTime() - start.getTime();
+              const days = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
               
               if (tipo.includes('asunto') || tipo.includes('propio')) {
                 totalAsuntoDays += days;
@@ -2271,14 +2312,16 @@ export default function SolicitudesPage() {
             if (solicitud.tipo === 'Asunto Propio' && solicitud.fecha_inicio && solicitud.fecha_fin) {
               const start = new Date(solicitud.fecha_inicio);
               const end = new Date(solicitud.fecha_fin);
-              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              const diffMs = end.getTime() - start.getTime();
+              const days = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
               totalAsuntoDays += days;
             }
             
             if (solicitud.tipo === 'Vacaciones' && solicitud.fecha_inicio && solicitud.fecha_fin) {
               const start = new Date(solicitud.fecha_inicio);
               const end = new Date(solicitud.fecha_fin);
-              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              const diffMs = end.getTime() - start.getTime();
+              const days = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
               totalVacacionesDays += days;
             }
           });
@@ -3609,7 +3652,8 @@ export default function SolicitudesPage() {
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
         const diffStart = (start - today) / (1000 * 60 * 60 * 24);
-        const diffZile = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        const diffMs = end.getTime() - start.getTime();
+        const diffZile = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 
         if (diffStart < 5) {
           setErrorMsg('No es posible solicitar un día de asunto propio con menos de 5 días de antelación.');
@@ -3634,7 +3678,8 @@ export default function SolicitudesPage() {
         // Normalizăm orele la 00:00:00 pentru consistență
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
-        const diffZile = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        const diffMs = end.getTime() - start.getTime();
+        const diffZile = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
         if (diffZile < 1) {
           setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
           return false;
@@ -3669,7 +3714,8 @@ export default function SolicitudesPage() {
         // Normalizăm orele la 00:00:00 pentru a evita probleme de timezone
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
-        const diffZile = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        const diffMs = end.getTime() - start.getTime();
+        const diffZile = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
         
         if ((end - start) < 0) {
           setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
@@ -4780,10 +4826,20 @@ export default function SolicitudesPage() {
   const calculateDays = (fechaInicio, fechaFin) => {
     if (!fechaInicio || !fechaFin || fechaInicio === '-' || fechaFin === '-' || fechaInicio === '' || fechaFin === '') return 0;
     try {
-      const start = new Date(fechaInicio);
-      const end = new Date(fechaFin);
+      // Folosim același calcul ca în validare pentru consistență (evită probleme de timezone)
+      const [y1, m1, d1] = fechaInicio.split('-').map(Number);
+      const [y2, m2, d2] = fechaFin.split('-').map(Number);
+      const start = new Date(y1, m1 - 1, d1);
+      const end = new Date(y2, m2 - 1, d2);
       if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
-      return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+      // Normalizăm orele la 00:00:00 pentru consistență
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      // Calculăm diferența în zile (folosim Math.floor pentru a obține zile calendaristice exacte)
+      // +1 pentru a include ambele zile (inclusiv prima și ultima)
+      const diffMs = end.getTime() - start.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      return diffDays + 1;
     } catch (error) {
       return 0;
     }
@@ -8060,7 +8116,7 @@ export default function SolicitudesPage() {
                     {selectedDates.length > 0 && (
                       <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-sm font-medium text-green-800">
-                          📅 Días seleccionados: {selectedDates.length} días
+                          📅 Días seleccionados: {fechaInicio && fechaFin ? calculateDays(fechaInicio, fechaFin) : selectedDates.length} días
                         </p>
                         <p className="text-xs text-green-600 mt-1">
                           Desde: {fechaInicio} hasta: {fechaFin}
@@ -8324,7 +8380,7 @@ export default function SolicitudesPage() {
                     {selectedDates.length > 0 && (
                       <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-sm font-medium text-green-800">
-                          📅 Días seleccionados: {selectedDates.length} días
+                          📅 Días seleccionados: {fechaInicio && fechaFin ? calculateDays(fechaInicio, fechaFin) : selectedDates.length} días
                         </p>
                         <p className="text-xs text-green-600 mt-1">
                           Desde: {fechaInicio} hasta: {fechaFin}

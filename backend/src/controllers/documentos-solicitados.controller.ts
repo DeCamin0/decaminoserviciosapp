@@ -9,6 +9,7 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { DocumentosSolicitadosService } from '../services/documentos-solicitados.service';
@@ -29,6 +30,10 @@ export class DocumentosSolicitadosController {
    * Obține cererile pentru un angajat sau toate (pentru admin)
    */
   @Get()
+  @Throttle({
+    short: { ttl: 10000, limit: 50 }, // 50 request-uri / 10 secunde (în loc de 20)
+    medium: { ttl: 60000, limit: 200 }, // 200 request-uri / minut (în loc de 100)
+  })
   async getSolicitudes(
     @Query('empleadoId') empleadoId?: string,
     @CurrentUser() currentUser?: any,

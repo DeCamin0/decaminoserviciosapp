@@ -1479,6 +1479,23 @@ export default function CuadrantesEmpleadoPage() {
 
   });
 
+  // Verifică dacă luna selectată este în viitor (după luna curentă)
+  const isFutureMonth = useMemo(() => {
+    if (!selectedLunaNorm || typeof selectedLunaNorm !== 'string' || !selectedLunaNorm.includes('-')) return false;
+    
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1; // 1-12
+    const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    
+    // Compară luna selectată cu luna curentă
+    return selectedLunaNorm > currentMonthFormatted;
+  }, [selectedLunaNorm]);
+
+  // Verifică dacă există date pentru luna selectată (cuadrante, horario_multicentro sau horario normal)
+  // IMPORTANT: Pentru lunile viitoare, întotdeauna afișăm mesajul "pendiente de generación"
+  const hasDataForMonth = !isFutureMonth && (cuadrant || (horariosMulticentroLista && horariosMulticentroLista.length > 0) || horarioAsignado);
+
 
 
   // Generez lista de luni disponibile din cuadrantes + luni curente
@@ -4065,7 +4082,38 @@ const getFirstValue = (record, keys) => {
 
           <div className="grid grid-cols-7 gap-3">
 
-            {calendarCells.length === 0 && (
+            {/* Mesaj profesional când nu există date pentru luna selectată */}
+            {!hasDataForMonth && !loading && !loadingHorarioMulticentro && (
+              <div className="col-span-7 text-center py-16">
+                <div className="relative inline-block mb-6">
+                  <div className="absolute inset-0 bg-amber-400 rounded-full blur-lg opacity-20 animate-pulse"></div>
+                  <div 
+                    className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-2xl"
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      boxShadow: '0 15px 30px rgba(245, 158, 11, 0.4)'
+                    }}
+                  >
+                    <span className="text-5xl">⏳</span>
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">
+                  Horario pendiente de generación
+                </h3>
+                <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed">
+                  Tu horario para este mes está en proceso de generación.
+                  <br />
+                  Por favor, contacta con tu supervisor o el departamento de recursos humanos 
+                  si necesitas información sobre tu horario.
+                </p>
+                <p className="text-gray-500 text-sm mt-4">
+                  Te notificaremos cuando esté disponible.
+                </p>
+              </div>
+            )}
+
+            {/* Calendar normal când există date */}
+            {hasDataForMonth && calendarCells.length === 0 && (
 
               <div className="col-span-7 text-center py-12">
 
@@ -4103,7 +4151,7 @@ const getFirstValue = (record, keys) => {
 
             )}
 
-            {calendarCells.length > 0 && (
+            {hasDataForMonth && calendarCells.length > 0 && (
 
               calendarCells.map((cell, idx) => {
 

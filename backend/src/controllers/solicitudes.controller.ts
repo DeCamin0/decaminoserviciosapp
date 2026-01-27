@@ -16,6 +16,7 @@ import {
 import { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SolicitudesService } from '../services/solicitudes.service';
@@ -28,6 +29,10 @@ export class SolicitudesController {
   constructor(private readonly solicitudesService: SolicitudesService) {}
 
   @Get()
+  @Throttle({
+    short: { ttl: 10000, limit: 50 }, // 50 request-uri / 10 secunde (în loc de 20)
+    medium: { ttl: 60000, limit: 200 }, // 200 request-uri / minut (în loc de 100)
+  })
   async getSolicitudes(
     @Query('email') email?: string,
     @Query('codigo') codigo?: string,
