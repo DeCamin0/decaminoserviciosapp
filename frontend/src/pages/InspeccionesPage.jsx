@@ -22,15 +22,18 @@ export default function InspeccionesPage() {
   // Verific dacă utilizatorul este supervisor
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   // Fallback: verifică direct GRUPO dacă isManager nu este setat
+  // Include și "Administrativ" pentru utilizatori cu rol administrativ
   const isSupervisor = authUser?.isManager || 
                        authUser?.GRUPO === 'Manager' || 
                        authUser?.GRUPO === 'Supervisor' || 
                        authUser?.GRUPO === 'Developer' || 
                        authUser?.GRUPO === 'Admin' ||
+                       authUser?.GRUPO === 'Administrativ' ||
                        authUser?.grupo === 'Manager' || 
                        authUser?.grupo === 'Supervisor' || 
                        authUser?.grupo === 'Developer' || 
                        authUser?.grupo === 'Admin' ||
+                       authUser?.grupo === 'Administrativ' ||
                        false;
 
   // Demo data for InspeccionesPage

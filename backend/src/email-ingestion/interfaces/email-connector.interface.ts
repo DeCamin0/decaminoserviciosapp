@@ -8,6 +8,10 @@ export interface EmailMessage {
   date: Date;
   read: boolean;
   attachments: EmailAttachment[];
+  body?: {
+    text?: string; // Plain text body
+    html?: string; // HTML body
+  };
 }
 
 export interface EmailAttachment {

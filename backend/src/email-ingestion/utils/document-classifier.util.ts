@@ -36,12 +36,13 @@ export interface ClassificationResult {
 }
 
 /**
- * Classify document from filename, subject, and optionally PDF content
+ * Classify document from filename, subject, and optionally PDF content and email body
  */
 export async function classifyDocument(
   filename: string,
   emailSubject: string,
   pdfContent?: Buffer,
+  emailBody?: { text?: string; html?: string },
 ): Promise<ClassificationResult> {
   const result: ClassificationResult = {
     tipoDocumento: null,
@@ -1247,7 +1248,153 @@ export async function classifyDocument(
   // Cap confidence at 1.0
   result.confidence = Math.min(result.confidence, 1.0);
 
+  // FALLBACK: Try to extract name from email body if all other methods failed
+  if (!result.empleadoNombre && emailBody) {
+    logger.log(
+      `🔍 Attempting to extract name from email body (text: ${!!emailBody.text}, html: ${!!emailBody.html})`,
+    );
+    const nombreFromBody = extractEmpleadoNombreFromBody(emailBody);
+    if (nombreFromBody) {
+      result.empleadoNombre = nombreFromBody;
+      result.confidence += 0.15; // Lower confidence for body extraction (fallback)
+      logger.log(
+        `✅ Extracted name from email body (fallback): ${nombreFromBody}`,
+      );
+    } else {
+      logger.log(
+        `⏭️ Could not extract name from email body (no matching pattern)`,
+      );
+    }
+  } else if (!result.empleadoNombre && !emailBody) {
+    logger.log(`⏭️ No email body available for name extraction`);
+  }
+
   return result;
+}
+
+/**
+ * Extract employee name from email body (text or HTML)
+ * Used as fallback when name cannot be extracted from subject, filename, or PDF
+ */
+function extractEmpleadoNombreFromBody(body: {
+  text?: string;
+  html?: string;
+}): string | null {
+  // Combine text and HTML (strip HTML tags from HTML)
+  let combinedText = '';
+
+  if (body.text) {
+    combinedText += body.text + ' ';
+    logger.log(`📄 Body text length: ${body.text.length} chars`);
+  }
+
+  if (body.html) {
+    // Strip HTML tags and decode HTML entities
+    const htmlText = body.html
+      .replace(/<[^>]+>/g, ' ') // Remove HTML tags
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    combinedText += htmlText;
+    logger.log(
+      `📄 Body HTML length: ${body.html.length} chars (stripped: ${htmlText.length} chars)`,
+    );
+  }
+
+  if (!combinedText.trim()) {
+    logger.log(`⚠️ Combined body text is empty`);
+    return null;
+  }
+
+  // Log first 500 chars for debugging
+  const preview = combinedText.substring(0, 500).replace(/\n/g, ' ');
+  logger.log(`🔍 Body text preview (first 500 chars): "${preview}..."`);
+
+  // Pattern 1: "Estimado/a [NUME]," or "Estimado [NUME]," or "Estimada [NUME],"
+  // Example: "Estimado/a LUCACI MARIAN," or "Estimado LUCACI MARIAN,"
+  // Also handle HTML formatting and special characters like asterisks
+  // Use greedy match to capture full name until comma, period, or end of line
+  let match = combinedText.match(
+    /Estimado\/?a?\s*[*]?\s*([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,}?)(?:\s*[,\.]|\s*$|\s*\n|Se\s+ha)/i,
+  );
+  if (match && match[1]) {
+    let name = match[1].trim();
+    // Remove any remaining HTML tags and special characters
+    name = name
+      .replace(/<[^>]+>/g, '')
+      .replace(/[*]/g, '')
+      .trim();
+    // Validate it looks like a name (at least 2 words, max 5 words)
+    const nameWords = name.split(/\s+/).filter((w) => w.length >= 2);
+    logger.log(
+      `🔍 Pattern 1 matched: raw="${match[1]}", cleaned="${name}", words=${nameWords.length}`,
+    );
+    if (nameWords.length >= 2 && nameWords.length <= 5) {
+      logger.log(`✅ Extracted name from body (Estimado/a pattern): ${name}`);
+      return name.toUpperCase();
+    } else {
+      logger.log(
+        `⏭️ Rejected name from body (invalid word count: ${nameWords.length}): ${name}`,
+      );
+    }
+  } else {
+    logger.log(`⏭️ Pattern 1 (Estimado/a) did not match`);
+  }
+
+  // Pattern 2: "Estimado/a [NUME]" (without comma, with optional asterisk)
+  match = combinedText.match(
+    /Estimado\/?a?\s*[*]?\s*([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,}?)(?:\s|$|\.|,|\n|Se\s+ha)/i,
+  );
+  if (match && match[1]) {
+    let name = match[1].trim();
+    name = name
+      .replace(/<[^>]+>/g, '')
+      .replace(/[*]/g, '')
+      .trim();
+    const nameWords = name.split(/\s+/).filter((w) => w.length >= 2);
+    logger.log(
+      `🔍 Pattern 2 matched: raw="${match[1]}", cleaned="${name}", words=${nameWords.length}`,
+    );
+    if (nameWords.length >= 2 && nameWords.length <= 5) {
+      logger.log(
+        `✅ Extracted name from body (Estimado/a without comma): ${name}`,
+      );
+      return name.toUpperCase();
+    }
+  }
+
+  // Pattern 3: "Solicitud de documento para [NUME]" or "solicitud para [NUME]"
+  match = combinedText.match(
+    /solicitud\s+(?:de\s+documento\s+)?para\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{3,}?)(?:\s|$|\.|,)/i,
+  );
+  if (match && match[1]) {
+    const name = match[1].trim();
+    const nameWords = name.split(/\s+/).filter((w) => w.length >= 2);
+    if (nameWords.length >= 2 && nameWords.length <= 5) {
+      logger.log(`🔍 Extracted name from body (solicitud pattern): ${name}`);
+      return name.toUpperCase();
+    }
+  }
+
+  // Pattern 4: Look for name after "para usted:" or "para [NUME]:"
+  match = combinedText.match(
+    /para\s+(?:usted|([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{3,}?)):/i,
+  );
+  if (match && match[1]) {
+    const name = match[1].trim();
+    const nameWords = name.split(/\s+/).filter((w) => w.length >= 2);
+    if (nameWords.length >= 2 && nameWords.length <= 5) {
+      logger.log(`🔍 Extracted name from body (para pattern): ${name}`);
+      return name.toUpperCase();
+    }
+  }
+
+  return null;
 }
 
 /**

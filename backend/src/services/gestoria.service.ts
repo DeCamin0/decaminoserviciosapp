@@ -907,16 +907,165 @@ export class GestoriaService {
       }
     }
 
+    // 4.5. Potrivire pentru nume cu 3+ cuvinte - verifică TOATE cuvintele indiferent de ordine
+    // Ex: "TORCANTES EREU ANDHY ALEJANDRO" → găsește "ANDHY ALEJANDRO TORCATES EREU"
+    if (nombreParts.length >= 3) {
+      // Construim query care caută angajați care au TOATE cuvintele (indiferent de ordine)
+      const likeConditions = nombreParts
+        .filter((p) => p.length >= 3) // Doar cuvinte de cel puțin 3 caractere
+        .map(
+          (word) =>
+            `TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${word}%`)}`,
+        )
+        .join(' AND ');
+
+      if (likeConditions) {
+        empleadoQuery = `
+          SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
+          FROM \`DatosEmpleados\`
+          WHERE ${likeConditions}
+          LIMIT 20
+        `;
+        empleado =
+          await this.prisma.$queryRawUnsafe<
+            Array<{ CODIGO: string; 'NOMBRE / APELLIDOS': string }>
+          >(empleadoQuery);
+
+        if (empleado.length > 0) {
+          // Găsim cel mai bun match - verificăm câte cuvinte se potrivesc exact
+          let bestMatch: {
+            CODIGO: string;
+            'NOMBRE / APELLIDOS': string;
+          } | null = null;
+          let bestConfianza = 0;
+          const nombreDetectadoWords = new Set(nombreParts);
+
+          for (const emp of empleado) {
+            const empWords = emp['NOMBRE / APELLIDOS']
+              .toUpperCase()
+              .split(/\s+/)
+              .filter((w) => w.length > 0);
+            const empWordsSet = new Set(empWords);
+
+            // Calculăm câte cuvinte din numele detectat sunt în numele din DB
+            let matchedWords = 0;
+            for (const word of nombreDetectadoWords) {
+              if (empWordsSet.has(word)) {
+                matchedWords++;
+              }
+            }
+
+            // Calculăm confidența: procentul de cuvinte potrivite
+            // Dacă numele din DB are mai multe cuvinte, folosim minimul pentru a evita false positives
+            const totalWords = Math.min(
+              nombreDetectadoWords.size,
+              empWordsSet.size,
+            );
+            const confianza = Math.round((matchedWords / totalWords) * 100);
+
+            // Dacă TOATE cuvintele se potrivesc (100% confidență)
+            if (
+              matchedWords === nombreDetectadoWords.size &&
+              matchedWords === empWordsSet.size
+            ) {
+              this.logger.debug(
+                `✅ Empleado găsit (potrivire completă toate cuvintele - 100%): ${emp['NOMBRE / APELLIDOS']}`,
+              );
+              return {
+                ...emp,
+                confianza: 100,
+                matchType: 'todas_palabras_completa',
+              };
+            }
+
+            // Dacă toate cuvintele din numele detectat se găsesc în DB (chiar dacă DB are mai multe)
+            if (matchedWords === nombreDetectadoWords.size) {
+              this.logger.debug(
+                `✅ Empleado găsit (toate cuvintele detectate găsite - ${confianza}%): ${emp['NOMBRE / APELLIDOS']}`,
+              );
+              return {
+                ...emp,
+                confianza: Math.min(95, confianza), // Max 95% dacă DB are mai multe cuvinte
+                matchType: 'todas_palabras_detectadas',
+              };
+            }
+
+            // Păstrăm cel mai bun match
+            if (confianza > bestConfianza) {
+              bestConfianza = confianza;
+              bestMatch = emp;
+            }
+          }
+
+          // Returnăm dacă confidența este >= 70% (majoritatea cuvintelor)
+          // ȘI dacă cel puțin 2 cuvinte se potrivesc (pentru a evita false positives cu doar 1 cuvânt comun)
+          if (bestMatch && bestConfianza >= 70) {
+            // Verificăm câte cuvinte se potrivesc efectiv
+            const empWords = bestMatch['NOMBRE / APELLIDOS']
+              .toUpperCase()
+              .split(/\s+/)
+              .filter((w) => w.length > 0);
+            const empWordsSet = new Set(empWords);
+            let matchedCount = 0;
+            for (const word of nombreDetectadoWords) {
+              if (empWordsSet.has(word)) {
+                matchedCount++;
+              }
+            }
+
+            // Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite (sau toate dacă sunt mai puține)
+            // Pentru nume cu 4+ cuvinte, cerem minim 3 cuvinte (majoritatea)
+            const minRequiredMatches =
+              nombreDetectadoWords.size >= 4
+                ? Math.min(3, nombreDetectadoWords.size)
+                : Math.min(2, nombreDetectadoWords.size);
+
+            if (matchedCount >= minRequiredMatches) {
+              this.logger.debug(
+                `✅ Empleado găsit (potrivire toate cuvintele - ${bestConfianza}%, ${matchedCount}/${nombreDetectadoWords.size} cuvinte): ${bestMatch['NOMBRE / APELLIDOS']}`,
+              );
+              return {
+                ...bestMatch,
+                confianza: bestConfianza,
+                matchType: 'todas_palabras_parcial',
+              };
+            } else {
+              this.logger.debug(
+                `⚠️ Match respins (doar ${matchedCount}/${nombreDetectadoWords.size} cuvinte potrivite, minim ${minRequiredMatches} necesare): ${bestMatch['NOMBRE / APELLIDOS']}`,
+              );
+            }
+          }
+        }
+      }
+    }
+
     // 5. Potrivire parțială - căutăm după primele 2 cuvinte în orice ordine
+    // IMPORTANT: Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite (nu doar primele 2)
+    // Pentru nume cu 3+ cuvinte, căutăm și după oricare 2 cuvinte (nu doar primele 2)
     if (nombreParts.length >= 2) {
+      // Pentru nume cu 3+ cuvinte, construim query care caută după oricare 2 cuvinte
+      let likeConditions = '';
+      if (nombreParts.length >= 3) {
+        // Pentru nume cu 3+ cuvinte, căutăm după oricare 2 cuvinte (pentru a găsi și cu typo-uri)
+        const conditions: string[] = [];
+        for (let i = 0; i < nombreParts.length; i++) {
+          for (let j = i + 1; j < nombreParts.length; j++) {
+            conditions.push(
+              `(TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[i]}%${nombreParts[j]}%`)} OR TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[j]}%${nombreParts[i]}%`)})`,
+            );
+          }
+        }
+        likeConditions = conditions.join(' OR ');
+      } else {
+        // Pentru nume cu 2 cuvinte, căutăm după primele 2
+        likeConditions = `(TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[0]}%${nombreParts[1]}%`)} OR TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[1]}%${nombreParts[0]}%`)})`;
+      }
+
       empleadoQuery = `
         SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
         FROM \`DatosEmpleados\`
-        WHERE (
-          TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[0]}%${nombreParts[1]}%`)}
-          OR TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[1]}%${nombreParts[0]}%`)}
-        )
-        LIMIT 10
+        WHERE ${likeConditions}
+        LIMIT 20
       `;
       empleado =
         await this.prisma.$queryRawUnsafe<
@@ -964,22 +1113,62 @@ export class GestoriaService {
           }
         }
 
-        // Returnăm doar dacă confidența este >= 70% (cel puțin 2 din 3 cuvinte sau similar)
-        if (bestMatch && bestConfianza >= 70) {
-          this.logger.debug(
-            `✅ Empleado găsit (potrivire parțială - ${bestConfianza}%): ${bestMatch['NOMBRE / APELLIDOS']}`,
-          );
-          return {
-            ...bestMatch,
-            confianza: bestConfianza,
-            matchType: 'parcial',
-          };
+        // Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite (nu doar confidență >= 70%)
+        if (bestMatch) {
+          const empWords = bestMatch['NOMBRE / APELLIDOS']
+            .toUpperCase()
+            .split(/\s+/)
+            .filter((w) => w.length > 0);
+          const empWordsSet = new Set(empWords);
+          let matchedCount = 0;
+          for (const word of nombreDetectadoWords) {
+            if (empWordsSet.has(word)) {
+              matchedCount++;
+            }
+          }
+
+          // Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite
+          // Pentru nume cu 4+ cuvinte, cerem minim 3 cuvinte (majoritatea)
+          // Dar dacă confidența este >= 60% și avem cel puțin 2 cuvinte, acceptăm (pentru typo-uri)
+          const minRequiredMatches =
+            nombreParts.length >= 4
+              ? Math.min(3, nombreParts.length)
+              : nombreParts.length >= 3
+                ? 2
+                : 1;
+
+          // Acceptăm dacă:
+          // 1. Avem minim cuvinte necesare ȘI confidența >= 70%
+          // 2. SAU avem minim 2 cuvinte ȘI confidența >= 60% (pentru typo-uri sau nume apropiate)
+          const isAcceptable =
+            (matchedCount >= minRequiredMatches && bestConfianza >= 70) ||
+            (matchedCount >= 2 && bestConfianza >= 60);
+
+          if (isAcceptable) {
+            this.logger.debug(
+              `✅ Empleado găsit (potrivire parțială - ${bestConfianza}%, ${matchedCount}/${nombreDetectadoWords.size} cuvinte): ${bestMatch['NOMBRE / APELLIDOS']}`,
+            );
+            return {
+              ...bestMatch,
+              confianza: bestConfianza,
+              matchType: 'parcial',
+            };
+          } else if (nombreParts.length >= 3) {
+            this.logger.debug(
+              `⚠️ Match respins (doar ${matchedCount}/${nombreDetectadoWords.size} cuvinte potrivite, confidența ${bestConfianza}%, minim ${minRequiredMatches} cuvinte și 70% confidență necesare): ${bestMatch['NOMBRE / APELLIDOS']}`,
+            );
+          }
         }
       }
     }
 
     // 6. Căutare după primul nume (dacă numele detectat are cel puțin un cuvânt)
-    if (nombreParts.length >= 1 && nombreParts[0].length >= 3) {
+    // IMPORTANT: Pentru nume cu 3+ cuvinte, nu folosim această strategie (prea multe false positives)
+    if (
+      nombreParts.length >= 1 &&
+      nombreParts[0].length >= 3 &&
+      nombreParts.length < 3
+    ) {
       const primerNombre = nombreParts[0];
       empleadoQuery = `
         SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
@@ -1127,6 +1316,7 @@ export class GestoriaService {
     }
 
     // 7. Căutare după ultimul nume (apellido) - dacă numele detectat are cel puțin 2 cuvinte
+    // IMPORTANT: Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite (nu doar ultimul)
     if (nombreParts.length >= 2) {
       const ultimoNombre = nombreParts[nombreParts.length - 1];
       if (ultimoNombre.length >= 3) {
@@ -1162,15 +1352,37 @@ export class GestoriaService {
                 const confianza = Math.round(
                   (matchedWords / nombreParts.length) * 100,
                 );
-                this.logger.debug(
-                  `✅ Empleado găsit (după ultimul + primul nume - ${confianza}%): ${emp['NOMBRE / APELLIDOS']}`,
-                );
-                return { ...emp, confianza, matchType: 'ultimo_primer_nombre' };
+
+                // Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite
+                const minRequiredMatches = nombreParts.length >= 3 ? 2 : 1;
+                if (matchedWords >= minRequiredMatches) {
+                  this.logger.debug(
+                    `✅ Empleado găsit (după ultimul + primul nume - ${confianza}%, ${matchedWords}/${nombreParts.length} cuvinte): ${emp['NOMBRE / APELLIDOS']}`,
+                  );
+                  return {
+                    ...emp,
+                    confianza,
+                    matchType: 'ultimo_primer_nombre',
+                  };
+                } else {
+                  this.logger.debug(
+                    `⚠️ Match respins (doar ${matchedWords}/${nombreParts.length} cuvinte potrivite, minim ${minRequiredMatches} necesare): ${emp['NOMBRE / APELLIDOS']}`,
+                  );
+                }
               }
             }
           }
 
-          // Dacă nu găsim potrivire perfectă, confidența este scăzută
+          // Dacă nu găsim potrivire perfectă, pentru nume cu 3+ cuvinte NU returnăm nimic
+          // (prea multe false positives - ex: "ALEJANDRO" găsește mulți angajați)
+          if (nombreParts.length >= 3) {
+            this.logger.debug(
+              `⚠️ Match respins (nume cu 3+ cuvinte, doar ultimul nume găsit, fără alte potriviri): ${empleado[0]['NOMBRE / APELLIDOS']}`,
+            );
+            return null;
+          }
+
+          // Pentru nume cu 2 cuvinte, confidența este scăzută dar acceptabilă
           this.logger.debug(
             `✅ Empleado găsit (după ultimul nume - confidența scăzută): ${empleado[0]['NOMBRE / APELLIDOS']}`,
           );
@@ -1180,7 +1392,8 @@ export class GestoriaService {
     }
 
     // 8. Căutare după orice cuvânt din nume (ultimul rezort) - doar dacă numele are cel puțin 3 caractere
-    if (nombreParts.length >= 1) {
+    // IMPORTANT: Pentru nume cu 3+ cuvinte, NU folosim această strategie (prea multe false positives)
+    if (nombreParts.length >= 1 && nombreParts.length < 3) {
       // Căutăm după cel mai lung cuvânt (cel mai probabil să fie nume sau apellido)
       const palabrasOrdenadas = [...nombreParts].sort(
         (a, b) => b.length - a.length,
@@ -6785,8 +6998,21 @@ export class GestoriaService {
               }
 
               if (empleadoEncontrado) {
-                // Marcăm ca "encontrado" doar dacă confidența este >= 80%
+                // Marcăm ca "encontrado" dacă confidența este >= 70% (majoritatea cuvintelor)
+                // Sau dacă matchType indică o potrivire bună (ex: toate cuvintele, primele 2 nume, etc.)
                 const confianza = empleadoEncontrado.confianza || 0;
+                const matchType = empleadoEncontrado.matchType || 'unknown';
+
+                // Considerăm "encontrado" dacă:
+                // 1. Confidența >= 70% (majoritatea cuvintelor)
+                // 2. SAU matchType indică o potrivire bună (toate cuvintele, primele 2 nume, etc.)
+                const isEncontrado =
+                  confianza >= 70 ||
+                  matchType.includes('completa') ||
+                  matchType.includes('todas_palabras') ||
+                  matchType.includes('primeros_dos_nombres') ||
+                  matchType === 'exacta';
+
                 preview.push({
                   nombre_archivo: file.originalname,
                   pagina: pageIndex + 1,
@@ -6794,9 +7020,9 @@ export class GestoriaService {
                   codigo: empleadoEncontrado.CODIGO,
                   nombre_bd:
                     empleadoEncontrado['NOMBRE / APELLIDOS'] || nombreDetectado,
-                  empleado_encontrado: confianza >= 80,
+                  empleado_encontrado: isEncontrado,
                   confianza: confianza,
-                  matchType: empleadoEncontrado.matchType || 'unknown',
+                  matchType: matchType,
                   es_finiquito: esFiniquito,
                   total: totalCalculado, // Pentru PDF-uri folosim doar total_calculado
                   total_calculado: totalCalculado,

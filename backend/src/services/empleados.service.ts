@@ -10,6 +10,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import * as pdfParseModule from 'pdf-parse';
 
 @Injectable()
 export class EmpleadosService {
@@ -311,6 +313,157 @@ export class EmpleadosService {
     }
   }
 
+  async exportListaIbanPDF(): Promise<Buffer> {
+    try {
+      // CODIGO-uri de utilizatori de exclus din listă (utilizatori de test/admin)
+      const excludedCodigos = ['10000002', '10000001'];
+
+      // Obține toți angajații
+      const allEmpleados = await this.getAllEmpleados();
+
+      // Filtrează doar cei activi
+      // Exclude pe cei cu fecha baja programada (viitoare) și utilizatorii de test/admin
+      const activeEmployees = allEmpleados.filter((emp) => {
+        const codigo = (emp.CODIGO || emp.codigo || '').toString().trim();
+        const estado = (emp.ESTADO || emp.estado || '')
+          .toString()
+          .trim()
+          .toUpperCase();
+        const fechaBajaProgramada =
+          emp['fecha_baja_programada'] || emp.fecha_baja_programada || '';
+
+        // Exclude utilizatorii de test/admin
+        if (excludedCodigos.includes(codigo)) {
+          return false;
+        }
+
+        // Exclude pe cei cu fecha baja programada
+        if (fechaBajaProgramada && fechaBajaProgramada.trim() !== '') {
+          return false;
+        }
+
+        // Include DOAR pe cei cu ESTADO = 'ACTIVO'
+        return estado === 'ACTIVO';
+      });
+
+      return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({
+          size: 'A4',
+          layout: 'landscape',
+          margin: 50,
+        });
+
+        const buffers: Buffer[] = [];
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(buffers);
+          resolve(pdfBuffer);
+        });
+        doc.on('error', reject);
+
+        // Title
+        doc
+          .fontSize(16)
+          .text('Lista de IBAN - Empleados Activos', { align: 'center' });
+        doc.moveDown(0.5);
+
+        // Table headers - 3 coloane
+        const headers = ['CODIGO', 'NOMBRE', 'IBAN'];
+        // Lățimi coloane pentru landscape A4 (width ~842px, margin 50px = 742px disponibil)
+        const colWidths = [120, 300, 322]; // Total: 742px
+        const rowHeight = 18;
+        const tableTop = doc.y;
+        let currentY = tableTop;
+
+        // Draw header
+        doc.fontSize(10).font('Helvetica-Bold');
+        let x = 50;
+        headers.forEach((header, i) => {
+          doc.text(header, x, currentY, { width: colWidths[i], align: 'left' });
+          x += colWidths[i];
+        });
+        currentY += rowHeight;
+
+        // Linie sub header
+        doc
+          .moveTo(50, currentY)
+          .lineTo(50 + colWidths.reduce((a, b) => a + b, 0), currentY)
+          .stroke();
+
+        // Draw rows
+        doc.font('Helvetica').fontSize(8);
+        currentY += 3;
+
+        activeEmployees.forEach((emp) => {
+          // Verifică dacă trebuie pagină nouă
+          if (currentY > 750) {
+            doc.addPage();
+            currentY = 50;
+
+            // Redraw headers on new page
+            doc.font('Helvetica-Bold').fontSize(10);
+            x = 50;
+            headers.forEach((header, i) => {
+              doc.text(header, x, currentY, {
+                width: colWidths[i],
+                align: 'left',
+              });
+              x += colWidths[i];
+            });
+            currentY += rowHeight;
+
+            // Linie sub header
+            doc
+              .moveTo(50, currentY)
+              .lineTo(50 + colWidths.reduce((a, b) => a + b, 0), currentY)
+              .stroke();
+
+            currentY += 3;
+            doc.font('Helvetica').fontSize(8);
+          }
+
+          const codigo = (emp.CODIGO || emp.codigo || '').toString().trim();
+          const nombre =
+            this.getFormattedNombre(emp) ||
+            emp['NOMBRE / APELLIDOS'] ||
+            emp.NOMBRE ||
+            '-';
+          const iban =
+            (emp['Nº Cuenta'] || emp['Nº CUENTA'] || emp.cuenta || '')
+              .toString()
+              .trim() || '-';
+
+          // Truncate text dacă e prea lung pentru a evita overflow
+          const nombreTruncated =
+            nombre.length > 40 ? nombre.substring(0, 37) + '...' : nombre;
+          const ibanTruncated =
+            iban.length > 38 ? iban.substring(0, 35) + '...' : iban;
+
+          const row = [codigo, nombreTruncated, ibanTruncated];
+
+          x = 50;
+          row.forEach((cell, i) => {
+            doc.text(cell || '-', x, currentY, {
+              width: colWidths[i],
+              align: 'left',
+            });
+            x += colWidths[i];
+          });
+
+          currentY += rowHeight;
+        });
+
+        doc.end();
+      });
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error en exportListaIbanPDF: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
+    }
+  }
+
   async getEmpleadoByCodigo(codigo: string) {
     if (!codigo) {
       throw new NotFoundException('Employee code is required');
@@ -433,7 +586,9 @@ export class EmpleadosService {
         \`Antigüedad\`,
         \`DerechoPedidos\`,
         \`TrabajaFestivos\`,
-        certificado_handicap_confirmado
+        certificado_handicap_confirmado,
+        fecha_baja_programada,
+        VACACIONES_RESTANTES_ANO_ANTERIOR
       FROM DatosEmpleados
       ORDER BY \`NOMBRE / APELLIDOS\` ASC
     `;
@@ -725,6 +880,9 @@ export class EmpleadosService {
       DerechoPedidos?: string;
       TrabajaFestivos?: string;
       Contraseña?: string;
+      fecha_baja_programada?: string | null;
+      VACACIONES_RESTANTES_ANO_ANTERIOR?: number | null;
+      certificado_handicap_confirmado?: boolean | null;
     },
   ): Promise<{ success: true; codigo: string }> {
     if (!codigo) {
@@ -786,6 +944,75 @@ export class EmpleadosService {
         `🔍 [updateEmpleado] nombreFieldsUpdate: ${nombreFieldsUpdate}`,
       );
 
+      // Construiește câmpurile opționale noi
+      const optionalFields: string[] = [];
+      if (empleadoData.fecha_baja_programada !== undefined) {
+        let fechaBajaProgramadaValue = null;
+        if (
+          empleadoData.fecha_baja_programada &&
+          empleadoData.fecha_baja_programada.trim()
+        ) {
+          // Convertește formatul DD/MM/YYYY la YYYY-MM-DD pentru SQL
+          const fechaStr = empleadoData.fecha_baja_programada.trim();
+          if (fechaStr.includes('/')) {
+            const [dd, mm, yyyy] = fechaStr.split('/');
+            if (dd && mm && yyyy) {
+              fechaBajaProgramadaValue = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+            }
+          } else if (fechaStr.includes('-')) {
+            // Verifică dacă este deja în format YYYY-MM-DD
+            const parts = fechaStr.split('-');
+            if (parts[0].length === 4) {
+              fechaBajaProgramadaValue = fechaStr;
+            } else {
+              // Format DD-MM-YYYY
+              const [dd, mm, yyyy] = parts;
+              if (dd && mm && yyyy) {
+                fechaBajaProgramadaValue = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+              }
+            }
+          }
+        }
+        optionalFields.push(
+          `\`fecha_baja_programada\` = ${fechaBajaProgramadaValue ? this.escapeSql(fechaBajaProgramadaValue) : 'NULL'}`,
+        );
+      }
+      if (empleadoData.VACACIONES_RESTANTES_ANO_ANTERIOR !== undefined) {
+        const vacacionesValue = empleadoData.VACACIONES_RESTANTES_ANO_ANTERIOR;
+        if (vacacionesValue === null || vacacionesValue === undefined) {
+          optionalFields.push(`\`VACACIONES_RESTANTES_ANO_ANTERIOR\` = NULL`);
+        } else {
+          // Asigură-te că este un număr valid
+          const numValue =
+            typeof vacacionesValue === 'string'
+              ? Number(vacacionesValue)
+              : vacacionesValue;
+          if (isNaN(numValue) || numValue === null || numValue === undefined) {
+            optionalFields.push(`\`VACACIONES_RESTANTES_ANO_ANTERIOR\` = NULL`);
+          } else {
+            optionalFields.push(
+              `\`VACACIONES_RESTANTES_ANO_ANTERIOR\` = ${numValue}`,
+            );
+          }
+        }
+      }
+      if (empleadoData.certificado_handicap_confirmado !== undefined) {
+        optionalFields.push(
+          `\`certificado_handicap_confirmado\` = ${empleadoData.certificado_handicap_confirmado ? 1 : 0}`,
+        );
+      }
+
+      // Construiește ultimul câmp (TrabajaFestivos) cu sau fără virgulă în funcție de câmpurile opționale
+      const trabajafestivosField =
+        optionalFields.length > 0
+          ? `\`TrabajaFestivos\`       = ${this.escapeSql(empleadoData.TrabajaFestivos ?? '')},`
+          : `\`TrabajaFestivos\`       = ${this.escapeSql(empleadoData.TrabajaFestivos ?? '')}`;
+
+      const optionalFieldsUpdate =
+        optionalFields.length > 0
+          ? '\n          ' + optionalFields.join(',\n          ')
+          : '';
+
       const updateQuery = `
         UPDATE DatosEmpleados SET
           \`NOMBRE / APELLIDOS\`    = ${this.escapeSql(empleadoData['NOMBRE / APELLIDOS'] ?? '')},
@@ -811,10 +1038,26 @@ export class EmpleadosService {
           \`Antigüedad\`            = ${this.escapeSql(empleadoData.Antigüedad ?? null)},
           ${passwordUpdate}
           \`DerechoPedidos\`        = ${this.escapeSql(empleadoData.DerechoPedidos ?? '')},
-          \`TrabajaFestivos\`       = ${this.escapeSql(empleadoData.TrabajaFestivos ?? '')}
+          ${trabajafestivosField}${optionalFieldsUpdate}
         WHERE
           \`CODIGO\` = ${this.escapeSql(codigo)}
       `;
+
+      this.logger.log(
+        `🔍 [updateEmpleado] Generated SQL query (first 500 chars): ${updateQuery.substring(0, 500)}`,
+      );
+      this.logger.log(`🔍 [updateEmpleado] Full SQL query:\n${updateQuery}`);
+      this.logger.log(
+        `🔍 [updateEmpleado] trabajafestivosField: "${trabajafestivosField}"`,
+      );
+      this.logger.log(
+        `🔍 [updateEmpleado] optionalFieldsUpdate: "${optionalFieldsUpdate}"`,
+      );
+      if (optionalFields.length > 0) {
+        this.logger.log(
+          `🔍 [updateEmpleado] Optional fields: ${optionalFields.join(', ')}`,
+        );
+      }
 
       await this.prisma.$executeRawUnsafe(updateQuery);
 
@@ -1989,6 +2232,852 @@ export class EmpleadosService {
       }
       throw new BadRequestException(
         `Error al confirmar certificado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Extrage textul dintr-un PDF
+   * Folosește PDFParse ca clasă (același pattern ca în gestoria.service.ts)
+   */
+  private async extractTextFromPdf(pdfBuffer: Buffer): Promise<string> {
+    try {
+      // pdf-parse returnează un obiect cu PDFParse ca clasă
+      const PDFParse = pdfParseModule.PDFParse;
+
+      if (!PDFParse) {
+        throw new Error('PDFParse class not found in pdf-parse module');
+      }
+
+      // Creăm instanță PDFParse (același pattern ca în gestoria.service.ts)
+      const pdfInstance = new PDFParse({
+        data: new Uint8Array(pdfBuffer),
+      });
+
+      // Extragem textul
+      const textResult = await pdfInstance.getText();
+
+      // Verificăm formatul rezultatului
+      if (
+        textResult &&
+        typeof textResult === 'object' &&
+        'text' in textResult
+      ) {
+        return textResult.text || '';
+      } else if (typeof textResult === 'string') {
+        return textResult;
+      } else {
+        return '';
+      }
+    } catch (error: any) {
+      this.logger.error(`❌ Error extrayendo texto del PDF: ${error.message}`);
+      this.logger.error(`❌ Error stack: ${error.stack?.substring(0, 500)}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Normalizează un IBAN (elimină spații, transformă în majuscule)
+   */
+  private normalizeIban(iban: string): string {
+    if (!iban) return '';
+    return iban.replace(/\s+/g, '').toUpperCase().trim();
+  }
+
+  /**
+   * Validează formatul IBAN (simplu: începe cu 2 litere, urmate de cifre)
+   */
+  private isValidIban(iban: string): boolean {
+    const normalized = this.normalizeIban(iban);
+    // IBAN spaniol: ES + 2 cifre + 4 cifre + 20 cifre = 24 caractere total
+    // Dar acceptăm și alte formate europene
+    return (
+      /^[A-Z]{2}\d{2,30}$/.test(normalized) &&
+      normalized.length >= 15 &&
+      normalized.length <= 34
+    );
+  }
+
+  /**
+   * Extrage IBAN-uri din textul PDF
+   * Caută pattern-uri comune: ES + cifre, sau alte formate IBAN
+   */
+  private extractIbansFromText(text: string): string[] {
+    const ibans: string[] = [];
+    const lines = text.split('\n').map((line) => line.trim());
+
+    // Pattern pentru IBAN: ES + 2 cifre + 4 cifre + 20 cifre (sau alte formate)
+    const ibanPattern = /ES\d{22}|[A-Z]{2}\d{2,30}/g;
+
+    for (const line of lines) {
+      // Elimină spații și caractere speciale pentru a găsi IBAN-uri
+      const cleanLine = line.replace(/\s+/g, '');
+      const matches = cleanLine.match(ibanPattern);
+
+      if (matches) {
+        for (const match of matches) {
+          const normalized = this.normalizeIban(match);
+          if (this.isValidIban(normalized) && !ibans.includes(normalized)) {
+            ibans.push(normalized);
+          }
+        }
+      }
+    }
+
+    return ibans;
+  }
+
+  /**
+   * Verifică dacă două cuvinte sunt similare (pentru typo-uri)
+   * Returnează true dacă sunt identice sau foarte similare (max 1-2 caractere diferite)
+   */
+  private areWordsSimilar(word1: string, word2: string): boolean {
+    if (word1 === word2) return true;
+
+    // Dacă unul este substring al celuilalt (ex: "MOHAMEN" în "MOHAMED")
+    if (word1.length >= 5 && word2.length >= 5) {
+      if (
+        word1.includes(word2.substring(0, Math.min(5, word2.length))) ||
+        word2.includes(word1.substring(0, Math.min(5, word1.length)))
+      ) {
+        return true;
+      }
+    }
+
+    // Verifică diferența de lungime (max 1 caracter)
+    if (Math.abs(word1.length - word2.length) > 1) return false;
+
+    // Verifică câte caractere diferă (max 1-2 pentru cuvinte de 5+ caractere)
+    const minLen = Math.min(word1.length, word2.length);
+    if (minLen < 5) return false; // Pentru cuvinte scurte, doar exact match
+
+    let diff = 0;
+    for (let i = 0; i < minLen; i++) {
+      if (word1[i] !== word2[i]) {
+        diff++;
+        if (diff > 1) return false; // Max 1 caracter diferit
+      }
+    }
+
+    return diff <= 1;
+  }
+
+  /**
+   * Găsește un angajat după CODIGO sau NOMBRE
+   */
+  private async findEmpleadoByIdentifier(
+    identifier: string,
+    isCodigo: boolean = false,
+  ): Promise<any | null> {
+    if (!identifier || identifier.trim().length === 0) {
+      return null;
+    }
+
+    const cleanId = identifier.trim().toUpperCase();
+
+    // Dacă este CODIGO, încearcă mai multe variante
+    if (isCodigo) {
+      // Varianta 1: exact match
+      try {
+        const byCodigo = await this.prisma.$queryRawUnsafe<Array<any>>(
+          `SELECT CODIGO, \`NOMBRE / APELLIDOS\` as NOMBRE_APELLIDOS, \`Nº Cuenta\` as IBAN_ACTUAL
+           FROM DatosEmpleados 
+           WHERE CODIGO = ${this.escapeSql(cleanId)} 
+           LIMIT 1`,
+        );
+
+        if (byCodigo && byCodigo.length > 0) {
+          return byCodigo[0];
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ Error buscando por CODIGO ${cleanId}: ${error.message}`,
+        );
+      }
+
+      // Varianta 2: dacă CODIGO este de 6-7 cifre, adaugă zerouri la început până la 8
+      if (cleanId.length >= 6 && cleanId.length < 8) {
+        const codigoConZeros = cleanId.padStart(8, '0');
+        try {
+          const byCodigo = await this.prisma.$queryRawUnsafe<Array<any>>(
+            `SELECT CODIGO, \`NOMBRE / APELLIDOS\` as NOMBRE_APELLIDOS, \`Nº Cuenta\` as IBAN_ACTUAL
+             FROM DatosEmpleados 
+             WHERE CODIGO = ${this.escapeSql(codigoConZeros)} 
+             LIMIT 1`,
+          );
+
+          if (byCodigo && byCodigo.length > 0) {
+            return byCodigo[0];
+          }
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ Error buscando por CODIGO ${codigoConZeros}: ${error.message}`,
+          );
+        }
+      }
+
+      // Varianta 3: căutare parțială (ultimele cifre)
+      if (cleanId.length >= 6) {
+        try {
+          const byCodigo = await this.prisma.$queryRawUnsafe<Array<any>>(
+            `SELECT CODIGO, \`NOMBRE / APELLIDOS\` as NOMBRE_APELLIDOS, \`Nº Cuenta\` as IBAN_ACTUAL
+             FROM DatosEmpleados 
+             WHERE CODIGO LIKE ${this.escapeSql(`%${cleanId}`)} 
+             LIMIT 5`,
+          );
+
+          if (byCodigo && byCodigo.length > 0) {
+            // Dacă găsește exact un match, îl returnează
+            if (byCodigo.length === 1) {
+              return byCodigo[0];
+            }
+            // Dacă găsește mai multe, returnează primul
+            return byCodigo[0];
+          }
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ Error buscando por CODIGO parcial ${cleanId}: ${error.message}`,
+          );
+        }
+      }
+    } else {
+      // Căutare după NOMBRE
+      // Normalizează numele: elimină underscore-uri, spații multiple, etc.
+      let nombreNormalizado = cleanId
+        .replace(/_/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Elimină underscore-uri și caractere speciale la început/la final
+      nombreNormalizado = nombreNormalizado
+        .replace(/^[_\s]+|[_\s]+$/g, '')
+        .trim();
+
+      // Extrage cuvintele importante (filtrează cuvinte scurte)
+      const palabras = nombreNormalizado.split(' ').filter((p) => p.length > 2);
+
+      if (palabras.length === 0) {
+        return null;
+      }
+
+      try {
+        // Căutare flexibilă: folosește OR pentru a găsi mai mulți candidați
+        // Apoi verificăm manual câte cuvinte se potrivesc (inclusiv cu fuzzy matching)
+        const condiciones = palabras
+          .map(
+            (palabra) =>
+              `UPPER(REPLACE(REPLACE(\`NOMBRE / APELLIDOS\`, '_', ' '), '  ', ' ')) LIKE ${this.escapeSql(`%${palabra}%`)}`,
+          )
+          .join(' OR ');
+
+        const byNombre = await this.prisma.$queryRawUnsafe<Array<any>>(
+          `SELECT CODIGO, \`NOMBRE / APELLIDOS\` as NOMBRE_APELLIDOS, \`Nº Cuenta\` as IBAN_ACTUAL
+           FROM DatosEmpleados 
+           WHERE ${condiciones}
+           LIMIT 20`,
+        );
+
+        if (byNombre && byNombre.length > 0) {
+          // Verifică manual câte cuvinte se potrivesc pentru fiecare candidat
+          // (inclusiv cu fuzzy matching pentru typo-uri)
+          let bestMatch = null;
+          let bestScore = 0;
+
+          for (const empleado of byNombre) {
+            const nombreEmpleado = (empleado.NOMBRE_APELLIDOS || '')
+              .toUpperCase()
+              .replace(/_/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const palabrasEmpleado = nombreEmpleado
+              .split(' ')
+              .filter((p) => p.length > 2);
+
+            // Verifică câte cuvinte din PDF există în numele din DB
+            // (indiferent de ordine, cu fuzzy matching pentru typo-uri)
+            let matches = 0;
+            for (const palabra of palabras) {
+              // Verifică exact match
+              if (palabrasEmpleado.includes(palabra)) {
+                matches++;
+              } else {
+                // Verifică fuzzy match (pentru typo-uri)
+                for (const palabraEmpleado of palabrasEmpleado) {
+                  if (this.areWordsSimilar(palabra, palabraEmpleado)) {
+                    matches++;
+                    break; // Nu numără de două ori același cuvânt
+                  }
+                }
+              }
+            }
+
+            // Verifică dacă TOATE cuvintele din DB se găsesc în PDF
+            // (chiar dacă PDF are mai multe cuvinte - ex: "FLORES CORREA ZULLY ANAKELLY" vs "ZULLY ANAKELLY")
+            let allDbWordsMatch = true;
+            for (const palabraEmpleado of palabrasEmpleado) {
+              let found = false;
+              for (const palabra of palabras) {
+                if (
+                  palabra === palabraEmpleado ||
+                  this.areWordsSimilar(palabra, palabraEmpleado)
+                ) {
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) {
+                allDbWordsMatch = false;
+                break;
+              }
+            }
+
+            // Prioritizează ultimele 2-3 cuvinte (numele și prenumele)
+            // Dacă acestea se potrivesc, acceptă match-ul chiar dacă primele cuvinte nu se găsesc
+            const ultimasPalabras = palabras.slice(
+              -Math.min(3, palabras.length),
+            ); // Ultimele 2-3 cuvinte
+            let ultimasMatches = 0;
+            for (const palabra of ultimasPalabras) {
+              if (palabrasEmpleado.includes(palabra)) {
+                ultimasMatches++;
+              } else {
+                for (const palabraEmpleado of palabrasEmpleado) {
+                  if (this.areWordsSimilar(palabra, palabraEmpleado)) {
+                    ultimasMatches++;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Scor: numărul de cuvinte potrivite / numărul total de cuvinte
+            const score = matches / palabras.length;
+
+            // Acceptă match dacă:
+            // 1. TOATE cuvintele din DB se găsesc în PDF (chiar dacă PDF are mai multe)
+            // 2. SAU majoritatea cuvintelor se potrivesc (60%+)
+            // 3. SAU toate ultimele 2-3 cuvinte se potrivesc (numele și prenumele)
+            const minMatches = Math.max(2, Math.ceil(palabras.length * 0.6)); // Cel puțin 60% din cuvinte
+            const allUltimasMatch =
+              ultimasMatches === ultimasPalabras.length &&
+              ultimasPalabras.length >= 2;
+
+            if (
+              (allDbWordsMatch && palabrasEmpleado.length > 0) ||
+              (matches >= minMatches && score > bestScore) ||
+              (allUltimasMatch && score > bestScore)
+            ) {
+              // Dacă toate cuvintele din DB se găsesc, acesta este match-ul perfect
+              if (allDbWordsMatch && palabrasEmpleado.length > 0) {
+                return empleado; // Returnează imediat, este match perfect
+              }
+
+              if (
+                score > bestScore ||
+                (allUltimasMatch && score >= bestScore)
+              ) {
+                bestMatch = empleado;
+                bestScore = score;
+              }
+            }
+          }
+
+          // Dacă găsește un match bun, returnează-l
+          if (bestMatch) {
+            return bestMatch;
+          }
+
+          // Dacă nu găsește cu majoritatea, încearcă cu primele 2 cuvinte importante
+          if (palabras.length >= 2) {
+            const condiciones2 = palabras
+              .slice(0, 2)
+              .map(
+                (palabra) =>
+                  `UPPER(REPLACE(REPLACE(\`NOMBRE / APELLIDOS\`, '_', ' '), '  ', ' ')) LIKE ${this.escapeSql(`%${palabra}%`)}`,
+              )
+              .join(' OR ');
+
+            const byNombre2 = await this.prisma.$queryRawUnsafe<Array<any>>(
+              `SELECT CODIGO, \`NOMBRE / APELLIDOS\` as NOMBRE_APELLIDOS, \`Nº Cuenta\` as IBAN_ACTUAL
+               FROM DatosEmpleados 
+               WHERE ${condiciones2}
+               LIMIT 10`,
+            );
+
+            if (byNombre2 && byNombre2.length > 0) {
+              // Verifică match-ul pentru fiecare rezultat (cu fuzzy matching)
+              for (const empleado of byNombre2) {
+                const nombreEmpleado = (empleado.NOMBRE_APELLIDOS || '')
+                  .toUpperCase()
+                  .replace(/_/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                const palabrasEmpleado = nombreEmpleado
+                  .split(' ')
+                  .filter((p) => p.length > 2);
+
+                let matches = 0;
+                for (const palabra of palabras) {
+                  if (palabrasEmpleado.includes(palabra)) {
+                    matches++;
+                  } else {
+                    // Fuzzy match
+                    for (const palabraEmpleado of palabrasEmpleado) {
+                      if (this.areWordsSimilar(palabra, palabraEmpleado)) {
+                        matches++;
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                // Dacă găsește cel puțin 2 cuvinte (sau majoritatea), returnează-l
+                if (matches >= Math.max(2, Math.ceil(palabras.length * 0.6))) {
+                  return empleado;
+                }
+              }
+            }
+          }
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ Error buscando por NOMBRE ${nombreNormalizado}: ${error.message}`,
+        );
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Procesează PDF-ul SOPORTE și extrage IBAN-urile cu asocieri propuse
+   */
+  async procesarPdfSoportePreview(pdfBuffer: Buffer): Promise<{
+    success: boolean;
+    asociaciones: Array<{
+      codigo?: string;
+      nombre?: string;
+      ibanExtraido: string;
+      empleadoEncontrado?: {
+        codigo: string;
+        nombre: string;
+        ibanActual?: string;
+      };
+      necesitaConfirmacion: boolean;
+    }>;
+    errores: string[];
+  }> {
+    try {
+      this.logger.log('📄 Procesando PDF SOPORTE para extraer IBANs...');
+
+      // Extrage textul din PDF
+      const pdfText = await this.extractTextFromPdf(pdfBuffer);
+
+      if (!pdfText || pdfText.trim().length === 0) {
+        throw new BadRequestException('No se pudo extraer texto del PDF');
+      }
+
+      // LOG pentru debugging - primele 3000 caractere
+      this.logger.log(`📄 PDF text length: ${pdfText.length}`);
+      this.logger.log(`📄 First 3000 chars: ${pdfText.substring(0, 3000)}`);
+
+      // Extrage IBAN-uri
+      const ibans = this.extractIbansFromText(pdfText);
+
+      if (ibans.length === 0) {
+        throw new BadRequestException('No se encontraron IBANs en el PDF');
+      }
+
+      this.logger.log(`✅ Encontrados ${ibans.length} IBANs en el PDF`);
+
+      // LOG primele 5 IBAN-uri și contextul lor
+      const lines = pdfText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      for (let i = 0; i < Math.min(5, ibans.length); i++) {
+        const iban = ibans[i];
+        const ibanNormalizado = this.normalizeIban(iban);
+
+        for (let j = 0; j < lines.length; j++) {
+          if (lines[j].replace(/\s+/g, '').includes(ibanNormalizado)) {
+            this.logger.log(`\n📋 IBAN ${i + 1}: ${ibanNormalizado}`);
+            this.logger.log(`   Line ${j} (with IBAN): ${lines[j]}`);
+            this.logger.log(`   Lines BEFORE (3 lines):`);
+            for (let k = Math.max(0, j - 3); k < j; k++) {
+              this.logger.log(`     [${k}] ${lines[k]}`);
+            }
+            break;
+          }
+        }
+      }
+
+      // Încearcă să asocieze IBAN-urile cu angajații
+      // Strategie: căutăm în text contextul în jurul fiecărui IBAN
+      const asociaciones: Array<{
+        codigo?: string;
+        nombre?: string;
+        ibanExtraido: string;
+        empleadoEncontrado?: {
+          codigo: string;
+          nombre: string;
+          ibanActual?: string;
+        };
+        necesitaConfirmacion: boolean;
+      }> = [];
+
+      const errores: string[] = [];
+
+      // Structura PDF SOPORTE: fiecare linie are formatul: IBAN \t CODIGO_OPERARIO NOMBRE APELLIDOS IMPORTE
+      // (lines este deja declarat mai sus pentru logging)
+      // Exemplu: "ES5514650100981740095762	0580002 NEACSU DECEBAL MARIUS 1.338,30"
+      // Primul IBAN (linia 6) este singur, fără CODIGO - este IBAN-ul companiei, îl ignorăm
+
+      for (let ibanIndex = 0; ibanIndex < ibans.length; ibanIndex++) {
+        const iban = ibans[ibanIndex];
+        const ibanNormalizado = this.normalizeIban(iban);
+        let contextFound = false;
+
+        // IGNORĂ complet primul IBAN (este IBAN companie)
+        if (ibanIndex === 0) {
+          this.logger.log(
+            `⚠️ Ignorando IBAN companie (primul IBAN): ${ibanNormalizado}`,
+          );
+          continue; // Skip complet, nu adăugăm în asociaciones
+        }
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // Verifică dacă linia conține IBAN-ul
+          if (line.replace(/\s+/g, '').includes(ibanNormalizado)) {
+            // Pattern: IBAN \t CODIGO NOMBRE APELLIDOS IMPORTE
+            // Sau: IBAN (singur, fără CODIGO - este IBAN companie)
+
+            // Verifică dacă linia are TAB sau spații multiple (format cu CODIGO și nume)
+            const hasTab = line.includes('\t');
+            const parts = hasTab ? line.split('\t') : line.split(/\s{2,}/);
+
+            if (parts.length >= 2) {
+              // Format: IBAN \t CODIGO NOMBRE APELLIDOS IMPORTE
+              const ibanPart = parts[0].trim();
+
+              // Verifică că primul part este IBAN-ul
+              if (ibanPart.replace(/\s+/g, '') === ibanNormalizado) {
+                const restOfLine = parts.slice(1).join(' ').trim();
+
+                // Extrage CODIGO (6-7 cifre la început, după TAB)
+                // Pattern: 0580002 sau 0580003 (6-7 cifre)
+                const codigoMatch = restOfLine.match(/^(\d{6,7})\s+/);
+                let codigoEncontrado: string | null = null;
+                let nombreEncontrado: string | null = null;
+
+                if (codigoMatch) {
+                  codigoEncontrado = codigoMatch[1];
+
+                  // Restul liniei după CODIGO este: NOMBRE APELLIDOS IMPORTE
+                  const afterCodigo = restOfLine
+                    .substring(codigoMatch[0].length)
+                    .trim();
+
+                  // Extrage NOMBRE APELLIDOS (până la ultimul număr care este IMPORTE)
+                  // IMPORTE este de forma: 1.338,30 sau 3.091,06
+                  const importeMatch = afterCodigo.match(
+                    /\s+(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/,
+                  );
+
+                  if (importeMatch) {
+                    // Numele este tot ce este înainte de IMPORTE
+                    nombreEncontrado = afterCodigo
+                      .substring(0, importeMatch.index)
+                      .trim();
+                  } else {
+                    // Dacă nu găsește IMPORTE, tot ce rămâne este numele
+                    nombreEncontrado = afterCodigo;
+                  }
+
+                  // Normalizează numele (elimină underscore-uri și caractere speciale)
+                  if (nombreEncontrado) {
+                    // Elimină underscore-uri și normalizează spațiile
+                    nombreEncontrado = nombreEncontrado
+                      .replace(/_/g, ' ')
+                      .replace(/\s+/g, ' ')
+                      .trim();
+                    // Elimină underscore-uri și spații la început/la final
+                    nombreEncontrado = nombreEncontrado
+                      .replace(/^[_\s]+|[_\s]+$/g, '')
+                      .trim();
+                  }
+                } else {
+                  // Nu are CODIGO, ignorăm (nu ar trebui să ajungă aici pentru IBAN-uri valide)
+                  continue;
+                }
+
+                // Încearcă să găsească angajatul
+                // PRIORITATE: 1) IBAN (cel mai sigur), 2) CODIGO, 3) NOMBRE
+                let empleadoEncontrado = null;
+
+                // PRIORITATE 1: Caută mai întâi după IBAN (cel mai sigur match)
+                // Dacă IBAN-ul există deja în DB, este cel mai probabil că este pentru acel angajat
+                try {
+                  const empleadoByIban = await this.prisma.$queryRawUnsafe<
+                    Array<any>
+                  >(
+                    `SELECT CODIGO, \`NOMBRE / APELLIDOS\` as NOMBRE_APELLIDOS, \`Nº Cuenta\` as IBAN_ACTUAL
+                     FROM DatosEmpleados 
+                     WHERE \`Nº Cuenta\` = ${this.escapeSql(ibanNormalizado)} 
+                     LIMIT 1`,
+                  );
+
+                  if (empleadoByIban && empleadoByIban.length > 0) {
+                    empleadoEncontrado = empleadoByIban[0];
+                    this.logger.log(
+                      `✅ Empleado encontrado por IBAN: ${empleadoEncontrado.CODIGO} - ${empleadoEncontrado.NOMBRE_APELLIDOS}`,
+                    );
+                  } else {
+                    this.logger.log(
+                      `ℹ️ IBAN ${ibanNormalizado} no encontrado en DB, buscando por CODIGO/NOMBRE...`,
+                    );
+                  }
+                } catch (error: any) {
+                  this.logger.warn(
+                    `⚠️ Error buscando por IBAN ${ibanNormalizado}: ${error.message}`,
+                  );
+                }
+
+                // PRIORITATE 2: Dacă nu găsește după IBAN, caută după CODIGO
+                // IMPORTANT: Verifică dacă IBAN-ul din DB pentru acel CODIGO se potrivește
+                if (!empleadoEncontrado && codigoEncontrado) {
+                  const empleadoByCodigo = await this.findEmpleadoByIdentifier(
+                    codigoEncontrado,
+                    true,
+                  );
+                  if (empleadoByCodigo) {
+                    const ibanDbCodigo = empleadoByCodigo.IBAN_ACTUAL
+                      ? this.normalizeIban(empleadoByCodigo.IBAN_ACTUAL)
+                      : null;
+
+                    // Dacă CODIGO-ul are deja un IBAN diferit în DB, este suspect
+                    // Poate că CODIGO-ul din PDF este greșit sau IBAN-ul este pentru alt angajat
+                    if (ibanDbCodigo && ibanDbCodigo !== ibanNormalizado) {
+                      this.logger.warn(
+                        `⚠️ CODIGO ${codigoEncontrado} tiene IBAN diferente en DB (${ibanDbCodigo} vs ${ibanNormalizado}). Buscando por NOMBRE también...`,
+                      );
+
+                      // Încearcă să găsească după nume (poate găsește angajatul corect)
+                      if (nombreEncontrado) {
+                        const empleadoByNombre =
+                          await this.findEmpleadoByIdentifier(
+                            nombreEncontrado,
+                            false,
+                          );
+                        if (empleadoByNombre) {
+                          const ibanDbNombre = empleadoByNombre.IBAN_ACTUAL
+                            ? this.normalizeIban(empleadoByNombre.IBAN_ACTUAL)
+                            : null;
+
+                          // Dacă numele găsește un angajat cu IBAN-ul corect, folosește-l
+                          if (ibanDbNombre === ibanNormalizado) {
+                            empleadoEncontrado = empleadoByNombre;
+                            this.logger.log(
+                              `✅ Empleado encontrado por NOMBRE (IBAN coincide): ${empleadoEncontrado.CODIGO} - ${empleadoEncontrado.NOMBRE_APELLIDOS}`,
+                            );
+                          } else if (!ibanDbNombre) {
+                            // Dacă numele găsește un angajat fără IBAN, este probabil corect
+                            empleadoEncontrado = empleadoByNombre;
+                            this.logger.log(
+                              `✅ Empleado encontrado por NOMBRE (sin IBAN en DB): ${empleadoEncontrado.CODIGO} - ${empleadoEncontrado.NOMBRE_APELLIDOS}`,
+                            );
+                          } else {
+                            // Dacă nici numele nu se potrivește, folosește CODIGO-ul (dar va necesita confirmare)
+                            empleadoEncontrado = empleadoByCodigo;
+                            this.logger.warn(
+                              `⚠️ Usando CODIGO ${codigoEncontrado} pero IBAN no coincide. Requiere confirmación.`,
+                            );
+                          }
+                        } else {
+                          // Dacă nu găsește după nume, folosește CODIGO-ul (dar va necesita confirmare)
+                          empleadoEncontrado = empleadoByCodigo;
+                          this.logger.warn(
+                            `⚠️ Usando CODIGO ${codigoEncontrado} pero IBAN no coincide. Requiere confirmación.`,
+                          );
+                        }
+                      } else {
+                        // Dacă nu are nume, folosește CODIGO-ul (dar va necesita confirmare)
+                        empleadoEncontrado = empleadoByCodigo;
+                        this.logger.warn(
+                          `⚠️ Usando CODIGO ${codigoEncontrado} pero IBAN no coincide. Requiere confirmación.`,
+                        );
+                      }
+                    } else {
+                      // Dacă CODIGO-ul nu are IBAN sau IBAN-ul se potrivește, este OK
+                      empleadoEncontrado = empleadoByCodigo;
+                      this.logger.log(
+                        `✅ Empleado encontrado por CODIGO: ${codigoEncontrado} - ${empleadoEncontrado.NOMBRE_APELLIDOS}`,
+                      );
+                    }
+                  }
+                }
+
+                // PRIORITATE 3: Dacă tot nu găsește, încearcă după nume
+                if (!empleadoEncontrado && nombreEncontrado) {
+                  empleadoEncontrado = await this.findEmpleadoByIdentifier(
+                    nombreEncontrado,
+                    false,
+                  );
+                  if (empleadoEncontrado) {
+                    this.logger.log(
+                      `✅ Empleado encontrado por NOMBRE: ${nombreEncontrado} - ${empleadoEncontrado.NOMBRE_APELLIDOS}`,
+                    );
+                  }
+                }
+
+                // Verifică dacă IBAN-ul din PDF diferă de cel din DB
+                const ibanActualNormalizado = empleadoEncontrado?.IBAN_ACTUAL
+                  ? this.normalizeIban(empleadoEncontrado.IBAN_ACTUAL)
+                  : null;
+                const ibanDiferente =
+                  empleadoEncontrado && ibanActualNormalizado
+                    ? ibanActualNormalizado !== ibanNormalizado
+                    : false;
+
+                asociaciones.push({
+                  codigo: codigoEncontrado || undefined,
+                  nombre: nombreEncontrado || undefined,
+                  ibanExtraido: ibanNormalizado,
+                  empleadoEncontrado: empleadoEncontrado
+                    ? {
+                        codigo: empleadoEncontrado.CODIGO,
+                        nombre: empleadoEncontrado.NOMBRE_APELLIDOS || '',
+                        ibanActual: empleadoEncontrado.IBAN_ACTUAL || undefined,
+                      }
+                    : undefined,
+                  // Necesită confirmare dacă: nu găsește angajatul SAU IBAN-urile diferă
+                  necesitaConfirmacion: !empleadoEncontrado || ibanDiferente,
+                });
+
+                contextFound = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!contextFound) {
+          // Dacă nu găsește context, adaugă IBAN-ul fără asociere
+          asociaciones.push({
+            ibanExtraido: ibanNormalizado,
+            necesitaConfirmacion: true,
+          });
+          errores.push(
+            `IBAN ${iban} encontrado pero no se pudo asociar con ningún empleado`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `✅ Procesadas ${asociaciones.length} asociaciones, ${errores.length} errores`,
+      );
+
+      return {
+        success: true,
+        asociaciones,
+        errores,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error procesando PDF SOPORTE: ${error.message}`,
+        error.stack,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Error procesando PDF: ${error.message}`);
+    }
+  }
+
+  /**
+   * Confirma și actualizează IBAN-urile în baza de date
+   */
+  async confirmarActualizacionIbans(
+    actualizaciones: Array<{
+      codigo: string;
+      iban: string;
+    }>,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _usuarioId: string,
+  ): Promise<{
+    success: boolean;
+    actualizados: number;
+    errores: Array<{ codigo: string; error: string }>;
+  }> {
+    try {
+      this.logger.log(
+        `💾 Confirmando actualización de ${actualizaciones.length} IBANs...`,
+      );
+
+      let actualizados = 0;
+      const errores: Array<{ codigo: string; error: string }> = [];
+
+      for (const actualizacion of actualizaciones) {
+        try {
+          const ibanNormalizado = this.normalizeIban(actualizacion.iban);
+
+          if (!this.isValidIban(ibanNormalizado)) {
+            errores.push({
+              codigo: actualizacion.codigo,
+              error: `IBAN inválido: ${actualizacion.iban}`,
+            });
+            continue;
+          }
+
+          // Actualizează IBAN-ul în baza de date
+          const updateQuery = `
+            UPDATE DatosEmpleados 
+            SET \`Nº Cuenta\` = ${this.escapeSql(ibanNormalizado)}
+            WHERE CODIGO = ${this.escapeSql(actualizacion.codigo)}
+          `;
+
+          const result = await this.prisma.$executeRawUnsafe(updateQuery);
+
+          if (result > 0) {
+            actualizados++;
+            this.logger.log(
+              `✅ IBAN actualizado para empleado ${actualizacion.codigo}`,
+            );
+          } else {
+            errores.push({
+              codigo: actualizacion.codigo,
+              error: 'Empleado no encontrado',
+            });
+          }
+        } catch (error: any) {
+          this.logger.error(
+            `❌ Error actualizando IBAN para ${actualizacion.codigo}: ${error.message}`,
+          );
+          errores.push({
+            codigo: actualizacion.codigo,
+            error: error.message,
+          });
+        }
+      }
+
+      this.logger.log(
+        `✅ Actualizados ${actualizados} IBANs, ${errores.length} errores`,
+      );
+
+      return {
+        success: true,
+        actualizados,
+        errores,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error confirmando actualización de IBANs: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error confirmando actualización: ${error.message}`,
       );
     }
   }

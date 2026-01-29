@@ -159,7 +159,9 @@ export class InspeccionesController {
     @Res() res: Response,
   ) {
     try {
-      this.logger.log(`📥 Download material document request - doc_id: ${docId}`);
+      this.logger.log(
+        `📥 Download material document request - doc_id: ${docId}`,
+      );
 
       const docIdNumber = parseInt(docId, 10);
       if (isNaN(docIdNumber)) {

@@ -132,6 +132,7 @@ export class DocumentIngestionService {
               attachment.contentType.startsWith('application/pdf')
                 ? attachment.content
                 : undefined,
+              message.body, // Include email body for name extraction fallback
             );
 
             // PRIORITY 1: Try to find employee by DNI/NIE or Social Security Number (more reliable than name)
@@ -1514,6 +1515,7 @@ export class DocumentIngestionService {
               attachment.contentType.startsWith('application/pdf')
                 ? attachment.content
                 : undefined,
+              message.body, // Include email body for name extraction fallback
             );
 
             // Also check by filename + size + empleadoId (catches same file sent in different emails)
@@ -1744,6 +1746,7 @@ export class DocumentIngestionService {
               attachment.contentType.startsWith('application/pdf')
                 ? attachment.content
                 : undefined,
+              message.body, // Include email body for name extraction fallback
             );
 
             // Also check by filename + size + empleadoId (catches same file sent in different emails)
@@ -3560,6 +3563,7 @@ export class DocumentIngestionService {
             filename,
             subjectForClassification, // Use employee folder, subfolder, or filename as "subject" for classification
             contentType.startsWith('application/pdf') ? buffer : undefined,
+            undefined, // No email body for folder ingestion
           );
 
           // If subfolder name gave us an employee, use it (unless classification found a better match)

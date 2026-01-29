@@ -357,19 +357,6 @@ export default function EmpleadosPage() {
     }
   };
 
-  // Funcții pentru editare inline
-  const startEditing = (codigo, field, currentValue) => {
-    setEditingCell({ codigo, field });
-    setEditingValue(currentValue || '');
-    // Resetează termenii de căutare când începe editarea
-    if (field === 'centro') {
-      setCentroSearchTerm(currentValue || '');
-      setShowCentroDropdown(true);
-    } else if (field === 'grupo') {
-      setGrupoSearchTerm(currentValue || '');
-      setShowGrupoDropdown(true);
-    }
-  };
 
   const cancelEditing = () => {
     setEditingCell(null);
@@ -679,7 +666,11 @@ export default function EmpleadosPage() {
     EMPRESA: 'DE CAMINO SERVICIOS AUXILIARES SL',
     ESTADO: 'PENDIENTE', // Default pentru angajați noi
     DerechoPedidos: 'NO',
-    TrabajaFestivos: 'NO'
+    TrabajaFestivos: 'NO',
+    // Câmpuri separate pentru nume (pentru PDF)
+    NOMBRE: '',
+    APELLIDO1: '',
+    APELLIDO2: ''
   }));
   
   // Sincronizare automată: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
@@ -813,6 +804,15 @@ export default function EmpleadosPage() {
     comentario_empresa: '',
     confirmar: false,
   });
+
+  // State pentru actualizare IBAN din PDF SOPORTE
+  const [showIbanModal, setShowIbanModal] = useState(false);
+  const [ibanPdfFile, setIbanPdfFile] = useState(null);
+  const [ibanPreview, setIbanPreview] = useState(null);
+  const [ibanLoading, setIbanLoading] = useState(false);
+  const [ibanError, setIbanError] = useState(null);
+  const [ibanConfirmando, setIbanConfirmando] = useState(false);
+  const [ibanSeleccionadas, setIbanSeleccionadas] = useState({}); // { codigo: true/false }
   const [despidoAttachments, setDespidoAttachments] = useState([]);
   const [despidoLoading, setDespidoLoading] = useState(false);
   const [despidoError, setDespidoError] = useState(null);
@@ -1408,6 +1408,19 @@ export default function EmpleadosPage() {
       return filtered;
     }
 
+    // Filtru special: "activos_sin_iban" - arată doar angajații activi fără IBAN
+    if (searchBy === 'activos_sin_iban') {
+      const filtered = users.filter((user) => {
+        const estado = (user['ESTADO'] || user.ESTADO || '').toString().trim().toUpperCase();
+        const iban = user['Nº Cuenta'] || user['Nº_Cuenta'] || user.cuenta || '';
+        const isActivo = estado === 'ACTIVO';
+        const sinIban = !iban || iban.toString().trim() === '';
+        return isActivo && sinIban;
+      });
+      console.log(`🔍 [Activos sin IBAN Filter] Total users: ${users.length}, Filtered: ${filtered.length}`);
+      return filtered;
+    }
+
     // În primul rând aplicăm filtrul de căutare
     const base = !searchTerm.trim()
       ? users
@@ -1587,7 +1600,11 @@ export default function EmpleadosPage() {
         EMPRESA: 'DE CAMINO SERVICIOS AUXILIARES SL',
         ESTADO: 'PENDIENTE', // Default pentru angajați noi
         DerechoPedidos: 'NO',
-        TrabajaFestivos: 'NO'
+        TrabajaFestivos: 'NO',
+        // Câmpuri separate pentru nume (pentru PDF)
+        NOMBRE: '',
+        APELLIDO1: '',
+        APELLIDO2: ''
       });
       setAddSuccess(true);
       setShowPDFModal(false);
@@ -1858,7 +1875,8 @@ export default function EmpleadosPage() {
     try {
       const { exportToExcelWithHeader } = await import('../utils/exportExcel');
       
-      const dataToExport = searchTerm ? getFilteredUsers : users;
+      // Folosește întotdeauna getFilteredUsers pentru a respecta toate filtrele (searchTerm, searchBy, statusFilter)
+      const dataToExport = getFilteredUsers;
       
       if (!dataToExport || dataToExport.length === 0) {
         setNotification({
@@ -1924,7 +1942,11 @@ export default function EmpleadosPage() {
       // Log export
       await activityLogger.logDataExport('empleados_excel', {
         count: dataToExport.length,
-        filters: { searchTerm, searchBy },
+        filters: { 
+          searchTerm, 
+          searchBy,
+          statusFilter: statusFilter !== 'ALL' ? statusFilter : undefined
+        },
         columnsExported: columns.length
       }, authUser);
       
@@ -1934,6 +1956,390 @@ export default function EmpleadosPage() {
         type: 'error',
         title: 'Error al Exportar',
         message: 'Error al exportar a Excel. Por favor, inténtalo de nuevo.',
+        show: true
+      });
+    }
+  };
+
+  const handleSendActiveEmployeesList = async () => {
+    try {
+      // CODIGO-uri de utilizatori de exclus din listă (utilizatori de test/admin)
+      const excludedCodigos = ['10000002', '10000001'];
+      
+      // Funcție helper pentru a normaliza datele
+      const normalizeDateInput = (dateStr) => {
+        if (!dateStr) return null;
+        const str = String(dateStr).trim();
+        if (!str) return null;
+        
+        // Format YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+          return str;
+        }
+        
+        // Format DD/MM/YYYY sau DD-MM-YYYY
+        if (str.includes('/') || str.includes('-')) {
+          const separator = str.includes('/') ? '/' : '-';
+          const parts = str.split(separator);
+          if (parts.length === 3) {
+            let dd, mm, yyyy;
+            if (parts[0].length === 4) {
+              // YYYY-MM-DD
+              [yyyy, mm, dd] = parts;
+            } else {
+              // DD-MM-YYYY
+              [dd, mm, yyyy] = parts;
+            }
+            return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+          }
+        }
+        
+        return null;
+      };
+      
+      // Funcție helper pentru a verifica dacă un angajat are baja activă în Mutua
+      const hasBajaActivaEnMutua = (codigo, bajasMedicas) => {
+        if (!bajasMedicas || bajasMedicas.length === 0) return false;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const bajaActiva = bajasMedicas.find((baja) => {
+          if (!baja || typeof baja !== 'object') return false;
+          
+          // Verifică dacă baja este pentru acest angajat
+          const bajaCodigo = String(baja.Codigo_Empleado || baja.codigo_empleado || baja.CODIGO || baja.codigo || '').trim();
+          if (bajaCodigo !== codigo) return false;
+          
+          const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja['Fecha de baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || '';
+          const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha de alta'] || baja['Fecha de Alta'] || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
+          
+          if (!fechaInicio) return false;
+          
+          const inicio = normalizeDateInput(fechaInicio);
+          const fin = fechaFin ? normalizeDateInput(fechaFin) : null;
+          
+          if (!inicio) return false;
+          
+          const inicioDate = new Date(inicio);
+          inicioDate.setHours(0, 0, 0, 0);
+          
+          // Dacă există fechaFin (fecha_alta), verifică dacă este în trecut
+          if (fin) {
+            const finDate = new Date(fin);
+            finDate.setHours(0, 0, 0, 0);
+            
+            // Dacă fechaFin este în trecut, baja médica nu este activă
+            if (today > finDate) {
+              return false;
+            }
+            
+            // Verifică dacă ziua curentă este în intervalul [inicio, fin] (inclusiv fin)
+            return today >= inicioDate && today <= finDate;
+          } else {
+            // Dacă nu există fechaFin, consideră activă până în prezent
+            return today >= inicioDate;
+          }
+        });
+        
+        return !!bajaActiva;
+      };
+      
+      // Fetch toate bajas medicas din Mutua
+      let allBajasMedicas = [];
+      try {
+        const baseUrl = import.meta.env.DEV 
+          ? 'http://localhost:3000' 
+          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const token = localStorage.getItem('auth_token');
+        const url = `${baseUrl}/api/bajas-medicas`; // Fără codigo pentru a obține toate
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          }
+        });
+        
+        if (response.ok) {
+          allBajasMedicas = await response.json();
+          if (!Array.isArray(allBajasMedicas)) {
+            allBajasMedicas = [];
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching bajas medicas:', error);
+        // Continuă fără bajas medicas dacă nu se pot obține
+      }
+      
+      // Filtrează DOAR angajații cu ESTADO = 'ACTIVO'
+      // Exclude pe cei cu fecha baja programada (viitoare) și utilizatorii de test/admin
+      const activeEmployees = users.filter(u => {
+        const codigo = (u['CODIGO'] || u.CODIGO || '').toString().trim();
+        const estado = (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase();
+        const fechaBajaProgramada = u['fecha_baja_programada'] || u.fecha_baja_programada || '';
+        
+        // Exclude utilizatorii de test/admin
+        if (excludedCodigos.includes(codigo)) {
+          return false;
+        }
+        
+        // Exclude pe cei cu fecha baja programada (viitoare)
+        if (fechaBajaProgramada && fechaBajaProgramada.trim() !== '') {
+          return false;
+        }
+        
+        // Include DOAR pe cei cu ESTADO = 'ACTIVO'
+        return estado === 'ACTIVO';
+      });
+
+      if (!activeEmployees || activeEmployees.length === 0) {
+        setNotification({
+          type: 'warning',
+          title: 'Sin Datos',
+          message: 'No hay empleados activos para enviar',
+          show: true
+        });
+        return;
+      }
+
+      // Extrage doar coloanele necesare și verifică dacă au baja activă în Mutua
+      const dataToSend = activeEmployees.map(emp => {
+        const codigo = (emp['CODIGO'] || emp.CODIGO || '').toString().trim();
+        const tieneBajaActiva = hasBajaActivaEnMutua(codigo, allBajasMedicas);
+        
+        return {
+          'CODIGO': codigo,
+          'NOMBRE / APELLIDOS': emp['NOMBRE / APELLIDOS'] || emp['NOMBRE'] || '',
+          'D.N.I. / NIE': emp['D.N.I. / NIE'] || emp.DNI || '',
+          'CORREO ELECTRONICO': emp['CORREO ELECTRONICO'] || emp.EMAIL || '',
+          'TELEFONO': emp['TELEFONO'] || emp.TELEFONO || '',
+          'ESTADO': tieneBajaActiva ? 'BAJA' : (emp['ESTADO'] || emp.ESTADO || 'ACTIVO') // Marchează ca BAJA dacă are baja activă în Mutua
+        };
+      });
+
+      // Definește coloanele pentru Excel
+      const columns = [
+        { key: 'CODIGO', label: 'Código', width: 15 },
+        { key: 'NOMBRE / APELLIDOS', label: 'Nombre', width: 30 },
+        { key: 'D.N.I. / NIE', label: 'DNI', width: 20 },
+        { key: 'CORREO ELECTRONICO', label: 'Correo', width: 30 },
+        { key: 'TELEFONO', label: 'Teléfono', width: 20 }
+      ];
+
+      // Generează Excel-ul ca buffer
+      const { generateExcelBuffer } = await import('../utils/exportExcel');
+      const excelBuffer = await generateExcelBuffer(
+        dataToSend,
+        columns,
+        'LISTA DE EMPLEADOS ACTIVOS',
+        new Date().toLocaleDateString('es-ES')
+      );
+
+      // Convertește buffer-ul în File pentru FormData
+      const blob = new Blob([excelBuffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const filename = `empleados_activos_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const excelFile = new File([blob], filename, { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+
+      // Trimite email-ul cu attachment-ul
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('No estás autenticado');
+      }
+
+      const baseUrl = import.meta.env.DEV 
+        ? 'http://localhost:3000' 
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+
+      const formData = new FormData();
+      formData.append('recipientType', 'gestoria');
+      formData.append('recipientEmail', 'mdelosangeles@ancaraconsulting.es');
+      formData.append('subject', `Lista de Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
+      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>`);
+      formData.append('attachments', excelFile);
+
+      setNotification({
+        type: 'info',
+        title: 'Enviando...',
+        message: 'Enviando lista de empleados activos...',
+        show: true
+      });
+
+      const response = await fetch(`${baseUrl}/api/sent-emails/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setNotification({
+          type: 'success',
+          title: 'Enviado',
+          message: `Lista de ${activeEmployees.length} empleados activos enviada correctamente`,
+          show: true
+        });
+
+        // Log export
+        await activityLogger.logDataExport('empleados_activos_email', {
+          count: activeEmployees.length,
+          sentTo: 'gestoria'
+        }, authUser);
+      } else {
+        throw new Error(result.message || 'Error al enviar el email');
+      }
+      
+    } catch (error) {
+      console.error('Error sending active employees list:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error al Enviar',
+        message: error.message || 'Error al enviar la lista de empleados activos. Por favor, inténtalo de nuevo.',
+        show: true
+      });
+    }
+  };
+
+  const handleSendListaIban = async () => {
+    try {
+      // CODIGO-uri de utilizatori de exclus din listă (utilizatori de test/admin)
+      const excludedCodigos = ['10000002', '10000001'];
+      
+      // Filtrează DOAR angajații cu ESTADO = 'ACTIVO'
+      const activeEmployees = users.filter(u => {
+        const codigo = (u['CODIGO'] || u.CODIGO || '').toString().trim();
+        const estado = (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase();
+        const fechaBajaProgramada = u['fecha_baja_programada'] || u.fecha_baja_programada || '';
+        
+        // Exclude utilizatorii de test/admin
+        if (excludedCodigos.includes(codigo)) {
+          return false;
+        }
+        
+        // Exclude pe cei cu fecha baja programada (viitoare)
+        if (fechaBajaProgramada && fechaBajaProgramada.trim() !== '') {
+          return false;
+        }
+        
+        // Include DOAR pe cei cu ESTADO = 'ACTIVO'
+        return estado === 'ACTIVO';
+      });
+
+      if (!activeEmployees || activeEmployees.length === 0) {
+        setNotification({
+          type: 'warning',
+          title: 'Sin Datos',
+          message: 'No hay empleados activos para enviar',
+          show: true
+        });
+        return;
+      }
+
+      // Extrage doar coloanele necesare: CODIGO, NOMBRE, IBAN
+      const dataToSend = activeEmployees.map(emp => {
+        const codigo = (emp['CODIGO'] || emp.CODIGO || '').toString().trim();
+        const nombre = getFormattedNombre(emp) || emp['NOMBRE / APELLIDOS'] || emp.NOMBRE || '';
+        const iban = (emp['Nº Cuenta'] || emp['Nº CUENTA'] || emp.cuenta || '').toString().trim() || '-';
+        
+        return {
+          'CODIGO': codigo,
+          'NOMBRE': nombre,
+          'IBAN': iban
+        };
+      });
+
+      // Definește coloanele pentru Excel
+      const columns = [
+        { key: 'CODIGO', label: 'Código', width: 15 },
+        { key: 'NOMBRE', label: 'Nombre', width: 40 },
+        { key: 'IBAN', label: 'IBAN', width: 35 }
+      ];
+
+      // Generează Excel-ul ca buffer
+      const { generateExcelBuffer } = await import('../utils/exportExcel');
+      const excelBuffer = await generateExcelBuffer(
+        dataToSend,
+        columns,
+        'LISTA DE IBAN - EMPLEADOS ACTIVOS',
+        new Date().toLocaleDateString('es-ES')
+      );
+
+      // Convertește buffer-ul în File pentru FormData
+      const blob = new Blob([excelBuffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const filename = `Lista_IBAN_Empleados_Activos_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const excelFile = new File([blob], filename, { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+
+      // Trimite email-ul cu Excel-ul
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('No estás autenticado');
+      }
+
+      const baseUrl = import.meta.env.DEV 
+        ? 'http://localhost:3000' 
+        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+
+      // Trimite la gestorie (default: altemprado@gmail.com)
+      // BCC-urile automat adăugate sunt: app@decaminoservicios.com și decamino.rrhh@gmail.com
+      const formData = new FormData();
+      formData.append('recipientType', 'gestoria');
+      // Nu specificăm recipientEmail pentru a folosi default-ul gestoriei: altemprado@gmail.com
+      formData.append('subject', `Lista de IBAN - Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
+      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de IBAN de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>`);
+      formData.append('attachments', excelFile);
+
+      setNotification({
+        type: 'info',
+        title: 'Enviando...',
+        message: 'Enviando lista de IBAN a gestoria...',
+        show: true
+      });
+
+      const response = await fetch(`${baseUrl}/api/sent-emails/send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setNotification({
+          type: 'success',
+          title: 'Enviado',
+          message: `Lista de IBAN de ${activeEmployees.length} empleados activos enviada correctamente`,
+          show: true
+        });
+
+        // Log export
+        await activityLogger.logDataExport('lista_iban_email', {
+          count: activeEmployees.length,
+          sentTo: 'gestoria'
+        }, authUser);
+      } else {
+        throw new Error(result.message || 'Error al enviar el email');
+      }
+      
+    } catch (error) {
+      console.error('Error sending IBAN list:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error al Enviar',
+        message: error.message || 'Error al enviar la lista de IBAN. Por favor, inténtalo de nuevo.',
         show: true
       });
     }
@@ -2184,6 +2590,7 @@ export default function EmpleadosPage() {
                               searchBy === 'fecha_alta' ? 'Fecha Alta' :
                               searchBy === 'sin_fecha_alta' ? 'Sin Fecha Alta' :
                               searchBy === 'certificado_handicap' ? 'Con Certificado Discapacidad' :
+                              searchBy === 'activos_sin_iban' ? 'Activos sin IBAN' :
                               'Todos';
         filters.push(`${searchByLabel}: "${searchTerm}"`);
       }
@@ -2207,7 +2614,7 @@ export default function EmpleadosPage() {
                 [{ text: 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
                 [{ text: 'NIF: B85524536', style: 'companyDetails' }],
                 [{ text: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: 'Teléfono: +34 91 123 45 67', style: 'companyDetails' }],
+                [{ text: 'Teléfono: 910 440 275', style: 'companyDetails' }],
                 [{ text: 'Email: info@decaminoservicios.com', style: 'companyDetails' }]
               ]
             },
@@ -2281,7 +2688,8 @@ export default function EmpleadosPage() {
         count: dataToExport.length,
         filters: {
           searchTerm: searchTerm,
-          searchBy: searchBy
+          searchBy: searchBy,
+          statusFilter: statusFilter !== 'ALL' ? statusFilter : undefined
         }
       }, authUser);
       
@@ -2516,6 +2924,162 @@ export default function EmpleadosPage() {
     setDocumentoTodosError(null);
     setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
     setShowSolicitarDocumentoTodosModal(true);
+  };
+
+  // Handlers pentru actualizare IBAN
+  const openIbanModal = () => {
+    setIbanPdfFile(null);
+    setIbanPreview(null);
+    setIbanError(null);
+    setIbanSeleccionadas({});
+    setShowIbanModal(true);
+  };
+
+  const handleIbanPdfChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        setIbanError('El archivo debe ser un PDF');
+        return;
+      }
+      setIbanPdfFile(file);
+      setIbanPreview(null);
+      setIbanError(null);
+    }
+  };
+
+  const handleIbanPreview = async () => {
+    if (!ibanPdfFile) {
+      setIbanError('Por favor, selecciona un archivo PDF');
+      return;
+    }
+
+    setIbanLoading(true);
+    setIbanError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('pdf', ibanPdfFile);
+
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.actualizarIbanPreview, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al procesar PDF');
+      }
+
+      const data = await response.json();
+      setIbanPreview(data);
+
+      // Selectează automat toate asocierile valide (cu empleado găsit)
+      const seleccionadas = {};
+      const asociacionesConEmpleado = [];
+      const asociacionesSinEmpleado = [];
+      
+      if (data.asociaciones) {
+        data.asociaciones.forEach((asoc) => {
+          if (asoc.empleadoEncontrado) {
+            asociacionesConEmpleado.push(asoc);
+            if (!asoc.necesitaConfirmacion) {
+              seleccionadas[asoc.empleadoEncontrado.codigo] = true;
+            }
+          } else {
+            asociacionesSinEmpleado.push(asoc);
+          }
+        });
+      }
+      
+      console.log('📊 IBAN Preview Stats:', {
+        total: data.asociaciones?.length || 0,
+        conEmpleado: asociacionesConEmpleado.length,
+        sinEmpleado: asociacionesSinEmpleado.length,
+        seleccionadasAutomaticamente: Object.keys(seleccionadas).length,
+        necesitaConfirmacion: asociacionesConEmpleado.filter(a => a.necesitaConfirmacion).length,
+      });
+      
+      setIbanSeleccionadas(seleccionadas);
+    } catch (error) {
+      console.error('Error al procesar PDF:', error);
+      setIbanError(error.message || 'Error al procesar PDF');
+    } finally {
+      setIbanLoading(false);
+    }
+  };
+
+  const handleIbanConfirmar = async () => {
+    if (!ibanPreview || !ibanPreview.asociaciones) {
+      setIbanError('No hay asociaciones para confirmar');
+      return;
+    }
+
+    // Filtrează doar asocierile selectate
+    const actualizaciones = ibanPreview.asociaciones
+      .filter((asoc) => {
+        if (!asoc.empleadoEncontrado) return false;
+        return ibanSeleccionadas[asoc.empleadoEncontrado.codigo] === true;
+      })
+      .map((asoc) => ({
+        codigo: asoc.empleadoEncontrado.codigo,
+        iban: asoc.ibanExtraido,
+      }));
+
+    if (actualizaciones.length === 0) {
+      setIbanError('Por favor, selecciona al menos una asociación para actualizar');
+      return;
+    }
+
+    setIbanConfirmando(true);
+    setIbanError(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.actualizarIbanConfirmar, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({ actualizaciones }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al confirmar actualización');
+      }
+
+      const data = await response.json();
+      
+      setNotification({
+        type: 'success',
+        title: 'IBANs Actualizados',
+        message: `Se actualizaron ${data.actualizados} IBANs correctamente${data.errores && data.errores.length > 0 ? `. ${data.errores.length} errores.` : ''}`,
+        show: true,
+      });
+
+      // Reîncarcă lista de angajați
+      fetchUsers();
+
+      // Închide modal-ul după 2 secunde
+      setTimeout(() => {
+        setShowIbanModal(false);
+        setIbanPdfFile(null);
+        setIbanPreview(null);
+        setIbanSeleccionadas({});
+        setIbanError(null);
+      }, 2000);
+    } catch (error) {
+      console.error('Error al confirmar actualización:', error);
+      setIbanError(error.message || 'Error al confirmar actualización');
+    } finally {
+      setIbanConfirmando(false);
+    }
   };
 
   const handleSolicitarDocumentoTodos = async () => {
@@ -3398,6 +3962,7 @@ export default function EmpleadosPage() {
                         <option value="fecha_alta">📅 Fecha Alta</option>
                         <option value="sin_fecha_alta">⚠️ Sin Fecha Alta</option>
                         <option value="certificado_handicap">♿ Con Certificado Discapacidad</option>
+                        <option value="activos_sin_iban">💳 Activos sin IBAN</option>
                         <option value="todos">🔍 Todos</option>
                       </select>
                     </div>
@@ -3509,6 +4074,90 @@ export default function EmpleadosPage() {
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
                   </button>
 
+                  {/* Enviar Lista Activos - ORANGE */}
+                  <button
+                    onClick={handleSendActiveEmployeesList}
+                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid rgba(249, 115, 22, 0.25)',
+                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.15)',
+                      padding: '0.75rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(249, 115, 22, 0.15)';
+                    }}
+                  >
+                    {/* Glow sutil en hover */}
+                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                    
+                    {/* Contenido */}
+                    <div className="relative flex items-center gap-2 justify-center">
+                      <div 
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                          boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)'
+                        }}
+                      >
+                        <span className="text-base">📧</span>
+                      </div>
+                      <span className="text-sm font-bold text-orange-800">Enviar Lista Activos</span>
+                    </div>
+                    
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  </button>
+
+                  {/* Enviar Lista Iban - ORANGE */}
+                  <button
+                    onClick={handleSendListaIban}
+                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid rgba(249, 115, 22, 0.25)',
+                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.15)',
+                      padding: '0.75rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(249, 115, 22, 0.15)';
+                    }}
+                  >
+                    {/* Glow sutil en hover */}
+                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                    
+                    {/* Contenido */}
+                    <div className="relative flex items-center gap-2 justify-center">
+                      <div 
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
+                          boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)'
+                        }}
+                      >
+                        <span className="text-base">💳</span>
+                      </div>
+                      <span className="text-sm font-bold text-orange-800">Enviar Lista Iban</span>
+                    </div>
+                    
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  </button>
+
                   {/* Actualizar - BLUE */}
                   <button
                     onClick={fetchUsers}
@@ -3587,6 +4236,48 @@ export default function EmpleadosPage() {
                         <span className="text-base">📦</span>
                       </div>
                       <span className="text-sm font-bold text-green-800">Exportar Todos ZIP</span>
+                    </div>
+                    
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  </button>
+
+                  {/* Actualizar IBAN desde PDF - TEAL */}
+                  <button
+                    onClick={openIbanModal}
+                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(20, 184, 166, 0.1) 0%, rgba(15, 118, 110, 0.1) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid rgba(20, 184, 166, 0.25)',
+                      boxShadow: '0 4px 12px rgba(20, 184, 166, 0.15)',
+                      padding: '0.75rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(20, 184, 166, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(20, 184, 166, 0.15)';
+                    }}
+                  >
+                    {/* Glow sutil en hover */}
+                    <div className="absolute inset-0 rounded-xl bg-teal-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                    
+                    {/* Contenido */}
+                    <div className="relative flex items-center gap-2 justify-center">
+                      <div 
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)',
+                          boxShadow: '0 2px 8px rgba(20, 184, 166, 0.3)'
+                        }}
+                      >
+                        <span className="text-base">🏦</span>
+                      </div>
+                      <span className="text-sm font-bold text-teal-800">Actualizar IBAN</span>
                     </div>
                     
                     {/* Shimmer effect */}
@@ -5117,13 +5808,11 @@ export default function EmpleadosPage() {
                             </div>
                           ) : (
                             <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer hover:opacity-80 ${
+                              className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                                 emp.estado === 'ACTIVO' 
                                   ? 'bg-green-100 text-green-800' 
                                   : 'bg-red-100 text-red-800'
                               }`}
-                              onClick={() => startEditing(emp.CODIGO, 'estado', emp.estado)}
-                              title="Click para editar"
                             >
                               {emp.estado || '-'}
                             </span>
@@ -5160,11 +5849,7 @@ export default function EmpleadosPage() {
                               </button>
                             </div>
                           ) : (
-                            <span
-                              className="font-mono text-xs cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded"
-                              onClick={() => startEditing(emp.CODIGO, 'fecha_alta', emp.fecha_alta)}
-                              title="Click para editar"
-                            >
+                            <span className="font-mono text-xs">
                               {emp.fecha_alta ? (
                                 emp.fecha_alta
                               ) : (
@@ -5232,11 +5917,7 @@ export default function EmpleadosPage() {
                               </button>
                             </div>
                           ) : (
-                            <span
-                              className="cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded"
-                              onClick={() => startEditing(emp.CODIGO, 'centro', emp.centro)}
-                              title="Click para editar"
-                            >
+                            <span>
                               {emp.centro || '-'}
                             </span>
                           )}
@@ -5300,11 +5981,7 @@ export default function EmpleadosPage() {
                               </button>
                             </div>
                           ) : (
-                            <span
-                              className="cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded"
-                              onClick={() => startEditing(emp.CODIGO, 'grupo', emp.grupo)}
-                              title="Click para editar"
-                            >
+                            <span>
                               {emp.grupo || '-'}
                             </span>
                           )}
@@ -5453,7 +6130,15 @@ export default function EmpleadosPage() {
                   {field === 'TrabajaFestivos' && '🎉'} 
                   {field === 'Contraseña' && '🔑'} 
                   {field === 'CuantoPuedeGastar' && '💰'} 
-                  {field}
+                  {field === 'fecha_baja_programada' && '📅'} 
+                  {field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' && '🏖️'} 
+                  {field === 'certificado_handicap_confirmado' && '♿'} 
+                  {field === 'fecha_baja_programada' ? 'Fecha de Baja Programada' :
+                   field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' ? 'Vacaciones Restantes Año Anterior' :
+                   field === 'certificado_handicap_confirmado' ? 'Certificado Handicap Confirmado' :
+                   field === 'DerechoPedidos' ? 'Derecho Pedidos' :
+                   field === 'TrabajaFestivos' ? 'Trabaja Festivos' :
+                   field}
                 </label>
                 {field === 'CODIGO' ? (
                   <Input
@@ -6055,6 +6740,60 @@ export default function EmpleadosPage() {
                       </div>
                     )}
                   </div>
+                ) : field === 'fecha_baja_programada' ? (
+                  <input
+                    id={fieldId}
+                    name={field}
+                    type="date"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
+                    value={editForm[field] ? (() => {
+                      const date = editForm[field];
+                      // Detectează formatul și convertește la YYYY-MM-DD pentru input type="date"
+                      if (date.includes('/')) {
+                        const [dd, mm, yyyy] = date.split('/');
+                        return `${yyyy}-${mm}-${dd}`;
+                      } else if (date.includes('-')) {
+                        const parts = date.split('-');
+                        if (parts[0].length === 4) return date; // Deja e YYYY-MM-DD
+                        const [dd, mm, yyyy] = parts;
+                        return `${yyyy}-${mm}-${dd}`;
+                      }
+                      return date;
+                    })() : ''}
+                    onChange={(e) => {
+                      const [yyyy, mm, dd] = e.target.value.split('-');
+                      setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                    }}
+                  />
+                ) : field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' ? (
+                  <div className="space-y-2">
+                    <input
+                      id={fieldId}
+                      name={field}
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
+                      value={editForm[field] || ''}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
+                      placeholder="0.0"
+                    />
+                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                      <span>🏖️</span>
+                      <span>Días de vacaciones restantes del año anterior</span>
+                    </div>
+                  </div>
+                ) : field === 'certificado_handicap_confirmado' ? (
+                  <select
+                    id={fieldId}
+                    name={field}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
+                    value={editForm[field] === true || editForm[field] === 'true' || editForm[field] === 1 ? 'SI' : 'NO'}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value === 'SI' ? true : false }))}
+                  >
+                    <option value="NO">❌ NO</option>
+                    <option value="SI">✅ SÍ</option>
+                  </select>
                 ) : field === 'DIRECCION' ? (
                   <AddressAutocomplete
                     id={fieldId}
@@ -7128,6 +7867,257 @@ export default function EmpleadosPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal Actualizar IBAN desde PDF */}
+      <Modal
+        isOpen={showIbanModal}
+        onClose={() => {
+          setShowIbanModal(false);
+          setIbanPdfFile(null);
+          setIbanPreview(null);
+          setIbanError(null);
+          setIbanSeleccionadas({});
+        }}
+        title="Actualizar IBAN desde PDF SOPORTE"
+        size="large"
+      >
+        <div className="space-y-6">
+          {/* Upload PDF */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Seleccionar PDF SOPORTE
+            </label>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={handleIbanPdfChange}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-lg file:border-0
+                file:text-sm file:font-semibold
+                file:bg-teal-50 file:text-teal-700
+                hover:file:bg-teal-100
+                dark:file:bg-teal-900 dark:file:text-teal-200"
+            />
+            {ibanPdfFile && (
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                Archivo seleccionado: {ibanPdfFile.name}
+              </p>
+            )}
+          </div>
+
+          {/* Botón Preview */}
+          {ibanPdfFile && !ibanPreview && (
+            <div className="flex justify-center">
+              <Button
+                onClick={handleIbanPreview}
+                variant="primary"
+                loading={ibanLoading}
+                disabled={ibanLoading}
+                className="px-6 py-2 bg-teal-600 hover:bg-teal-700"
+              >
+                {ibanLoading ? 'Procesando...' : '📄 Procesar PDF'}
+              </Button>
+            </div>
+          )}
+
+          {/* Preview de asociaciones */}
+          {ibanPreview && ibanPreview.asociaciones && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">
+                Asociaciones encontradas ({ibanPreview.asociaciones.length})
+              </h3>
+              
+              {ibanPreview.errores && ibanPreview.errores.length > 0 && (
+                <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
+                    ⚠️ Advertencias:
+                  </p>
+                  <ul className="list-disc list-inside text-sm text-yellow-700 dark:text-yellow-300">
+                    {ibanPreview.errores.map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="max-h-96 overflow-y-auto border rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        <input
+                          type="checkbox"
+                          checked={ibanPreview.asociaciones.every(asoc => 
+                            !asoc.empleadoEncontrado || ibanSeleccionadas[asoc.empleadoEncontrado.codigo] === true
+                          )}
+                          onChange={(e) => {
+                            const newSeleccionadas = {};
+                            if (e.target.checked) {
+                              ibanPreview.asociaciones.forEach((asoc) => {
+                                if (asoc.empleadoEncontrado) {
+                                  newSeleccionadas[asoc.empleadoEncontrado.codigo] = true;
+                                }
+                              });
+                            }
+                            setIbanSeleccionadas(newSeleccionadas);
+                          }}
+                          className="rounded"
+                        />
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Empleado
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        IBAN Actual
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        IBAN Nuevo
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Estado
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                    {ibanPreview.asociaciones.map((asoc, index) => (
+                      <tr
+                        key={index}
+                        className={asoc.empleadoEncontrado ? '' : 'bg-red-50 dark:bg-red-900/20'}
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {asoc.empleadoEncontrado ? (
+                            <input
+                              type="checkbox"
+                              checked={ibanSeleccionadas[asoc.empleadoEncontrado.codigo] === true}
+                              onChange={(e) => {
+                                setIbanSeleccionadas({
+                                  ...ibanSeleccionadas,
+                                  [asoc.empleadoEncontrado.codigo]: e.target.checked,
+                                });
+                              }}
+                              className="rounded"
+                            />
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {asoc.empleadoEncontrado ? (
+                            <div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                {asoc.empleadoEncontrado.nombre}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                COD: {asoc.empleadoEncontrado.codigo}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-red-600 dark:text-red-400">
+                              ⚠️ No encontrado
+                              {asoc.codigo && ` (COD: ${asoc.codigo})`}
+                              {asoc.nombre && ` (${asoc.nombre})`}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                          {asoc.empleadoEncontrado?.ibanActual || '—'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className="text-sm font-mono text-teal-700 dark:text-teal-300">
+                            {asoc.ibanExtraido}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {asoc.empleadoEncontrado ? (
+                            asoc.necesitaConfirmacion ? (
+                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                ⚠️ IBAN diferente - Requiere confirmación
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                ✅ Encontrado
+                              </span>
+                            )
+                          ) : (
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                              ⚠️ No encontrado
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                <p>
+                  Seleccionadas: {ibanPreview.asociaciones.filter(a => 
+                    a.empleadoEncontrado && ibanSeleccionadas[a.empleadoEncontrado.codigo] === true
+                  ).length} de{' '}
+                  {ibanPreview.asociaciones.filter(a => a.empleadoEncontrado).length} asociaciones válidas
+                </p>
+                {ibanPreview.asociaciones.filter(a => a.empleadoEncontrado && a.necesitaConfirmacion).length > 0 && (
+                  <p className="mt-2 text-yellow-600 dark:text-yellow-400">
+                    ⚠️ {ibanPreview.asociaciones.filter(a => a.empleadoEncontrado && a.necesitaConfirmacion).length} asociación(es) con IBAN diferente en la base de datos - 
+                    selecciónalas manualmente si deseas actualizarlas
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {ibanError && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-800 dark:text-red-200">{ibanError}</p>
+            </div>
+          )}
+
+          {/* Butoane */}
+          <div className="flex gap-4 justify-center mt-8">
+            <Button
+              onClick={() => {
+                setShowIbanModal(false);
+                setIbanPdfFile(null);
+                setIbanPreview(null);
+                setIbanError(null);
+                setIbanSeleccionadas({});
+              }}
+              variant="outline"
+              size="lg"
+              className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+              disabled={ibanConfirmando}
+            >
+              <span className="mr-2">✖️</span>
+              Cancelar
+            </Button>
+            {ibanPreview && (
+              <Button
+                onClick={handleIbanConfirmar}
+                variant="primary"
+                size="lg"
+                loading={ibanConfirmando}
+                disabled={ibanConfirmando || Object.values(ibanSeleccionadas).filter(v => v === true).length === 0}
+                className="px-8 py-3 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 shadow-lg"
+              >
+                {ibanConfirmando ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Actualizando...
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-2">💾</span>
+                    Confirmar Actualización
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   );

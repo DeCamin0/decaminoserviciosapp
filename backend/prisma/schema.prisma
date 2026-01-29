@@ -1339,3 +1339,143 @@ model HallOfFameMensual {
   @@index([mes, ranking], map: "idx_ranking")
   @@map("hall_of_fame_mensual")
 }
+
+// ============================================
+// PRL DOCUMENTOS - Sistema de Gestión PRL
+// ============================================
+// NOTA: Se usa directamente User.GRUPO como "puesto"
+// PrlDocumentTemplate.grupo_nombre = User.GRUPO
+
+enum PrlDocumentType {
+  EVALUACION_RIESGOS      // 1) Evaluación de Riesgos Laborales (informativo)
+  ACTA_INFORMATIVA        // 2) Acta Informativa (requiere firma)
+  ENTREGA_EPIS            // 3) Entrega de EPIs (requiere firma)
+  RENUNCIA_RM             // 4) Renuncia RM (requiere firma solo si rechaza)
+  MANUAL_TEST             // 5) Manual + Test (completar test + certificado)
+}
+
+enum PrlDocumentStatus {
+  PENDIENTE    // Documento asignado, esperando acción
+  FIRMADO      // Firmado/Completado
+  RECHAZADO    // Rechazado (para Renuncia RM)
+  NO_APLICA    // No aplica (ej: no rechaza RM)
+  INFORMATIVO  // Solo informativo (Evaluación Riesgos)
+}
+
+enum PrlAuditAction {
+  DESCARGADO
+  VISUALIZADO
+  FIRMADO
+  TEST_COMPLETADO
+  CERTIFICADO_UPLOAD
+  RECHAZADO
+}
+
+// Template-uri de documente per GRUPO (puesto)
+model PrlDocumentTemplate {
+  id              Int      @id @default(autoincrement())
+  grupo_nombre    String   @map("grupo_nombre") @db.VarChar(200) // = User.GRUPO
+  tipo_documento  PrlDocumentType
+  nombre          String   @db.VarChar(255)
+  archivo         Bytes    // PDF template almacenado en DB
+  nombre_archivo  String   @db.VarChar(255)
+  requiere_firma  Boolean  @default(false) @map("requiere_firma")
+  es_renuncia_rm  Boolean  @default(false) @map("es_renuncia_rm")
+  es_manual_test  Boolean  @default(false) @map("es_manual_test")
+  version         Int      @default(1)
+  activo          Boolean  @default(true)
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  updated_at      DateTime @updatedAt @db.Timestamp(0)
+  
+  employeeDocs    PrlEmployeeDocument[]
+  
+  @@index([grupo_nombre], map: "idx_prl_template_grupo")
+  @@index([tipo_documento], map: "idx_prl_template_tipo")
+  @@index([activo], map: "idx_prl_template_activo")
+  @@index([grupo_nombre, tipo_documento], map: "idx_prl_template_grupo_tipo") // Unique per grupo+tipo
+  @@map("prl_document_templates")
+}
+
+// Documente atribuite angajaților
+model PrlEmployeeDocument {
+  id                    Int      @id @default(autoincrement())
+  empleado_id           String   @map("empleado_id") @db.VarChar(50)
+  grupo_nombre          String   @map("grupo_nombre") @db.VarChar(200) // = User.GRUPO (snapshot)
+  template_id           Int      @map("template_id")
+  tipo_documento        PrlDocumentType
+  estado                PrlDocumentStatus @default(PENDIENTE)
+  
+  // Documento original (template)
+  archivo_original      Bytes?   @map("archivo_original")
+  nombre_archivo_original String? @map("nombre_archivo_original") @db.VarChar(255)
+  
+  // Documento firmado (si aplica)
+  archivo_firmado       Bytes?   @map("archivo_firmado")
+  nombre_archivo_firmado String? @map("nombre_archivo_firmado") @db.VarChar(255)
+  fecha_firma           DateTime? @map("fecha_firma") @db.Timestamp(0)
+  ip_firma              String?   @map("ip_firma") @db.VarChar(100)
+  
+  // Para Manual + Test
+  test_completado       Boolean  @default(false) @map("test_completado")
+  test_fecha_completado DateTime? @map("test_fecha_completado") @db.Timestamp(0)
+  test_puntuacion        Int?     @map("test_puntuacion")
+  certificado_archivo   Bytes?   @map("certificado_archivo")
+  certificado_nombre    String?  @map("certificado_nombre") @db.VarChar(255)
+  certificado_fecha     DateTime? @map("certificado_fecha") @db.Timestamp(0)
+  
+  // Metadata
+  asignado_por          String   @map("asignado_por") @db.VarChar(50)
+  asignado_en           DateTime  @default(now()) @map("asignado_en") @db.Timestamp(0)
+  updated_at            DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+  notas                 String?   @db.Text
+  
+  template              PrlDocumentTemplate @relation(fields: [template_id], references: [id])
+  auditLogs             PrlAuditLog[]
+  
+  @@index([empleado_id], map: "idx_prl_emp_doc_empleado")
+  @@index([grupo_nombre], map: "idx_prl_emp_doc_grupo")
+  @@index([template_id], map: "idx_prl_emp_doc_template")
+  @@index([estado], map: "idx_prl_emp_doc_estado")
+  @@index([empleado_id, estado], map: "idx_prl_emp_doc_emp_estado")
+  @@index([tipo_documento], map: "idx_prl_emp_doc_tipo")
+  @@map("prl_employee_documents")
+}
+
+// Audit log (opcional pentru MVP, dar recomandat pentru conformitate)
+model PrlAuditLog {
+  id              Int      @id @default(autoincrement())
+  employee_doc_id Int      @map("employee_doc_id")
+  usuario_id      String   @map("usuario_id") @db.VarChar(50)
+  accion          PrlAuditAction
+  ip_address      String?  @map("ip_address") @db.VarChar(100)
+  user_agent      String?  @map("user_agent") @db.Text
+  detalles        String?  @db.Text
+  created_at      DateTime @default(now()) @db.Timestamp(0)
+  
+  employeeDoc     PrlEmployeeDocument @relation(fields: [employee_doc_id], references: [id], onDelete: Cascade)
+  
+  @@index([employee_doc_id], map: "idx_prl_audit_doc")
+  @@index([usuario_id], map: "idx_prl_audit_usuario")
+  @@index([accion], map: "idx_prl_audit_accion")
+  @@index([created_at], map: "idx_prl_audit_created")
+  @@map("prl_audit_logs")
+}
+
+// ============================================
+// DIPLOMAS - Sistema de Gestión de Diplomas
+// ============================================
+
+model Diploma {
+  id              Int      @id @default(autoincrement())
+  empleado_id     String   @map("empleado_id") @db.VarChar(50)
+  nombre_empleado String   @map("nombre_empleado") @db.VarChar(500) // Snapshot pentru audit
+  nombre_archivo  String   @map("nombre_archivo") @db.VarChar(255)
+  archivo         Bytes    // PDF diploma almacenado en DB
+  fecha_subida    DateTime @default(now()) @map("fecha_subida") @db.Timestamp(0)
+  subido_por      String   @map("subido_por") @db.VarChar(50)
+  notas           String?  @db.Text
+  
+  @@index([empleado_id], map: "idx_diploma_empleado")
+  @@index([fecha_subida], map: "idx_diploma_fecha")
+  @@map("diplomas")
+}

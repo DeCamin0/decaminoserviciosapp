@@ -223,6 +223,28 @@ export class ImapConnector implements EmailConnector {
               message.envelope.messageId || `msg_${seq}_${Date.now()}`;
             const read = message.flags?.has('\\Seen') || false;
 
+            // Extract body (text and HTML) for name extraction
+            let emailBody: { text?: string; html?: string } | undefined;
+            try {
+              if (message.bodyStructure) {
+                const bodyParts = await this.extractBodyText(
+                  seq,
+                  message.bodyStructure,
+                );
+                if (bodyParts.text || bodyParts.html) {
+                  emailBody = bodyParts;
+                  this.logger.log(
+                    `📄 Extracted body from message ${seq} (text: ${!!bodyParts.text}, html: ${!!bodyParts.html})`,
+                  );
+                }
+              }
+            } catch (bodyError: any) {
+              // Non-critical: log but don't fail message processing
+              this.logger.warn(
+                `⚠️ Could not extract body from message ${seq}: ${bodyError.message}`,
+              );
+            }
+
             // Extract attachments only if requested
             const attachments: EmailAttachment[] = [];
             if (extractAttachments && message.bodyStructure) {
@@ -252,6 +274,7 @@ export class ImapConnector implements EmailConnector {
               date,
               read,
               attachments,
+              ...(emailBody && { body: emailBody }),
             };
 
             // Store sequence number and bodyStructure for later attachment extraction if needed
@@ -455,11 +478,20 @@ export class ImapConnector implements EmailConnector {
           const fileSize = content.length;
           const isImage = /\.(png|jpg|jpeg|gif)$/i.test(filename);
 
+          // Check if filename is purely numeric (e.g., "1000046909.jpg") - these are usually real documents, not signatures
+          const isNumericFilename = /^\d+\.(png|jpg|jpeg|gif)$/i.test(filename);
+
+          // Check if filename is a hex hash with letters (e.g., "1f6cbf6f.png") - these are usually signature images
+          const isHexHashWithLetters =
+            /^[a-f0-9]{8,16}\.(png|jpg|jpeg|gif)$/i.test(filename) &&
+            /[a-f]/.test(filename.toLowerCase());
+
           const isSignatureImage =
             // Outlook signature images (Outlook-*.png)
             filenameLower.startsWith('outlook-') ||
-            // Hash-like filenames (1f6cbf6f.png, etc.) - typically inline signature images
-            /^[a-f0-9]{8,16}\.(png|jpg|jpeg|gif)$/i.test(filename) ||
+            // Hash-like filenames with hex letters (1f6cbf6f.png, etc.) - typically inline signature images
+            // BUT: Skip if it's purely numeric (1000046909.jpg) - these are usually real scanned documents
+            (isHexHashWithLetters && !isNumericFilename) ||
             // Logo files in signatures (explicit logo names)
             (filenameLower.includes('logo') &&
               filenameLower.length < 50 &&
@@ -550,6 +582,123 @@ export class ImapConnector implements EmailConnector {
     );
 
     return attachments;
+  }
+
+  /**
+   * Extract text and HTML body from message
+   * @param seq - Message sequence number
+   * @param bodyStructure - Message body structure
+   * @returns Object with text and/or html body
+   */
+  private async extractBodyText(
+    seq: number,
+    bodyStructure: any,
+  ): Promise<{ text?: string; html?: string }> {
+    const result: { text?: string; html?: string } = {};
+
+    if (!this.client) {
+      return result;
+    }
+
+    const extractFromPart = async (part: any, partNumber?: string) => {
+      // Skip multipart containers - process children
+      if (
+        part.type === 'multipart' ||
+        (part.childNodes &&
+          Array.isArray(part.childNodes) &&
+          part.childNodes.length > 0)
+      ) {
+        if (part.childNodes && Array.isArray(part.childNodes)) {
+          for (let i = 0; i < part.childNodes.length; i++) {
+            const childPart = part.childNodes[i];
+            const childPartNumber = partNumber
+              ? `${partNumber}.${i + 1}`
+              : `${i + 1}`;
+            await extractFromPart(childPart, childPartNumber);
+          }
+        }
+        return;
+      }
+
+      // Log part structure for debugging
+      this.logger.log(
+        `🔍 DEBUG extractBodyText: part.type=${part.type}, part.subtype=${part.subtype}, partNumber=${partNumber || 'root'}, contentType=${part.contentType || 'none'}`,
+      );
+
+      // Extract text/plain and text/html parts
+      // part.type can be either 'text' (with subtype) or 'text/plain'/'text/html' (complete string)
+      const typeStr =
+        typeof part.type === 'string' ? part.type.toLowerCase() : '';
+      const contentType =
+        part.contentType ||
+        (part.subtype ? `${part.type}/${part.subtype}` : part.type);
+      const contentTypeStr =
+        typeof contentType === 'string' ? contentType.toLowerCase() : '';
+
+      const isPlainText =
+        (part.type === 'text' && part.subtype === 'plain') ||
+        typeStr === 'text/plain' ||
+        contentTypeStr === 'text/plain';
+      const isHtml =
+        (part.type === 'text' && part.subtype === 'html') ||
+        typeStr === 'text/html' ||
+        contentTypeStr === 'text/html';
+
+      if (isPlainText || isHtml) {
+        try {
+          const downloadPartNumber = partNumber || '1';
+          this.logger.log(
+            `🔍 Attempting to download ${part.subtype || contentType.split('/')[1]} body from part ${downloadPartNumber}`,
+          );
+          const bodyData = await this.client!.download(
+            seq,
+            downloadPartNumber,
+            {
+              uid: false,
+            },
+          );
+
+          if (bodyData && bodyData.content) {
+            const chunks: Buffer[] = [];
+            for await (const chunk of bodyData.content) {
+              chunks.push(chunk);
+            }
+
+            if (chunks.length > 0) {
+              const content = Buffer.concat(chunks).toString('utf-8');
+              if (isPlainText && !result.text) {
+                result.text = content;
+                this.logger.log(
+                  `✅ Extracted text/plain body (${content.length} chars) from part ${downloadPartNumber}`,
+                );
+              } else if (isHtml && !result.html) {
+                result.html = content;
+                this.logger.log(
+                  `✅ Extracted text/html body (${content.length} chars) from part ${downloadPartNumber}`,
+                );
+              }
+            } else {
+              this.logger.warn(
+                `⚠️ No content chunks for ${part.subtype || contentType.split('/')[1]} body from part ${downloadPartNumber}`,
+              );
+            }
+          } else {
+            this.logger.warn(
+              `⚠️ No bodyData or content for ${part.subtype || contentType.split('/')[1]} body from part ${downloadPartNumber}`,
+            );
+          }
+        } catch (error: any) {
+          const partNum = partNumber || '1';
+          this.logger.warn(
+            `⚠️ Error extracting body from part ${partNum}: ${error.message}`,
+          );
+        }
+      }
+    };
+
+    await extractFromPart(bodyStructure);
+
+    return result;
   }
 
   /**

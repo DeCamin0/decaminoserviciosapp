@@ -73,6 +73,15 @@ export default function IdleProvider({ children }) {
   }, [timeoutMin, warnSec, writeStorage, broadcast])
 
   const performLogout = useCallback(async () => {
+    // Oprește timer-ul imediat
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    setShowWarning(false)
+    setSecondsToLogout(null)
+    setIsModalSticky(false)
+    
     try {
       if (logout) {
         await logout()
@@ -208,8 +217,21 @@ export default function IdleProvider({ children }) {
       {idleEnabled && showWarning && (
         <IdleWarningModal
           secondsLeft={secondsToLogout}
-          onStay={resetActivityTimer}
-          onLogout={() => { broadcast('logout'); performLogout() }}
+          onStay={() => {
+            resetActivityTimer()
+          }}
+          onLogout={async () => {
+            // Oprește timer-ul și închide modalul imediat
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current)
+              intervalRef.current = null
+            }
+            setShowWarning(false)
+            setSecondsToLogout(null)
+            setIsModalSticky(false)
+            broadcast('logout')
+            await performLogout()
+          }}
         />
       )}
     </IdleContext.Provider>

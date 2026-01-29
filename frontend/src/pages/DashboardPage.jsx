@@ -23,6 +23,7 @@ import {
   Trophy,
   UserCircle,
   Users,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   getCurrentMonthKey,
@@ -54,6 +55,7 @@ const InicioPage = () => {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
   const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
+  const [documentosPRLPendientesCount, setDocumentosPRLPendientesCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [bannerStatusLoading, setBannerStatusLoading] = useState(true);
 
@@ -510,6 +512,84 @@ const InicioPage = () => {
     };
   }, [user?.CODIGO, user?.isDemo]);
 
+  // Fetch documente PRL pendiente pentru badge
+  useEffect(() => {
+    const fetchDocumentosPRLPendientesCount = async () => {
+      if (!user?.CODIGO || user?.isDemo) {
+        setDocumentosPRLPendientesCount(0);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(routes.prlMisDocumentos, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        // Dacă endpoint-ul nu există sau dacă e eroare 404/500, nu aruncăm eroare
+        if (response.status === 404 || response.status === 500) {
+          setDocumentosPRLPendientesCount(0);
+          return;
+        }
+
+        if (!response.ok) {
+          console.warn(`Warning: Error HTTP ${response.status} al obtener documentos PRL`);
+          setDocumentosPRLPendientesCount(0);
+          return;
+        }
+
+        const data = await response.json();
+        
+        if (data.success && data.documentos && Array.isArray(data.documentos)) {
+          // Filtrează doar documentele pendiente care necesită semnătură
+          const pendientes = data.documentos.filter(
+            (d) => d.estado === 'PENDIENTE' && d.requiere_firma
+          );
+          setDocumentosPRLPendientesCount(pendientes.length);
+        } else {
+          setDocumentosPRLPendientesCount(0);
+        }
+      } catch (error) {
+        console.warn('Warning: Error obteniendo documentos PRL pendientes:', error);
+        setDocumentosPRLPendientesCount(0);
+      }
+    };
+
+    fetchDocumentosPRLPendientesCount();
+    
+    // Reîncarcă la fiecare 60 de secunde pentru a actualiza badge-ul
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          fetchDocumentosPRLPendientesCount();
+        }
+      }, 60000); // 60 secunde
+    };
+    
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        fetchDocumentosPRLPendientesCount();
+        startPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.CODIGO, user?.isDemo]);
+
   const quickAccessItems = useMemo(() => {
     // Dacă permisiunile nu sunt încă încărcate, folosim verificările hardcodate ca fallback
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
@@ -576,6 +656,8 @@ const InicioPage = () => {
     }
 
     if (canAccessDocumentos) {
+      // Calculează totalul de notificări (documentos solicitados + PRL pendientes)
+      const totalNotifications = documentosSolicitadosCount + documentosPRLPendientesCount;
       list.push({
         id: 'documentos',
         label: 'Documentos',
@@ -583,7 +665,7 @@ const InicioPage = () => {
         icon: <FileText className="h-6 w-6 text-white" />,
         gradient: 'from-orange-500 via-amber-500 to-yellow-500',
         href: '/documentos',
-        notificationCount: documentosSolicitadosCount > 0 ? documentosSolicitadosCount : undefined,
+        notificationCount: totalNotifications > 0 ? totalNotifications : undefined,
       });
     }
 
@@ -648,6 +730,19 @@ const InicioPage = () => {
         icon: <Folder className="h-6 w-6 text-white" />,
         gradient: 'from-teal-500 via-cyan-500 to-sky-500',
         href: '/documentos-empleados',
+        role: 'manager',
+      });
+    }
+
+    // PRL Documentos - doar pentru manageri/admini
+    if ((!useBackendPermissions && isManager) || canManageDocuments) {
+      list.push({
+        id: 'prl-documentos',
+        label: 'Documentos PRL',
+        hint: 'Gestión documentos PRL por puesto',
+        icon: <ShieldCheck className="h-6 w-6 text-white" />,
+        gradient: 'from-red-500 via-rose-500 to-pink-500',
+        href: '/prl-documentos',
         role: 'manager',
       });
     }
@@ -786,6 +881,7 @@ const InicioPage = () => {
     findGrupoKey,
     comunicadosUnreadCount,
     documentosSolicitadosCount,
+    documentosPRLPendientesCount,
   ]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)

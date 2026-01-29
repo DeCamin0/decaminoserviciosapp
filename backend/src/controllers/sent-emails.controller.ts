@@ -255,14 +255,11 @@ export class SentEmailsController {
       );
 
       // Template HTML pentru email - fără indentare pentru a evita spații
-      const htmlTemplate = (nombre: string, mesaj: string) => {
-        // Curăță mesajul de spații și linii goale
-        const mesajCleaned = (mesaj || '')
-          .trim()
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0)
-          .join('\n');
+      const htmlTemplate = (
+        nombre: string,
+        mesaj: string,
+        isGestoria: boolean = false,
+      ) => {
         const additionalMsgCleaned = additionalMessage
           ? (additionalMessage || '')
               .trim()
@@ -272,6 +269,22 @@ export class SentEmailsController {
               .join('\n')
           : '';
 
+        // Pentru gestoria, doar mesajul complet (fără "Hola Gestoria," și fără footer)
+        // Păstrăm mesajul EXACT cum este trimis, fără nicio procesare
+        if (isGestoria) {
+          // Folosim mesajul exact, fără procesare - poate fi HTML sau text
+          const mesajFinal = mesaj || '';
+          return `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${mesajFinal}${additionalMsgCleaned ? `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;"><strong>Mensaje adicional:</strong><br><div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div></div>` : ''}</body></html>`;
+        }
+
+        // Pentru alți destinatari, template complet
+        // Curăță mesajul de spații și linii goale
+        const mesajCleaned = (mesaj || '')
+          .trim()
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .join('\n');
         return `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${additionalMsgCleaned ? `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;"><strong>Mensaje adicional:</strong><br><div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div></div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p></body></html>`;
       };
 
@@ -299,9 +312,19 @@ export class SentEmailsController {
       for (let i = 0; i < recipients.length; i++) {
         const recipient = recipients[i];
         try {
-          const html = htmlTemplate(recipient.nombre, message);
+          const html = htmlTemplate(
+            recipient.nombre,
+            message,
+            recipientType === 'gestoria',
+          );
 
           // Trimite email
+          // Pentru gestoria, adaugă BCC la app@decaminoservicios.com
+          const bccList =
+            recipientType === 'gestoria'
+              ? ['app@decaminoservicios.com', 'decamino.rrhh@gmail.com']
+              : ['decamino.rrhh@gmail.com'];
+
           if (attachments.length > 0) {
             await this.emailService.sendEmailWithAttachments(
               recipient.email,
@@ -309,12 +332,12 @@ export class SentEmailsController {
               html,
               attachments,
               {
-                bcc: ['decamino.rrhh@gmail.com'],
+                bcc: bccList,
               },
             );
           } else {
             await this.emailService.sendEmail(recipient.email, subject, html, {
-              bcc: ['decamino.rrhh@gmail.com'],
+              bcc: bccList,
             });
           }
 

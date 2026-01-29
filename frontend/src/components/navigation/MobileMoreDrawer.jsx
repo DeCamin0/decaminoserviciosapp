@@ -19,6 +19,7 @@ import {
   Mail,
   BarChart3,
   Trophy,
+  ShieldCheck,
 } from 'lucide-react';
 import { routes } from '../../utils/routes';
 
@@ -377,6 +378,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     }
     if (canManageDocuments) {
       list.push({ id: 'documentos-empleados', label: 'Documentos empleados', hint: 'Archivos por empleado', icon: Folder, href: '/documentos-empleados', role: 'manager', gradient: 'from-teal-500 via-cyan-500 to-sky-500' });
+      list.push({ id: 'prl-documentos', label: 'Documentos PRL', hint: 'Gestión documentos PRL por puesto', icon: ShieldCheck, href: '/prl-documentos', role: 'manager', gradient: 'from-red-500 via-rose-500 to-pink-500' });
     }
     if (canManageCuadrantes) {
       list.push({ id: 'cuadrantes', label: 'Cuadrantes', hint: 'Gestión de horarios del equipo', icon: Calendar, href: '/cuadrantes', role: 'manager', gradient: 'from-slate-500 via-gray-500 to-zinc-500' });

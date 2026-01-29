@@ -91,6 +91,10 @@ import { HallOfFameController } from './controllers/hall-of-fame.controller';
 import { HallOfFameService } from './services/hall-of-fame.service';
 import { EmailIngestionModule } from './email-ingestion/email-ingestion.module';
 import { EmployeeExportService } from './services/employee-export.service';
+import { PrlDocumentsController } from './controllers/prl-documents.controller';
+import { PrlDocumentsService } from './services/prl-documents.service';
+import { DiplomasController } from './controllers/diplomas.controller';
+import { DiplomasService } from './services/diplomas.service';
 
 @Module({
   imports: [
@@ -162,6 +166,8 @@ import { EmployeeExportService } from './services/employee-export.service';
     ScheduledMessagesController,
     GestoriaController,
     MonitoringController,
+    PrlDocumentsController,
+    DiplomasController,
     // AssistantController se importa din AssistantModule
   ],
   providers: [
@@ -212,6 +218,8 @@ import { EmployeeExportService } from './services/employee-export.service';
     DespidoAutomationCronService,
     BajaVoluntariaPdfService,
     EmployeeExportService,
+    PrlDocumentsService,
+    DiplomasService,
   ],
 })
 export class AppModule {}

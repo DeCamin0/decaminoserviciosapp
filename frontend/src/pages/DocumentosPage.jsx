@@ -82,7 +82,7 @@ export default function DocumentosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [activeTab, setActiveTab] = useState('nominas'); // 'nominas', 'mis-documentos' o 'upload-documentos'
+  const [activeTab, setActiveTab] = useState('nominas'); // 'nominas', 'mis-documentos', 'contrato-documentos', 'prl-documentos', 'diplomas'
   const [documentType, setDocumentType] = useState(''); // Estado para el tipo de documento seleccionado
   const [customDocumentType, setCustomDocumentType] = useState(''); // Estado para el tipo de documento personalizado
   const fileInputRefs = useRef({});
@@ -121,6 +121,16 @@ export default function DocumentosPage() {
 
   // Estado para documentos solicitados
   const [documentosSolicitados, setDocumentosSolicitados] = useState([]);
+
+  // Estado para documentos PRL
+  const [documentosPRL, setDocumentosPRL] = useState([]);
+  const [documentosPRLLoading, setDocumentosPRLLoading] = useState(false);
+  const [documentosPRLError, setDocumentosPRLError] = useState(null);
+
+  // Estado para diplomas (solo visualización)
+  const [diplomas, setDiplomas] = useState([]);
+  const [diplomasLoading, setDiplomasLoading] = useState(false);
+  const [diplomasError, setDiplomasError] = useState(null);
 
   const email = authUser?.['CORREO ELECTRONICO'] || authUser?.email;
   const empleadoId = authUser?.CODIGO || authUser?.id || authUser?.userId;
@@ -716,6 +726,106 @@ export default function DocumentosPage() {
       setDocumentosSolicitados([]);
     }
   }, [empleadoId]);
+
+  // Función para obtener documentos PRL
+  const fetchDocumentosPRL = useCallback(async () => {
+    if (!empleadoId) {
+      setDocumentosPRLError('No se pudo identificar al empleado');
+      setDocumentosPRLLoading(false);
+      return;
+    }
+
+    setDocumentosPRLLoading(true);
+    setDocumentosPRLError(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.prlMisDocumentos, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📋 Documentos PRL obtenidos:', data);
+
+      if (data.success && data.documentos) {
+        setDocumentosPRL(data.documentos);
+      } else {
+        setDocumentosPRL([]);
+      }
+    } catch (error) {
+      console.error('❌ Error obteniendo documentos PRL:', error);
+      setDocumentosPRLError(error.message);
+      setDocumentosPRL([]);
+    } finally {
+      setDocumentosPRLLoading(false);
+    }
+  }, [empleadoId]);
+
+  // Cargar documentos PRL cuando se accede a la página (para badge) y cuando se abre el tab
+  useEffect(() => {
+    // Cargar siempre para tener el badge actualizado
+    fetchDocumentosPRL();
+  }, [fetchDocumentosPRL]);
+
+  // Función para cargar diplomas del empleado
+  const fetchDiplomas = useCallback(async () => {
+    if (!empleadoId) {
+      setDiplomasError('No se pudo identificar al empleado');
+      setDiplomasLoading(false);
+      return;
+    }
+
+    setDiplomasLoading(true);
+    setDiplomasError(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.diplomasListarEmpleado(empleadoId), {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error al cargar diplomas' }));
+        throw new Error(errorData.message || 'Error al cargar diplomas');
+      }
+
+      const data = await response.json();
+      setDiplomas(Array.isArray(data.diplomas) ? data.diplomas : []);
+    } catch (error) {
+      console.error('Error cargando diplomas:', error);
+      setDiplomasError(error.message);
+      setDiplomas([]);
+    } finally {
+      setDiplomasLoading(false);
+    }
+  }, [empleadoId]);
+
+  // Cargar diplomas cuando se accede al tab
+  useEffect(() => {
+    if (activeTab === 'diplomas' && empleadoId) {
+      fetchDiplomas();
+    }
+  }, [activeTab, empleadoId, fetchDiplomas]);
 
   // Función para abrir el preview de un documento
   const handlePreviewDocument = async (documento) => {
@@ -1860,14 +1970,6 @@ export default function DocumentosPage() {
     activityLogger.logPageAccess('documentos', authUser);
   }, [email, authUser, fetchNominas, fetchDocumentos, fetchDocumentosOficiales, fetchDocumentosSolicitados, authUser?.isDemo]);
 
-  const handleUpload = (tip) => {
-    // Establecer el tipo de documento
-    setDocumentType(tip);
-    
-    // Siempre abrir el modal para elegir la fuente (cámara, galería, archivo)
-    setShowCustomTypeSourceModal(true);
-  };
-
   // Funcție pentru ștergerea unui document existent
   const handleDeleteDocumento = async (documentoId, docId, fileName) => {
     try {
@@ -1928,69 +2030,6 @@ export default function DocumentosPage() {
         message: `No se pudo eliminar el documento: ${error.message}`
       });
       return false;
-    }
-  };
-
-  // Funcție pentru înlocuirea unui document (șterge vechiul și încarcă unul nou)
-  const handleReplaceDocumento = async (event, tip, documentoExistente) => {
-    if (!event || !event.target || !event.target.files || !event.target.files[0]) return;
-    
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    setUploading(true);
-    
-    try {
-      // Șterge documentul existent dacă există
-      if (documentoExistente && documentoExistente.length > 0) {
-        const documentoToDelete = documentoExistente[0];
-        
-        // Obține fileName cu fallback pentru compatibilitate
-        const fileNameToDelete = documentoToDelete.fileName || 
-                                documentoToDelete.nombre_archivo || 
-                                documentoToDelete.filename ||
-                                documentoToDelete.archivo;
-        
-        console.log('🔍 [handleReplaceDocumento] Document to delete:', documentoToDelete);
-        console.log('🔍 [handleReplaceDocumento] fileName to delete:', fileNameToDelete);
-        
-        if (!fileNameToDelete) {
-          setUploading(false);
-          setNotification({
-            type: 'error',
-            title: 'Error',
-            message: 'No se pudo obtener el nombre del archivo del documento a reemplazar'
-          });
-          return;
-        }
-        
-        const deleted = await handleDeleteDocumento(documentoToDelete.id, documentoToDelete.doc_id, fileNameToDelete);
-        if (!deleted) {
-          setUploading(false);
-          return;
-        }
-        // Așteaptă puțin pentru a se actualiza lista
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
-      // Creează un nou event pentru a încărca noul document
-      // (event-ul original a fost consumat, deci creăm unul nou)
-      const newEvent = {
-        target: {
-          files: [file]
-        }
-      };
-      
-      // Acum încarcă noul document cu flag-ul de reemplazo
-      await handleWebFileChange(newEvent, tip, true);
-    } catch (error) {
-      console.error('Error replacing documento:', error);
-      setNotification({
-        type: 'error',
-        title: 'Error',
-        message: `Error al reemplazar el documento: ${error.message}`
-      });
-      setUploading(false);
     }
   };
 
@@ -2251,7 +2290,8 @@ export default function DocumentosPage() {
             const tabNames = {
               'nominas': 'Nóminas',
               'mis-documentos': 'Mis Documentos',
-              'upload-documentos': 'Subir Documentos'
+              'contrato-documentos': 'Documentos Oficiales',
+              'prl-documentos': 'Documentos PRL'
             };
             
             const pageData = {
@@ -2348,22 +2388,51 @@ export default function DocumentosPage() {
           </button>
           
           <button
-            onClick={() => setActiveTab('upload-documentos')}
+            onClick={() => setActiveTab('prl-documentos')}
             className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'upload-documentos'
-                ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
-                : 'bg-white text-orange-600 border-2 border-orange-200 hover:border-orange-400 hover:bg-orange-50'
+              activeTab === 'prl-documentos'
+                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
+                : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
             }`}
           >
             {/* Glow effect */}
             <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'upload-documentos' 
-                ? 'bg-orange-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-orange-400 opacity-0 group-hover:opacity-20 blur-md'
+              activeTab === 'prl-documentos' 
+                ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
+                : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
             }`}></div>
             <div className="relative flex items-center gap-2">
-              <span className="text-xl">📤</span>
-              <span>Upload Documentos</span>
+              <span className="text-xl">🛡️</span>
+              <span>Documentos PRL</span>
+              {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length > 0 && (
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                  activeTab === 'prl-documentos'
+                    ? 'bg-white text-red-600'
+                    : 'bg-red-500 text-white'
+                }`}>
+                  {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length}
+                </span>
+              )}
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('diplomas')}
+            className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+              activeTab === 'diplomas'
+                ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-yellow-200'
+                : 'bg-white text-yellow-600 border-2 border-yellow-200 hover:border-yellow-400 hover:bg-yellow-50'
+            }`}
+          >
+            {/* Glow effect */}
+            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+              activeTab === 'diplomas' 
+                ? 'bg-yellow-400 opacity-30 blur-md animate-pulse' 
+                : 'bg-yellow-400 opacity-0 group-hover:opacity-20 blur-md'
+            }`}></div>
+            <div className="relative flex items-center gap-2">
+              <span className="text-xl">🎓</span>
+              <span>Diplomas</span>
             </div>
           </button>
         </div>
@@ -3132,254 +3201,6 @@ export default function DocumentosPage() {
             </div>
           )}
 
-           {activeTab === 'upload-documentos' && (
-             <div data-upload-section>
-               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-                 <div className="flex items-center gap-3 sm:gap-4">
-                   <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
-                     <span className="text-white text-xl sm:text-2xl">📤</span>
-                   </div>
-                   <div>
-                     <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Upload Documentos</h2>
-                     <p className="text-gray-600 text-xs sm:text-sm">Sube tus documentos personales de forma segura</p>
-                   </div>
-                 </div>
-               </div>
-               
-               {/* FORMULAR ÚNICO ULTRA MODERN */}
-               <div className="max-w-3xl mx-auto">
-                 <div className="relative group">
-                   {/* Glow effect */}
-                   <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-3xl opacity-20 group-hover:opacity-30 blur-xl transition-all duration-500"></div>
-                   
-                   <div className="relative bg-white/95 backdrop-blur-xl shadow-2xl border-2 border-gray-200/50 rounded-3xl p-6 sm:p-8"
-                        style={{ backdropFilter: 'blur(20px)' }}>
-                     
-                     {/* Header con icon */}
-                     <div className="flex items-center gap-4 mb-8">
-                       <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg">
-                         <span className="text-3xl">📄</span>
-                           </div>
-                       <div>
-                         <h3 className="text-2xl font-black text-gray-900">Subir Documento Personal</h3>
-                         <p className="text-sm text-gray-600 font-medium">Completa el formulario y sube tu documento</p>
-                           </div>
-                             </div>
-                     
-                     {/* Tipo de Documento */}
-                     <div className="mb-6">
-                       <label htmlFor="document-type-select" className="block text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
-                         <span className="text-xl">📋</span>
-                         <span>Tipo de Documento *</span>
-                       </label>
-                       <select
-                         id="document-type-select"
-                         name="documentType"
-                         value={documentType}
-                         onChange={(e) => setDocumentType(e.target.value)}
-                         className="w-full px-5 py-4 text-lg border-2 border-gray-300 rounded-2xl text-gray-800 bg-gradient-to-br from-white to-orange-50/30 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-lg focus:shadow-2xl focus:shadow-orange-500/30 font-medium cursor-pointer"
-                       >
-                         <option value="">Selecciona un tipo de documento...</option>
-                         <option value="DNI">🆔 DNI (Documento de Identidad)</option>
-                         <option value="Certificado de titularidad">🏦 Certificado de titularidad</option>
-                         <option value="justificante_medico">🏥 Justificante Médico</option>
-                         <option value="certificado_matrimonio">💍 Certificado de Matrimonio</option>
-                         <option value="justificante_ausencia">📅 Justificante de Ausencia</option>
-                         <option value="certificado_residencia">🏠 Certificado de Residencia</option>
-                         <option value="certificado_trabajo">💼 Certificado de Trabajo</option>
-                         <option value="otro">📎 Otro Documento</option>
-                       </select>
-                         </div>
-                     
-                     {/* Informare clară */}
-                     <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4">
-                       <div className="flex items-start">
-                         <div className="flex-shrink-0">
-                           <span className="text-blue-600 text-lg">ℹ️</span>
-                         </div>
-                         <div className="ml-3">
-                           <p className="text-sm text-blue-800 font-medium">
-                             Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
-                           </p>
-                         </div>
-                       </div>
-                     </div>
-                     
-                     {/* Aviso de reemplazo para DNI y Certificado de titularidad */}
-                     {(documentType === 'DNI' || documentType === 'Certificado de titularidad') && (() => {
-                       const documentoExistente = documentos.find(doc => 
-                         doc.tipo === documentType || 
-                         (documentType === 'DNI' && doc.tipo === 'DNI') ||
-                         (documentType === 'Certificado de titularidad' && doc.tipo === 'Certificado de titularidad')
-                       );
-                       
-                       if (documentoExistente) {
-                         return (
-                           <div className="mb-6 bg-amber-50 border-l-4 border-amber-500 rounded-lg p-4">
-                             <div className="flex items-start">
-                               <div className="flex-shrink-0">
-                                 <span className="text-amber-600 text-lg">⚠️</span>
-                               </div>
-                               <div className="ml-3 flex-1">
-                                 <p className="text-sm text-amber-800 font-medium mb-3">
-                                   Ya tienes un documento de tipo <strong>{documentType}</strong> subido:
-                                 </p>
-                                 <div className="bg-white rounded-lg p-3 mb-3 border border-amber-200">
-                                   <p className="text-xs text-gray-700 font-semibold">{documentoExistente.fileName}</p>
-                                   <p className="text-xs text-gray-500 mt-1">
-                                     Subido el: {formatDate(documentoExistente.uploadDate)}
-                                   </p>
-                                 </div>
-                                 <p className="text-sm text-amber-800 font-medium mb-3">
-                                   Si deseas reemplazarlo, selecciona un nuevo archivo:
-                                 </p>
-                                 <label className="block">
-                                   <input
-                                     type="file"
-                                     accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp"
-                                     onChange={(e) => handleReplaceDocumento(e, documentType, [documentoExistente])}
-                                     disabled={uploading}
-                                     className="hidden"
-                                     id={`replace-${documentType.replace(/\s+/g, '-')}`}
-                                   />
-                                   <button
-                                     type="button"
-                                     onClick={() => document.getElementById(`replace-${documentType.replace(/\s+/g, '-')}`)?.click()}
-                                     disabled={uploading}
-                                     className="w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                   >
-                                     {uploading ? (
-                                       <>
-                                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                         <span>Reemplazando...</span>
-                                       </>
-                                     ) : (
-                                       <>
-                                         <span>🔄</span>
-                                         <span>Reemplazar Documento</span>
-                                       </>
-                                     )}
-                                   </button>
-                                 </label>
-                               </div>
-                             </div>
-                           </div>
-                         );
-                       }
-                       return null;
-                     })()}
-                     
-                     {/* Campo de texto personalizado si selecciona "Otro" */}
-                     {documentType === 'otro' && (
-                       <div className="mb-6">
-                         <label htmlFor="custom-document-type-input" className="block text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
-                           <span className="text-xl">✍️</span>
-                           <span>Especifica el Tipo de Documento *</span>
-                         </label>
-                         <input
-                           id="custom-document-type-input"
-                           name="customDocumentType"
-                           type="text"
-                           value={customDocumentType}
-                           onChange={(e) => setCustomDocumentType(e.target.value)}
-                           placeholder="Ej: Certificado de Estudios, Carta de Recomendación..."
-                           className="w-full px-5 py-4 text-lg border-2 border-gray-300 rounded-2xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-lg focus:shadow-2xl focus:shadow-purple-500/30 font-medium"
-                         />
-                       </div>
-                     )}
-                     
-                     {/* Formatos aceptados */}
-                     <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-2xl">
-                       <div className="block text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
-                         <span className="text-lg">📎</span>
-                         <span>Formatos Aceptados</span>
-                       </div>
-                       <div className="flex flex-wrap gap-2">
-                         {['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.webp'].map(format => (
-                           <span key={format} className="px-3 py-2 bg-white text-blue-700 text-sm font-bold rounded-lg border-2 border-blue-300 shadow-sm">
-                                 {format}
-                           </span>
-                         ))}
-                           </div>
-                         </div>
-                         
-                     {/* Botón MEGA WOW para subir */}
-                         <button
-                       onClick={() => {
-                         if (!documentType) {
-                           setNotification({
-                             type: 'warning',
-                             title: 'Campo Requerido',
-                             message: 'Por favor, selecciona un tipo de documento'
-                           });
-                           return;
-                         }
-                         if (documentType === 'otro' && !customDocumentType.trim()) {
-                           setNotification({
-                             type: 'warning',
-                             title: 'Campo Requerido',
-                             message: 'Por favor, especifica el tipo de documento'
-                           });
-                           return;
-                         }
-                         handleUpload(documentType);
-                       }}
-                       disabled={uploading || !documentType}
-                       className="group relative w-full px-8 py-5 rounded-2xl font-black text-white transition-all duration-700 transform hover:scale-110 hover:-translate-y-2 shadow-2xl hover:shadow-orange-500/50 overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                       style={{
-                         background: 'linear-gradient(135deg, #f97316 0%, #ea580c 30%, #c2410c 60%, #9a3412 100%)',
-                         boxShadow: '0 20px 50px rgba(249, 115, 22, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.2)'
-                       }}
-                     >
-                       {/* Animated glow ultra potente */}
-                       <div className="absolute -inset-1 bg-gradient-to-r from-orange-400 via-amber-500 to-orange-600 opacity-60 group-hover:opacity-90 blur-2xl transition-all duration-700 animate-pulse"></div>
-                       
-                       {/* Shimmer mega effect */}
-                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                       
-                       {/* Particles effect */}
-                       {!uploading && (
-                         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
-                           <div className="absolute top-2 left-8 w-2 h-2 bg-white rounded-full animate-ping"></div>
-                           <div className="absolute bottom-3 right-10 w-1.5 h-1.5 bg-white rounded-full animate-ping" style={{ animationDelay: '0.2s' }}></div>
-                           <div className="absolute top-4 right-16 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0.4s' }}></div>
-                         </div>
-                       )}
-                       
-                       {/* Content */}
-                       <div className="relative flex items-center justify-center gap-3">
-                             {uploading ? (
-                               <>
-                             <div className="w-7 h-7 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
-                             <span className="text-lg">Subiendo Documento...</span>
-                               </>
-                             ) : (
-                               <>
-                             <span className="text-3xl transform group-hover:scale-125 group-hover:-rotate-12 transition-all duration-500">📤</span>
-                             <div className="flex flex-col items-start">
-                               <span className="text-xl tracking-wide">SUBIR DOCUMENTO</span>
-                               <span className="text-xs opacity-90">Clic para seleccionar archivo</span>
-                             </div>
-                               </>
-                             )}
-                           </div>
-                       
-                       {/* Borde brillante animado */}
-                       <div className="absolute inset-0 rounded-2xl border-2 border-white/30 group-hover:border-white/60 transition-all duration-700"></div>
-                         </button>
-                         
-                         <input
-                       ref={el => (fileInputRefs.current[documentType || 'default'] = el)}
-                           type="file"
-                           className="hidden"
-                       onChange={e => handleWebFileChange(e, documentType)}
-                           accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp"
-                         />
-                       </div>
-                 </div>
-               </div>
-             </div>
-           )}
         </div>
       </div>
 
@@ -3487,6 +3308,363 @@ export default function DocumentosPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Tab Documentos PRL */}
+      {activeTab === 'prl-documentos' && (
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span className="text-white text-xl sm:text-2xl">🛡️</span>
+              </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Documentos PRL</h2>
+                <p className="text-gray-600 text-xs sm:text-sm">Prevención de Riesgos Laborales - Documentos asignados</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={fetchDocumentosPRL}
+              disabled={documentosPRLLoading}
+              className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              <div className="absolute inset-0 rounded-xl bg-red-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+              <div className="relative flex items-center gap-2">
+                {documentosPRLLoading ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                ) : (
+                  <span className="text-lg">🔄</span>
+                )}
+                <span>Actualizar</span>
+              </div>
+            </button>
+          </div>
+
+          {documentosPRLLoading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-500 border-t-transparent mx-auto mb-4"></div>
+              <p className="text-gray-600">Cargando documentos PRL...</p>
+            </div>
+          ) : documentosPRLError ? (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+              <p className="text-red-800">Error: {documentosPRLError}</p>
+            </div>
+          ) : documentosPRL.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">🛡️</div>
+              <p className="text-gray-600 mb-2 font-bold text-lg">No hay documentos PRL asignados</p>
+              <p className="text-sm text-gray-500">Los documentos PRL aparecerán aquí cuando te sean asignados</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Documentos pendientes de firma */}
+              {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length > 0 && (
+                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg mb-4">
+                  <h3 className="font-bold text-yellow-800 mb-2">⚠️ Documentos pendientes de firma</h3>
+                  <p className="text-sm text-yellow-700">
+                    Tienes {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length} documento(s) que requieren firma y deben ser devueltos.
+                  </p>
+                </div>
+              )}
+
+              {/* Lista de documentos */}
+              {documentosPRL.map((doc) => {
+                const getEstadoBadge = () => {
+                  switch (doc.estado) {
+                    case 'PENDIENTE':
+                      return doc.requiere_firma ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
+                          ⚠️ Pendiente de Firma
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                          📋 Pendiente
+                        </span>
+                      );
+                    case 'FIRMADO':
+                      return (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+                          ✅ Firmado
+                        </span>
+                      );
+                    case 'INFORMATIVO':
+                      return (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                          📄 Informativo
+                        </span>
+                      );
+                    case 'NO_APLICA':
+                      return (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                          ℹ️ No Aplica
+                        </span>
+                      );
+                    default:
+                      return (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-300">
+                          {doc.estado}
+                        </span>
+                      );
+                  }
+                };
+
+                const getTipoLabel = (tipo) => {
+                  const tipos = {
+                    'EVALUACION_RIESGOS': 'Evaluación de Riesgos Laborales',
+                    'ACTA_INFORMATIVA': 'Acta Informativa del Puesto',
+                    'ENTREGA_EPIS': 'Entrega de EPIs',
+                    'RENUNCIA_RM': 'Renuncia Reconocimiento Médico',
+                    'MANUAL_TEST': 'Manual del Puesto + Test',
+                  };
+                  return tipos[tipo] || tipo;
+                };
+
+                return (
+                  <div
+                    key={doc.id}
+                    className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+                      doc.estado === 'PENDIENTE' && doc.requiere_firma
+                        ? 'border-yellow-300 bg-yellow-50'
+                        : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="font-semibold text-gray-900">{doc.template_nombre}</h3>
+                          {getEstadoBadge()}
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {getTipoLabel(doc.tipo_documento)}
+                        </p>
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <p>📅 Asignado: {formatDate(doc.asignado_en)}</p>
+                          {doc.fecha_firma && (
+                            <p>✍️ Firmado: {formatDate(doc.fecha_firma)}</p>
+                          )}
+                          {doc.es_manual_test && doc.test_completado && (
+                            <p>✅ Test completado: {doc.test_puntuacion !== null ? `${doc.test_puntuacion} puntos` : 'Completado'}</p>
+                          )}
+                        </div>
+                        {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
+                          <div className="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-xs text-yellow-800">
+                            ⚠️ Este documento requiere firma. Debes descargarlo, firmarlo y devolverlo.
+                          </div>
+                        )}
+                        {doc.es_renuncia_rm && (
+                          <div className="mt-2 p-2 bg-orange-100 border border-orange-300 rounded text-xs text-orange-800">
+                            ℹ️ Este documento se firma únicamente si rechazas el Reconocimiento Médico.
+                            {doc.estado === 'NO_APLICA' && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`renuncia-rm-${doc.id}`}
+                                  onChange={async (e) => {
+                                    if (e.target.checked) {
+                                      try {
+                                        const token = localStorage.getItem('auth_token');
+                                        const response = await fetch(routes.prlRenunciarRM(doc.id), {
+                                          method: 'POST',
+                                          headers: {
+                                            Authorization: `Bearer ${token}`,
+                                            'Content-Type': 'application/json',
+                                          },
+                                        });
+
+                                        if (!response.ok) {
+                                          const errorData = await response.json();
+                                          throw new Error(errorData.message || 'Error al renunciar a RM');
+                                        }
+
+                                        // Reîncarcă documentele pentru a actualiza statusul
+                                        await fetchDocumentosPRL();
+
+                                        setNotification({
+                                          type: 'success',
+                                          title: 'Renuncia registrada',
+                                          message: 'Debes descargar el documento, firmarlo y subirlo.',
+                                        });
+                                      } catch (error) {
+                                        e.target.checked = false;
+                                        setNotification({
+                                          type: 'error',
+                                          title: 'Error',
+                                          message: `Error al renunciar a RM: ${error.message}`,
+                                        });
+                                      }
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-orange-600 border-orange-300 rounded focus:ring-orange-500"
+                                />
+                                <label htmlFor={`renuncia-rm-${doc.id}`} className="cursor-pointer font-medium">
+                                  Renuncio al Reconocimiento Médico
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {/* Buton de descărcare - ascuns pentru RENUNCIA_RM cu status NO_APLICA */}
+                        {!(doc.es_renuncia_rm && doc.estado === 'NO_APLICA') && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const token = localStorage.getItem('auth_token');
+                                const response = await fetch(routes.prlDescargarMiDocumento(doc.id), {
+                                  headers: {
+                                    Authorization: `Bearer ${token}`,
+                                  },
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Error al descargar documento');
+                                }
+
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = doc.nombre_archivo_original;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+
+                                setNotification({
+                                  type: 'success',
+                                  title: 'Descarga exitosa',
+                                  message: `Documento "${doc.template_nombre}" descargado correctamente`,
+                                });
+                              } catch (error) {
+                                setNotification({
+                                  type: 'error',
+                                  title: 'Error',
+                                  message: `Error al descargar documento: ${error.message}`,
+                                });
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors text-sm"
+                          >
+                            📥 Descargar
+                          </button>
+                        )}
+                        {/* Mesaj pentru RENUNCIA_RM cu status NO_APLICA */}
+                        {doc.es_renuncia_rm && doc.estado === 'NO_APLICA' && (
+                          <div className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm text-center border border-gray-300">
+                            ℹ️ Marca la casilla para descargar
+                          </div>
+                        )}
+                        {/* Buton de upload pentru documente care necesită semnătură cu status PENDIENTE */}
+                        {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
+                          <label className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors text-sm text-center cursor-pointer">
+                            ✍️ Subir Firmado
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+
+                                try {
+                                  const token = localStorage.getItem('auth_token');
+                                  const formData = new FormData();
+                                  formData.append('archivo', file);
+
+                                  const response = await fetch(routes.prlSubirDocumentoFirmado(doc.id), {
+                                    method: 'POST',
+                                    headers: {
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: formData,
+                                  });
+
+                                  if (!response.ok) {
+                                    const errorData = await response.json();
+                                    throw new Error(errorData.message || 'Error al subir documento');
+                                  }
+
+                                  // Reîncarcă documentele pentru a actualiza statusul
+                                  await fetchDocumentosPRL();
+
+                                  setNotification({
+                                    type: 'success',
+                                    title: 'Documento subido',
+                                    message: 'El documento firmado ha sido subido exitosamente.',
+                                  });
+                                } catch (error) {
+                                  setNotification({
+                                    type: 'error',
+                                    title: 'Error',
+                                    message: `Error al subir documento: ${error.message}`,
+                                  });
+                                } finally {
+                                  // Reset input
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+                        )}
+                        {/* Buton de descărcare pentru documentul firmat (când există) */}
+                        {doc.estado === 'FIRMADO' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const token = localStorage.getItem('auth_token');
+                                const response = await fetch(routes.prlDescargarDocumentoFirmado(doc.id), {
+                                  headers: {
+                                    Authorization: `Bearer ${token}`,
+                                  },
+                                });
+
+                                if (!response.ok) {
+                                  throw new Error('Error al descargar documento firmado');
+                                }
+
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                // Folosim numele din header-ul Content-Disposition sau fallback
+                                const contentDisposition = response.headers.get('Content-Disposition');
+                                const filename = contentDisposition
+                                  ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || 'documento_firmado.pdf'
+                                  : 'documento_firmado.pdf';
+                                a.download = filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+
+                                setNotification({
+                                  type: 'success',
+                                  title: 'Descarga exitosa',
+                                  message: `Documento firmado "${doc.template_nombre}" descargado correctamente`,
+                                });
+                              } catch (error) {
+                                setNotification({
+                                  type: 'error',
+                                  title: 'Error',
+                                  message: `Error al descargar documento firmado: ${error.message}`,
+                                });
+                              }
+                            }}
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors text-sm"
+                          >
+                            📄 Descargar Firmado
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -3989,6 +4167,121 @@ export default function DocumentosPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Tab Diplomas */}
+      {activeTab === 'diplomas' && (
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span className="text-white text-xl sm:text-2xl">🎓</span>
+              </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Diplomas</h2>
+                <p className="text-gray-600 text-xs sm:text-sm">Tus diplomas y certificados</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={fetchDiplomas}
+              disabled={diplomasLoading}
+              className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-yellow-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              <div className="absolute inset-0 rounded-xl bg-yellow-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+              <div className="relative flex items-center gap-2">
+                {diplomasLoading ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                ) : (
+                  <span className="text-lg">🔄</span>
+                )}
+                <span>Actualizar</span>
+              </div>
+            </button>
+          </div>
+
+          {diplomasLoading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-yellow-500 border-t-transparent mx-auto mb-4"></div>
+              <p className="text-gray-600">Cargando diplomas...</p>
+            </div>
+          ) : diplomasError ? (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+              <p className="text-red-800">❌ {diplomasError}</p>
+            </div>
+          ) : diplomas.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-6xl mb-4">🎓</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">No se encontraron diplomas</h3>
+              <p className="text-gray-600">No hay diplomas disponibles para tu usuario</p>
+              <p className="text-gray-500 text-sm mt-2">Los diplomas aparecerán aquí cuando estén disponibles</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {diplomas.map((diploma) => (
+                <div
+                  key={diploma.id}
+                  className="card p-4 sm:p-6 hover:shadow-xl transition-shadow duration-200"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">
+                        {diploma.nombre_archivo}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Subido el: {new Date(diploma.uploaded_at).toLocaleDateString('es-ES', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const response = await fetch(routes.diplomasDescargar(diploma.id), {
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                            },
+                          });
+
+                          if (!response.ok) {
+                            throw new Error('Error al descargar diploma');
+                          }
+
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          const contentDisposition = response.headers.get('Content-Disposition');
+                          const filename = contentDisposition
+                            ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || diploma.nombre_archivo
+                            : diploma.nombre_archivo;
+                          a.download = filename;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(url);
+                        } catch (error) {
+                          setNotification({
+                            type: 'error',
+                            title: 'Error',
+                            message: `Error al descargar diploma: ${error.message}`,
+                          });
+                        }
+                      }}
+                      className="px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
+                    >
+                      <span>📥</span>
+                      <span>Descargar</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

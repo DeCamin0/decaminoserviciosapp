@@ -53,7 +53,8 @@ import {
   LazyComunicadoDetailPage,
   LazyComunicadoCreatePage,
   LazyMensajesEnviadosPage,
-  LazyHallOfFamePage
+  LazyHallOfFamePage,
+  LazyPRLDocumentosPage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -362,6 +363,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyDocumentosEmpleadosPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/prl-documentos"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyPRLDocumentosPage />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

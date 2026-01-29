@@ -34,6 +34,7 @@ const ComunicadoDetailPage = lazy(() => import('../ComunicadoDetailPage'));
 const ComunicadoCreatePage = lazy(() => import('../ComunicadoCreatePage'));
 const MensajesEnviadosPage = lazy(() => import('../MensajesEnviadosPage'));
 const HallOfFamePage = lazy(() => import('../HallOfFamePage'));
+const PRLDocumentosPage = lazy(() => import('../PRLDocumentosPage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -305,6 +306,14 @@ export const LazyHallOfFamePage = (props) => {
   );
 };
 
+export const LazyPRLDocumentosPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Documentos PRL..." />}>
+      <PRLDocumentosPage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -334,5 +343,6 @@ export default {
   LazyComunicadoDetailPage,
   LazyComunicadoCreatePage,
   LazyMensajesEnviadosPage,
-  LazyHallOfFamePage
+  LazyHallOfFamePage,
+  LazyPRLDocumentosPage
 };

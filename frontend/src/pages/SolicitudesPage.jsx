@@ -4404,7 +4404,7 @@ export default function SolicitudesPage() {
                 [{ text: 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
                 [{ text: 'NIF: B85524536', style: 'companyDetails' }],
                 [{ text: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: 'Teléfono: +34 91 123 45 67', style: 'companyDetails' }],
+                [{ text: 'Teléfono: 910 440 275', style: 'companyDetails' }],
                 [{ text: 'Email: info@decaminoservicios.com', style: 'companyDetails' }]
               ]
             },

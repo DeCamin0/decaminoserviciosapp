@@ -94,6 +94,12 @@ export const routes = {
   retrimiteFicha: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/retrimite-ficha'
     : 'https://api.decaminoservicios.com/api/empleados/retrimite-ficha',
+  actualizarIbanPreview: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/iban/preview'
+    : 'https://api.decaminoservicios.com/api/empleados/iban/preview',
+  actualizarIbanConfirmar: import.meta.env.DEV
+    ? 'http://localhost:3000/api/empleados/iban/confirmar'
+    : 'https://api.decaminoservicios.com/api/empleados/iban/confirmar',
   
   // Scheduled Messages (Mesaje Automate)
   getScheduledMessages: import.meta.env.DEV
@@ -703,4 +709,77 @@ export const routes = {
       : 'https://api.decaminoservicios.com';
     return `${base}/api/geocoding/address-from-coords?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`;
   },
+  
+  // PRL Documentos
+  prlListarGrupos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/prl/grupos'
+    : 'https://api.decaminoservicios.com/api/prl/grupos',
+  prlListarEmpleadosConDocumentos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/prl/empleados-con-documentos'
+    : 'https://api.decaminoservicios.com/api/prl/empleados-con-documentos',
+  prlListarTemplates: (grupoNombre) => {
+    const encoded = encodeURIComponent(grupoNombre);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/prl/grupos/${encoded}/templates`
+      : `https://api.decaminoservicios.com/api/prl/grupos/${encoded}/templates`;
+  },
+  prlUploadZipPreview: import.meta.env.DEV
+    ? 'http://localhost:3000/api/prl/upload-zip-preview'
+    : 'https://api.decaminoservicios.com/api/prl/upload-zip-preview',
+  prlUploadZipConfirmar: import.meta.env.DEV
+    ? 'http://localhost:3000/api/prl/upload-zip-confirmar'
+    : 'https://api.decaminoservicios.com/api/prl/upload-zip-confirmar',
+  prlUploadDocumento: import.meta.env.DEV
+    ? 'http://localhost:3000/api/prl/upload-documento'
+    : 'https://api.decaminoservicios.com/api/prl/upload-documento',
+  prlDescargarTemplate: (templateId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/templates/${templateId}/descargar`
+    : `https://api.decaminoservicios.com/api/prl/templates/${templateId}/descargar`,
+  prlEliminarTemplate: (templateId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/templates/${templateId}`
+    : `https://api.decaminoservicios.com/api/prl/templates/${templateId}`,
+  prlEliminarTodosTemplates: (grupoNombre) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/grupos/${encodeURIComponent(grupoNombre)}/templates`
+    : `https://api.decaminoservicios.com/api/prl/grupos/${encodeURIComponent(grupoNombre)}/templates`,
+  prlEnviarDocumentosAGrupo: (grupoNombre) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/grupos/${encodeURIComponent(grupoNombre)}/enviar`
+    : `https://api.decaminoservicios.com/api/prl/grupos/${encodeURIComponent(grupoNombre)}/enviar`,
+  prlMisDocumentos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/prl/mis-documentos'
+    : 'https://api.decaminoservicios.com/api/prl/mis-documentos',
+  prlDescargarMiDocumento: (documentoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/descargar`
+    : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/descargar`,
+  prlRenunciarRM: (documentoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/renunciar-rm`
+    : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/renunciar-rm`,
+  prlSubirDocumentoFirmado: (documentoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/subir-firmado`
+    : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/subir-firmado`,
+  prlDescargarDocumentoFirmado: (documentoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/descargar-firmado`
+    : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/descargar-firmado`,
+  
+  // Diplomas
+  diplomasUploadZipPreview: import.meta.env.DEV
+    ? 'http://localhost:3000/api/diplomas/upload-zip-preview'
+    : 'https://api.decaminoservicios.com/api/diplomas/upload-zip-preview',
+  diplomasUploadZipConfirmar: import.meta.env.DEV
+    ? 'http://localhost:3000/api/diplomas/upload-zip-confirmar'
+    : 'https://api.decaminoservicios.com/api/diplomas/upload-zip-confirmar',
+  diplomasUploadPdfsPreview: import.meta.env.DEV
+    ? 'http://localhost:3000/api/diplomas/upload-pdfs-preview'
+    : 'https://api.decaminoservicios.com/api/diplomas/upload-pdfs-preview',
+  diplomasUploadPdfsConfirmar: import.meta.env.DEV
+    ? 'http://localhost:3000/api/diplomas/upload-pdfs-confirmar'
+    : 'https://api.decaminoservicios.com/api/diplomas/upload-pdfs-confirmar',
+  diplomasListarEmpleado: (empleadoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/diplomas/empleado/${empleadoId}`
+    : `https://api.decaminoservicios.com/api/diplomas/empleado/${empleadoId}`,
+  diplomasListarTodas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/diplomas/todas'
+    : 'https://api.decaminoservicios.com/api/diplomas/todas',
+  diplomasDescargar: (diplomaId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/diplomas/${diplomaId}/descargar`
+    : `https://api.decaminoservicios.com/api/diplomas/${diplomaId}/descargar`,
 };

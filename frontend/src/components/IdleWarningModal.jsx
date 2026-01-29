@@ -171,20 +171,6 @@ export default function IdleWarningModal({ secondsLeft, onStay, onLogout }) {
                       Permanecer conectado
                     </span>
                   </button>
-
-                  {/* Logout now button */}
-                  <button
-                    type="button"
-                    onClick={onLogout}
-                    className="group relative overflow-hidden rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 px-8 py-3 text-white/80 font-medium hover:bg-white/20 hover:text-white transition-all duration-300 ease-out"
-                  >
-                    <span className="relative flex items-center justify-center gap-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      Cerrar sesión ahora
-                    </span>
-                  </button>
                 </div>
 
                 {/* Footer note */}

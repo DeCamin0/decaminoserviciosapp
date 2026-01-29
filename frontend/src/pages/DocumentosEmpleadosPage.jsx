@@ -406,7 +406,7 @@ export default function DocumentosEmpleadosPage() {
     });
   }, [bulkAvatarsLoaded, empleados, enqueueAvatar]);
 
-  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
+  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas', 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
 
   const [uploading, setUploading] = useState(false);
 
@@ -461,6 +461,69 @@ export default function DocumentosEmpleadosPage() {
   const [documentosOficialesLoading, setDocumentosOficialesLoading] = useState(false);
 
   const [documentosOficialesError, setDocumentosOficialesError] = useState(null);
+
+  // Estado para diplomas
+  const [diplomasPreview, setDiplomasPreview] = useState(null);
+  const [diplomasLoading, setDiplomasLoading] = useState(false);
+  const [diplomasError, setDiplomasError] = useState(null);
+  const [diplomasZipFile, setDiplomasZipFile] = useState(null);
+  const [diplomasSeleccionadas, setDiplomasSeleccionadas] = useState([]);
+  const [diplomasGuardando, setDiplomasGuardando] = useState(false);
+  
+  // Estados para upload individual de PDFs
+  const [diplomasPdfsFiles, setDiplomasPdfsFiles] = useState([]);
+  const [diplomasPdfsPreview, setDiplomasPdfsPreview] = useState(null);
+  const [diplomasPdfsLoading, setDiplomasPdfsLoading] = useState(false);
+  const [diplomasPdfsError, setDiplomasPdfsError] = useState(null);
+  const [diplomasPdfsSeleccionadas, setDiplomasPdfsSeleccionadas] = useState([]);
+  const [diplomasPdfsGuardando, setDiplomasPdfsGuardando] = useState(false);
+  
+  // Estado para lista de todas las diplomas
+  const [todasLasDiplomas, setTodasLasDiplomas] = useState([]);
+  const [todasLasDiplomasLoading, setTodasLasDiplomasLoading] = useState(false);
+  const [todasLasDiplomasError, setTodasLasDiplomasError] = useState(null);
+
+  // Función para cargar todas las diplomas
+  const fetchTodasLasDiplomas = useCallback(async () => {
+    setTodasLasDiplomasLoading(true);
+    setTodasLasDiplomasError(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.diplomasListarTodas, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error al cargar diplomas' }));
+        throw new Error(errorData.message || 'Error al cargar diplomas');
+      }
+
+      const data = await response.json();
+      setTodasLasDiplomas(Array.isArray(data.diplomas) ? data.diplomas : []);
+    } catch (error) {
+      console.error('Error cargando todas las diplomas:', error);
+      setTodasLasDiplomasError(error.message);
+      setTodasLasDiplomas([]);
+    } finally {
+      setTodasLasDiplomasLoading(false);
+    }
+  }, []);
+
+  // Cargar todas las diplomas cuando se accede al tab
+  useEffect(() => {
+    if (activeTab === 'diplomas') {
+      fetchTodasLasDiplomas();
+    }
+  }, [activeTab, fetchTodasLasDiplomas]);
 
 
 
@@ -4332,6 +4395,24 @@ export default function DocumentosEmpleadosPage() {
                 </div>
               </button>
 
+              {/* Tab Diplomas */}
+              <button
+                onClick={() => setActiveTab('diplomas')}
+                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'diplomas'
+                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-lg shadow-yellow-200'
+                    : 'text-gray-600 hover:text-yellow-600 hover:bg-yellow-50/50'
+                }`}
+              >
+                {activeTab === 'diplomas' && (
+                  <div className="absolute inset-0 bg-yellow-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                )}
+                <div className="relative flex items-center gap-2">
+                  <span className="text-base">🎓</span>
+                  <span>Diplomas</span>
+                </div>
+              </button>
+
               {selectedEmpleado && (
                 <>
                   {/* Tab Documentos */}
@@ -4973,6 +5054,599 @@ export default function DocumentosEmpleadosPage() {
           {/* Tab Coste Personal */}
           {activeTab === 'coste-personal' && (
             <CostePersonalTab />
+          )}
+
+          {activeTab === 'diplomas' && (
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <span className="text-white text-xl sm:text-2xl">🎓</span>
+                  </div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Diplomas</h2>
+                    <p className="text-gray-600 text-xs sm:text-sm">Gestiona diplomas de empleados</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Upload PDFs individuales */}
+              <div className="card mb-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">📄 Subir PDFs Individuales</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Selecciona uno o más archivos PDF de diplomas. El sistema extraerá automáticamente los nombres de los empleados desde el PDF (o desde el nombre del archivo como fallback).
+                </p>
+                
+                <div className="flex flex-col gap-4">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <svg className="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="mb-2 text-sm text-gray-500">
+                        <span className="font-semibold">Click para seleccionar</span> o arrastra los PDFs aquí
+                      </p>
+                      <p className="text-xs text-gray-500">Puedes seleccionar múltiples archivos PDF</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      multiple
+                      className="hidden"
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+
+                        setDiplomasPdfsFiles(files);
+                        setDiplomasPdfsLoading(true);
+                        setDiplomasPdfsError(null);
+                        setDiplomasPdfsPreview(null);
+
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const formData = new FormData();
+                          files.forEach((file) => {
+                            formData.append('pdf_files', file);
+                          });
+
+                          const response = await fetch(routes.diplomasUploadPdfsPreview, {
+                            method: 'POST',
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                            },
+                            body: formData,
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.message || 'Error al procesar PDFs');
+                          }
+
+                          const data = await response.json();
+                          setDiplomasPdfsPreview(data);
+                          setDiplomasPdfsSeleccionadas(
+                            data.diplomas
+                              .filter((d) => d.empleadoCodigo)
+                              .map((d) => ({
+                                nombreArchivo: d.nombreArchivo,
+                                empleadoCodigo: d.empleadoCodigo,
+                                empleadoNombre: d.empleadoNombre,
+                              }))
+                          );
+
+                          showNotification('success', 'PDFs procesados', `Se encontraron ${data.diplomas.length} diplomas. ${data.diplomas.filter((d) => d.empleadoCodigo).length} asociados correctamente.`);
+                        } catch (error) {
+                          setDiplomasPdfsError(error.message);
+                          showNotification('error', 'Error', `Error al procesar PDFs: ${error.message}`);
+                        } finally {
+                          setDiplomasPdfsLoading(false);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  {diplomasPdfsLoading && (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="ml-3 text-gray-600">Procesando PDFs...</span>
+                    </div>
+                  )}
+
+                  {diplomasPdfsError && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-red-800 text-sm">❌ {diplomasPdfsError}</p>
+                    </div>
+                  )}
+
+                  {diplomasPdfsPreview && (
+                    <div className="mt-4">
+                      <h4 className="font-bold text-gray-900 mb-3">
+                        Preview: {diplomasPdfsPreview.diplomas.length} diplomas encontrados
+                      </h4>
+                      
+                      <div className="max-h-96 overflow-y-auto space-y-2 mb-4">
+                        {diplomasPdfsPreview.diplomas.map((diploma, idx) => (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-lg border-2 ${
+                              diploma.empleadoCodigo
+                                ? 'bg-green-50 border-green-200'
+                                : 'bg-yellow-50 border-yellow-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <p className="font-medium text-sm text-gray-900">
+                                  {diploma.nombreArchivo}
+                                </p>
+                                {diploma.nombreExtraido && (
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    Nombre extraído: <span className="font-semibold">{diploma.nombreExtraido}</span>
+                                    {diploma.fuente && (
+                                      <span className="ml-2 text-gray-500">
+                                        ({diploma.fuente === 'pdf' ? '📄 PDF' : '📝 Filename'})
+                                      </span>
+                                    )}
+                                  </p>
+                                )}
+                                {diploma.empleadoCodigo ? (
+                                  <p className="text-xs text-green-700 mt-1">
+                                    ✅ Asociado a: {diploma.empleadoNombre} ({diploma.empleadoCodigo})
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-yellow-700 mt-1">
+                                    ⚠️ No se encontró empleado
+                                  </p>
+                                )}
+                              </div>
+                              {diploma.empleadoCodigo && (
+                                <input
+                                  type="checkbox"
+                                  checked={diplomasPdfsSeleccionadas.some(
+                                    (d) => d.nombreArchivo === diploma.nombreArchivo
+                                  )}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setDiplomasPdfsSeleccionadas([
+                                        ...diplomasPdfsSeleccionadas,
+                                        {
+                                          nombreArchivo: diploma.nombreArchivo,
+                                          empleadoCodigo: diploma.empleadoCodigo,
+                                          empleadoNombre: diploma.empleadoNombre,
+                                        },
+                                      ]);
+                                    } else {
+                                      setDiplomasPdfsSeleccionadas(
+                                        diplomasPdfsSeleccionadas.filter(
+                                          (d) => d.nombreArchivo !== diploma.nombreArchivo
+                                        )
+                                      );
+                                    }
+                                  }}
+                                  className="ml-2 w-5 h-5 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {diplomasPdfsPreview.errores && diplomasPdfsPreview.errores.length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="font-bold text-red-700 mb-2">Errores:</h5>
+                          <div className="space-y-1">
+                            {diplomasPdfsPreview.errores.map((error, idx) => (
+                              <p key={idx} className="text-xs text-red-600">
+                                {error.nombreArchivo}: {error.error}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {diplomasPdfsSeleccionadas.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            if (diplomasPdfsFiles.length === 0) return;
+
+                            setDiplomasPdfsGuardando(true);
+                            try {
+                              const token = localStorage.getItem('auth_token');
+                              const formData = new FormData();
+                              diplomasPdfsFiles.forEach((file) => {
+                                formData.append('pdf_files', file);
+                              });
+                              formData.append('diplomas', JSON.stringify(diplomasPdfsSeleccionadas));
+
+                              const response = await fetch(routes.diplomasUploadPdfsConfirmar, {
+                                method: 'POST',
+                                headers: {
+                                  Authorization: `Bearer ${token}`,
+                                },
+                                body: formData,
+                              });
+
+                              if (!response.ok) {
+                                const errorData = await response.json();
+                                throw new Error(errorData.message || 'Error al guardar diplomas');
+                              }
+
+                              const data = await response.json();
+                              showNotification('success', 'Diplomas guardadas', data.message || `Se guardaron ${data.guardados} diplomas correctamente.`);
+
+                              // Reset
+                              setDiplomasPdfsFiles([]);
+                              setDiplomasPdfsPreview(null);
+                              setDiplomasPdfsSeleccionadas([]);
+                              // Recargar lista de diplomas
+                              fetchTodasLasDiplomas();
+                            } catch (error) {
+                              showNotification('error', 'Error', `Error al guardar diplomas: ${error.message}`);
+                            } finally {
+                              setDiplomasPdfsGuardando(false);
+                            }
+                          }}
+                          disabled={diplomasPdfsGuardando || diplomasPdfsSeleccionadas.length === 0}
+                          className="w-full px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {diplomasPdfsGuardando ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>Guardando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>💾</span>
+                              <span>Guardar {diplomasPdfsSeleccionadas.length} diplomas seleccionadas</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Upload ZIP */}
+              <div className="card mb-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">📦 Subir ZIP con Diplomas</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Sube un archivo ZIP con diplomas en formato PDF. El sistema extraerá automáticamente los nombres de los empleados desde el PDF (o desde el nombre del archivo como fallback).
+                </p>
+                
+                <div className="flex flex-col gap-4">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <svg className="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="mb-2 text-sm text-gray-500">
+                        <span className="font-semibold">Click para seleccionar</span> o arrastra el ZIP aquí
+                      </p>
+                      <p className="text-xs text-gray-500">ZIP con archivos PDF</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".zip"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setDiplomasZipFile(file);
+                        setDiplomasLoading(true);
+                        setDiplomasError(null);
+                        setDiplomasPreview(null);
+
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const formData = new FormData();
+                          formData.append('zip_file', file);
+
+                          const response = await fetch(routes.diplomasUploadZipPreview, {
+                            method: 'POST',
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                            },
+                            body: formData,
+                          });
+
+                          if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.message || 'Error al procesar ZIP');
+                          }
+
+                          const data = await response.json();
+                          setDiplomasPreview(data);
+                          setDiplomasSeleccionadas(
+                            data.diplomas
+                              .filter((d) => d.empleadoCodigo)
+                              .map((d) => ({
+                                nombreArchivo: d.nombreArchivo,
+                                empleadoCodigo: d.empleadoCodigo,
+                                empleadoNombre: d.empleadoNombre,
+                              }))
+                          );
+
+                          showNotification('success', 'ZIP procesado', `Se encontraron ${data.diplomas.length} diplomas. ${data.diplomas.filter((d) => d.empleadoCodigo).length} asociados correctamente.`);
+                        } catch (error) {
+                          setDiplomasError(error.message);
+                          showNotification('error', 'Error', `Error al procesar ZIP: ${error.message}`);
+                        } finally {
+                          setDiplomasLoading(false);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  {diplomasLoading && (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="ml-3 text-gray-600">Procesando ZIP...</span>
+                    </div>
+                  )}
+
+                  {diplomasError && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-red-800 text-sm">❌ {diplomasError}</p>
+                    </div>
+                  )}
+
+                  {diplomasPreview && (
+                    <div className="mt-4">
+                      <h4 className="font-bold text-gray-900 mb-3">
+                        Preview: {diplomasPreview.diplomas.length} diplomas encontrados
+                      </h4>
+                      
+                      <div className="max-h-96 overflow-y-auto space-y-2 mb-4">
+                        {diplomasPreview.diplomas.map((diploma, idx) => (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-lg border-2 ${
+                              diploma.empleadoCodigo
+                                ? 'bg-green-50 border-green-200'
+                                : 'bg-yellow-50 border-yellow-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <p className="font-medium text-sm text-gray-900">
+                                  {diploma.nombreArchivo}
+                                </p>
+                                {diploma.nombreExtraido && (
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    Nombre extraído: <span className="font-semibold">{diploma.nombreExtraido}</span>
+                                    {diploma.fuente && (
+                                      <span className="ml-2 text-gray-500">
+                                        ({diploma.fuente === 'pdf' ? '📄 PDF' : '📝 Filename'})
+                                      </span>
+                                    )}
+                                  </p>
+                                )}
+                                {diploma.empleadoCodigo ? (
+                                  <p className="text-xs text-green-700 mt-1">
+                                    ✅ Asociado a: {diploma.empleadoNombre} ({diploma.empleadoCodigo})
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-yellow-700 mt-1">
+                                    ⚠️ No se encontró empleado
+                                  </p>
+                                )}
+                              </div>
+                              {diploma.empleadoCodigo && (
+                                <input
+                                  type="checkbox"
+                                  checked={diplomasSeleccionadas.some(
+                                    (d) => d.nombreArchivo === diploma.nombreArchivo
+                                  )}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setDiplomasSeleccionadas([
+                                        ...diplomasSeleccionadas,
+                                        {
+                                          nombreArchivo: diploma.nombreArchivo,
+                                          empleadoCodigo: diploma.empleadoCodigo,
+                                          empleadoNombre: diploma.empleadoNombre,
+                                        },
+                                      ]);
+                                    } else {
+                                      setDiplomasSeleccionadas(
+                                        diplomasSeleccionadas.filter(
+                                          (d) => d.nombreArchivo !== diploma.nombreArchivo
+                                        )
+                                      );
+                                    }
+                                  }}
+                                  className="ml-2 w-5 h-5 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {diplomasPreview.errores && diplomasPreview.errores.length > 0 && (
+                        <div className="mb-4">
+                          <h5 className="font-bold text-red-700 mb-2">Errores:</h5>
+                          <div className="space-y-1">
+                            {diplomasPreview.errores.map((error, idx) => (
+                              <p key={idx} className="text-xs text-red-600">
+                                {error.nombreArchivo}: {error.error}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {diplomasSeleccionadas.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            if (!diplomasZipFile) return;
+
+                            setDiplomasGuardando(true);
+                            try {
+                              const token = localStorage.getItem('auth_token');
+                              const formData = new FormData();
+                              formData.append('zip_file', diplomasZipFile);
+                              formData.append('diplomas', JSON.stringify(diplomasSeleccionadas));
+
+                              const response = await fetch(routes.diplomasUploadZipConfirmar, {
+                                method: 'POST',
+                                headers: {
+                                  Authorization: `Bearer ${token}`,
+                                },
+                                body: formData,
+                              });
+
+                              if (!response.ok) {
+                                const errorData = await response.json();
+                                throw new Error(errorData.message || 'Error al guardar diplomas');
+                              }
+
+                              const data = await response.json();
+                              showNotification('success', 'Diplomas guardadas', data.message || `Se guardaron ${data.guardados} diplomas correctamente.`);
+
+                              // Reset
+                              setDiplomasZipFile(null);
+                              setDiplomasPreview(null);
+                              setDiplomasSeleccionadas([]);
+                              // Recargar lista de diplomas
+                              fetchTodasLasDiplomas();
+                            } catch (error) {
+                              showNotification('error', 'Error', `Error al guardar diplomas: ${error.message}`);
+                            } finally {
+                              setDiplomasGuardando(false);
+                            }
+                          }}
+                          disabled={diplomasGuardando || diplomasSeleccionadas.length === 0}
+                          className="w-full px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {diplomasGuardando ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                              <span>Guardando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>💾</span>
+                              <span>Guardar {diplomasSeleccionadas.length} diplomas seleccionadas</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Lista de todas las diplomas */}
+              <div className="card mt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">📋 Todas las Diplomas</h3>
+                  <button
+                    onClick={fetchTodasLasDiplomas}
+                    disabled={todasLasDiplomasLoading}
+                    className="px-4 py-2 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {todasLasDiplomasLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Cargando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🔄</span>
+                        <span>Actualizar</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {todasLasDiplomasLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-yellow-500 border-t-transparent mx-auto mb-4"></div>
+                    <p className="text-gray-600">Cargando diplomas...</p>
+                  </div>
+                ) : todasLasDiplomasError ? (
+                  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                    <p className="text-red-800">❌ {todasLasDiplomasError}</p>
+                  </div>
+                ) : todasLasDiplomas.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-2">🎓</div>
+                    <p className="text-gray-600">No hay diplomas en la base de datos</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-sm text-gray-600 mb-4">
+                      Total: <span className="font-bold">{todasLasDiplomas.length}</span> diplomas
+                    </div>
+                    <div className="max-h-96 overflow-y-auto space-y-2">
+                      {todasLasDiplomas.map((diploma) => (
+                        <div
+                          key={diploma.id}
+                          className="p-4 rounded-lg border-2 border-gray-200 hover:border-yellow-300 hover:bg-yellow-50 transition-all duration-200"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <h4 className="font-bold text-gray-900 mb-1">{diploma.nombre_archivo}</h4>
+                              <p className="text-sm text-gray-600">
+                                <span className="font-semibold">Empleado:</span> {diploma.nombre_empleado} ({diploma.empleado_id})
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Subido el: {new Date(diploma.uploaded_at).toLocaleDateString('es-ES', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const token = localStorage.getItem('auth_token');
+                                  const response = await fetch(routes.diplomasDescargar(diploma.id), {
+                                    headers: {
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                  });
+
+                                  if (!response.ok) {
+                                    throw new Error('Error al descargar diploma');
+                                  }
+
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  const contentDisposition = response.headers.get('Content-Disposition');
+                                  const filename = contentDisposition
+                                    ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || diploma.nombre_archivo
+                                    : diploma.nombre_archivo;
+                                  a.download = filename;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  window.URL.revokeObjectURL(url);
+                                } catch (error) {
+                                  showNotification('error', 'Error', `Error al descargar diploma: ${error.message}`);
+                                }
+                              }}
+                              className="px-4 py-2 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
+                            >
+                              <span>📥</span>
+                              <span>Descargar</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {activeTab === 'nominas' && selectedEmpleado && (

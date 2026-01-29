@@ -61,6 +61,9 @@ export const SHEET_FIELDS = [
   'TrabajaFestivos',
   'Contraseña',
   'CuantoPuedeGastar',
+  'fecha_baja_programada',
+  'VACACIONES_RESTANTES_ANO_ANTERIOR',
+  'certificado_handicap_confirmado',
 ];
 
 // Routes

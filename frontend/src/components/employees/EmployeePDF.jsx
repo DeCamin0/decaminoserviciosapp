@@ -247,7 +247,17 @@ const EmployeePDF = ({ employeeData, createdBy }) => {
             
             <View style={styles.row}>
               <Text style={styles.label}>Nombre:</Text>
-              <Text style={styles.value}>{getFieldValue(employeeData['NOMBRE / APELLIDOS'])}</Text>
+              <Text style={styles.value}>{getFieldValue(employeeData.NOMBRE)}</Text>
+            </View>
+            
+            <View style={styles.row}>
+              <Text style={styles.label}>Primer Apellido:</Text>
+              <Text style={styles.value}>{getFieldValue(employeeData.APELLIDO1)}</Text>
+            </View>
+            
+            <View style={styles.row}>
+              <Text style={styles.label}>Segundo Apellido:</Text>
+              <Text style={styles.value}>{getFieldValue(employeeData.APELLIDO2)}</Text>
             </View>
             
             <View style={styles.row}>

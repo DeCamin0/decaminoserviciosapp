@@ -6,6 +6,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFiles,
+  UploadedFile,
   Body,
   Param,
   Query,
@@ -14,7 +15,10 @@ import {
   Logger,
   Res,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
@@ -146,6 +150,26 @@ export class EmpleadosController {
       res.send(buffer);
     } catch (error: any) {
       this.logger.error('❌ Error exporting estadísticas PDF:', error);
+      throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
+    }
+  }
+
+  @Get('lista-iban/export-pdf')
+  @UseGuards(JwtAuthGuard)
+  async exportListaIbanPDF(@Res() res: any) {
+    try {
+      this.logger.log('📄 Export lista IBAN PDF request');
+      const buffer = await this.empleadosService.exportListaIbanPDF();
+
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename=Lista_IBAN_Empleados_Activos_${new Date().toISOString().split('T')[0]}.pdf`,
+        'Content-Length': buffer.length,
+      });
+
+      res.send(buffer);
+    } catch (error: any) {
+      this.logger.error('❌ Error exporting lista IBAN PDF:', error);
       throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
   }
@@ -396,7 +420,7 @@ export class EmpleadosController {
             }
 
             if (enviarAGestoria) {
-              // Dacă este bifat: trimite la gestoria (altemprado@gmail.com) cu BCC
+              // Dacă este bifat: trimite la gestoria (altemprado@gmail.com) cu CC și BCC
               if (attachments.length > 1) {
                 // Folosește sendEmailWithAttachments pentru multiple attachments
                 await this.emailService.sendEmailWithAttachments(
@@ -405,6 +429,7 @@ export class EmpleadosController {
                   htmlFinal,
                   attachments,
                   {
+                    cc: ['marlosangeles@ancaraconsulting.es'],
                     bcc: [
                       'info@decaminoservicios.com',
                       'mirisjm@gmail.com',
@@ -421,6 +446,7 @@ export class EmpleadosController {
                   pdfFile.buffer,
                   pdfFileName,
                   {
+                    cc: ['marlosangeles@ancaraconsulting.es'],
                     bcc: [
                       'info@decaminoservicios.com',
                       'mirisjm@gmail.com',
@@ -1123,6 +1149,16 @@ export class EmpleadosController {
         ESTADO: body.ESTADO || '',
         DerechoPedidos: body.DerechoPedidos || '',
         TrabajaFestivos: body.TrabajaFestivos || '',
+        fecha_baja_programada:
+          body.fecha_baja_programada || body['fecha_baja_programada'] || null,
+        VACACIONES_RESTANTES_ANO_ANTERIOR:
+          body.VACACIONES_RESTANTES_ANO_ANTERIOR !== undefined
+            ? body.VACACIONES_RESTANTES_ANO_ANTERIOR
+            : null,
+        certificado_handicap_confirmado:
+          body.certificado_handicap_confirmado !== undefined
+            ? body.certificado_handicap_confirmado
+            : null,
       };
 
       // Include parola doar dacă este furnizată și nu este goală
@@ -2795,6 +2831,93 @@ export class EmpleadosController {
         error.stack,
       );
       throw error;
+    }
+  }
+
+  /**
+   * Preview: Procesează PDF-ul SOPORTE și returnează asocieri propuse
+   */
+  @Post('iban/preview')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('pdf'))
+  async previewActualizacionIbans(
+    @UploadedFile() file: Express.Multer.File,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      if (!file) {
+        throw new BadRequestException('No se proporcionó archivo PDF');
+      }
+
+      if (file.mimetype !== 'application/pdf') {
+        throw new BadRequestException('El archivo debe ser un PDF');
+      }
+
+      this.logger.log(`📄 Procesando PDF SOPORTE para preview de IBANs...`);
+
+      const resultado = await this.empleadosService.procesarPdfSoportePreview(
+        file.buffer,
+      );
+
+      return {
+        success: true,
+        ...resultado,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error en preview de IBANs: ${error.message}`,
+        error.stack,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Error procesando PDF: ${error.message}`);
+    }
+  }
+
+  /**
+   * Confirma și actualizează IBAN-urile în baza de date
+   */
+  @Post('iban/confirmar')
+  @UseGuards(JwtAuthGuard)
+  async confirmarActualizacionIbans(
+    @Body() body: { actualizaciones: Array<{ codigo: string; iban: string }> },
+    @CurrentUser() user: any,
+  ) {
+    try {
+      if (!body.actualizaciones || !Array.isArray(body.actualizaciones)) {
+        throw new BadRequestException('Se requiere array de actualizaciones');
+      }
+
+      if (body.actualizaciones.length === 0) {
+        throw new BadRequestException('No hay actualizaciones para confirmar');
+      }
+
+      this.logger.log(
+        `💾 Confirmando ${body.actualizaciones.length} actualizaciones de IBANs...`,
+      );
+
+      const resultado = await this.empleadosService.confirmarActualizacionIbans(
+        body.actualizaciones,
+        user?.userId || 'system',
+      );
+
+      return {
+        success: true,
+        ...resultado,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error confirmando actualización de IBANs: ${error.message}`,
+        error.stack,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error confirmando actualización: ${error.message}`,
+      );
     }
   }
 }

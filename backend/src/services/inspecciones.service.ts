@@ -291,18 +291,23 @@ export class InspeccionesService {
       await this.prisma.$executeRawUnsafe(query);
 
       // Dacă este "Entrega de Materiales", salvează documentele materialelor
-      if (tipoInspeccion === 'entrega-materiales' && body.puncte && Array.isArray(body.puncte)) {
+      if (
+        tipoInspeccion === 'entrega-materiales' &&
+        body.puncte &&
+        Array.isArray(body.puncte)
+      ) {
         this.logger.log(
           `📦 Processing ${body.puncte.length} material documents for inspeccion ${inspeccionId}`,
         );
 
         for (let index = 0; index < body.puncte.length; index++) {
           const material = body.puncte[index];
-          
+
           // Verifică dacă materialul are document (albarán/factura)
           if (material.documentoBase64 || material.documento) {
             try {
-              const documentoBase64 = material.documentoBase64 || material.documento;
+              const documentoBase64 =
+                material.documentoBase64 || material.documento;
               // Remove data: prefix if present
               const base64Data = documentoBase64.includes(',')
                 ? documentoBase64.split(',')[1]
@@ -311,14 +316,20 @@ export class InspeccionesService {
 
               // Determină tipul documentului din nume sau tip
               let tipoDocumento = 'albaran'; // default
-              const nombreArchivo = material.documentoNombre || material.documento?.name || `material_${index + 1}.pdf`;
-              if (nombreArchivo.toLowerCase().includes('factura') || 
-                  material.documentoType?.toLowerCase().includes('factura')) {
+              const nombreArchivo =
+                material.documentoNombre ||
+                material.documento?.name ||
+                `material_${index + 1}.pdf`;
+              if (
+                nombreArchivo.toLowerCase().includes('factura') ||
+                material.documentoType?.toLowerCase().includes('factura')
+              ) {
                 tipoDocumento = 'factura';
               }
 
               // Descrierea materialului
-              const descripcionMaterial = material.descripcion || material.desc || material.text || null;
+              const descripcionMaterial =
+                material.descripcion || material.desc || material.text || null;
 
               // Salvează documentul în MaterialesDocumentos
               const materialQuery = `
@@ -420,15 +431,16 @@ export class InspeccionesService {
         ORDER BY material_index ASC
       `;
 
-      const result =
-        await this.prisma.$queryRawUnsafe<Array<{
+      const result = await this.prisma.$queryRawUnsafe<
+        Array<{
           doc_id: number;
           material_index: number;
           tipo_documento: string | null;
           nombre_archivo: string | null;
           fecha_creacion: string | null;
           descripcion_material: string | null;
-        }>>(query);
+        }>
+      >(query);
 
       this.logger.log(
         `✅ Found ${result.length} material documents for inspeccion ${inspeccionId}`,
@@ -460,7 +472,9 @@ export class InspeccionesService {
         throw new BadRequestException('Se requiere "docId" válido');
       }
 
-      this.logger.log(`📥 Download material document request - docId: ${docId}`);
+      this.logger.log(
+        `📥 Download material document request - docId: ${docId}`,
+      );
 
       // Query pentru a obține documentul
       const query = `
@@ -472,10 +486,12 @@ export class InspeccionesService {
         LIMIT 1
       `;
 
-      const result = await this.prisma.$queryRawUnsafe<Array<{
-        nombre_archivo: string | null;
-        archivo: Buffer | null;
-      }>>(query);
+      const result = await this.prisma.$queryRawUnsafe<
+        Array<{
+          nombre_archivo: string | null;
+          archivo: Buffer | null;
+        }>
+      >(query);
 
       if (!result || result.length === 0) {
         throw new NotFoundException(
@@ -496,7 +512,10 @@ export class InspeccionesService {
 
       // Determină tipul MIME din extensie
       let tipoMime = 'application/pdf';
-      if (nombreArchivo.toLowerCase().endsWith('.jpg') || nombreArchivo.toLowerCase().endsWith('.jpeg')) {
+      if (
+        nombreArchivo.toLowerCase().endsWith('.jpg') ||
+        nombreArchivo.toLowerCase().endsWith('.jpeg')
+      ) {
         tipoMime = 'image/jpeg';
       } else if (nombreArchivo.toLowerCase().endsWith('.png')) {
         tipoMime = 'image/png';

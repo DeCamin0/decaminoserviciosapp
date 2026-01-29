@@ -5,7 +5,7 @@ const COMPANY_INFO = {
   name: 'DE CAMINO SERVICIOS AUXILIARES SL',
   cif: 'B85524536',
   address: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
-  phone: '+34 91 123 45 67',
+  phone: '910 440 275',
   email: 'info@decaminoservicios.com'
 };
 
@@ -260,3 +260,126 @@ export const exportGastosToExcel = async (items: ExcelDataItem[], totals: ExcelT
   await exportToExcelWithHeader(items, columns, 'REPORTE DE GASTOS', 'gastos', totals);
 };
 
+/**
+ * Generate Excel buffer (for sending via email)
+ * Returns the Excel file as a Buffer/ArrayBuffer
+ */
+export const generateExcelBuffer = async (
+  data: ExcelDataItem[], 
+  columns: ExcelColumn[], 
+  reportTitle: string, 
+  period?: string
+): Promise<ArrayBuffer> => {
+  if (!data || data.length === 0) {
+    throw new Error('No data to export');
+  }
+
+  // Create workbook
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Report');
+
+  // Set column widths
+  columns.forEach((col, index) => {
+    worksheet.getColumn(index + 1).width = col.width || 15;
+  });
+
+  let currentRow = 1;
+
+  // Company name (merged across all columns)
+  const companyNameCell = worksheet.getCell(`A${currentRow}`);
+  companyNameCell.value = COMPANY_INFO.name;
+  companyNameCell.font = STYLES.companyName.font;
+  companyNameCell.fill = STYLES.companyName.fill;
+  companyNameCell.alignment = STYLES.companyName.alignment;
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+  currentRow++;
+
+  // Company details (merged across all columns)
+  const cifCell = worksheet.getCell(`A${currentRow}`);
+  cifCell.value = `NIF: ${COMPANY_INFO.cif}`;
+  cifCell.font = STYLES.companyDetails.font;
+  cifCell.fill = STYLES.companyDetails.fill;
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+  currentRow++;
+
+  const addressCell = worksheet.getCell(`A${currentRow}`);
+  addressCell.value = `Dirección: ${COMPANY_INFO.address}`;
+  addressCell.font = STYLES.companyDetails.font;
+  addressCell.fill = STYLES.companyDetails.fill;
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+  currentRow++;
+
+  const phoneCell = worksheet.getCell(`A${currentRow}`);
+  phoneCell.value = `Teléfono: ${COMPANY_INFO.phone}`;
+  phoneCell.font = STYLES.companyDetails.font;
+  phoneCell.fill = STYLES.companyDetails.fill;
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+  currentRow++;
+
+  const emailCell = worksheet.getCell(`A${currentRow}`);
+  emailCell.value = `Email: ${COMPANY_INFO.email}`;
+  emailCell.font = STYLES.companyDetails.font;
+  emailCell.fill = STYLES.companyDetails.fill;
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+  currentRow++;
+
+  // Empty row
+  currentRow++;
+
+  // Report title (merged across all columns)
+  const titleCell = worksheet.getCell(`A${currentRow}`);
+  titleCell.value = reportTitle;
+  titleCell.font = STYLES.reportTitle.font;
+  titleCell.fill = STYLES.reportTitle.fill;
+  titleCell.alignment = STYLES.reportTitle.alignment;
+  worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+  currentRow++;
+
+  // Period (merged across all columns)
+  if (period) {
+    const periodCell = worksheet.getCell(`A${currentRow}`);
+    periodCell.value = `Período: ${period}`;
+    periodCell.font = STYLES.period.font;
+    periodCell.alignment = STYLES.period.alignment;
+    worksheet.mergeCells(`A${currentRow}:${getExcelColumnLetter(columns.length - 1)}${currentRow}`);
+    currentRow++;
+  }
+
+  // Empty row
+  currentRow++;
+
+  // Column headers
+  columns.forEach((col, index) => {
+    const headerCell = worksheet.getCell(`${getExcelColumnLetter(index)}${currentRow}`);
+    headerCell.value = col.label;
+    headerCell.font = STYLES.columnHeaders.font;
+    headerCell.fill = STYLES.columnHeaders.fill;
+    headerCell.alignment = STYLES.columnHeaders.alignment;
+  });
+  currentRow++;
+
+  // Data rows
+  data.forEach(item => {
+    // Verifică dacă angajatul este BAJA pentru colorare condițională
+    const isBaja = (item['ESTADO'] || '').toString().toUpperCase() === 'BAJA';
+    // Găsește indexul coloanei 'NOMBRE / APELLIDOS' pentru colorare
+    const nombreColumnIndex = columns.findIndex(col => col.key === 'NOMBRE / APELLIDOS');
+    
+    columns.forEach((col, index) => {
+      const cell = worksheet.getCell(`${getExcelColumnLetter(index)}${currentRow}`);
+      const value = item[col.key];
+      cell.value = value !== undefined && value !== null ? value : '';
+      
+      // Colorează celula cu numele în portocaliu dacă angajatul este BAJA
+      if (isBaja && index === nombreColumnIndex && nombreColumnIndex !== -1) {
+        cell.font = { color: { argb: "FF8C00" } }; // Portocaliu
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: "FFF4E6" } }; // Fundal portocaliu deschis
+      }
+    });
+    currentRow++;
+  });
+
+  // Generate buffer
+  const buffer = await workbook.xlsx.writeBuffer();
+  return buffer;
+};
