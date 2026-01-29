@@ -291,6 +291,9 @@ export const routes = {
   updateCuadrantes: import.meta.env.DEV
     ? 'http://localhost:3000/api/cuadrantes/update'
     : 'https://api.decaminoservicios.com/api/cuadrantes/update',
+  toggleCuadranteVisible: import.meta.env.DEV
+    ? 'http://localhost:3000/api/cuadrantes/toggle-visible'
+    : 'https://api.decaminoservicios.com/api/cuadrantes/toggle-visible',
   uploadCuadrantesExcel: import.meta.env.DEV
     ? 'http://localhost:3000/api/cuadrantes/upload-excel'
     : 'https://api.decaminoservicios.com/api/cuadrantes/upload-excel',

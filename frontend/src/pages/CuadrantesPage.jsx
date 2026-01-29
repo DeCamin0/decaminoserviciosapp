@@ -884,6 +884,53 @@ export default function CuadrantesPage() {
           }
         }
         
+        // Calculăm TotalHoras sumând orele din toate zilele
+        const getHorasFromTurno = (turno) => {
+          if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+            return 0;
+          }
+          
+          // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
+          const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+          if (timeMatch) {
+            const startHour = parseInt(timeMatch[1], 10);
+            const startMin = parseInt(timeMatch[2], 10);
+            const endHour = parseInt(timeMatch[3], 10);
+            const endMin = parseInt(timeMatch[4], 10);
+            
+            let startMinutes = startHour * 60 + startMin;
+            let endMinutes = endHour * 60 + endMin;
+            
+            // Pentru ture nocturne (peste miezul nopții)
+            if (endMinutes < startMinutes) {
+              endMinutes += 24 * 60;
+            }
+            
+            const diffMinutes = endMinutes - startMinutes;
+            return diffMinutes / 60;
+          }
+          
+          // T1, T2, T3 fără ore = 8 ore standard
+          if (turno === 'T1' || turno === 'T2' || turno === 'T3') {
+            return 8;
+          }
+          
+          // Dacă turno conține "T1", "T2", "T3" dar fără ore
+          if (turno.includes('T1') && !turno.includes(':')) return 8;
+          if (turno.includes('T2') && !turno.includes(':')) return 8;
+          if (turno.includes('T3') && !turno.includes(':')) return 8;
+          
+          // Fallback: 8 ore
+          return 8;
+        };
+        
+        let totalHoras = 0;
+        for (let i = 1; i <= 31; i++) {
+          const ziKey = `ZI_${i}`;
+          const turno = cuadranteParaGuardar[ziKey];
+          totalHoras += getHorasFromTurno(turno);
+        }
+        cuadranteParaGuardar.TotalHoras = totalHoras > 0 ? totalHoras.toFixed(2) : null;
         
         cuadrantesToSave.push(cuadranteParaGuardar);
       });
@@ -958,8 +1005,52 @@ export default function CuadrantesPage() {
     const shifts = new Set();
     const shiftCounts = new Map(); // Pentru a număra aparițiile
     
-    // Parcurge toate cuadrantele (inclusiv modificările din editedCuadrantes)
-    cuadrantesLista.forEach(cuadrante => {
+    // Funcție pentru normalizarea formatării turnurilor
+    const normalizeShift = (shiftValue) => {
+      if (!shiftValue) return null;
+      
+      // Elimină spațiile multiple și normalizează formatul
+      let normalized = shiftValue.trim().replace(/\s+/g, ' ');
+      
+      // Normalizează formatul "T1 09:00-17:00" (un singur spațiu între T1 și ore)
+      const match = normalized.match(/^(T[123])\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      if (match) {
+        // Reconstruiește cu format standard: "T1 09:00-17:00"
+        return `${match[1]} ${match[2]}:${match[3]}-${match[4]}:${match[5]}`;
+      }
+      
+      // Dacă este doar "T1", "T2", "T3" fără ore, returnează așa cum este
+      const typeMatch = normalized.match(/^(T[123])$/);
+      if (typeMatch) {
+        return typeMatch[1];
+      }
+      
+      // Altfel, returnează normalizat (fără spații multiple)
+      return normalized;
+    };
+    
+    // Filtrează cuadrantele după filtrele active
+    const filteredCuadrantes = cuadrantesLista.filter(cuadrante => {
+      // Filtrare după luna selectată
+      if (selectedMesAno && cuadrante.LUNA !== selectedMesAno) {
+        return false;
+      }
+      
+      // Filtrare după angajat selectat (dacă este setat)
+      if (selectedEmpleado && selectedEmpleado.trim() !== '') {
+        const empleadoMatch = cuadrante.CODIGO === selectedEmpleado ||
+                             cuadrante.EMAIL?.toLowerCase() === selectedEmpleado.toLowerCase() ||
+                             cuadrante.NOMBRE?.toLowerCase().includes(selectedEmpleado.toLowerCase());
+        if (!empleadoMatch) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    // Parcurge doar cuadrantele filtrate (inclusiv modificările din editedCuadrantes)
+    filteredCuadrantes.forEach(cuadrante => {
       for (let i = 1; i <= 31; i++) {
         const ziKey = `ZI_${i}`;
         const identificator = getCuadranteIdentificator(cuadrante);
@@ -971,9 +1062,11 @@ export default function CuadrantesPage() {
           : (cuadrante[ziKey] || '');
         
         if (value && value !== 'LIBRE' && value.trim() !== '' && !value.startsWith('MC->')) {
-          const shiftValue = value.trim();
-          shifts.add(shiftValue);
-          shiftCounts.set(shiftValue, (shiftCounts.get(shiftValue) || 0) + 1);
+          const normalizedShift = normalizeShift(value);
+          if (normalizedShift) {
+            shifts.add(normalizedShift);
+            shiftCounts.set(normalizedShift, (shiftCounts.get(normalizedShift) || 0) + 1);
+          }
         }
       }
     });
@@ -1012,11 +1105,26 @@ export default function CuadrantesPage() {
       }
       return a.shift.localeCompare(b.shift);
     });
-  }, [cuadrantesLista, editedCuadrantes]);
+  }, [cuadrantesLista, editedCuadrantes, selectedMesAno, selectedEmpleado]);
   
   // Funcție pentru a actualiza toate aparițiile unei ture cu noile ore
   const handleUpdateShiftHours = (oldShift, newStart, newEnd) => {
     if (!oldShift || !newStart || !newEnd) return;
+    
+    // Normalizează turnul vechi pentru a găsi toate variantele
+    const normalizeShift = (shiftValue) => {
+      if (!shiftValue) return null;
+      let normalized = shiftValue.trim().replace(/\s+/g, ' ');
+      const match = normalized.match(/^(T[123])\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+      if (match) {
+        return `${match[1]} ${match[2]}:${match[3]}-${match[4]}:${match[5]}`;
+      }
+      const typeMatch = normalized.match(/^(T[123])$/);
+      if (typeMatch) {
+        return typeMatch[1];
+      }
+      return normalized;
+    };
     
     // Extrage tipul turei (T1, T2, T3)
     const typeMatch = oldShift.match(/^(T[123])/);
@@ -1024,13 +1132,30 @@ export default function CuadrantesPage() {
     
     const shiftType = typeMatch[1]; // T1, T2, sau T3
     const newShift = `${shiftType} ${newStart}-${newEnd}`;
+    const normalizedOldShift = normalizeShift(oldShift);
     
     // Actualizează toate aparițiile în editedCuadrantes
     const updated = { ...editedCuadrantes };
     let updatedCount = 0;
     
-    // Parcurge toate cuadrantele și actualizează turele
-    cuadrantesLista.forEach(cuadrante => {
+    // Filtrează cuadrantele după filtrele active (la fel ca în getAllUniqueShifts)
+    const filteredCuadrantes = cuadrantesLista.filter(cuadrante => {
+      if (selectedMesAno && cuadrante.LUNA !== selectedMesAno) {
+        return false;
+      }
+      if (selectedEmpleado && selectedEmpleado.trim() !== '') {
+        const empleadoMatch = cuadrante.CODIGO === selectedEmpleado ||
+                             cuadrante.EMAIL?.toLowerCase() === selectedEmpleado.toLowerCase() ||
+                             cuadrante.NOMBRE?.toLowerCase().includes(selectedEmpleado.toLowerCase());
+        if (!empleadoMatch) {
+          return false;
+        }
+      }
+      return true;
+    });
+    
+    // Parcurge doar cuadrantele filtrate și actualizează turele
+    filteredCuadrantes.forEach(cuadrante => {
       const identificator = getCuadranteIdentificator(cuadrante);
       
       for (let i = 1; i <= 31; i++) {
@@ -1039,10 +1164,13 @@ export default function CuadrantesPage() {
           ? updated[editKey] 
           : (cuadrante[`ZI_${i}`] || '');
         
-        // Dacă valoarea curentă se potrivește cu tura veche, actualizează-o
-        if (currentValue && currentValue.trim() === oldShift.trim()) {
-          updated[editKey] = newShift;
-          updatedCount++;
+        // Normalizează valoarea curentă și compară cu tura veche normalizată
+        if (currentValue && currentValue !== 'LIBRE' && currentValue.trim() !== '' && !currentValue.startsWith('MC->')) {
+          const normalizedCurrent = normalizeShift(currentValue);
+          if (normalizedCurrent === normalizedOldShift) {
+            updated[editKey] = newShift;
+            updatedCount++;
+          }
         }
       }
     });
@@ -5161,6 +5289,103 @@ export default function CuadrantesPage() {
                         <thead>
                           <tr className="bg-gray-50">
                             <th className="border border-gray-300 p-3 text-center font-bold min-w-[200px]">Empleado</th>
+                            <th className="border border-gray-300 p-2 text-center font-bold min-w-[80px] bg-yellow-50">
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-xs">Visible</span>
+                                {cuadrantesLista.filter(c => !selectedMesAno || c.LUNA === selectedMesAno).length > 0 && (
+                                  <input
+                                    type="checkbox"
+                                    checked={(() => {
+                                      const filtered = cuadrantesLista.filter(c => !selectedMesAno || c.LUNA === selectedMesAno);
+                                      return filtered.length > 0 && filtered.every(c => c.visible !== false && c.visible !== 0 && c.visible !== '0');
+                                    })()}
+                                    onChange={async (e) => {
+                                      const newVisible = e.target.checked;
+                                      const filtered = cuadrantesLista.filter(c => !selectedMesAno || c.LUNA === selectedMesAno);
+                                      
+                                      console.log('🔄 Toggling all visibility:', {
+                                        count: filtered.length,
+                                        newVisible: newVisible
+                                      });
+                                      
+                                      try {
+                                        const token = localStorage.getItem('auth_token');
+                                        const apiUrl = routes.toggleCuadranteVisible;
+                                        
+                                        // Actualizăm toate cuadrantele cu delay între request-uri pentru a evita throttling
+                                        let successCount = 0;
+                                        let failCount = 0;
+                                        
+                                        for (let i = 0; i < filtered.length; i++) {
+                                          const cuadrante = filtered[i];
+                                          
+                                          try {
+                                            const response = await fetch(apiUrl, {
+                                              method: 'POST',
+                                              headers: {
+                                                'Content-Type': 'application/json',
+                                                'Authorization': token ? `Bearer ${token}` : '',
+                                              },
+                                              body: JSON.stringify({
+                                                CODIGO: cuadrante.CODIGO,
+                                                LUNA: cuadrante.LUNA,
+                                                visible: newVisible
+                                              })
+                                            });
+                                            
+                                            if (response.ok) {
+                                              successCount++;
+                                            } else {
+                                              failCount++;
+                                              console.error(`❌ Error updating cuadrante ${cuadrante.CODIGO} ${cuadrante.LUNA}:`, response.status);
+                                            }
+                                          } catch (error) {
+                                            failCount++;
+                                            console.error(`❌ Error updating cuadrante ${cuadrante.CODIGO} ${cuadrante.LUNA}:`, error);
+                                          }
+                                          
+                                          // Delay între request-uri (100ms pentru a evita throttling)
+                                          if (i < filtered.length - 1) {
+                                            await new Promise(resolve => setTimeout(resolve, 100));
+                                          }
+                                        }
+                                        
+                                        if (failCount > 0) {
+                                          throw new Error(`${failCount} de ${filtered.length} cuadrantes nu s-au putut actualiza`);
+                                        }
+                                        
+                                        // Actualizăm starea locală pentru toate cuadrantele
+                                        setCuadrantesLista(prev => prev.map(c => {
+                                          const shouldUpdate = !selectedMesAno || c.LUNA === selectedMesAno;
+                                          return shouldUpdate ? { ...c, visible: newVisible } : c;
+                                        }));
+                                        
+                                        setNotification({
+                                          type: 'success',
+                                          title: 'Visibilidad actualizada',
+                                          message: `${filtered.length} cuadrante${filtered.length !== 1 ? 's' : ''} ${newVisible ? 'visibles' : 'ocultos'} para los empleados.`
+                                        });
+                                      } catch (error) {
+                                        console.error('❌ Error toggling all visibility:', error);
+                                        setNotification({
+                                          type: 'error',
+                                          title: 'Error',
+                                          message: error.message || 'No se pudieron actualizar todos los cuadrantes.'
+                                        });
+                                        // Revert checkbox
+                                        e.target.checked = !newVisible;
+                                      }
+                                    }}
+                                    className="w-4 h-4 cursor-pointer"
+                                    title={(() => {
+                                      const filtered = cuadrantesLista.filter(c => !selectedMesAno || c.LUNA === selectedMesAno);
+                                      const allVisible = filtered.every(c => c.visible !== false && c.visible !== 0 && c.visible !== '0');
+                                      return allVisible ? "Desmarcar todos" : "Marcar todos como visibles";
+                                    })()}
+                                  />
+                                )}
+                              </div>
+                            </th>
                             {Array.from({ length: 31 }, (_, i) => {
                               const dayNumber = i + 1;
                               const currentMonth = selectedMesAno ? parseInt(selectedMesAno.split('-')[1]) - 1 : selectedMonth;
@@ -5211,8 +5436,96 @@ export default function CuadrantesPage() {
                                       <div className="text-xs text-gray-500">
                                         {cuadrante.EMAIL || 'N/A'}
                                       </div>
+                                      {cuadrante.LUNA && (
+                                        <div className="text-xs text-blue-600 font-semibold mt-1">
+                                          📅 {(() => {
+                                            const luna = cuadrante.LUNA;
+                                            if (typeof luna === 'number') {
+                                              const date = new Date(Math.round((luna - 25569) * 86400 * 1000));
+                                              const year = date.getUTCFullYear();
+                                              const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                                              return `${year}-${month}`;
+                                            }
+                                            if (typeof luna === 'string' && luna.includes('-')) {
+                                              const [year, month] = luna.split('-');
+                                              const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                                              return `${monthNames[parseInt(month) - 1]} ${year}`;
+                                            }
+                                            return luna;
+                                          })()}
+                                        </div>
+                                      )}
                                     </div>
                               </td>
+                                  <td className="border border-gray-300 p-2 text-center bg-yellow-50">
+                                    <input
+                                      type="checkbox"
+                                      checked={cuadrante.visible !== false && cuadrante.visible !== 0 && cuadrante.visible !== '0'}
+                                      onChange={async (e) => {
+                                        const newVisible = e.target.checked;
+                                        console.log('🔄 Toggling visibility:', {
+                                          CODIGO: cuadrante.CODIGO,
+                                          LUNA: cuadrante.LUNA,
+                                          current: cuadrante.visible,
+                                          new: newVisible
+                                        });
+                                        
+                                        try {
+                                          const token = localStorage.getItem('auth_token');
+                                          const apiUrl = routes.toggleCuadranteVisible;
+                                          console.log('📡 API URL:', apiUrl);
+                                          
+                                          const response = await fetch(apiUrl, {
+                                            method: 'POST',
+                                            headers: {
+                                              'Content-Type': 'application/json',
+                                              'Authorization': token ? `Bearer ${token}` : '',
+                                            },
+                                            body: JSON.stringify({
+                                              CODIGO: cuadrante.CODIGO,
+                                              LUNA: cuadrante.LUNA,
+                                              visible: newVisible
+                                            })
+                                          });
+                                          
+                                          console.log('📥 Response status:', response.status);
+                                          
+                                          if (!response.ok) {
+                                            const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+                                            console.error('❌ Error response:', errorData);
+                                            throw new Error(errorData.message || 'Error al actualizar visibilidad');
+                                          }
+                                          
+                                          const result = await response.json().catch(() => ({}));
+                                          console.log('✅ Success:', result);
+                                          
+                                          // Actualizăm starea locală
+                                          setCuadrantesLista(prev => prev.map(c => 
+                                            (c.CODIGO === cuadrante.CODIGO && c.LUNA === cuadrante.LUNA)
+                                              ? { ...c, visible: newVisible }
+                                              : c
+                                          ));
+                                          
+                                          setNotification({
+                                            type: 'success',
+                                            title: 'Visibilidad actualizada',
+                                            message: `El cuadrante de ${cuadrante.NOMBRE} ahora es ${newVisible ? 'visible' : 'oculto'} para los empleados.`
+                                          });
+                                        } catch (error) {
+                                          console.error('❌ Error toggling visibility:', error);
+                                          setNotification({
+                                            type: 'error',
+                                            title: 'Error',
+                                            message: error.message || 'No se pudo actualizar la visibilidad del cuadrante.'
+                                          });
+                                          // Revert checkbox - forțăm re-render
+                                          setCuadrantesLista(prev => [...prev]);
+                                        }
+                                      }}
+                                      className="w-5 h-5 cursor-pointer"
+                                      title={cuadrante.visible !== false && cuadrante.visible !== 0 && cuadrante.visible !== '0' ? "Visible para empleados" : "Oculto para empleados"}
+                                    />
+                                  </td>
                                   {zile.map((z, i) => {
                                     const editKey = `${identificator}_${i + 1}`;
                                     const isEdited = editedCuadrantes[editKey] !== undefined;
@@ -5220,22 +5533,47 @@ export default function CuadrantesPage() {
                                     // Verifică dacă ziua este marcată ca multicentro
                                     const esMulticentro = z && String(z).startsWith('MC->');
                                     
+                                    // Calculează ziua săptămânii pentru luna acestui cuadrante
+                                    const getDayOfWeek = (dayNumber, lunaStr) => {
+                                      if (!lunaStr || !lunaStr.includes('-')) return '';
+                                      try {
+                                        const [year, month] = lunaStr.split('-');
+                                        const date = new Date(parseInt(year), parseInt(month) - 1, dayNumber);
+                                        const dayOfWeek = date.getDay();
+                                        const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+                                        return dayNames[dayOfWeek];
+                                      } catch (e) {
+                                        return '';
+                                      }
+                                    };
+                                    
+                                    const dayOfWeek = getDayOfWeek(i + 1, cuadrante.LUNA);
+                                    
                                     return (
                                       <td key={i} className="border border-gray-300 p-1 text-center text-xs">
-                                        <span 
-                                          className={`px-1 py-1 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors block ${
-                                            z === 'LIBRE' || z === '' 
-                                              ? 'bg-gray-100 text-gray-600' 
-                                              : esMulticentro
-                                              ? 'bg-purple-100 text-purple-700 font-medium'
-                                              : 'bg-green-100 text-green-700'
-                                          } ${isEdited ? 'ring-1 ring-yellow-400' : ''}`}
-                                          title={`Click para editar ${cuadrante.NOMBRE} - día ${i + 1}: ${z || 'Sin datos'}${esMulticentro ? ' (Multicentro)' : ''}`}
-                                          onClick={() => handleEditDay(index, i + 1, z, cuadrante)}
-                                        >
-                                          {z || '-'}
-                                          {isEdited && <span className="text-yellow-600">*</span>}
-                                        </span>
+                                        <div className="flex flex-col items-center gap-0.5">
+                                          {dayOfWeek && (
+                                            <div className={`text-[10px] font-semibold ${
+                                              dayOfWeek === 'Dom' || dayOfWeek === 'Sáb' ? 'text-red-500' : 'text-gray-500'
+                                            }`}>
+                                              {dayOfWeek}
+                                            </div>
+                                          )}
+                                          <span 
+                                            className={`px-1 py-1 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors block w-full ${
+                                              z === 'LIBRE' || z === '' 
+                                                ? 'bg-gray-100 text-gray-600' 
+                                                : esMulticentro
+                                                ? 'bg-purple-100 text-purple-700 font-medium'
+                                                : 'bg-green-100 text-green-700'
+                                            } ${isEdited ? 'ring-1 ring-yellow-400' : ''}`}
+                                            title={`Click para editar ${cuadrante.NOMBRE} - día ${i + 1} (${dayOfWeek || 'N/A'}): ${z || 'Sin datos'}${esMulticentro ? ' (Multicentro)' : ''}`}
+                                            onClick={() => handleEditDay(index, i + 1, z, cuadrante)}
+                                          >
+                                            {z || '-'}
+                                            {isEdited && <span className="text-yellow-600">*</span>}
+                                          </span>
+                                        </div>
                                       </td>
                                     );
                                   })}

@@ -137,6 +137,32 @@ export class CuadrantesController {
   }
 
   /**
+   * PATCH endpoint pentru toggle vizibilitate cuadrante
+   * Acceptă body cu: { id: number, visible: boolean } sau { CODIGO: string, LUNA: string, visible: boolean }
+   */
+  @Post('toggle-visible')
+  async toggleVisible(@Body() body: { id?: number; CODIGO?: string; LUNA?: string; visible: boolean }) {
+    try {
+      const { id, CODIGO, LUNA, visible } = body;
+
+      if (id) {
+        // Update by ID
+        await this.cuadrantesService.toggleVisibleById(id, visible);
+      } else if (CODIGO && LUNA) {
+        // Update by CODIGO and LUNA
+        await this.cuadrantesService.toggleVisibleByCodigoLuna(CODIGO, LUNA, visible);
+      } else {
+        throw new BadRequestException('Either id or (CODIGO and LUNA) must be provided');
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      this.logger.error('❌ Error toggling cuadrante visibility:', error);
+      throw error;
+    }
+  }
+
+  /**
    * POST endpoint pentru upload Excel cu cuadrantes
    * Acceptă multipart/form-data cu:
    *   - file: Excel file (.xlsx, .xls)

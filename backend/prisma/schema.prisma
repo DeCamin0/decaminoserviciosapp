@@ -832,6 +832,7 @@ model cuadrante {
   ZI_30      String? @db.VarChar(50)
   ZI_31      String? @db.VarChar(50)
   TotalHoras String? @db.VarChar(100)
+  visible    Boolean @default(true)
 
   @@unique([CODIGO, LUNA], map: "unique_codigo_luna")
   @@index([LUNA], map: "idx_cuadrante_luna")

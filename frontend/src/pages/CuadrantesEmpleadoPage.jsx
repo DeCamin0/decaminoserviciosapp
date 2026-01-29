@@ -743,6 +743,40 @@ export default function CuadrantesEmpleadoPage() {
         const data = await res.json();
 
         const lista = Array.isArray(data) ? data : [data];
+        
+        // Debug: Verifică valorile visible primite din backend
+        console.log('📥 Cuadrantes loaded from backend:', lista.length, 'items');
+        if (lista.length > 0) {
+          const first = lista[0];
+          console.log('🔍 First cuadrante visible value:', {
+            CODIGO: first.CODIGO,
+            LUNA: first.LUNA,
+            visible: first.visible,
+            visibleType: typeof first.visible,
+            visibleValue: JSON.stringify(first.visible),
+            allKeys: Object.keys(first)
+          });
+          
+          // Verifică toate cuadrantele pentru luna curentă
+          const currentDate = new Date();
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth() + 1;
+          const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+          
+          const cuadrantesForCurrentMonth = lista.filter(c => {
+            let luna = c.LUNA || c.luna;
+            if (typeof luna === 'number') {
+              const date = new Date(Math.round((luna - 25569) * 86400 * 1000));
+              luna = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+            }
+            return luna === currentMonthFormatted;
+          });
+          
+          console.log('🔍 Cuadrantes for current month (' + currentMonthFormatted + '):', cuadrantesForCurrentMonth.length);
+          cuadrantesForCurrentMonth.forEach((c, idx) => {
+            console.log(`  [${idx}] CODIGO: ${c.CODIGO}, visible: ${c.visible} (${typeof c.visible})`);
+          });
+        }
 
         setCuadrantesUser(lista);
 
@@ -1458,6 +1492,7 @@ export default function CuadrantesEmpleadoPage() {
 
 
   // Găsesc cuadrantele pentru luna selectată și utilizatorul curent
+  // IMPORTANT: Filtrează doar cuadrantele vizibile (visible === true)
 
   const cuadrant = cuadrantesUser.find(c => {
 
@@ -1473,9 +1508,54 @@ export default function CuadrantesEmpleadoPage() {
     const codigoMatch = (c.CODIGO || '').trim() === codigoEmpleado.trim();
     const nombreMatch = (c.NOMBRE || '').trim() === nombreEmpleado.trim();
     
+    // Verifică dacă cuadrantul este vizibil
+    // MySQL returnează 1/0 (number) sau true/false (boolean)
+    // Compatibilitate: undefined/null = vizibil (pentru cuadrante vechi)
+    const visibleValue = c.visible;
+    
+    // Conversie robustă: orice valoare "truthy" sau undefined/null = vizibil
+    // Excludem explicit: false, 0, '0', 'false'
+    let isVisible = true; // Default: vizibil (pentru compatibilitate cu cuadrante vechi)
+    
+    if (visibleValue !== undefined && visibleValue !== null) {
+      // Dacă este boolean
+      if (typeof visibleValue === 'boolean') {
+        isVisible = visibleValue === true;
+      }
+      // Dacă este number (MySQL returnează 1/0)
+      else if (typeof visibleValue === 'number') {
+        isVisible = visibleValue === 1;
+      }
+      // Dacă este string
+      else if (typeof visibleValue === 'string') {
+        isVisible = visibleValue === '1' || visibleValue.toLowerCase() === 'true';
+      }
+    }
+    
+    // Debug logging pentru a vedea ce se întâmplă
+    if (lunaMatch && (emailMatch || codigoMatch || nombreMatch)) {
+      console.log('🔍 Cuadrante found for user:', {
+        CODIGO: c.CODIGO,
+        LUNA: luna,
+        EMAIL: c.EMAIL,
+        emailLogat: emailLogat,
+        codigoEmpleado: codigoEmpleado,
+        visible: visibleValue,
+        visibleType: typeof visibleValue,
+        visibleValueString: String(visibleValue),
+        isVisible: isVisible,
+        emailMatch,
+        codigoMatch,
+        nombreMatch,
+        lunaMatch,
+        willMatch: lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible,
+        finalResult: lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible ? '✅ MATCH' : '❌ NO MATCH'
+      });
+    }
+    
     // Verificare cuadrant
     
-    return lunaMatch && (emailMatch || codigoMatch || nombreMatch);
+    return lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible;
 
   });
 
@@ -1493,8 +1573,13 @@ export default function CuadrantesEmpleadoPage() {
   }, [selectedLunaNorm]);
 
   // Verifică dacă există date pentru luna selectată (cuadrante, horario_multicentro sau horario normal)
-  // IMPORTANT: Pentru lunile viitoare, întotdeauna afișăm mesajul "pendiente de generación"
-  const hasDataForMonth = !isFutureMonth && (cuadrant || (horariosMulticentroLista && horariosMulticentroLista.length > 0) || horarioAsignado);
+  // IMPORTANT: Pentru lunile viitoare, afișăm cuadrantul dacă este vizibil (visible === true)
+  // Dacă nu există cuadrante vizibil pentru luna viitoare, afișăm mesajul "pendiente de generación"
+  const hasDataForMonth = cuadrant || 
+                          (horariosMulticentroLista && horariosMulticentroLista.length > 0) || 
+                          horarioAsignado ||
+                          // Pentru lunile viitoare, dacă există cuadrante vizibil, îl afișăm
+                          (isFutureMonth && cuadrant);
 
 
 

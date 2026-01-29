@@ -80,6 +80,15 @@ export class CuadrantesService {
         `✅ Cuadrantes retrieved: ${rows.length} records (centro: ${centro || 'all'}, empleado: ${empleado || 'all'}, nombre: ${nombre || 'all'}, email: ${email || 'all'})`,
       );
 
+      // Debug: Verifică dacă câmpul visible este prezent în rezultate
+      if (rows.length > 0) {
+        const firstRow = rows[0];
+        const hasVisible = 'visible' in firstRow;
+        this.logger.debug(
+          `🔍 First cuadrante sample - CODIGO: ${firstRow.CODIGO}, LUNA: ${firstRow.LUNA}, visible field exists: ${hasVisible}, visible value: ${firstRow.visible}, visible type: ${typeof firstRow.visible}`,
+        );
+      }
+
       return rows;
     } catch (error: any) {
       this.logger.error('❌ Error retrieving cuadrantes:', error);
@@ -132,6 +141,7 @@ export class CuadrantesService {
     ZI_30?: string;
     ZI_31?: string;
     TotalHoras?: string;
+    visible?: boolean;
   }): Promise<{ success: true }> {
     try {
       if (!data.CODIGO || !data.LUNA) {
@@ -139,13 +149,14 @@ export class CuadrantesService {
       }
 
       // Construiește query-ul SQL exact ca în n8n
+      const visibleValue = data.visible !== undefined ? (data.visible ? '1' : '0') : '1';
       const query = `
         INSERT INTO cuadrante (
           CODIGO, EMAIL, NOMBRE, LUNA, CENTRO,
           ZI_1, ZI_2, ZI_3, ZI_4, ZI_5, ZI_6, ZI_7, ZI_8, ZI_9, ZI_10,
           ZI_11, ZI_12, ZI_13, ZI_14, ZI_15, ZI_16, ZI_17, ZI_18, ZI_19, ZI_20,
           ZI_21, ZI_22, ZI_23, ZI_24, ZI_25, ZI_26, ZI_27, ZI_28, ZI_29, ZI_30, ZI_31,
-          TotalHoras
+          TotalHoras, visible
         )
         VALUES (
           ${this.escapeSql(data.CODIGO)},
@@ -164,7 +175,8 @@ export class CuadrantesService {
           ${data.ZI_25 ? this.escapeSql(data.ZI_25) : 'NULL'}, ${data.ZI_26 ? this.escapeSql(data.ZI_26) : 'NULL'}, ${data.ZI_27 ? this.escapeSql(data.ZI_27) : 'NULL'},
           ${data.ZI_28 ? this.escapeSql(data.ZI_28) : 'NULL'}, ${data.ZI_29 ? this.escapeSql(data.ZI_29) : 'NULL'}, ${data.ZI_30 ? this.escapeSql(data.ZI_30) : 'NULL'},
           ${data.ZI_31 ? this.escapeSql(data.ZI_31) : 'NULL'},
-          ${data.TotalHoras ? this.escapeSql(data.TotalHoras) : 'NULL'}
+          ${data.TotalHoras ? this.escapeSql(data.TotalHoras) : 'NULL'},
+          ${visibleValue}
         )
         ON DUPLICATE KEY UPDATE
           EMAIL = VALUES(EMAIL),
@@ -181,7 +193,8 @@ export class CuadrantesService {
           ZI_25 = VALUES(ZI_25), ZI_26 = VALUES(ZI_26), ZI_27 = VALUES(ZI_27),
           ZI_28 = VALUES(ZI_28), ZI_29 = VALUES(ZI_29), ZI_30 = VALUES(ZI_30),
           ZI_31 = VALUES(ZI_31),
-          TotalHoras = VALUES(TotalHoras)
+          TotalHoras = VALUES(TotalHoras),
+          visible = VALUES(visible)
       `;
 
       this.logger.log(
@@ -250,6 +263,7 @@ export class CuadrantesService {
       ZI_30?: string;
       ZI_31?: string;
       TotalHoras?: string;
+      visible?: boolean;
     }>,
   ): Promise<{ success: true; updated: number }> {
     try {
@@ -375,6 +389,13 @@ export class CuadrantesService {
           updates.push('TotalHoras = VALUES(TotalHoras)');
         }
 
+        // visible
+        if (cuadrante.visible !== undefined) {
+          fields.push('visible');
+          values.push(cuadrante.visible ? '1' : '0');
+          updates.push(`visible = VALUES(visible)`);
+        }
+
         const query = `
           INSERT INTO cuadrante (${fields.join(', ')})
           VALUES (${values.join(', ')})
@@ -430,6 +451,38 @@ export class CuadrantesService {
       }
       throw new BadRequestException(
         `Error al actualizar cuadrantes: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Toggle vizibilitate cuadrante by ID
+   */
+  async toggleVisibleById(id: number, visible: boolean): Promise<void> {
+    try {
+      const query = `UPDATE cuadrante SET visible = ${visible ? '1' : '0'} WHERE id = ${id}`;
+      await this.prisma.$executeRawUnsafe(query);
+      this.logger.log(`✅ Toggled visibility for cuadrante id=${id} to ${visible}`);
+    } catch (error: any) {
+      this.logger.error(`❌ Error toggling visibility for cuadrante id=${id}:`, error);
+      throw new BadRequestException(
+        `Error al actualizar visibilidad: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Toggle vizibilitate cuadrante by CODIGO and LUNA
+   */
+  async toggleVisibleByCodigoLuna(CODIGO: string, LUNA: string, visible: boolean): Promise<void> {
+    try {
+      const query = `UPDATE cuadrante SET visible = ${visible ? '1' : '0'} WHERE CODIGO = ${this.escapeSql(CODIGO)} AND LUNA = ${this.escapeSql(LUNA)}`;
+      await this.prisma.$executeRawUnsafe(query);
+      this.logger.log(`✅ Toggled visibility for cuadrante CODIGO=${CODIGO}, LUNA=${LUNA} to ${visible}`);
+    } catch (error: any) {
+      this.logger.error(`❌ Error toggling visibility for cuadrante CODIGO=${CODIGO}, LUNA=${LUNA}:`, error);
+      throw new BadRequestException(
+        `Error al actualizar visibilidad: ${error.message}`,
       );
     }
   }
