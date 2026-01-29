@@ -291,8 +291,17 @@ if [ ! -f "$MAIN_JS" ]; then
     MAIN_JS="dist/main.js"
 fi
 
+# Exportă variabilele de mediu din .env înainte de a porni backend-ul
+if [ -f ".env" ]; then
+    echo -e "${YELLOW}📋 Loading environment variables from .env...${NC}"
+    set -a
+    source .env
+    set +a
+    echo -e "${GREEN}✅ Environment variables loaded${NC}"
+fi
+
 # Pornește backend-ul în background
-nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
+nohup env $(cat .env | grep -v '^#' | xargs) node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
 sleep 3
 
 # 10. Verifică că rulează
