@@ -300,8 +300,15 @@ if [ -f ".env" ]; then
     echo -e "${GREEN}✅ Environment variables loaded${NC}"
 fi
 
+# Exportă variabilele de mediu din .env înainte de a porni backend-ul
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 # Pornește backend-ul în background
-nohup env $(cat .env | grep -v '^#' | xargs) node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
+nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
 sleep 3
 
 # 10. Verifică că rulează
