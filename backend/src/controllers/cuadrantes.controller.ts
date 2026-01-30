@@ -141,7 +141,15 @@ export class CuadrantesController {
    * Acceptă body cu: { id: number, visible: boolean } sau { CODIGO: string, LUNA: string, visible: boolean }
    */
   @Post('toggle-visible')
-  async toggleVisible(@Body() body: { id?: number; CODIGO?: string; LUNA?: string; visible: boolean }) {
+  async toggleVisible(
+    @Body()
+    body: {
+      id?: number;
+      CODIGO?: string;
+      LUNA?: string;
+      visible: boolean;
+    },
+  ) {
     try {
       const { id, CODIGO, LUNA, visible } = body;
 
@@ -150,9 +158,15 @@ export class CuadrantesController {
         await this.cuadrantesService.toggleVisibleById(id, visible);
       } else if (CODIGO && LUNA) {
         // Update by CODIGO and LUNA
-        await this.cuadrantesService.toggleVisibleByCodigoLuna(CODIGO, LUNA, visible);
+        await this.cuadrantesService.toggleVisibleByCodigoLuna(
+          CODIGO,
+          LUNA,
+          visible,
+        );
       } else {
-        throw new BadRequestException('Either id or (CODIGO and LUNA) must be provided');
+        throw new BadRequestException(
+          'Either id or (CODIGO and LUNA) must be provided',
+        );
       }
 
       return { success: true };
@@ -231,6 +245,46 @@ export class CuadrantesController {
     } catch (error: any) {
       this.logger.error('❌ Error uploading Excel:', error);
       throw error;
+    }
+  }
+
+  /**
+   * GET /api/cuadrantes/check-existing?codigo=XXX&mes=YYYY-MM&centro=XXX
+   * Verifică dacă există deja cuadrante sau horario_multicentro pentru un angajat, lună și centru
+   */
+  @Get('check-existing')
+  async checkExistingCuadrante(
+    @Query('codigo') codigo: string,
+    @Query('mes') mes: string,
+    @Query('centro') centro?: string,
+  ) {
+    try {
+      if (!codigo) {
+        throw new BadRequestException('Se requiere el código del empleado');
+      }
+      if (!mes) {
+        throw new BadRequestException('Se requiere el mes (YYYY-MM)');
+      }
+
+      this.logger.log(
+        `📝 Check existing cuadrante request - codigo: ${codigo}, mes: ${mes}, centro: ${centro || 'N/A'}`,
+      );
+
+      const result = await this.cuadrantesService.checkExistingCuadrante(
+        codigo,
+        mes,
+        centro,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error checking existing cuadrante:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al verificar cuadrante existente: ${error.message}`,
+      );
     }
   }
 }

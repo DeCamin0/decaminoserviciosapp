@@ -102,7 +102,7 @@ const PDFViewerAndroid = ({ pdfUrl, className = '', style = {} }) => {
             renderTaskRef.current.cancel();
             // Wait a bit for cancellation to complete
             await new Promise(resolve => setTimeout(resolve, 50));
-          } catch (_) {
+          } catch {
             // ignore cancel errors
           }
         }
@@ -156,7 +156,7 @@ const PDFViewerAndroid = ({ pdfUrl, className = '', style = {} }) => {
       if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
         try {
           renderTaskRef.current.cancel();
-        } catch (_) {
+        } catch {
           // ignore
         } finally {
           renderTaskRef.current = null;

@@ -35,7 +35,7 @@ if (typeof window !== 'undefined') {
               type: file.type 
             };
           }
-        } catch (e) {
+        } catch {
           // FormData poate fi consumat doar o dată
         }
       }
@@ -58,7 +58,7 @@ if (typeof window !== 'undefined') {
           corsHeaders['access-control-allow-credentials'] = response.headers.get('access-control-allow-credentials');
           corsHeaders['access-control-allow-methods'] = response.headers.get('access-control-allow-methods');
           corsHeaders['access-control-allow-headers'] = response.headers.get('access-control-allow-headers');
-        } catch (e) {
+        } catch {
           // Headers pot fi read-only în unele cazuri
         }
         
@@ -223,7 +223,7 @@ export const useComunicadosApi = () => {
         let errorData;
         try {
           errorData = await response.json();
-        } catch (e) {
+        } catch {
           errorData = { message: `Error ${response.status}: ${response.statusText}` };
         }
         console.error('[Comunicados] ❌ Upload error:', errorData);
@@ -309,7 +309,7 @@ export const useComunicadosApi = () => {
         let errorData;
         try {
           errorData = await response.json();
-        } catch (e) {
+        } catch {
           errorData = { message: `Error ${response.status}: ${response.statusText}` };
         }
         console.error('[Comunicados] ❌ Update error:', errorData);

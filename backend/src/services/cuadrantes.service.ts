@@ -99,6 +99,91 @@ export class CuadrantesService {
   }
 
   /**
+   * Verifică dacă există deja cuadrante sau horario_multicentro pentru un angajat, lună și centru
+   * @param codigo - CODIGO al angajatului
+   * @param mes - Luna în format YYYY-MM
+   * @param centro - Numele centrului (opțional)
+   * @returns Informații despre existența cuadrantelor
+   */
+  async checkExistingCuadrante(
+    codigo: string,
+    mes: string,
+    centro?: string,
+  ): Promise<{
+    hasCuadrante: boolean;
+    hasHorarioMulticentro: boolean;
+    cuadrante?: any;
+    horarioMulticentro?: any[];
+  }> {
+    try {
+      const codigoClean = codigo.trim();
+      const mesClean = mes.trim();
+
+      this.logger.log(
+        `🔍 [checkExistingCuadrante] Verificăm pentru CODIGO: ${codigoClean}, LUNA: ${mesClean}, CENTRO: ${centro || 'N/A'}`,
+      );
+
+      // Verifică cuadrante
+      // NOTĂ: Constraint-ul unique pentru cuadrante este pe (CODIGO, LUNA), nu pe (CODIGO, LUNA, CENTRO)
+      // Deci verificăm doar CODIGO și LUNA, nu și CENTRO
+      const cuadranteQuery = `
+        SELECT CODIGO, LUNA, CENTRO, ZI_1, ZI_2, ZI_3, ZI_4, ZI_5, ZI_6, ZI_7, ZI_8, ZI_9, ZI_10,
+          ZI_11, ZI_12, ZI_13, ZI_14, ZI_15, ZI_16, ZI_17, ZI_18, ZI_19, ZI_20,
+          ZI_21, ZI_22, ZI_23, ZI_24, ZI_25, ZI_26, ZI_27, ZI_28, ZI_29, ZI_30, ZI_31
+        FROM cuadrante
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+          AND LUNA = ${this.escapeSql(mesClean)}
+        LIMIT 1
+      `;
+
+      const cuadranteResult =
+        await this.prisma.$queryRawUnsafe<any[]>(cuadranteQuery);
+
+      const hasCuadrante = cuadranteResult && cuadranteResult.length > 0;
+      const cuadrante = hasCuadrante ? cuadranteResult[0] : undefined;
+
+      // Verifică horario_multicentro
+      let horarioMulticentroQuery = `
+        SELECT id, CODIGO, LUNA, CLIENTE, HORARIO, SERVICIO, ZI_1, ZI_2, ZI_3, ZI_4, ZI_5, ZI_6, ZI_7, ZI_8, ZI_9, ZI_10,
+          ZI_11, ZI_12, ZI_13, ZI_14, ZI_15, ZI_16, ZI_17, ZI_18, ZI_19, ZI_20,
+          ZI_21, ZI_22, ZI_23, ZI_24, ZI_25, ZI_26, ZI_27, ZI_28, ZI_29, ZI_30, ZI_31
+        FROM horario_multicentro
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+          AND LUNA = ${this.escapeSql(mesClean)}
+      `;
+
+      if (centro && centro.trim() !== '') {
+        horarioMulticentroQuery += ` AND CLIENTE = ${this.escapeSql(centro.trim())}`;
+      }
+
+      const horarioMulticentroResult = await this.prisma.$queryRawUnsafe<any[]>(
+        horarioMulticentroQuery,
+      );
+
+      const hasHorarioMulticentro =
+        horarioMulticentroResult && horarioMulticentroResult.length > 0;
+
+      this.logger.log(
+        `✅ [checkExistingCuadrante] Rezultat - hasCuadrante: ${hasCuadrante}, hasHorarioMulticentro: ${hasHorarioMulticentro}`,
+      );
+
+      return {
+        hasCuadrante,
+        hasHorarioMulticentro,
+        cuadrante,
+        horarioMulticentro: hasHorarioMulticentro
+          ? horarioMulticentroResult
+          : undefined,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error checking existing cuadrante:', error);
+      throw new BadRequestException(
+        `Error al verificar cuadrante existente: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Salvează sau actualizează un cuadrante
    * Folosește INSERT ... ON DUPLICATE KEY UPDATE (exact ca n8n)
    * Unique constraint: (CODIGO, LUNA)
@@ -149,7 +234,8 @@ export class CuadrantesService {
       }
 
       // Construiește query-ul SQL exact ca în n8n
-      const visibleValue = data.visible !== undefined ? (data.visible ? '1' : '0') : '1';
+      const visibleValue =
+        data.visible !== undefined ? (data.visible ? '1' : '0') : '1';
       const query = `
         INSERT INTO cuadrante (
           CODIGO, EMAIL, NOMBRE, LUNA, CENTRO,
@@ -462,9 +548,14 @@ export class CuadrantesService {
     try {
       const query = `UPDATE cuadrante SET visible = ${visible ? '1' : '0'} WHERE id = ${id}`;
       await this.prisma.$executeRawUnsafe(query);
-      this.logger.log(`✅ Toggled visibility for cuadrante id=${id} to ${visible}`);
+      this.logger.log(
+        `✅ Toggled visibility for cuadrante id=${id} to ${visible}`,
+      );
     } catch (error: any) {
-      this.logger.error(`❌ Error toggling visibility for cuadrante id=${id}:`, error);
+      this.logger.error(
+        `❌ Error toggling visibility for cuadrante id=${id}:`,
+        error,
+      );
       throw new BadRequestException(
         `Error al actualizar visibilidad: ${error.message}`,
       );
@@ -474,13 +565,22 @@ export class CuadrantesService {
   /**
    * Toggle vizibilitate cuadrante by CODIGO and LUNA
    */
-  async toggleVisibleByCodigoLuna(CODIGO: string, LUNA: string, visible: boolean): Promise<void> {
+  async toggleVisibleByCodigoLuna(
+    CODIGO: string,
+    LUNA: string,
+    visible: boolean,
+  ): Promise<void> {
     try {
       const query = `UPDATE cuadrante SET visible = ${visible ? '1' : '0'} WHERE CODIGO = ${this.escapeSql(CODIGO)} AND LUNA = ${this.escapeSql(LUNA)}`;
       await this.prisma.$executeRawUnsafe(query);
-      this.logger.log(`✅ Toggled visibility for cuadrante CODIGO=${CODIGO}, LUNA=${LUNA} to ${visible}`);
+      this.logger.log(
+        `✅ Toggled visibility for cuadrante CODIGO=${CODIGO}, LUNA=${LUNA} to ${visible}`,
+      );
     } catch (error: any) {
-      this.logger.error(`❌ Error toggling visibility for cuadrante CODIGO=${CODIGO}, LUNA=${LUNA}:`, error);
+      this.logger.error(
+        `❌ Error toggling visibility for cuadrante CODIGO=${CODIGO}, LUNA=${LUNA}:`,
+        error,
+      );
       throw new BadRequestException(
         `Error al actualizar visibilidad: ${error.message}`,
       );

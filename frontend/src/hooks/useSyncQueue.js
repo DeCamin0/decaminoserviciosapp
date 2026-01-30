@@ -15,7 +15,12 @@ export const useSyncQueue = () => {
     const savedQueue = localStorage.getItem('syncQueue');
     if (savedQueue) {
       try {
-        setSyncQueue(JSON.parse(savedQueue));
+        // Folosim setTimeout pentru a evita apelarea sincronă a setState
+        const timer = setTimeout(() => {
+          setSyncQueue(JSON.parse(savedQueue));
+        }, 0);
+        
+        return () => clearTimeout(timer);
       } catch (error) {
         console.warn('⚠️ Error loading sync queue:', error);
         localStorage.removeItem('syncQueue');
@@ -118,7 +123,12 @@ export const useSyncQueue = () => {
   useEffect(() => {
     if (isOnline && wasOffline && syncQueue.length > 0) {
       console.log('🔄 Sincronizando cambios pendientes...');
-      syncPendingChanges();
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const timer = setTimeout(() => {
+        syncPendingChanges();
+      }, 0);
+      
+      return () => clearTimeout(timer);
     }
   }, [isOnline, wasOffline, syncPendingChanges, syncQueue.length]);
 

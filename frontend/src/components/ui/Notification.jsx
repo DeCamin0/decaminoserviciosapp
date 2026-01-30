@@ -27,16 +27,26 @@ const Notification = ({
 
   useEffect(() => {
     if (show) {
-      setIsVisible(true);
-      setIsAnimating(true);
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const showTimer = setTimeout(() => {
+        setIsVisible(true);
+        setIsAnimating(true);
+      }, 0);
       
       // Auto-hide after duration
+      let hideTimer;
       if (duration > 0) {
-        const timer = setTimeout(() => {
+        hideTimer = setTimeout(() => {
           handleClose();
         }, duration);
-        return () => clearTimeout(timer);
       }
+      
+      return () => {
+        clearTimeout(showTimer);
+        if (hideTimer) {
+          clearTimeout(hideTimer);
+        }
+      };
     }
   }, [show, duration, handleClose]);
 

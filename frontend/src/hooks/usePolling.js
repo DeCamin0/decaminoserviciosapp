@@ -26,7 +26,9 @@ export const usePolling = (callback, intervalMs, enabled = true, jitterMs = null
     return intervalMs + randomJitter;
   }, [intervalMs, jitterMs]);
 
-  // Funcție pentru a programa următorul poll
+  // Funcție pentru a programa următorul poll (folosim useRef pentru a evita dependența circulară)
+  const scheduleNextRef = useRef(null);
+  
   const scheduleNext = useCallback(() => {
     if (!enabled || !isVisibleRef.current) return;
     
@@ -34,10 +36,18 @@ export const usePolling = (callback, intervalMs, enabled = true, jitterMs = null
     timeoutRef.current = setTimeout(() => {
       if (isVisibleRef.current && enabled) {
         callbackRef.current();
-        scheduleNext();
+        // Folosim ref pentru a apela funcția actualizată
+        if (scheduleNextRef.current) {
+          scheduleNextRef.current();
+        }
       }
     }, nextInterval);
   }, [enabled, getJitteredInterval]);
+  
+  // Actualizează ref-ul când se schimbă funcția
+  useEffect(() => {
+    scheduleNextRef.current = scheduleNext;
+  }, [scheduleNext]);
 
   // Gestionează visibility change
   useEffect(() => {

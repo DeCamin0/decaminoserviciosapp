@@ -37,7 +37,7 @@ export default function IdleProvider({ children }) {
   const writeStorage = useCallback((ts) => {
     try {
       localStorage.setItem('idle:lastActivityAt', String(ts))
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [])
@@ -46,7 +46,7 @@ export default function IdleProvider({ children }) {
     try {
       const v = Number(localStorage.getItem('idle:lastActivityAt'))
       return Number.isFinite(v) ? v : null
-    } catch (e) {
+    } catch {
       return null
     }
   }, [])
@@ -54,7 +54,7 @@ export default function IdleProvider({ children }) {
   const broadcast = useCallback((type, payload) => {
     try {
       channelRef.current?.postMessage({ type, payload })
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [])

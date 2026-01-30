@@ -268,10 +268,12 @@ export default function PRLDocumentosPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Error al eliminar documento');
+        const errorData = await res.json().catch(() => ({ message: 'Error al eliminar documento' }));
+        throw new Error(errorData.message || 'Error al eliminar documento');
       }
 
-      mostrarNotificacion('success', '✅ Documento eliminado correctamente');
+      const data = await res.json();
+      mostrarNotificacion('success', data.message || '✅ Documento eliminado correctamente');
       setShowDeleteModal(false);
       setTemplateToDelete(null);
       cargarTemplates(grupoSeleccionado);

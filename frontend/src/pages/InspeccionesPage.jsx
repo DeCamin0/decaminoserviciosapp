@@ -51,8 +51,10 @@ export default function InspeccionesPage() {
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
       console.log('🎭 DEMO mode: Using demo centros stats instead of fetching from backend');
-      setDemoCentrosStats();
-      return;
+      const timer = setTimeout(() => {
+        setDemoCentrosStats();
+      }, 0);
+      return () => clearTimeout(timer);
     }
 
     const loadCentrosStats = async () => {

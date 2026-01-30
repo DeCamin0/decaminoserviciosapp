@@ -108,7 +108,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
     if (days > 0 && years === 0) partsText.push(`${days} día${days !== 1 ? 's' : ''}`);
     
     return partsText.join(', ') || '0 días';
-  } catch (error) {
+  } catch {
     return '';
   }
 };
@@ -3398,7 +3398,7 @@ export default function EmpleadosPage() {
         setEmailError('Ha ocurrido un problema al enviar el correo.');
         setEmailLoading(false);
       }
-    } catch (error) {
+    } catch {
       setEmailError('No se pudo enviar el correo.');
       setEmailLoading(false);
     }

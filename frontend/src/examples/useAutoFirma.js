@@ -11,7 +11,7 @@ export const useAutoFirma = () => {
       try {
         const available = window.MiniApplet?.isAvailable?.() || false;
         setIsAvailable(available);
-      } catch (err) {
+      } catch {
         setIsAvailable(false);
       }
     };

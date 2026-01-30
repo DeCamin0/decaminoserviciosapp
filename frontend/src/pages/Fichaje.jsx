@@ -289,7 +289,7 @@ function useMadridClock(resyncIntervalMs = 60000, authUser = null) {
         setTimeStr(t);
         setDateStr(ds);
         setEpochMs(ms);
-      } catch (_) {
+      } catch {
         const d = new Date();
         setTimeStr(d.toLocaleTimeString());
         setDateStr(d.toLocaleDateString());
@@ -732,7 +732,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const daySchedule = cuadranteAsignado[dayKey];
       
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        // Folosește helper-ul comun pentru calculul orelor
+        // Folosește helper-ul comun pentru calculul orelor (suportă ambele formate: T1 07:00-15:00 și "12")
         const hours = calculateCuadranteHours(daySchedule);
         return hours > 0 ? hours.toFixed(2) : '0.00';
       }
@@ -743,13 +743,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const daySchedule = horarioMulticentroAsignado[dayKey];
       
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '' && daySchedule !== '0' && daySchedule !== '0h') {
-        if (typeof daySchedule === 'string' && daySchedule.includes('-')) {
-          const hours = calculateCuadranteHours(daySchedule);
-          return hours > 0 ? hours.toFixed(2) : '0.00';
-        } else if (typeof daySchedule === 'string' && !isNaN(parseFloat(daySchedule))) {
-          const hours = parseFloat(daySchedule);
-          return hours > 0 ? hours.toFixed(2) : '0.00';
-        }
+        // Folosește helper-ul comun pentru calculul orelor (suportă ambele formate: T1 07:00-15:00 și "12")
+        const hours = calculateCuadranteHours(daySchedule);
+        return hours > 0 ? hours.toFixed(2) : '0.00';
       }
       return '0.00';
     } else if (horarioAsignado && horarioAsignado.days) {
@@ -1941,7 +1937,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
                 setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
               }
-            } catch (err) {
+            } catch {
               // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
               const matchingItems = itemsToCheck.filter(item => 
                 (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
@@ -2119,7 +2115,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         if (loc) {
           try {
             address = await locationContext.getAddressFromCoords(loc.latitude, loc.longitude) || currentAddress;
-          } catch (e) {
+          } catch {
             // Ignoră erorile de geocodare - continuă fără adresă
             address = currentAddress;
           }
@@ -2185,7 +2181,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         
         horasMensuales = 0; // Duration is now calculated by database triggers
         horasAsignadas = horasAsignadasResult;
-      } catch (error) {
+      } catch {
         warn('Timeout sau eroare la calculul orelor lunare, continuăm cu valori default');
         // Continuă cu valori default
       }
@@ -5237,7 +5233,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                   const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
                   setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
                 }
-              } catch (err) {
+              } catch {
                 // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
                 const matchingItems = itemsToCheck.filter(item => 
                   (item.codigo || item.CODIGO) === codigo && item.data === data
@@ -5753,7 +5749,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           } else {
             throw new Error('No se encontró dirección en la respuesta');
           }
-        } catch (error) {
+        } catch {
           warn('No se pudo obtener la dirección, usando coordenadas');
         currentAddress = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
           setForm(prev => ({ 
@@ -5839,7 +5835,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               address: currentAddress 
             }));
           }
-        } catch (error) {
+        } catch {
           warn('No se pudo obtener la dirección, usando coordenadas');
         currentAddress = `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
           setForm(prev => ({ 
@@ -7248,7 +7244,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                             address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
                             }));
                           }
-                        } catch (error) {
+                        } catch {
                           setForm(prev => ({ 
                             ...prev, 
                           address: `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` 
@@ -8848,7 +8844,7 @@ export default function FichajePage() {
       });
       setMadridTime(time);
       setMadridDate(date);
-    } catch (e) {
+    } catch {
       setMadridTime(new Date().toLocaleTimeString());
       setMadridDate(new Date().toLocaleDateString());
     }
@@ -8884,7 +8880,7 @@ export default function FichajePage() {
             } else {
               setModalAddress(`${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
             }
-          } catch (_) {
+          } catch {
             setModalAddress(`${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
           }
         } catch (error) {

@@ -355,12 +355,7 @@ export default defineConfig({
             return 'maps-libs';
           }
           
-          // 6. CAPACITOR - Chunk pentru mobile (300KB) - LAZY LOADING
-          if (id.includes('@capacitor/')) {
-            return 'capacitor';
-          }
-          
-          // 7. FORM LIBRARIES - Chunk pentru formulare (150KB)
+          // 6. FORM LIBRARIES - Chunk pentru formulare (150KB)
           if (id.includes('react-hook-form') || id.includes('@hookform') || id.includes('zod')) {
             return 'form-libs';
           }

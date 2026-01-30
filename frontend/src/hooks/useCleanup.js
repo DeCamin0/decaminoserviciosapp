@@ -63,8 +63,9 @@ export const useCleanup = () => {
     addInterval,
     clearTimeout: clearTimeoutRef,
     clearInterval: clearIntervalRef,
-    timeouts: timeoutsRef.current,
-    intervals: intervalsRef.current
+    // Funcții pentru a obține listele (accesează ref-urile doar când sunt apelate)
+    getTimeouts: () => timeoutsRef.current,
+    getIntervals: () => intervalsRef.current
   };
 };
 

@@ -34,17 +34,22 @@ const NotificationsBell = () => {
   useEffect(() => {
     const latestNotification = notifications[0];
     if (latestNotification && !latestNotification.read) {
-      setShowNotification({
-        type: latestNotification.type || 'info',
-        title: latestNotification.title || 'Nouă notificare',
-        message: latestNotification.message || latestNotification.content,
-        onClose: () => {
-          setShowNotification(null);
-          if (latestNotification.id) {
-            markAsRead(latestNotification.id);
-          }
-        },
-      });
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const timer = setTimeout(() => {
+        setShowNotification({
+          type: latestNotification.type || 'info',
+          title: latestNotification.title || 'Nouă notificare',
+          message: latestNotification.message || latestNotification.content,
+          onClose: () => {
+            setShowNotification(null);
+            if (latestNotification.id) {
+              markAsRead(latestNotification.id);
+            }
+          },
+        });
+      }, 0);
+      
+      return () => clearTimeout(timer);
     }
   }, [notifications, markAsRead]);
 

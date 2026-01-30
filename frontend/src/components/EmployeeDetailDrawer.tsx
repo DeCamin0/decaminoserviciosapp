@@ -535,7 +535,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
   const resumenMensualData = React.useMemo(() => {
     if (!detalle?.resumenMensual) return undefined;
     return Array.isArray(detalle.resumenMensual) ? detalle.resumenMensual : undefined;
-  }, [detalle?.resumenMensual]);
+  }, [detalle]);
 
   const formatMonthLabel = React.useCallback((ym: string) => {
     if (!ym) return ym;
@@ -573,7 +573,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
     } catch {
       return detalle.mes;
     }
-  }, [detalle?.mes, isAnual]);
+  }, [detalle.mes, isAnual]);
 
   // Reset tab când se deschide drawer-ul
   React.useEffect(() => {

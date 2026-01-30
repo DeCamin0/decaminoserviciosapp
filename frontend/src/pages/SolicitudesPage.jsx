@@ -42,7 +42,7 @@ const formatDate = (dateStr) => {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('es-ES');
-  } catch (error) {
+  } catch {
     return '-';
   }
 };
@@ -57,7 +57,7 @@ const formatDateTime = (value) => {
       hour: '2-digit',
       minute: '2-digit',
     })}`;
-  } catch (error) {
+  } catch {
     return value;
   }
 };
@@ -105,7 +105,7 @@ const formatDateRange = (fechaCombinada) => {
     }
     
     return fechaNormalized.split('-').reverse().join('/');
-  } catch (error) {
+  } catch {
     return '—';
   }
 };
@@ -666,7 +666,7 @@ function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatFecha
                       hour: '2-digit',
                       minute: '2-digit',
                     })}`;
-                  } catch (e) {
+                  } catch {
                     return createdAt;
                   }
                 })()}
@@ -730,7 +730,7 @@ function MobileSolicitudItem({ solicitud, getAusenciaDurationDisplay, formatDate
             fechaNormalizada = fecha.toISOString().split('T')[0];
           }
         }
-      } catch (e) {
+      } catch {
         // Ignore
       }
     }
@@ -3026,7 +3026,7 @@ export default function SolicitudesPage() {
               fechaNormalizada = fecha.toISOString().split('T')[0];
             }
           }
-        } catch (e) {
+        } catch {
           fechaNormalizada = fechaAusencia;
         }
       }
@@ -4789,7 +4789,7 @@ export default function SolicitudesPage() {
             hour12: false
           });
         }
-      } catch (e) {
+      } catch {
         // Ignore
       }
     }
@@ -4840,7 +4840,7 @@ export default function SolicitudesPage() {
       const diffMs = end.getTime() - start.getTime();
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
       return diffDays + 1;
-    } catch (error) {
+    } catch {
       return 0;
     }
   };
@@ -4856,7 +4856,7 @@ export default function SolicitudesPage() {
       }
       // Dacă nu e format combinat, returnează 1 zi
       return 1;
-    } catch (error) {
+    } catch {
       return 0;
     }
   };
@@ -6641,7 +6641,7 @@ export default function SolicitudesPage() {
                                         hour: '2-digit',
                                         minute: '2-digit',
                                       })}`;
-                                    } catch (e) {
+                                    } catch {
                                       return createdAt;
                                     }
                                   })()}

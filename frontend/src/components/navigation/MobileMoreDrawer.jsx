@@ -151,7 +151,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
             setDocumentosSolicitadosCount(pendientes.length);
           }
         }
-      } catch (error) {
+      } catch {
         setDocumentosSolicitadosCount(0);
       }
     };

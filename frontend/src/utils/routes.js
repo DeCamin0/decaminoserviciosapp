@@ -308,6 +308,15 @@ export const routes = {
   saveHorariosMulticentro: import.meta.env.DEV
     ? 'http://localhost:3000/api/horarios/save-multicentro'
     : 'https://api.decaminoservicios.com/api/horarios/save-multicentro',
+  updateHorarioMulticentro: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horarios/multicentro'
+    : 'https://api.decaminoservicios.com/api/horarios/multicentro',
+  getTurnosFromCuadrante: import.meta.env.DEV
+    ? 'http://localhost:3000/api/horarios/multicentro/turnos-from-cuadrante'
+    : 'https://api.decaminoservicios.com/api/horarios/multicentro/turnos-from-cuadrante',
+  checkExistingCuadrante: import.meta.env.DEV
+    ? 'http://localhost:3000/api/cuadrantes/check-existing'
+    : 'https://api.decaminoservicios.com/api/cuadrantes/check-existing',
   
   // Solicitudes (Requests)
   // Folosește GET pentru listare, POST cu accion: 'create'/'update'/'delete' pentru modificări
@@ -759,6 +768,9 @@ export const routes = {
   prlSubirDocumentoFirmado: (documentoId) => import.meta.env.DEV
     ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/subir-firmado`
     : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/subir-firmado`,
+  prlAgregarFirmaADocx: (documentoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/agregar-firma-docx`
+    : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/agregar-firma-docx`,
   prlDescargarDocumentoFirmado: (documentoId) => import.meta.env.DEV
     ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/descargar-firmado`
     : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/descargar-firmado`,

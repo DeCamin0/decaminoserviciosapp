@@ -370,7 +370,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -779,7 +779,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     try {
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1201,7 +1201,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1284,7 +1284,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       setLoadingProductos(true);
       try {
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-App-Source': 'DeCamino-Web-App',
@@ -1438,7 +1438,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       const total = subtotal + iva_total;
 
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',

@@ -1342,7 +1342,7 @@ export default function MensajesEnviadosPage() {
                                     return 'N/A';
                                   }
                                   return `${start.toLocaleDateString('es-ES')} - ${end.toLocaleDateString('es-ES')}`;
-                                } catch (e) {
+                                } catch {
                                   return 'N/A';
                                 }
                               })() : (

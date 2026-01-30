@@ -343,6 +343,7 @@ const InspectionForm = ({ type }) => {
     },
     locatie: '',
     centro: '',
+    centroTrabajador: '', // Centru temporar pentru angajații fără centru (doar pentru inspecția curentă)
     supervisor: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
     supervisor_codigo: user?.CODIGO || user?.codigo || null, // Adăugat codigo supervizor
     puncte: [],
@@ -616,17 +617,18 @@ const InspectionForm = ({ type }) => {
         console.log('✅ Centros de Trabajo (Clientes) cargados:', centrosFromClientes.length);
         console.log('✅ Empleados cargados:', empleadosArray.length);
         
-        // Setează centru-ul automat dacă utilizatorul are un centru
-        const userCentro = user?.['CENTRO TRABAJO'] || 
-                           user?.CENTRO_TRABAJO || 
-                           user?.CENTRO || 
-                           user?.centro ||
-                           user?.['CENTRO_DE_TRABAJO'] || 
-                           user?.['CENTRO LABORAL'];
-        
-        if (userCentro && centrosFromClientes.includes(userCentro)) {
-          setFormData(prev => ({ ...prev, centro: userCentro }));
-        }
+        // Nu setăm centru-ul automat - utilizatorul trebuie să selecteze manual
+        // (Comentat pentru a permite utilizatorului să aleagă centru-ul manual)
+        // const userCentro = user?.['CENTRO TRABAJO'] || 
+        //                    user?.CENTRO_TRABAJO || 
+        //                    user?.CENTRO || 
+        //                    user?.centro ||
+        //                    user?.['CENTRO_DE_TRABAJO'] || 
+        //                    user?.['CENTRO LABORAL'];
+        // 
+        // if (userCentro && centrosFromClientes.includes(userCentro)) {
+        //   setFormData(prev => ({ ...prev, centro: userCentro }));
+        // }
       } catch (error) {
         console.error('Error loading centros/empleados:', error);
       } finally {
@@ -640,6 +642,7 @@ const InspectionForm = ({ type }) => {
   // Filtrează angajații când se schimbă centru-ul
   useEffect(() => {
     if (formData.centro && empleados.length > 0) {
+      // Dacă există centru selectat, filtrează angajații cu acel centru
       const empleadosDelCentro = empleados.filter(emp => {
         const empCentro = emp['CENTRO TRABAJO'] || 
                           emp.CENTRO_TRABAJO || 
@@ -650,6 +653,26 @@ const InspectionForm = ({ type }) => {
         return empCentro === formData.centro;
       });
       setEmpleadosFiltrados(empleadosDelCentro);
+    } else if (empleados.length > 0) {
+      // Dacă nu există centru selectat, filtrează angajații activi fără centru asociat
+      const empleadosSinCentro = empleados.filter(emp => {
+        // Verifică dacă angajatul este activ
+        const estado = (emp['ESTADO'] || emp.ESTADO || '').toString().trim().toUpperCase();
+        const isActivo = estado === 'ACTIVO';
+        
+        // Verifică dacă angajatul nu are centru asociat
+        const empCentro = emp['CENTRO TRABAJO'] || 
+                          emp.CENTRO_TRABAJO || 
+                          emp.CENTRO || 
+                          emp.centro ||
+                          emp['CENTRO_DE_TRABAJO'] || 
+                          emp['CENTRO LABORAL'];
+        const sinCentro = !empCentro || empCentro.trim() === '';
+        
+        // Returnează true doar dacă este activ ȘI nu are centru
+        return isActivo && sinCentro;
+      });
+      setEmpleadosFiltrados(empleadosSinCentro);
     } else {
       setEmpleadosFiltrados([]);
     }
@@ -689,7 +712,27 @@ const InspectionForm = ({ type }) => {
     if (!formData.data) newErrors.data = 'Data este obligatorie';
     if (!formData.inspector.nume.trim()) newErrors.inspectorName = 'Numele inspectorului este obligatoriu';
     if (!formData.locatie.trim()) newErrors.locatie = 'Locația este obligatorie';
-    if (!formData.centro.trim()) newErrors.centro = 'Centro de trabajo es obligatorio';
+    
+    // Verifică dacă angajatul selectat are centru
+    const selectedEmployee = formData.trabajador.nume 
+      ? empleados.find(emp => 
+          (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === formData.trabajador.nume
+        )
+      : null;
+    const trabajadorTieneCentro = selectedEmployee ? empleadoTieneCentro(selectedEmployee) : false;
+    
+    // Centru-ul este obligatoriu doar dacă:
+    // 1. Nu există un angajat fără centru selectat SAU
+    // 2. Angajatul selectat are centru asociat
+    // Dacă angajatul nu are centru, centru-ul devine opțional (poate fi setat prin centroTrabajador)
+    if (trabajadorTieneCentro || !formData.trabajador.nume.trim()) {
+      // Dacă angajatul are centru sau nu există angajat selectat, centru-ul este obligatoriu
+      if (!formData.centro.trim()) {
+        newErrors.centro = 'Centro de trabajo es obligatorio';
+      }
+    }
+    // Dacă angajatul nu are centru, centru-ul este opțional (nu adăugăm eroare)
+    
     if (!formData.trabajador.nume.trim()) newErrors.trabajador = 'Trabajador es obligatorio';
 
     // Validări pentru semnături (opționale - doar warning)
@@ -741,16 +784,43 @@ const InspectionForm = ({ type }) => {
     }));
   };
 
+  // Funcție helper pentru a verifica dacă un angajat are centru asociat
+  const empleadoTieneCentro = (empleado) => {
+    if (!empleado) return false;
+    const empCentro = empleado['CENTRO TRABAJO'] || 
+                      empleado.CENTRO_TRABAJO || 
+                      empleado.CENTRO || 
+                      empleado.centro ||
+                      empleado['CENTRO_DE_TRABAJO'] || 
+                      empleado['CENTRO LABORAL'];
+    return empCentro && empCentro.trim() !== '';
+  };
+
   const handleTrabajadorChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      trabajador: {
-        ...prev.trabajador,
-        [field]: value
-      },
-      // Actualizează și codigo_empleado la nivel principal
-      codigo_empleado: field === 'codigo' ? value : prev.codigo_empleado
-    }));
+    setFormData(prev => {
+      const newData = {
+        ...prev,
+        trabajador: {
+          ...prev.trabajador,
+          [field]: value
+        },
+        // Actualizează și codigo_empleado la nivel principal
+        codigo_empleado: field === 'codigo' ? value : prev.codigo_empleado
+      };
+      
+      // Dacă se schimbă numele angajatului, verifică dacă are centru și resetează centroTrabajador dacă are
+      if (field === 'nume' && value) {
+        const selectedEmployee = empleados.find(emp => 
+          (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === value
+        );
+        if (selectedEmployee && empleadoTieneCentro(selectedEmployee)) {
+          // Dacă angajatul are centru, resetează centroTrabajador
+          newData.centroTrabajador = '';
+        }
+      }
+      
+      return newData;
+    });
   };
 
   const handlePointChange = (pointId, field, value) => {
@@ -916,7 +986,7 @@ const InspectionForm = ({ type }) => {
                  <Text style={styles.inspectionNumber}>Número: {safeText(formData.nr)}</Text>
                  <Text style={styles.date}>Fecha: {safeText(formData.data)}</Text>
                  <Text style={styles.location}>Ubicación: {safeText(formData.locatie)}</Text>
-                 <Text style={styles.trabajador}>Centro de Trabajo: {safeText(formData.centro)}</Text>
+                 <Text style={styles.trabajador}>Centro de Trabajo: {safeText(formData.centroTrabajador || formData.centro)}</Text>
                  <Text style={styles.inspector}>Inspector: {safeText(formData.inspector?.nume)}</Text>
                  <Text style={styles.employee}>
                    Empleado: {safeText(formData.trabajador?.nume)}
@@ -1251,9 +1321,15 @@ const InspectionForm = ({ type }) => {
           })
         );
         
+        // Dacă există un angajat fără centru și s-a setat centroTrabajador, folosește-l ca centro pentru backend
+        const centroParaBackend = formData.centroTrabajador 
+          ? formData.centroTrabajador 
+          : formData.centro;
+        
         // Salvează datele pentru previzualizare
         setPdfPreviewData({
           ...formData,
+          centro: centroParaBackend, // Trimite centroTrabajador ca centro dacă există
           puncte: puncteConDocumentos,
           pdfBase64: base64,
           scor_total: Math.round(scorTotal * 100) / 100 // Rotunjire la 2 zecimale
@@ -1535,6 +1611,7 @@ const InspectionForm = ({ type }) => {
       },
       locatie: '',
       centro: '',
+      centroTrabajador: '', // Resetare centru temporar
       supervisor: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
       supervisor_codigo: user?.CODIGO || user?.codigo || null, // Păstrează codigo supervizor
       puncte: [],
@@ -1802,7 +1879,7 @@ const InspectionForm = ({ type }) => {
                   handleTrabajadorChange('codigo', codigo);
                 }
               }}
-              disabled={!formData.centro || empleadosFiltrados.length === 0}
+              disabled={empleadosFiltrados.length === 0}
               className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-gradient-to-br from-white to-blue-50/30 focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 errors.trabajador 
                   ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
@@ -1810,7 +1887,11 @@ const InspectionForm = ({ type }) => {
               }`}
             >
               <option value="">
-                {formData.centro ? 'Selecciona un trabajador...' : 'Primero selecciona un centro'}
+                {formData.centro 
+                  ? 'Selecciona un trabajador...' 
+                  : empleadosFiltrados.length > 0 
+                    ? 'Selecciona un trabajador sin centro...' 
+                    : 'Cargando trabajadores...'}
               </option>
               {empleadosFiltrados.map(emp => {
                 const codigo = emp.codigo || emp.CODIGO || emp.codigo_empleado || emp['CODIGO EMPLEADO'] || emp.NIE || emp['D.N.I. / NIE'] || emp.DNI || 'N/A';
@@ -1836,6 +1917,85 @@ const InspectionForm = ({ type }) => {
             )}
             {errors.trabajador && <p className="text-xs text-red-600 mt-1">{errors.trabajador}</p>}
           </div>
+          
+          {/* Centro para trabajador sin centro (apare doar când angajatul selectat nu are centru) */}
+          {formData.trabajador.nume && (() => {
+            const selectedEmployee = empleados.find(emp => 
+              (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === formData.trabajador.nume
+            );
+            const tieneCentro = selectedEmployee ? empleadoTieneCentro(selectedEmployee) : false;
+            
+            // Afișează câmpul doar dacă angajatul nu are centru
+            if (!tieneCentro) {
+              return (
+                <div>
+                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
+                    <span className="text-base">🏢</span>
+                    <span>Centro para esta inspección (opcional)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Selecciona un centro para esta inspección..."
+                      value={formData.centroTrabajador}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setFormData(prev => ({ ...prev, centroTrabajador: value }));
+                        setShowCentroDropdown(true);
+                      }}
+                      onFocus={() => setShowCentroDropdown(true)}
+                      onBlur={() => {
+                        setTimeout(() => setShowCentroDropdown(false), 200);
+                      }}
+                      className={`w-full px-4 py-3 pr-10 border-2 rounded-xl text-gray-800 bg-gradient-to-br from-white to-purple-50/30 focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium ${
+                        errors.centroTrabajador 
+                          ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                          : 'border-gray-300 focus:ring-purple-500 focus:border-purple-500 hover:border-purple-300 focus:shadow-purple-500/20'
+                      }`}
+                    />
+                    <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                      <span className="text-gray-400 text-lg">🔍</span>
+                    </div>
+                    
+                    {/* Dropdown de sugerencias */}
+                    {showCentroDropdown && formData.centroTrabajador && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                        {centros
+                          .filter(centro => 
+                            centro.toLowerCase().includes(formData.centroTrabajador.toLowerCase())
+                          )
+                          .slice(0, 10)
+                          .map((centro, index) => (
+                            <button
+                              key={`${centro}-${index}`}
+                              className="w-full px-4 py-3 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, centroTrabajador: centro }));
+                                setShowCentroDropdown(false);
+                              }}
+                            >
+                              <div className="font-medium text-gray-900">{centro}</div>
+                            </button>
+                          ))}
+                        {centros.filter(centro => 
+                          centro.toLowerCase().includes(formData.centroTrabajador.toLowerCase())
+                        ).length === 0 && (
+                          <div className="px-4 py-3 text-gray-500 text-center">
+                            No se encontraron centros
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Este centro se usará solo para esta inspección y no se guardará en el perfil del empleado.
+                  </p>
+                  {errors.centroTrabajador && <p className="text-xs text-red-600 mt-1">{errors.centroTrabajador}</p>}
+                </div>
+              );
+            }
+            return null;
+          })()}
           
           {/* Ubicación con GPS - Full width en mobile */}
           <div className="md:col-span-2">

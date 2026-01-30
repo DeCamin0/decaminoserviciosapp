@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.01.29.1150",
+  "version": "2026.01.30.1321",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,27 +26,9 @@
     "lint:fix": "cross-env NODE_OPTIONS=--max-old-space-size=4096 npx eslint . --ext js,jsx,ts,tsx --fix --cache --cache-location .eslintcache",
     "preview": "vite preview",
     "proxy": "node proxy-server.js",
-    "test-jwt": "node scripts/test/test-jwt-auth.js",
-    "cap:copy": "npx cap copy",
-    "cap:sync": "npx cap sync",
-    "cap:android": "npx cap open android"
+    "test-jwt": "node scripts/test/test-jwt-auth.js"
   },
   "dependencies": {
-    "@capacitor/android": "^7.4.3",
-    "@capacitor/app": "^7.1.0",
-    "@capacitor/camera": "^7.0.2",
-    "@capacitor/cli": "^7.4.3",
-    "@capacitor/core": "^7.4.3",
-    "@capacitor/device": "^7.0.2",
-    "@capacitor/filesystem": "^7.1.4",
-    "@capacitor/geolocation": "^7.1.5",
-    "@capacitor/haptics": "^7.0.2",
-    "@capacitor/keyboard": "^7.0.3",
-    "@capacitor/network": "^7.0.2",
-    "@capacitor/share": "^7.0.2",
-    "@capacitor/splash-screen": "^7.0.3",
-    "@capacitor/status-bar": "^7.0.3",
-    "@capacitor/toast": "^7.0.2",
     "@hookform/resolvers": "^3.3.2",
     "@react-google-maps/api": "^2.20.7",
     "@react-pdf/renderer": "^4.3.0",
@@ -64,6 +46,7 @@
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.0.0",
     "lucide-react": "^0.294.0",
+    "mammoth": "^1.11.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.54",
     "pdfmake": "^0.2.20",
@@ -89,14 +72,15 @@
     "@typescript-eslint/parser": "^8.39.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.14",
-    "baseline-browser-mapping": "^2.8.32",
+    "baseline-browser-mapping": "^2.9.19",
     "buffer": "^6.0.3",
     "cross-env": "^7.0.3",
-    "crypto-browserify": "^3.12.1",
-    "eslint": "^8.36.0",
+    "crypto-browserify": "^3.3.0",
+    "eslint": "^9.39.2",
     "eslint-plugin-react": "^7.32.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.3.4",
+    "globals": "^17.2.0",
     "imagemin-svgo": "^11.0.1",
     "msw": "^2.11.3",
     "path-browserify": "^1.0.1",
@@ -106,12 +90,13 @@
     "tailwindcss": "^3.2.7",
     "util": "^0.12.5",
     "vite": "^7.1.5",
-    "vite-plugin-node-polyfills": "^0.24.0",
+    "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-pwa": "^1.0.3",
     "workbox-window": "^7.3.0"
   },
   "overrides": {
-    "tar": "^7.5.3"
+    "tar": "^7.5.3",
+    "elliptic": "^6.6.1"
   },
   "msw": {
     "workerDirectory": [

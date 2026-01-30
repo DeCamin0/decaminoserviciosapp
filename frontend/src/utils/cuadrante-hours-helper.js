@@ -36,8 +36,10 @@ export function calculateCuadranteHours(daySchedule) {
     return 0;
   }
   
+  const s = String(daySchedule).trim();
+  
   // Format "24h (3×8h)" - extrage orele per tură din paranteză
-  const format24hMatch = daySchedule.match(/^(\d+)h\s*\((\d+)×(\d+)h\)/);
+  const format24hMatch = s.match(/^(\d+)h\s*\((\d+)×(\d+)h\)/);
   if (format24hMatch) {
     const totalHours = parseInt(format24hMatch[1]);
     const shiftCount = parseInt(format24hMatch[2]);
@@ -52,23 +54,31 @@ export function calculateCuadranteHours(daySchedule) {
   }
   
   // Format simplu "8h" sau "24h"
-  const simpleFormatMatch = daySchedule.match(/^(\d+)h$/);
+  const simpleFormatMatch = s.match(/^(\d+(?:\.\d+)?)h$/i);
   if (simpleFormatMatch) {
-    return parseInt(simpleFormatMatch[1]);
+    return parseFloat(simpleFormatMatch[1]);
   }
   
-  // Format "08:00-17:00" sau "09:00-15:00 / 16:00-20:00"
+  // Format simplu numeric: "8", "12", "8.5" (fără "h")
+  const numericMatch = s.match(/^(\d+(?:\.\d+)?)$/);
+  if (numericMatch) {
+    return parseFloat(numericMatch[1]);
+  }
+  
+  // Format "08:00-17:00" sau "09:00-15:00 / 16:00-20:00" sau "T1 07:30-19:30"
   const separators = /[,/]/;
-  const hasMultipleShifts = separators.test(daySchedule);
+  const hasMultipleShifts = separators.test(s);
   
   if (hasMultipleShifts) {
     // Multiple ture - extrage toate turele
-    const timeMatches = daySchedule.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g);
+    // Suportă atât "T1 07:30-19:30" (cu spațiu) cât și "T1:07:30-19:30" (cu două puncte)
+    const timeMatches = s.match(/(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g);
     if (timeMatches && timeMatches.length > 0) {
       const shiftHours = [];
       
       timeMatches.forEach(timeMatch => {
-        const match = timeMatch.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+        // Suportă atât "T1 07:30-19:30" (cu spațiu) cât și "T1:07:30-19:30" (cu două puncte)
+        const match = timeMatch.match(/(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
         if (match) {
           const hours = parseIntervalHours(`${match[1]}:${match[2]}`, `${match[3]}:${match[4]}`);
           shiftHours.push(hours);
@@ -96,8 +106,9 @@ export function calculateCuadranteHours(daySchedule) {
       }
     }
   } else {
-    // O singură tură în formatul "T1 08:00-16:00" sau "08:00-16:00"
-    const match = daySchedule.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    // O singură tură în formatul "T1 08:00-16:00" sau "08:00-16:00" sau "T2 19:30-07:30"
+    // Suportă atât "T1 07:30-19:30" (cu spațiu) cât și "T1:07:30-19:30" (cu două puncte)
+    const match = s.match(/(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
     if (match) {
       return parseIntervalHours(`${match[1]}:${match[2]}`, `${match[3]}:${match[4]}`);
     }

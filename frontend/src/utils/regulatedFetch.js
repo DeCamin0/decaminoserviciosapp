@@ -50,7 +50,7 @@ const shouldRegulate = (urlString) => {
       path.startsWith('/api/n8n') ||
       host.includes('api.decaminoservicios.com') ||
       host === 'localhost' && url.port === '3000'; // Backend local în development
-  } catch (err) {
+  } catch {
     return false;
   }
 };

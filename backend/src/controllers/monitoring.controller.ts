@@ -305,4 +305,62 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
       return { dismissed: false, error: err.message };
     }
   }
+
+  /**
+   * Verifică dacă angajatul a închis deja banner-ul despre modificări de horarios
+   * Verifică în ActivityLog dacă există un log cu action='banner_horarios_dismissed'
+   */
+  @Get('banner-horarios-status')
+  @UseGuards(JwtAuthGuard)
+  async getBannerHorariosStatus(
+    @Query('email') email?: string,
+    @Query('codigo') codigo?: string,
+  ) {
+    try {
+      if (!email && !codigo) {
+        return { dismissed: false, message: 'email or codigo required' };
+      }
+
+      // Verifică în ActivityLog dacă există un log cu acțiunea 'banner_horarios_dismissed'
+      // pentru acest angajat
+      const where: any = {
+        action: 'banner_horarios_dismissed',
+      };
+
+      if (email) {
+        where.email = email;
+      }
+
+      // Dacă avem codigo, trebuie să verificăm prin email-ul asociat codigo-ului
+      if (codigo && !email) {
+        try {
+          const empleado = await this.prisma.user.findUnique({
+            where: { CODIGO: codigo },
+            select: { CORREO_ELECTRONICO: true },
+          });
+          if (empleado?.CORREO_ELECTRONICO) {
+            where.email = empleado.CORREO_ELECTRONICO;
+          } else {
+            // Dacă nu găsim email, verificăm direct prin codigo în details
+            // (dar ActivityLog nu stochează codigo direct, doar email)
+            return { dismissed: false };
+          }
+        } catch {
+          return { dismissed: false };
+        }
+      }
+
+      const log = await this.prisma.logs.findFirst({
+        where,
+        orderBy: { timestamp: 'desc' },
+      });
+
+      return {
+        dismissed: !!log,
+        dismissedAt: log?.timestamp || null,
+      };
+    } catch (err: any) {
+      return { dismissed: false, error: err.message };
+    }
+  }
 }

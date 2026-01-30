@@ -8,7 +8,7 @@ const SignatureCanvas = forwardRef(function SignatureCanvas({ onSave, className=
     const canvas = canvasRef.current;
     if(!canvas) return;
     
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -40,28 +40,32 @@ const SignatureCanvas = forwardRef(function SignatureCanvas({ onSave, className=
     canvas.addEventListener('mouseup', stop);
     canvas.addEventListener('mouseleave', stop);
     
-    // Touch events
-    canvas.addEventListener('touchstart', (e)=>{
+    // Touch events - explicit passive: false pentru preventDefault()
+    const touchStartHandler = (e) => {
       e.preventDefault();
       start(e.touches[0]);
-    });
-    canvas.addEventListener('touchmove', (e)=>{
+    };
+    const touchMoveHandler = (e) => {
       e.preventDefault();
       draw(e.touches[0]);
-    });
-    canvas.addEventListener('touchend', (e)=>{
+    };
+    const touchEndHandler = (e) => {
       e.preventDefault();
       stop();
-    });
+    };
+    
+    canvas.addEventListener('touchstart', touchStartHandler, { passive: false });
+    canvas.addEventListener('touchmove', touchMoveHandler, { passive: false });
+    canvas.addEventListener('touchend', touchEndHandler, { passive: false });
     
     return ()=>{
       canvas.removeEventListener('mousedown', start);
       canvas.removeEventListener('mousemove', draw);
       canvas.removeEventListener('mouseup', stop);
       canvas.removeEventListener('mouseleave', stop);
-      canvas.removeEventListener('touchstart', start);
-      canvas.removeEventListener('touchmove', draw);
-      canvas.removeEventListener('touchend', stop);
+      canvas.removeEventListener('touchstart', touchStartHandler, { passive: false });
+      canvas.removeEventListener('touchmove', touchMoveHandler, { passive: false });
+      canvas.removeEventListener('touchend', touchEndHandler, { passive: false });
     };
   }, []);
   
@@ -113,9 +117,9 @@ const SignatureCanvas = forwardRef(function SignatureCanvas({ onSave, className=
     <div className={`border rounded-lg p-4 ${className}`}>
       <canvas
         ref={canvasRef}
-        width={400}
-        height={200}
-        className="border border-gray-300 rounded cursor-crosshair w-full h-48"
+        width={300}
+        height={150}
+        className="border border-gray-300 rounded cursor-crosshair w-full h-36"
         data-focusable="true"
       />
       <div className="flex gap-2 mt-2">

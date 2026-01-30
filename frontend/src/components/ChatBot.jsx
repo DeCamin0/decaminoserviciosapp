@@ -86,7 +86,7 @@ const ChatBot = () => {
           const text = await response.text();
           data = text;
         }
-      } catch (_) {
+      } catch {
         data = await response.text().catch(() => null);
       }
 

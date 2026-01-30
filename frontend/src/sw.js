@@ -121,7 +121,7 @@ self.addEventListener('push', (event) => {
         vibrate: [200, 100, 200],
         silent: false,
       };
-    } catch (e) {
+    } catch {
       // Dacă nu e JSON, folosește text
       notificationData.body = event.data.text() || notificationData.body;
     }

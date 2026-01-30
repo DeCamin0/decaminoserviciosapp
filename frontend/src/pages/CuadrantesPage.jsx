@@ -195,6 +195,8 @@ export default function CuadrantesPage() {
   const [savingExcel, setSavingExcel] = useState(false);
   // State pentru checkbox-uri horario_multicentro în preview cuadrantes
   const [selectedForHorarioMulticentro, setSelectedForHorarioMulticentro] = useState(new Set());
+  // State pentru checkbox-uri rescriere cuadrantes existente
+  const [selectedForRescriere, setSelectedForRescriere] = useState(new Set());
   
   // State pentru import Excel horario_multicentro
   const [uploadingExcelMulticentro, setUploadingExcelMulticentro] = useState(false);
@@ -486,11 +488,13 @@ export default function CuadrantesPage() {
           console.warn('⚠️ [handleSaveDayEdit] Error al verificar ziua anterioară:', error);
         }
         
-        // Determină HORARIO și SERVICIO din valoarea turnului
-        // Notă: horarioTipo și horarioCompleto nu sunt folosite în acest context
-        
-        // Transformă valoarea zilei în număr de ore
-        const oreValue = transformaZiValueInOre(newValue);
+        // Funcție helper pentru calculul orelor din formatul complet (pentru TotalHoras)
+        const calculaOreDinFormat = (ziValue) => {
+          if (!ziValue || ziValue === '' || ziValue === 'LIBRE' || ziValue === '0' || ziValue === '0h') {
+            return 0;
+          }
+          return transformaZiValueInOre(ziValue) || 0;
+        };
         
         // Construiește obiectul horario multicentro
         const mesAno = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
@@ -541,41 +545,36 @@ export default function CuadrantesPage() {
         
         // Dacă există un orar existent, păstrează toate zilele existente și actualizează doar ziua nouă
         if (horarioExistenteParaCentro) {
-          // Copiază toate zilele existente
+          // Copiază toate zilele existente - PĂSTRĂM FORMATUL COMPLET
           for (let i = 1; i <= 31; i++) {
             const ziKey = `ZI_${i}`;
             const ziValue = horarioExistenteParaCentro[ziKey];
             if (ziValue !== undefined && ziValue !== null && ziValue !== '') {
-              // Dacă valoarea existentă este deja un număr (ore), o păstrăm așa
-              // Dacă este un format complet (ex: "T3 23:00-07:00"), o transformăm în ore
-              const ziValueStr = String(ziValue).trim();
-              if (!isNaN(parseFloat(ziValueStr)) && isFinite(parseFloat(ziValueStr))) {
-                // Este deja un număr, îl păstrăm
-                horarioMulticentro[ziKey] = ziValueStr;
-              } else {
-                // Este un format complet, îl transformăm în ore
-                const oreValueExistente = transformaZiValueInOre(ziValue);
-                horarioMulticentro[ziKey] = oreValueExistente || ziValueStr;
-              }
+              // Păstrăm formatul complet (T1 07:00-15:00 sau doar "12")
+              horarioMulticentro[ziKey] = String(ziValue).trim();
             }
           }
-          // Actualizează ziua nouă
-          horarioMulticentro[`ZI_${dayNumber}`] = oreValue || null;
+          // Actualizează ziua nouă cu formatul complet (T1 07:00-15:00)
+          horarioMulticentro[`ZI_${dayNumber}`] = newValue && newValue !== 'LIBRE' ? String(newValue).trim() : null;
           
-          // Recalculează TotalHoras
+          // Recalculează TotalHoras din formatul complet
           let totalHoras = 0;
           for (let i = 1; i <= 31; i++) {
             const ziKey = `ZI_${i}`;
             const ziValue = horarioMulticentro[ziKey];
-            if (ziValue && !isNaN(parseFloat(ziValue))) {
-              totalHoras += parseFloat(ziValue);
+            if (ziValue) {
+              const horasDia = calculaOreDinFormat(ziValue);
+              if (typeof horasDia === 'number' && !isNaN(horasDia)) {
+                totalHoras += horasDia;
+              }
             }
           }
-          horarioMulticentro.TotalHoras = totalHoras > 0 ? totalHoras : null;
+          horarioMulticentro.TotalHoras = totalHoras > 0 ? String(totalHoras.toFixed(2)) : null;
         } else {
-          // Creează un orar nou cu doar ziua nouă
-          horarioMulticentro[`ZI_${dayNumber}`] = oreValue || null;
-          horarioMulticentro.TotalHoras = oreValue ? parseFloat(oreValue) : null;
+          // Creează un orar nou cu doar ziua nouă - PĂSTRĂM FORMATUL COMPLET (T1 07:00-15:00)
+          horarioMulticentro[`ZI_${dayNumber}`] = newValue && newValue !== 'LIBRE' ? String(newValue).trim() : null;
+          const horasDia = calculaOreDinFormat(newValue);
+          horarioMulticentro.TotalHoras = (typeof horasDia === 'number' && !isNaN(horasDia) && horasDia > 0) ? String(horasDia.toFixed(2)) : null;
         }
         
         
@@ -1775,7 +1774,8 @@ export default function CuadrantesPage() {
       let parsed = null;
       try {
         parsed = JSON.parse(text);
-      } catch (parseError) {
+      // eslint-disable-next-line no-unused-vars
+      } catch (_parseError) {
         console.warn('Respuesta de festivo sin JSON:', text);
       }
 
@@ -1873,7 +1873,8 @@ export default function CuadrantesPage() {
       let parsed = null;
       try {
         parsed = JSON.parse(text);
-      } catch (parseError) {
+      // eslint-disable-next-line no-unused-vars
+      } catch (_parseError) {
         console.warn('Respuesta de borrado sin JSON:', text);
       }
 
@@ -2541,8 +2542,69 @@ export default function CuadrantesPage() {
       
       // Afișăm preview înainte de salvare
       if (result.cuadrantes && result.cuadrantes.length > 0) {
-        setExcelPreviewData(result);
+        // Verifică pentru fiecare cuadrante dacă există deja
+        const mesAno = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+        console.log(`🔍 Verificando existencia para ${result.cuadrantes.length} cuadrantes, mes: ${mesAno}, centro: ${selectedCentro}`);
+        
+        const cuadrantesConVerificare = await Promise.all(
+          result.cuadrantes.map(async (cuadrante) => {
+            if (!cuadrante.CODIGO) {
+              console.log(`⚠️ Cuadrante sin CODIGO: ${cuadrante.NOMBRE || 'N/A'}`);
+              return { ...cuadrante, yaExiste: false, tipoExistente: null };
+            }
+
+            try {
+              const checkParams = new URLSearchParams({
+                codigo: cuadrante.CODIGO,
+                mes: mesAno,
+              });
+              // Folosim CENTRO din cuadrante dacă există, altfel selectedCentro
+              const centroParaVerificar = cuadrante.CENTRO || selectedCentro;
+              if (centroParaVerificar) {
+                checkParams.append('centro', centroParaVerificar);
+              }
+
+              console.log(`🔍 Verificando: CODIGO=${cuadrante.CODIGO}, MES=${mesAno}, CENTRO=${centroParaVerificar || 'N/A'}`);
+
+              const checkResponse = await fetch(`${routes.checkExistingCuadrante}?${checkParams.toString()}`, {
+                method: 'GET',
+                headers: {
+                  'Authorization': token ? `Bearer ${token}` : '',
+                },
+              });
+
+              if (checkResponse.ok) {
+                const checkData = await checkResponse.json();
+                console.log(`✅ Respuesta para ${cuadrante.CODIGO}:`, checkData);
+                const yaExiste = checkData.hasCuadrante || checkData.hasHorarioMulticentro;
+                const tipoExistente = [];
+                if (checkData.hasCuadrante) tipoExistente.push('Cuadrante');
+                if (checkData.hasHorarioMulticentro) tipoExistente.push('Horario Multicentro');
+                if (yaExiste) {
+                  console.log(`⚠️ Ya existe para ${cuadrante.CODIGO}: ${tipoExistente.join(', ')}`);
+                }
+                return { ...cuadrante, yaExiste, tipoExistente };
+              } else {
+                console.error(`❌ Error HTTP ${checkResponse.status} verificando ${cuadrante.CODIGO}`);
+              }
+            } catch (err) {
+              console.error(`❌ Error verificando existencia para ${cuadrante.CODIGO}:`, err);
+            }
+
+            return { ...cuadrante, yaExiste: false, tipoExistente: null };
+          })
+        );
+        
+        const existentes = cuadrantesConVerificare.filter(c => c.yaExiste);
+        console.log(`📊 Resumen: ${existentes.length} de ${cuadrantesConVerificare.length} cuadrantes ya existen`);
+
+        setExcelPreviewData({ ...result, cuadrantes: cuadrantesConVerificare });
         setSelectedForHorarioMulticentro(new Set()); // Reset checkbox-uri la încărcare nouă
+        // Reset checkbox-uri rescriere - selectează automat toate cuadrantesle existente pentru rescriere
+        const existentesKeys = cuadrantesConVerificare
+          .filter(c => c.yaExiste)
+          .map(c => c.CODIGO || c.EMAIL || cuadrantesConVerificare.indexOf(c));
+        setSelectedForRescriere(new Set(existentesKeys));
         setShowExcelPreviewModal(true);
       } else {
         showToast('warning', 'No se encontraron cuadrantes en el Excel');
@@ -2699,7 +2761,8 @@ export default function CuadrantesPage() {
             });
           }
         }
-      } catch (e) {
+      // eslint-disable-next-line no-unused-vars
+      } catch (_e) {
         cuadranteExistente = [];
       }
 
@@ -3123,6 +3186,72 @@ export default function CuadrantesPage() {
       let failCount = 0;
       const totalRequests = cuadrantePreview.length;
       
+      // Verifică pentru fiecare cuadrante dacă există deja
+      const cuadrantesConVerificare = [];
+      const mesAno = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+      const token = localStorage.getItem('auth_token');
+      
+      for (let i = 0; i < cuadrantePreview.length; i++) {
+        const cuadrante = cuadrantePreview[i];
+        
+        // Verifică dacă există deja
+        let yaExiste = false;
+        let tipoExistente = [];
+        
+        if (cuadrante.CODIGO) {
+          try {
+            const checkParams = new URLSearchParams({
+              codigo: cuadrante.CODIGO,
+              mes: mesAno,
+            });
+            if (selectedCentro) {
+              checkParams.append('centro', selectedCentro);
+            }
+
+            const checkResponse = await fetch(`${routes.checkExistingCuadrante}?${checkParams.toString()}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': token ? `Bearer ${token}` : '',
+              },
+            });
+
+            if (checkResponse.ok) {
+              const checkData = await checkResponse.json();
+              yaExiste = checkData.hasCuadrante || checkData.hasHorarioMulticentro;
+              if (checkData.hasCuadrante) tipoExistente.push('Cuadrante');
+              if (checkData.hasHorarioMulticentro) tipoExistente.push('Horario Multicentro');
+            }
+          } catch (err) {
+            console.error(`Error verificando existencia para ${cuadrante.CODIGO}:`, err);
+          }
+        }
+        
+        cuadrantesConVerificare.push({ ...cuadrante, yaExiste, tipoExistente });
+      }
+      
+      // Dacă există cuadrantes deja existente, întreabă utilizatorul
+      const cuadrantesExistentes = cuadrantesConVerificare.filter(c => c.yaExiste);
+      if (cuadrantesExistentes.length > 0) {
+        const listaExistentes = cuadrantesExistentes.map(c => 
+          `- ${c.NOMBRE} (${c.CODIGO}): ${c.tipoExistente.join(', ')}`
+        ).join('\n');
+        
+        const confirmRescrie = confirm(
+          `⚠️ Atención: ${cuadrantesExistentes.length} cuadrante(s) ya existe(n) en el sistema:\n\n${listaExistentes}\n\n` +
+          `¿Deseas sobrescribir los cuadrantes existentes?\n\n` +
+          `- Presiona "OK" para sobrescribir\n` +
+          `- Presiona "Cancel" para cancelar`
+        );
+        
+        if (!confirmRescrie) {
+          console.log('Salvarea a fost anulată de utilizator - există cuadrantes duplicate');
+          setLoading(false);
+          setProgress(null);
+          showToast('info', 'Operación cancelada - existen cuadrantes duplicados');
+          return;
+        }
+      }
+      
       for (let i = 0; i < cuadrantePreview.length; i++) {
         const cuadrante = cuadrantePreview[i];
         
@@ -3242,7 +3371,8 @@ export default function CuadrantesPage() {
           } else {
             console.warn(r.message || 'Error al listar horarios');
           }
-        } catch (e) {
+        // eslint-disable-next-line no-unused-vars
+        } catch (_e) {
           console.warn('No se pudo conectar con el servidor');
         }
       };
@@ -4181,7 +4311,8 @@ export default function CuadrantesPage() {
                     } else {
                       console.warn(r.message || 'Error al listar horarios');
                     }
-                  } catch (e) {
+                  // eslint-disable-next-line no-unused-vars
+                  } catch (_e) {
                     console.warn('No se pudo conectar con el servidor');
                   }
                 }}
@@ -4399,7 +4530,8 @@ export default function CuadrantesPage() {
                               } else {
                                 console.warn(resp.message || 'No se pudo eliminar');
                               }
-                            } catch (e) {
+                            // eslint-disable-next-line no-unused-vars
+                            } catch (_e) {
                               console.warn('No se pudo conectar con el servidor');
                             }
                           }}
@@ -5313,6 +5445,7 @@ export default function CuadrantesPage() {
                                         const apiUrl = routes.toggleCuadranteVisible;
                                         
                                         // Actualizăm toate cuadrantele cu delay între request-uri pentru a evita throttling
+                                        // eslint-disable-next-line no-unused-vars
                                         let successCount = 0;
                                         let failCount = 0;
                                         
@@ -5334,7 +5467,7 @@ export default function CuadrantesPage() {
                                             });
                                             
                                             if (response.ok) {
-                                              successCount++;
+                                              // successCount++; // Comentat - nu este folosit
                                             } else {
                                               failCount++;
                                               console.error(`❌ Error updating cuadrante ${cuadrante.CODIGO} ${cuadrante.LUNA}:`, response.status);
@@ -5542,7 +5675,8 @@ export default function CuadrantesPage() {
                                         const dayOfWeek = date.getDay();
                                         const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
                                         return dayNames[dayOfWeek];
-                                      } catch (e) {
+                                      // eslint-disable-next-line no-unused-vars
+                                      } catch (_e) {
                                         return '';
                                       }
                                     };
@@ -5889,6 +6023,105 @@ export default function CuadrantesPage() {
 
             {/* Afișare Horarios Multicentro grupate după Centru */}
             {horariosMulticentroList.length > 0 && (() => {
+              // Funcție helper pentru calculul orelor din formatul complet (T1 07:30-19:30 sau doar "12")
+              const calculaOreDinFormat = (horasStr) => {
+                if (!horasStr || horasStr === '' || horasStr === 'LIBRE' || horasStr === '0' || horasStr === '0h') {
+                  return 0;
+                }
+
+                const str = String(horasStr).trim();
+
+                // Dacă este deja un număr (ex: "8", "8h", "8.0")
+                if (!isNaN(parseFloat(str)) && isFinite(parseFloat(str))) {
+                  const hours = parseFloat(str);
+                  return hours > 0 ? hours : 0;
+                }
+
+                // Dacă este format "T1 XX:XX:XX - XX:XX:XX", "T2 XX:XX:XX - XX:XX:XX", "T3 XX:XX:XX - XX:XX:XX"
+                let turnoMatch = str.match(
+                  /^T[123]\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/
+                );
+                if (!turnoMatch) {
+                  turnoMatch = str.match(
+                    /^T[123](\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/
+                  );
+                }
+                if (!turnoMatch) {
+                  turnoMatch = str.match(
+                    /^T[123]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/
+                  );
+                }
+
+                if (turnoMatch) {
+                  const startHour = parseInt(turnoMatch[1], 10);
+                  const startMin = parseInt(turnoMatch[2], 10);
+                  let endHour = parseInt(turnoMatch[4], 10);
+                  const endMin = parseInt(turnoMatch[5], 10);
+
+                  if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+                    endHour += 24;
+                  }
+
+                  const startMinutes = startHour * 60 + startMin;
+                  const endMinutes = endHour * 60 + endMin;
+                  const durationMinutes = endMinutes - startMinutes;
+                  const durationHours = durationMinutes / 60;
+
+                  return durationHours;
+                }
+
+                // Dacă este format "XX:XX:XX - XX:XX:XX" (fără T1/T2/T3)
+                const timeMatch = str.match(
+                  /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/
+                );
+                if (timeMatch) {
+                  const startHour = parseInt(timeMatch[1], 10);
+                  const startMin = parseInt(timeMatch[2], 10);
+                  let endHour = parseInt(timeMatch[4], 10);
+                  const endMin = parseInt(timeMatch[5], 10);
+
+                  if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+                    endHour += 24;
+                  }
+
+                  const startMinutes = startHour * 60 + startMin;
+                  const endMinutes = endHour * 60 + endMin;
+                  const durationMinutes = endMinutes - startMinutes;
+                  const durationHours = durationMinutes / 60;
+
+                  return durationHours;
+                }
+
+                // Dacă este doar "T1", "T2", "T3" fără ore, presupunem 8 ore
+                if (str.match(/^T[123]$/)) {
+                  return 8;
+                }
+
+                // Fallback: încercăm să extragem orice format de orar
+                const anyTimeMatch = str.match(
+                  /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/
+                );
+                if (anyTimeMatch) {
+                  const startHour = parseInt(anyTimeMatch[1], 10);
+                  const startMin = parseInt(anyTimeMatch[2], 10);
+                  let endHour = parseInt(anyTimeMatch[4], 10);
+                  const endMin = parseInt(anyTimeMatch[5], 10);
+
+                  if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+                    endHour += 24;
+                  }
+
+                  const startMinutes = startHour * 60 + startMin;
+                  const endMinutes = endHour * 60 + endMin;
+                  const durationMinutes = endMinutes - startMinutes;
+                  const durationHours = durationMinutes / 60;
+
+                  return durationHours;
+                }
+
+                return 0;
+              };
+
               // Grupează după CLIENTE (Centro)
               const groupedByCentro = horariosMulticentroList.reduce((acc, horario) => {
                 const centro = horario.CLIENTE || horario.cliente || 'Sin centro';
@@ -5924,13 +6157,14 @@ export default function CuadrantesPage() {
                                 return (
                                   <th 
                                     key={`day-header-${i + 1}`} 
-                                    className="px-1 py-2 text-center border border-gray-200 min-w-[40px]"
+                                    className="px-1 py-2 text-center border border-gray-200 min-w-[60px]"
                                   >
                                     {dayNumber}
                                   </th>
                                 );
                               })}
                               <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold">Total Horas</th>
+                              <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50 font-bold">Acciones</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -5940,11 +6174,7 @@ export default function CuadrantesPage() {
 
                               for (let i = 1; i <= 31; i++) {
                                 const horasStr = horario[`ZI_${i}`] || horario[`zi_${i}`] || '';
-                                let horasNum = 0;
-                                if (horasStr && horasStr !== '' && horasStr !== null) {
-                                  horasNum = parseFloat(String(horasStr));
-                                  if (isNaN(horasNum)) horasNum = 0;
-                                }
+                                const horasNum = calculaOreDinFormat(horasStr);
                                 horas.push(horasStr || '');
                                 totalHoras += horasNum;
                               }
@@ -5971,12 +6201,103 @@ export default function CuadrantesPage() {
                                           ? 'bg-gray-50 text-gray-400' 
                                           : 'bg-green-50 text-green-700 font-medium'
                                       }`}
+                                      title={h || '-'}
                                     >
-                                      {h || '-'}
+                                      {h ? (h.length > 8 ? `${h.substring(0, 8)}...` : h) : '-'}
                                     </td>
                                   ))}
                                   <td className="px-3 py-2 text-center border border-gray-200 font-bold bg-blue-50">
                                     {totalHoras > 0 ? `${totalHoras.toFixed(1)}h` : '-'}
+                                  </td>
+                                  <td className="px-3 py-2 text-center border border-gray-200">
+                                    <div className="flex gap-2 justify-center">
+                                      <button
+                                        onClick={async () => {
+                                          // Preia ture din cuadrante
+                                          try {
+                                            const token = localStorage.getItem('auth_token');
+                                            const codigo = horario.CODIGO || horario.codigo;
+                                            const mes = horario.LUNA || horario.luna || selectedMonthHorariosMulticentro;
+                                            const centroNombre = horario.CLIENTE || horario.cliente || centro;
+
+                                            if (!codigo || !mes || !centroNombre) {
+                                              showToast('error', 'Faltan datos para obtener turnos del cuadrante');
+                                              return;
+                                            }
+
+                                            const params = new URLSearchParams({
+                                              codigo: codigo,
+                                              mes: mes,
+                                              centro: centroNombre,
+                                            });
+
+                                            const response = await fetch(`${routes.getTurnosFromCuadrante}?${params.toString()}`, {
+                                              method: 'GET',
+                                              headers: {
+                                                'Content-Type': 'application/json',
+                                                'Authorization': token ? `Bearer ${token}` : '',
+                                              },
+                                            });
+
+                                            if (!response.ok) {
+                                              throw new Error(`HTTP error! status: ${response.status}`);
+                                            }
+
+                                            const data = await response.json();
+                                            if (data.success && data.cuadrante) {
+                                              // Actualizează horario_multicentro cu turele din cuadrante
+                                              const updateData = {};
+                                              for (let i = 1; i <= 31; i++) {
+                                                const ziKey = `ZI_${i}`;
+                                                if (data.cuadrante[ziKey] !== undefined) {
+                                                  updateData[ziKey] = data.cuadrante[ziKey] || null;
+                                                }
+                                              }
+
+                                              // Actualizează în backend
+                                              const updateResponse = await fetch(`${routes.updateHorarioMulticentro}/${horario.id}`, {
+                                                method: 'PUT',
+                                                headers: {
+                                                  'Content-Type': 'application/json',
+                                                  'Authorization': token ? `Bearer ${token}` : '',
+                                                },
+                                                body: JSON.stringify(updateData),
+                                              });
+
+                                              if (!updateResponse.ok) {
+                                                throw new Error(`HTTP error! status: ${updateResponse.status}`);
+                                              }
+
+                                              // Reîncarcă lista
+                                              const refreshResponse = await fetch(`${routes.getHorarioMulticentro}?mes=${mes}${codigo ? `&codigo=${codigo}` : ''}`, {
+                                                method: 'GET',
+                                                headers: {
+                                                  'Content-Type': 'application/json',
+                                                  'Authorization': token ? `Bearer ${token}` : '',
+                                                },
+                                              });
+
+                                              if (refreshResponse.ok) {
+                                                const refreshData = await refreshResponse.json();
+                                                if (refreshData.success && Array.isArray(refreshData.horarios)) {
+                                                  setHorariosMulticentroList(refreshData.horarios);
+                                                  showToast('success', 'Turnos importados desde cuadrante correctamente');
+                                                }
+                                              }
+                                            } else {
+                                              showToast('warning', data.message || 'No se encontró cuadrante para estos datos');
+                                            }
+                                          } catch (error) {
+                                            console.error('Error importing turnos from cuadrante:', error);
+                                            showToast('error', `Error al importar turnos: ${error.message}`);
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
+                                        title="Preia ture din cuadrante"
+                                      >
+                                        📥
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -6578,7 +6899,8 @@ export default function CuadrantesPage() {
                       if (r.success) {
                         setHorariosLista(Array.isArray(r.data) ? r.data : []);
                       }
-                    } catch (e) {
+                    // eslint-disable-next-line no-unused-vars
+                    } catch (_e) {
                       console.warn('No se pudo conectar con el servidor');
                     }
                   };
@@ -6780,6 +7102,7 @@ export default function CuadrantesPage() {
               setShowExcelPreviewModal(false);
               setExcelPreviewData(null);
               setSelectedForHorarioMulticentro(new Set());
+              setSelectedForRescriere(new Set());
             }
           }}
         >
@@ -6805,6 +7128,7 @@ export default function CuadrantesPage() {
                   setShowExcelPreviewModal(false);
                   setExcelPreviewData(null);
                   setSelectedForHorarioMulticentro(new Set());
+                  setSelectedForRescriere(new Set());
                 }}
                 className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
                 >
@@ -6824,6 +7148,9 @@ export default function CuadrantesPage() {
                         <th className="px-3 py-2 text-left border border-gray-200" rowSpan={2}>Email</th>
                         <th className="px-3 py-2 text-left border border-gray-200" rowSpan={2}>Centro</th>
                         <th className="px-3 py-2 text-center border border-gray-200" rowSpan={2}>Estado</th>
+                        <th className="px-3 py-2 text-center border border-gray-200" rowSpan={2} title="Indica si ya existe cuadrante o horario_multicentro">
+                          📊 Ya existe
+                        </th>
                         <th className="px-3 py-2 text-center border border-gray-200 bg-blue-50" rowSpan={2} title="Guardar en Horario Multicentro">
                           📋 Multicentro
                         </th>
@@ -6963,6 +7290,39 @@ export default function CuadrantesPage() {
                                 </span>
                               )}
                             </td>
+                            <td className="px-3 py-2 border border-gray-200 text-center">
+                              {cuadrante.yaExiste ? (
+                                <div className="flex flex-col items-center gap-2">
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800" title={`Ya existe: ${cuadrante.tipoExistente?.join(', ') || 'Cuadrante'}`}>
+                                    ⚠️ Ya existe {cuadrante.tipoExistente?.length > 0 ? `(${cuadrante.tipoExistente.join(', ')})` : ''}
+                                  </span>
+                                  <label className="flex items-center gap-1 cursor-pointer text-xs">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedForRescriere.has(cuadrante.CODIGO || cuadrante.EMAIL || idx)}
+                                      onChange={(e) => {
+                                        const key = cuadrante.CODIGO || cuadrante.EMAIL || idx;
+                                        setSelectedForRescriere(prev => {
+                                          const newSet = new Set(prev);
+                                          if (e.target.checked) {
+                                            newSet.add(key);
+                                          } else {
+                                            newSet.delete(key);
+                                          }
+                                          return newSet;
+                                        });
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                    />
+                                    <span className="text-gray-700">Rescribir</span>
+                                  </label>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                                  ➕ Nuevo
+                                </span>
+                              )}
+                            </td>
                             <td className="px-3 py-2 border border-gray-200 text-center bg-blue-50">
                               <label className="flex items-center justify-center cursor-pointer">
                                 <input
@@ -7035,6 +7395,7 @@ export default function CuadrantesPage() {
                   setShowExcelPreviewModal(false);
                   setExcelPreviewData(null);
                   setSelectedForHorarioMulticentro(new Set());
+                  setSelectedForRescriere(new Set());
                 }}
                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
               >
@@ -7052,14 +7413,30 @@ export default function CuadrantesPage() {
                     const token = localStorage.getItem('auth_token');
                     const mesAno = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
                     
-                    // Separăm cuadrantes normale de cele pentru horario_multicentro
-                    const cuadrantesNormales = excelPreviewData.cuadrantes.filter(c => {
+                    // Filtrează cuadrantesle existente care nu au checkbox-ul de rescriere bifat
+                    const cuadrantesParaGuardar = excelPreviewData.cuadrantes.filter(c => {
                       const key = c.CODIGO || c.EMAIL || excelPreviewData.cuadrantes.indexOf(c);
+                      // Dacă există deja și nu are checkbox-ul de rescriere bifat, sări peste
+                      if (c.yaExiste && !selectedForRescriere.has(key)) {
+                        return false;
+                      }
+                      return true;
+                    });
+                    
+                    if (cuadrantesParaGuardar.length === 0) {
+                      showToast('info', 'No hay cuadrantes para guardar (todos los existentes fueron excluidos)');
+                      setSavingExcel(false);
+                      return;
+                    }
+                    
+                    // Separăm cuadrantes normale de cele pentru horario_multicentro
+                    const cuadrantesNormales = cuadrantesParaGuardar.filter(c => {
+                      const key = c.CODIGO || c.EMAIL || cuadrantesParaGuardar.indexOf(c);
                       return !selectedForHorarioMulticentro.has(key);
                     });
                     
-                    const cuadrantesMulticentro = excelPreviewData.cuadrantes.filter(c => {
-                      const key = c.CODIGO || c.EMAIL || excelPreviewData.cuadrantes.indexOf(c);
+                    const cuadrantesMulticentro = cuadrantesParaGuardar.filter(c => {
+                      const key = c.CODIGO || c.EMAIL || cuadrantesParaGuardar.indexOf(c);
                       return selectedForHorarioMulticentro.has(key);
                     });
                     
@@ -7282,6 +7659,7 @@ export default function CuadrantesPage() {
                     setShowExcelPreviewModal(false);
                     setExcelPreviewData(null);
                     setSelectedForHorarioMulticentro(new Set());
+                    setSelectedForRescriere(new Set());
                     
                     // Recărcăm lista de cuadrantes - doar dacă suntem pe tab-ul "lista"
                     if (activeTab === 'lista') {
@@ -7298,7 +7676,16 @@ export default function CuadrantesPage() {
                 disabled={savingExcel || !excelPreviewData.cuadrantes || excelPreviewData.cuadrantes.length === 0}
                 className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savingExcel ? 'Guardando...' : `✅ Confirmar y Guardar (${excelPreviewData.cuadrantes?.length || 0})`}
+                {savingExcel ? 'Guardando...' : (() => {
+                  const cuadrantesParaGuardar = excelPreviewData.cuadrantes.filter(c => {
+                    const key = c.CODIGO || c.EMAIL || excelPreviewData.cuadrantes.indexOf(c);
+                    if (c.yaExiste && !selectedForRescriere.has(key)) {
+                      return false;
+                    }
+                    return true;
+                  });
+                  return `✅ Confirmar y Guardar (${cuadrantesParaGuardar.length}${cuadrantesParaGuardar.length !== excelPreviewData.cuadrantes.length ? ` de ${excelPreviewData.cuadrantes.length}` : ''})`;
+                })()}
               </button>
             </div>
           </div>

@@ -4,6 +4,8 @@ import {
   Body,
   Get,
   Query,
+  Put,
+  Param,
   UseGuards,
   Logger,
   BadRequestException,
@@ -267,6 +269,80 @@ export class HorariosController {
       }
       throw new BadRequestException(
         `Error al obtener el horario_multicentro: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * PUT /api/horarios/multicentro/:id
+   * Actualizează un horario_multicentro existent
+   */
+  @Put('multicentro/:id')
+  async updateHorarioMulticentro(@Param('id') id: string, @Body() body: any) {
+    try {
+      const idNum = parseInt(id, 10);
+      if (isNaN(idNum)) {
+        throw new BadRequestException('ID invalid');
+      }
+
+      this.logger.log(`📝 Update horario_multicentro request - ID: ${idNum}`);
+
+      const result = await this.horariosService.updateHorarioMulticentro(
+        idNum,
+        body,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error updating horario_multicentro:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar horario_multicentro: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * GET /api/horarios/multicentro/turnos-from-cuadrante?codigo=XXX&mes=YYYY-MM&centro=XXX
+   * Obține turele din cuadrante pentru un angajat, lună și centru
+   */
+  @Get('multicentro/turnos-from-cuadrante')
+  async getTurnosFromCuadrante(
+    @Query('codigo') codigo: string,
+    @Query('mes') mes: string,
+    @Query('centro') centro: string,
+  ) {
+    try {
+      if (!codigo) {
+        throw new BadRequestException('Se requiere el código del empleado');
+      }
+      if (!mes) {
+        throw new BadRequestException('Se requiere el mes (YYYY-MM)');
+      }
+      if (!centro) {
+        throw new BadRequestException('Se requiere el centro');
+      }
+
+      this.logger.log(
+        `📝 Get turnos from cuadrante request - codigo: ${codigo}, mes: ${mes}, centro: ${centro}`,
+      );
+
+      const result = await this.horariosService.getTurnosFromCuadrante(
+        codigo,
+        mes,
+        centro,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting turnos from cuadrante:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener turnos del cuadrante: ${error.message}`,
       );
     }
   }

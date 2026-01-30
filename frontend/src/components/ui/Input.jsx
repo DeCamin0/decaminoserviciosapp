@@ -1,3 +1,5 @@
+import { useId, useMemo } from 'react';
+
 const Input = ({ 
   label,
   type = 'text', 
@@ -13,10 +15,14 @@ const Input = ({
   name,
   ...props 
 }) => {
-  // Generează un ID unic dacă nu este furnizat
-  const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+  // Generează un ID unic dacă nu este furnizat folosind useId hook (React 18+)
+  const generatedId = useId();
+  const inputId = id || generatedId;
+  
   // Generează un name din id dacă nu este furnizat
-  const inputName = name || (id ? id.replace(/[^a-zA-Z0-9]/g, '-') : inputId);
+  const inputName = useMemo(() => {
+    return name || (id ? id.replace(/[^a-zA-Z0-9]/g, '-') : inputId);
+  }, [name, id, inputId]);
   
   return (
     <div className={className}>

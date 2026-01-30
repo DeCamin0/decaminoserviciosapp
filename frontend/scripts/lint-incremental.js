@@ -102,8 +102,9 @@ function lintFile(filePath, skipVeryLarge = false) {
     }
     
     // Pentru fișiere foarte mari, folosim opțiuni mai simple
+    // ESLint 9 folosește eslint.config.js, nu mai suportă --no-eslintrc sau --config
     const eslintOptions = isVeryLargeFile
-      ? `--ext js,jsx,ts,tsx --max-warnings 0 --cache --cache-location .eslintcache --no-eslintrc --config .eslintrc.json`
+      ? `--ext js,jsx,ts,tsx --max-warnings 0 --cache --cache-location .eslintcache`
       : `--ext js,jsx,ts,tsx --report-unused-disable-directives --max-warnings 0 --cache --cache-location .eslintcache`;
     
     // Setează NODE_OPTIONS direct în environment

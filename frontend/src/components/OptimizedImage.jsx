@@ -34,7 +34,12 @@ const OptimizedImage = ({
       observer.observe(imgRef.current);
       return () => observer.disconnect();
     } else {
-      setIsInView(true);
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const timer = setTimeout(() => {
+        setIsInView(true);
+      }, 0);
+      
+      return () => clearTimeout(timer);
     }
   }, [loading]);
 

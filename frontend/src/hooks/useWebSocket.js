@@ -112,8 +112,10 @@ export const useWebSocket = (namespace = '/notifications') => {
     };
   }, [user, namespace]);
 
-  // Actualizează ref-ul pentru apelul recursiv
-  connectRef.current = connect;
+  // Actualizează ref-ul pentru apelul recursiv (în useEffect pentru a evita actualizarea în timpul render-ului)
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Deconectare
   const disconnect = useCallback(() => {
@@ -151,7 +153,15 @@ export const useWebSocket = (namespace = '/notifications') => {
   // Conectare la mount și când user-ul se schimbă
   useEffect(() => {
     if (user) {
-      connect();
+      // Amânăm apelul connect() pentru a evita cascading renders
+      // Folosim setTimeout pentru a amâna după ce render-ul s-a terminat
+      const timeoutId = setTimeout(() => {
+        connect();
+      }, 0);
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
     }
 
     return () => {

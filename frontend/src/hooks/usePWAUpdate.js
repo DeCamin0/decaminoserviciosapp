@@ -45,7 +45,7 @@ export const usePWAUpdate = () => {
             registration.update().catch(() => {
               // Ignoră erorile tranzitorii (ex. InvalidStateError în HMR)
             });
-          } catch (_) {
+          } catch {
             // Ignoră complet
           }
         };

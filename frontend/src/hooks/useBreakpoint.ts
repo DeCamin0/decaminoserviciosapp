@@ -29,9 +29,7 @@ export const useBreakpoint = () => {
       setIsMobile(e.matches);
     };
 
-    // Setează valoarea inițială
-    setIsMobile(mediaQuery.matches);
-
+    // Nu setăm valoarea inițială aici - este deja setată corect în useState
     // Adaugă listener (folosind addEventListener dacă e disponibil, altfel addListener pentru compatibilitate)
     if (mediaQuery.addEventListener) {
       mediaQuery.addEventListener('change', handleChange);

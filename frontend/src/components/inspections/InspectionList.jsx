@@ -230,7 +230,7 @@ const InspectionList = ({ onBackToSelection }) => {
         month: '2-digit',
         day: '2-digit'
       });
-    } catch (error) {
+    } catch {
       return 'N/A';
     }
   };
@@ -338,7 +338,7 @@ const InspectionList = ({ onBackToSelection }) => {
           // Fallback la mock data dacă webhook-ul nu funcționează
           setInspections(getMockInspections());
         }
-      } catch (error) {
+      } catch {
         // Fallback la mock data
         setInspections(getMockInspections());
       } finally {
@@ -508,7 +508,7 @@ const InspectionList = ({ onBackToSelection }) => {
           } else {
             matchesMonth = false;
           }
-        } catch (e) {
+        } catch {
           matchesMonth = false;
         }
       } else {
@@ -685,7 +685,7 @@ const InspectionList = ({ onBackToSelection }) => {
           } else {
             alert('El PDF no está disponible para esta inspección');
           }
-        } catch (jsonError) {
+        } catch {
           // Încearcă să descarce direct ca PDF (fallback)
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);

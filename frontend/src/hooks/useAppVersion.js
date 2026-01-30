@@ -18,9 +18,8 @@ export const useAppVersion = () => {
         } else {
           // ServiceWorker-ul nu este activ - continuă cu verificarea normală (fără log)
         }
-      } catch (error) {
+      } catch {
         // Dacă nu poate obține registration, continuă cu verificarea normală (fără log)
-        // Pentru alte erori, continuă cu verificarea
       }
     }
     

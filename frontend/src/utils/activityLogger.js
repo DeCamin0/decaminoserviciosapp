@@ -449,6 +449,20 @@ class ActivityLogger {
     }, 50);
   }
 
+  async logBannerHorariosDismissed(user) {
+    setTimeout(() => {
+      this.logAction('banner_horarios_dismissed', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email,
+        grupo: user.GRUPO,
+        role: user.role,
+        codigo: user.CODIGO || user.codigo
+      }).catch(error => {
+        console.error('Error logging banner horarios dismissed:', error);
+      });
+    }, 50);
+  }
+
   // === APROBACIONES ===
   async logAprobacionFichajeViewed(user) {
     setTimeout(() => {

@@ -377,7 +377,7 @@ export default function ClientesPage() {
       
       const rawText = await response.text();
       let json;
-      try { json = JSON.parse(rawText); } catch (_) { json = null; }
+      try { json = JSON.parse(rawText); } catch { json = null; }
 
       if (response.ok) {
         // Log crear ítem

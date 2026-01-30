@@ -13,7 +13,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileInterceptor,
+  FileFieldsInterceptor,
+} from '@nestjs/platform-express';
+import { UploadedFiles } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrlDocumentsService } from '../services/prl-documents.service';
@@ -256,14 +260,37 @@ export class PrlDocumentsController {
         );
       }
 
+      // Corectează encoding-ul numelui fișierului dacă este corupt
+      let nombreArchivo = file.originalname;
+      // "mÃ©dico" (latin1 interpretat greșit ca UTF-8) -> "médico"
+      if (
+        nombreArchivo.includes('mÃ©dico') ||
+        nombreArchivo.includes('mÃ©dico')
+      ) {
+        this.logger.log(
+          `🔧 Corrigiendo encoding en nombre de archivo: "${nombreArchivo}"`,
+        );
+        nombreArchivo = nombreArchivo.replace(/mÃ©dico/gi, 'médico');
+        nombreArchivo = nombreArchivo.replace(/mÃ©dico/gi, 'médico');
+        nombreArchivo = nombreArchivo.replace(
+          /reconocimiento mÃ©dico/gi,
+          'reconocimiento médico',
+        );
+        nombreArchivo = nombreArchivo.replace(
+          /reconocimiento mÃ©dico/gi,
+          'reconocimiento médico',
+        );
+        this.logger.log(`✅ Nombre corregido: "${nombreArchivo}"`);
+      }
+
       this.logger.log(
-        `📄 Upload documento individual: ${file.originalname} para GRUPO ${grupoNombre}`,
+        `📄 Upload documento individual: ${nombreArchivo} para GRUPO ${grupoNombre}`,
       );
 
       const result = await this.prlDocumentsService.uploadDocumentoIndividual(
         grupoNombre,
         tipoDocumento as any,
-        file.originalname,
+        nombreArchivo,
         file.buffer,
         user.userId,
       );
@@ -354,7 +381,9 @@ export class PrlDocumentsController {
 
       return {
         success: true,
-        message: `${result.eliminados} documentos eliminados permanentemente`,
+        message:
+          result.message ||
+          `${result.eliminados} documentos eliminados correctamente`,
         eliminados: result.eliminados,
       };
     } catch (error: any) {
@@ -390,14 +419,14 @@ export class PrlDocumentsController {
         `🗑️ Eliminar template ${templateIdNum} por usuario ${user.userId}`,
       );
 
-      await this.prlDocumentsService.eliminarTemplate(
+      const result = await this.prlDocumentsService.eliminarTemplate(
         templateIdNum,
         user.userId,
       );
 
       return {
         success: true,
-        message: 'Template eliminado permanentemente',
+        message: result.message || 'Template eliminado correctamente',
       };
     } catch (error: any) {
       this.logger.error(`❌ Error eliminando template ${templateId}:`, error);
@@ -519,7 +548,21 @@ export class PrlDocumentsController {
           empleadoId,
         );
 
-      res.setHeader('Content-Type', 'application/pdf');
+      // Detectează tipul fișierului pe baza extensiei
+      const nombreArchivo = documento.nombre_archivo || '';
+      const esDocx =
+        nombreArchivo.toLowerCase().endsWith('.docx') ||
+        nombreArchivo.toLowerCase().endsWith('.doc');
+      const esPdf = nombreArchivo.toLowerCase().endsWith('.pdf');
+
+      // Setează Content-Type corect
+      const contentType = esDocx
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : esPdf
+          ? 'application/pdf'
+          : 'application/octet-stream'; // Fallback pentru alte tipuri
+
+      res.setHeader('Content-Type', contentType);
       res.setHeader(
         'Content-Disposition',
         `attachment; filename="${documento.nombre_archivo}"`,
@@ -574,13 +617,40 @@ export class PrlDocumentsController {
           empleadoId,
         );
 
-      res.setHeader('Content-Type', 'application/pdf');
+      // Detectează tipul fișierului pe baza extensiei
+      const nombreArchivo = documento.nombre_archivo || '';
+      const esDocx =
+        nombreArchivo.toLowerCase().endsWith('.docx') ||
+        nombreArchivo.toLowerCase().endsWith('.doc');
+      const esPdf = nombreArchivo.toLowerCase().endsWith('.pdf');
+
+      // Setează Content-Type corect
+      const contentType = esDocx
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : esPdf
+          ? 'application/pdf'
+          : 'application/octet-stream'; // Fallback pentru alte tipuri
+
+      this.logger.log(
+        `📄 [Descargar Firmado] Archivo: "${nombreArchivo}", Tipo detectado: ${esDocx ? 'DOCX' : esPdf ? 'PDF' : 'OTRO'}, Content-Type: ${contentType}`,
+      );
+
+      // Setează headers înainte de trimitere
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', documento.archivo.length.toString());
       res.setHeader(
         'Content-Disposition',
         `attachment; filename="${documento.nombre_archivo}"`,
       );
 
-      res.send(documento.archivo);
+      // Folosește writeHead pentru a forța header-urile (înainte de send)
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': documento.archivo.length.toString(),
+        'Content-Disposition': `attachment; filename="${documento.nombre_archivo}"`,
+      });
+
+      res.end(documento.archivo);
     } catch (error: any) {
       this.logger.error(
         `❌ Error descargando documento firmado ${documentoId}:`,
@@ -698,6 +768,87 @@ export class PrlDocumentsController {
       throw new BadRequestException(
         `Error listando empleados con documentos: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Endpoint pentru adăugarea semnăturii în DOCX (înlocuiește {{FIRMA}})
+   */
+  @Post('mis-documentos/:documentoId/agregar-firma-docx')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'archivo', maxCount: 1 },
+      { name: 'firma', maxCount: 1 },
+    ]),
+  )
+  async agregarFirmaADocx(
+    @Param('documentoId') documentoId: string,
+    @UploadedFiles()
+    files: { archivo?: Express.Multer.File[]; firma?: Express.Multer.File[] },
+    @CurrentUser() user: any,
+  ) {
+    try {
+      if (!files.archivo || !files.archivo[0]) {
+        throw new BadRequestException('Se requiere el archivo DOCX');
+      }
+
+      if (!files.firma || !files.firma[0]) {
+        throw new BadRequestException('Se requiere la imagen de la firma');
+      }
+
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      if (!empleadoId) {
+        throw new BadRequestException('No se pudo identificar al empleado');
+      }
+
+      const docxFile = files.archivo[0];
+      const firmaFile = files.firma[0];
+
+      // Verifică că este DOCX
+      if (!docxFile.originalname.toLowerCase().endsWith('.docx')) {
+        throw new BadRequestException('El archivo debe ser un DOCX');
+      }
+
+      this.logger.log(
+        `✍️ Agregando firma a DOCX ${documentoIdNum} para empleado ${empleadoId}`,
+      );
+
+      // Adaugă semnătura în DOCX
+      const docxConFirma = await this.prlDocumentsService.agregarFirmaADocx(
+        docxFile.buffer,
+        firmaFile.buffer,
+      );
+
+      // Salvează DOCX-ul cu semnătură
+      // Verifică dacă numele deja conține "_FIRMADO" pentru a evita dublarea
+      let nombreFinal = docxFile.originalname;
+      if (!nombreFinal.toLowerCase().includes('_firmado')) {
+        nombreFinal = nombreFinal.replace(/\.docx$/i, '_FIRMADO.docx');
+      }
+
+      await this.prlDocumentsService.subirDocumentoFirmado(
+        documentoIdNum,
+        empleadoId,
+        docxConFirma,
+        nombreFinal,
+      );
+
+      return {
+        success: true,
+        message: 'Firma agregada al documento exitosamente',
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error agregando firma a DOCX ${documentoId}:`,
+        error,
+      );
+      throw error;
     }
   }
 

@@ -17,6 +17,14 @@ interface ApiResponse<T> {
   ok: boolean;
 }
 
+// Type for fetch request options (compatible with RequestInit)
+// Folosim RequestInit direct pentru a evita problemele cu tipurile DOM
+// eslint-disable-next-line no-undef
+type FetchOptions = Omit<RequestInit, 'body'> & {
+  body?: string | FormData | Blob | ArrayBuffer | null;
+  headers?: Record<string, string> | Headers;
+};
+
 class ApiError extends Error {
   constructor(
     message: string,
@@ -31,11 +39,11 @@ class ApiError extends Error {
 
 async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: FetchOptions = {}
 ): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  const config: RequestInit = {
+  const config: FetchOptions = {
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,

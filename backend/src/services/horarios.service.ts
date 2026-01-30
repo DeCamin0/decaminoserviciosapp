@@ -916,8 +916,8 @@ export class HorariosService {
           horarioData[`ZI_${zi}`] = null;
         }
 
-        // Funcție helper pentru a transforma valorile ZI_X în număr de ore
-        const transformaZiValueInOre = (ziValue: any): string | null => {
+        // Funcție helper pentru a calcula orele dintr-un format (pentru TotalHoras)
+        const calculaOreDinFormat = (ziValue: any): number => {
           if (
             !ziValue ||
             ziValue === '' ||
@@ -925,7 +925,7 @@ export class HorariosService {
             ziValue === '0' ||
             ziValue === '0h'
           ) {
-            return null; // LIBRE rămâne LIBRE
+            return 0;
           }
 
           const ziStr = String(ziValue).trim();
@@ -933,7 +933,7 @@ export class HorariosService {
           // Dacă este deja un număr (ex: "8", "8h", "8.0")
           if (!isNaN(parseFloat(ziStr)) && isFinite(parseFloat(ziStr))) {
             const hours = parseFloat(ziStr);
-            return hours > 0 ? String(hours) : null;
+            return hours > 0 ? hours : 0;
           }
 
           // Dacă este format "T1 XX:XX:XX - XX:XX:XX", "T2 XX:XX:XX - XX:XX:XX", "T3 XX:XX:XX - XX:XX:XX"
@@ -970,11 +970,7 @@ export class HorariosService {
             const durationMinutes = endMinutes - startMinutes;
             const durationHours = durationMinutes / 60;
 
-            if (durationHours === Math.round(durationHours)) {
-              return String(Math.round(durationHours));
-            } else {
-              return String(Math.round(durationHours * 10) / 10);
-            }
+            return durationHours;
           }
 
           // Dacă este format "XX:XX:XX - XX:XX:XX" (fără T1/T2/T3, cu sau fără secunde)
@@ -999,12 +995,12 @@ export class HorariosService {
             const durationMinutes = endMinutes - startMinutes;
             const durationHours = durationMinutes / 60;
 
-            return String(Math.round(durationHours * 10) / 10);
+            return durationHours;
           }
 
           // Dacă este doar "T1", "T2", "T3" fără ore, presupunem 8 ore
           if (ziStr.match(/^T[123]$/)) {
-            return '8';
+            return 8;
           }
 
           // Fallback: încercăm să extragem orice format de orar
@@ -1029,23 +1025,23 @@ export class HorariosService {
             const durationMinutes = endMinutes - startMinutes;
             const durationHours = durationMinutes / 60;
 
-            if (durationHours === Math.round(durationHours)) {
-              return String(Math.round(durationHours));
-            } else {
-              return String(Math.round(durationHours * 10) / 10);
-            }
+            return durationHours;
           }
 
-          return null;
+          return 0;
         };
 
-        // Copiem și transformăm orele pentru fiecare zi
+        // Copiem valorile pentru fiecare zi - PĂSTRĂM FORMATUL COMPLET (T1 07:30-19:30 sau doar "12")
         Object.entries(columnToDayMap).forEach(([headerKey, dayNum]) => {
           const value = rowData[headerKey];
           if (value !== undefined && value !== null && value !== '') {
-            // Transformăm valoarea în număr de ore dacă este format complet
-            const transformedValue = transformaZiValueInOre(value);
-            horarioData[`ZI_${dayNum}`] = transformedValue || String(value); // Dacă transformarea eșuează, păstrăm valoarea originală
+            // Păstrăm formatul original (T1 07:30-19:30 sau doar "12")
+            const valueStr = String(value).trim();
+            if (valueStr === 'LIBRE' || valueStr === '0' || valueStr === '0h') {
+              horarioData[`ZI_${dayNum}`] = null;
+            } else {
+              horarioData[`ZI_${dayNum}`] = valueStr;
+            }
           }
         });
 
@@ -1055,31 +1051,7 @@ export class HorariosService {
         for (let zi = 1; zi <= 31; zi++) {
           const horasStr = horarioData[`ZI_${zi}`];
           if (horasStr && horasStr !== '' && horasStr !== null) {
-            let horasNum = 0;
-
-            // Încearcă să parseze ca format cu timpi exacti (T1 07:30-19:30 sau 07:30-19:30)
-            const timeRangeMatch = String(horasStr).match(
-              /(?:T\d+\s*:?)?\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
-            );
-            if (timeRangeMatch) {
-              const [, h1, m1, h2, m2] = timeRangeMatch;
-              const start = parseInt(h1) * 60 + parseInt(m1);
-              const end = parseInt(h2) * 60 + parseInt(m2);
-              const minutes = end > start ? end - start : 24 * 60 - start + end;
-              horasNum = minutes / 60; // Convertește minute în ore
-            } else {
-              // Încearcă să parseze ca număr simplu (8, 12, 8.5) sau cu "h" (8h, 12h)
-              const horasMatch = String(horasStr).match(
-                /(\d+(?:\.\d+)?)(\s*h)?/i,
-              );
-              if (horasMatch) {
-                horasNum = parseFloat(horasMatch[1]);
-              } else {
-                // Fallback: încearcă parseFloat direct
-                horasNum = parseFloat(String(horasStr));
-              }
-            }
-
+            const horasNum = calculaOreDinFormat(horasStr);
             if (!isNaN(horasNum) && horasNum > 0) {
               totalHoras += horasNum;
             }
@@ -1656,6 +1628,382 @@ export class HorariosService {
         error,
       );
       return [];
+    }
+  }
+
+  /**
+   * Actualizează un horario_multicentro existent
+   * @param id - ID-ul horario_multicentro de actualizat
+   * @param data - Datele de actualizat (ZI_1-ZI_31, TotalHoras, etc.)
+   */
+  async updateHorarioMulticentro(
+    id: number,
+    data: {
+      ZI_1?: string;
+      ZI_2?: string;
+      ZI_3?: string;
+      ZI_4?: string;
+      ZI_5?: string;
+      ZI_6?: string;
+      ZI_7?: string;
+      ZI_8?: string;
+      ZI_9?: string;
+      ZI_10?: string;
+      ZI_11?: string;
+      ZI_12?: string;
+      ZI_13?: string;
+      ZI_14?: string;
+      ZI_15?: string;
+      ZI_16?: string;
+      ZI_17?: string;
+      ZI_18?: string;
+      ZI_19?: string;
+      ZI_20?: string;
+      ZI_21?: string;
+      ZI_22?: string;
+      ZI_23?: string;
+      ZI_24?: string;
+      ZI_25?: string;
+      ZI_26?: string;
+      ZI_27?: string;
+      ZI_28?: string;
+      ZI_29?: string;
+      ZI_30?: string;
+      ZI_31?: string;
+      TotalHoras?: string;
+    },
+  ): Promise<{ success: true; updated: boolean }> {
+    try {
+      // Verificăm dacă există horario_multicentro cu ID-ul dat
+      const existingQuery = `
+        SELECT id, CODIGO, LUNA, CLIENTE, HORARIO
+        FROM horario_multicentro
+        WHERE id = ${id}
+        LIMIT 1
+      `;
+      const existing = await this.prisma.$queryRawUnsafe<any[]>(existingQuery);
+
+      if (!existing || existing.length === 0) {
+        throw new BadRequestException(
+          `Horario_multicentro cu ID ${id} nu a fost găsit`,
+        );
+      }
+
+      // Construim UPDATE query
+      const updates: string[] = [];
+
+      // Calculăm TotalHoras dacă nu este furnizat
+      let totalHoras = data.TotalHoras;
+      if (!totalHoras) {
+        let total = 0;
+        for (let zi = 1; zi <= 31; zi++) {
+          const ziKey = `ZI_${zi}` as keyof typeof data;
+          const value = data[ziKey];
+          if (value !== undefined && value !== null && value !== '') {
+            // Folosim funcția helper pentru calcul
+            const horasNum = this.calculaOreDinFormatHelper(value);
+            if (!isNaN(horasNum) && horasNum > 0) {
+              total += horasNum;
+            }
+          } else {
+            // Dacă nu este în data, citim din DB
+            const existingZiKey = `ZI_${zi}`;
+            const existingValue = existing[0][existingZiKey];
+            if (existingValue) {
+              const horasNum = this.calculaOreDinFormatHelper(existingValue);
+              if (!isNaN(horasNum) && horasNum > 0) {
+                total += horasNum;
+              }
+            }
+          }
+        }
+        totalHoras = total.toFixed(2);
+      }
+
+      // Adăugăm ZI_X în UPDATE
+      for (let i = 1; i <= 31; i++) {
+        const ziKey = `ZI_${i}` as keyof typeof data;
+        const value = data[ziKey];
+        if (value !== undefined) {
+          updates.push(
+            `ZI_${i} = ${value ? this.escapeSql(String(value)) : 'NULL'}`,
+          );
+        }
+      }
+
+      // Adăugăm TotalHoras
+      if (totalHoras !== undefined) {
+        updates.push(`TotalHoras = ${this.escapeSql(String(totalHoras))}`);
+      }
+
+      if (updates.length === 0) {
+        return { success: true, updated: false };
+      }
+
+      const query = `
+        UPDATE horario_multicentro
+        SET ${updates.join(', ')}
+        WHERE id = ${id}
+      `;
+
+      this.logger.log(
+        `📝 Update horario_multicentro ID=${id}, updates: ${updates.length} fields`,
+      );
+
+      await this.prisma.$executeRawUnsafe(query);
+
+      return { success: true, updated: true };
+    } catch (error: any) {
+      this.logger.error('❌ Error updating horario_multicentro:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar horario_multicentro: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Helper pentru calculul orelor dintr-un format (folosit și în procesare Excel)
+   */
+  private calculaOreDinFormatHelper(ziValue: any): number {
+    if (
+      !ziValue ||
+      ziValue === '' ||
+      ziValue === 'LIBRE' ||
+      ziValue === '0' ||
+      ziValue === '0h'
+    ) {
+      return 0;
+    }
+
+    const ziStr = String(ziValue).trim();
+
+    // Dacă este deja un număr (ex: "8", "8h", "8.0")
+    if (!isNaN(parseFloat(ziStr)) && isFinite(parseFloat(ziStr))) {
+      const hours = parseFloat(ziStr);
+      return hours > 0 ? hours : 0;
+    }
+
+    // Dacă este format "T1 XX:XX:XX - XX:XX:XX", "T2 XX:XX:XX - XX:XX:XX", "T3 XX:XX:XX - XX:XX:XX"
+    let turnoMatch = ziStr.match(
+      /^T[123]\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+    );
+    if (!turnoMatch) {
+      turnoMatch = ziStr.match(
+        /^T[123](\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+      );
+    }
+    if (!turnoMatch) {
+      turnoMatch = ziStr.match(
+        /^T[123]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+      );
+    }
+
+    if (turnoMatch) {
+      const startHour = parseInt(turnoMatch[1], 10);
+      const startMin = parseInt(turnoMatch[2], 10);
+      let endHour = parseInt(turnoMatch[4], 10);
+      const endMin = parseInt(turnoMatch[5], 10);
+
+      if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+        endHour += 24;
+      }
+
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      const durationMinutes = endMinutes - startMinutes;
+      const durationHours = durationMinutes / 60;
+
+      return durationHours;
+    }
+
+    // Dacă este format "XX:XX:XX - XX:XX:XX" (fără T1/T2/T3)
+    const timeMatch = ziStr.match(
+      /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+    );
+    if (timeMatch) {
+      const startHour = parseInt(timeMatch[1], 10);
+      const startMin = parseInt(timeMatch[2], 10);
+      let endHour = parseInt(timeMatch[4], 10);
+      const endMin = parseInt(timeMatch[5], 10);
+
+      if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+        endHour += 24;
+      }
+
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      const durationMinutes = endMinutes - startMinutes;
+      const durationHours = durationMinutes / 60;
+
+      return durationHours;
+    }
+
+    // Dacă este doar "T1", "T2", "T3" fără ore, presupunem 8 ore
+    if (ziStr.match(/^T[123]$/)) {
+      return 8;
+    }
+
+    // Fallback: încercăm să extragem orice format de orar
+    const anyTimeMatch = ziStr.match(
+      /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/,
+    );
+    if (anyTimeMatch) {
+      const startHour = parseInt(anyTimeMatch[1], 10);
+      const startMin = parseInt(anyTimeMatch[2], 10);
+      let endHour = parseInt(anyTimeMatch[4], 10);
+      const endMin = parseInt(anyTimeMatch[5], 10);
+
+      if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
+        endHour += 24;
+      }
+
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      const durationMinutes = endMinutes - startMinutes;
+      const durationHours = durationMinutes / 60;
+
+      return durationHours;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Obține turele din cuadrante pentru un angajat, lună și centru
+   * @param codigo - CODIGO al angajatului
+   * @param mes - Luna în format YYYY-MM
+   * @param centro - Numele centrului (corespunde cu CLIENTE în horario_multicentro)
+   */
+  async getTurnosFromCuadrante(
+    codigo: string,
+    mes: string,
+    centro: string,
+  ): Promise<{
+    success: boolean;
+    cuadrante?: {
+      CODIGO: string;
+      LUNA: string;
+      CENTRO: string;
+      ZI_1?: string;
+      ZI_2?: string;
+      ZI_3?: string;
+      ZI_4?: string;
+      ZI_5?: string;
+      ZI_6?: string;
+      ZI_7?: string;
+      ZI_8?: string;
+      ZI_9?: string;
+      ZI_10?: string;
+      ZI_11?: string;
+      ZI_12?: string;
+      ZI_13?: string;
+      ZI_14?: string;
+      ZI_15?: string;
+      ZI_16?: string;
+      ZI_17?: string;
+      ZI_18?: string;
+      ZI_19?: string;
+      ZI_20?: string;
+      ZI_21?: string;
+      ZI_22?: string;
+      ZI_23?: string;
+      ZI_24?: string;
+      ZI_25?: string;
+      ZI_26?: string;
+      ZI_27?: string;
+      ZI_28?: string;
+      ZI_29?: string;
+      ZI_30?: string;
+      ZI_31?: string;
+    };
+    message?: string;
+  }> {
+    try {
+      const codigoClean = codigo.trim();
+      const mesClean = mes.trim();
+      const centroClean = centro.trim();
+
+      this.logger.log(
+        `🔍 [getTurnosFromCuadrante] Căutăm cuadrante pentru CODIGO: ${codigoClean}, LUNA: ${mesClean}, CENTRO: ${centroClean}`,
+      );
+
+      const query = `
+        SELECT CODIGO, LUNA, CENTRO,
+          ZI_1, ZI_2, ZI_3, ZI_4, ZI_5, ZI_6, ZI_7, ZI_8, ZI_9, ZI_10,
+          ZI_11, ZI_12, ZI_13, ZI_14, ZI_15, ZI_16, ZI_17, ZI_18, ZI_19, ZI_20,
+          ZI_21, ZI_22, ZI_23, ZI_24, ZI_25, ZI_26, ZI_27, ZI_28, ZI_29, ZI_30, ZI_31
+        FROM cuadrante
+        WHERE CODIGO = ${this.escapeSql(codigoClean)}
+          AND LUNA = ${this.escapeSql(mesClean)}
+          AND CENTRO = ${this.escapeSql(centroClean)}
+        LIMIT 1
+      `;
+
+      const result = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      if (!result || result.length === 0) {
+        this.logger.warn(
+          `⚠️ [getTurnosFromCuadrante] Nu s-a găsit cuadrante pentru CODIGO: ${codigoClean}, LUNA: ${mesClean}, CENTRO: ${centroClean}`,
+        );
+        return {
+          success: false,
+          message: `Nu s-a găsit cuadrante pentru angajatul ${codigoClean}, luna ${mesClean} și centrul ${centroClean}`,
+        };
+      }
+
+      const cuadrante = result[0];
+
+      this.logger.log(
+        `✅ [getTurnosFromCuadrante] Găsit cuadrante pentru CODIGO: ${codigoClean}, LUNA: ${mesClean}, CENTRO: ${centroClean}`,
+      );
+
+      return {
+        success: true,
+        cuadrante: {
+          CODIGO: cuadrante.CODIGO || '',
+          LUNA: cuadrante.LUNA || '',
+          CENTRO: cuadrante.CENTRO || '',
+          ZI_1: cuadrante.ZI_1 || undefined,
+          ZI_2: cuadrante.ZI_2 || undefined,
+          ZI_3: cuadrante.ZI_3 || undefined,
+          ZI_4: cuadrante.ZI_4 || undefined,
+          ZI_5: cuadrante.ZI_5 || undefined,
+          ZI_6: cuadrante.ZI_6 || undefined,
+          ZI_7: cuadrante.ZI_7 || undefined,
+          ZI_8: cuadrante.ZI_8 || undefined,
+          ZI_9: cuadrante.ZI_9 || undefined,
+          ZI_10: cuadrante.ZI_10 || undefined,
+          ZI_11: cuadrante.ZI_11 || undefined,
+          ZI_12: cuadrante.ZI_12 || undefined,
+          ZI_13: cuadrante.ZI_13 || undefined,
+          ZI_14: cuadrante.ZI_14 || undefined,
+          ZI_15: cuadrante.ZI_15 || undefined,
+          ZI_16: cuadrante.ZI_16 || undefined,
+          ZI_17: cuadrante.ZI_17 || undefined,
+          ZI_18: cuadrante.ZI_18 || undefined,
+          ZI_19: cuadrante.ZI_19 || undefined,
+          ZI_20: cuadrante.ZI_20 || undefined,
+          ZI_21: cuadrante.ZI_21 || undefined,
+          ZI_22: cuadrante.ZI_22 || undefined,
+          ZI_23: cuadrante.ZI_23 || undefined,
+          ZI_24: cuadrante.ZI_24 || undefined,
+          ZI_25: cuadrante.ZI_25 || undefined,
+          ZI_26: cuadrante.ZI_26 || undefined,
+          ZI_27: cuadrante.ZI_27 || undefined,
+          ZI_28: cuadrante.ZI_28 || undefined,
+          ZI_29: cuadrante.ZI_29 || undefined,
+          ZI_30: cuadrante.ZI_30 || undefined,
+          ZI_31: cuadrante.ZI_31 || undefined,
+        },
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error getting turnos from cuadrante:', error);
+      throw new BadRequestException(
+        `Error al obtener turnos del cuadrante: ${error.message}`,
+      );
     }
   }
 }

@@ -65,7 +65,12 @@ export const GoogleMapsProvider = ({ children }) => {
   useEffect(() => {
     if (checkGoogleMapsLoaded()) {
       isGoogleMapsLoaded = true;
-      setIsLoaded(true);
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const timer = setTimeout(() => {
+        setIsLoaded(true);
+      }, 0);
+      
+      return () => clearTimeout(timer);
     }
   }, []);
   
@@ -79,7 +84,7 @@ export const GoogleMapsProvider = ({ children }) => {
                  window.google.maps && 
                  window.google.maps.places &&
                  window.google.maps.places.PlacesService;
-        } catch (e) {
+        } catch {
           return false;
         }
       };

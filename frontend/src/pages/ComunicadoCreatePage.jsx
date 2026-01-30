@@ -41,7 +41,12 @@ const ComunicadoCreatePage = () => {
 
   useEffect(() => {
     if (isEdit) {
-      loadComunicado();
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const timer = setTimeout(() => {
+        loadComunicado();
+      }, 0);
+      
+      return () => clearTimeout(timer);
     }
   }, [isEdit, loadComunicado]);
 

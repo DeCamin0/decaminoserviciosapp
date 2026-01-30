@@ -13,6 +13,7 @@ import DeclararNoPunchModal from '../components/DeclararNoPunchModal.jsx';
 
 import { routes } from '../utils/routes.js';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import activityLogger from '../utils/activityLogger';
 
 
 
@@ -339,7 +340,7 @@ export default function CuadrantesEmpleadoPage() {
       } else {
         setUserData(found);
       }
-    } catch (e) {
+    } catch {
       // Error fetching user data
     }
   }, [authUser]);
@@ -373,6 +374,14 @@ export default function CuadrantesEmpleadoPage() {
   const [ziSelectata, setZiSelectata] = useState(null);
 
   const [totalOreMunca, setTotalOreMunca] = useState('');
+
+  // State pentru aviso horarios
+  const [showAvisoModal, setShowAvisoModal] = useState(false);
+  // bannerDismissed și bannerStatusLoading - setter-urile sunt folosite dar state-urile nu (pentru viitor folosire)
+  // eslint-disable-next-line no-unused-vars
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  // eslint-disable-next-line no-unused-vars
+  const [bannerStatusLoading, setBannerStatusLoading] = useState(true);
 
   
 
@@ -697,129 +706,58 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // Fetch cuadrantes pentru angajatul curent
-
+  // OPTIMIZARE: Fetch cuadrantes și userData în paralel pentru performanță mai bună
   useEffect(() => {
-
     // Skip real data fetch in DEMO mode
-
     if (authUser?.isDemo) {
-
       setDemoCuadrantes();
-
       setDemoAusencias();
-
       setLoading(false);
-
       return;
-
     }
 
+    if (!codigoEmpleado && !authUser?.email) return;
 
+    setLoading(true);
+    setError('');
 
-    async function fetchCuadrantes() {
+    // Paralelizăm request-urile critice
+    const token = localStorage.getItem('auth_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
-      setLoading(true);
+    // Request 1: Cuadrantes (critic pentru calendar)
+    const fetchCuadrantesPromise = codigoEmpleado ? fetch(routes.getCuadrantes, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ codigo: codigoEmpleado })
+    }).then(res => res.json()).then(data => {
+      const lista = Array.isArray(data) ? data : [data];
+      setCuadrantesUser(lista);
+      
+      // Detectez luna curentă și o setez imediat
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+      setSelectedLuna(currentMonthFormatted);
+      
+      return lista;
+    }).catch(() => {
+      setError('No se pudieron cargar los cuadrantes.');
+      return null;
+    }) : Promise.resolve(null);
 
-      setError('');
+    // Request 2: UserData (critic pentru alte date)
+    const fetchUserDataPromise = authUser?.email ? fetchUserData().catch(() => null) : Promise.resolve(null);
 
-      try {
-        const token = localStorage.getItem('auth_token');
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const res = await fetch(routes.getCuadrantes, {
-
-          method: 'POST',
-
-          headers: headers,
-
-          body: JSON.stringify({ codigo: codigoEmpleado })
-
-        });
-
-        const data = await res.json();
-
-        const lista = Array.isArray(data) ? data : [data];
-        
-        // Debug: Verifică valorile visible primite din backend
-        console.log('📥 Cuadrantes loaded from backend:', lista.length, 'items');
-        if (lista.length > 0) {
-          const first = lista[0];
-          console.log('🔍 First cuadrante visible value:', {
-            CODIGO: first.CODIGO,
-            LUNA: first.LUNA,
-            visible: first.visible,
-            visibleType: typeof first.visible,
-            visibleValue: JSON.stringify(first.visible),
-            allKeys: Object.keys(first)
-          });
-          
-          // Verifică toate cuadrantele pentru luna curentă
-          const currentDate = new Date();
-          const currentYear = currentDate.getFullYear();
-          const currentMonth = currentDate.getMonth() + 1;
-          const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-          
-          const cuadrantesForCurrentMonth = lista.filter(c => {
-            let luna = c.LUNA || c.luna;
-            if (typeof luna === 'number') {
-              const date = new Date(Math.round((luna - 25569) * 86400 * 1000));
-              luna = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-            }
-            return luna === currentMonthFormatted;
-          });
-          
-          console.log('🔍 Cuadrantes for current month (' + currentMonthFormatted + '):', cuadrantesForCurrentMonth.length);
-          cuadrantesForCurrentMonth.forEach((c, idx) => {
-            console.log(`  [${idx}] CODIGO: ${c.CODIGO}, visible: ${c.visible} (${typeof c.visible})`);
-          });
-        }
-
-        setCuadrantesUser(lista);
-
-        // Detectez luna curentă
-
-        const currentDate = new Date();
-
-        const currentYear = currentDate.getFullYear();
-
-        const currentMonth = currentDate.getMonth() + 1;
-
-        const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-
-        // Întotdeauna selectez luna curentă, chiar dacă nu există cuadrante pentru ea
-        // Astfel utilizatorul vede calendarul pentru luna curentă direct
-        setSelectedLuna(currentMonthFormatted);
-
-      } catch (e) {
-
-        setError('No se pudieron cargar los cuadrantes.');
-
-      }
-
+    // Așteptăm ambele request-uri să se termine, apoi setăm loading false
+    Promise.all([fetchCuadrantesPromise, fetchUserDataPromise]).finally(() => {
       setLoading(false);
-
-    }
-
-    
-
-    if (codigoEmpleado) {
-
-      fetchCuadrantes();
-
-    }
-
-  }, [codigoEmpleado, authUser?.isDemo]);
-
-  // Încarcă datele complete ale utilizatorului
-  useEffect(() => {
-    if (authUser?.email) {
-      fetchUserData();
-    }
-  }, [authUser?.email, fetchUserData]);
+    });
+  }, [codigoEmpleado, authUser?.email, authUser?.isDemo, fetchUserData]);
 
   // Funcție pentru a încărca orarul asignat
   // Memoizăm și optimizăm pentru a preveni apeluri repetate
@@ -859,7 +797,7 @@ export default function CuadrantesEmpleadoPage() {
           });
         }
       }
-    } catch (error) {
+    } catch {
       // Error loading assigned schedule
       horarioFetchedRef.current = false; // Resetăm flag-ul în caz de eroare
     }
@@ -1096,7 +1034,7 @@ export default function CuadrantesEmpleadoPage() {
 
         setFichajes(fichajesUser);
 
-      } catch (e) {
+      } catch {
 
         setFichajes([]);
 
@@ -1116,9 +1054,14 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // Fetch regularizări confirmate pentru a verifica dacă zilele au regularizare
+  // OPTIMIZARE: Lazy load regularizaciones - se încarcă după ce calendarul e afișat
   useEffect(() => {
     if (authUser?.isDemo) {
+      return;
+    }
+
+    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    if (loading) {
       return;
     }
 
@@ -1176,7 +1119,7 @@ export default function CuadrantesEmpleadoPage() {
         if (typeof detalii === 'string') {
           try {
             detalii = JSON.parse(detalii);
-          } catch (e) {
+          } catch {
             detalii = [];
           }
         }
@@ -1210,54 +1153,143 @@ export default function CuadrantesEmpleadoPage() {
         setRegularizacionesConfirmadas(regularizacionesMap);
         setPlanFuenteMap(planFuenteMapLocal);
         setDetaliiZilnice(detalii); // Stocăm detalii_zilnice pentru a le folosi direct în calendarCells
-      } catch (e) {
+      } catch {
         setRegularizacionesConfirmadas(new Map());
       } finally {
         setLoadingRegularizaciones(false);
       }
     }
 
-    fetchRegularizacionesConfirmadas();
-  }, [codigoEmpleado, selectedLuna, authUser?.isDemo]);
+    // Delay mic pentru a nu bloca render-ul calendarului
+    const timeoutId = setTimeout(() => {
+      fetchRegularizacionesConfirmadas();
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [codigoEmpleado, selectedLuna, authUser?.isDemo, loading]);
 
-
-
-  // Fetch ausencias pentru angajatul curent
-
+  // OPTIMIZARE: Banner check după ce pagina e afișată (lazy load)
   useEffect(() => {
-
-    // Skip real data fetch in DEMO mode
-
-    if (authUser?.isDemo) {
-
+    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    if (loading) {
       return;
-
     }
 
+    if (!authUser?.CODIGO && !authUser?.email && !authUser?.CORREO_ELECTRONICO) return;
+    
+    const checkBannerStatus = async () => {
+      setBannerStatusLoading(true);
+      try {
+        const baseUrl = import.meta.env.DEV 
+          ? 'http://localhost:3000' 
+          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const token = localStorage.getItem('auth_token');
+        
+        const userEmail = authUser?.email || authUser?.CORREO_ELECTRONICO;
+        const userCodigo = authUser?.CODIGO || authUser?.codigo;
+        
+        if (!userEmail && !userCodigo) {
+          setBannerStatusLoading(false);
+          return;
+        }
+        
+        const queryParams = new URLSearchParams();
+        if (userEmail) queryParams.append('email', userEmail);
+        if (userCodigo) queryParams.append('codigo', userCodigo);
+        
+        const response = await fetch(`${baseUrl}/api/monitoring/banner-horarios-status?${queryParams.toString()}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setBannerDismissed(data.dismissed || false);
+          // Dacă nu a fost dismissat, arată modal-ul
+          if (!data.dismissed) {
+            setShowAvisoModal(true);
+          }
+        } else {
+          // Fallback la localStorage
+          const localDismissed = localStorage.getItem('avisoHorariosAceptado') === 'true';
+          setBannerDismissed(localDismissed);
+          if (!localDismissed) {
+            setShowAvisoModal(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking banner status:', error);
+        // Fallback la localStorage
+        const localDismissed = localStorage.getItem('avisoHorariosAceptado') === 'true';
+        setBannerDismissed(localDismissed);
+        if (!localDismissed) {
+          setShowAvisoModal(true);
+        }
+      } finally {
+        setBannerStatusLoading(false);
+      }
+    };
+    
+    // Delay mic pentru a nu bloca render-ul calendarului
+    const timeoutId = setTimeout(() => {
+      checkBannerStatus();
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+  }, [authUser?.email, authUser?.CORREO_ELECTRONICO, authUser?.CODIGO, authUser?.codigo, loading]);
 
+  // Handler pentru închidere modal fără salvare (X button)
+  const handleCerrarAviso = () => {
+    setShowAvisoModal(false);
+    // Nu salvează - modal-ul va apărea din nou la următoarea intrare
+  };
+
+  // Handler pentru acceptare aviso (buton Aceptar)
+  const handleAceptarAviso = async () => {
+    setBannerDismissed(true);
+    setShowAvisoModal(false);
+    
+    // Fallback la localStorage
+    localStorage.setItem('avisoHorariosAceptado', 'true');
+    
+    // Log acțiunea în BD
+    if (authUser) {
+      try {
+        await activityLogger.logBannerHorariosDismissed(authUser);
+      } catch (error) {
+        console.error('Error logging banner dismissal:', error);
+      }
+    }
+  };
+
+  // OPTIMIZARE: Lazy load ausencias - se încarcă după ce calendarul e afișat (loading = false)
+  useEffect(() => {
+    // Skip real data fetch in DEMO mode
+    if (authUser?.isDemo) {
+      return;
+    }
+
+    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    if (loading) {
+      return;
+    }
 
     async function fetchAusencias() {
-
       try {
-
         // Folosim userData în loc de authUser pentru a avea acces la CODIGO
         const userCode = userData?.['CODIGO'] || authUser?.['CODIGO'] || authUser?.codigo || '';
-
         
-
         if (!userCode) {
-
           return;
-
         }
-
-
 
         // Folosim backend-ul nou pentru ausencias (nu n8n)
         const baseAusenciasUrl = routes.getAusencias;
         const ausenciasSeparator = baseAusenciasUrl.includes('?') ? '&' : '?';
         const url = `${baseAusenciasUrl}${ausenciasSeparator}codigo=${encodeURIComponent(userCode)}`;
-
 
         const token = localStorage.getItem('auth_token');
         const fetchHeaders = {};
@@ -1270,68 +1302,51 @@ export default function CuadrantesEmpleadoPage() {
         });
 
         if (!response.ok) {
-
           throw new Error(`HTTP error! status: ${response.status}`);
-
         }
 
         const result = await response.json();
-
         const ausenciasData = Array.isArray(result) ? result : [result];
-
         setAusencias(ausenciasData);
-
-      } catch (error) {
-
+      } catch {
         setAusencias([]);
-
       }
-
     }
-
     
+    // Delay mic pentru a nu bloca render-ul calendarului
+    const timeoutId = setTimeout(() => {
+      fetchAusencias();
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [authUser?.isDemo, userData?.['CODIGO'], authUser?.['CODIGO'], authUser?.codigo, loading]);
 
-    fetchAusencias();
-
-  }, [authUser?.isDemo, userData?.['CODIGO'], authUser?.['CODIGO'], authUser?.codigo]);
 
 
-
-  // Fetch bajas médicas pentru angajatul curent
-
+  // OPTIMIZARE: Lazy load bajas médicas - se încarcă după ce calendarul e afișat
   useEffect(() => {
-
     if (authUser?.isDemo) {
-
       setBajasMedicas([]);
-
       lastBajasRequestKey.current = 'demo';
-
       return;
-
     }
 
-
+    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    if (loading) {
+      return;
+    }
 
     const endpoint = routes.getBajasMedicas;
 
     if (!endpoint || (!empleadoCodigo && !empleadoNombre)) {
-
       return;
-
     }
-
-
 
     const requestKey = `${empleadoCodigo}|${empleadoNombre}`.toLowerCase();
 
     if (lastBajasRequestKey.current === requestKey) {
-
       return;
-
     }
-
-
 
     const controller = new AbortController();
 
@@ -1457,13 +1472,16 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-    fetchBajasMedicasEmpleado();
+    // Delay mic pentru a nu bloca render-ul calendarului
+    const timeoutId = setTimeout(() => {
+      fetchBajasMedicasEmpleado();
+    }, 200);
 
-
-
-    return () => controller.abort();
-
-  }, [authUser?.isDemo, empleadoCodigo, empleadoNombre]);
+    return () => {
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
+  }, [authUser?.isDemo, empleadoCodigo, empleadoNombre, loading]);
 
 
 
@@ -2960,7 +2978,7 @@ const getFirstValue = (record, keys) => {
 
       }
 
-    } catch (error) {
+    } catch {
 
       alert('¡Error al guardar el fichaje!');
 
@@ -3293,7 +3311,44 @@ const getFirstValue = (record, keys) => {
                   today.setHours(0, 0, 0, 0);
                   const currentBaja = bajasCalendar.find((baja) => {
                     if (!baja?.start || !baja?.end) return false;
-                    return today >= baja.start && today <= baja.end;
+                    
+                    // Dacă situacion este "Alta" sau similar, nu afișăm mesajul de baja activă
+                    const situacion = (baja.situacion || '').toUpperCase();
+                    if (situacion === 'ALTA' || situacion === 'ALTA MÉDICA' || situacion === 'ALTA MEDICA') {
+                      return false; // Nu afișăm mesajul dacă este deja "Alta"
+                    }
+                    
+                    // Verifică dacă există fecha_alta reală în trecut (din raw data)
+                    // pentru a evita problemele când end este setat la data de astăzi din cauza logicii de fallback
+                    if (baja.raw) {
+                      const fechaAltaRaw = baja.raw['Fecha alta'] || baja.raw['Fecha Alta'] || baja.raw.fecha_alta || baja.raw.fechaAlta || baja.raw.FECHA_ALTA || baja.raw['FECHA ALTA'] || '';
+                      if (fechaAltaRaw) {
+                        const fechaAltaDate = new Date(fechaAltaRaw);
+                        if (!isNaN(fechaAltaDate.getTime())) {
+                          fechaAltaDate.setHours(0, 0, 0, 0);
+                          if (fechaAltaDate < today) {
+                            return false; // Nu afișăm mesajul dacă data de alta este în trecut
+                          }
+                        }
+                      }
+                    }
+                    
+                    // Verifică dacă endDate (fecha_alta) este în trecut - folosim endDate string, nu end object
+                    if (baja.endDate) {
+                      const endDateObj = new Date(baja.endDate);
+                      if (!isNaN(endDateObj.getTime())) {
+                        endDateObj.setHours(0, 0, 0, 0);
+                        if (endDateObj < today) {
+                          return false; // Nu afișăm mesajul dacă data de alta este în trecut
+                        }
+                      }
+                    }
+                    
+                    // Verifică dacă ziua curentă este în intervalul de baja
+                    const isInRange = today >= baja.start && today <= baja.end;
+                    if (!isInRange) return false;
+                    
+                    return true;
                   });
                   
                   if (currentBaja) {
@@ -3675,7 +3730,41 @@ const getFirstValue = (record, keys) => {
 
         </div>
 
+        {/* Modal Aviso Horarios */}
+        <Modal
+          isOpen={showAvisoModal}
+          onClose={handleCerrarAviso}
+          title="Aviso importante"
+        >
+          <div className="p-6 space-y-4">
+            <p className="text-gray-700">
+              Los horarios de trabajo y turnos asignados pueden estar sujetos a ajustes puntuales por necesidades organizativas o del servicio.
+            </p>
+            <p className="text-gray-700">
+              Cualquier modificación será comunicada con antelación, siempre que sea posible, a través de los canales oficiales de la empresa (correo electrónico, WhatsApp u otros medios habituales).
+            </p>
+            <p className="text-gray-700 font-semibold">
+              Gracias por vuestra comprensión y colaboración.
+            </p>
+            <div className="flex justify-end pt-4">
+              <Button onClick={handleAceptarAviso}>
+                Aceptar
+              </Button>
+            </div>
+          </div>
+        </Modal>
 
+        {/* Aviso permanente */}
+        <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div className="flex-1">
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">Aviso:</span> Los horarios y turnos pueden sufrir modificaciones puntuales. Las actualizaciones se comunicarán por los canales oficiales.
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Calendar MEGA WOW 3D modernizado */}
 

@@ -41,8 +41,8 @@ export const LoadingSpinner = ({
 
 // Loading pentru pagini întregi
 export const PageLoading = ({ 
-  title = 'Se încarcă...', 
-  subtitle = 'Vă rugăm să așteptați',
+  title = 'Cargando...', 
+  subtitle = 'Por favor, espere',
   icon: Icon = Database 
 }) => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -58,7 +58,7 @@ export const PageLoading = ({
 
 // Loading pentru secțiuni
 export const SectionLoading = ({ 
-  title = 'Se încarcă...', 
+  title = 'Cargando...', 
   className = '',
   icon: Icon = RefreshCw 
 }) => (
@@ -99,7 +99,7 @@ export const TableLoading = ({
 
 // Loading pentru carduri
 export const CardLoading = ({ 
-  title = 'Se încarcă...',
+  title = 'Cargando...',
   className = '' 
 }) => (
   <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
@@ -119,7 +119,7 @@ export const CardLoading = ({
 export const ButtonLoading = ({ 
   children, 
   loading = false, 
-  loadingText = 'Se încarcă...',
+  loadingText = 'Cargando...',
   className = '' 
 }) => (
   <button 
@@ -190,7 +190,7 @@ export const StatsLoading = ({
 
 // Loading pentru modale
 export const ModalLoading = ({ 
-  title = 'Se încarcă...',
+  title = 'Cargando...',
   className = '' 
 }) => (
   <div className={`flex items-center justify-center p-8 ${className}`}>

@@ -9,6 +9,7 @@ import AdmZip from 'adm-zip';
 import * as iconv from 'iconv-lite';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
+import { TelegramService } from './telegram.service';
 
 type PrlDocumentType =
   | 'EVALUACION_RIESGOS'
@@ -25,6 +26,7 @@ export class PrlDocumentsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly emailService: EmailService,
+    private readonly telegramService: TelegramService,
   ) {}
 
   /**
@@ -139,6 +141,32 @@ export class PrlDocumentsService {
       this.logger.log(
         `🔍 Normalizando: "${nombreArchivo}" (length: ${normalized.length}, bytes: ${originalBytes.substring(0, 100)})`,
       );
+
+      // CORECTARE: "mÃ©dico" (latin1 interpretat greșit ca UTF-8) -> "médico"
+      // "mÃ©dico" = "m" + "Ã©" (care este "é" în latin1) + "dico"
+      // "Ã©" în UTF-8 bytes = C3 A9, dar dacă e interpretat greșit ca latin1 -> "Ã©"
+      if (normalized.includes('mÃ©dico') || normalized.includes('mÃ©dico')) {
+        this.logger.log(
+          `🔧 Detectado "mÃ©dico" (encoding error), corrigiendo...`,
+        );
+        normalized = normalized.replace(/mÃ©dico/gi, 'médico');
+        normalized = normalized.replace(/mÃ©dico/gi, 'médico');
+      }
+
+      // CORECTARE: "reconocimiento mÃ©dico" -> "reconocimiento médico"
+      if (
+        normalized.includes('reconocimiento mÃ©dico') ||
+        normalized.includes('reconocimiento mÃ©dico')
+      ) {
+        normalized = normalized.replace(
+          /reconocimiento mÃ©dico/gi,
+          'reconocimiento médico',
+        );
+        normalized = normalized.replace(
+          /reconocimiento mÃ©dico/gi,
+          'reconocimiento médico',
+        );
+      }
 
       // DETECTARE: Verifică dacă conține replacement character () sau bytes efbfbd
       const hasReplacementChar =
@@ -842,7 +870,7 @@ export class PrlDocumentsService {
   async eliminarTodosTemplatesPorGrupo(
     grupoNombre: string,
     usuarioId: string,
-  ): Promise<{ success: boolean; eliminados: number }> {
+  ): Promise<{ success: boolean; eliminados: number; message?: string }> {
     try {
       // Verifică câte template-uri există pentru acest GRUPO
       const countResult = await this.prisma.$queryRawUnsafe<
@@ -867,20 +895,67 @@ export class PrlDocumentsService {
         return { success: true, eliminados: 0 };
       }
 
-      // Hard delete: șterge efectiv din tabel
-      await this.prisma.$executeRawUnsafe(
+      // Verifică dacă există documente PRL care folosesc aceste template-uri
+      const documentosUsandoTemplates = await this.prisma.$queryRawUnsafe<
+        Array<{ template_id: number; count: bigint }>
+      >(
         `
-        DELETE FROM prl_document_templates
-        WHERE grupo_nombre = ${this.escapeSql(grupoNombre)}
-          AND activo = 1
+        SELECT template_id, COUNT(*) as count
+        FROM prl_employee_documents
+        WHERE template_id IN (
+          SELECT id FROM prl_document_templates
+          WHERE grupo_nombre = ${this.escapeSql(grupoNombre)} AND activo = 1
+        )
+        GROUP BY template_id
         `,
       );
 
-      this.logger.log(
-        `✅ ${count} templates eliminados permanentemente para GRUPO ${grupoNombre} por usuario ${usuarioId}`,
+      const templatesConDocumentos = new Set(
+        documentosUsandoTemplates.map((d) => d.template_id),
       );
 
-      return { success: true, eliminados: count };
+      if (templatesConDocumentos.size > 0) {
+        // Soft delete: marchează template-urile ca inactive
+        await this.prisma.$executeRawUnsafe(
+          `
+          UPDATE prl_document_templates
+          SET activo = false,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE grupo_nombre = ${this.escapeSql(grupoNombre)}
+            AND activo = 1
+          `,
+        );
+
+        const totalDocumentos = documentosUsandoTemplates.reduce(
+          (sum, d) => sum + Number(d.count || 0),
+          0,
+        );
+
+        this.logger.log(
+          `✅ ${count} templates desactivados (soft delete) para GRUPO ${grupoNombre} por usuario ${usuarioId}. ${totalDocumentos} documento(s) PRL existentes que usan estos templates.`,
+        );
+
+        return {
+          success: true,
+          eliminados: count,
+          message: `${count} templates desactivados. Existen ${totalDocumentos} documento(s) PRL que usan estos templates, por lo que no se pueden eliminar permanentemente.`,
+        };
+      } else {
+        // Hard delete: dacă nu există documente, se pot șterge fizic
+        await this.prisma.$executeRawUnsafe(
+          `
+          DELETE FROM prl_document_templates
+          WHERE grupo_nombre = ${this.escapeSql(grupoNombre)}
+            AND activo = 1
+          `,
+        );
+
+        this.logger.log(
+          `✅ ${count} templates eliminados permanentemente para GRUPO ${grupoNombre} por usuario ${usuarioId} (no hay documentos que los usen)`,
+        );
+
+        return { success: true, eliminados: count };
+      }
     } catch (error: any) {
       this.logger.error(
         `❌ Error eliminando templates para GRUPO ${grupoNombre}:`,
@@ -898,7 +973,7 @@ export class PrlDocumentsService {
   async eliminarTemplate(
     templateId: number,
     usuarioId: string,
-  ): Promise<{ success: boolean }> {
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       // Verifică dacă template-ul există
       const template = await this.prisma.$queryRawUnsafe<
@@ -916,19 +991,53 @@ export class PrlDocumentsService {
         throw new NotFoundException(`Template ${templateId} no encontrado`);
       }
 
-      // Hard delete: șterge efectiv din tabel
-      await this.prisma.$executeRawUnsafe(
+      // Verifică dacă există documente PRL care folosesc acest template
+      const documentosUsandoTemplate = await this.prisma.$queryRawUnsafe<
+        Array<{ count: bigint }>
+      >(
         `
-        DELETE FROM prl_document_templates
-        WHERE id = ${templateId}
+        SELECT COUNT(*) as count
+        FROM prl_employee_documents
+        WHERE template_id = ${templateId}
         `,
       );
 
-      this.logger.log(
-        `✅ Template ${templateId} eliminado permanentemente por usuario ${usuarioId}`,
-      );
+      const count = Number(documentosUsandoTemplate[0]?.count || 0);
 
-      return { success: true };
+      if (count > 0) {
+        // Soft delete: marchează template-ul ca inactiv (nu se poate șterge fizic din cauza foreign key)
+        await this.prisma.$executeRawUnsafe(
+          `
+          UPDATE prl_document_templates
+          SET activo = false,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${templateId}
+          `,
+        );
+
+        this.logger.log(
+          `✅ Template ${templateId} desactivado (soft delete) por usuario ${usuarioId}. ${count} documento(s) PRL existente que usan este template.`,
+        );
+
+        return {
+          success: true,
+          message: `Template desactivado. Existen ${count} documento(s) PRL que usan este template, por lo que no se puede eliminar permanentemente.`,
+        };
+      } else {
+        // Hard delete: dacă nu există documente, se poate șterge fizic
+        await this.prisma.$executeRawUnsafe(
+          `
+          DELETE FROM prl_document_templates
+          WHERE id = ${templateId}
+          `,
+        );
+
+        this.logger.log(
+          `✅ Template ${templateId} eliminado permanentemente por usuario ${usuarioId} (no hay documentos que lo usen)`,
+        );
+
+        return { success: true };
+      }
     } catch (error: any) {
       this.logger.error(`❌ Error eliminando template ${templateId}:`, error);
       if (error instanceof NotFoundException) {
@@ -1042,6 +1151,171 @@ export class PrlDocumentsService {
   }
 
   /**
+   * Generează documentul DOCX cu placeholder-urile completate
+   */
+  private async generarDocumentoConPlaceholders(
+    templateBuffer: Buffer,
+    empleadoNombre: string,
+    empleadoDNI: string,
+    empleadoGrupo: string,
+  ): Promise<Buffer> {
+    try {
+      const zip = new AdmZip(templateBuffer);
+      let xml = zip.readAsText('word/document.xml');
+
+      // Formatează data actuală în format spaniol: "a de de 2026" -> "a 15 de enero de 2026"
+      const ahora = new Date();
+      const dia = ahora.getDate();
+      const meses = [
+        'enero',
+        'febrero',
+        'marzo',
+        'abril',
+        'mayo',
+        'junio',
+        'julio',
+        'agosto',
+        'septiembre',
+        'octubre',
+        'noviembre',
+        'diciembre',
+      ];
+      const mes = meses[ahora.getMonth()];
+      const año = ahora.getFullYear();
+      const fechaFormateada = `a ${dia} de ${mes} de ${año}`;
+
+      // Valori default pentru firmă
+      const empresaDefault = 'De Camino Servicios Auxiliares SL';
+      const cifDefault = 'B85524536';
+
+      // Log pentru debugging
+      const beforeReplace = {
+        trabajador: (xml.match(/\{\{TRABAJADOR\}\}/g) || []).length,
+        dni: (xml.match(/\{\{DNI\}\}/g) || []).length,
+        empresa: (xml.match(/\{\{EMPRESA\}\}/g) || []).length,
+        cif: (xml.match(/\{\{CIF\}\}/g) || []).length,
+        puesto: (xml.match(/\{\{PUESTO_TRABAJO\}\}/g) || []).length,
+        fecha: (xml.match(/\{\{FECHA\}\}/g) || []).length,
+        firma: (xml.match(/\{\{FIRMA\}\}/g) || []).length,
+      };
+
+      this.logger.log(
+        `🔍 Placeholder-uri găsite înainte de înlocuire: ${JSON.stringify(beforeReplace)}`,
+      );
+
+      // Înlocuiește placeholder-urile - TOATE variantele posibile (cu sau fără spații)
+      // Varianta standard: {{PLACEHOLDER}}
+      xml = xml.replace(/\{\{TRABAJADOR\}\}/g, empleadoNombre || '');
+      xml = xml.replace(/\{\{DNI\}\}/g, empleadoDNI || '');
+      xml = xml.replace(/\{\{EMPRESA\}\}/g, empresaDefault);
+      xml = xml.replace(/\{\{CIF\}\}/g, cifDefault);
+      xml = xml.replace(/\{\{PUESTO_TRABAJO\}\}/g, empleadoGrupo || '');
+      xml = xml.replace(/\{\{FECHA\}\}/g, fechaFormateada);
+      // NOTĂ: {{FIRMA}} NU se înlocuiește aici - rămâne placeholder pentru ca agregarFirmaADocx să-l înlocuiască cu imaginea semnăturii
+
+      // Variante cu spații (dacă Word a adăugat spații): { { PLACEHOLDER } }
+      xml = xml.replace(/\{\s*{\s*TRABAJADOR\s*}\s*\}/g, empleadoNombre || '');
+      xml = xml.replace(/\{\s*{\s*DNI\s*}\s*\}/g, empleadoDNI || '');
+      xml = xml.replace(/\{\s*{\s*EMPRESA\s*}\s*\}/g, empresaDefault);
+      xml = xml.replace(/\{\s*{\s*CIF\s*}\s*\}/g, cifDefault);
+      xml = xml.replace(
+        /\{\s*{\s*PUESTO_TRABAJO\s*}\s*\}/g,
+        empleadoGrupo || '',
+      );
+      xml = xml.replace(/\{\s*{\s*FECHA\s*}\s*\}/g, fechaFormateada);
+      // NOTĂ: {{FIRMA}} NU se înlocuiește aici - rămâne placeholder pentru ca agregarFirmaADocx să-l înlocuiască cu imaginea semnăturii
+
+      // Variante când placeholder-urile sunt separate în tag-uri diferite în XML
+      // Ex: <w:t>{{</w:t><w:t>EMPRESA</w:t><w:t>}}</w:t>
+      // Strategie: înlocuiește placeholder-ul chiar dacă este între tag-uri diferite
+      const replacePlaceholderInTags = (
+        placeholder: string,
+        replacement: string,
+      ) => {
+        // Pattern 1: placeholder într-un singur tag: <w:t>{{PLACEHOLDER}}</w:t>
+        xml = xml.replace(
+          new RegExp(`(<w:t[^>]*>)\\{\\{${placeholder}\\}\\}(</w:t>)`, 'gi'),
+          `$1${replacement}$2`,
+        );
+        // Pattern 2: placeholder separat în tag-uri: <w:t>{{</w:t><w:t>PLACEHOLDER</w:t><w:t>}}</w:t>
+        // Înlocuiește întregul pattern cu replacement-ul
+        xml = xml.replace(
+          new RegExp(
+            `(<w:t[^>]*>)\\{\\{</w:t>\\s*<w:t[^>]*>${placeholder}</w:t>\\s*<w:t[^>]*>\\}\\}(</w:t>)`,
+            'gi',
+          ),
+          `$1${replacement}$2`,
+        );
+        // Pattern 3: placeholder poate fi și fără tag-uri de închidere/deschidere între ele
+        // {{PLACEHOLDER}} poate fi: {{</w:t><w:t>PLACEHOLDER</w:t><w:t>}}
+        xml = xml.replace(
+          new RegExp(
+            `\\{\\{</w:t>\\s*<w:t[^>]*>${placeholder}</w:t>\\s*<w:t[^>]*>\\}\\}`,
+            'gi',
+          ),
+          replacement,
+        );
+      };
+
+      replacePlaceholderInTags('TRABAJADOR', empleadoNombre || '');
+      replacePlaceholderInTags('DNI', empleadoDNI || '');
+      replacePlaceholderInTags('EMPRESA', empresaDefault);
+      replacePlaceholderInTags('CIF', cifDefault);
+      replacePlaceholderInTags('PUESTO_TRABAJO', empleadoGrupo || '');
+      replacePlaceholderInTags('FECHA', fechaFormateada);
+      // NOTĂ: {{FIRMA}} NU se înlocuiește aici - rămâne placeholder pentru ca agregarFirmaADocx să-l înlocuiască cu imaginea semnăturii
+
+      // Verifică dacă s-au înlocuit toate
+      const afterReplace = {
+        trabajador: (xml.match(/\{\{TRABAJADOR\}\}/g) || []).length,
+        dni: (xml.match(/\{\{DNI\}\}/g) || []).length,
+        empresa: (xml.match(/\{\{EMPRESA\}\}/g) || []).length,
+        cif: (xml.match(/\{\{CIF\}\}/g) || []).length,
+        puesto: (xml.match(/\{\{PUESTO_TRABAJO\}\}/g) || []).length,
+        fecha: (xml.match(/\{\{FECHA\}\}/g) || []).length,
+        firma: (xml.match(/\{\{FIRMA\}\}/g) || []).length,
+      };
+
+      // Verifică și variantele cu spații
+      const afterReplaceSpaces = {
+        trabajador: (xml.match(/\{\s*{\s*TRABAJADOR\s*}\s*\}/g) || []).length,
+        dni: (xml.match(/\{\s*{\s*DNI\s*}\s*\}/g) || []).length,
+        empresa: (xml.match(/\{\s*{\s*EMPRESA\s*}\s*\}/g) || []).length,
+        cif: (xml.match(/\{\s*{\s*CIF\s*}\s*\}/g) || []).length,
+        puesto: (xml.match(/\{\s*{\s*PUESTO_TRABAJO\s*}\s*\}/g) || []).length,
+        fecha: (xml.match(/\{\s*{\s*FECHA\s*}\s*\}/g) || []).length,
+        firma: (xml.match(/\{\s*{\s*FIRMA\s*}\s*\}/g) || []).length,
+      };
+
+      const totalRemaining =
+        Object.values(afterReplace).reduce((a, b) => a + b, 0) +
+        Object.values(afterReplaceSpaces).reduce((a, b) => a + b, 0);
+
+      if (totalRemaining > 0) {
+        this.logger.warn(
+          `⚠️ Au rămas ${totalRemaining} placeholder-uri neînlocuite: ${JSON.stringify(afterReplace)} + ${JSON.stringify(afterReplaceSpaces)}`,
+        );
+      } else {
+        this.logger.log(
+          `✅ Toate placeholder-urile au fost înlocuite cu succes!`,
+        );
+      }
+
+      // Actualizează document.xml în ZIP
+      zip.updateFile('word/document.xml', Buffer.from(xml, 'utf8'));
+
+      // Returnează buffer-ul DOCX generat
+      return zip.toBuffer();
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error generando documento con placeholders: ${error.message}`,
+      );
+      // Dacă apare eroare, returnează template-ul original
+      return templateBuffer;
+    }
+  }
+
+  /**
    * Trimite documentele PRL la toți angajații activi dintr-un grup
    * Creează PrlEmployeeDocument pentru fiecare angajat + template
    * Trimite email/notificare la fiecare angajat
@@ -1058,19 +1332,23 @@ export class PrlDocumentsService {
     notificaciones_enviadas: number;
   }> {
     try {
-      // 1. Obține toți angajații activi din grup
+      // 1. Obține toți angajații activi din grup (cu DNI și GRUPO)
       const empleados = await this.prisma.$queryRawUnsafe<
         Array<{
           CODIGO: string;
           'NOMBRE / APELLIDOS': string;
           'CORREO ELECTRONICO': string;
+          'D.N.I. / NIE': string;
+          GRUPO: string;
         }>
       >(
         `
         SELECT 
           CODIGO,
           \`NOMBRE / APELLIDOS\`,
-          \`CORREO ELECTRONICO\`
+          \`CORREO ELECTRONICO\`,
+          \`D.N.I. / NIE\`,
+          \`GRUPO\`
         FROM DatosEmpleados
         WHERE \`GRUPO\` = ${this.escapeSql(grupoNombre)}
           AND \`ESTADO\` = 'ACTIVO'
@@ -1134,6 +1412,8 @@ export class PrlDocumentsService {
         const empleadoCodigo = empleado.CODIGO;
         const empleadoNombre = empleado['NOMBRE / APELLIDOS'] || 'Empleado';
         const empleadoEmail = empleado['CORREO ELECTRONICO'] || null;
+        const empleadoDNI = empleado['D.N.I. / NIE'] || '';
+        const empleadoGrupo = empleado.GRUPO || grupoNombre;
 
         for (const template of templates) {
           // Verifică dacă există deja un document pentru această combinație
@@ -1166,8 +1446,27 @@ export class PrlDocumentsService {
             estadoInicial = 'PENDIENTE';
           }
 
-          // Creează PrlEmployeeDocument
-          const archivoHex = `0x${template.archivo.toString('hex')}`;
+          // Generează documentul cu placeholder-urile completate
+          let archivoFinal = template.archivo;
+          try {
+            archivoFinal = await this.generarDocumentoConPlaceholders(
+              template.archivo,
+              empleadoNombre,
+              empleadoDNI,
+              empleadoGrupo,
+            );
+            this.logger.log(
+              `✅ Documento generado con placeholders para ${empleadoNombre} (${template.nombre})`,
+            );
+          } catch (genError: any) {
+            this.logger.warn(
+              `⚠️ Error generando documento con placeholders, usando template original: ${genError.message}`,
+            );
+            // Continuă cu template-ul original dacă generarea eșuează
+          }
+
+          // Creează PrlEmployeeDocument cu documentul generat
+          const archivoHex = `0x${archivoFinal.toString('hex')}`;
 
           await this.prisma.$executeRawUnsafe(
             `
@@ -1691,6 +1990,216 @@ export class PrlDocumentsService {
   }
 
   /**
+   * Adaugă semnătura (imagine) în DOCX înlocuind placeholder-ul {{FIRMA}}
+   */
+  async agregarFirmaADocx(
+    docxBuffer: Buffer,
+    firmaImageBuffer: Buffer,
+  ): Promise<Buffer> {
+    try {
+      const zip = new AdmZip(docxBuffer);
+      let documentXml = zip.readAsText('word/document.xml');
+      let relsXml = zip.readAsText('word/_rels/document.xml.rels');
+
+      // Verifică dacă există placeholder-ul {{FIRMA}} în diferite formate
+      const hasFirma1 = documentXml.includes('{{FIRMA}}');
+      const hasFirma2 = documentXml.includes('{ { FIRMA } }');
+      const hasFirma3 = documentXml.match(
+        /<w:t[^>]*>\{\{<\/w:t>.*?<w:t[^>]*>FIRMA<\/w:t>/,
+      );
+
+      this.logger.log(`🔍 [Agregar Firma] Căutare placeholder {{FIRMA}}:`);
+      this.logger.log(`   - {{FIRMA}} direct: ${hasFirma1}`);
+      this.logger.log(`   - { { FIRMA } } cu spații: ${hasFirma2}`);
+      this.logger.log(
+        `   - {{FIRMA}} în tag-uri separate: ${hasFirma3 ? 'DA' : 'NU'}`,
+      );
+
+      if (!hasFirma1 && !hasFirma2 && !hasFirma3) {
+        // Caută și alte variante posibile
+        const firmaMatches = documentXml.match(/FIRMA/gi);
+        this.logger.warn(
+          `⚠️ Placeholder {{FIRMA}} nu a fost găsit în document. Cuvântul "FIRMA" apare ${firmaMatches ? firmaMatches.length : 0} ori.`,
+        );
+
+        // Log un fragment din document pentru debugging
+        const sampleXml = documentXml.substring(0, 2000);
+        this.logger.warn(
+          `📄 Fragment XML (primele 2000 caractere): ${sampleXml}`,
+        );
+
+        return docxBuffer; // Returnează documentul original dacă nu există placeholder
+      }
+
+      // Găsește rId disponibil
+      const rIdMatches = relsXml.match(/rId(\d+)/g);
+      let maxRId = 0;
+      if (rIdMatches) {
+        rIdMatches.forEach((match) => {
+          const id = parseInt(match.replace('rId', ''));
+          if (id > maxRId) maxRId = id;
+        });
+      }
+      const newRId = `rId${maxRId + 1}`;
+      const imageId = maxRId + 1;
+
+      // Adaugă imaginea semnăturii în ZIP
+      const imageName = `signature_${Date.now()}.png`;
+      const imagePath = `word/media/${imageName}`;
+      zip.addFile(imagePath, firmaImageBuffer);
+      this.logger.log(`✅ Imagine semnătură adăugată: ${imagePath}`);
+
+      // Adaugă relația în document.xml.rels
+      const newRelationship = `  <Relationship Id="${newRId}" Target="media/${imageName}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"/>`;
+      relsXml = relsXml.replace(
+        '</Relationships>',
+        `${newRelationship}\n</Relationships>`,
+      );
+      this.logger.log(`✅ Relație adăugată: ${newRId} -> media/${imageName}`);
+
+      // Structură XML pentru imagine în DOCX (dimensiuni standard pentru semnătură)
+      const imageDrawing = `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="3000000" cy="1500000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${imageId}" name="Firma"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${imageId}" name="Firma"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${newRId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3000000" cy="1500000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+
+      // Înlocuiește placeholder-ul {{FIRMA}} cu imaginea
+      let replacementsCount = 0;
+
+      // Strategie: înlocuim placeholder-ul împreună cu orice spațiu sau structură XML care îl înconjoară
+      // pentru a asigura că imaginea se inserează exact în locul placeholder-ului, fără spațiu suplimentar
+
+      // Varianta 1: placeholder într-un singur tag <w:t>{{FIRMA}}</w:t>
+      // Strategie: înlocuim doar tag-ul <w:t> pentru a evita coruperea structurii XML
+      // Nu înlocuim paragrafe sau celule întregi pentru a evita probleme de validitate XML
+      const before1 = documentXml;
+      documentXml = documentXml.replace(
+        /<w:t[^>]*>\{\{FIRMA\}\}<\/w:t>/g,
+        (match) => {
+          replacementsCount++;
+          this.logger.log(
+            `✅ Înlocuit placeholder (varianta 1 - exact w:t): ${match.substring(0, 50)}...`,
+          );
+          return imageDrawing;
+        },
+      );
+      if (before1 !== documentXml) {
+        this.logger.log(`✅ Varianta 1: ${replacementsCount} înlocuiri`);
+      }
+
+      // Varianta 2: placeholder separat în tag-uri ({{FIRMA}} poate fi în tag-uri diferite)
+      // Înlocuiește toate tag-urile <w:t> care conțin părți din placeholder
+      const before2 = documentXml;
+      documentXml = documentXml.replace(
+        /<w:t[^>]*>\{\{<\/w:t>\s*<w:t[^>]*>FIRMA<\/w:t>\s*<w:t[^>]*>\}\}<\/w:t>/gs,
+        (match) => {
+          replacementsCount++;
+          this.logger.log(
+            `✅ Înlocuit placeholder (varianta 2 - tag-uri separate): ${match.substring(0, 100)}...`,
+          );
+          return imageDrawing;
+        },
+      );
+      if (before2 !== documentXml) {
+        this.logger.log(`✅ Varianta 2: ${replacementsCount} înlocuiri`);
+      }
+
+      // Varianta 3: placeholder cu spații { { FIRMA } } - fallback
+      const before3 = documentXml;
+      documentXml = documentXml.replace(
+        /<w:t[^>]*>\{\s*{\s*FIRMA\s*}\s*\}<\/w:t>/g,
+        (match) => {
+          replacementsCount++;
+          this.logger.log(
+            `✅ Înlocuit placeholder (varianta 3 - cu spații): ${match}`,
+          );
+          return imageDrawing;
+        },
+      );
+      if (before3 !== documentXml) {
+        this.logger.log(`✅ Varianta 3: ${replacementsCount} înlocuiri`);
+      }
+
+      // Varianta 4: placeholder într-un <w:r> complet - doar dacă nu s-a găsit în variantele anterioare
+      // Aceasta este o ultimă opțiune pentru cazuri complexe
+      const before4 = documentXml;
+      if (replacementsCount === 0) {
+        documentXml = documentXml.replace(
+          /<w:r[^>]*>.*?<w:t[^>]*>\{\{FIRMA\}\}<\/w:t>.*?<\/w:r>/gs,
+          (match) => {
+            replacementsCount++;
+            this.logger.log(
+              `✅ Înlocuit placeholder (varianta 4 - întreg w:r fallback): ${match.substring(0, 80)}...`,
+            );
+            return imageDrawing;
+          },
+        );
+        if (before4 !== documentXml) {
+          this.logger.log(`✅ Varianta 4: ${replacementsCount} înlocuiri`);
+        }
+      }
+
+      if (replacementsCount === 0) {
+        this.logger.error(
+          '❌ Niciun placeholder {{FIRMA}} nu a fost înlocuit!',
+        );
+      } else {
+        this.logger.log(`✅ Total înlocuiri: ${replacementsCount}`);
+      }
+
+      // Verifică dacă XML-ul este valid (are tag-uri închise corect)
+      const openTags = (documentXml.match(/<w:[^>]+>/g) || []).length;
+      const closeTags = (documentXml.match(/<\/w:[^>]+>/g) || []).length;
+      const selfClosingTags = (documentXml.match(/<w:[^>]+\/>/g) || []).length;
+
+      // Verifică dacă există tag-uri neechilibrate (fără să numărăm self-closing tags)
+      const balancedTags = openTags - selfClosingTags === closeTags;
+
+      if (!balancedTags) {
+        this.logger.warn(
+          `⚠️ XML-ul poate fi neechilibrat: ${openTags} tag-uri deschise, ${closeTags} tag-uri închise, ${selfClosingTags} self-closing`,
+        );
+      }
+
+      // Verifică dacă există caractere invalide sau probleme de encoding
+      if (documentXml.includes('\0') || documentXml.includes('\uFFFD')) {
+        this.logger.warn(
+          '⚠️ XML-ul conține caractere invalide sau probleme de encoding',
+        );
+      }
+
+      // Actualizează fișierele în ZIP
+      try {
+        zip.updateFile('word/document.xml', Buffer.from(documentXml, 'utf8'));
+        zip.updateFile(
+          'word/_rels/document.xml.rels',
+          Buffer.from(relsXml, 'utf8'),
+        );
+
+        this.logger.log('✅ Semnătura adăugată în DOCX');
+
+        // Returnează DOCX-ul modificat
+        const resultBuffer = zip.toBuffer();
+
+        // Verifică dacă buffer-ul este valid (nu este gol)
+        if (!resultBuffer || resultBuffer.length === 0) {
+          this.logger.error('❌ Buffer-ul DOCX generat este gol!');
+          throw new Error('Buffer-ul DOCX generat este gol');
+        }
+
+        this.logger.log(
+          `✅ DOCX generat cu succes: ${resultBuffer.length} bytes`,
+        );
+        return resultBuffer;
+      } catch (zipError: any) {
+        this.logger.error(`❌ Error actualizando ZIP: ${zipError.message}`);
+        throw zipError;
+      }
+    } catch (error: any) {
+      this.logger.error(`❌ Error agregando firma a DOCX: ${error.message}`);
+      // Dacă apare eroare, returnează documentul original
+      return docxBuffer;
+    }
+  }
+
+  /**
    * Încarcă documentul semnat pentru Renuncia RM
    */
   async subirDocumentoFirmado(
@@ -1701,19 +2210,27 @@ export class PrlDocumentsService {
   ): Promise<void> {
     try {
       // Verifică că documentul există și aparține angajatului
+      // Obține și informații despre template pentru notificare
       const documento = await this.prisma.$queryRawUnsafe<
         Array<{
           id: number;
           empleado_id: string;
           tipo_documento: string;
           estado: string;
+          template_nombre: string | null;
         }>
       >(
         `
-        SELECT id, empleado_id, tipo_documento, estado
-        FROM prl_employee_documents
-        WHERE id = ${documentoId}
-          AND empleado_id = ${this.escapeSql(empleadoId)}
+        SELECT 
+          ed.id, 
+          ed.empleado_id, 
+          ed.tipo_documento, 
+          ed.estado,
+          t.nombre as template_nombre
+        FROM prl_employee_documents ed
+        LEFT JOIN prl_document_templates t ON ed.template_id = t.id
+        WHERE ed.id = ${documentoId}
+          AND ed.empleado_id = ${this.escapeSql(empleadoId)}
         LIMIT 1
         `,
       );
@@ -1757,6 +2274,65 @@ export class PrlDocumentsService {
       this.logger.log(
         `✅ Documento ${documentoId} firmado y subido por empleado ${empleadoId}`,
       );
+
+      // Trimite notificare Telegram la gestoria
+      try {
+        // Obține numele angajatului
+        const empleadoInfo = await this.prisma.$queryRawUnsafe<
+          Array<{
+            nombre: string;
+          }>
+        >(
+          `
+          SELECT CONCAT(\`NOMBRE / APELLIDOS\`) as nombre
+          FROM DatosEmpleados
+          WHERE CODIGO = ${this.escapeSql(empleadoId)}
+          LIMIT 1
+          `,
+        );
+
+        const empleadoNombre =
+          empleadoInfo && empleadoInfo.length > 0
+            ? empleadoInfo[0].nombre
+            : empleadoId;
+
+        const templateNombre =
+          documento[0].template_nombre ||
+          documento[0].tipo_documento ||
+          'Documento PRL';
+        const fechaFirma = new Date().toLocaleString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        const mensajeTelegram = `✅ *Documento PRL Firmado*
+
+👤 *Empleado:* ${empleadoNombre}
+📄 *Documento:* ${templateNombre}
+📅 *Fecha:* ${fechaFirma}
+🆔 *ID Documento:* ${documentoId}
+
+El documento ha sido firmado y guardado correctamente.`;
+
+        if (this.telegramService.isConfigured()) {
+          await this.telegramService.sendMessage(mensajeTelegram);
+          this.logger.log(
+            `📱 Notificación Telegram enviada a gestoria para documento ${documentoId}`,
+          );
+        } else {
+          this.logger.warn(
+            '⚠️ Telegram service no configurado, no se envió notificación',
+          );
+        }
+      } catch (telegramError: any) {
+        // Nu aruncăm eroare dacă Telegram eșuează - doar logăm
+        this.logger.warn(
+          `⚠️ Error enviando notificación Telegram: ${telegramError.message}`,
+        );
+      }
     } catch (error: any) {
       this.logger.error(
         `❌ Error subiendo documento firmado ${documentoId}:`,

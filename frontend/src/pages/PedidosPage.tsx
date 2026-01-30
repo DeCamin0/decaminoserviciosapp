@@ -764,7 +764,7 @@ const TabNuevoPedido: React.FC<{
       
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1044,7 +1044,7 @@ const TabNuevoPedido: React.FC<{
     try {
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1503,7 +1503,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1568,7 +1568,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
       setLoadingClientes(true);
       try {
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-App-Source': 'DeCamino-Web-App',
@@ -1617,7 +1617,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     setBuscandoProductos(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1694,7 +1694,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     // Salvează direct în baza de date
     try {
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1761,7 +1761,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
       });
 
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1811,7 +1811,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
 
     try {
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1859,7 +1859,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
 
     try {
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -1903,7 +1903,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
       }
 
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -2000,7 +2000,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     try {
       setLoading(true);
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -2072,7 +2072,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     try {
       setEnviandoProveedor(true);
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -3039,7 +3039,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       
       try {
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-App-Source': 'DeCamino-Web-App',
@@ -3121,7 +3121,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       // Construiește URL-ul pentru încărcarea permisiunilor
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -3263,7 +3263,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
 
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -3578,7 +3578,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       
       try {
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-App-Source': 'DeCamino-Web-App',
@@ -3707,7 +3707,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
 
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -3779,7 +3779,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
 
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
@@ -3852,7 +3852,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
 
       // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
       const token = localStorage.getItem('auth_token');
-      const headers: HeadersInit = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',

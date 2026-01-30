@@ -46,7 +46,7 @@ async function fetchHorasPermitidas(): Promise<HorasPermitidasItem[]> {
       : 'https://api.decaminoservicios.com/api/horas-permitidas');
     
     const token = localStorage.getItem('auth_token');
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
     if (token) {
@@ -241,7 +241,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
         console.log('✅ [HorasPermitidas] Folosind backend-ul nou (createHorasPermitidas):', endpoint);
         
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
         };
         if (token) {
@@ -322,7 +322,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
         console.log('✅ [HorasPermitidas] Folosind backend-ul nou (updateHorasPermitidas):', endpoint);
         
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
         };
         if (token) {
@@ -400,7 +400,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
         console.log('✅ [HorasPermitidas] Folosind backend-ul nou (deleteHorasPermitidas):', endpoint);
         
         const token = localStorage.getItem('auth_token');
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
         };
         if (token) {

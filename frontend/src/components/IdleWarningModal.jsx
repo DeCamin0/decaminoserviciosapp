@@ -7,28 +7,51 @@ export default function IdleWarningModal({ secondsLeft, onStay, onLogout }) {
 
   useEffect(() => {
     if (secondsLeft != null) {
-      setIsVisible(true)
-      setIsDisconnected(false)
+      // Folosim setTimeout pentru a evita apelarea sincronă a setState
+      const updateTimer = setTimeout(() => {
+        setIsVisible(true)
+        setIsDisconnected(false)
+      }, 0)
       
       // Pulse animation every 10 seconds
       if (secondsLeft <= 10) {
-        setPulse(true)
-        const timer = setTimeout(() => setPulse(false), 1000)
-        return () => clearTimeout(timer)
+        const pulseTimer = setTimeout(() => {
+          setPulse(true)
+          setTimeout(() => setPulse(false), 1000)
+        }, 0)
+        
+        return () => {
+          clearTimeout(updateTimer)
+          clearTimeout(pulseTimer)
+        }
       }
       
       // Când ajunge la 0, afișează mesajul de deconectare
       if (secondsLeft === 0) {
-        setIsDisconnected(true)
+        const disconnectTimer = setTimeout(() => {
+          setIsDisconnected(true)
+        }, 0)
+        
         // După 3 secunde, execută logout-ul
         const logoutTimer = setTimeout(() => {
           onLogout()
         }, 3000)
-        return () => clearTimeout(logoutTimer)
+        
+        return () => {
+          clearTimeout(updateTimer)
+          clearTimeout(disconnectTimer)
+          clearTimeout(logoutTimer)
+        }
       }
+      
+      return () => clearTimeout(updateTimer)
     } else {
-      setIsVisible(false)
-      setIsDisconnected(false)
+      const hideTimer = setTimeout(() => {
+        setIsVisible(false)
+        setIsDisconnected(false)
+      }, 0)
+      
+      return () => clearTimeout(hideTimer)
     }
   }, [secondsLeft, onLogout])
 

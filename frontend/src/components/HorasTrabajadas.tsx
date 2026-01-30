@@ -96,6 +96,16 @@ export type ResumenEmpleado = {
   diasFiesta?: number | string;
 };
 
+// Interface pentru registru de ore
+interface RegistroHora {
+  fecha: string;
+  entrada: string;
+  salida: string;
+  horas: number;
+  empleadoId: number;
+  empleadoNombre: string;
+}
+
 export type DetalleDia = {
   fecha: string;     // "2025-10-01"
   entrada: string;   // "08:02"
@@ -346,7 +356,7 @@ async function fetchResumen(
       }
     }
     
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };
     
@@ -972,16 +982,6 @@ async function fetchDetalle(
         console.log('🔍 Data structure:', data);
         console.log('🔍 Registros count:', data.registros.length);
         
-        // Interface pentru registru de ore
-        interface RegistroHora {
-          fecha: string;
-          entrada: string;
-          salida: string;
-          horas: number;
-          empleadoId: number;
-          empleadoNombre: string;
-        }
-
         // Grupează registrele pe zile și calculează orele
         const registrosPorDia: { [fecha: string]: RegistroHora[] } = {};
         data.registros.forEach((registro: RegistroHora) => {

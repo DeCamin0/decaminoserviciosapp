@@ -976,7 +976,7 @@ const [editLoading, setEditLoading] = useState(false);
         }
         // Altfel, nu facem nimic - păstrăm user-ul existent
       }
-    } catch (e) {
+    } catch {
       setError('No se pudieron cargar los datos del usuario.');
     } finally {
       setOperationLoading('user', false);
@@ -2100,7 +2100,7 @@ const [editLoading, setEditLoading] = useState(false);
                       title: '¡Éxito!',
                       message: '¡Las modificaciones han sido enviadas para aprobación!'
                     });
-                  } catch (e) {
+                  } catch {
                     setEditError('Error al enviar para aprobación!');
                   }
                   setEditLoading(false);

@@ -265,7 +265,7 @@ export default function MisInspeccionesPage() {
               month: '2-digit',
               day: '2-digit'
             });
-          } catch (error) {
+          } catch {
             return 'N/A';
           }
         };
@@ -373,7 +373,7 @@ export default function MisInspeccionesPage() {
             } else {
               setPreviewData({ ...inspection, error: 'El PDF no está disponible para la vista previa' });
             }
-          } catch (jsonError) {
+          } catch {
             // Fallback: încearcă să creeze un blob URL
             const blob = await response.blob();
             if (blob.size > 0) {
@@ -485,7 +485,7 @@ export default function MisInspeccionesPage() {
           } else {
             alert('El PDF no está disponible para esta inspección');
           }
-        } catch (jsonError) {
+        } catch {
           // Încearcă să descarce direct ca PDF (fallback)
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);

@@ -162,11 +162,11 @@ const EmpleadosChartsSection = ({
     });
 
     const sorted = Array.from(altasPorMes.keys()).sort();
-    let acumulado = 0;
-    const data = sorted.map((key) => {
-      acumulado += altasPorMes.get(key) || 0;
-      return acumulado;
-    });
+    const data = sorted.reduce((acc, key) => {
+      const valor = altasPorMes.get(key) || 0;
+      const acumulado = acc.length > 0 ? acc[acc.length - 1] + valor : valor;
+      return [...acc, acumulado];
+    }, []);
 
     const labels = sorted.map((key) => {
       const [year, month] = key.split('-');

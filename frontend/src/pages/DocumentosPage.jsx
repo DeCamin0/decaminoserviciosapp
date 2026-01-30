@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContextBase';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { Button, LoadingSpinner, Notification } from '../components/ui';
 import ContractSigner from '../components/ContractSigner';
+import PRLDocumentSigner from '../components/PRLDocumentSigner';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 import { routes } from '../utils/routes.js';
 import activityLogger from '../utils/activityLogger';
@@ -126,6 +127,9 @@ export default function DocumentosPage() {
   const [documentosPRL, setDocumentosPRL] = useState([]);
   const [documentosPRLLoading, setDocumentosPRLLoading] = useState(false);
   const [documentosPRLError, setDocumentosPRLError] = useState(null);
+  const [showPRLSigner, setShowPRLSigner] = useState(false);
+  const [prlDocumentToSign, setPrlDocumentToSign] = useState(null);
+  const [prlPdfUrl, setPrlPdfUrl] = useState(null);
 
   // Estado para diplomas (solo visualización)
   const [diplomas, setDiplomas] = useState([]);
@@ -3557,57 +3561,113 @@ export default function DocumentosPage() {
                             ℹ️ Marca la casilla para descargar
                           </div>
                         )}
-                        {/* Buton de upload pentru documente care necesită semnătură cu status PENDIENTE */}
+                        {/* Buton de semnare pentru documente care necesită semnătură cu status PENDIENTE */}
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
-                          <label className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors text-sm text-center cursor-pointer">
-                            ✍️ Subir Firmado
-                            <input
-                              type="file"
-                              accept=".pdf"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
+                          <>
+                            <button
+                              onClick={async () => {
+                                // Verifică tipul de fișier (PDF sau DOCX - ambele se pot semna acum!)
+                                const fileName = doc.nombre_archivo_original || doc.nombre_archivo || '';
+                                const isDocx = fileName.toLowerCase().endsWith('.docx') || fileName.toLowerCase().endsWith('.doc');
+                                const isPdf = fileName.toLowerCase().endsWith('.pdf');
+                                
+                                // Permite doar PDF și DOCX pentru semnare directă
+                                if (!isPdf && !isDocx) {
+                                  setNotification({
+                                    type: 'info',
+                                    title: 'Tipo de archivo no soportado',
+                                    message: 'Solo se pueden firmar documentos PDF y DOCX directamente. Para otros tipos de archivo, descárgalos, fírmalos manualmente y súbelos usando "Subir Firmado".',
+                                  });
+                                  return;
+                                }
 
                                 try {
                                   const token = localStorage.getItem('auth_token');
-                                  const formData = new FormData();
-                                  formData.append('archivo', file);
-
-                                  const response = await fetch(routes.prlSubirDocumentoFirmado(doc.id), {
-                                    method: 'POST',
+                                  const response = await fetch(routes.prlDescargarMiDocumento(doc.id), {
                                     headers: {
                                       Authorization: `Bearer ${token}`,
                                     },
-                                    body: formData,
                                   });
 
                                   if (!response.ok) {
-                                    const errorData = await response.json();
-                                    throw new Error(errorData.message || 'Error al subir documento');
+                                    throw new Error('Error al descargar documento');
                                   }
 
-                                  // Reîncarcă documentele pentru a actualiza statusul
-                                  await fetchDocumentosPRL();
-
-                                  setNotification({
-                                    type: 'success',
-                                    title: 'Documento subido',
-                                    message: 'El documento firmado ha sido subido exitosamente.',
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  
+                                  // Setează documentul și URL-ul pentru semnare
+                                  console.log('🔍 [DocumentosPage] Setting document to sign:', { 
+                                    fileName, 
+                                    isDocx, 
+                                    isPdf, 
+                                    docId: doc.id 
                                   });
+                                  setPrlDocumentToSign({ ...doc, isDocx });
+                                  setPrlPdfUrl(url);
+                                  setShowPRLSigner(true);
                                 } catch (error) {
                                   setNotification({
                                     type: 'error',
                                     title: 'Error',
-                                    message: `Error al subir documento: ${error.message}`,
+                                    message: `Error al cargar documento para firmar: ${error.message}`,
                                   });
-                                } finally {
-                                  // Reset input
-                                  e.target.value = '';
                                 }
                               }}
-                            />
-                          </label>
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm"
+                            >
+                              ✍️ Firmar
+                            </button>
+                            <label className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors text-sm text-center cursor-pointer">
+                              📤 Subir Firmado
+                              <input
+                                type="file"
+                                accept=".pdf,.docx,.doc"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+
+                                  try {
+                                    const token = localStorage.getItem('auth_token');
+                                    const formData = new FormData();
+                                    formData.append('archivo', file);
+
+                                    const response = await fetch(routes.prlSubirDocumentoFirmado(doc.id), {
+                                      method: 'POST',
+                                      headers: {
+                                        Authorization: `Bearer ${token}`,
+                                      },
+                                      body: formData,
+                                    });
+
+                                    if (!response.ok) {
+                                      const errorData = await response.json();
+                                      throw new Error(errorData.message || 'Error al subir documento');
+                                    }
+
+                                    // Reîncarcă documentele pentru a actualiza statusul
+                                    await fetchDocumentosPRL();
+
+                                    setNotification({
+                                      type: 'success',
+                                      title: 'Documento subido',
+                                      message: 'El documento firmado ha sido subido exitosamente.',
+                                    });
+                                  } catch (error) {
+                                    setNotification({
+                                      type: 'error',
+                                      title: 'Error',
+                                      message: `Error al subir documento: ${error.message}`,
+                                    });
+                                  } finally {
+                                    // Reset input
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
+                            </label>
+                          </>
                         )}
                         {/* Buton de descărcare pentru documentul firmat (când există) */}
                         {doc.estado === 'FIRMADO' && (
@@ -3625,15 +3685,49 @@ export default function DocumentosPage() {
                                   throw new Error('Error al descargar documento firmado');
                                 }
 
+                                // Detectează tipul fișierului din Content-Type
+                                const contentType = response.headers.get('Content-Type') || '';
+                                const isDocx = contentType.includes('wordprocessingml') || contentType.includes('msword');
+                                const isPdf = contentType.includes('pdf');
+                                
+                                const contentDisposition = response.headers.get('Content-Disposition');
+                                let filename = contentDisposition
+                                  ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || null
+                                  : null;
+                                
+                                console.log('🔍 [DocumentosPage] Descargando documento firmado:', {
+                                  documentoId: doc.id,
+                                  contentType,
+                                  isDocx,
+                                  isPdf,
+                                  contentDisposition,
+                                  filenameFromHeader: filename,
+                                  nombreOriginal: doc.nombre_archivo_original || doc.nombre_archivo
+                                });
+                                
+                                // Fallback bazat pe tipul detectat
+                                if (!filename) {
+                                  if (isDocx) {
+                                    filename = `documento_firmado_${doc.id}.docx`;
+                                  } else if (isPdf) {
+                                    filename = `documento_firmado_${doc.id}.pdf`;
+                                  } else {
+                                    // Încearcă să detecteze din numele documentului original
+                                    const originalName = doc.nombre_archivo_original || doc.nombre_archivo || '';
+                                    if (originalName.toLowerCase().endsWith('.docx') || originalName.toLowerCase().endsWith('.doc')) {
+                                      filename = `documento_firmado_${doc.id}.docx`;
+                                    } else {
+                                      filename = `documento_firmado_${doc.id}.pdf`;
+                                    }
+                                  }
+                                }
+                                
+                                console.log('📥 [DocumentosPage] Filename final para descarga:', filename);
+                                
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
-                                // Folosim numele din header-ul Content-Disposition sau fallback
-                                const contentDisposition = response.headers.get('Content-Disposition');
-                                const filename = contentDisposition
-                                  ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || 'documento_firmado.pdf'
-                                  : 'documento_firmado.pdf';
                                 a.download = filename;
                                 document.body.appendChild(a);
                                 a.click();
@@ -4283,6 +4377,42 @@ export default function DocumentosPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Modal pentru semnare PRL */}
+      {showPRLSigner && prlDocumentToSign && prlPdfUrl && (
+        <PRLDocumentSigner
+          pdfUrl={prlPdfUrl}
+          documentoId={prlDocumentToSign.id}
+          originalFileName={prlDocumentToSign.nombre_archivo_original}
+          isDocx={prlDocumentToSign.isDocx || false}
+          onClose={() => {
+            setShowPRLSigner(false);
+            setPrlDocumentToSign(null);
+            if (prlPdfUrl) {
+              window.URL.revokeObjectURL(prlPdfUrl);
+            }
+            setPrlPdfUrl(null);
+          }}
+          onSuccess={async () => {
+            // Reîncarcă documentele pentru a actualiza statusul
+            await fetchDocumentosPRL();
+            
+            setNotification({
+              type: 'success',
+              title: 'Documento firmado',
+              message: 'El documento ha sido firmado y enviado exitosamente.',
+            });
+            
+            // Închide modalul
+            setShowPRLSigner(false);
+            setPrlDocumentToSign(null);
+            if (prlPdfUrl) {
+              window.URL.revokeObjectURL(prlPdfUrl);
+            }
+            setPrlPdfUrl(null);
+          }}
+        />
       )}
     </div>
   );

@@ -40,7 +40,12 @@ const ComunicadosPage = () => {
   }, [fetchComunicados]);
 
   useEffect(() => {
-    loadComunicados();
+    // Folosim setTimeout pentru a evita apelarea sincronă a setState
+    const timer = setTimeout(() => {
+      loadComunicados();
+    }, 0);
+    
+    return () => clearTimeout(timer);
   }, [loadComunicados]);
 
   const formatDate = (dateString) => {

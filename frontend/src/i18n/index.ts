@@ -68,7 +68,7 @@ const resources = {
       'empleados.loading': 'Se încarcă gestionarea angajaților...',
       'solicitudes.loading': 'Se încarcă solicitările...',
       'cuadrantes.loading': 'Se încarcă programele de lucru...',
-      'cuadrantesEmpleado.loading': 'Se încarcă programul angajatului...',
+      'cuadrantesEmpleado.loading': 'Cargando programa del empleado...',
       'documentos.loading': 'Se încarcă documentele...',
       'documentosEmpleados.loading': 'Se încarcă documentele angajaților...',
       'aprobaciones.loading': 'Se încarcă aprobările...',

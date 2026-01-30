@@ -768,7 +768,7 @@ export default function DocumentosEmpleadosPage() {
         }
       });
 
-    } catch (e) {
+    } catch {
 
       setEmpleados([]);
 

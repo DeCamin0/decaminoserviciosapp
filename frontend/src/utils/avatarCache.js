@@ -107,7 +107,7 @@ export const fetchAvatarOnce = async ({ codigo, nombre, endpoint, version }) => 
         }
       }
     }
-  } catch (e) {
+  } catch {
     // ignore SW cache read errors, continue to memory/fetch
   }
 
