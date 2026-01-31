@@ -1567,18 +1567,18 @@ const InspectionList = ({ onBackToSelection }) => {
 
       {/* Modal ULTRA MODERN pentru preview PDF */}
       {showPreviewModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 transform scale-100 transition-all duration-500">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-none sm:rounded-3xl max-w-5xl w-full h-full sm:h-auto sm:max-h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 transform scale-100 transition-all duration-500 flex flex-col">
             {/* Header ULTRA MODERN */}
-            <div className="bg-gradient-to-r from-green-50 to-emerald-100 px-6 py-4 border-b border-green-200">
+            <div className="bg-gradient-to-r from-green-50 to-emerald-100 px-4 sm:px-6 py-3 sm:py-4 border-b border-green-200 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-2xl">👁️</span>
+                <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                    <span className="text-white text-xl sm:text-2xl">👁️</span>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">Vista Previa PDF</h3>
-                    <p className="text-sm text-green-600 font-medium">{previewData?.id}</p>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 truncate">Vista Previa PDF</h3>
+                    <p className="text-xs sm:text-sm text-green-600 font-medium">{previewData?.id}</p>
                   </div>
                 </div>
                 <button
@@ -1591,14 +1591,15 @@ const InspectionList = ({ onBackToSelection }) => {
                       setShowPreviewModal(false);
                       setPreviewData(null);
                     }}
-                  className="group w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg"
+                  className="hidden sm:flex group w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg flex-shrink-0"
+                  aria-label="Cerrar preview"
                 >
                   <span className="text-gray-400 group-hover:text-red-500 text-xl font-bold">✕</span>
                 </button>
               </div>
             </div>
             
-            <div className="p-6 h-[calc(95vh-100px)] overflow-auto bg-gray-50">
+            <div className="p-4 sm:p-6 flex-1 overflow-auto bg-gray-50 min-h-0">
               {previewLoading ? (
                 <div className="flex flex-col items-center justify-center h-64">
                   <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-500 border-t-transparent mb-4"></div>
@@ -1615,6 +1616,15 @@ const InspectionList = ({ onBackToSelection }) => {
                     <PDFViewerAndroid 
                       pdfUrl={previewData.pdfUrl}
                       className="w-full h-full"
+                      onClose={() => {
+                        // Cleanup blob URL dacă există
+                        if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+                          window.URL.revokeObjectURL(previewData.pdfUrl);
+                          console.log('🧹 Blob URL revocat la închiderea modalului');
+                        }
+                        setShowPreviewModal(false);
+                        setPreviewData(null);
+                      }}
                     />
                   ) : (
                 <iframe
@@ -1630,6 +1640,30 @@ const InspectionList = ({ onBackToSelection }) => {
                   <div className="text-gray-600 text-xl font-bold">No se encontró el PDF</div>
                 </div>
               )}
+            </div>
+            
+            {/* Buton de închidere fixat jos - VIZIBIL PE MOBIL */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white sm:hidden" style={{ zIndex: 10001, marginBottom: '64px' }}>
+              <button
+                onClick={() => {
+                  // Cleanup blob URL dacă există
+                  if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+                    window.URL.revokeObjectURL(previewData.pdfUrl);
+                    console.log('🧹 Blob URL revocat la închiderea modalului');
+                  }
+                  setShowPreviewModal(false);
+                  setPreviewData(null);
+                }}
+                className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold text-lg rounded-none transition-all duration-200 shadow-lg touch-manipulation"
+                aria-label="Cerrar preview"
+                style={{ 
+                  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+                  position: 'relative',
+                  zIndex: 10001
+                }}
+              >
+                Cerrar preview
+              </button>
             </div>
           </div>
         </div>

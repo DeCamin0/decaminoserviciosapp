@@ -20,7 +20,7 @@ if (!GlobalWorkerOptions.workerSrc) {
   console.log('📱 PDFViewerAndroid: Worker configurat:', GlobalWorkerOptions.workerSrc);
 }
 
-const PDFViewerAndroid = ({ pdfUrl, className = '', style = {} }) => {
+const PDFViewerAndroid = ({ pdfUrl, className = '', style = {}, onClose = null }) => {
   const [pdfDocument, setPdfDocument] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -268,10 +268,34 @@ const PDFViewerAndroid = ({ pdfUrl, className = '', style = {} }) => {
               >
               →
               </button>
+              {/* Buton X pentru închidere - doar dacă onClose este furnizat */}
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="ml-2 px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded font-bold min-h-[32px] min-w-[32px] touch-manipulation transition-colors"
+                  aria-label="Cerrar preview"
+                  title="Cerrar preview"
+                >
+                  ✕
+                </button>
+              )}
             </div>
         ) : (
-          <div className="text-xs text-blue-600 font-medium">
-            📄 1 página
+          <div className="flex items-center gap-1">
+            <div className="text-xs text-blue-600 font-medium">
+              📄 1 página
+            </div>
+            {/* Buton X pentru închidere - doar dacă onClose este furnizat */}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="ml-2 px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded font-bold min-h-[32px] min-w-[32px] touch-manipulation transition-colors"
+                aria-label="Cerrar preview"
+                title="Cerrar preview"
+              >
+                ✕
+              </button>
+            )}
           </div>
         )}
         

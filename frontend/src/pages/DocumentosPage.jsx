@@ -1359,6 +1359,89 @@ export default function DocumentosPage() {
     setPreviewError(null);
   };
 
+  // Funcție pentru preview diploma
+  const handlePreviewDiploma = async (diploma) => {
+    setShowPreviewModal(true);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.diplomasDescargar(diploma.id), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al cargar diploma para preview');
+      }
+
+      const blob = await response.blob();
+      const contentType = response.headers.get('content-type') || blob.type;
+      
+      // Detectăm tipul fișierului
+      const isImage = contentType && contentType.startsWith('image/');
+      const isPdf = contentType && contentType.includes('application/pdf');
+      
+      let previewUrl;
+      if (isImage) {
+        // Pentru imagini, folosim base64
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result;
+          if (base64String && typeof base64String === 'string') {
+            setPreviewDocument({ 
+              fileName: diploma.nombre_archivo, 
+              previewUrl: base64String, 
+              isPdf: false 
+            });
+            setPreviewLoading(false);
+          }
+        };
+        reader.onerror = () => {
+          const url = URL.createObjectURL(blob);
+          setPreviewDocument({ 
+            fileName: diploma.nombre_archivo, 
+            previewUrl: url, 
+            isPdf: false 
+          });
+          setPreviewLoading(false);
+        };
+        reader.readAsDataURL(blob);
+        return;
+      } else if (isPdf) {
+        // Pentru PDF-uri
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        previewUrl = isIOS 
+          ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+          : URL.createObjectURL(blob);
+        setPreviewDocument({ 
+          fileName: diploma.nombre_archivo, 
+          previewUrl: previewUrl, 
+          isPdf: true 
+        });
+        setPreviewLoading(false);
+      } else {
+        // Fallback - tratăm ca PDF
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        previewUrl = isIOS 
+          ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+          : URL.createObjectURL(blob);
+        setPreviewDocument({ 
+          fileName: diploma.nombre_archivo, 
+          previewUrl: previewUrl, 
+          isPdf: true 
+        });
+        setPreviewLoading(false);
+      }
+    } catch (error) {
+      console.error('Error al cargar diploma para preview:', error);
+      setPreviewError(`Error al cargar diploma: ${error.message}`);
+      setPreviewLoading(false);
+    }
+  };
+
   // Función para descargar documentos oficiales
   const handleDownloadDocumentOficial = async (documento) => {
     try {
@@ -3582,6 +3665,14 @@ export default function DocumentosPage() {
                                 }
 
                                 try {
+                                  console.log('🔍 [DocumentosPage] Starting document download for signing:', {
+                                    docId: doc.id,
+                                    fileName,
+                                    isDocx,
+                                    isPdf,
+                                    url: routes.prlDescargarMiDocumento(doc.id)
+                                  });
+                                  
                                   const token = localStorage.getItem('auth_token');
                                   const response = await fetch(routes.prlDescargarMiDocumento(doc.id), {
                                     headers: {
@@ -3589,24 +3680,55 @@ export default function DocumentosPage() {
                                     },
                                   });
 
+                                  console.log('🔍 [DocumentosPage] Download response:', {
+                                    ok: response.ok,
+                                    status: response.status,
+                                    statusText: response.statusText,
+                                    contentType: response.headers.get('Content-Type'),
+                                    contentLength: response.headers.get('Content-Length')
+                                  });
+
                                   if (!response.ok) {
-                                    throw new Error('Error al descargar documento');
+                                    const errorText = await response.text().catch(() => 'Unknown error');
+                                    console.error('❌ [DocumentosPage] Download failed:', {
+                                      status: response.status,
+                                      statusText: response.statusText,
+                                      errorText
+                                    });
+                                    throw new Error(`Error al descargar documento: ${response.status} ${response.statusText}`);
                                   }
 
                                   const blob = await response.blob();
+                                  console.log('🔍 [DocumentosPage] Blob created:', {
+                                    size: blob.size,
+                                    type: blob.type
+                                  });
+                                  
+                                  if (!blob || blob.size === 0) {
+                                    throw new Error('El documento descargado está vacío');
+                                  }
+                                  
                                   const url = window.URL.createObjectURL(blob);
+                                  console.log('🔍 [DocumentosPage] Object URL created:', url);
                                   
                                   // Setează documentul și URL-ul pentru semnare
                                   console.log('🔍 [DocumentosPage] Setting document to sign:', { 
                                     fileName, 
                                     isDocx, 
                                     isPdf, 
-                                    docId: doc.id 
+                                    docId: doc.id,
+                                    blobSize: blob.size,
+                                    blobType: blob.type,
+                                    objectUrl: url
                                   });
+                                  
                                   setPrlDocumentToSign({ ...doc, isDocx });
                                   setPrlPdfUrl(url);
                                   setShowPRLSigner(true);
+                                  
+                                  console.log('✅ [DocumentosPage] Document signer opened successfully');
                                 } catch (error) {
+                                  console.error('❌ [DocumentosPage] Error loading document for signing:', error);
                                   setNotification({
                                     type: 'error',
                                     title: 'Error',
@@ -3913,25 +4035,27 @@ export default function DocumentosPage() {
 
       {/* Modal de Preview - Modernizado */}
       {showPreviewModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-        <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 animate-in fade-in duration-300 relative">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-4">
+        <div className="bg-white rounded-none sm:rounded-2xl max-w-6xl w-full h-full sm:h-auto sm:max-h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 animate-in fade-in duration-300 relative flex flex-col">
             {/* Header moderno */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl">👁️</span>
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 sm:px-6 py-3 sm:py-4 border-b border-blue-200 relative flex-shrink-0">
+              <div className="flex items-center justify-between gap-2 pr-16 sm:pr-0">
+                <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
+                    <span className="text-white text-lg sm:text-xl">👁️</span>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 break-all leading-tight">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base sm:text-xl font-bold text-gray-900 break-all leading-tight truncate">
                       Vista Previa: {previewDocument?.fileName}
                     </h3>
-                    <p className="text-sm text-blue-600 font-medium">Visualización de documento</p>
+                    <p className="text-xs sm:text-sm text-blue-600 font-medium hidden sm:block">Visualización de documento</p>
                   </div>
                 </div>
+                {/* Buton de închidere în header - ascuns pe mobil, vizibil pe desktop */}
                 <button
                   onClick={handleClosePreview}
-                  className="w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
+                  className="hidden sm:flex w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group flex-shrink-0 touch-manipulation"
+                  aria-label="Cerrar preview"
                 >
                   <span className="text-gray-400 group-hover:text-red-500 text-xl">✕</span>
                 </button>
@@ -4094,10 +4218,17 @@ export default function DocumentosPage() {
                   </div>
                 )}
               </div>
-
-
-
-              {/* Butoanele de jos eliminate - se folosește doar X-ul din dreapta sus */}
+            </div>
+            
+            {/* Buton de închidere fixat jos - VIZIBIL PE MOBIL */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white sm:hidden">
+              <button
+                onClick={handleClosePreview}
+                className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold text-lg rounded-none transition-all duration-200 shadow-lg touch-manipulation"
+                aria-label="Cerrar preview"
+              >
+                Cerrar preview
+              </button>
             </div>
           </div>
         </div>
@@ -4331,46 +4462,55 @@ export default function DocumentosPage() {
                         })}
                       </p>
                     </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const token = localStorage.getItem('auth_token');
-                          const response = await fetch(routes.diplomasDescargar(diploma.id), {
-                            headers: {
-                              Authorization: `Bearer ${token}`,
-                            },
-                          });
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handlePreviewDiploma(diploma)}
+                        className="px-4 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span>👁️</span>
+                        <span className="hidden sm:inline">Preview</span>
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const token = localStorage.getItem('auth_token');
+                            const response = await fetch(routes.diplomasDescargar(diploma.id), {
+                              headers: {
+                                Authorization: `Bearer ${token}`,
+                              },
+                            });
 
-                          if (!response.ok) {
-                            throw new Error('Error al descargar diploma');
+                            if (!response.ok) {
+                              throw new Error('Error al descargar diploma');
+                            }
+
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            const contentDisposition = response.headers.get('Content-Disposition');
+                            const filename = contentDisposition
+                              ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || diploma.nombre_archivo
+                              : diploma.nombre_archivo;
+                            a.download = filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            setNotification({
+                              type: 'error',
+                              title: 'Error',
+                              message: `Error al descargar diploma: ${error.message}`,
+                            });
                           }
-
-                          const blob = await response.blob();
-                          const url = window.URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          const contentDisposition = response.headers.get('Content-Disposition');
-                          const filename = contentDisposition
-                            ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || diploma.nombre_archivo
-                            : diploma.nombre_archivo;
-                          a.download = filename;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          window.URL.revokeObjectURL(url);
-                        } catch (error) {
-                          setNotification({
-                            type: 'error',
-                            title: 'Error',
-                            message: `Error al descargar diploma: ${error.message}`,
-                          });
-                        }
-                      }}
-                      className="px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-                    >
-                      <span>📥</span>
-                      <span>Descargar</span>
-                    </button>
+                        }}
+                        className="px-4 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
+                      >
+                        <span>📥</span>
+                        <span className="hidden sm:inline">Descargar</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -4380,7 +4520,19 @@ export default function DocumentosPage() {
       )}
 
       {/* Modal pentru semnare PRL */}
-      {showPRLSigner && prlDocumentToSign && prlPdfUrl && (
+      {(() => {
+        const shouldShow = showPRLSigner && prlDocumentToSign && prlPdfUrl;
+        console.log('🔍 [DocumentosPage] PRLDocumentSigner render check:', {
+          showPRLSigner,
+          hasPrlDocumentToSign: !!prlDocumentToSign,
+          hasPrlPdfUrl: !!prlPdfUrl,
+          shouldShow,
+          isDocx: prlDocumentToSign?.isDocx,
+          documentoId: prlDocumentToSign?.id,
+          fileName: prlDocumentToSign?.nombre_archivo_original
+        });
+        return shouldShow;
+      })() && (
         <PRLDocumentSigner
           pdfUrl={prlPdfUrl}
           documentoId={prlDocumentToSign.id}

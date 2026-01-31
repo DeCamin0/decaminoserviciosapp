@@ -23,28 +23,62 @@ import { debug as loggerDebug, warn, error as logError, success, demo, info } fr
 import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 
 // Cache global pentru checkConfirmation - previne apeluri duplicate pentru aceeași combinație codigo + data
-const checkConfirmationCache = new Map(); // key: "codigo_data", value: Promise
+const checkConfirmationCache = new Map(); // key: "codigo_data", value: { promise, timestamp, result }
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minute cache pentru a preveni apeluri duplicate
 
 // Funcție helper pentru a obține sau crea un promise pentru checkConfirmation
-const getCheckConfirmationPromise = (callApi, codigo, data) => {
-  const cacheKey = `${codigo}_${data}`;
-  
-  // Dacă există deja un promise în cache pentru această combinație, îl returnăm
-  if (checkConfirmationCache.has(cacheKey)) {
-    return checkConfirmationCache.get(cacheKey);
+// IMPORTANT: Această funcție trebuie să primească isAuthenticated pentru a preveni apelurile după logout
+const getCheckConfirmationPromise = (callApi, codigo, data, isAuthenticated = true) => {
+  // Dacă utilizatorul nu este autentificat, nu facem apelul
+  if (!isAuthenticated) {
+    return Promise.reject(new Error('User not authenticated'));
   }
   
-  // Altfel, creăm un nou promise și îl adăugăm în cache
+  const cacheKey = `${codigo}_${data}`;
+  const now = Date.now();
+  
+  // Verifică dacă există un cache valid (nu mai vechi de 5 minute)
+  const cached = checkConfirmationCache.get(cacheKey);
+  if (cached) {
+    // Dacă cache-ul este încă valid (mai puțin de 5 minute), returnăm rezultatul sau promise-ul
+    if (now - cached.timestamp < CACHE_DURATION) {
+      // Dacă avem deja rezultatul, returnăm un promise rezolvat cu rezultatul
+      if (cached.result) {
+        return Promise.resolve(cached.result);
+      }
+      // Altfel, returnăm promise-ul în curs
+      return cached.promise;
+    } else {
+      // Cache-ul a expirat, ștergem
+      checkConfirmationCache.delete(cacheKey);
+    }
+  }
+  
+  // Creăm un nou promise și îl adăugăm în cache
   const promise = callApi(routes.checkConfirmation(codigo, data))
-    .finally(() => {
-      // Ștergem din cache după ce promise-ul s-a terminat (succes sau eroare)
-      // Folosim un timeout scurt pentru a permite și altor apeluri simultane să folosească același promise
-      setTimeout(() => {
-        checkConfirmationCache.delete(cacheKey);
-      }, 1000); // Ștergem după 1 secundă pentru a permite apelurile simultane
+    .then(result => {
+      // Salvează rezultatul în cache pentru reuse
+      const cached = checkConfirmationCache.get(cacheKey);
+      if (cached) {
+        cached.result = result;
+      }
+      return result;
+    })
+    .catch(error => {
+      // La eroare 401 (Unauthorized), ștergem cache-ul și nu mai încercăm
+      if (error?.response?.status === 401 || error?.status === 401) {
+        // Ștergem toate cache-urile pentru a preveni apelurile duplicate după logout
+        checkConfirmationCache.clear();
+        return Promise.reject(new Error('Unauthorized - user logged out'));
+      }
+      // La alte erori, ștergem doar cache-ul pentru acest codigo+data
+      checkConfirmationCache.delete(cacheKey);
+      throw error;
     });
   
-  checkConfirmationCache.set(cacheKey, promise);
+  // Salvează promise-ul și timestamp-ul în cache
+  checkConfirmationCache.set(cacheKey, { promise, timestamp: now, result: null });
+  
   return promise;
 };
 
@@ -503,7 +537,7 @@ function MobileRegistroItem({ item, authUser, isManager, callApi, setNotificatio
           });
         }
       } else {
-        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data, !!authUser);
         const resultData = checkResult.data || checkResult;
         
         // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
@@ -1689,6 +1723,14 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   }, [ultimoMarcajeGlobal, logs]);
 
   const fetchLogs = useCallback(async (month = selectedMonth) => {
+    // IMPORTANT: Verifică autentificarea ÎNAINTE de a face orice apel API
+    if (!isAuthenticated || !authUser) {
+      loggerDebug('Skipping fetchLogs - user not authenticated');
+      setLoadingLogs(false);
+      setChangingMonth(false);
+      return [];
+    }
+    
     setLoadingLogs(true);
     setChangingMonth(month !== selectedMonth);
     
@@ -1898,33 +1940,53 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         
         // Verifică asincron pentru fiecare fichaje dacă necesită regularizare (doar pentru Salida fără effective_duration)
         // IMPORTANT: Nu așteptăm toate request-urile - actualizăm map-ul incremental pentru a nu bloca UI-ul
-        const itemsToCheck = sortedLogs.filter(item => 
-          item.tipo === 'Salida' && 
-          item.duration && 
-          !(item.effective_duration && item.effective_duration.trim() !== '') && 
-          !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
-        );
-        
-        // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
-        // Folosim un Set pentru a stoca combinațiile unice de codigo + data
-        const uniqueChecks = new Map();
-        const userCodigo = authUser?.CODIGO || authUser?.codigo;
-        for (const item of itemsToCheck) {
-          const codigo = item.codigo || item.CODIGO || userCodigo;
-          const data = item.data;
-          if (codigo && data) {
-            const uniqueKey = `${codigo}_${data}`;
-            if (!uniqueChecks.has(uniqueKey)) {
-              uniqueChecks.set(uniqueKey, { codigo, data });
+        // IMPORTANT: Verifică autentificarea ÎNAINTE de a procesa itemsToCheck
+        if (!isAuthenticated || !authUser) {
+          loggerDebug('Skipping check confirmation - user not authenticated (fetchLogs)');
+        } else {
+          const itemsToCheck = sortedLogs.filter(item => 
+            item.tipo === 'Salida' && 
+            item.duration && 
+            !(item.effective_duration && item.effective_duration.trim() !== '') && 
+            !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
+          );
+          
+          // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
+          // Folosim un Set pentru a stoca combinațiile unice de codigo + data
+          const uniqueChecks = new Map();
+          const userCodigo = authUser?.CODIGO || authUser?.codigo;
+          for (const item of itemsToCheck) {
+            const codigo = item.codigo || item.CODIGO || userCodigo;
+            const data = item.data;
+            if (codigo && data) {
+              const uniqueKey = `${codigo}_${data}`;
+              if (!uniqueChecks.has(uniqueKey)) {
+                uniqueChecks.set(uniqueKey, { codigo, data });
+              }
             }
           }
-        }
-        
-        // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
-        (async () => {
+          
+          // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
+          // IMPORTANT: Batch update pentru a evita re-render-uri multiple
+          // IMPORTANT: Verifică autentificarea înainte de a face apelurile
+          (async () => {
+            // Verifică din nou dacă utilizatorul este încă autentificat
+            if (!isAuthenticated || !authUser) {
+              loggerDebug('Skipping check confirmation - user not authenticated');
+              return;
+            }
+          
+          const updates = {}; // Colectează toate update-urile într-un singur batch
+          
           for (const { codigo, data } of uniqueChecks.values()) {
+            // Verifică din nou autentificarea înainte de fiecare apel
+            if (!isAuthenticated || !authUser) {
+              loggerDebug('Stopping check confirmation - user logged out during processing');
+              break;
+            }
+            
             try {
-              const checkResult = await getCheckConfirmationPromise(callApi, codigo, data);
+              const checkResult = await getCheckConfirmationPromise(callApi, codigo, data, isAuthenticated);
               const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
               
               // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
@@ -1935,24 +1997,35 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               
               for (const item of matchingItems) {
                 const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
-                setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
+                updates[key] = checkResult.success && resultData.needs_confirmation;
               }
-            } catch {
-              // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+            } catch (error) {
+              // Dacă eroarea este 401 (Unauthorized), oprim procesarea
+              if (error?.message?.includes('Unauthorized') || error?.response?.status === 401 || error?.status === 401) {
+                loggerDebug('Stopping check confirmation - unauthorized error');
+                break;
+              }
+              // Dacă verificarea eșuează din alte motive, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
               const matchingItems = itemsToCheck.filter(item => 
                 (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
               );
               for (const item of matchingItems) {
                 const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
-                setNeedsRegularizationMap(prev => ({ ...prev, [key]: true }));
+                updates[key] = true;
               }
             }
             // Delay între fiecare request pentru a evita rate limiting
             await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
           }
-        })().catch(err => {
-          loggerDebug('Error checking needs regularization:', err);
-        });
+          
+            // Aplică toate update-urile într-un singur batch pentru a evita re-render-uri multiple
+            if (Object.keys(updates).length > 0) {
+              setNeedsRegularizationMap(prev => ({ ...prev, ...updates }));
+            }
+          })().catch(err => {
+            loggerDebug('Error checking needs regularization:', err);
+          });
+        }
         
         // IMPORTANT: Resetăm loading-ul imediat după ce datele sunt procesate, nu după verificare
         setLoadingLogs(false);
@@ -1974,7 +2047,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     setLoadingLogs(false);
     setChangingMonth(false);
     return [];
-  }, [authUser, callApi, selectedMonth]);
+  }, [authUser, callApi, selectedMonth, isAuthenticated]);
 
   // Încarcă marcajele la montarea componentei și când se schimbă luna
   useEffect(() => {
@@ -3645,7 +3718,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                         const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
                         const value = `${year}-${month}`;
                         return (
-                          <option key={value} value={value} className="py-2">
+                          <option key={`month-${i}-${value}`} value={value} className="py-2">
                             {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
                           </option>
                         );
@@ -3844,7 +3917,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                         }
                                       } else {
                                         // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
-                                        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+                                        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data, !!authUser);
                                         const resultData = checkResult.data || checkResult;
                                         
                                         // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
@@ -4420,7 +4493,7 @@ function MobileRegistroEmpleadoItem({ item, index, authUser, isManager, callApi,
           });
         }
       } else {
-        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data, !!authUser);
         const resultData = checkResult.data || checkResult;
         
         // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
@@ -4930,6 +5003,14 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
 
 
   const fetchRegistros = useCallback(async (month = selectedMonth, useCurrentDay = false) => {
+    // IMPORTANT: Verifică autentificarea ÎNAINTE de a face orice apel API
+    if (!authUser) {
+      loggerDebug('Skipping fetchRegistros - user not authenticated');
+      setLoadingRegistros(false);
+      setChangingMonth(false);
+      return;
+    }
+    
     setLoadingRegistros(true);
     setChangingMonth(month !== selectedMonth);
     
@@ -5195,32 +5276,52 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           
           // Verifică asincron pentru fiecare fichaje dacă necesită regularizare (doar pentru Salida fără effective_duration)
           // IMPORTANT: Nu așteptăm toate request-urile - actualizăm map-ul incremental pentru a nu bloca UI-ul
-          const itemsToCheck = sortedRegistros.filter(item => 
-            item.tipo === 'Salida' && 
-            item.duration && 
-            !(item.effective_duration && item.effective_duration.trim() !== '') && 
-            !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
-          );
-          
-          // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
-          // Folosim un Set pentru a stoca combinațiile unice de codigo + data
-          const uniqueChecks = new Map();
-          for (const item of itemsToCheck) {
-            const codigo = item.codigo || item.CODIGO;
-            const data = item.data;
-            if (codigo && data) {
-              const uniqueKey = `${codigo}_${data}`;
-              if (!uniqueChecks.has(uniqueKey)) {
-                uniqueChecks.set(uniqueKey, { codigo, data });
+          // IMPORTANT: Verifică autentificarea ÎNAINTE de a procesa itemsToCheck
+          if (!authUser) {
+            loggerDebug('Skipping check confirmation - user not authenticated (fetchRegistros)');
+          } else {
+            const itemsToCheck = sortedRegistros.filter(item => 
+              item.tipo === 'Salida' && 
+              item.duration && 
+              !(item.effective_duration && item.effective_duration.trim() !== '') && 
+              !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
+            );
+            
+            // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
+            // Folosim un Set pentru a stoca combinațiile unice de codigo + data
+            const uniqueChecks = new Map();
+            for (const item of itemsToCheck) {
+              const codigo = item.codigo || item.CODIGO;
+              const data = item.data;
+              if (codigo && data) {
+                const uniqueKey = `${codigo}_${data}`;
+                if (!uniqueChecks.has(uniqueKey)) {
+                  uniqueChecks.set(uniqueKey, { codigo, data });
+                }
               }
             }
-          }
-          
-          // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
-          (async () => {
+            
+            // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
+            // IMPORTANT: Batch update pentru a evita re-render-uri multiple
+            // IMPORTANT: Verifică autentificarea înainte de a face apelurile
+            (async () => {
+              // Verifică din nou dacă utilizatorul este încă autentificat
+              if (!authUser) {
+                loggerDebug('Skipping check confirmation - user not authenticated');
+                return;
+              }
+            
+            const updates = {}; // Colectează toate update-urile într-un singur batch
+            
             for (const { codigo, data } of uniqueChecks.values()) {
+              // Verifică din nou autentificarea înainte de fiecare apel
+              if (!authUser) {
+                loggerDebug('Stopping check confirmation - user logged out during processing');
+                break;
+              }
+              
               try {
-                const checkResult = await getCheckConfirmationPromise(callApi, codigo, data);
+                const checkResult = await getCheckConfirmationPromise(callApi, codigo, data, !!authUser);
                 const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
                 
                 // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
@@ -5231,24 +5332,35 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                 
                 for (const item of matchingItems) {
                   const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
-                  setNeedsRegularizationMap(prev => ({ ...prev, [key]: checkResult.success && resultData.needs_confirmation }));
+                  updates[key] = checkResult.success && resultData.needs_confirmation;
                 }
-              } catch {
-                // Dacă verificarea eșuează, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+              } catch (error) {
+                // Dacă eroarea este 401 (Unauthorized), oprim procesarea
+                if (error?.message?.includes('Unauthorized') || error?.response?.status === 401 || error?.status === 401) {
+                  loggerDebug('Stopping check confirmation - unauthorized error');
+                  break;
+                }
+                // Dacă verificarea eșuează din alte motive, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
                 const matchingItems = itemsToCheck.filter(item => 
                   (item.codigo || item.CODIGO) === codigo && item.data === data
                 );
                 for (const item of matchingItems) {
                   const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
-                  setNeedsRegularizationMap(prev => ({ ...prev, [key]: true }));
+                  updates[key] = true;
                 }
               }
               // Delay între fiecare request pentru a evita rate limiting
               await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
             }
-          })().catch(err => {
-            loggerDebug('Error checking needs regularization:', err);
-          });
+            
+              // Aplică toate update-urile într-un singur batch pentru a evita re-render-uri multiple
+              if (Object.keys(updates).length > 0) {
+                setNeedsRegularizationMap(prev => ({ ...prev, ...updates }));
+              }
+            })().catch(err => {
+              loggerDebug('Error checking needs regularization:', err);
+            });
+          }
         } else {
           warn('No registros found for month', month, '- păstrăm datele existente (nu ștergem)');
           // Nu ștergem datele existente - poate fi o problemă temporară sau o lună fără registros
@@ -6593,7 +6705,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                                           }
                                       } else {
                                         // Angajat sau manager care își regularizează propriul registru: deschide modalul de confirmare
-                                        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data);
+                                        const checkResult = await getCheckConfirmationPromise(callApi, item.codigo || item.empleado || authUser?.CODIGO || authUser?.codigo, item.data, !!authUser);
                                         const resultData = checkResult.data || checkResult;
                                         
                                         // Verifică dacă există program prevăzut (scheduled_minutes > 0) și dacă necesită confirmare
@@ -7402,7 +7514,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                         const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
                         const value = `${year}-${month}`;
                         return (
-                          <option key={value} value={value}>
+                          <option key={`modal-month-${i}-${value}`} value={value}>
                             {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
                           </option>
                         );

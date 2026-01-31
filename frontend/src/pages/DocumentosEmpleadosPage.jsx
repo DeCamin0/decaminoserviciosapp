@@ -4553,6 +4553,8 @@ export default function DocumentosEmpleadosPage() {
                     </div>
 
                     <input
+                      id="documentos-empleados-search"
+                      name="documentos-empleados-search"
                       type="text"
                       placeholder="Buscar por nombre, email, código o grupo..."
                       value={searchTerm}
@@ -6681,37 +6683,84 @@ export default function DocumentosEmpleadosPage() {
 
       {showPreviewModal && (
 
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-4">
 
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
+          <div className="bg-white rounded-none sm:rounded-2xl max-w-6xl w-full h-full sm:h-auto sm:max-h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 animate-in fade-in duration-300 relative flex flex-col">
 
-            <div className="flex items-center justify-between mb-4">
+            {/* Header moderno */}
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 sm:px-6 py-3 sm:py-4 border-b border-blue-200 relative flex-shrink-0">
 
-                             <h3 className="text-lg font-bold text-gray-900">
+              <div className="flex items-center justify-between gap-2 pr-16 sm:pr-0">
 
-                 👁️ Preview: {previewDocument?.fileName || 'Documento'}
+                <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
 
-                 {previewDocument?.tipo === 'Nómina' && <span className="ml-2 text-sm text-green-600">(Nómina)</span>}
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
 
-               </h3>
+                    <span className="text-white text-lg sm:text-xl">👁️</span>
 
-              <button
+                  </div>
 
-                onClick={handleClosePreview}
+                  <div className="min-w-0 flex-1">
 
-                className="text-gray-400 hover:text-gray-600 text-xl"
+                    <h3 className="text-base sm:text-xl font-bold text-gray-900 break-all leading-tight truncate">
 
-              >
+                      Vista Previa: {previewDocument?.fileName || 'Documento'}
 
-                ✕
+                      {previewDocument?.tipo === 'Nómina' && <span className="ml-2 text-sm text-green-600">(Nómina)</span>}
 
-              </button>
+                    </h3>
+
+                    <p className="text-xs sm:text-sm text-blue-600 font-medium hidden sm:block">Visualización de documento</p>
+
+                  </div>
+
+                </div>
+
+                {/* Buton de închidere în header - ascuns pe mobil, vizibil pe desktop */}
+
+                <button
+
+                  onClick={handleClosePreview}
+
+                  className="hidden sm:flex w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group flex-shrink-0 touch-manipulation"
+
+                  aria-label="Cerrar preview"
+
+                >
+
+                  <span className="text-gray-400 group-hover:text-red-500 text-xl">✕</span>
+
+                </button>
+
+              </div>
 
             </div>
 
 
 
-            <div className="flex-1 overflow-hidden">
+            {previewLoading && (
+
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-50">
+
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+
+                <p className="text-gray-600 text-sm font-medium">Cargando vista previa...</p>
+
+              </div>
+
+            )}
+
+            {previewError && (
+
+              <div className="px-4 py-3 bg-red-50 border-b border-red-200 text-red-600 text-sm font-semibold">
+
+                {previewError}
+
+              </div>
+
+            )}
+
+            <div className="p-4 flex-1 overflow-y-auto min-h-0">
 
               {previewLoading ? (
 
@@ -6736,18 +6785,6 @@ export default function DocumentosEmpleadosPage() {
                   </p>
 
                   <p className="text-gray-600 mb-4">{previewError}</p>
-
-                  <button
-
-                    onClick={handleClosePreview}
-
-                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-
-                  >
-
-                    Cerrar
-
-                  </button>
 
                 </div>
 
@@ -6945,18 +6982,26 @@ export default function DocumentosEmpleadosPage() {
 
                   </div>
 
-
-
-                  {/* Butoanele de jos eliminate - se folosește doar X-ul din dreapta sus */}
-
-
-
-
-
                 </div>
 
               )}
 
+            </div>
+            
+            {/* Buton de închidere fixat jos - VIZIBIL PE MOBIL */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white sm:hidden" style={{ zIndex: 10001, marginBottom: '64px' }}>
+              <button
+                onClick={handleClosePreview}
+                className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold text-lg rounded-none transition-all duration-200 shadow-lg touch-manipulation"
+                aria-label="Cerrar preview"
+                style={{ 
+                  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+                  position: 'relative',
+                  zIndex: 10001
+                }}
+              >
+                Cerrar preview
+              </button>
             </div>
 
           </div>

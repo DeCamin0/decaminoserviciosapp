@@ -573,7 +573,7 @@ const EmployeeDetailDrawer: React.FC<EmployeeDetailDrawerProps> = ({
     } catch {
       return detalle.mes;
     }
-  }, [detalle.mes, isAnual]);
+  }, [detalle, isAnual]); // ✅ Corectat: folosim detalle (obiectul complet) pentru a se potrivi cu inferența React Compiler
 
   // Reset tab când se deschide drawer-ul
   React.useEffect(() => {

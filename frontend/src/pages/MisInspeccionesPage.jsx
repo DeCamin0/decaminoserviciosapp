@@ -824,16 +824,16 @@ export default function MisInspeccionesPage() {
       
       {/* Modal de Preview pentru PDF */}
       {showPreviewModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2">
-          <div className="bg-white rounded-2xl shadow-2xl w-[95vw] h-[95vh] flex flex-col border-4 border-red-100">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-2">
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl w-full h-full sm:w-[95vw] sm:h-[95vh] flex flex-col border-0 sm:border-4 border-red-100">
             {/* Header modal */}
-            <div className="flex items-center justify-between p-6 border-b-2 border-red-200 bg-gradient-to-r from-red-50 to-white">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b-2 border-red-200 bg-gradient-to-r from-red-50 to-white flex-shrink-0">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
                   <span className="text-red-600 text-xl">🔍</span>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
                     Preview Inspección
                   </h3>
                   <div className="flex items-center gap-2">
@@ -858,7 +858,8 @@ export default function MisInspeccionesPage() {
                     console.log('🧹 Blob URL revocat la închiderea modalului');
                   }
                 }}
-                className="w-10 h-10 bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110"
+                className="hidden sm:flex w-10 h-10 bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700 rounded-full items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110 flex-shrink-0"
+                aria-label="Cerrar preview"
               >
                 ×
               </button>
@@ -890,6 +891,15 @@ export default function MisInspeccionesPage() {
                      <PDFViewerAndroid 
                        pdfUrl={previewData.pdfUrl}
                        className="w-full h-full"
+                       onClose={() => {
+                         setShowPreviewModal(false);
+                         setPreviewData(null);
+                         // Cleanup blob URL dacă există
+                         if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+                           window.URL.revokeObjectURL(previewData.pdfUrl);
+                           console.log('🧹 Blob URL revocat la închiderea modalului');
+                         }
+                       }}
                      />
                    ) : (
                      <iframe
@@ -913,7 +923,7 @@ export default function MisInspeccionesPage() {
             </div>
             
             {/* Footer modal cu butoane */}
-            <div className="flex justify-between items-center p-6 border-t-2 border-red-200 bg-gradient-to-r from-white to-red-50">
+            <div className="hidden sm:flex justify-between items-center p-6 border-t-2 border-red-200 bg-gradient-to-r from-white to-red-50 flex-shrink-0">
               <div className="text-sm text-gray-500">
                 <span className="font-medium">Inspección:</span> {previewData?.id}
               </div>
@@ -942,6 +952,30 @@ export default function MisInspeccionesPage() {
                   </Button>
                 )}
               </div>
+            </div>
+            
+            {/* Buton de închidere fixat jos - VIZIBIL PE MOBIL */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white sm:hidden" style={{ zIndex: 10001, marginBottom: '64px' }}>
+              <button
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setPreviewData(null);
+                  // Cleanup blob URL dacă există
+                  if (previewData?.pdfUrl && typeof previewData.pdfUrl === 'string' && previewData.pdfUrl.startsWith('blob:')) {
+                    window.URL.revokeObjectURL(previewData.pdfUrl);
+                    console.log('🧹 Blob URL revocat la închiderea modalului');
+                  }
+                }}
+                className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold text-lg rounded-none transition-all duration-200 shadow-lg touch-manipulation"
+                aria-label="Cerrar preview"
+                style={{ 
+                  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+                  position: 'relative',
+                  zIndex: 10001
+                }}
+              >
+                Cerrar preview
+              </button>
             </div>
           </div>
         </div>
