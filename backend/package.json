@@ -83,7 +83,7 @@
     "@types/web-push": "^3.6.4",
     "@typescript-eslint/eslint-plugin": "^8.50.1",
     "@typescript-eslint/parser": "^8.50.1",
-    "eslint": "^8.42.0",
+    "eslint": "^9.39.2",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.0",
     "glob": "^11.0.0",
@@ -107,7 +107,11 @@
     "inquirer": "^10.2.2",
     "tar": "^7.5.3",
     "diff": "^8.0.3",
-    "lodash": "^4.17.23"
+    "lodash": "^4.17.23",
+    "fast-xml-parser": "^5.3.4",
+    "@aws-sdk/xml-builder": {
+      "fast-xml-parser": "^5.3.4"
+    }
   },
   "jest": {
     "moduleFileExtensions": [
