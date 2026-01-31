@@ -762,6 +762,9 @@ export const routes = {
   prlDescargarMiDocumento: (documentoId) => import.meta.env.DEV
     ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/descargar`
     : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/descargar`,
+  prlConvertirDocxAHtml: (documentoId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/convertir-docx-html`
+    : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/convertir-docx-html`,
   prlRenunciarRM: (documentoId) => import.meta.env.DEV
     ? `http://localhost:3000/api/prl/mis-documentos/${documentoId}/renunciar-rm`
     : `https://api.decaminoservicios.com/api/prl/mis-documentos/${documentoId}/renunciar-rm`,

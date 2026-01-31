@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import AdmZip from 'adm-zip';
 import * as iconv from 'iconv-lite';
+import * as mammoth from 'mammoth';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
 import { TelegramService } from './telegram.service';
@@ -2493,6 +2494,39 @@ El documento ha sido firmado y guardado correctamente.`;
       this.logger.error(`❌ Error actualizando templates MANUAL_TEST:`, error);
       throw new BadRequestException(
         `Error actualizando templates: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Convertește un buffer DOCX la HTML folosind mammoth
+   */
+  async convertirDocxAHtml(docxBuffer: Buffer): Promise<{ html: string }> {
+    try {
+      this.logger.log(
+        `🔄 Convirtiendo DOCX a HTML, tamaño: ${docxBuffer.length} bytes`,
+      );
+
+      // În Node.js, mammoth acceptă direct Buffer
+      const result = await mammoth.convertToHtml({ buffer: docxBuffer });
+
+      if (!result || !result.value) {
+        throw new BadRequestException(
+          'La conversión de DOCX no devolvió resultados válidos',
+        );
+      }
+
+      this.logger.log(
+        `✅ DOCX convertido a HTML exitosamente, longitud: ${result.value.length} caracteres`,
+      );
+
+      return {
+        html: result.value,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error convirtiendo DOCX a HTML:`, error);
+      throw new BadRequestException(
+        `Error al convertir DOCX a HTML: ${error.message || error}`,
       );
     }
   }

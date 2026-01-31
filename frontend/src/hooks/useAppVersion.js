@@ -1,12 +1,23 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export const useAppVersion = () => {
   const [needsRefresh, setNeedsRefresh] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const isCheckingRef = useRef(false); // Ref pentru a preveni apelurile multiple simultane
+  const lastCheckRef = useRef(0); // Ref pentru a preveni verificări prea frecvente
 
   const checkForUpdates = useCallback(async () => {
-    if (isChecking || needsRefresh) return;
+    // Previne apelurile multiple simultane
+    if (isCheckingRef.current || needsRefresh) return;
     
+    // Debounce: nu permite verificări mai frecvente decât la 5 secunde
+    const now = Date.now();
+    if (now - lastCheckRef.current < 5000) {
+      return;
+    }
+    lastCheckRef.current = now;
+    
+    isCheckingRef.current = true;
     setIsChecking(true);
     
     // Verifică dacă ServiceWorker-ul este într-o stare validă înainte de a continua
@@ -65,12 +76,15 @@ export const useAppVersion = () => {
               xhr.send();
             });
             
-            if (xhrResponse.status === 200) {
+              if (xhrResponse.status === 200) {
               const html = xhrResponse.responseText;
               const versionMatch = html.match(/data-version="([^"]+)"/);
               const serverVersion = versionMatch ? versionMatch[1] : null;
               
-              console.log('🔍 Chrome Mobile XHR version:', serverVersion);
+              // Log doar în dev sau dacă versiunea s-a schimbat
+              if (import.meta.env.DEV || serverVersion !== localStorage.getItem('app-version')) {
+                console.log('🔍 Chrome Mobile XHR version:', serverVersion);
+              }
               
               if (serverVersion) {
                 const storedVersion = localStorage.getItem('app-version');
@@ -125,9 +139,10 @@ export const useAppVersion = () => {
     } catch (error) {
       console.error('❌ Error checking for updates:', error);
     } finally {
+      isCheckingRef.current = false;
       setIsChecking(false);
     }
-  }, [isChecking, needsRefresh]);
+  }, [needsRefresh]); // Elimină isChecking din dependențe pentru a evita loop-ul
 
   const forceRefresh = async () => {
     console.log('🔄 Forcing refresh to new version...');
@@ -232,25 +247,34 @@ export const useAppVersion = () => {
       console.log('✅ Accepted version restored after refresh:', acceptedVersion);
     }
     
-    checkForUpdates();
-  }, [checkForUpdates]);
+    // Delay mic pentru a evita apeluri imediate la mount
+    const timeoutId = setTimeout(() => {
+      checkForUpdates();
+    }, 1000);
+    
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Rulează doar o dată la mount
 
-  // Verifică pentru actualizări la fiecare 2 minute (ca înainte)
+  // Verifică pentru actualizări la fiecare 5 minute (redus de la 2 minute)
   useEffect(() => {
-    const interval = setInterval(checkForUpdates, 120000); // 2 minute
+    const interval = setInterval(() => {
+      checkForUpdates();
+    }, 300000); // 5 minute (redus frecvența)
     return () => clearInterval(interval);
-  }, [checkForUpdates]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Nu depinde de checkForUpdates pentru a evita loop-ul
 
-  // Verifică pentru actualizări când utilizatorul revine pe tab (cu debounce)
+  // Verifică pentru actualizări când utilizatorul revine pe tab (cu debounce mai agresiv)
   useEffect(() => {
     let timeoutId;
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // Debounce pentru a evita verificări multiple rapide
+        // Debounce mai agresiv: 10 secunde delay
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => {
           checkForUpdates();
-        }, 2000); // 2 secunde delay
+        }, 10000); // 10 secunde delay (mărit de la 2)
       }
     };
 
@@ -259,7 +283,8 @@ export const useAppVersion = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearTimeout(timeoutId);
     };
-  }, [checkForUpdates]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Nu depinde de checkForUpdates pentru a evita loop-ul
 
   return {
     needsRefresh,

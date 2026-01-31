@@ -898,4 +898,77 @@ export class PrlDocumentsController {
       throw error;
     }
   }
+
+  /**
+   * Endpoint pentru conversia DOCX → HTML (pentru preview)
+   */
+  @Get('mis-documentos/:documentoId/convertir-docx-html')
+  @UseGuards(JwtAuthGuard)
+  async convertirDocxAHtml(
+    @Param('documentoId') documentoId: string,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      if (!empleadoId) {
+        throw new BadRequestException('No se pudo identificar al empleado');
+      }
+
+      this.logger.log(
+        `🔄 Convirtiendo DOCX a HTML para documento ${documentoIdNum}, empleado ${empleadoId}`,
+      );
+
+      // Descarcă documentul din DB
+      const documento =
+        await this.prlDocumentsService.descargarDocumentoEmpleado(
+          documentoIdNum,
+          empleadoId,
+        );
+
+      if (!documento || !documento.archivo) {
+        throw new NotFoundException('Documento no encontrado');
+      }
+
+      // Verifică că este DOCX
+      const nombreArchivo = documento.nombre_archivo || '';
+      const esDocx =
+        nombreArchivo.toLowerCase().endsWith('.docx') ||
+        nombreArchivo.toLowerCase().endsWith('.doc');
+
+      if (!esDocx) {
+        throw new BadRequestException(
+          'Este endpoint solo funciona para documentos DOCX',
+        );
+      }
+
+      // Convertește DOCX la HTML
+      const resultado = await this.prlDocumentsService.convertirDocxAHtml(
+        documento.archivo,
+      );
+
+      return {
+        success: true,
+        html: resultado.html,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error convirtiendo DOCX a HTML ${documentoId}:`,
+        error,
+      );
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al convertir DOCX a HTML: ${error.message}`,
+      );
+    }
+  }
 }

@@ -63,7 +63,15 @@ if (typeof window !== 'undefined') {
        (msg.includes('reading \'get\'') || msg.includes('reading \'CJ\'') ||
         stack.includes('reading \'get\'') || stack.includes('reading \'CJ\'')));
     
-    if (isGoogleMapsError) {
+    // Suprimă erorile Bluebird promise (_isBound, _receiverAt)
+    const isBluebirdError = 
+      stack.includes('promise.js') && 
+      (stack.includes('_isBound') || stack.includes('_receiverAt') || stack.includes('_migrateCallback'));
+    
+    if (isGoogleMapsError || isBluebirdError) {
+      if (isBluebirdError) {
+        console.warn('⚠️ Suppressed Bluebird promise error (likely from mammoth or other library)');
+      }
       event.preventDefault();
       event.stopPropagation();
       return false;
@@ -103,7 +111,7 @@ import './index.css'
 import './i18n' // Side-effect import pentru inițializare
 import { handleBrowserExtensionErrors } from './utils/errorHandler'
 import { isDemoMode } from './utils/demo'
-import './registerSW'
+// import './registerSW' // ❌ ELIMINAT: usePWAUpdate din componente gestionează deja SW registration
 // Import consoleOverride BEFORE setting up error handlers
 import './utils/consoleOverride' // Dezactivează console.log-urile în production
 import { installRegulatedFetch } from './utils/regulatedFetch'

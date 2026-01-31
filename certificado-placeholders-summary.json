@@ -1,0 +1,12 @@
+{
+  "total": 5,
+  "unique": 5,
+  "placeholders": {
+    "TRABAJADOR": 1,
+    "DNI": 1,
+    "EMPRESA": 1,
+    "CIF": 1,
+    "FECHA": 1
+  },
+  "allFound": true
+}

@@ -4439,26 +4439,19 @@ inspecciones_score AS (
   SELECT 
     CAST(de.CODIGO AS CHAR) AS empleadoId,
     CASE 
-      -- Pentru supervizori: sistem progresiv de puncte bazat pe inspecții pe zi lucrătoare
-      -- Target: 2 inspecții/zi lucrătoare, dar acordă puncte parțiale pentru performanță sub target
+      -- Pentru supervizori: calcul procentual bazat pe target (2 inspecții/zi lucrătoare)
+      -- Formula: (num_inspecciones / (dias_laborables * 2.0)) * 4.0
+      -- Recompensă proporțională cu performanța față de target
       WHEN BINARY UPPER(TRIM(de.GRUPO)) = BINARY 'SUPERVISOR' THEN
         CASE 
           -- Dacă nu are zile lucrătoare în lună (ex: toată luna în vacanță), primește 4 puncte
           WHEN COALESCE(dlm.dias_laborables, 0) = 0 THEN 4
-          -- Sub 0.5 inspecții/zi → 0 puncte
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 0.5) THEN 0
-          -- 0.5-1 inspecții/zi → 1 punct
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 1) THEN 1
-          -- 1-1.5 inspecții/zi → 1.5 puncte
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 1.5) THEN 1.5
-          -- 1.5-2 inspecții/zi → 2 puncte (aproape de target)
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 2) THEN 2
-          -- 2-2.9 inspecții/zi → 2 puncte (target atins)
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 3) THEN 2
-          -- 3-3.9 inspecții/zi → 3 puncte
-          WHEN COALESCE(icm.num_inspecciones, 0) < (dlm.dias_laborables * 4) THEN 3
-          -- 4+ inspecții/zi → 4 puncte (maxim)
-          ELSE 4
+          -- Calcul procentual: (inspecții efective / target) * 4 puncte maxime
+          -- Target = 2 inspecții/zi lucrătoare
+          ELSE
+            LEAST(4, 
+              (COALESCE(icm.num_inspecciones, 0) / (dlm.dias_laborables * 2.0)) * 4.0
+            )
         END
       -- Pentru angajați normali: dacă nu are inspecții, primește 4 puncte
       WHEN NOT EXISTS (
@@ -4602,14 +4595,16 @@ scoring AS (
           0
         ELSE 0
       END - 
-      (COALESCE(cp.fichajes_sin_direccion, 0) * 2) -
-      (COALESCE(cp.regularizaciones_confirmed, 0) * 1.5)
+      (COALESCE(cp.fichajes_sin_direccion, 0) * 2)
+      -- ELIMINAT: - (COALESCE(cp.regularizaciones_confirmed, 0) * 1.5)
+      -- Regularizările confirmate sunt deja incluse în horas_pontate, deci nu penalizăm
     ) AS score_indeplinire,
     GREATEST(0, 100 - 
       (GREATEST(0, cp.fichajes_incompleto - (cp.regularizaciones_confirmed * 0.5)) * 5) - 
       (cp.regularizaciones_pendiente * 5) -
-      (COALESCE(cp.fichajes_sin_direccion, 0) * 3) -
-      (COALESCE(cp.regularizaciones_confirmed, 0) * 2)
+      (COALESCE(cp.fichajes_sin_direccion, 0) * 3)
+      -- ELIMINAT: - (COALESCE(cp.regularizaciones_confirmed, 0) * 2)
+      -- Regularizările confirmate sunt deja incluse în horas_pontate, deci nu penalizăm
     ) AS score_calitate,
     CASE 
       WHEN eo.has_orar = 1 AND p.zile_cu_orar > 0 THEN

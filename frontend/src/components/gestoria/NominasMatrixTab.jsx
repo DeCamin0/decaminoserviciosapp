@@ -846,6 +846,8 @@ export default function NominasMatrixTab() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">🔍 Buscar</label>
           <input
+            id="nominas-matrix-search"
+            name="nominas-matrix-search"
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -856,6 +858,8 @@ export default function NominasMatrixTab() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">🏢 Filtrar por Centro</label>
           <input
+            id="nominas-matrix-centro-filter"
+            name="nominas-matrix-centro-filter"
             type="text"
             value={centroFilter}
             onChange={(e) => setCentroFilter(e.target.value)}

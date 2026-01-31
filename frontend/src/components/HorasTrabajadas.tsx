@@ -2127,6 +2127,8 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
             </svg>
           </div>
           <input
+            id="horas-trabajadas-search"
+            name="horas-trabajadas-search"
             type="text"
             placeholder={isMobile ? "Buscar..." : "Buscar por nombre, código, estado..."}
             value={searchTerm}

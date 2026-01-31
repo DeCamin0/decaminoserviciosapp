@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
-import mammoth from 'mammoth';
 import SignaturePadComponent from '../shared/components/SignaturePad';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
@@ -40,6 +39,7 @@ const dialogStyles = `
     background: #fff;
     border-top: 1px solid #eee;
     padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
     display: flex;
     gap: 8px;
     z-index: 1001;
@@ -47,31 +47,97 @@ const dialogStyles = `
   }
   
   @media (max-width: 768px) {
+    /* Override pentru Modal pe mobil - asigură fullscreen */
+    /* Target Modal container direct */
+    [class*="fixed"][class*="inset-0"] > div[class*="bg-white"] {
+      max-height: 100vh !important;
+      height: 100vh !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      border-radius: 0 !important;
+      max-width: 100vw !important;
+      width: 100vw !important;
+      margin: 0 !important;
+    }
+    
+    /* Target Modal content wrapper - div cu overflow-y-auto */
+    [class*="fixed"][class*="inset-0"] > div[class*="bg-white"] > div[class*="overflow-y-auto"] {
+      flex: 1 !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+      padding: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+    
     .prl-signer-dialog {
-      inset: 0;
-      border-radius: 0;
-      max-height: 100vh;
+      position: fixed !important;
+      inset: 0 !important;
+      border-radius: 0 !important;
+      max-height: 100vh !important;
+      max-width: 100vw !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      display: flex !important;
+      flex-direction: column !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
 
     .prl-signer-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
       padding: 12px;
-      padding-bottom: 220px; /* Space pentru footer fix */
+      padding-bottom: 320px !important; /* Space pentru footer + butoane semnare - mărit pentru siguranță */
+      -webkit-overflow-scrolling: touch;
+      min-height: 0; /* Permite flex să funcționeze */
+      box-sizing: border-box;
     }
 
     .prl-signer-footer {
-      padding: 16px 12px;
+      position: fixed !important;
+      bottom: 64px !important; /* Peste navbar (care are h-16 = 64px) */
+      left: 0 !important;
+      right: 0 !important;
+      padding: 16px 12px !important;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
       gap: 12px;
       flex-direction: column;
+      flex-shrink: 0;
+      z-index: 10003 !important; /* Peste Modal (z-9999) și navbar (z-50) */
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.2) !important;
+      background: #fff !important;
+      border-top: 1px solid #eee !important;
+      display: flex !important;
     }
     
     .prl-signer-footer button {
-      width: 100%;
-      padding: 16px 20px !important;
+      width: 100% !important;
+      padding: 18px 20px !important;
       font-size: 16px !important;
       font-weight: 600 !important;
       border-radius: 12px !important;
-      min-height: 48px;
+      min-height: 52px !important;
       touch-action: manipulation; /* Previne double-tap zoom */
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Asigură că butonul "Guardar" este vizibil și accesibil */
+    .prl-signer-footer button:last-child {
+      background: #dc2626 !important; /* red-600 */
+      color: white !important;
+    }
+    
+    .prl-signer-footer button:last-child:hover {
+      background: #b91c1c !important; /* red-700 */
+    }
+    
+    .prl-signer-footer button:last-child:disabled {
+      background: #fca5a5 !important; /* red-300 */
+      opacity: 0.6 !important;
     }
 
     /* Canvas PDF - optimizat pentru mobile */
@@ -85,6 +151,60 @@ const dialogStyles = `
       min-height: 44px;
       min-width: 44px;
       touch-action: manipulation;
+    }
+
+    /* Preview DOCX container - responsive pe mobil */
+    .docx-preview-container {
+      max-height: 35vh !important;
+    }
+    
+    /* Preview DOCX - responsive pe mobil */
+    .docx-preview {
+      max-height: calc(35vh - 60px) !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      -webkit-overflow-scrolling: touch;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      font-size: 10pt !important;
+    }
+    
+    .docx-preview * {
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    
+    .docx-preview img {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+    
+    .docx-preview table {
+      width: 100% !important;
+      max-width: 100% !important;
+      display: block !important;
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Butoane semnare - responsive pe mobil */
+    .prl-signer-body button {
+      min-height: 44px !important;
+      min-width: 44px !important;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      font-size: 14px !important;
+      padding: 12px 16px !important;
+    }
+    
+    /* Butoane "Añadir Firma" și "Limpiar Firma" - full width pe mobil */
+    .signature-buttons-container {
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+    
+    .signature-buttons-container button {
+      width: 100% !important;
     }
 
     /* SignaturePad - mai mic pe mobile */
@@ -102,6 +222,16 @@ const dialogStyles = `
 
 export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileName, onClose, onSuccess, isDocx = false }) {
   useAuth(); // Keep for potential future use
+  
+  // Log la inițializare pentru debugging
+  console.log('🔍 [PRLDocumentSigner] Component initialized:', {
+    isDocx,
+    hasPdfUrl: !!pdfUrl,
+    documentoId,
+    originalFileName,
+    pdfUrlType: pdfUrl ? typeof pdfUrl : 'null'
+  });
+  
   const [pdfDocument, setPdfDocument] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -126,7 +256,11 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
     if (!sig || !sig.dataUrl) return;
     
     const img = new Image();
+    let isLoaded = false;
+    
     img.onload = () => {
+      if (isLoaded) return; // Previne desenarea dublă
+      isLoaded = true;
       try {
         context.drawImage(
           img,
@@ -142,7 +276,18 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
     img.onerror = () => {
       console.error('Error loading signature image');
     };
-    img.src = sig.dataUrl;
+    
+    // Pe mobile, forțează încărcarea imediată
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      img.crossOrigin = 'anonymous';
+    }
+    
+    // Dacă imaginea este deja în cache, onload nu se declanșează - verificăm manual
+    if (img.complete && img.naturalWidth > 0) {
+      img.onload();
+    } else {
+      img.src = sig.dataUrl;
+    }
   }, []);
   
   // Convertește coordonatele ecran → PDF
@@ -155,19 +300,50 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
     // Mouse position tracking removed - not used
   }, [isPlacingSignature]);
 
-  // Încarcă DOCX-ul și convertește la HTML pentru preview
+  // Încarcă DOCX-ul și convertește la HTML pentru preview (pe backend)
   useEffect(() => {
-    if (!isDocx || !pdfUrl) return;
+    console.log('🔍 [PRLDocumentSigner] DOCX useEffect triggered:', { isDocx, documentoId });
+    
+    if (!isDocx || !documentoId) {
+      console.log('🔍 [PRLDocumentSigner] Skipping DOCX load:', { isDocx, hasDocumentoId: !!documentoId });
+      return;
+    }
 
     const loadDocx = async () => {
       try {
+        console.log('🔍 [PRLDocumentSigner] Starting DOCX conversion via backend for documento:', documentoId);
         setDocxLoading(true);
-        const response = await fetch(pdfUrl);
-        const arrayBuffer = await response.arrayBuffer();
+        setLoading(true);
+        setError(null);
         
-        // Convertește DOCX la HTML folosind mammoth
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        let html = result.value;
+        // Apelăm backend-ul pentru conversie DOCX → HTML
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Content-Type': 'application/json',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(routes.prlConvertirDocxAHtml(documentoId), {
+          method: 'GET',
+          headers: headers,
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: 'Error al convertir DOCX' }));
+          throw new Error(errorData.message || `HTTP error! status: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.success || !data.html) {
+          throw new Error('La conversión de DOCX no devolvió resultados válidos');
+        }
+        
+        let html = data.html;
+        
+        console.log('🔍 [PRLDocumentSigner] DOCX converted to HTML via backend, length:', html.length);
         
         // Evidențiază placeholder-ul {{FIRMA}} pentru a-l face vizibil
         html = html.replace(
@@ -182,16 +358,18 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
         setDocxHtml(html);
         setDocxLoading(false);
         setLoading(false);
+        console.log('✅ [PRLDocumentSigner] DOCX loaded successfully via backend');
       } catch (err) {
-        console.error('Error loading DOCX:', err);
-        setError(`Error al cargar documento DOCX: ${err.message}`);
+        console.error('❌ [PRLDocumentSigner] Error loading DOCX via backend:', err);
+        const errorMessage = err.message || 'Error desconocido al cargar documento DOCX';
+        setError(`Error al cargar documento DOCX: ${errorMessage}`);
         setDocxLoading(false);
         setLoading(false);
       }
     };
 
     loadDocx();
-  }, [isDocx, pdfUrl]);
+  }, [isDocx, documentoId]);
 
   // Încarcă PDF-ul (doar pentru PDF, nu pentru DOCX)
   useEffect(() => {
@@ -370,12 +548,21 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
         width: sigWidth,
         height: sigHeight
       });
-      setIsPlacingSignature(true); // Activează modul de poziționare
+      
+      // Pe mobile, plasează automat semnătura la poziția default (fără să aștepte click)
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+      if (isMobile) {
+        // Pe mobile, nu activăm modul de poziționare - semnătura apare direct la poziția default
+        // useEffect-ul va re-rendera canvas-ul automat când se schimbă signature/signaturePosition
+        setIsPlacingSignature(false);
+      } else {
+        setIsPlacingSignature(true); // Pe desktop, activează modul de poziționare
+      }
     } else {
       setSignature({
         dataUrl: signatureDataUrl
       });
-      setIsPlacingSignature(true);
+      setIsPlacingSignature(false);
     }
   }, [signatureDataUrl, isDocx, docxHtml]);
 
@@ -646,12 +833,14 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
   // Log pentru debugging
   console.log('🔍 [PRLDocumentSigner] isDocx:', isDocx, 'saveSignedDocument type:', isDocx ? 'DOCX' : 'PDF');
 
-  if (loading) {
+  if (loading || docxLoading) {
     return (
       <Modal isOpen={true} onClose={onClose} title="Firmar Documento PRL">
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-500 border-t-transparent mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando PDF...</p>
+          <p className="text-gray-600">
+            {isDocx ? 'Cargando documento DOCX...' : 'Cargando PDF...'}
+          </p>
         </div>
       </Modal>
     );
@@ -701,8 +890,8 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
               )}
               
               {docxHtml && !docxLoading && (
-                <div className="mb-4 border rounded-lg overflow-auto bg-white" style={{ maxHeight: '50vh' }}>
-                  <div className="p-4 bg-gray-50 border-b">
+                <div className="mb-4 border rounded-lg overflow-hidden bg-white docx-preview-container">
+                  <div className="p-3 bg-gray-50 border-b sticky top-0 z-10">
                     <p className="text-sm font-semibold text-gray-700">📄 Preview del Documento</p>
                     {signatureAddedToPreview && (
                       <p className="text-xs text-green-600 mt-1">
@@ -711,7 +900,7 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
                     )}
                   </div>
                   <div 
-                    className="p-6 docx-preview"
+                    className="p-4 docx-preview"
                     dangerouslySetInnerHTML={{ __html: docxHtmlWithSignature || docxHtml }}
                     style={{
                       fontFamily: 'Calibri, Arial, sans-serif',
@@ -771,6 +960,12 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
                 ref={canvasRef}
                 onClick={handleCanvasClick}
                 onMouseMove={handleCanvasMouseMove}
+                onTouchStart={(e) => {
+                  // Pe mobile, permite touch pentru poziționare
+                  if (isPlacingSignature && signature) {
+                    e.preventDefault();
+                  }
+                }}
                 onTouchEnd={(e) => {
                   // Permite touch events pentru click pe canvas (doar când plasezi semnătura)
                   if (isPlacingSignature && signature) {
@@ -793,7 +988,7 @@ export default function PRLDocumentSigner({ pdfUrl, documentoId, originalFileNam
               width={typeof window !== 'undefined' && window.innerWidth < 768 ? 300 : 400}
               height={typeof window !== 'undefined' && window.innerWidth < 768 ? 150 : 200}
             />
-            <div className="flex gap-2 mt-2">
+            <div className="flex gap-2 mt-2 signature-buttons-container">
               <button
                 onClick={handleAddSignature}
                 disabled={!signatureDataUrl}

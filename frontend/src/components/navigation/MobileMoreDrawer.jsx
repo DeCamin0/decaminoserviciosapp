@@ -191,9 +191,10 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     const empleado = user || {};
     const grupo = empleado?.GRUPO || user?.GRUPO;
     
-    // 🔍 LOG: Datele din DatosEmpleados
-    console.log('🔍 [MobileMoreDrawer] ===== PEDIDOS ACCESS DEBUG =====');
-    console.log('📋 [MobileMoreDrawer] User object (DatosEmpleados):', {
+    // 🔍 LOG: Datele din DatosEmpleados (doar în dev)
+    if (import.meta.env.DEV) {
+      console.log('🔍 [MobileMoreDrawer] ===== PEDIDOS ACCESS DEBUG =====');
+      console.log('📋 [MobileMoreDrawer] User object (DatosEmpleados):', {
       CODIGO: empleado?.CODIGO,
       GRUPO: empleado?.GRUPO || grupo,
       NOMBRE: empleado?.['NOMBRE / APELLIDOS'] || empleado?.NOMBRE,
@@ -215,16 +216,17 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
         acc[key] = empleado[key];
         return acc;
       }, {}),
-    });
-    
-    // 🔍 LOG: Datele din Permisos
-    console.log('🔐 [MobileMoreDrawer] Permissions object (Permisos table):', {
+      });
+      
+      // 🔍 LOG: Datele din Permisos
+      console.log('🔐 [MobileMoreDrawer] Permissions object (Permisos table):', {
       userPermissions,
       loadingPermissions,
       userGrupo,
       hasBackendPermissions: userPermissions && Object.keys(userPermissions).length > 0,
       permissionsKeys: userPermissions ? Object.keys(userPermissions) : [],
-    });
+      });
+    }
     
     const checkField = (value) => {
       if (!value) return false;
@@ -264,10 +266,11 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     // Acces complet dacă are 'pedidos' în permisiuni SAU 'dashboard' + DerechoPedidos individual
     const hasBackendPedidosPermission = hasPedidosPermission || hasIndividualPedidosAccess;
     
-    // 🔍 LOG: Rezultatele verificărilor
+    // 🔍 LOG: Rezultatele verificărilor (doar în dev)
     const grupoKey = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) : null;
     const grupoPermissions = grupoKey && userPermissions ? userPermissions[grupoKey] : null;
-    console.log('🔍 [MobileMoreDrawer] Permission checks:', {
+    if (import.meta.env.DEV) {
+      console.log('🔍 [MobileMoreDrawer] Permission checks:', {
       hasSpecialAccess,
       isManager,
       isAdmin,
@@ -292,7 +295,8 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
       hasFieldPermission,
       hasGenericPermission,
       backendSystemExists: userPermissions !== null || loadingPermissions === true,
-    });
+      });
+    }
 
     // ✅ CORECTAT STRICT: Pentru angajații normali, verificăm DOAR permisiunile din backend
     // Managerii/Adminii/Developerii au acces complet (hasSpecialAccess)
@@ -305,19 +309,21 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
       (!backendSystemExists && hasFieldPermission) || // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
       (!backendSystemExists && hasGenericPermission); // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
     
-    // 🔍 LOG: Rezultatul final
-    console.log('✅ [MobileMoreDrawer] Final decision:', {
-      canAccess,
-      reason: hasSpecialAccess ? 'hasSpecialAccess (Manager/Admin/Developer)' :
-               hasPedidosPermission ? 'hasPedidosPermission (permisiune pedidos pe grup)' :
-               hasIndividualPedidosAccess ? 'hasIndividualPedidosAccess (dashboard + DerechoPedidos individual)' :
-               (!backendSystemExists && hasFieldPermission) ? 'Fallback: hasFieldPermission (câmpuri în DatosEmpleados)' :
-               (!backendSystemExists && hasGenericPermission) ? 'Fallback: hasGenericPermission (câmpuri generice)' :
-               'NO ACCESS',
-      href: (hasSpecialAccess || hasPedidosPermission) ? '/pedidos' : '/empleado-pedidos',
-      role: (hasSpecialAccess || hasPedidosPermission) ? 'manager' : undefined,
-    });
-    console.log('🔍 [MobileMoreDrawer] ===== END PEDIDOS ACCESS DEBUG =====\n');
+    // 🔍 LOG: Rezultatul final (doar în dev)
+    if (import.meta.env.DEV) {
+      console.log('✅ [MobileMoreDrawer] Final decision:', {
+        canAccess,
+        reason: hasSpecialAccess ? 'hasSpecialAccess (Manager/Admin/Developer)' :
+                 hasPedidosPermission ? 'hasPedidosPermission (permisiune pedidos pe grup)' :
+                 hasIndividualPedidosAccess ? 'hasIndividualPedidosAccess (dashboard + DerechoPedidos individual)' :
+                 (!backendSystemExists && hasFieldPermission) ? 'Fallback: hasFieldPermission (câmpuri în DatosEmpleados)' :
+                 (!backendSystemExists && hasGenericPermission) ? 'Fallback: hasGenericPermission (câmpuri generice)' :
+                 'NO ACCESS',
+        href: (hasSpecialAccess || hasPedidosPermission) ? '/pedidos' : '/empleado-pedidos',
+        role: (hasSpecialAccess || hasPedidosPermission) ? 'manager' : undefined,
+      });
+      console.log('🔍 [MobileMoreDrawer] ===== END PEDIDOS ACCESS DEBUG =====\n');
+    }
     
     return {
       canAccess,

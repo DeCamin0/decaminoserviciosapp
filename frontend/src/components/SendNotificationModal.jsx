@@ -263,6 +263,8 @@ const SendNotificationModal = ({ isOpen, onClose, currentUser }) => {
             <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
+                id="send-notification-search"
+                name="send-notification-search"
                 type="text"
                 placeholder="Buscar por nombre, email o código..."
                 value={searchTerm}

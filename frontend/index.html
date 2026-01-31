@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es" data-version="2026.01.30.1321">
+<html lang="es" data-version="2026.01.30.2056">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
@@ -74,7 +74,16 @@
       window.addEventListener('unhandledrejection', function(event) {
         const msg = event.reason?.message || event.reason?.toString() || '';
         const stack = event.reason?.stack || '';
-        if (suppressError(msg, stack)) {
+        
+        // Suprimă erorile Bluebird promise (_isBound, _receiverAt)
+        const isBluebirdError = 
+          stack.includes('promise.js') && 
+          (stack.includes('_isBound') || stack.includes('_receiverAt') || stack.includes('_migrateCallback'));
+        
+        if (suppressError(msg, stack) || isBluebirdError) {
+          if (isBluebirdError) {
+            console.warn('⚠️ Suppressed Bluebird promise error (likely from mammoth or other library)');
+          }
           event.preventDefault();
           return false;
         }

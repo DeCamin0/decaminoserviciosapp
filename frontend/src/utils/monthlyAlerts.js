@@ -252,6 +252,9 @@ export const clearAllMonthlyAlertsNotified = () => {
   });
 };
 
+// Cache pentru a preveni fetch-uri duplicate simultane
+const pendingFetches = new Map();
+
 export const fetchMonthlyAlerts = async ({
   empleadoId,
   empleadoNombre,
@@ -261,20 +264,32 @@ export const fetchMonthlyAlerts = async ({
     return { data: null, summary: { total: 0, positivos: 0, negativos: 0 } };
   }
 
-  try {
-    // Folosim direct endpoint-ul resumen care returnează datele procesate cu delta calculat
-    const { routes } = await import('./routes');
-    const token = localStorage.getItem('auth_token');
-    const url = `${routes.getMonthlyAlertsResumen}?tipo=mensual&lunaselectata=${month}&t=${Date.now()}`;
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+  // Previne fetch-uri duplicate simultane pentru aceeași lună
+  const cacheKey = `${empleadoId}-${month}`;
+  if (pendingFetches.has(cacheKey)) {
+    if (import.meta.env.DEV) {
+      console.log('⏭️ [MonthlyAlerts] Fetch already in progress, reusing promise:', cacheKey);
     }
-    
-    console.log('🔍 [MonthlyAlerts] Fetching resumen from new backend:', url);
+    return pendingFetches.get(cacheKey);
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      // Folosim direct endpoint-ul resumen care returnează datele procesate cu delta calculat
+      const { routes } = await import('./routes');
+      const token = localStorage.getItem('auth_token');
+      const url = `${routes.getMonthlyAlertsResumen}?tipo=mensual&lunaselectata=${month}&t=${Date.now()}`;
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      if (import.meta.env.DEV) {
+        console.log('🔍 [MonthlyAlerts] Fetching resumen from new backend:', url);
+      }
     
     const response = await fetch(url, {
       method: 'GET',
@@ -402,15 +417,24 @@ export const fetchMonthlyAlerts = async ({
     const normalized = normalizeDetalles(detalii);
     const summary = computeMonthlyAlertSummary(detalii);
 
-    console.log('✅ [MonthlyAlerts] Calculated summary:', summary);
+      if (import.meta.env.DEV) {
+        console.log('✅ [MonthlyAlerts] Calculated summary:', summary);
+      }
 
-    storeMonthlyAlerts(month, summary);
+      storeMonthlyAlerts(month, summary);
 
-    return { data: normalized, summary };
-  } catch (error) {
-    console.error('❌ fetchMonthlyAlerts - error verificando alertas mensuales:', error);
-    return { data: null, summary: null };
-  }
+      return { data: normalized, summary };
+    } catch (error) {
+      console.error('❌ fetchMonthlyAlerts - error verificando alertas mensuales:', error);
+      return { data: null, summary: null };
+    } finally {
+      // Șterge cache-ul după ce fetch-ul s-a terminat
+      pendingFetches.delete(cacheKey);
+    }
+  })();
+
+  pendingFetches.set(cacheKey, fetchPromise);
+  return fetchPromise;
 };
 
 
