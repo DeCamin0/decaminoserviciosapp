@@ -1,5 +1,9 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AusenciasService } from './ausencias.service';
+import { EmailService } from './email.service';
+import { TelegramService } from './telegram.service';
+import { EmpleadosService } from './empleados.service';
 
 @Injectable()
 export class HallOfFameService {
@@ -61,7 +65,13 @@ export class HallOfFameService {
     return obj;
   }
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ausenciasService: AusenciasService,
+    private readonly emailService: EmailService,
+    private readonly telegramService: TelegramService,
+    private readonly empleadosService: EmpleadosService,
+  ) {}
 
   /**
    * Calculează și salvează scorul pentru un singur angajat
@@ -2984,6 +2994,360 @@ ORDER BY f.d;
   }
 
   /**
+   * Calculează și salvează scorurile trimestriale pentru toți angajații
+   * @param trimestre Format: "Q1-2026", "Q2-2026", etc.
+   */
+  async calculateTrimestralScores(
+    trimestre: string,
+  ): Promise<{ success: boolean; processed: number }> {
+    if (!trimestre) {
+      throw new BadRequestException('trimestre is required');
+    }
+
+    // Validare format trimestre (Q1-2026, Q2-2026, etc.)
+    const trimestreRegex = /^Q([1-4])-(\d{4})$/;
+    const match = trimestre.match(trimestreRegex);
+    if (!match) {
+      throw new BadRequestException(
+        'trimestre must be in format Q1-2026, Q2-2026, etc.',
+      );
+    }
+
+    const trimestreNum = parseInt(match[1], 10);
+    const ano = parseInt(match[2], 10);
+
+    // Calculează lunile din trimestru
+    const startMonth = (trimestreNum - 1) * 3 + 1; // 1, 4, 7, 10
+    const meses = [
+      `${ano}-${String(startMonth).padStart(2, '0')}`,
+      `${ano}-${String(startMonth + 1).padStart(2, '0')}`,
+      `${ano}-${String(startMonth + 2).padStart(2, '0')}`,
+    ];
+
+    try {
+      this.logger.log(
+        `Calculating Hall of Fame trimestral scores for ${trimestre} (meses: ${meses.join(', ')})...`,
+      );
+
+      // Obține toate scorurile lunare pentru cele 3 luni
+      const scoresMensuales = await this.prisma.hallOfFameMensual.findMany({
+        where: {
+          mes: { in: meses },
+          ranking: { not: null },
+          empleado_codigo: { not: '10000001' }, // Excludem test
+        },
+      });
+
+      if (scoresMensuales.length === 0) {
+        this.logger.warn(
+          `No monthly scores found for trimestre ${trimestre} (meses: ${meses.join(', ')})`,
+        );
+        return { success: true, processed: 0 };
+      }
+
+      // Grupează după empleado_codigo
+      const scoresPorEmpleado = new Map<string, any[]>();
+      for (const score of scoresMensuales) {
+        const codigo = score.empleado_codigo;
+        if (!scoresPorEmpleado.has(codigo)) {
+          scoresPorEmpleado.set(codigo, []);
+        }
+        scoresPorEmpleado.get(codigo)!.push(score);
+      }
+
+      let processed = 0;
+
+      // Calculează media pentru fiecare angajat
+      for (const [codigo, scores] of scoresPorEmpleado.entries()) {
+        // Filtrează doar scorurile care au toate cele 3 luni (sau cel puțin 2)
+        if (scores.length < 2) {
+          this.logger.warn(
+            `Empleado ${codigo} has less than 2 months of scores for ${trimestre}, skipping`,
+          );
+          continue;
+        }
+
+        // Calculează media pentru fiecare tip de scor
+        const calcularMedia = (field: string): number => {
+          const valores = scores
+            .map((s) => {
+              const val = (s as any)[field];
+              return val !== null && val !== undefined ? Number(val) : null;
+            })
+            .filter((v) => v !== null) as number[];
+          if (valores.length === 0) return 0;
+          return valores.reduce((a, b) => a + b, 0) / valores.length;
+        };
+
+        const calcularSuma = (field: string): number => {
+          return scores.reduce((sum, s) => {
+            const val = (s as any)[field];
+            return sum + (val !== null && val !== undefined ? Number(val) : 0);
+          }, 0);
+        };
+
+        const scoreFinal = calcularMedia('score_final');
+        const scoreIndeplinire = calcularMedia('score_indeplinire');
+        const scoreCalitate = calcularMedia('score_calitate');
+        const scorePunctualitate = calcularMedia('score_punctualitate');
+        const scoreUsoApp = calcularMedia('score_uso_app');
+        const scoreResponsabilidadDigital = calcularMedia(
+          'score_responsabilidad_digital',
+        );
+
+        // Pentru sume (nu medii)
+        const horasPontate = calcularSuma('horas_pontate');
+        const targetAjustat = calcularSuma('target_ajustat');
+        const targetInitial = calcularSuma('target_initial');
+        const horasNeutre = calcularSuma('horas_neutre');
+        const diasNeutre = calcularSuma('dias_neutre');
+        const fichajesIncompleto = calcularSuma('fichajes_incompleto');
+        const regularizacionesConfirmed = calcularSuma(
+          'regularizaciones_confirmed',
+        );
+        const regularizacionesPendiente = calcularSuma(
+          'regularizaciones_pendiente',
+        );
+        const zilePunctuale = calcularSuma('zile_punctuale');
+        const zileCuOrar = calcularSuma('zile_cu_orar');
+        const accionesTotales = calcularSuma('acciones_totales');
+        const maxAccionesMes = calcularMedia('max_acciones_mes'); // Media pentru max
+
+        // Verifică dacă are orar (dacă are în cel puțin o lună)
+        const hasOrar = scores.some((s) => s.has_orar === true);
+
+        // Creează breakdown_json cu detalii despre cele 3 luni
+        const breakdownJson = {
+          meses: meses,
+          scores_por_mes: scores.map((s) => ({
+            mes: s.mes,
+            score_final: Number(s.score_final),
+            score_indeplinire: Number(s.score_indeplinire),
+            score_calitate: Number(s.score_calitate),
+            score_punctualitate: Number(s.score_punctualitate),
+            score_uso_app: Number(s.score_uso_app),
+            score_responsabilidad_digital: s.score_responsabilidad_digital
+              ? Number(s.score_responsabilidad_digital)
+              : null,
+          })),
+          promedio_score_final: scoreFinal,
+          promedio_score_indeplinire: scoreIndeplinire,
+          promedio_score_calitate: scoreCalitate,
+          promedio_score_punctualitate: scorePunctualitate,
+          promedio_score_uso_app: scoreUsoApp,
+          promedio_score_responsabilidad_digital: scoreResponsabilidadDigital,
+        };
+
+        // Salvează sau actualizează în tabelul trimestrial
+        await this.prisma.hallOfFameTrimestral.upsert({
+          where: {
+            empleado_codigo_trimestre: {
+              empleado_codigo: codigo,
+              trimestre: trimestre,
+            },
+          },
+          update: {
+            ano: ano,
+            trimestre_num: trimestreNum,
+            score_final: scoreFinal,
+            score_indeplinire: scoreIndeplinire,
+            score_calitate: scoreCalitate,
+            score_punctualitate: scorePunctualitate,
+            score_uso_app: scoreUsoApp,
+            score_responsabilidad_digital: scoreResponsabilidadDigital,
+            horas_pontate: horasPontate,
+            target_ajustat: targetAjustat,
+            target_initial: targetInitial,
+            horas_neutre: horasNeutre,
+            dias_neutre: diasNeutre,
+            fichajes_incompleto: fichajesIncompleto,
+            regularizaciones_confirmed: regularizacionesConfirmed,
+            regularizaciones_pendiente: regularizacionesPendiente,
+            zile_punctuale: zilePunctuale,
+            zile_cu_orar: zileCuOrar,
+            has_orar: hasOrar,
+            acciones_totales: accionesTotales,
+            max_acciones_mes: maxAccionesMes,
+            breakdown_json: breakdownJson,
+            ranking: null, // Va fi calculat după ce salvăm toate
+          },
+          create: {
+            empleado_codigo: codigo,
+            trimestre: trimestre,
+            ano: ano,
+            trimestre_num: trimestreNum,
+            score_final: scoreFinal,
+            score_indeplinire: scoreIndeplinire,
+            score_calitate: scoreCalitate,
+            score_punctualitate: scorePunctualitate,
+            score_uso_app: scoreUsoApp,
+            score_responsabilidad_digital: scoreResponsabilidadDigital,
+            horas_pontate: horasPontate,
+            target_ajustat: targetAjustat,
+            target_initial: targetInitial,
+            horas_neutre: horasNeutre,
+            dias_neutre: diasNeutre,
+            fichajes_incompleto: fichajesIncompleto,
+            regularizaciones_confirmed: regularizacionesConfirmed,
+            regularizaciones_pendiente: regularizacionesPendiente,
+            zile_punctuale: zilePunctuale,
+            zile_cu_orar: zileCuOrar,
+            has_orar: hasOrar,
+            acciones_totales: accionesTotales,
+            max_acciones_mes: maxAccionesMes,
+            breakdown_json: breakdownJson,
+            ranking: null, // Va fi calculat după ce salvăm toate
+          },
+        });
+
+        processed++;
+      }
+
+      // Calculează ranking-ul după ce am salvat toate scorurile
+      const allTrimestralScores =
+        await this.prisma.hallOfFameTrimestral.findMany({
+          where: {
+            trimestre: trimestre,
+          },
+          orderBy: [{ score_final: 'desc' }, { score_uso_app: 'desc' }],
+        });
+
+      // Actualizează ranking-ul
+      for (let i = 0; i < allTrimestralScores.length; i++) {
+        await this.prisma.hallOfFameTrimestral.update({
+          where: { id: allTrimestralScores[i].id },
+          data: { ranking: i + 1 },
+        });
+      }
+
+      this.logger.log(
+        `✅ Trimestral scores calculated and saved for ${trimestre}: ${processed} empleados`,
+      );
+
+      return { success: true, processed };
+    } catch (error: any) {
+      this.logger.error(
+        `Error calculating trimestral scores: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error calculating trimestral scores: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Returnează clasamentul trimestrial pentru un trimestru
+   * @param trimestre Format: "Q1-2026", "Q2-2026", etc.
+   */
+  async getRankingTrimestral(
+    trimestre: string,
+    limit?: number,
+  ): Promise<any[]> {
+    if (!trimestre) {
+      throw new BadRequestException('trimestre is required');
+    }
+
+    const trimestreRegex = /^Q([1-4])-(\d{4})$/;
+    if (!trimestreRegex.test(trimestre)) {
+      throw new BadRequestException(
+        'trimestre must be in format Q1-2026, Q2-2026, etc.',
+      );
+    }
+
+    const results = await this.prisma.hallOfFameTrimestral.findMany({
+      where: {
+        trimestre: trimestre,
+        ranking: { not: null },
+        empleado_codigo: { not: '10000001' }, // Excludem test
+      },
+      orderBy: [
+        { ranking: 'asc' },
+        { score_final: 'desc' },
+        { score_uso_app: 'desc' },
+      ],
+      take: limit && limit > 0 ? limit : undefined,
+    });
+
+    // Enrich with employee names
+    const enriched = await Promise.all(
+      results.map(async (row) => {
+        const empleado = await this.prisma.user.findUnique({
+          where: { CODIGO: row.empleado_codigo },
+          select: {
+            CODIGO: true,
+            NOMBRE_APELLIDOS: true,
+            GRUPO: true,
+          },
+        });
+
+        const breakdownJson = (row.breakdown_json as any) || {};
+        const convertedRow = {
+          ...row,
+          empleadoNombre: empleado?.NOMBRE_APELLIDOS || row.empleado_codigo,
+          grupo: empleado?.GRUPO || null,
+          breakdown_json: row.breakdown_json || null,
+          score_final: row.score_final ? Number(row.score_final) : null,
+          score_indeplinire: row.score_indeplinire
+            ? Number(row.score_indeplinire)
+            : null,
+          score_calitate: row.score_calitate
+            ? Number(row.score_calitate)
+            : null,
+          score_punctualitate: row.score_punctualitate
+            ? Number(row.score_punctualitate)
+            : null,
+          score_uso_app: row.score_uso_app ? Number(row.score_uso_app) : null,
+          score_responsabilidad_digital: row.score_responsabilidad_digital
+            ? Number(row.score_responsabilidad_digital)
+            : breakdownJson.promedio_score_responsabilidad_digital
+              ? Number(breakdownJson.promedio_score_responsabilidad_digital)
+              : null,
+          horas_pontate: row.horas_pontate ? Number(row.horas_pontate) : null,
+          target_ajustat: row.target_ajustat
+            ? Number(row.target_ajustat)
+            : null,
+          target_initial: row.target_initial
+            ? Number(row.target_initial)
+            : null,
+          horas_neutre: row.horas_neutre ? Number(row.horas_neutre) : null,
+          acciones_totales: row.acciones_totales
+            ? Number(row.acciones_totales)
+            : null,
+          max_acciones_mes: row.max_acciones_mes
+            ? Number(row.max_acciones_mes)
+            : null,
+        };
+        return convertedRow;
+      }),
+    );
+
+    return this.convertBigIntToNumber(enriched);
+  }
+
+  /**
+   * Returnează ultimul trimestru disponibil (cel mai recent cu date)
+   */
+  async getLatestTrimestre(): Promise<string | null> {
+    try {
+      const latest = await this.prisma.hallOfFameTrimestral.findFirst({
+        orderBy: [{ ano: 'desc' }, { trimestre_num: 'desc' }],
+        select: {
+          trimestre: true,
+        },
+      });
+
+      return latest?.trimestre || null;
+    } catch (error) {
+      this.logger.error(
+        `Error getting latest trimestre: ${error.message}`,
+        error.stack,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Returnează breakdown-ul pentru un angajat specific
    */
   async getEmployeeBreakdown(codigo: string, mes: string): Promise<any | null> {
@@ -4759,6 +5123,338 @@ ORDER BY
         error.stack,
       );
       return null;
+    }
+  }
+
+  /**
+   * Obține lista de premii date (permiso retribuido ca premiu)
+   */
+  async getPremios(): Promise<any[]> {
+    try {
+      // Căutăm în Ausencias toate permiso retribuido care au MOTIVO care conține "Premio - Salón de la Fama"
+      const premios = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT 
+          a.id,
+          a.solicitud_id,
+          a.CODIGO,
+          a.NOMBRE,
+          a.TIPO,
+          a.FECHA,
+          a.HORA,
+          a.MOTIVO,
+          a.DURACION,
+          a.UNIDAD_DURACION,
+          a.created_at,
+          de.\`NOMBRE / APELLIDOS\` as empleado_nombre_completo,
+          de.\`CENTRO TRABAJO\` as centro_trabajo
+        FROM Ausencias a
+        LEFT JOIN DatosEmpleados de ON a.CODIGO = de.CODIGO
+        WHERE a.TIPO = 'Permiso Retribuido'
+          AND a.MOTIVO LIKE '%Premio - Salón de la Fama%'
+        ORDER BY a.created_at DESC
+      `);
+
+      return this.convertBigIntToNumber(premios);
+    } catch (error) {
+      this.logger.error(`Error getting premios: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error getting premios: ${error.message}`);
+    }
+  }
+
+  /**
+   * Creează un premiu (permiso retribuido) pentru un angajat
+   */
+  async createPremio(
+    codigo: string,
+    nombre: string,
+    fecha: string,
+    mesPremio: string,
+    dadoPor: string,
+  ): Promise<{ success: true; id: number; ausenciaId: number }> {
+    try {
+      // Validări
+      if (!codigo || codigo.trim() === '') {
+        throw new BadRequestException('codigo is required');
+      }
+      if (!nombre || nombre.trim() === '') {
+        throw new BadRequestException('nombre is required');
+      }
+      if (!fecha || fecha.trim() === '') {
+        throw new BadRequestException('fecha is required');
+      }
+      if (!mesPremio || mesPremio.trim() === '') {
+        throw new BadRequestException('mesPremio is required');
+      }
+
+      // Verifică formatul datei
+      const fechaDate = new Date(fecha);
+      if (isNaN(fechaDate.getTime())) {
+        throw new BadRequestException('fecha must be a valid date');
+      }
+
+      // Generează un solicitud_id unic pentru premiu
+      const solicitudId = `PREMIO-${codigo}-${Date.now()}`;
+
+      // Creează MOTIVO special pentru premiu
+      const motivo = `Premio - Salón de la Fama - ${mesPremio} (Otorgado por: ${dadoPor})`;
+
+      // Creează ausencia folosind AusenciasService
+      const ausenciaResult = await this.ausenciasService.addAusencia({
+        solicitud_id: solicitudId,
+        codigo: codigo,
+        nombre: nombre,
+        tipo: 'Permiso Retribuido',
+        data: fecha,
+        hora: new Date().toTimeString().slice(0, 8), // Hora actuală
+        motivo: motivo,
+      });
+
+      // Trimite email către angajat și notificare Telegram către gestoria (async, non-blocking)
+      this.sendPremioNotifications(
+        codigo,
+        nombre,
+        fecha,
+        mesPremio,
+        dadoPor,
+      ).catch((error) => {
+        // Nu aruncăm eroare dacă notificările eșuează - doar logăm
+        this.logger.warn(
+          `⚠️ Error sending premio notifications (non-blocking): ${error.message}`,
+        );
+      });
+
+      return {
+        success: true,
+        id: ausenciaResult.id,
+        ausenciaId: ausenciaResult.id,
+      };
+    } catch (error) {
+      this.logger.error(`Error creating premio: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error creating premio: ${error.message}`);
+    }
+  }
+
+  /**
+   * Trimite notificări pentru premiu (email către angajat și Telegram către gestoria)
+   */
+  private async sendPremioNotifications(
+    codigo: string,
+    nombre: string,
+    fecha: string,
+    mesPremio: string,
+    dadoPor: string,
+  ): Promise<void> {
+    try {
+      // Obține datele angajatului pentru email
+      let empleadoEmail: string | null = null;
+      let empleadoNombreFormatted: string = nombre;
+
+      try {
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        if (empleado) {
+          empleadoEmail =
+            empleado['CORREO ELECTRONICO'] ||
+            empleado.CORREO_ELECTRONICO ||
+            null;
+          empleadoNombreFormatted =
+            this.empleadosService.getFormattedNombre(empleado) || nombre;
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ Could not fetch empleado data for ${codigo}: ${error.message}`,
+        );
+      }
+
+      // Formatează data pentru afișare
+      const fechaFormatted = new Date(fecha).toLocaleDateString('es-ES', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+      // Formatează luna premiului
+      const meses = [
+        'Enero',
+        'Febrero',
+        'Marzo',
+        'Abril',
+        'Mayo',
+        'Junio',
+        'Julio',
+        'Agosto',
+        'Septiembre',
+        'Octubre',
+        'Noviembre',
+        'Diciembre',
+      ];
+      const [year, month] = mesPremio.split('-');
+      const mesNombre = meses[parseInt(month, 10) - 1] || month;
+      const mesFormatted = `${mesNombre} ${year}`;
+
+      // Trimite email către angajat (dacă are email configurat)
+      if (empleadoEmail && this.emailService.isConfigured()) {
+        try {
+          const subject = `🎁 ¡Premio Otorgado - Salón de la Fama!`;
+          const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <style>
+                body {
+                  font-family: Arial, sans-serif;
+                  line-height: 1.6;
+                  color: #333;
+                  max-width: 600px;
+                  margin: 0 auto;
+                  padding: 20px;
+                }
+                .header {
+                  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+                  color: white;
+                  padding: 30px;
+                  text-align: center;
+                  border-radius: 10px 10px 0 0;
+                }
+                .header h1 {
+                  margin: 0;
+                  font-size: 28px;
+                }
+                .content {
+                  background: #ffffff;
+                  padding: 30px;
+                  border: 1px solid #e5e7eb;
+                  border-top: none;
+                }
+                .premio-box {
+                  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+                  border-left: 4px solid #f59e0b;
+                  padding: 20px;
+                  margin: 20px 0;
+                  border-radius: 5px;
+                }
+                .premio-box h2 {
+                  margin-top: 0;
+                  color: #92400e;
+                }
+                .info-item {
+                  margin: 15px 0;
+                  padding: 10px;
+                  background: #f9fafb;
+                  border-radius: 5px;
+                }
+                .info-item strong {
+                  color: #1f2937;
+                }
+                .footer {
+                  text-align: center;
+                  padding: 20px;
+                  color: #6b7280;
+                  font-size: 14px;
+                  border-top: 1px solid #e5e7eb;
+                  margin-top: 20px;
+                }
+                .trophy-icon {
+                  font-size: 48px;
+                  margin-bottom: 10px;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="header">
+                <div class="trophy-icon">🏆</div>
+                <h1>¡Felicitaciones!</h1>
+                <p style="margin: 10px 0 0 0; font-size: 18px;">Has recibido un premio especial</p>
+              </div>
+              <div class="content">
+                <p>Hola <strong>${empleadoNombreFormatted}</strong>,</p>
+                
+                <p>Nos complace informarte que has sido reconocido por tu excelente desempeño en el <strong>Salón de la Fama</strong> del mes de <strong>${mesFormatted}</strong>.</p>
+                
+                <div class="premio-box">
+                  <h2>🎁 Tu Premio</h2>
+                  <div class="info-item">
+                    <strong>📅 Día Libre:</strong> ${fechaFormatted}
+                  </div>
+                  <div class="info-item">
+                    <strong>🏆 Motivo:</strong> Reconocimiento por tu destacado desempeño en el Salón de la Fama
+                  </div>
+                  <div class="info-item">
+                    <strong>📊 Período:</strong> ${mesFormatted}
+                  </div>
+                </div>
+                
+                <p>Este día libre es un <strong>permiso retribuido</strong> que puedes disfrutar como reconocimiento a tu esfuerzo, constancia y dedicación.</p>
+                
+                <p>¡Sigue así! Tu compromiso y profesionalismo son un ejemplo para todos.</p>
+                
+                <p style="margin-top: 30px;">
+                  <strong>Atentamente,</strong><br>
+                  <strong>RRHH</strong><br>
+                  <strong>DE CAMINO SERVICIOS AUXILIARES SL</strong>
+                </p>
+              </div>
+              <div class="footer">
+                <p>Este es un mensaje automático. Por favor, no respondas a este correo.</p>
+              </div>
+            </body>
+            </html>
+          `;
+
+          await this.emailService.sendEmail(empleadoEmail, subject, html, {
+            bcc: ['decamino.rrhh@gmail.com'],
+          });
+
+          this.logger.log(
+            `✅ Email de premio enviado a ${empleadoEmail} (${empleadoNombreFormatted})`,
+          );
+        } catch (emailError: any) {
+          this.logger.warn(
+            `⚠️ Error enviando email de premio (non-blocking): ${emailError.message}`,
+          );
+        }
+      } else if (!empleadoEmail) {
+        this.logger.warn(
+          `⚠️ Empleado ${codigo} no tiene email configurado, no se envió email de premio`,
+        );
+      }
+
+      // Trimite notificare Telegram către gestoria
+      if (this.telegramService.isConfigured()) {
+        try {
+          const telegramMessage = `🎁 *Premio Otorgado - Salón de la Fama*
+
+🏆 *Empleado:* ${empleadoNombreFormatted}
+📋 *Código:* ${codigo}
+📅 *Día Libre:* ${fechaFormatted}
+📊 *Período:* ${mesFormatted}
+👤 *Otorgado por:* ${dadoPor}
+
+✅ Se ha otorgado un día de permiso retribuido como premio por su destacado desempeño en el Salón de la Fama.`;
+
+          await this.telegramService.sendMessage(telegramMessage);
+
+          this.logger.log(
+            `✅ Notificación Telegram enviada a gestoria para premio de ${empleadoNombreFormatted}`,
+          );
+        } catch (telegramError: any) {
+          this.logger.warn(
+            `⚠️ Error enviando notificación Telegram (non-blocking): ${telegramError.message}`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          '⚠️ Telegram service no configurado, no se envió notificación',
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error en sendPremioNotifications: ${error.message}`,
+        error.stack,
+      );
+      // Nu aruncăm eroare - doar logăm
     }
   }
 }

@@ -1025,7 +1025,7 @@ export async function classifyDocument(
         // Pattern 3: "Curriculum /NAME" or "Curriculum: NAME" (with separator)
         if (!nombreFromSubject) {
           subjectNameMatch = emailSubject.match(
-            /\b(?:curriculum|curriculum\s+vitae|cv)\s*[\/:]\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})(?:\s|$)/i,
+            /\b(?:curriculum|curriculum\s+vitae|cv)\s*[/:]\s*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})(?:\s|$)/i,
           );
           if (subjectNameMatch) {
             nombreFromSubject = subjectNameMatch[1].trim().toUpperCase();
@@ -1320,7 +1320,7 @@ function extractEmpleadoNombreFromBody(body: {
   // Also handle HTML formatting and special characters like asterisks
   // Use greedy match to capture full name until comma, period, or end of line
   let match = combinedText.match(
-    /Estimado\/?a?\s*[*]?\s*([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,}?)(?:\s*[,\.]|\s*$|\s*\n|Se\s+ha)/i,
+    /Estimado\/?a?\s*[*]?\s*([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{2,}?)(?:\s*[,.]|\s*$|\s*\n|Se\s+ha)/i,
   );
   if (match && match[1]) {
     let name = match[1].trim();

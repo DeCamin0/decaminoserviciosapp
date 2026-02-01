@@ -1030,7 +1030,7 @@ export class PedidosService {
         pedido.comunidad?.nombre || `Pedido ${pedido.pedido_uid}`;
       baseSheetName = baseSheetName
         .substring(0, 31)
-        .replace(/[\\/?*\[\]]/g, '_');
+        .replace(/[\\/?*[\]]/g, '_');
 
       // Verifică dacă numele există deja în workbook
       let finalSheetName = baseSheetName;

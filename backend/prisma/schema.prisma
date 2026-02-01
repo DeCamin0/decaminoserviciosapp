@@ -1341,6 +1341,44 @@ model HallOfFameMensual {
   @@map("hall_of_fame_mensual")
 }
 
+model HallOfFameTrimestral {
+  id                            BigInt   @id @default(autoincrement())
+  empleado_codigo               String   @map("empleado_codigo") @db.VarChar(50)
+  trimestre                     String   @map("trimestre") @db.VarChar(7) // Format: "Q1-2026", "Q2-2026", etc.
+  ano                           Int      @map("ano")
+  trimestre_num                 Int      @map("trimestre_num") // 1, 2, 3, 4
+  score_final                   Decimal  @map("score_final") @db.Decimal(5, 2) // Media celor 3 luni
+  score_indeplinire             Decimal  @map("score_indeplinire") @db.Decimal(5, 2) // Media
+  score_calitate                Decimal  @map("score_calitate") @db.Decimal(5, 2) // Media
+  score_punctualitate           Decimal  @map("score_punctualitate") @db.Decimal(5, 2) // Media
+  score_uso_app                 Decimal  @map("score_uso_app") @db.Decimal(5, 2) // Media
+  score_responsabilidad_digital Decimal? @map("score_responsabilidad_digital") @db.Decimal(5, 2) // Media
+  horas_pontate                 Decimal  @map("horas_pontate") @db.Decimal(10, 2) // Suma celor 3 luni
+  target_ajustat                Decimal  @map("target_ajustat") @db.Decimal(10, 2) // Suma celor 3 luni
+  target_initial                Decimal  @map("target_initial") @db.Decimal(10, 2) // Suma celor 3 luni
+  horas_neutre                  Decimal  @default(0) @map("horas_neutre") @db.Decimal(10, 2) // Suma
+  dias_neutre                   Int      @default(0) @map("dias_neutre") // Suma
+  fichajes_incompleto           Int      @default(0) @map("fichajes_incompleto") // Suma
+  regularizaciones_confirmed    Int      @default(0) @map("regularizaciones_confirmed") // Suma
+  regularizaciones_pendiente    Int      @default(0) @map("regularizaciones_pendiente") // Suma
+  zile_punctuale                Int      @default(0) @map("zile_punctuale") // Suma
+  zile_cu_orar                  Int      @default(0) @map("zile_cu_orar") // Suma
+  has_orar                      Boolean  @default(false) @map("has_orar")
+  acciones_totales              Decimal  @default(0) @map("acciones_totales") @db.Decimal(10, 2) // Suma
+  max_acciones_mes              Decimal  @default(0) @map("max_acciones_mes") @db.Decimal(10, 2) // Media
+  breakdown_json                Json?    @map("breakdown_json") // Detalii despre cele 3 luni
+  ranking                       Int?     @map("ranking") // Poziția în clasament trimestrial
+  created_at                    DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at                    DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@unique([empleado_codigo, trimestre], map: "uk_emp_trimestre")
+  @@index([trimestre, ano], map: "idx_trimestre_ano")
+  @@index([score_final], map: "idx_score_final_trim")
+  @@index([empleado_codigo], map: "idx_empleado_trim")
+  @@index([trimestre, ranking], map: "idx_ranking_trim")
+  @@map("hall_of_fame_trimestral")
+}
+
 // ============================================
 // PRL DOCUMENTOS - Sistema de Gestión PRL
 // ============================================

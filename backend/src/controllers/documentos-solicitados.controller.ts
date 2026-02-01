@@ -31,8 +31,8 @@ export class DocumentosSolicitadosController {
    */
   @Get()
   @Throttle({
-    short: { ttl: 10000, limit: 50 }, // 50 request-uri / 10 secunde (în loc de 20)
-    medium: { ttl: 60000, limit: 200 }, // 200 request-uri / minut (în loc de 100)
+    short: { ttl: 10000, limit: 200 }, // 200 request-uri / 10 secunde (foarte generos pentru manageri)
+    medium: { ttl: 60000, limit: 1000 }, // 1000 request-uri / minut (foarte generos pentru manageri)
   })
   async getSolicitudes(
     @Query('empleadoId') empleadoId?: string,

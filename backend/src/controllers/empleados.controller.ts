@@ -1213,7 +1213,7 @@ export class EmpleadosController {
           if (!isNaN(date.getTime())) return date;
         }
         // Formato DD/MM/YYYY o DD-MM-YYYY
-        const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+        const match = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
         if (match) {
           const day = parseInt(match[1], 10);
           const month = parseInt(match[2], 10) - 1;
@@ -2842,7 +2842,7 @@ export class EmpleadosController {
   @UseInterceptors(FileInterceptor('pdf'))
   async previewActualizacionIbans(
     @UploadedFile() file: Express.Multer.File,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     @CurrentUser() _user: any,
   ) {
     try {

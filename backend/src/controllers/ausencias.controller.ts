@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
+  Param,
   Query,
   Body,
   UseGuards,
@@ -63,6 +65,21 @@ export class AusenciasController {
       return result;
     } catch (error: any) {
       this.logger.error('❌ Error adding ausencia:', error);
+      throw error;
+    }
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async deleteAusencia(@Param('id') id: string) {
+    try {
+      this.logger.log(`📝 Delete ausencia request - id: ${id}`);
+
+      const result = await this.ausenciasService.deleteAusencia(Number(id));
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error deleting ausencia:', error);
       throw error;
     }
   }

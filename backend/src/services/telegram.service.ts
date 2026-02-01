@@ -238,25 +238,25 @@ ${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
     // NU escape-uim liniuța `-` pentru a păstra formatul datelor
     return (
       text
-        .replace(/\_/g, '\\_')
+        .replace(/_/g, '\\_')
         .replace(/\*/g, '\\*')
         .replace(/\[/g, '\\[')
         .replace(/\]/g, '\\]')
         .replace(/\(/g, '\\(')
         .replace(/\)/g, '\\)')
-        .replace(/\~/g, '\\~')
-        .replace(/\`/g, '\\`')
-        .replace(/\>/g, '\\>')
-        .replace(/\#/g, '\\#')
+        .replace(/~/g, '\\~')
+        .replace(/`/g, '\\`')
+        .replace(/>/g, '\\>')
+        .replace(/#/g, '\\#')
         .replace(/\+/g, '\\+')
         // Nu escape-uim liniuța - pentru a păstra formatul datelor (YYYY-MM-DD)
-        // .replace(/\-/g, '\\-')
-        .replace(/\=/g, '\\=')
+        // .replace(/-/g, '\\-')
+        .replace(/=/g, '\\=')
         .replace(/\|/g, '\\|')
         .replace(/\{/g, '\\{')
         .replace(/\}/g, '\\}')
         .replace(/\./g, '\\.')
-        .replace(/\!/g, '\\!')
+        .replace(/!/g, '\\!')
     );
   }
 

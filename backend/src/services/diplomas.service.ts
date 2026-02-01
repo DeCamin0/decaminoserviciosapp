@@ -318,7 +318,7 @@ export class DiplomasService {
    */
   async procesarZipDiplomas(
     zipBuffer: Buffer,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _usuarioId: string,
   ): Promise<{
     success: boolean;
@@ -464,7 +464,7 @@ export class DiplomasService {
    */
   async procesarPdfDiplomas(
     pdfs: Array<{ nombreArchivo: string; archivoBuffer: Buffer }>,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _usuarioId: string,
   ): Promise<{
     success: boolean;

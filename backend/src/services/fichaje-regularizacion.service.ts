@@ -1974,7 +1974,7 @@ export class FichajeRegularizacionService {
     // Format cu ture multiple separate prin "/" sau ",": "07:00-15:00 / 15:00-23:00 / 23:00-07:00"
     // Sau: "07:00-15:00, 15:00-23:00, 23:00-07:00"
     // Sau: "T1 07:30-19:30 / T2 19:30-07:30"
-    const separators = /[\/,]/;
+    const separators = /[/,]/;
     if (separators.test(s)) {
       // Split pe separator și calculează fiecare segment
       const segments = s.split(separators);

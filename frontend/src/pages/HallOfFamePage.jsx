@@ -5,7 +5,7 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { Card, LoadingSpinner } from '../components/ui';
 import { routes } from '../utils/routes.js';
-import { Trophy, Medal, Award, Info, Calendar, RefreshCw } from 'lucide-react';
+import { Trophy, Medal, Award, Info, Calendar, RefreshCw, Gift } from 'lucide-react';
 import Notification from '../components/ui/Notification.jsx';
 
 const MONTHS = [
@@ -102,6 +102,14 @@ const HallOfFamePage = () => {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [breakdown, setBreakdown] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [activeTab, setActiveTab] = useState('ranking'); // 'ranking', 'premios' sau 'trimestral'
+  const [premios, setPremios] = useState([]);
+  const [showPremioModal, setShowPremioModal] = useState(false);
+  const [selectedEmployeeForPremio, setSelectedEmployeeForPremio] = useState(null);
+  const [premioFecha, setPremioFecha] = useState('');
+  // State pentru trimestrial
+  const [rankingTrimestral, setRankingTrimestral] = useState([]);
+  const [selectedTrimestre, setSelectedTrimestre] = useState('');
 
   // Initialize month/year și limit - pentru admin folosim luna curentă, pentru angajați luna curentă și Top 15
   useEffect(() => {
@@ -118,6 +126,31 @@ const HallOfFamePage = () => {
     };
     initializeMonth();
   }, [canCalculate]);
+
+  // Initialize trimestre - trimestrul curent
+  useEffect(() => {
+    const initializeTrimestre = async () => {
+      const now = new Date();
+      const ano = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const trimestreNum = Math.ceil(month / 3); // 1-4
+      const currentTrimestre = `Q${trimestreNum}-${ano}`;
+      
+      // Încearcă să obțină ultimul trimestru disponibil
+      try {
+        const result = await callApi(routes.getHallOfFameTrimestralLatest, { method: 'GET' });
+        if (result.success && result.trimestre) {
+          setSelectedTrimestre(result.trimestre);
+        } else {
+          setSelectedTrimestre(currentTrimestre);
+        }
+      } catch (error) {
+        console.error('Error fetching latest trimestre:', error);
+        setSelectedTrimestre(currentTrimestre);
+      }
+    };
+    initializeTrimestre();
+  }, [callApi]);
 
   // Fetch ranking
   const fetchRanking = useCallback(async () => {
@@ -270,6 +303,116 @@ const HallOfFamePage = () => {
     }
   }, [selectedMonth, fetchRanking]);
 
+  // Fetch premios
+  const fetchPremios = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await callApi(routes.getPremios, { method: 'GET' });
+      
+      if (result.success && result.premios) {
+        setPremios(result.premios);
+      } else if (result.success && result.data?.premios) {
+        setPremios(result.data.premios);
+      }
+    } catch (error) {
+      console.error('Error fetching premios:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'No se pudieron cargar los premios',
+        duration: 3000
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [callApi]);
+
+  // Fetch ranking trimestral
+  const fetchRankingTrimestral = useCallback(async () => {
+    if (!selectedTrimestre) return;
+
+    setLoading(true);
+    try {
+      const url = `${routes.getHallOfFameTrimestral}?trimestre=${selectedTrimestre}&limit=${limit}`;
+      const result = await callApi(url, { method: 'GET' });
+      
+      if (result.success && result.data?.ranking) {
+        setRankingTrimestral(result.data.ranking);
+      } else if (result.success && result.ranking) {
+        // Fallback pentru format direct
+        setRankingTrimestral(result.ranking);
+      }
+    } catch (error) {
+      console.error('Error fetching trimestral ranking:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTrimestre, limit, callApi]);
+
+  useEffect(() => {
+    if (activeTab === 'premios') {
+      fetchPremios();
+    } else if (activeTab === 'trimestral') {
+      fetchRankingTrimestral();
+    }
+  }, [activeTab, fetchPremios, fetchRankingTrimestral]);
+
+  // Create premio
+  const createPremio = async () => {
+    if (!selectedEmployeeForPremio || !premioFecha) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Por favor selecciona una fecha',
+        duration: 3000
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await callApi(routes.createPremio, {
+        method: 'POST',
+        body: JSON.stringify({
+          codigo: selectedEmployeeForPremio.empleado_codigo || selectedEmployeeForPremio.CODIGO,
+          nombre: selectedEmployeeForPremio.empleadoNombre || selectedEmployeeForPremio.NOMBRE,
+          fecha: premioFecha,
+          mesPremio: selectedMonth
+        })
+      });
+
+      if (result.success) {
+        setNotification({
+          type: 'success',
+          title: '¡Premio creado!',
+          message: `Se ha otorgado un día libre a ${selectedEmployeeForPremio.empleadoNombre || selectedEmployeeForPremio.NOMBRE}`,
+          duration: 4000
+        });
+        setShowPremioModal(false);
+        setSelectedEmployeeForPremio(null);
+        setPremioFecha('');
+        fetchPremios();
+      } else {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: result.message || 'No se pudo crear el premio',
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Error creating premio:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'Ocurrió un error al crear el premio',
+        duration: 5000
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleMonthChange = (e) => {
     const value = e.target.value;
     if (value) {
@@ -327,8 +470,45 @@ const HallOfFamePage = () => {
           </span>
         </div>
 
+        {/* Tabs pentru Ranking și Premios */}
+        <div className={`${isMobile ? 'mb-2' : 'mb-3 sm:mb-4'} flex gap-2 border-b border-gray-200`}>
+          <button
+            onClick={() => setActiveTab('ranking')}
+            className={`${isMobile ? 'px-2 py-1 text-xs' : 'px-4 py-2 text-sm'} font-medium transition-colors border-b-2 ${
+              activeTab === 'ranking'
+                ? 'border-yellow-500 text-yellow-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Trophy className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} inline-block mr-1`} />
+            Ranking
+          </button>
+          <button
+            onClick={() => setActiveTab('premios')}
+            className={`${isMobile ? 'px-2 py-1 text-xs' : 'px-4 py-2 text-sm'} font-medium transition-colors border-b-2 ${
+              activeTab === 'premios'
+                ? 'border-yellow-500 text-yellow-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Gift className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} inline-block mr-1`} />
+            Premios
+          </button>
+          <button
+            onClick={() => setActiveTab('trimestral')}
+            className={`${isMobile ? 'px-2 py-1 text-xs' : 'px-4 py-2 text-sm'} font-medium transition-colors border-b-2 ${
+              activeTab === 'trimestral'
+                ? 'border-yellow-500 text-yellow-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Calendar className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} inline-block mr-1`} />
+            Trimestral
+          </button>
+        </div>
+
         {/* Filters - doar pentru admin */}
-        {canCalculate && (
+        {canCalculate && activeTab !== 'trimestral' && (
           <Card className={`${isMobile ? 'mb-2 p-2' : 'mb-3 sm:mb-4 md:mb-6 p-2.5 sm:p-3 md:p-4'}`}>
             <div className={`flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center ${isMobile ? 'gap-2' : 'gap-3 sm:gap-4'}`}>
               <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2'} flex-1 min-w-0`}>
@@ -366,6 +546,91 @@ const HallOfFamePage = () => {
               >
                 <RefreshCw className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} />
                 <span className="hidden sm:inline">Calcular Scores</span>
+                <span className="sm:hidden">Calcular</span>
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {/* Filters pentru Trimestral - doar pentru admin */}
+        {canCalculate && activeTab === 'trimestral' && (
+          <Card className={`${isMobile ? 'mb-2 p-2' : 'mb-3 sm:mb-4 md:mb-6 p-2.5 sm:p-3 md:p-4'}`}>
+            <div className={`flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center ${isMobile ? 'gap-2' : 'gap-3 sm:gap-4'}`}>
+              <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2'} flex-1 min-w-0`}>
+                <Calendar className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4 sm:w-5 sm:h-5'} text-gray-500 flex-shrink-0`} />
+                <label htmlFor="hall-of-fame-trimestre" className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} font-medium text-gray-700 whitespace-nowrap`}>Trimestre:</label>
+                <select
+                  id="hall-of-fame-trimestre"
+                  name="hall-of-fame-trimestre"
+                  value={selectedTrimestre}
+                  onChange={(e) => setSelectedTrimestre(e.target.value)}
+                  className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm'} border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-1 min-w-0`}
+                >
+                  {(() => {
+                    const options = [];
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+                    // Generează opțiuni pentru ultimii 2 ani
+                    for (let year = currentYear; year >= currentYear - 1; year--) {
+                      for (let q = 4; q >= 1; q--) {
+                        options.push(
+                          <option key={`Q${q}-${year}`} value={`Q${q}-${year}`}>
+                            Q{q} {year}
+                          </option>
+                        );
+                      }
+                    }
+                    return options;
+                  })()}
+                </select>
+              </div>
+              <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2'} flex-1 sm:flex-initial`}>
+                <label htmlFor="hall-of-fame-top-trim" className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} font-medium text-gray-700 whitespace-nowrap`}>Top:</label>
+                <select
+                  id="hall-of-fame-top-trim"
+                  name="hall-of-fame-top-trim"
+                  value={limit}
+                  onChange={(e) => setLimit(parseInt(e.target.value, 10))}
+                  className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm'} border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-1 sm:flex-initial`}
+                >
+                  <option value={10}>Top 10</option>
+                  <option value={20}>Top 20</option>
+                  <option value={50}>Top 50</option>
+                  <option value={100}>Top 100</option>
+                  <option value={0}>Todos</option>
+                </select>
+              </div>
+              <button
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    const url = `${routes.calculateHallOfFameTrimestral}?trimestre=${selectedTrimestre}`;
+                    const result = await callApi(url, { method: 'POST' });
+                    if (result.success) {
+                      setNotification({
+                        type: 'success',
+                        title: 'Éxito',
+                        message: `Calculados ${result.processed} scores trimestrales para ${selectedTrimestre}`,
+                        duration: 3000
+                      });
+                      fetchRankingTrimestral();
+                    }
+                  } catch {
+                    setNotification({
+                      type: 'error',
+                      title: 'Error',
+                      message: 'Error al calcular scores trimestrales',
+                      duration: 3000
+                    });
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading}
+                className={`w-full sm:w-auto sm:ml-auto ${isMobile ? 'px-2 py-1.5 text-[10px]' : 'px-3 sm:px-4 py-2 text-xs sm:text-sm'} bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <RefreshCw className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} />
+                <span className="hidden sm:inline">Calcular Scores Trimestrales</span>
                 <span className="sm:hidden">Calcular</span>
               </button>
             </div>
@@ -454,6 +719,227 @@ const HallOfFamePage = () => {
           );
         })()}
 
+        {/* Conținut în funcție de tab-ul activ */}
+        {activeTab === 'premios' ? (
+          /* Tab Premios */
+          loading ? (
+            <div className={`flex justify-center items-center ${isMobile ? 'py-12' : 'py-20'}`}>
+              <LoadingSpinner />
+            </div>
+          ) : premios.length === 0 ? (
+            <Card className={`${isMobile ? 'p-4' : 'p-6 sm:p-8 md:p-12'} text-center bg-gradient-to-br from-gray-50 to-white`}>
+              <div className="max-w-md mx-auto">
+                <div className={isMobile ? 'mb-2' : 'mb-3 sm:mb-4'}>
+                  <Gift className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12 sm:w-16 sm:h-16'} text-gray-300 mx-auto`} />
+                </div>
+                <h3 className={`${isMobile ? 'text-sm mb-1.5' : 'text-lg sm:text-xl mb-2 sm:mb-3'} font-semibold text-gray-700 px-2`}>
+                  ✨ Aún no hay premios otorgados
+                </h3>
+                <p className={`${isMobile ? 'text-xs mb-2' : 'text-sm sm:text-base mb-3 sm:mb-4'} text-gray-600 leading-relaxed px-2`}>
+                  Los premios otorgados a los empleados aparecerán aquí.
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <div className={`grid ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3 md:gap-4'}`}>
+              {premios.map((premio, index) => (
+                <Card
+                  key={premio.id || index}
+                  padding=""
+                  className={`${isMobile ? 'p-2' : 'p-2.5 sm:p-3 md:p-4'} transition-shadow`}
+                >
+                  <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3'}`}>
+                    <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10 sm:w-12 sm:h-12'} rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center flex-shrink-0`}>
+                      <Gift className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-white`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className={`${isMobile ? 'text-xs sm:text-sm' : 'text-sm sm:text-base md:text-lg'} font-bold text-gray-800 truncate`}>
+                        {premio.NOMBRE || premio.empleado_nombre_completo || premio.CODIGO}
+                      </h3>
+                      <p className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-500 truncate`}>
+                        {premio.centro_trabajo || '-'}
+                      </p>
+                      <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-0.5`}>
+                        {premio.MOTIVO || ''}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-gray-700`}>
+                        {premio.FECHA || '-'}
+                      </div>
+                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>
+                        {premio.DURACION ? `${premio.DURACION} ${premio.UNIDAD_DURACION || 'días'}` : '1 día'}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )
+        ) : activeTab === 'trimestral' ? (
+          /* Tab Trimestral */
+          loading ? (
+            <div className={`flex justify-center items-center ${isMobile ? 'py-12' : 'py-20'}`}>
+              <LoadingSpinner />
+            </div>
+          ) : rankingTrimestral.length === 0 ? (
+            <Card className={`${isMobile ? 'p-4' : 'p-6 sm:p-8 md:p-12'} text-center bg-gradient-to-br from-gray-50 to-white`}>
+              <div className="max-w-md mx-auto">
+                <div className={isMobile ? 'mb-2' : 'mb-3 sm:mb-4'}>
+                  <Trophy className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12 sm:w-16 sm:h-16'} text-gray-300 mx-auto`} />
+                </div>
+                <h3 className={`${isMobile ? 'text-sm mb-1.5' : 'text-lg sm:text-xl mb-2 sm:mb-3'} font-semibold text-gray-700 px-2`}>
+                  ✨ Aún no hay datos para este trimestre
+                </h3>
+                <p className={`${isMobile ? 'text-xs mb-2' : 'text-sm sm:text-base mb-3 sm:mb-4'} text-gray-600 leading-relaxed px-2`}>
+                  Cuando se calculen los resultados trimestrales, aquí aparecerán los empleados destacados.
+                </p>
+                <p className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-500 px-2`}>
+                  Los scores trimestrales son el promedio de los 3 meses del trimestre.
+                </p>
+                {canCalculate && (
+                  <div className={isMobile ? 'mt-3' : 'mt-4 sm:mt-6'}>
+                    <button
+                      onClick={async () => {
+                        setLoading(true);
+                        try {
+                          const url = `${routes.calculateHallOfFameTrimestral}?trimestre=${selectedTrimestre}`;
+                          const result = await callApi(url, { method: 'POST' });
+                          if (result.success) {
+                            setNotification({
+                              type: 'success',
+                              title: 'Éxito',
+                              message: `Calculados ${result.processed} scores trimestrales para ${selectedTrimestre}`,
+                              duration: 3000
+                            });
+                            fetchRankingTrimestral();
+                          }
+                        } catch {
+                          setNotification({
+                            type: 'error',
+                            title: 'Error',
+                            message: 'Error al calcular scores trimestrales',
+                            duration: 3000
+                          });
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      disabled={loading}
+                      className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base'} bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 mx-auto disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      <RefreshCw className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4'} ${loading ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">Calcular Scores Trimestrales para {selectedTrimestre}</span>
+                      <span className="sm:hidden">Calcular Scores</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          ) : (
+            <div className={`grid ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3 md:gap-4'}`}>
+              {/* Podium 3D pentru primii 3 */}
+              {rankingTrimestral.length >= 3 && (
+                <div className={`${isMobile ? 'mb-2' : 'mb-4 sm:mb-6'} grid grid-cols-3 gap-2 sm:gap-4 items-end`}>
+                  {/* Locul 2 */}
+                  <div className="flex flex-col items-center">
+                    <div className={`${getBadgeColor(2)} text-white ${isMobile ? 'w-12 h-12' : 'w-16 h-16 sm:w-20 sm:h-20'} rounded-full flex items-center justify-center shadow-lg mb-2`}>
+                      {getBadgeIcon(2)}
+                    </div>
+                    <Card className={`${isMobile ? 'p-2' : 'p-3 sm:p-4'} w-full text-center bg-gradient-to-br from-gray-300 to-gray-500`}>
+                      <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-bold text-white truncate mb-1`}>
+                        {rankingTrimestral[1]?.empleadoNombre || rankingTrimestral[1]?.empleado_codigo}
+                      </div>
+                      <div className={`${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} font-bold text-white`}>
+                        {formatScore(rankingTrimestral[1]?.score_final)}
+                      </div>
+                    </Card>
+                  </div>
+                  {/* Locul 1 */}
+                  <div className="flex flex-col items-center">
+                    <div className={`${getBadgeColor(1)} text-white ${isMobile ? 'w-16 h-16' : 'w-20 h-20 sm:w-24 sm:h-24'} rounded-full flex items-center justify-center shadow-lg mb-2`}>
+                      {getBadgeIcon(1)}
+                    </div>
+                    <Card className={`${isMobile ? 'p-2' : 'p-3 sm:p-4'} w-full text-center bg-gradient-to-br from-yellow-400 to-yellow-600`}>
+                      <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-bold text-white truncate mb-1`}>
+                        {rankingTrimestral[0]?.empleadoNombre || rankingTrimestral[0]?.empleado_codigo}
+                      </div>
+                      <div className={`${isMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-bold text-white`}>
+                        {formatScore(rankingTrimestral[0]?.score_final)}
+                      </div>
+                    </Card>
+                  </div>
+                  {/* Locul 3 */}
+                  <div className="flex flex-col items-center">
+                    <div className={`${getBadgeColor(3)} text-white ${isMobile ? 'w-12 h-12' : 'w-16 h-16 sm:w-20 sm:h-20'} rounded-full flex items-center justify-center shadow-lg mb-2`}>
+                      {getBadgeIcon(3)}
+                    </div>
+                    <Card className={`${isMobile ? 'p-2' : 'p-3 sm:p-4'} w-full text-center bg-gradient-to-br from-amber-500 to-amber-700`}>
+                      <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-bold text-white truncate mb-1`}>
+                        {rankingTrimestral[2]?.empleadoNombre || rankingTrimestral[2]?.empleado_codigo}
+                      </div>
+                      <div className={`${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} font-bold text-white`}>
+                        {formatScore(rankingTrimestral[2]?.score_final)}
+                      </div>
+                    </Card>
+                  </div>
+                </div>
+              )}
+
+              {/* Restul clasamentului */}
+              {rankingTrimestral.map((item, index) => {
+                const position = item.ranking || index + 1;
+                // Skip primii 3 dacă există podium
+                if (rankingTrimestral.length >= 3 && position <= 3) return null;
+
+                return (
+                  <Card
+                    key={item.id || item.empleado_codigo || index}
+                    padding=""
+                    className={`${isMobile ? 'p-2' : 'p-2.5 sm:p-3 md:p-4'} transition-shadow hover:shadow-lg ${position <= 10 ? 'bg-gradient-to-r from-blue-50 to-indigo-50' : ''}`}
+                  >
+                    <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3'}`}>
+                      {/* Badge cu poziția */}
+                      <div className={`${getBadgeColor(position)} text-white ${isMobile ? 'w-8 h-8' : 'w-10 h-10 sm:w-12 sm:h-12'} rounded-full flex items-center justify-center shadow-lg flex-shrink-0`}>
+                        {position <= 10 ? getBadgeIcon(position) : <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold`}>#{position}</span>}
+                      </div>
+
+                      {/* Informații angajat */}
+                      <div className="flex-1 min-w-0">
+                        <h3 className={`${isMobile ? 'text-xs sm:text-sm' : 'text-sm sm:text-base md:text-lg'} font-bold text-gray-800 truncate`}>
+                          {item.empleadoNombre || item.empleado_codigo}
+                        </h3>
+                        <p className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-500 truncate`}>
+                          {item.grupo || '-'}
+                        </p>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap`}>
+                          <span>Score: <strong>{formatScore(item.score_final)}</strong></span>
+                          {item.breakdown_json && (
+                            <span className="text-gray-500">
+                              (Promedio de {item.breakdown_json.meses?.length || 3} meses)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Score final */}
+                      <div className="text-right flex-shrink-0">
+                        <div className={`${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} font-bold text-gray-700`}>
+                          {formatScore(item.score_final)}
+                        </div>
+                        <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>
+                          Trimestral
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          /* Tab Ranking */
+          <>
         {/* Ranking */}
         {loading ? (
           <div className={`flex justify-center items-center ${isMobile ? 'py-12' : 'py-20'}`}>
@@ -542,6 +1028,34 @@ const HallOfFamePage = () => {
                         boxShadow: '0 10px 20px rgba(0,0,0,0.2)'
                       }}></div>
                     </div>
+                    {/* Butoane acțiune pentru Locul 2 (desktop) */}
+                    {canCalculate && (
+                      <div className="flex justify-center gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(ranking[1]?.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className="px-2 py-1 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(ranking[1]);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className="px-2 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Dar Premio"
+                        >
+                          <Gift className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Locul 1 (centru - cel mai înalt) */}
@@ -587,6 +1101,34 @@ const HallOfFamePage = () => {
                         boxShadow: '0 15px 30px rgba(0,0,0,0.3)'
                       }}></div>
                     </div>
+                    {/* Butoane acțiune pentru Locul 1 (desktop) */}
+                    {canCalculate && (
+                      <div className="flex justify-center gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(ranking[0]?.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className="px-2 py-1 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(ranking[0]);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className="px-2 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Dar Premio"
+                        >
+                          <Gift className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Locul 3 (dreapta) */}
@@ -630,6 +1172,34 @@ const HallOfFamePage = () => {
                         boxShadow: '0 8px 15px rgba(0,0,0,0.2)'
                       }}></div>
                     </div>
+                    {/* Butoane acțiune pentru Locul 3 (desktop) */}
+                    {canCalculate && (
+                      <div className="flex justify-center gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(ranking[2]?.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className="px-2 py-1 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(ranking[2]);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className="px-2 py-1 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Dar Premio"
+                        >
+                          <Gift className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -661,6 +1231,34 @@ const HallOfFamePage = () => {
                       <div>Uso App (10%): {formatScore(ranking[0]?.score_uso_app)}</div>
                       <div>Responsabilidad Digital (30%): {formatScore(ranking[0]?.score_responsabilidad_digital || (ranking[0]?.breakdown_json?.score_responsabilidad_digital))}</div>
                     </div>
+                    {/* Butoane acțiune pentru Locul 1 (mobile) */}
+                    {canCalculate && (
+                      <div className="flex justify-center gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(ranking[0]?.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1 text-xs'} bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(ranking[0]);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1 text-xs'} bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title="Dar Premio"
+                        >
+                          <Gift className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Locul 2 */}
@@ -689,6 +1287,34 @@ const HallOfFamePage = () => {
                       <div>Uso App (10%): {formatScore(ranking[1]?.score_uso_app)}</div>
                       <div>Responsabilidad Digital (30%): {formatScore(ranking[1]?.score_responsabilidad_digital || (ranking[1]?.breakdown_json?.score_responsabilidad_digital))}</div>
                     </div>
+                    {/* Butoane acțiune pentru Locul 2 (mobile) */}
+                    {canCalculate && (
+                      <div className="flex justify-center gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(ranking[1]?.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1 text-xs'} bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(ranking[1]);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1 text-xs'} bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title="Dar Premio"
+                        >
+                          <Gift className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Locul 3 */}
@@ -717,6 +1343,34 @@ const HallOfFamePage = () => {
                       <div>Uso App (10%): {formatScore(ranking[2]?.score_uso_app)}</div>
                       <div>Responsabilidad Digital (30%): {formatScore(ranking[2]?.score_responsabilidad_digital || (ranking[2]?.breakdown_json?.score_responsabilidad_digital))}</div>
                     </div>
+                    {/* Butoane acțiune pentru Locul 3 (mobile) */}
+                    {canCalculate && (
+                      <div className="flex justify-center gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            calculateEmployeeScore(ranking[2]?.empleado_codigo, e);
+                          }}
+                          disabled={loading}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1 text-xs'} bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title="Recalcular"
+                        >
+                          <RefreshCw className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${loading ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(ranking[2]);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1 text-xs'} bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title="Dar Premio"
+                        >
+                          <Gift className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -805,15 +1459,30 @@ const HallOfFamePage = () => {
 
                     {/* Recalculate Button (admin only) */}
                     {canCalculate && (
-                      <button
-                        onClick={(e) => calculateEmployeeScore(item.empleado_codigo, e)}
-                        disabled={loading}
-                        className="px-3 py-1.5 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                        title="Recalcular score para este empleado"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-                        Recalcular
-                      </button>
+                      <>
+                        <button
+                          onClick={(e) => calculateEmployeeScore(item.empleado_codigo, e)}
+                          disabled={loading}
+                          className="px-3 py-1.5 bg-yellow-500 text-white text-xs rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                          title="Recalcular score para este empleado"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                          Recalcular
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeForPremio(item);
+                            setShowPremioModal(true);
+                          }}
+                          disabled={loading}
+                          className="px-3 py-1.5 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                          title="Dar premio (día libre) a este empleado"
+                        >
+                          <Gift className="w-3 h-3" />
+                          Dar Premio
+                        </button>
+                      </>
                     )}
                   </div>
 
@@ -839,17 +1508,31 @@ const HallOfFamePage = () => {
                         <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 truncate leading-tight w-full`}>{item.grupo || '-'}</p>
                       </div>
                       {canCalculate && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            calculateEmployeeScore(item.empleado_codigo, e);
-                          }}
-                          disabled={loading}
-                          className={`${isMobile ? 'px-1 py-0.5' : 'px-1.5 py-1'} bg-yellow-500 text-white ${isMobile ? 'text-[10px]' : 'text-xs'} rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
-                          title="Recalcular"
-                        >
-                          <RefreshCw className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${loading ? 'animate-spin' : ''}`} />
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              calculateEmployeeScore(item.empleado_codigo, e);
+                            }}
+                            disabled={loading}
+                            className={`${isMobile ? 'px-1 py-0.5' : 'px-1.5 py-1'} bg-yellow-500 text-white ${isMobile ? 'text-[10px]' : 'text-xs'} rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                            title="Recalcular"
+                          >
+                            <RefreshCw className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${loading ? 'animate-spin' : ''}`} />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEmployeeForPremio(item);
+                              setShowPremioModal(true);
+                            }}
+                            disabled={loading}
+                            className={`${isMobile ? 'px-1 py-0.5' : 'px-1.5 py-1'} bg-green-500 text-white ${isMobile ? 'text-[10px]' : 'text-xs'} rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                            title="Dar Premio"
+                          >
+                            <Gift className={`${isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3'}`} />
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -920,23 +1603,69 @@ const HallOfFamePage = () => {
           </div>
         )}
 
-        {/* Mini-bloc "¿Cómo funciona?" - Mutat sub lista */}
-        <Card className={`${isMobile ? 'mt-2 p-2 mb-2' : 'mt-3 sm:mt-4 md:mt-6 p-2.5 sm:p-3 md:p-4 mb-4 sm:mb-6'} bg-blue-50 border border-blue-200`}>
-          <div className={`flex items-start ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3'}`}>
-            <Info className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4 sm:w-5 sm:h-5'} text-blue-600 flex-shrink-0 mt-0.5`} />
-            <div className="flex-1 min-w-0">
-              <h3 className={`${isMobile ? 'text-xs mb-1' : 'text-sm sm:text-base mb-1.5 sm:mb-2'} font-semibold text-gray-900 flex items-center gap-2`}>
-                📊 ¿Cómo funciona?
-              </h3>
-              <ul className={`${isMobile ? 'text-[10px] space-y-0.5' : 'text-xs sm:text-sm space-y-1'} text-gray-700`}>
-                <li>• El ranking se calcula de forma mensual</li>
-                <li>• Se tienen en cuenta distintos factores de desempeño</li>
-                <li>• La posición puede variar cada mes</li>
-                <li>• El objetivo es reconocer el esfuerzo y la mejora continua</li>
-              </ul>
+        {/* Mini-bloc "¿Cómo funciona?" - Mutat sub lista (doar pentru ranking) */}
+        {activeTab === 'ranking' && (
+          <Card className={`${isMobile ? 'mt-2 p-2 mb-2' : 'mt-3 sm:mt-4 md:mt-6 p-2.5 sm:p-3 md:p-4 mb-4 sm:mb-6'} bg-blue-50 border border-blue-200`}>
+            <div className={`flex items-start ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3'}`}>
+              <Info className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4 sm:w-5 sm:h-5'} text-blue-600 flex-shrink-0 mt-0.5`} />
+              <div className="flex-1 min-w-0">
+                <h3 className={`${isMobile ? 'text-xs mb-1' : 'text-sm sm:text-base mb-1.5 sm:mb-2'} font-semibold text-gray-900 flex items-center gap-2`}>
+                  📊 ¿Cómo funciona?
+                </h3>
+                <div className={`${isMobile ? 'text-[10px] space-y-1' : 'text-xs sm:text-sm space-y-1.5'} text-gray-700`}>
+                  <p className={`${isMobile ? 'mb-1' : 'mb-1.5'} font-medium text-gray-800`}>
+                    El ranking se calcula mensualmente teniendo en cuenta los siguientes factores:
+                  </p>
+                  
+                  <div className={`${isMobile ? 'space-y-1' : 'space-y-1.5'} pl-2 border-l-2 border-blue-300`}>
+                    <div>
+                      <div className="font-semibold text-blue-700">⏰ Cumplimiento de Horas (30%)</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-xs'} text-gray-600 ml-1`}>
+                        Mide si cumples con las horas de trabajo asignadas. Se calcula comparando las horas fichadas con tu objetivo mensual. Cuanto más cerca estés de tu objetivo, mayor será tu puntuación.
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="font-semibold text-blue-700">⭐ Calidad del Fichaje (20%)</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-xs'} text-gray-600 ml-1`}>
+                        Evalúa la calidad de tus fichajes. Se tiene en cuenta si completas correctamente las entradas y salidas, si evitas fichajes incompletos y si realizas las regularizaciones necesarias cuando corresponde.
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="font-semibold text-blue-700">🕐 Puntualidad (10%)</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-xs'} text-gray-600 ml-1`}>
+                        Mide tu puntualidad en las entradas. Se considera si fichas a la hora correcta según tu horario asignado. La puntualidad es un factor importante para el buen funcionamiento del equipo.
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="font-semibold text-blue-700">📱 Uso de la Aplicación (10%)</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-xs'} text-gray-600 ml-1`}>
+                        Evalúa tu uso activo de la aplicación móvil. Se considera la frecuencia con la que utilizas la app para fichar, consultar información y realizar acciones. Un uso regular demuestra compromiso y adaptación tecnológica.
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="font-semibold text-blue-700">💻 Responsabilidad Digital (30%)</div>
+                      <div className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-xs'} text-gray-600 ml-1`}>
+                        Mide tu responsabilidad en el uso de herramientas digitales y cumplimiento de procesos. Incluye aspectos como la gestión correcta de documentos, cumplimiento de plazos digitales y uso adecuado de las plataformas de trabajo.
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className={`${isMobile ? 'mt-1.5 pt-1' : 'mt-2 pt-1.5'} border-t border-blue-200`}>
+                    <p className={`${isMobile ? 'text-[9px]' : 'text-[10px] sm:text-xs'} text-gray-600 italic`}>
+                      💡 <strong>Consejo:</strong> La posición puede variar cada mes. El objetivo es reconocer el esfuerzo y la mejora continua. ¡Sigue así!
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        )}
+          </>
+        )}
 
         {/* Breakdown Modal */}
         {breakdown && selectedEmployee && (
@@ -993,6 +1722,76 @@ const HallOfFamePage = () => {
           </div>
         )}
       </div>
+
+      {/* Modal pentru Dar Premio */}
+      {showPremioModal && selectedEmployeeForPremio && (
+        <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 ${isMobile ? 'p-2' : 'p-2 sm:p-4'}`}>
+          <Card className={`max-w-md w-full ${isMobile ? 'max-w-full' : ''}`}>
+            <div className={isMobile ? 'p-3' : 'p-4 sm:p-6'}>
+              <div className={`flex justify-between items-center ${isMobile ? 'mb-3 gap-1.5' : 'mb-4 gap-2'}`}>
+                <h2 className={`${isMobile ? 'text-sm' : 'text-lg sm:text-xl md:text-2xl'} font-bold truncate min-w-0 flex-1`}>
+                  🎁 Dar Premio
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowPremioModal(false);
+                    setSelectedEmployeeForPremio(null);
+                    setPremioFecha('');
+                  }}
+                  className={`text-gray-500 hover:text-gray-700 flex-shrink-0 ${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'}`}
+                  aria-label="Cerrar"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className={isMobile ? 'space-y-2' : 'space-y-3 sm:space-y-4'}>
+                <div>
+                  <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600 mb-1`}>Empleado:</div>
+                  <div className={`${isMobile ? 'text-sm' : 'text-base'} font-semibold text-gray-800`}>
+                    {selectedEmployeeForPremio.empleadoNombre || selectedEmployeeForPremio.NOMBRE || selectedEmployeeForPremio.empleado_codigo || selectedEmployeeForPremio.CODIGO}
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="premio-fecha" className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium text-gray-700 block mb-1`}>
+                    Fecha del día libre:
+                  </label>
+                  <input
+                    id="premio-fecha"
+                    type="date"
+                    value={premioFecha}
+                    onChange={(e) => setPremioFecha(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className={`w-full ${isMobile ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm'} border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent`}
+                  />
+                </div>
+                <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 bg-yellow-50 p-2 rounded border border-yellow-200`}>
+                  ℹ️ Se otorgará un día de permiso retribuido como premio por su desempeño en el Salón de la Fama.
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => {
+                      setShowPremioModal(false);
+                      setSelectedEmployeeForPremio(null);
+                      setPremioFecha('');
+                    }}
+                    className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'} bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors`}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={createPremio}
+                    disabled={loading || !premioFecha}
+                    className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'} bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <Gift className={isMobile ? 'w-3 h-3' : 'w-4 h-4'} />
+                    Confirmar Premio
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Notificări moderne */}
       {notification && (

@@ -673,6 +673,299 @@ export class AusenciasService {
   /**
    * Obtine lista de ausencias cu filtrare opțională pe codigo și MES
    */
+  /**
+   * Șterge o ausencia din baza de date
+   */
+  async deleteAusencia(
+    id: number,
+  ): Promise<{ success: true; message: string }> {
+    try {
+      if (!id) {
+        throw new BadRequestException('id is required');
+      }
+
+      // Verifică dacă ausencia există
+      const ausencia = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id, CODIGO, NOMBRE, TIPO, FECHA, MOTIVO
+        FROM Ausencias
+        WHERE id = ${Number(id)}
+        LIMIT 1
+      `);
+
+      if (!ausencia || ausencia.length === 0) {
+        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+      }
+
+      const ausenciaData = ausencia[0];
+      const codigo = ausenciaData.CODIGO;
+      const nombre = ausenciaData.NOMBRE;
+      const tipo = ausenciaData.TIPO;
+      const fecha = ausenciaData.FECHA;
+      const motivo = ausenciaData.MOTIVO || '';
+
+      // Verifică dacă este un premiu (Permiso Retribuido cu MOTIVO care conține "Premio - Salón de la Fama")
+      const esPremio =
+        tipo === 'Permiso Retribuido' &&
+        motivo.includes('Premio - Salón de la Fama');
+
+      // Șterge ausencia
+      await this.prisma.$executeRawUnsafe(`
+        DELETE FROM Ausencias
+        WHERE id = ${Number(id)}
+      `);
+
+      this.logger.log(`✅ Ausencia ${id} eliminada exitosamente`);
+
+      // Dacă este un premiu, trimite notificări (async, non-blocking)
+      if (esPremio) {
+        this.sendPremioDeletedNotifications(
+          codigo,
+          nombre,
+          fecha,
+          motivo,
+        ).catch((error) => {
+          // Nu aruncăm eroare dacă notificările eșuează - doar logăm
+          this.logger.warn(
+            `⚠️ Error sending premio deleted notifications (non-blocking): ${error.message}`,
+          );
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Ausencia eliminada correctamente',
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error deleting ausencia ${id}:`, error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al eliminar la ausencia: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Trimite notificări pentru ștergerea unui premiu (email către angajat și Telegram către gestoria)
+   */
+  private async sendPremioDeletedNotifications(
+    codigo: string,
+    nombre: string,
+    fecha: string,
+    motivo: string,
+  ): Promise<void> {
+    try {
+      // Obține datele angajatului pentru email
+      let empleadoEmail: string | null = null;
+      let empleadoNombreFormatted: string = nombre;
+
+      try {
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        if (empleado) {
+          empleadoEmail =
+            empleado['CORREO ELECTRONICO'] ||
+            empleado.CORREO_ELECTRONICO ||
+            null;
+          empleadoNombreFormatted =
+            this.empleadosService.getFormattedNombre(empleado) || nombre;
+        }
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ Could not fetch empleado data for ${codigo}: ${error.message}`,
+        );
+      }
+
+      // Formatează data pentru afișare
+      const fechaFormatted = new Date(fecha).toLocaleDateString('es-ES', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+      // Extrage luna premiului din MOTIVO (ex: "Premio - Salón de la Fama - 2026-02 (Otorgado por: Admin)")
+      let mesFormatted = '';
+      const mesMatch = motivo.match(/(\d{4}-\d{2})/);
+      if (mesMatch) {
+        const meses = [
+          'Enero',
+          'Febrero',
+          'Marzo',
+          'Abril',
+          'Mayo',
+          'Junio',
+          'Julio',
+          'Agosto',
+          'Septiembre',
+          'Octubre',
+          'Noviembre',
+          'Diciembre',
+        ];
+        const [year, month] = mesMatch[1].split('-');
+        const mesNombre = meses[parseInt(month, 10) - 1] || month;
+        mesFormatted = `${mesNombre} ${year}`;
+      }
+
+      // Trimite email către angajat (dacă are email configurat)
+      if (empleadoEmail && this.emailService.isConfigured()) {
+        try {
+          const subject = `⚠️ Premio Cancelado - Salón de la Fama`;
+          const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <style>
+                body {
+                  font-family: Arial, sans-serif;
+                  line-height: 1.6;
+                  color: #333;
+                  max-width: 600px;
+                  margin: 0 auto;
+                  padding: 20px;
+                }
+                .header {
+                  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                  color: white;
+                  padding: 30px;
+                  text-align: center;
+                  border-radius: 10px 10px 0 0;
+                }
+                .header h1 {
+                  margin: 0;
+                  font-size: 28px;
+                }
+                .content {
+                  background: #ffffff;
+                  padding: 30px;
+                  border: 1px solid #e5e7eb;
+                  border-top: none;
+                }
+                .premio-box {
+                  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+                  border-left: 4px solid #dc2626;
+                  padding: 20px;
+                  margin: 20px 0;
+                  border-radius: 5px;
+                }
+                .premio-box h2 {
+                  margin-top: 0;
+                  color: #991b1b;
+                }
+                .info-item {
+                  margin: 15px 0;
+                  padding: 10px;
+                  background: #f9fafb;
+                  border-radius: 5px;
+                }
+                .info-item strong {
+                  color: #1f2937;
+                }
+                .footer {
+                  text-align: center;
+                  padding: 20px;
+                  color: #6b7280;
+                  font-size: 14px;
+                  border-top: 1px solid #e5e7eb;
+                  margin-top: 20px;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="header">
+                <h1>⚠️ Premio Cancelado</h1>
+                <p style="margin: 10px 0 0 0; font-size: 18px;">Se ha cancelado tu premio</p>
+              </div>
+              <div class="content">
+                <p>Hola <strong>${empleadoNombreFormatted}</strong>,</p>
+                
+                <p>Te informamos que se ha cancelado el premio que habías recibido del <strong>Salón de la Fama</strong>${mesFormatted ? ` del mes de <strong>${mesFormatted}</strong>` : ''}.</p>
+                
+                <div class="premio-box">
+                  <h2>📅 Premio Cancelado</h2>
+                  <div class="info-item">
+                    <strong>📅 Día Libre:</strong> ${fechaFormatted}
+                  </div>
+                  ${
+                    mesFormatted
+                      ? `<div class="info-item">
+                    <strong>📊 Período:</strong> ${mesFormatted}
+                  </div>`
+                      : ''
+                  }
+                </div>
+                
+                <p>El día libre que habías recibido como premio ha sido cancelado y ya no está disponible.</p>
+                
+                <p>Si tienes alguna pregunta o necesitas más información, por favor contacta con RRHH.</p>
+                
+                <p style="margin-top: 30px;">
+                  <strong>Atentamente,</strong><br>
+                  <strong>RRHH</strong><br>
+                  <strong>DE CAMINO SERVICIOS AUXILIARES SL</strong>
+                </p>
+              </div>
+              <div class="footer">
+                <p>Este es un mensaje automático. Por favor, no respondas a este correo.</p>
+              </div>
+            </body>
+            </html>
+          `;
+
+          await this.emailService.sendEmail(empleadoEmail, subject, html, {
+            bcc: ['decamino.rrhh@gmail.com'],
+          });
+
+          this.logger.log(
+            `✅ Email de premio cancelado enviado a ${empleadoEmail} (${empleadoNombreFormatted})`,
+          );
+        } catch (emailError: any) {
+          this.logger.warn(
+            `⚠️ Error enviando email de premio cancelado (non-blocking): ${emailError.message}`,
+          );
+        }
+      } else if (!empleadoEmail) {
+        this.logger.warn(
+          `⚠️ Empleado ${codigo} no tiene email configurado, no se envió email de premio cancelado`,
+        );
+      }
+
+      // Trimite notificare Telegram către gestoria
+      if (this.telegramService.isConfigured()) {
+        try {
+          const telegramMessage = `⚠️ *Premio Cancelado - Salón de la Fama*
+
+🏆 *Empleado:* ${empleadoNombreFormatted}
+📋 *Código:* ${codigo}
+📅 *Día Libre Cancelado:* ${fechaFormatted}
+${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado el día de permiso retribuido que había sido otorgado como premio por su desempeño en el Salón de la Fama.`;
+
+          await this.telegramService.sendMessage(telegramMessage);
+
+          this.logger.log(
+            `✅ Notificación Telegram enviada a gestoria para cancelación de premio de ${empleadoNombreFormatted}`,
+          );
+        } catch (telegramError: any) {
+          this.logger.warn(
+            `⚠️ Error enviando notificación Telegram (non-blocking): ${telegramError.message}`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          '⚠️ Telegram service no configurado, no se envió notificación',
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error en sendPremioDeletedNotifications: ${error.message}`,
+        error.stack,
+      );
+      // Nu aruncăm eroare - doar logăm
+    }
+  }
+
   async getAusencias(codigo?: string, mes?: string): Promise<any[]> {
     try {
       // Construiește query-ul SQL cu filtrare

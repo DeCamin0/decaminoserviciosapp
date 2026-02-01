@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 import * as pdfParseModule from 'pdf-parse';
 
 @Injectable()
@@ -1977,9 +1977,7 @@ export class EmpleadosService {
     const hasUpperCase = /[A-Z]/.test(password);
     const hasLowerCase = /[a-z]/.test(password);
     const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(
-      password,
-    );
+    const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
 
     const errors: string[] = [];
     if (!hasUpperCase) {
@@ -3004,7 +3002,7 @@ export class EmpleadosService {
       codigo: string;
       iban: string;
     }>,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _usuarioId: string,
   ): Promise<{
     success: boolean;

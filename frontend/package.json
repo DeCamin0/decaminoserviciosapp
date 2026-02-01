@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.01.31.1310",
+  "version": "2026.01.31.1314",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -92,7 +92,7 @@
     "tailwindcss": "^3.2.7",
     "util": "^0.12.5",
     "vite": "^7.1.5",
-    "vite-plugin-node-polyfills": "0.2.0",
+    "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-pwa": "^1.0.3",
     "workbox-window": "^7.3.0"
   },

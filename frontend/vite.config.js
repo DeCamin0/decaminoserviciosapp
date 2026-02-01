@@ -308,6 +308,20 @@ export default defineConfig({
       '@': '/src'
     }
   },
+  optimizeDeps: {
+    // Specifică doar entry point-urile corecte pentru dependency scanning
+    entries: [
+      'index.html'
+    ],
+    // Exclude path-urile virtuale create de vite-plugin-node-polyfills
+    // Folosim pattern matching pentru a exclude toate path-urile virtuale
+    exclude: [
+      '@esbuild-plugins/node-globals-polyfill',
+      '@esbuild-plugins/node-globals-polyfill/_virtual-process-polyfill_.js'
+    ],
+    // Forțează re-bundling doar dacă este necesar
+    force: false
+  },
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '1.0.0'),
     // Variabile de mediu pentru AutoFirma

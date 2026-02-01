@@ -3104,7 +3104,7 @@ export class DocumentIngestionService {
 
       // Try to extract from "del X de [mes] al Y de [mes] de [an]" pattern
       const fechaBajaPattern =
-        /del\s+\d{1,2}\s+de\s+\w+\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/i;
+        /del\s+\d{1,2}\s+de\s+\w+\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[.]?\d{0,4})/i;
       const fechaBajaMatch = textContent.match(fechaBajaPattern);
       if (fechaBajaMatch) {
         const mesNombreExtraido = fechaBajaMatch[2].toLowerCase();

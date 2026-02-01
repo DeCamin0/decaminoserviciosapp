@@ -308,7 +308,7 @@ export class DocumentosOficialesService {
     if (typeof v === 'string') {
       // Format: "28/08/2025, 14:33:49" -> "2025-08-28 14:33:49"
       const m = v.match(
-        /^(\d{2})[\/\-](\d{2})[\/\-](\d{4})(?:[ ,T]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/,
+        /^(\d{2})[/-](\d{2})[/-](\d{4})(?:[ ,T]+(\d{2}):(\d{2})(?::(\d{2}))?)?$/,
       );
       if (m) {
         const [, dd, mm, yyyy, hh = '00', mi = '00', ss = '00'] = m;

@@ -4,6 +4,7 @@ import {
   Post,
   Query,
   Param,
+  Body,
   UseGuards,
   Logger,
   BadRequestException,
@@ -53,6 +54,26 @@ export class HallOfFameController {
         error.stack,
       );
       throw new BadRequestException(`Error getting ranking: ${error.message}`);
+    }
+  }
+
+  /**
+   * GET /api/hall-of-fame/premios
+   * Returnează lista de premii date (permiso retribuido ca premiu)
+   * IMPORTANT: Această rută trebuie să fie ÎNAINTE de @Get(':codigo') pentru a evita conflictele
+   */
+  @Get('premios')
+  async getPremios() {
+    try {
+      const premios = await this.hallOfFameService.getPremios();
+      return {
+        success: true,
+        premios: premios,
+        total: premios.length,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting premios: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error getting premios: ${error.message}`);
     }
   }
 
@@ -275,6 +296,189 @@ export class HallOfFameController {
       throw new BadRequestException(
         `Error debugging cuadrante: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * GET /api/hall-of-fame/trimestral?trimestre=Q1-2026&limit=10
+   * Returnează clasamentul trimestrial pentru un trimestru
+   */
+  @Get('trimestral')
+  async getRankingTrimestral(
+    @Query('trimestre') trimestre?: string,
+    @Query('limit') limit?: string,
+  ) {
+    // Default: trimestrul curent
+    if (!trimestre) {
+      const now = new Date();
+      const ano = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const trimestreNum = Math.ceil(month / 3); // 1-4
+      trimestre = `Q${trimestreNum}-${ano}`;
+    }
+
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    if (isNaN(limitNum) || limitNum < 0 || limitNum > 500) {
+      throw new BadRequestException('limit must be between 0 (all) and 500');
+    }
+
+    try {
+      const ranking = await this.hallOfFameService.getRankingTrimestral(
+        trimestre,
+        limitNum,
+      );
+      return {
+        success: true,
+        trimestre: trimestre,
+        ranking: ranking,
+        total: ranking.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error getting trimestral ranking for ${trimestre}: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error getting trimestral ranking: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * POST /api/hall-of-fame/trimestral/calculate?trimestre=Q1-2026
+   * Calculează și salvează scorurile trimestriale pentru un trimestru (doar manageri/admini/developeri)
+   */
+  @Post('trimestral/calculate')
+  async calculateTrimestralScores(
+    @Query('trimestre') trimestre?: string,
+    @CurrentUser() user?: any,
+  ) {
+    // Verifică permisiuni
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const isManager = user?.isManager || false;
+    const canCalculate =
+      isManager ||
+      grupo === 'Admin' ||
+      grupo === 'Developer' ||
+      grupo === 'Manager' ||
+      grupo === 'Supervisor';
+
+    if (!canCalculate) {
+      throw new ForbiddenException(
+        'No tienes permisos para calcular scores trimestrales. Solo los administradores y managers pueden hacerlo.',
+      );
+    }
+
+    // Default: trimestrul curent
+    if (!trimestre) {
+      const now = new Date();
+      const ano = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const trimestreNum = Math.ceil(month / 3); // 1-4
+      trimestre = `Q${trimestreNum}-${ano}`;
+    }
+
+    try {
+      const result =
+        await this.hallOfFameService.calculateTrimestralScores(trimestre);
+      return {
+        success: result.success,
+        trimestre: trimestre,
+        processed: result.processed,
+        message: `Calculated ${result.processed} trimestral scores for ${trimestre}`,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error calculating trimestral scores for ${trimestre}: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error calculating trimestral scores: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * GET /api/hall-of-fame/trimestral/latest
+   * Returnează ultimul trimestru disponibil (cel mai recent cu date)
+   */
+  @Get('trimestral/latest')
+  async getLatestTrimestre() {
+    try {
+      // Găsește ultimul trimestru cu date
+      const latest = await this.hallOfFameService.getLatestTrimestre();
+      return {
+        success: true,
+        trimestre: latest,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error getting latest trimestre: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error getting latest trimestre: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * POST /api/hall-of-fame/premios
+   * Creează un premiu (permiso retribuido) pentru un angajat (doar manageri/admini/developeri)
+   */
+  @Post('premios')
+  async createPremio(
+    @Body()
+    body: {
+      codigo: string;
+      nombre: string;
+      fecha: string;
+      mesPremio: string;
+    },
+    @CurrentUser() user?: any,
+  ) {
+    // Verifică permisiuni
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const isManager = user?.isManager || false;
+    const canCreate =
+      isManager ||
+      grupo === 'Admin' ||
+      grupo === 'Developer' ||
+      grupo === 'Manager' ||
+      grupo === 'Supervisor';
+
+    if (!canCreate) {
+      throw new ForbiddenException(
+        'No tienes permisos para crear premios. Solo los administradores y managers pueden hacerlo.',
+      );
+    }
+
+    if (!body.codigo || !body.nombre || !body.fecha || !body.mesPremio) {
+      throw new BadRequestException(
+        'codigo, nombre, fecha, and mesPremio are required',
+      );
+    }
+
+    // Obține numele utilizatorului care dă premiul
+    const dadoPor =
+      user?.NOMBRE_APELLIDOS || user?.nombre || user?.CODIGO || 'Admin';
+
+    try {
+      const result = await this.hallOfFameService.createPremio(
+        body.codigo,
+        body.nombre,
+        body.fecha,
+        body.mesPremio,
+        dadoPor,
+      );
+      return {
+        success: true,
+        message: `Premio creado exitosamente para ${body.nombre}`,
+        data: result,
+      };
+    } catch (error) {
+      this.logger.error(`Error creating premio: ${error.message}`, error.stack);
+      throw new BadRequestException(`Error creating premio: ${error.message}`);
     }
   }
 }

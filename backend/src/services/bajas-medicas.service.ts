@@ -327,23 +327,23 @@ export class BajasMedicasService {
         const escapeMarkdown = (text: string): string => {
           if (!text) return text;
           return text
-            .replace(/\_/g, '\\_')
+            .replace(/_/g, '\\_')
             .replace(/\*/g, '\\*')
             .replace(/\[/g, '\\[')
             .replace(/\]/g, '\\]')
             .replace(/\(/g, '\\(')
             .replace(/\)/g, '\\)')
-            .replace(/\~/g, '\\~')
-            .replace(/\`/g, '\\`')
-            .replace(/\>/g, '\\>')
-            .replace(/\#/g, '\\#')
+            .replace(/~/g, '\\~')
+            .replace(/`/g, '\\`')
+            .replace(/>/g, '\\>')
+            .replace(/#/g, '\\#')
             .replace(/\+/g, '\\+')
-            .replace(/\=/g, '\\=')
+            .replace(/=/g, '\\=')
             .replace(/\|/g, '\\|')
             .replace(/\{/g, '\\{')
             .replace(/\}/g, '\\}')
             .replace(/\./g, '\\.')
-            .replace(/\!/g, '\\!');
+            .replace(/!/g, '\\!');
         };
 
         const nombreEscaped = escapeMarkdown(empleado.nombre || 'N/A');

@@ -35,7 +35,6 @@ export class PrlDocumentsController {
    */
   @Get('grupos')
   @UseGuards(JwtAuthGuard)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async listarGrupos(@CurrentUser() _user: any) {
     try {
       this.logger.log('📋 Listar todos los grupos de empleados activos');
@@ -54,7 +53,7 @@ export class PrlDocumentsController {
   @UseGuards(JwtAuthGuard)
   async listarTemplatesPorGrupo(
     @Param('grupoNombre') grupoNombre: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     @CurrentUser() _user: any,
   ) {
     try {
@@ -746,7 +745,6 @@ export class PrlDocumentsController {
    */
   @Get('empleados-con-documentos')
   @UseGuards(JwtAuthGuard)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async listarEmpleadosConDocumentos(@CurrentUser() _user: any) {
     try {
       this.logger.log(

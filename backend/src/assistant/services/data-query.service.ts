@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService, AccessLevel } from './rbac.service';
 import { calculateCuadranteHours } from '../../utils/cuadrante-hours-helper';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 import * as mysql from 'mysql2/promise';
 
 @Injectable()

@@ -45,7 +45,7 @@ export class NotificationsGateway
   /**
    * Called when gateway is initialized
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   afterInit(_server: Server) {
     this.logger.log('NotificationsGateway initialized');
   }

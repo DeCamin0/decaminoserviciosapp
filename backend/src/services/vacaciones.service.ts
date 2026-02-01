@@ -96,7 +96,7 @@ export class VacacionesService {
     }
 
     // Formato DD/MM/YYYY o DD-MM-YYYY
-    const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    const match = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
     if (match) {
       const day = parseInt(match[1], 10);
       const month = parseInt(match[2], 10) - 1; // Mes en JS es 0-indexed

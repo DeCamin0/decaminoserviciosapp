@@ -36,28 +36,29 @@ export class EmployeeExportService {
     mes: string,
     empleado: any,
   ): Promise<Buffer> {
-    return new Promise(async (resolve, reject) => {
+    // Obține datele
+    const resumenMensual = await this.horasTrabajadasService.getResumenMensual(
+      mes,
+      codigo,
+    );
+    if (!resumenMensual || resumenMensual.length === 0) {
+      throw new Error(`No hay datos para el mes ${mes}`);
+    }
+
+    const detalle = resumenMensual[0];
+    const registros = await this.fichajesService.getRegistros(codigo, mes);
+    // const ausencias = await this.ausenciasService.getAusencias(codigo, mes); // TODO: Use in future if needed
+
+    // Parsează luna
+    const [ano, mesNum] = mes.split('-');
+    const fechaMes = new Date(parseInt(ano), parseInt(mesNum) - 1, 1);
+    const nombreMes = fechaMes.toLocaleDateString('es-ES', {
+      month: 'long',
+      year: 'numeric',
+    });
+
+    return new Promise((resolve, reject) => {
       try {
-        // Obține datele
-        const resumenMensual =
-          await this.horasTrabajadasService.getResumenMensual(mes, codigo);
-        if (!resumenMensual || resumenMensual.length === 0) {
-          reject(new Error(`No hay datos para el mes ${mes}`));
-          return;
-        }
-
-        const detalle = resumenMensual[0];
-        const registros = await this.fichajesService.getRegistros(codigo, mes);
-        // const ausencias = await this.ausenciasService.getAusencias(codigo, mes); // TODO: Use in future if needed
-
-        // Parsează luna
-        const [ano, mesNum] = mes.split('-');
-        const fechaMes = new Date(parseInt(ano), parseInt(mesNum) - 1, 1);
-        const nombreMes = fechaMes.toLocaleDateString('es-ES', {
-          month: 'long',
-          year: 'numeric',
-        });
-
         // Creează PDF
         const doc = new PDFDocument({
           size: 'A4',

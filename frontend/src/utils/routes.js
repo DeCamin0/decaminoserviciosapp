@@ -66,6 +66,21 @@ export const routes = {
   calculateHallOfFameEmployee: (codigo) => import.meta.env.DEV
     ? `http://localhost:3000/api/hall-of-fame/calculate/employee/${codigo}`
     : `https://api.decaminoservicios.com/api/hall-of-fame/calculate/employee/${codigo}`,
+  getPremios: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/premios'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/premios',
+  createPremio: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/premios'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/premios',
+  getHallOfFameTrimestral: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/trimestral'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/trimestral',
+  getHallOfFameTrimestralLatest: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/trimestral/latest'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/trimestral/latest',
+  calculateHallOfFameTrimestral: import.meta.env.DEV
+    ? 'http://localhost:3000/api/hall-of-fame/trimestral/calculate'
+    : 'https://api.decaminoservicios.com/api/hall-of-fame/trimestral/calculate',
   exportEstadisticasEmpleadosExcel: import.meta.env.DEV
     ? 'http://localhost:3000/api/empleados/estadisticas/export-excel'
     : 'https://api.decaminoservicios.com/api/empleados/estadisticas/export-excel',
@@ -521,6 +536,9 @@ export const routes = {
   getAusencias: import.meta.env.DEV
     ? 'http://localhost:3000/api/ausencias'
     : 'https://api.decaminoservicios.com/api/ausencias',
+  deleteAusencia: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}`,
   addAusencia: import.meta.env.DEV
     ? 'http://localhost:3000/api/ausencias'
     : 'https://api.decaminoservicios.com/api/ausencias',

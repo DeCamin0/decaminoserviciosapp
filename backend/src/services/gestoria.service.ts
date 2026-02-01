@@ -8,9 +8,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 import * as pdfLib from 'pdf-lib';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 import * as pdfParseModule from 'pdf-parse';
 
 @Injectable()
@@ -104,18 +104,18 @@ export class GestoriaService {
       // Căutăm pattern-ul "fecha antigüedad" sau "fecha antiguedad" urmat de o dată
       // Pattern-uri mai flexibile pentru a găsi datele
       const patterns = [
-        /fecha\s+antigüedad\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /fecha\s+antiguedad\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /fecha\s+antigüedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /fecha\s+antiguedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /antigüedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /antiguedad\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antigüedad\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /fecha\s+antiguedad\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /fecha\s+antigüedad\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /fecha\s+antiguedad\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /antigüedad\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /antiguedad\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
         // Pattern mai flexibil - poate fi pe linii diferite sau cu spații diferite
-        /fecha\s+antigüedad[^\d]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /fecha\s+antiguedad[^\d]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antigüedad[^\d]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /fecha\s+antiguedad[^\d]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
         // Pattern pentru a găsi orice dată după "fecha antigüedad" (chiar dacă sunt caractere între, inclusiv newline)
-        /fecha\s+antigüedad[\s\S]{0,100}?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
-        /fecha\s+antiguedad[\s\S]{0,100}?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi,
+        /fecha\s+antigüedad[\s\S]{0,100}?(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
+        /fecha\s+antiguedad[\s\S]{0,100}?(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
       ];
 
       this.logger.debug(
@@ -130,7 +130,7 @@ export class GestoriaService {
           // Dacă nu există match[1], încercăm să extragem data din match[0]
           if (!dateStr && match[0]) {
             const dateMatchFromFull = match[0].match(
-              /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/,
+              /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/,
             );
             if (dateMatchFromFull) {
               dateStr = dateMatchFromFull[0];
@@ -142,7 +142,7 @@ export class GestoriaService {
               `✅ Pattern găsit pentru Fecha Antigüedad: "${match[0]}", dateStr: "${dateStr}"`,
             );
             const dateMatch = dateStr.match(
-              /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/,
+              /(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/,
             );
             if (dateMatch) {
               const day = parseInt(dateMatch[1], 10);
@@ -201,8 +201,8 @@ export class GestoriaService {
       // Sau variante: "del X al Y de [mes] de [an]"
       // Anul poate fi "2025" sau "2.025"
       const patterns = [
-        /del\s+(\d{1,2})\s+de\s+(\w+)\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/gi,
-        /del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/gi,
+        /del\s+(\d{1,2})\s+de\s+(\w+)\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[.]?\d{0,4})/gi,
+        /del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[.]?\d{0,4})/gi,
       ];
 
       for (const pattern of patterns) {
@@ -213,7 +213,7 @@ export class GestoriaService {
           // Pentru primul pattern: "del X de [mes1] al Y de [mes2] de [an]"
           if (pattern.source.includes('de\\s+(\\w+)\\s+al')) {
             const parts = match[0].match(
-              /del\s+(\d{1,2})\s+de\s+(\w+)\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/i,
+              /del\s+(\d{1,2})\s+de\s+(\w+)\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[.]?\d{0,4})/i,
             );
             if (parts) {
               const diaFinal = parseInt(parts[3], 10);
@@ -236,7 +236,7 @@ export class GestoriaService {
           } else {
             // Pentru al doilea pattern: "del X al Y de [mes] de [an]"
             const parts = match[0].match(
-              /del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[\.]?\d{0,4})/i,
+              /del\s+(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{1,4}[.]?\d{0,4})/i,
             );
             if (parts) {
               const diaFinal = parseInt(parts[2], 10);
@@ -3939,8 +3939,8 @@ export class GestoriaService {
           INSERT INTO \`coste_personal\` (
             \`codigo_empleado\`,
             \`nombre_empleado\`,
-            ${data.nombre_bd !== undefined ? '\`nombre_bd\`,' : ''}
-            ${data.empleado_encontrado !== undefined ? '\`empleado_encontrado\`,' : ''}
+            ${data.nombre_bd !== undefined ? '`nombre_bd`,' : ''}
+            ${data.empleado_encontrado !== undefined ? '`empleado_encontrado`,' : ''}
             \`mes\`,
             \`ano\`,
             \`total\`,

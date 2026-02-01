@@ -1064,6 +1064,7 @@ export default function SolicitudesPage() {
   const [selectedAusenciaForUpload, setSelectedAusenciaForUpload] = useState(null);
   const [uploadJustificanteFile, setUploadJustificanteFile] = useState(null);
   const [uploadJustificanteLoading, setUploadJustificanteLoading] = useState(false);
+  const [isFetchingDocumentos, setIsFetchingDocumentos] = useState(false);
   const [uploadJustificanteError, setUploadJustificanteError] = useState(null);
   const [documentosSolicitadosMap, setDocumentosSolicitadosMap] = useState(new Map()); // Map<codigo_tipo, {estado, fecha_solicitud, fecha_completado}>
   
@@ -3230,10 +3231,11 @@ export default function SolicitudesPage() {
 
   // Fetch documentos solicitados pentru ausencias (pentru a afișa statusul)
   const fetchDocumentosSolicitadosForAusencias = useCallback(async () => {
-    if (authUser?.isDemo || selectedTab !== 'ausencias') {
+    if (authUser?.isDemo || selectedTab !== 'ausencias' || isFetchingDocumentos) {
       return;
     }
 
+    setIsFetchingDocumentos(true);
     try {
       // Obținem toate CODIGO-urile unice din ausencias
       const codigosUnicos = new Set();
@@ -3250,74 +3252,65 @@ export default function SolicitudesPage() {
       }
 
       // Fetch documentos solicitados pentru fiecare codigo
+      // Folosim procesare complet secvențială cu delay pentru a evita throttling
       const token = localStorage.getItem('auth_token');
       const documentosMap = new Map();
+      const codigosArray = Array.from(codigosUnicos);
+      
+      // Procesăm complet secvențial (1 request la un moment dat) cu delay de 300ms între ele
+      for (const codigo of codigosArray) {
 
-      await Promise.all(
-        Array.from(codigosUnicos).map(async (codigo) => {
-          try {
-            const url = routes.getDocumentosSolicitados(codigo);
-            const response = await fetch(url, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token && { Authorization: `Bearer ${token}` }),
-              },
-            });
+        try {
+          const url = routes.getDocumentosSolicitados(codigo);
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+          });
 
-              if (response.ok) {
-              const data = await response.json();
-              if (data.success && data.data) {
-                // Filtrează doar justificantele (tipuri care conțin "justificante", "certificado médico" sau alte tipuri de justificante)
-                const justificantes = data.data.filter(doc => {
-                  const tipo = (doc.tipo_documento || '').toLowerCase();
-                  return tipo.includes('justificante') || 
-                         tipo.includes('certificado médico') || 
-                         tipo.includes('justificante médico') ||
-                         tipo.includes('justificante de ausencia');
-                });
+          if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.data) {
+                  // Filtrează doar justificantele (tipuri care conțin "justificante", "certificado médico" sau alte tipuri de justificante)
+                  const justificantes = data.data.filter(doc => {
+                    const tipo = (doc.tipo_documento || '').toLowerCase();
+                    return tipo.includes('justificante') || 
+                           tipo.includes('certificado médico') || 
+                           tipo.includes('justificante médico') ||
+                           tipo.includes('justificante de ausencia');
+                  });
 
-                justificantes.forEach(doc => {
-                  // Extrage tipul și data din notas pentru a crea key-ul corect
-                  const notas = doc.notas || '';
-                  let tipoAusencia = '';
-                  let fechaAusencia = '';
-                  
-                  // Pattern: "Justificante para ausencia: TIPO - YYYY-MM-DD"
-                  let match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
-                  if (!match) {
-                    // Pattern alternativ: "Justificante para ausencia: TIPO - DD/MM/YYYY"
-                    match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
-                    if (match) {
-                      const fechaParts = match[2].trim().split('/');
-                      if (fechaParts.length === 3) {
-                        fechaAusencia = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
-                        tipoAusencia = match[1].trim();
+                  justificantes.forEach(doc => {
+                    // Extrage tipul și data din notas pentru a crea key-ul corect
+                    const notas = doc.notas || '';
+                    let tipoAusencia = '';
+                    let fechaAusencia = '';
+                    
+                    // Pattern: "Justificante para ausencia: TIPO - YYYY-MM-DD"
+                    let match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
+                    if (!match) {
+                      // Pattern alternativ: "Justificante para ausencia: TIPO - DD/MM/YYYY"
+                      match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+                      if (match) {
+                        const fechaParts = match[2].trim().split('/');
+                        if (fechaParts.length === 3) {
+                          fechaAusencia = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                          tipoAusencia = match[1].trim();
+                        }
                       }
+                    } else {
+                      tipoAusencia = match[1].trim();
+                      fechaAusencia = match[2].trim();
                     }
-                  } else {
-                    tipoAusencia = match[1].trim();
-                    fechaAusencia = match[2].trim();
-                  }
-                  
-                  // Dacă am extras tipul și data, folosim key-ul complet
-                  if (tipoAusencia && fechaAusencia) {
-                    const key = `${codigo}_${tipoAusencia}_${fechaAusencia}`;
-                    const keySinEspacios = `${codigo}_${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}`;
                     
-                    documentosMap.set(key, {
-                      estado: doc.estado,
-                      fecha_solicitud: doc.fecha_solicitud,
-                      fecha_completado: doc.fecha_completado,
-                      tipo_documento: doc.tipo_documento,
-                      notas: doc.notas,
-                      tipoAusencia: tipoAusencia,
-                      fechaAusencia: fechaAusencia
-                    });
-                    
-                    // Adăugăm și key-ul fără spații pentru matching flexibil
-                    if (keySinEspacios !== key) {
-                      documentosMap.set(keySinEspacios, {
+                    // Dacă am extras tipul și data, folosim key-ul complet
+                    if (tipoAusencia && fechaAusencia) {
+                      const key = `${codigo}_${tipoAusencia}_${fechaAusencia}`;
+                      const keySinEspacios = `${codigo}_${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}`;
+                      
+                      documentosMap.set(key, {
                         estado: doc.estado,
                         fecha_solicitud: doc.fecha_solicitud,
                         fecha_completado: doc.fecha_completado,
@@ -3326,34 +3319,52 @@ export default function SolicitudesPage() {
                         tipoAusencia: tipoAusencia,
                         fechaAusencia: fechaAusencia
                       });
+                      
+                      // Adăugăm și key-ul fără spații pentru matching flexibil
+                      if (keySinEspacios !== key) {
+                        documentosMap.set(keySinEspacios, {
+                          estado: doc.estado,
+                          fecha_solicitud: doc.fecha_solicitud,
+                          fecha_completado: doc.fecha_completado,
+                          tipo_documento: doc.tipo_documento,
+                          notas: doc.notas,
+                          tipoAusencia: tipoAusencia,
+                          fechaAusencia: fechaAusencia
+                        });
+                      }
+                    } else {
+                      // Fallback: dacă nu putem extrage tipul și data, folosim key-ul vechi (pentru compatibilitate cu justificante vechi)
+                      // NOTĂ: Acest fallback este folosit doar pentru justificante vechi care nu au tipul și data în notas
+                      const key = `${codigo}_${doc.tipo_documento}`;
+                      documentosMap.set(key, {
+                        estado: doc.estado,
+                        fecha_solicitud: doc.fecha_solicitud,
+                        fecha_completado: doc.fecha_completado,
+                        tipo_documento: doc.tipo_documento,
+                        notas: doc.notas
+                      });
                     }
-                  } else {
-                    // Fallback: dacă nu putem extrage tipul și data, folosim key-ul vechi (pentru compatibilitate cu justificante vechi)
-                    // NOTĂ: Acest fallback este folosit doar pentru justificante vechi care nu au tipul și data în notas
-                    const key = `${codigo}_${doc.tipo_documento}`;
-                    documentosMap.set(key, {
-                      estado: doc.estado,
-                      fecha_solicitud: doc.fecha_solicitud,
-                      fecha_completado: doc.fecha_completado,
-                      tipo_documento: doc.tipo_documento,
-                      notas: doc.notas
-                    });
-                  }
-                });
+                  });
+                }
               }
+            } catch (error) {
+              console.warn(`Error fetching documentos solicitados for ${codigo}:`, error);
             }
-          } catch (error) {
-            console.warn(`Error fetching documentos solicitados for ${codigo}:`, error);
+            
+            // Delay de 500ms între fiecare request pentru a evita throttling
+            if (codigosArray.indexOf(codigo) < codigosArray.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
           }
-        })
-      );
 
       setDocumentosSolicitadosMap(documentosMap);
     } catch (error) {
       console.error('Error fetching documentos solicitados for ausencias:', error);
       setDocumentosSolicitadosMap(new Map());
+    } finally {
+      setIsFetchingDocumentos(false);
     }
-  }, [authUser?.isDemo, selectedTab, selectedUser, allAusencias]);
+  }, [authUser?.isDemo, selectedTab, selectedUser, allAusencias, isFetchingDocumentos]);
 
   // Fetch documentos solicitados pentru ausencias când se schimbă tab-ul sau ausencias
   useEffect(() => {
@@ -4673,27 +4684,48 @@ export default function SolicitudesPage() {
       setOperationLoading('delete', true);
       
       // Găsește solicitarea pentru a obține codigo-ul angajatului
-      const solicitudToDelete = [...solicitudes, ...allSolicitudes].find(s => s.id === solicitudId);
+      // Caută în toate locurile: solicitudes, allSolicitudes și allAusencias
+      let solicitudToDelete = [...solicitudes, ...allSolicitudes].find(s => s.id === solicitudId);
+      let esAusencia = solicitudToDelete?.fuente === 'ausencias';
+      
+      // Dacă nu s-a găsit în solicitudes, caută în allAusencias
+      if (!solicitudToDelete && allAusencias) {
+        solicitudToDelete = allAusencias.find(a => (a.id || a.ID) === solicitudId);
+        if (solicitudToDelete) {
+          esAusencia = true;
+        }
+      }
+      
       const codigo = solicitudToDelete?.codigo || solicitudToDelete?.CODIGO || '';
       
-      // Folosește același endpoint cu accion: 'delete'
-      const data = {
-        accion: 'delete',
-        id: solicitudId,
-        codigo: codigo
-      };
+      let result;
       
-      console.log('TRIMIT DELETE:', data);
-      
-      // Folosește backend-ul nou pentru delete
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
-      
-      const result = await callApi(endpoint, {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
+      // Dacă este o ausencia, folosește endpoint-ul de ștergere pentru ausencias
+      if (esAusencia) {
+        const endpoint = routes.deleteAusencia(solicitudId);
+        result = await callApi(endpoint, {
+          method: 'DELETE'
+        });
+      } else {
+        // Pentru solicitudes normale, folosește același endpoint cu accion: 'delete'
+        const data = {
+          accion: 'delete',
+          id: solicitudId,
+          codigo: codigo
+        };
+        
+        console.log('TRIMIT DELETE:', data);
+        
+        // Folosește backend-ul nou pentru delete
+        const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+          ? 'http://localhost:3000/api/solicitudes'
+          : 'https://api.decaminoservicios.com/api/solicitudes');
+        
+        result = await callApi(endpoint, {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+      }
 
       // Procesează răspunsul: poate fi array cu { status: "ok", ... } sau { success: true } sau obiect direct
       let responseData = result.data;
@@ -4712,14 +4744,14 @@ export default function SolicitudesPage() {
 
       if (isSuccess) {
         // Log ștergerea solicitării
-        await activityLogger.logAction('solicitud_deleted', {
+        await activityLogger.logAction(esAusencia ? 'ausencia_deleted' : 'solicitud_deleted', {
           solicitud_id: responseData?.deleted_id || responseData?.solicitud_id || solicitudId,
           codigo: responseData?.codigo || codigo,
           user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
           email: authUser?.email
         });
         
-        setSuccessMsg('Solicitud eliminada correctamente.');
+        setSuccessMsg(esAusencia ? 'Ausencia eliminada correctamente.' : 'Solicitud eliminada correctamente.');
         setDeleteConfirm({ isOpen: false, solicitudId: null }); // Închide modalul
         // Reîncarcă listele
         fetchSolicitudes();
@@ -4728,11 +4760,11 @@ export default function SolicitudesPage() {
         }
         setTimeout(() => setSuccessMsg(''), 2500);
       } else {
-        setErrorMsg(`No se pudo eliminar la solicitud: ${result.error || responseData?.error || 'Error desconocido'}`);
+        setErrorMsg(`No se pudo eliminar ${esAusencia ? 'la ausencia' : 'la solicitud'}: ${result.error || responseData?.error || 'Error desconocido'}`);
         setDeleteConfirm({ isOpen: false, solicitudId: null }); // Închide modalul chiar dacă e eroare
       }
     } catch (e) {
-      console.error('Error deleting solicitud:', e);
+      console.error('Error deleting solicitud/ausencia:', e);
       setErrorMsg(`Error al eliminar: ${e.message}`);
       setDeleteConfirm({ isOpen: false, solicitudId: null }); // Închide modalul în caz de eroare
     } finally {
@@ -6564,7 +6596,7 @@ export default function SolicitudesPage() {
                           </div>
                         </div>
                         {/* Iconițe Edit și Delete */}
-                        {selectedTab !== 'ausencias' && selectedTab !== 'baja' && (
+                        {selectedTab !== 'baja' && (
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {/* Butoane Preview/Aprobar/Rechazar pentru BAJA_VOLUNTARIA cu estado Pendiente */}
                             {selectedTab === 'baja_voluntaria' && item.estado === 'Pendiente' && isManager ? (

@@ -96,6 +96,7 @@ export class PrlDocumentsService {
       .replace(/\0/g, '\\0') // Escape null
       .replace(/\n/g, '\\n') // Escape newline
       .replace(/\r/g, '\\r') // Escape carriage return
+      // eslint-disable-next-line no-control-regex
       .replace(/\x1a/g, '\\Z'); // Escape Ctrl+Z
 
     return `'${escaped}'`;
@@ -304,7 +305,7 @@ export class PrlDocumentsService {
   async procesarZipUpload(
     grupoNombre: string,
     zipBuffer: Buffer,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _usuarioId: string,
   ): Promise<{
     success: boolean;
@@ -405,7 +406,7 @@ export class PrlDocumentsService {
       tipo: PrlDocumentType;
       archivoBuffer: Buffer;
     }>,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _usuarioId: string,
   ): Promise<{
     success: boolean;
@@ -605,7 +606,7 @@ export class PrlDocumentsService {
     tipo: PrlDocumentType,
     nombreArchivo: string,
     archivoBuffer: Buffer,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     _usuarioId: string,
   ): Promise<{ success: boolean; templateId: number }> {
     try {
