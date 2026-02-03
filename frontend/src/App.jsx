@@ -15,8 +15,12 @@ import OfflineIndicator from './components/OfflineIndicator';
 import CertificadoHandicapDialog from './components/CertificadoHandicapDialog';
 import { PeriodoProvider } from './contexts/PeriodoContext';
 import IdleProvider from './providers/IdleProvider.jsx';
+import { SessionExpiredProvider, useSessionExpired } from './contexts/SessionExpiredContext';
+import SessionExpiredBanner from './components/SessionExpiredBanner';
 import { usePWAMigration } from './hooks/usePWAMigration';
 import { useErrorHandler } from './hooks/useErrorHandler';
+import { setSessionExpiredCallback } from './utils/tokenRefresh';
+import { useTokenMonitor } from './hooks/useTokenMonitor';
 
 // Import doar paginile mici (non-lazy)
 import LoginPage from './pages/LoginPage';
@@ -59,6 +63,29 @@ import {
 
 // i18n este deja importat în main.jsx
 
+// Component intern pentru a configura session expired callback
+function SessionExpiredSetup() {
+  const { showSessionExpired } = useSessionExpired();
+  
+  useEffect(() => {
+    setSessionExpiredCallback(showSessionExpired);
+    return () => {
+      setSessionExpiredCallback(null);
+    };
+  }, [showSessionExpired]);
+  
+  return null;
+}
+
+// Component pentru monitorizarea periodică a token-ului
+// Se montează doar când utilizatorul e autentificat
+function TokenMonitor() {
+  // Monitorizează token-ul doar dacă utilizatorul e autentificat
+  useTokenMonitor(30000); // Verifică la fiecare 30 de secunde
+  
+  return null;
+}
+
 function App() {
   // Pornește migrarea PWA
   usePWAMigration();
@@ -70,13 +97,18 @@ function App() {
         <GoogleMapsProvider>
           <PeriodoProvider>
             <LocationProvider>
-              <IdleProvider>
-                <AppRoutes />
-                <CertificadoHandicapDialog />
-                <PWAUpdatePrompt />
-                <BrowserUpdatePrompt />
-                <OfflineIndicator />
-              </IdleProvider>
+              <SessionExpiredProvider>
+                <SessionExpiredSetup />
+                <TokenMonitor />
+                <IdleProvider>
+                  <SessionExpiredBanner />
+                  <AppRoutes />
+                  <CertificadoHandicapDialog />
+                  <PWAUpdatePrompt />
+                  <BrowserUpdatePrompt />
+                  <OfflineIndicator />
+                </IdleProvider>
+              </SessionExpiredProvider>
             </LocationProvider>
           </PeriodoProvider>
         </GoogleMapsProvider>

@@ -172,8 +172,9 @@ class ActivityLogger {
     }
   }
 
-  async logLogout(user) {
+  async logLogout(user, token = null) {
     // Non-blocking logout logging - direct sendToBackend
+    // token este opțional - dacă nu e furnizat, se încearcă din localStorage
     try {
       const browserInfo = this.getBrowserInfo();
       
@@ -201,8 +202,8 @@ class ActivityLogger {
       // Salvează local pentru backup
       this.saveLocalLog(logEntry);
 
-      // Trimite la backend (non-blocking)
-      this.sendToBackend(logEntry).catch(error => {
+      // Trimite la backend (non-blocking) cu token-ul furnizat sau din localStorage
+      this.sendToBackend(logEntry, token).catch(error => {
         console.error('Error sending logout to backend:', error);
       });
     } catch (error) {
@@ -1029,30 +1030,57 @@ class ActivityLogger {
       const logs = JSON.parse(localStorage.getItem('activityLogs') || '[]');
       logs.push(logEntry);
       
-      // Păstrează doar ultimele 100 log-uri
-      if (logs.length > 100) {
-        logs.splice(0, logs.length - 100);
+      // Păstrează doar ultimele 30 log-uri (reducere pentru a evita QuotaExceededError)
+      const MAX_LOGS = 30;
+      if (logs.length > MAX_LOGS) {
+        logs.splice(0, logs.length - MAX_LOGS);
       }
       
       localStorage.setItem('activityLogs', JSON.stringify(logs));
     } catch (error) {
-      console.error('Error saving local log:', error);
+      // Dacă apare QuotaExceededError, șterge log-urile vechi și încearcă din nou
+      if (error.name === 'QuotaExceededError' || error.message?.includes('QuotaExceededError')) {
+        try {
+          console.warn('[ActivityLogger] localStorage quota exceeded, clearing old logs...');
+          // Șterge toate log-urile și păstrează doar ultimul
+          const lastLog = logEntry;
+          localStorage.setItem('activityLogs', JSON.stringify([lastLog]));
+          console.log('[ActivityLogger] Cleared old logs, kept only the latest log');
+        } catch (clearError) {
+          // Dacă nici asta nu funcționează, șterge complet
+          console.error('[ActivityLogger] Failed to save log even after clearing, removing all logs:', clearError);
+          try {
+            localStorage.removeItem('activityLogs');
+          } catch (removeError) {
+            console.error('[ActivityLogger] Failed to remove activityLogs:', removeError);
+          }
+        }
+      } else {
+        console.error('Error saving local log:', error);
+      }
     }
   }
 
-  async sendToBackend(logEntry) {
+  async sendToBackend(logEntry, token = null) {
     try {
       const headers = {
         'Content-Type': 'application/json',
       };
 
       // Adaugă token JWT dacă e disponibil (pentru tracking, chiar dacă endpoint-ul nu necesită auth)
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      // Folosește token-ul furnizat sau încearcă din localStorage
+      const authToken = token || localStorage.getItem('auth_token');
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
       }
 
-      const response = await fetch(this.baseUrl, {
+      // Folosește originalFetch pentru a evita interceptor-ul global care transformă fetch în fetchWithAuth
+      // Astfel evităm erorile când token-ul a fost deja șters (ex: la logout)
+      const originalFetch = typeof window !== 'undefined' && window.__originalFetchForLocation 
+        ? window.__originalFetchForLocation 
+        : fetch;
+
+      const response = await originalFetch(this.baseUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(logEntry)

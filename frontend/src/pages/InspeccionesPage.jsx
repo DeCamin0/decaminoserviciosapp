@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
-import { Link } from 'react-router-dom';
 import { Card } from '../components/ui';
 import InspectionForm from '../components/inspections/InspectionForm';
 import InspectionList from '../components/inspections/InspectionList'; // Updated import
@@ -9,9 +8,12 @@ import { routes } from '../utils/routes';
 import { API_ENDPOINTS } from '../utils/constants';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { usePolling } from '../hooks/usePolling';
+import { usePermissions } from '../hooks/usePermissions';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
 
 export default function InspeccionesPage() {
   const { user: authUser } = useAuth();
+  const { hasPermission, loading: loadingPermissions, hasBackendPermissions } = usePermissions();
   const [selectedType, setSelectedType] = useState(null);
   const [centrosStats, setCentrosStats] = useState({
     totalCentros: 0,
@@ -19,22 +21,8 @@ export default function InspeccionesPage() {
     centrosActivos: 0
   });
 
-  // Verific dacă utilizatorul este supervisor
-  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
-  // Fallback: verifică direct GRUPO dacă isManager nu este setat
-  // Include și "Administrativ" pentru utilizatori cu rol administrativ
-  const isSupervisor = authUser?.isManager || 
-                       authUser?.GRUPO === 'Manager' || 
-                       authUser?.GRUPO === 'Supervisor' || 
-                       authUser?.GRUPO === 'Developer' || 
-                       authUser?.GRUPO === 'Admin' ||
-                       authUser?.GRUPO === 'Administrativ' ||
-                       authUser?.grupo === 'Manager' || 
-                       authUser?.grupo === 'Supervisor' || 
-                       authUser?.grupo === 'Developer' || 
-                       authUser?.grupo === 'Admin' ||
-                       authUser?.grupo === 'Administrativ' ||
-                       false;
+  // Verifică permisiunile din backend - folosim DOAR permisiunile din backend (fără fallback)
+  const canAccessPage = hasBackendPermissions ? hasPermission('inspecciones') : false;
 
   // Demo data for InspeccionesPage
   const setDemoCentrosStats = () => {
@@ -103,22 +91,32 @@ export default function InspeccionesPage() {
     loadCentrosStats();
   }, [authUser?.isDemo]);
 
-  if (!isSupervisor) {
+  // Verifică dacă utilizatorul are acces la pagină
+  if (loadingPermissions) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
+          <LoadingSpinner />
+          <p className="text-gray-600 mt-4">Cargando permisos...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canAccessPage) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md mx-auto p-6">
           <h1 className="text-2xl font-bold text-red-600 mb-4">
             Acceso Restringido
           </h1>
-          <p className="text-gray-600 mb-6">
-            Solo los supervisores pueden acceder a las inspecciones.
+          <p className="text-gray-600 mb-4">
+            No tienes permisos configurados para acceder a la página de Inspecciones.
           </p>
-          <Link 
-            to="/inicio"
-            className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
-          >
-            ← Volver al Inicio
-          </Link>
+          <p className="text-gray-600 mb-6">
+            Por favor, contacta con tu supervisor para que te asigne los permisos necesarios.
+          </p>
+          <Back3DButton to="/inicio" title="Volver al Inicio" />
         </div>
       </div>
     );

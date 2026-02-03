@@ -165,6 +165,40 @@ handleBrowserExtensionErrors();
 // Dev-only: regulate fetch toward n8n endpoints (rate limit + backoff)
 installRegulatedFetch();
 
+// Setup global fetch interceptor for token refresh
+// IMPORTANT: Folosim fetch-ul curent (poate fi deja interceptat de regulatedFetch)
+if (typeof window !== 'undefined' && window.__originalFetchForLocation) {
+  const currentFetch = window.fetch; // Fetch-ul curent (poate fi deja interceptat de regulatedFetch)
+  
+  window.fetch = async function(...args) {
+    const [url, options = {}] = args;
+    
+    // Interceptează toate endpoint-urile /api/ care necesită autentificare
+    // Excepții: /api/n8n/ (proxy către n8n) și /api/auth/ (login, refresh)
+    const isApiRequest = typeof url === 'string' && 
+      url.includes('/api/') && 
+      !url.includes('/api/n8n/') && 
+      !url.includes('/api/auth/');
+    
+    if (isApiRequest) {
+      // Importăm dinamic pentru a evita circular dependencies
+      try {
+        const { fetchWithAuth } = await import('./utils/tokenRefresh.js');
+        return await fetchWithAuth(url, options);
+      } catch (error) {
+        // Dacă fetchWithAuth eșuează, folosește fetch-ul curent (care poate fi deja interceptat)
+        console.warn('[TokenRefresh] Error in fetchWithAuth, falling back to current fetch:', error);
+        return currentFetch.apply(this, args);
+      }
+    }
+    
+    // Pentru request-uri non-API, folosește fetch-ul curent (poate fi deja interceptat)
+    return currentFetch.apply(this, args);
+  };
+  
+  console.log('✅ Global fetch interceptor for token refresh enabled');
+}
+
 /**
  * Bootstrap function to handle DEMO mode and MSW
  */

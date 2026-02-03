@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
@@ -8,11 +8,37 @@ const CertificadoHandicapDialog = () => {
   const [showDialog, setShowDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  
+  // Cache pentru empleado - evită apeluri duplicate
+  const empleadoCacheRef = useRef({ codigo: null, data: null, timestamp: 0 });
+  const CACHE_DURATION = 60000; // 60 secunde cache
+  const fetchingEmpleadoRef = useRef(false);
 
   // Verifică dacă utilizatorul a confirmat deja
   useEffect(() => {
     const checkConfirmation = async () => {
       if (!user?.CODIGO) {
+        setChecking(false);
+        return;
+      }
+
+      // Verifică cache-ul
+      const now = Date.now();
+      const cache = empleadoCacheRef.current;
+      if (cache.data && 
+          cache.codigo === user?.CODIGO &&
+          (now - cache.timestamp) < CACHE_DURATION) {
+        // Folosește cache-ul
+        const empleado = cache.data;
+        if (empleado?.certificado_handicap_confirmado === null || empleado?.certificado_handicap_confirmado === undefined) {
+          setShowDialog(true);
+        }
+        setChecking(false);
+        return;
+      }
+
+      // Evită apeluri duplicate simultane
+      if (fetchingEmpleadoRef.current) {
         setChecking(false);
         return;
       }
@@ -24,6 +50,7 @@ const CertificadoHandicapDialog = () => {
           return;
         }
 
+        fetchingEmpleadoRef.current = true;
         // Obține datele complete ale utilizatorului
         const res = await fetch(routes.getEmpleadoMe, {
           headers: {
@@ -36,6 +63,15 @@ const CertificadoHandicapDialog = () => {
           const data = await res.json();
           const empleado = data?.empleado || data?.data?.empleado;
           
+          // Actualizează cache-ul
+          if (empleado) {
+            empleadoCacheRef.current = {
+              codigo: user?.CODIGO,
+              data: empleado,
+              timestamp: Date.now(),
+            };
+          }
+          
           // Dacă certificado_handicap_confirmado este null, arată dialogul
           if (empleado?.certificado_handicap_confirmado === null || empleado?.certificado_handicap_confirmado === undefined) {
             setShowDialog(true);
@@ -45,6 +81,7 @@ const CertificadoHandicapDialog = () => {
         console.error('Error checking certificado confirmation:', error);
       } finally {
         setChecking(false);
+        fetchingEmpleadoRef.current = false;
       }
     };
 

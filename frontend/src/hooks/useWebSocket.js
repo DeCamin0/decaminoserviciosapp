@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../contexts/AuthContextBase';
+import { useSessionExpired } from '../contexts/SessionExpiredContext';
+import { isTokenFullyExpired } from '../utils/tokenRefresh';
 
 /**
  * Hook pentru gestionarea conexiunii WebSocket
@@ -8,6 +10,7 @@ import { useAuth } from '../contexts/AuthContextBase';
  */
 export const useWebSocket = (namespace = '/notifications') => {
   const { user } = useAuth();
+  const { isSessionExpired } = useSessionExpired();
   const [isConnected, setIsConnected] = useState(false);
   const [socket, setSocket] = useState(null);
   const socketRef = useRef(null); // Ref pentru a evita dependențe circulare
@@ -34,6 +37,12 @@ export const useWebSocket = (namespace = '/notifications') => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
       console.log('🔌 [WebSocket] No token, skipping connection');
+      return;
+    }
+
+    // Verifică dacă token-ul e expirat înainte de a încerca conexiunea
+    if (isTokenFullyExpired()) {
+      console.log('🔌 [WebSocket] Token expired, skipping connection');
       return;
     }
 
@@ -80,10 +89,21 @@ export const useWebSocket = (namespace = '/notifications') => {
       console.log('❌ [WebSocket] Disconnected:', reason);
       setIsConnected(false);
 
+      // Nu reconectăm dacă token-ul e expirat
+      if (isTokenFullyExpired()) {
+        console.log('🔌 [WebSocket] Token expired, not reconnecting');
+        return;
+      }
+
       // Reconnect dacă nu a fost o deconexiune intenționată
       if (reason === 'io server disconnect') {
         // Server-ul a deconectat, reconectăm manual
         reconnectTimeoutRef.current = setTimeout(() => {
+          // Verifică din nou dacă token-ul e expirat înainte de reconectare
+          if (isTokenFullyExpired()) {
+            console.log('🔌 [WebSocket] Token expired during reconnect attempt, aborting');
+            return;
+          }
           if (reconnectAttemptsRef.current < maxReconnectAttempts) {
             reconnectAttemptsRef.current++;
             console.log(`🔄 [WebSocket] Reconnecting (attempt ${reconnectAttemptsRef.current})...`);
@@ -150,9 +170,33 @@ export const useWebSocket = (namespace = '/notifications') => {
     }
   }, [socket, isConnected]);
 
+  // Deconectează WebSocket-ul când sesiunea expiră
+  useEffect(() => {
+    if (isSessionExpired && socketRef.current) {
+      console.log('🔌 [WebSocket] Session expired, disconnecting...');
+      // Mutăm apelul într-un setTimeout pentru a evita cascading renders
+      setTimeout(() => {
+        disconnect();
+      }, 0);
+    }
+  }, [isSessionExpired, disconnect]);
+
   // Conectare la mount și când user-ul se schimbă
   useEffect(() => {
     if (user) {
+      // Verifică dacă token-ul e valid înainte de a încerca conexiunea
+      const token = localStorage.getItem('auth_token');
+      if (!token || isTokenFullyExpired()) {
+        console.log('🔌 [WebSocket] Token missing or expired, skipping connection');
+        return;
+      }
+
+      // Nu conectăm dacă sesiunea e expirată
+      if (isSessionExpired) {
+        console.log('🔌 [WebSocket] Session expired, skipping connection');
+        return;
+      }
+
       // Amânăm apelul connect() pentru a evita cascading renders
       // Folosim setTimeout pentru a amâna după ce render-ul s-a terminat
       const timeoutId = setTimeout(() => {
@@ -180,7 +224,7 @@ export const useWebSocket = (namespace = '/notifications') => {
       setSocket(null);
       setIsConnected(false);
     };
-  }, [user, connect]);
+  }, [user, connect, isSessionExpired]);
 
   return {
     socket,

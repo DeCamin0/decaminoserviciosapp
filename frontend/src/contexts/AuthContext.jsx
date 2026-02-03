@@ -6,6 +6,7 @@ import { routes } from '../utils/routes.js';
 import { auth, debug } from '../utils/logger';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 import { AuthContext } from './AuthContextBase';
+import { fetchWithAuth } from '../utils/tokenRefresh';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -35,9 +36,9 @@ export const AuthProvider = ({ children }) => {
       // Dacă avem token, încercăm refresh la /api/me pentru date canonice
       if (savedToken) {
         try {
-          const res = await fetch(routes.me, {
+          // Folosim fetchWithAuth pentru a gestiona automat refresh-ul token-ului
+          const res = await fetchWithAuth(routes.me, {
             headers: {
-              Authorization: `Bearer ${savedToken}`,
               Accept: 'application/json',
             },
           });
@@ -246,15 +247,21 @@ export const AuthProvider = ({ children }) => {
         auth('Token salvat în localStorage');
       }
       
+      // Salvează refresh token dacă există în răspuns
+      if (data.refreshToken) {
+        localStorage.setItem('refresh_token', data.refreshToken);
+        auth('Refresh token salvat în localStorage');
+      }
+      
       localStorage.setItem('user', JSON.stringify(userObj));
       setUser(userObj);
 
       // Încercăm să luăm user canonic din backend (/api/me) dacă avem token
       if (data.accessToken) {
         try {
-          const meRes = await fetch(routes.me, {
+          // Folosim fetchWithAuth pentru a gestiona automat refresh-ul token-ului
+          const meRes = await fetchWithAuth(routes.me, {
             headers: {
-              Authorization: `Bearer ${data.accessToken}`,
               Accept: 'application/json',
             },
           });
@@ -345,9 +352,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    // Log logout (non-blocking, nu așteaptă)
+    // Salvează token-ul înainte de a-l șterge (pentru request-ul de logout)
+    const currentToken = localStorage.getItem('auth_token');
+    
+    // Log logout (non-blocking, nu așteaptă) - trimite token-ul pentru request
     if (user) {
-      activityLogger.logLogout(user).catch(error => {
+      activityLogger.logLogout(user, currentToken).catch(error => {
         console.error('Error logging logout:', error);
       });
     }
@@ -359,6 +369,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('auth_token'); // Șterge și token-ul JWT
+    localStorage.removeItem('refresh_token'); // Șterge și refresh token-ul
     setAuthToken(null); // Update state
     clearAvatarCache();
     sessionStorage.removeItem('lastPath');

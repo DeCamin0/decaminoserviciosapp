@@ -40,4 +40,48 @@ export class GruposService {
       );
     }
   }
+
+  async createGrupo(nombre: string): Promise<string> {
+    try {
+      if (!nombre || !nombre.trim()) {
+        throw new BadRequestException('El nombre del grupo es requerido');
+      }
+
+      const nombreTrimmed = nombre.trim();
+
+      // Verifică dacă grupul există deja
+      const checkQuery = `
+        SELECT \`nombre\`
+        FROM grupos_referencia
+        WHERE \`nombre\` = ?
+        LIMIT 1
+      `;
+
+      const existing = await this.prisma.$queryRawUnsafe<
+        Array<{ nombre: string }>
+      >(checkQuery, nombreTrimmed);
+
+      if (existing && existing.length > 0) {
+        throw new BadRequestException(`El grupo "${nombreTrimmed}" ya existe`);
+      }
+
+      // Creează grupul nou
+      const insertQuery = `
+        INSERT INTO grupos_referencia (\`nombre\`, \`activo\`, \`created_at\`, \`updated_at\`)
+        VALUES (?, TRUE, NOW(), NOW())
+      `;
+
+      await this.prisma.$executeRawUnsafe(insertQuery, nombreTrimmed);
+
+      this.logger.log(`✅ Grupo creado: ${nombreTrimmed}`);
+
+      return nombreTrimmed;
+    } catch (error: any) {
+      this.logger.error('❌ Error creating grupo:', error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Error al crear grupo: ${error.message}`);
+    }
+  }
 }

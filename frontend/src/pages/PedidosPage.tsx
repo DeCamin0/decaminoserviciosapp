@@ -3,7 +3,7 @@ import { Card, Button, Input } from '../components/ui';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
@@ -344,6 +344,40 @@ const PedidosPage: React.FC = () => {
     loadPermissions();
   }, [userGrupo, user?.isDemo, getPermissions]);
 
+  // 🔍 DEBUG: Log permisiunile încărcate
+  useEffect(() => {
+    console.log('🔍 [PedidosPage] ===== PERMISSIONS DEBUG =====');
+    console.log('📋 [PedidosPage] User info:', {
+      CODIGO: user?.CODIGO,
+      GRUPO: user?.GRUPO || user?.grupo,
+      NOMBRE: user?.['NOMBRE / APELLIDOS'] || user?.NOMBRE,
+      isManager: user?.isManager,
+    });
+    console.log('🔐 [PedidosPage] Permissions state:', {
+      userPermissions,
+      loadingPermissions,
+      userGrupo,
+      hasBackendPermissions: userPermissions && Object.keys(userPermissions).length > 0,
+      permissionsKeys: userPermissions ? Object.keys(userPermissions) : [],
+    });
+    
+    if (userPermissions && userGrupo) {
+      const grupoKey = findGrupoKey(userGrupo, userPermissions);
+      const grupoPermissions = grupoKey ? userPermissions[grupoKey] : null;
+      console.log('🔐 [PedidosPage] Grupo permissions:', {
+        grupoKey,
+        grupoPermissions: grupoPermissions ? {
+          ...grupoPermissions,
+          'pedidos-empleados': grupoPermissions['pedidos-empleados'],
+          'pedidos-admin': grupoPermissions['pedidos-admin'],
+          pedidos: grupoPermissions.pedidos, // Fallback
+          allKeys: Object.keys(grupoPermissions),
+        } : null,
+      });
+    }
+    console.log('🔍 [PedidosPage] ===== END PERMISSIONS DEBUG =====\n');
+  }, [userPermissions, loadingPermissions, userGrupo, user, findGrupoKey]);
+
   // Verifică rolul utilizatorului pentru restricționarea tab-urilor
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = user?.isManager || false;
@@ -356,11 +390,61 @@ const PedidosPage: React.FC = () => {
   const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
   const shouldUseBackend = useBackendPermissions && grupoKeyExists;
   
-  // Verifică permisiunea 'pedidos' din backend (DOAR 'pedidos', NU 'dashboard')
-  const hasBackendPedidosPermission = shouldUseBackend ? hasPermission('pedidos') : false;
+  // ✅ ACTUALIZAT: Verifică ambele tipuri de permisiuni pedidos
+  const hasPedidosEmpleadosPermission = shouldUseBackend ? hasPermission('pedidos-empleados') : false;
+  const hasPedidosAdminPermission = shouldUseBackend ? hasPermission('pedidos-admin') : false;
+  const hasPedidosPermissionOld = shouldUseBackend ? hasPermission('pedidos') : false; // Fallback pentru compatibilitate
   
-  // Doar managerii, adminii, developerii sau utilizatorii cu permisiunea 'pedidos' din backend pot accesa toate tab-urile
-  const canAccessAllTabs = isManager || isAdmin || isDeveloper || hasBackendPedidosPermission;
+  // ✅ Verifică DerechoPedidos din DatosEmpleados (similar cu DashboardPage)
+  const checkField = (value: string | number | boolean | null | undefined) => {
+    if (!value) return false;
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+    if (typeof normalized === 'boolean') return normalized;
+    if (typeof normalized === 'number') return normalized === 1;
+    if (typeof normalized === 'string') {
+      return ['s', 'si', 'sí', '1', 'y', 'yes', 'true'].includes(normalized);
+    }
+    return false;
+  };
+
+  const pedidosFields = [
+    'derechopedido', 'DERECHO_PEDIDO', 'pedidos_permitido', 'canMakePedidos',
+    'PEDIDOS_PERMITIDO', 'DERECHO_PEDIDOS', 'PEDIDOS_ACCESO', 'ACCESO_PEDIDOS',
+    'PEDIDOS_HABILITADO', 'HABILITADO_PEDIDOS', 'PEDIDOS_ACTIVO', 'ACTIVO_PEDIDOS',
+    'DerechoPedidos', 'derechoPedidos', 'derecho_pedidos',
+  ];
+
+  const hasFieldPermission = pedidosFields.some((field) => checkField(user?.[field]));
+  const hasGenericPermission = Object.keys(user || {}).some(
+    (key) => key.toLowerCase().includes('pedido') && checkField(user[key])
+  );
+  
+  // ✅ CORECTAT: Permisiunea veche 'pedidos' este tratată ca acces limitat (pedidos-empleados), nu acces total
+  // Doar managerii, adminii, developerii sau utilizatorii cu permisiunea 'pedidos-admin' pot accesa toate tab-urile
+  // hasPedidosPermissionOld este folosită doar pentru a determina dacă utilizatorul are acces la pagina (dar cu acces limitat)
+  const canAccessAllTabs = isManager || isAdmin || isDeveloper || hasPedidosAdminPermission;
+  
+  // ✅ NOU: Acces la "Mis Pedidos" pentru utilizatorii cu pedidos-empleados care au și DerechoPedidos
+  const canAccessMisPedidos = hasPedidosEmpleadosPermission && (hasFieldPermission || hasGenericPermission);
+  
+  // 🔍 DEBUG: Log decizia finală
+  console.log('🔍 [PedidosPage] Access decision:', {
+    isManager,
+    isAdmin,
+    isDeveloper,
+    hasPedidosEmpleadosPermission,
+    hasPedidosAdminPermission,
+    hasPedidosPermissionOld,
+    hasFieldPermission,
+    hasGenericPermission,
+    canAccessAllTabs,
+    canAccessMisPedidos,
+    reason: isManager || isAdmin || isDeveloper ? 'isManager/isAdmin/isDeveloper' :
+            hasPedidosAdminPermission ? 'hasPedidosAdminPermission (acces complet)' :
+            canAccessMisPedidos ? 'hasPedidosEmpleadosPermission + DerechoPedidos (acces Mis Pedidos)' :
+            (hasPedidosEmpleadosPermission || hasPedidosPermissionOld) ? 'hasPedidosEmpleadosPermission/hasPedidosPermissionOld (doar Nuevo Pedido)' :
+            'NO ACCESS',
+  });
 
   // Funcție pentru adăugarea de notificări
   const addToast = (type: ToastType, title: string, message: string, duration?: number) => {
@@ -373,6 +457,36 @@ const PedidosPage: React.FC = () => {
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
+
+  // ✅ Verificare acces: Dacă are pedidos-empleados dar NU are DerechoPedidos, nu are acces
+  const hasAccess = useMemo(() => {
+    // Acces complet: manager/admin/developer sau pedidos-admin
+    if (canAccessAllTabs) {
+      return true;
+    }
+    
+    // Acces limitat: pedidos-empleados + DerechoPedidos
+    if (canAccessMisPedidos) {
+      return true;
+    }
+    
+    // Permisiune veche 'pedidos' (pentru compatibilitate) - verifică și DerechoPedidos
+    if (hasPedidosPermissionOld) {
+      const hasOldPermissionWithDerecho = hasFieldPermission || hasGenericPermission;
+      if (hasOldPermissionWithDerecho) {
+        return true;
+      }
+    }
+    
+    // Nu are acces
+    return false;
+  }, [canAccessAllTabs, canAccessMisPedidos, hasPedidosPermissionOld, hasFieldPermission, hasGenericPermission]);
+
+  // Dacă nu are acces, redirect la inicio
+  if (!loadingPermissions && !hasAccess) {
+    console.warn('🚫 [PedidosPage] Access denied - redirecting to /inicio');
+    return <Navigate to="/inicio" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -453,7 +567,8 @@ const PedidosPage: React.FC = () => {
             </button>
             
             {/* Tab-uri restricționate pentru manageri, admini și developeri */}
-            {canAccessAllTabs && (
+            {/* Tab "Gestionar Pedidos" apare pentru canAccessAllTabs SAU canAccessMisPedidos */}
+            {(canAccessAllTabs || canAccessMisPedidos) && (
               <>
                 <button
                   onClick={() => setActiveTab('gestionar-pedidos')}
@@ -470,47 +585,52 @@ const PedidosPage: React.FC = () => {
                   }`}></div>
                   <div className="relative flex items-center gap-2">
                     <span className="text-xl">📋</span>
-                    <span>Gestionar Pedidos</span>
+                    <span>{canAccessAllTabs ? 'Gestionar Pedidos' : 'Mis Pedidos'}</span>
                   </div>
                 </button>
                 
-                <button
-                  onClick={() => setActiveTab('permisos')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                    activeTab === 'permisos'
-                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                      : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-                  }`}
-                >
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    activeTab === 'permisos' 
-                      ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                      : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-xl">🔒</span>
-                    <span>Permisos por Comunidad</span>
-                  </div>
-                </button>
-                
-                <button
-                  onClick={() => setActiveTab('catalogo')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                    activeTab === 'catalogo'
-                      ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                      : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-                  }`}
-                >
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    activeTab === 'catalogo' 
-                      ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
-                      : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-xl">📦</span>
-                    <span>Catálogo</span>
-                  </div>
-                </button>
+                {/* Tab-uri doar pentru acces complet (canAccessAllTabs) */}
+                {canAccessAllTabs && (
+                  <>
+                    <button
+                      onClick={() => setActiveTab('permisos')}
+                      className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                        activeTab === 'permisos'
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
+                          : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                      }`}
+                    >
+                      <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                        activeTab === 'permisos' 
+                          ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
+                          : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
+                      }`}></div>
+                      <div className="relative flex items-center gap-2">
+                        <span className="text-xl">🔒</span>
+                        <span>Permisos por Comunidad</span>
+                      </div>
+                    </button>
+                    
+                    <button
+                      onClick={() => setActiveTab('catalogo')}
+                      className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                        activeTab === 'catalogo'
+                          ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
+                          : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
+                      }`}
+                    >
+                      <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                        activeTab === 'catalogo' 
+                          ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
+                          : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
+                      }`}></div>
+                      <div className="relative flex items-center gap-2">
+                        <span className="text-xl">📦</span>
+                        <span>Catálogo</span>
+                      </div>
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -519,8 +639,8 @@ const PedidosPage: React.FC = () => {
         {/* Content */}
         {activeTab === 'nuevo-pedido' ? (
           <TabNuevoPedido addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
-        ) : canAccessAllTabs && activeTab === 'gestionar-pedidos' ? (
-          <TabGestionarPedidos addToast={addToast} />
+        ) : (canAccessAllTabs || canAccessMisPedidos) && activeTab === 'gestionar-pedidos' ? (
+          <TabGestionarPedidos addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
         ) : canAccessAllTabs && activeTab === 'permisos' ? (
           <TabPermisosComunidad addToast={addToast} />
         ) : canAccessAllTabs && activeTab === 'catalogo' ? (
@@ -1428,7 +1548,11 @@ const TabNuevoPedido: React.FC<{
 };
 
 // ===== TAB GESTIONAR PEDIDOS =====
-const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
+const TabGestionarPedidos: React.FC<{ 
+  addToast: (type: ToastType, title: string, message: string, duration?: number) => void;
+  canAccessAllTabs?: boolean;
+}> = ({ addToast, canAccessAllTabs = false }) => {
+  const { user } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState<string>('all');
@@ -1544,7 +1668,24 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
         console.warn('⚠️ [Frontend] Data is object but not array, keys:', Object.keys(data));
       }
       
-      setPedidos(Array.isArray(data) ? data : []);
+      let pedidosArray = Array.isArray(data) ? data : [];
+      
+      // ✅ Filtrează pedidosurile după comunitate dacă utilizatorul nu are acces complet
+      if (!canAccessAllTabs && user) {
+        const userComunidadNombre = user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || user?.CENTRO;
+        if (userComunidadNombre) {
+          pedidosArray = pedidosArray.filter((pedido: Pedido) => {
+            const pedidoComunidadNombre = pedido.comunidad?.nombre || '';
+            const match = userComunidadNombre && pedidoComunidadNombre && (
+              String(userComunidadNombre).trim().toLowerCase() === String(pedidoComunidadNombre).trim().toLowerCase()
+            );
+            return match;
+          });
+          console.log('🔍 [TabGestionarPedidos] Filtered pedidos by comunidad:', userComunidadNombre, 'Result:', pedidosArray.length);
+        }
+      }
+      
+      setPedidos(pedidosArray);
       
       if (!Array.isArray(data) || data.length === 0) {
         console.warn('⚠️ No pedidos found or invalid response format');
@@ -1556,7 +1697,7 @@ const TabGestionarPedidos: React.FC<{ addToast: (type: ToastType, title: string,
     } finally {
       setLoading(false);
     }
-  }, [filtroEstado, addToast]);
+  }, [filtroEstado, addToast, canAccessAllTabs, user]);
 
   useEffect(() => {
     loadPedidos();

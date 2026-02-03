@@ -1,0 +1,1513 @@
+{
+  "generatedAt": "2026-02-02T14:09:53.561Z",
+  "stats": {
+    "totalPages": 31,
+    "pagesWithBackend": 0,
+    "pagesWithPartialBackend": 4,
+    "pagesWithOldSystem": 9,
+    "pagesWithNoChecks": 18,
+    "totalChecks": 511,
+    "averageChecks": 16.483870967741936,
+    "mostComplexPages": [
+      {
+        "file": "DashboardPage.jsx",
+        "complexity": 147
+      },
+      {
+        "file": "SolicitudesPage.jsx",
+        "complexity": 69
+      },
+      {
+        "file": "PedidosPage.tsx",
+        "complexity": 58
+      },
+      {
+        "file": "AdminDashboard.tsx",
+        "complexity": 39
+      },
+      {
+        "file": "AprobacionesPage.jsx",
+        "complexity": 38
+      }
+    ]
+  },
+  "prioritized": {
+    "critical": [
+      {
+        "file": "DashboardPage.jsx",
+        "path": "DashboardPage.jsx",
+        "checks": {
+          "isManager": 21,
+          "isAdmin": 8,
+          "isDeveloper": 10,
+          "hasPermission": 26,
+          "canAccess": 26,
+          "canManage": 7,
+          "getPermissions": 3,
+          "userPermissions": 32,
+          "loadingPermissions": 14
+        },
+        "modules": [
+          "empleados",
+          "fichar",
+          "solicitudes",
+          "documentos",
+          "documentos-empleados",
+          "cuadrantes",
+          "cuadrantes-empleado",
+          "mis-inspecciones",
+          "inspecciones",
+          "aprobaciones",
+          "estadisticas",
+          "proveedores",
+          "pedidos",
+          "comunicados",
+          "hall-of-fame"
+        ],
+        "backendStatus": "partial",
+        "complexity": 147,
+        "lines": 1753,
+        "issues": [
+          "Mixed system: uses both backend and old system",
+          "High number of isManager checks: 21",
+          "High complexity: 147 permission checks"
+        ]
+      },
+      {
+        "file": "SolicitudesPage.jsx",
+        "path": "SolicitudesPage.jsx",
+        "checks": {
+          "isManager": 69
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "fichar",
+          "solicitudes",
+          "documentos",
+          "estadisticas",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 69,
+        "lines": 9612,
+        "issues": [
+          "High number of isManager checks: 69",
+          "High complexity: 69 permission checks"
+        ]
+      },
+      {
+        "file": "PedidosPage.tsx",
+        "path": "PedidosPage.tsx",
+        "checks": {
+          "isManager": 4,
+          "isAdmin": 2,
+          "isDeveloper": 2,
+          "hasPermission": 2,
+          "canAccess": 26,
+          "getPermissions": 3,
+          "userPermissions": 14,
+          "loadingPermissions": 5
+        },
+        "modules": [
+          "datos",
+          "clientes",
+          "pedidos",
+          "admin"
+        ],
+        "backendStatus": "partial",
+        "complexity": 58,
+        "lines": 4313,
+        "issues": [
+          "Mixed system: uses both backend and old system",
+          "High complexity: 58 permission checks"
+        ]
+      },
+      {
+        "file": "AdminDashboard.tsx",
+        "path": "AdminDashboard.tsx",
+        "checks": {
+          "isManager": 4,
+          "isAdmin": 4,
+          "isDeveloper": 5,
+          "hasPermission": 3,
+          "getPermissions": 3,
+          "userPermissions": 12,
+          "loadingPermissions": 8
+        },
+        "modules": [
+          "dashboard",
+          "empleados",
+          "admin"
+        ],
+        "backendStatus": "partial",
+        "complexity": 39,
+        "lines": 294,
+        "issues": [
+          "Mixed system: uses both backend and old system",
+          "High complexity: 39 permission checks"
+        ]
+      },
+      {
+        "file": "AprobacionesPage.jsx",
+        "path": "AprobacionesPage.jsx",
+        "checks": {
+          "isManager": 6,
+          "hasPermission": 3,
+          "canAccess": 6,
+          "getPermissions": 3,
+          "userPermissions": 12,
+          "loadingPermissions": 8
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "fichar",
+          "solicitudes",
+          "aprobaciones",
+          "admin"
+        ],
+        "backendStatus": "partial",
+        "complexity": 38,
+        "lines": 1924,
+        "issues": [
+          "Mixed system: uses both backend and old system",
+          "High complexity: 38 permission checks"
+        ]
+      },
+      {
+        "file": "HallOfFamePage.jsx",
+        "path": "HallOfFamePage.jsx",
+        "checks": {
+          "isManager": 7,
+          "canCalculate": 29
+        },
+        "modules": [
+          "fichar",
+          "documentos",
+          "admin",
+          "hall-of-fame"
+        ],
+        "backendStatus": "none",
+        "complexity": 36,
+        "lines": 1864,
+        "issues": [
+          "High complexity: 36 permission checks"
+        ]
+      },
+      {
+        "file": "Fichaje.jsx",
+        "path": "Fichaje.jsx",
+        "checks": {
+          "isManager": 27
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "fichar",
+          "solicitudes",
+          "cuadrantes",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 27,
+        "lines": 9941,
+        "issues": [
+          "High number of isManager checks: 27",
+          "High complexity: 27 permission checks"
+        ]
+      },
+      {
+        "file": "CuadrantesPage.jsx",
+        "path": "CuadrantesPage.jsx",
+        "checks": {
+          "isManager": 15
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "cuadrantes",
+          "clientes",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 15,
+        "lines": 8081,
+        "issues": [
+          "High number of isManager checks: 15"
+        ]
+      },
+      {
+        "file": "EstadisticasPage.jsx",
+        "path": "EstadisticasPage.jsx",
+        "checks": {
+          "isManager": 8,
+          "isAdmin": 3,
+          "isDeveloper": 3
+        },
+        "modules": [
+          "dashboard",
+          "empleados",
+          "fichar",
+          "solicitudes",
+          "cuadrantes",
+          "estadisticas",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 14,
+        "lines": 1230,
+        "issues": []
+      },
+      {
+        "file": "EstadisticasCuadrantesPage.jsx",
+        "path": "EstadisticasCuadrantesPage.jsx",
+        "checks": {
+          "isManager": 2,
+          "isAdmin": 3,
+          "isDeveloper": 3,
+          "isSupervisor": 2
+        },
+        "modules": [
+          "dashboard",
+          "cuadrantes",
+          "estadisticas"
+        ],
+        "backendStatus": "no",
+        "complexity": 10,
+        "lines": 461,
+        "issues": []
+      },
+      {
+        "file": "EstadisticasEmpleadosPage.jsx",
+        "path": "EstadisticasEmpleadosPage.jsx",
+        "checks": {
+          "isManager": 2,
+          "isAdmin": 3,
+          "isDeveloper": 3,
+          "isSupervisor": 2
+        },
+        "modules": [
+          "empleados",
+          "fichar",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 10,
+        "lines": 250,
+        "issues": []
+      },
+      {
+        "file": "EstadisticasFichajesPage.jsx",
+        "path": "EstadisticasFichajesPage.jsx",
+        "checks": {
+          "isManager": 2,
+          "isAdmin": 3,
+          "isDeveloper": 3,
+          "isSupervisor": 2
+        },
+        "modules": [
+          "dashboard",
+          "empleados",
+          "fichar",
+          "estadisticas",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 10,
+        "lines": 516,
+        "issues": []
+      },
+      {
+        "file": "EmpleadosPage.jsx",
+        "path": "EmpleadosPage.jsx",
+        "checks": {
+          "canManage": 9
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "solicitudes",
+          "documentos",
+          "inspecciones",
+          "estadisticas",
+          "clientes",
+          "pedidos",
+          "admin"
+        ],
+        "backendStatus": "none",
+        "complexity": 9,
+        "lines": 8124,
+        "issues": []
+      },
+      {
+        "file": "DocumentosEmpleadosPage.jsx",
+        "path": "DocumentosEmpleadosPage.jsx",
+        "checks": {
+          "isManager": 7
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "documentos",
+          "documentos-empleados",
+          "admin"
+        ],
+        "backendStatus": "no",
+        "complexity": 7,
+        "lines": 7716,
+        "issues": []
+      },
+      {
+        "file": "InspeccionesPage.jsx",
+        "path": "InspeccionesPage.jsx",
+        "checks": {
+          "isManager": 3,
+          "isSupervisor": 2
+        },
+        "modules": [
+          "dashboard",
+          "empleados",
+          "inspecciones"
+        ],
+        "backendStatus": "no",
+        "complexity": 5,
+        "lines": 754,
+        "issues": []
+      },
+      {
+        "file": "ClientesPage.jsx",
+        "path": "ClientesPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "datos",
+          "clientes",
+          "proveedores",
+          "admin"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 1579,
+        "issues": []
+      },
+      {
+        "file": "MisInspeccionesPage.jsx",
+        "path": "MisInspeccionesPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "mis-inspecciones",
+          "inspecciones"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 985,
+        "issues": []
+      }
+    ],
+    "important": [
+      {
+        "file": "MensajesEnviadosPage.jsx",
+        "path": "MensajesEnviadosPage.jsx",
+        "checks": {
+          "canManage": 8
+        },
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "admin"
+        ],
+        "backendStatus": "none",
+        "complexity": 8,
+        "lines": 1907,
+        "issues": []
+      }
+    ],
+    "low": [
+      {
+        "file": "ComunicadosPage.jsx",
+        "path": "ComunicadosPage.jsx",
+        "checks": {
+          "canManage": 5
+        },
+        "modules": [
+          "dashboard",
+          "comunicados"
+        ],
+        "backendStatus": "none",
+        "complexity": 5,
+        "lines": 292,
+        "issues": []
+      },
+      {
+        "file": "ComunicadoDetailPage.jsx",
+        "path": "ComunicadoDetailPage.jsx",
+        "checks": {
+          "canManage": 4
+        },
+        "modules": [
+          "empleados",
+          "admin",
+          "comunicados"
+        ],
+        "backendStatus": "none",
+        "complexity": 4,
+        "lines": 718,
+        "issues": []
+      },
+      {
+        "file": "ClienteDetallePage.jsx",
+        "path": "ClienteDetallePage.jsx",
+        "checks": {},
+        "modules": [
+          "datos",
+          "clientes"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 480,
+        "issues": []
+      },
+      {
+        "file": "ComunicadoCreatePage.jsx",
+        "path": "ComunicadoCreatePage.jsx",
+        "checks": {},
+        "modules": [
+          "empleados",
+          "documentos",
+          "comunicados"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 284,
+        "issues": []
+      },
+      {
+        "file": "CuadernosPage.jsx",
+        "path": "CuadernosPage.jsx",
+        "checks": {},
+        "modules": [
+          "cuadernos"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 30,
+        "issues": []
+      },
+      {
+        "file": "CuadernosPorCentroPage.jsx",
+        "path": "CuadernosPorCentroPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "cuadernos"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 50,
+        "issues": []
+      },
+      {
+        "file": "CuadrantesEmpleadoPage.jsx",
+        "path": "CuadrantesEmpleadoPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "fichar",
+          "cuadrantes"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 4896,
+        "issues": []
+      },
+      {
+        "file": "DatosPage.jsx",
+        "path": "DatosPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "datos",
+          "clientes",
+          "pedidos"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 2509,
+        "issues": []
+      },
+      {
+        "file": "DocumentosPage.jsx",
+        "path": "DocumentosPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "datos",
+          "empleados",
+          "solicitudes",
+          "documentos",
+          "documentos-empleados",
+          "inspecciones",
+          "admin"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 4571,
+        "issues": []
+      },
+      {
+        "file": "EmpleadoPedidosPage.tsx",
+        "path": "EmpleadoPedidosPage.tsx",
+        "checks": {},
+        "modules": [
+          "empleados",
+          "clientes",
+          "pedidos"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 1800,
+        "issues": []
+      },
+      {
+        "file": "LoginPage.jsx",
+        "path": "LoginPage.jsx",
+        "checks": {},
+        "modules": [
+          "datos",
+          "fichar"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 518,
+        "issues": []
+      },
+      {
+        "file": "PRLDocumentosPage.jsx",
+        "path": "PRLDocumentosPage.jsx",
+        "checks": {},
+        "modules": [
+          "dashboard",
+          "empleados",
+          "documentos",
+          "admin"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 963,
+        "issues": []
+      },
+      {
+        "file": "ProveedorDetallePage.jsx",
+        "path": "ProveedorDetallePage.jsx",
+        "checks": {},
+        "modules": [
+          "datos",
+          "clientes",
+          "proveedores"
+        ],
+        "backendStatus": "none",
+        "complexity": 0,
+        "lines": 403,
+        "issues": []
+      }
+    ]
+  },
+  "moduleUsage": {
+    "empleados": [
+      "DashboardPage.jsx",
+      "SolicitudesPage.jsx",
+      "AdminDashboard.tsx",
+      "AprobacionesPage.jsx",
+      "Fichaje.jsx",
+      "CuadrantesPage.jsx",
+      "EstadisticasPage.jsx",
+      "EstadisticasEmpleadosPage.jsx",
+      "EstadisticasFichajesPage.jsx",
+      "EmpleadosPage.jsx",
+      "MensajesEnviadosPage.jsx",
+      "DocumentosEmpleadosPage.jsx",
+      "InspeccionesPage.jsx",
+      "ComunicadoDetailPage.jsx",
+      "ComunicadoCreatePage.jsx",
+      "CuadrantesEmpleadoPage.jsx",
+      "DocumentosPage.jsx",
+      "EmpleadoPedidosPage.tsx",
+      "PRLDocumentosPage.jsx"
+    ],
+    "fichar": [
+      "DashboardPage.jsx",
+      "SolicitudesPage.jsx",
+      "AprobacionesPage.jsx",
+      "HallOfFamePage.jsx",
+      "Fichaje.jsx",
+      "EstadisticasPage.jsx",
+      "EstadisticasEmpleadosPage.jsx",
+      "EstadisticasFichajesPage.jsx",
+      "CuadrantesEmpleadoPage.jsx",
+      "LoginPage.jsx"
+    ],
+    "solicitudes": [
+      "DashboardPage.jsx",
+      "SolicitudesPage.jsx",
+      "AprobacionesPage.jsx",
+      "Fichaje.jsx",
+      "EstadisticasPage.jsx",
+      "EmpleadosPage.jsx",
+      "DocumentosPage.jsx"
+    ],
+    "documentos": [
+      "DashboardPage.jsx",
+      "SolicitudesPage.jsx",
+      "HallOfFamePage.jsx",
+      "EmpleadosPage.jsx",
+      "DocumentosEmpleadosPage.jsx",
+      "ComunicadoCreatePage.jsx",
+      "DocumentosPage.jsx",
+      "PRLDocumentosPage.jsx"
+    ],
+    "documentos-empleados": [
+      "DashboardPage.jsx",
+      "DocumentosEmpleadosPage.jsx",
+      "DocumentosPage.jsx"
+    ],
+    "cuadrantes": [
+      "DashboardPage.jsx",
+      "Fichaje.jsx",
+      "CuadrantesPage.jsx",
+      "EstadisticasPage.jsx",
+      "EstadisticasCuadrantesPage.jsx",
+      "CuadrantesEmpleadoPage.jsx"
+    ],
+    "cuadrantes-empleado": [
+      "DashboardPage.jsx"
+    ],
+    "mis-inspecciones": [
+      "DashboardPage.jsx",
+      "MisInspeccionesPage.jsx"
+    ],
+    "inspecciones": [
+      "DashboardPage.jsx",
+      "EmpleadosPage.jsx",
+      "InspeccionesPage.jsx",
+      "DocumentosPage.jsx",
+      "MisInspeccionesPage.jsx"
+    ],
+    "aprobaciones": [
+      "DashboardPage.jsx",
+      "AprobacionesPage.jsx"
+    ],
+    "estadisticas": [
+      "DashboardPage.jsx",
+      "SolicitudesPage.jsx",
+      "EstadisticasPage.jsx",
+      "EstadisticasCuadrantesPage.jsx",
+      "EstadisticasFichajesPage.jsx",
+      "EmpleadosPage.jsx"
+    ],
+    "proveedores": [
+      "DashboardPage.jsx",
+      "ClientesPage.jsx",
+      "ProveedorDetallePage.jsx"
+    ],
+    "pedidos": [
+      "DashboardPage.jsx",
+      "PedidosPage.tsx",
+      "EmpleadosPage.jsx",
+      "DatosPage.jsx",
+      "EmpleadoPedidosPage.tsx"
+    ],
+    "comunicados": [
+      "DashboardPage.jsx",
+      "ComunicadosPage.jsx",
+      "ComunicadoDetailPage.jsx",
+      "ComunicadoCreatePage.jsx"
+    ],
+    "hall-of-fame": [
+      "DashboardPage.jsx",
+      "HallOfFamePage.jsx"
+    ],
+    "dashboard": [
+      "SolicitudesPage.jsx",
+      "AdminDashboard.tsx",
+      "AprobacionesPage.jsx",
+      "Fichaje.jsx",
+      "CuadrantesPage.jsx",
+      "EstadisticasPage.jsx",
+      "EstadisticasCuadrantesPage.jsx",
+      "EstadisticasFichajesPage.jsx",
+      "EmpleadosPage.jsx",
+      "MensajesEnviadosPage.jsx",
+      "DocumentosEmpleadosPage.jsx",
+      "ComunicadosPage.jsx",
+      "InspeccionesPage.jsx",
+      "ClientesPage.jsx",
+      "CuadernosPorCentroPage.jsx",
+      "CuadrantesEmpleadoPage.jsx",
+      "DatosPage.jsx",
+      "DocumentosPage.jsx",
+      "MisInspeccionesPage.jsx",
+      "PRLDocumentosPage.jsx"
+    ],
+    "datos": [
+      "SolicitudesPage.jsx",
+      "PedidosPage.tsx",
+      "AprobacionesPage.jsx",
+      "Fichaje.jsx",
+      "CuadrantesPage.jsx",
+      "EmpleadosPage.jsx",
+      "MensajesEnviadosPage.jsx",
+      "DocumentosEmpleadosPage.jsx",
+      "ClienteDetallePage.jsx",
+      "ClientesPage.jsx",
+      "CuadrantesEmpleadoPage.jsx",
+      "DatosPage.jsx",
+      "DocumentosPage.jsx",
+      "LoginPage.jsx",
+      "ProveedorDetallePage.jsx"
+    ],
+    "admin": [
+      "SolicitudesPage.jsx",
+      "PedidosPage.tsx",
+      "AdminDashboard.tsx",
+      "AprobacionesPage.jsx",
+      "HallOfFamePage.jsx",
+      "Fichaje.jsx",
+      "CuadrantesPage.jsx",
+      "EstadisticasPage.jsx",
+      "EstadisticasEmpleadosPage.jsx",
+      "EstadisticasFichajesPage.jsx",
+      "EmpleadosPage.jsx",
+      "MensajesEnviadosPage.jsx",
+      "DocumentosEmpleadosPage.jsx",
+      "ComunicadoDetailPage.jsx",
+      "ClientesPage.jsx",
+      "DocumentosPage.jsx",
+      "PRLDocumentosPage.jsx"
+    ],
+    "clientes": [
+      "PedidosPage.tsx",
+      "CuadrantesPage.jsx",
+      "EmpleadosPage.jsx",
+      "ClienteDetallePage.jsx",
+      "ClientesPage.jsx",
+      "DatosPage.jsx",
+      "EmpleadoPedidosPage.tsx",
+      "ProveedorDetallePage.jsx"
+    ],
+    "cuadernos": [
+      "CuadernosPage.jsx",
+      "CuadernosPorCentroPage.jsx"
+    ]
+  },
+  "checkUsage": {
+    "isManager": {
+      "total": 177,
+      "pages": [
+        "DashboardPage.jsx",
+        "SolicitudesPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "AprobacionesPage.jsx",
+        "HallOfFamePage.jsx",
+        "Fichaje.jsx",
+        "CuadrantesPage.jsx",
+        "EstadisticasPage.jsx",
+        "EstadisticasCuadrantesPage.jsx",
+        "EstadisticasEmpleadosPage.jsx",
+        "EstadisticasFichajesPage.jsx",
+        "DocumentosEmpleadosPage.jsx",
+        "InspeccionesPage.jsx"
+      ]
+    },
+    "isAdmin": {
+      "total": 26,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "EstadisticasPage.jsx",
+        "EstadisticasCuadrantesPage.jsx",
+        "EstadisticasEmpleadosPage.jsx",
+        "EstadisticasFichajesPage.jsx"
+      ]
+    },
+    "isDeveloper": {
+      "total": 29,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "EstadisticasPage.jsx",
+        "EstadisticasCuadrantesPage.jsx",
+        "EstadisticasEmpleadosPage.jsx",
+        "EstadisticasFichajesPage.jsx"
+      ]
+    },
+    "hasPermission": {
+      "total": 34,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "AprobacionesPage.jsx"
+      ]
+    },
+    "canAccess": {
+      "total": 58,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AprobacionesPage.jsx"
+      ]
+    },
+    "canManage": {
+      "total": 33,
+      "pages": [
+        "DashboardPage.jsx",
+        "EmpleadosPage.jsx",
+        "MensajesEnviadosPage.jsx",
+        "ComunicadosPage.jsx",
+        "ComunicadoDetailPage.jsx"
+      ]
+    },
+    "getPermissions": {
+      "total": 12,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "AprobacionesPage.jsx"
+      ]
+    },
+    "userPermissions": {
+      "total": 70,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "AprobacionesPage.jsx"
+      ]
+    },
+    "loadingPermissions": {
+      "total": 35,
+      "pages": [
+        "DashboardPage.jsx",
+        "PedidosPage.tsx",
+        "AdminDashboard.tsx",
+        "AprobacionesPage.jsx"
+      ]
+    },
+    "canCalculate": {
+      "total": 29,
+      "pages": [
+        "HallOfFamePage.jsx"
+      ]
+    },
+    "isSupervisor": {
+      "total": 8,
+      "pages": [
+        "EstadisticasCuadrantesPage.jsx",
+        "EstadisticasEmpleadosPage.jsx",
+        "EstadisticasFichajesPage.jsx",
+        "InspeccionesPage.jsx"
+      ]
+    }
+  },
+  "pages": [
+    {
+      "file": "DashboardPage.jsx",
+      "path": "DashboardPage.jsx",
+      "checks": {
+        "isManager": 21,
+        "isAdmin": 8,
+        "isDeveloper": 10,
+        "hasPermission": 26,
+        "canAccess": 26,
+        "canManage": 7,
+        "getPermissions": 3,
+        "userPermissions": 32,
+        "loadingPermissions": 14
+      },
+      "modules": [
+        "empleados",
+        "fichar",
+        "solicitudes",
+        "documentos",
+        "documentos-empleados",
+        "cuadrantes",
+        "cuadrantes-empleado",
+        "mis-inspecciones",
+        "inspecciones",
+        "aprobaciones",
+        "estadisticas",
+        "proveedores",
+        "pedidos",
+        "comunicados",
+        "hall-of-fame"
+      ],
+      "backendStatus": "partial",
+      "complexity": 147,
+      "lines": 1753,
+      "issues": [
+        "Mixed system: uses both backend and old system",
+        "High number of isManager checks: 21",
+        "High complexity: 147 permission checks"
+      ]
+    },
+    {
+      "file": "SolicitudesPage.jsx",
+      "path": "SolicitudesPage.jsx",
+      "checks": {
+        "isManager": 69
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "fichar",
+        "solicitudes",
+        "documentos",
+        "estadisticas",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 69,
+      "lines": 9612,
+      "issues": [
+        "High number of isManager checks: 69",
+        "High complexity: 69 permission checks"
+      ]
+    },
+    {
+      "file": "PedidosPage.tsx",
+      "path": "PedidosPage.tsx",
+      "checks": {
+        "isManager": 4,
+        "isAdmin": 2,
+        "isDeveloper": 2,
+        "hasPermission": 2,
+        "canAccess": 26,
+        "getPermissions": 3,
+        "userPermissions": 14,
+        "loadingPermissions": 5
+      },
+      "modules": [
+        "datos",
+        "clientes",
+        "pedidos",
+        "admin"
+      ],
+      "backendStatus": "partial",
+      "complexity": 58,
+      "lines": 4313,
+      "issues": [
+        "Mixed system: uses both backend and old system",
+        "High complexity: 58 permission checks"
+      ]
+    },
+    {
+      "file": "AdminDashboard.tsx",
+      "path": "AdminDashboard.tsx",
+      "checks": {
+        "isManager": 4,
+        "isAdmin": 4,
+        "isDeveloper": 5,
+        "hasPermission": 3,
+        "getPermissions": 3,
+        "userPermissions": 12,
+        "loadingPermissions": 8
+      },
+      "modules": [
+        "dashboard",
+        "empleados",
+        "admin"
+      ],
+      "backendStatus": "partial",
+      "complexity": 39,
+      "lines": 294,
+      "issues": [
+        "Mixed system: uses both backend and old system",
+        "High complexity: 39 permission checks"
+      ]
+    },
+    {
+      "file": "AprobacionesPage.jsx",
+      "path": "AprobacionesPage.jsx",
+      "checks": {
+        "isManager": 6,
+        "hasPermission": 3,
+        "canAccess": 6,
+        "getPermissions": 3,
+        "userPermissions": 12,
+        "loadingPermissions": 8
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "fichar",
+        "solicitudes",
+        "aprobaciones",
+        "admin"
+      ],
+      "backendStatus": "partial",
+      "complexity": 38,
+      "lines": 1924,
+      "issues": [
+        "Mixed system: uses both backend and old system",
+        "High complexity: 38 permission checks"
+      ]
+    },
+    {
+      "file": "HallOfFamePage.jsx",
+      "path": "HallOfFamePage.jsx",
+      "checks": {
+        "isManager": 7,
+        "canCalculate": 29
+      },
+      "modules": [
+        "fichar",
+        "documentos",
+        "admin",
+        "hall-of-fame"
+      ],
+      "backendStatus": "none",
+      "complexity": 36,
+      "lines": 1864,
+      "issues": [
+        "High complexity: 36 permission checks"
+      ]
+    },
+    {
+      "file": "Fichaje.jsx",
+      "path": "Fichaje.jsx",
+      "checks": {
+        "isManager": 27
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "fichar",
+        "solicitudes",
+        "cuadrantes",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 27,
+      "lines": 9941,
+      "issues": [
+        "High number of isManager checks: 27",
+        "High complexity: 27 permission checks"
+      ]
+    },
+    {
+      "file": "CuadrantesPage.jsx",
+      "path": "CuadrantesPage.jsx",
+      "checks": {
+        "isManager": 15
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "cuadrantes",
+        "clientes",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 15,
+      "lines": 8081,
+      "issues": [
+        "High number of isManager checks: 15"
+      ]
+    },
+    {
+      "file": "EstadisticasPage.jsx",
+      "path": "EstadisticasPage.jsx",
+      "checks": {
+        "isManager": 8,
+        "isAdmin": 3,
+        "isDeveloper": 3
+      },
+      "modules": [
+        "dashboard",
+        "empleados",
+        "fichar",
+        "solicitudes",
+        "cuadrantes",
+        "estadisticas",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 14,
+      "lines": 1230,
+      "issues": []
+    },
+    {
+      "file": "EstadisticasCuadrantesPage.jsx",
+      "path": "EstadisticasCuadrantesPage.jsx",
+      "checks": {
+        "isManager": 2,
+        "isAdmin": 3,
+        "isDeveloper": 3,
+        "isSupervisor": 2
+      },
+      "modules": [
+        "dashboard",
+        "cuadrantes",
+        "estadisticas"
+      ],
+      "backendStatus": "no",
+      "complexity": 10,
+      "lines": 461,
+      "issues": []
+    },
+    {
+      "file": "EstadisticasEmpleadosPage.jsx",
+      "path": "EstadisticasEmpleadosPage.jsx",
+      "checks": {
+        "isManager": 2,
+        "isAdmin": 3,
+        "isDeveloper": 3,
+        "isSupervisor": 2
+      },
+      "modules": [
+        "empleados",
+        "fichar",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 10,
+      "lines": 250,
+      "issues": []
+    },
+    {
+      "file": "EstadisticasFichajesPage.jsx",
+      "path": "EstadisticasFichajesPage.jsx",
+      "checks": {
+        "isManager": 2,
+        "isAdmin": 3,
+        "isDeveloper": 3,
+        "isSupervisor": 2
+      },
+      "modules": [
+        "dashboard",
+        "empleados",
+        "fichar",
+        "estadisticas",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 10,
+      "lines": 516,
+      "issues": []
+    },
+    {
+      "file": "EmpleadosPage.jsx",
+      "path": "EmpleadosPage.jsx",
+      "checks": {
+        "canManage": 9
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "solicitudes",
+        "documentos",
+        "inspecciones",
+        "estadisticas",
+        "clientes",
+        "pedidos",
+        "admin"
+      ],
+      "backendStatus": "none",
+      "complexity": 9,
+      "lines": 8124,
+      "issues": []
+    },
+    {
+      "file": "MensajesEnviadosPage.jsx",
+      "path": "MensajesEnviadosPage.jsx",
+      "checks": {
+        "canManage": 8
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "admin"
+      ],
+      "backendStatus": "none",
+      "complexity": 8,
+      "lines": 1907,
+      "issues": []
+    },
+    {
+      "file": "DocumentosEmpleadosPage.jsx",
+      "path": "DocumentosEmpleadosPage.jsx",
+      "checks": {
+        "isManager": 7
+      },
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "documentos",
+        "documentos-empleados",
+        "admin"
+      ],
+      "backendStatus": "no",
+      "complexity": 7,
+      "lines": 7716,
+      "issues": []
+    },
+    {
+      "file": "ComunicadosPage.jsx",
+      "path": "ComunicadosPage.jsx",
+      "checks": {
+        "canManage": 5
+      },
+      "modules": [
+        "dashboard",
+        "comunicados"
+      ],
+      "backendStatus": "none",
+      "complexity": 5,
+      "lines": 292,
+      "issues": []
+    },
+    {
+      "file": "InspeccionesPage.jsx",
+      "path": "InspeccionesPage.jsx",
+      "checks": {
+        "isManager": 3,
+        "isSupervisor": 2
+      },
+      "modules": [
+        "dashboard",
+        "empleados",
+        "inspecciones"
+      ],
+      "backendStatus": "no",
+      "complexity": 5,
+      "lines": 754,
+      "issues": []
+    },
+    {
+      "file": "ComunicadoDetailPage.jsx",
+      "path": "ComunicadoDetailPage.jsx",
+      "checks": {
+        "canManage": 4
+      },
+      "modules": [
+        "empleados",
+        "admin",
+        "comunicados"
+      ],
+      "backendStatus": "none",
+      "complexity": 4,
+      "lines": 718,
+      "issues": []
+    },
+    {
+      "file": "ClienteDetallePage.jsx",
+      "path": "ClienteDetallePage.jsx",
+      "checks": {},
+      "modules": [
+        "datos",
+        "clientes"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 480,
+      "issues": []
+    },
+    {
+      "file": "ClientesPage.jsx",
+      "path": "ClientesPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "datos",
+        "clientes",
+        "proveedores",
+        "admin"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 1579,
+      "issues": []
+    },
+    {
+      "file": "ComunicadoCreatePage.jsx",
+      "path": "ComunicadoCreatePage.jsx",
+      "checks": {},
+      "modules": [
+        "empleados",
+        "documentos",
+        "comunicados"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 284,
+      "issues": []
+    },
+    {
+      "file": "CuadernosPage.jsx",
+      "path": "CuadernosPage.jsx",
+      "checks": {},
+      "modules": [
+        "cuadernos"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 30,
+      "issues": []
+    },
+    {
+      "file": "CuadernosPorCentroPage.jsx",
+      "path": "CuadernosPorCentroPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "cuadernos"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 50,
+      "issues": []
+    },
+    {
+      "file": "CuadrantesEmpleadoPage.jsx",
+      "path": "CuadrantesEmpleadoPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "fichar",
+        "cuadrantes"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 4896,
+      "issues": []
+    },
+    {
+      "file": "DatosPage.jsx",
+      "path": "DatosPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "datos",
+        "clientes",
+        "pedidos"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 2509,
+      "issues": []
+    },
+    {
+      "file": "DocumentosPage.jsx",
+      "path": "DocumentosPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "datos",
+        "empleados",
+        "solicitudes",
+        "documentos",
+        "documentos-empleados",
+        "inspecciones",
+        "admin"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 4571,
+      "issues": []
+    },
+    {
+      "file": "EmpleadoPedidosPage.tsx",
+      "path": "EmpleadoPedidosPage.tsx",
+      "checks": {},
+      "modules": [
+        "empleados",
+        "clientes",
+        "pedidos"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 1800,
+      "issues": []
+    },
+    {
+      "file": "LoginPage.jsx",
+      "path": "LoginPage.jsx",
+      "checks": {},
+      "modules": [
+        "datos",
+        "fichar"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 518,
+      "issues": []
+    },
+    {
+      "file": "MisInspeccionesPage.jsx",
+      "path": "MisInspeccionesPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "mis-inspecciones",
+        "inspecciones"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 985,
+      "issues": []
+    },
+    {
+      "file": "PRLDocumentosPage.jsx",
+      "path": "PRLDocumentosPage.jsx",
+      "checks": {},
+      "modules": [
+        "dashboard",
+        "empleados",
+        "documentos",
+        "admin"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 963,
+      "issues": []
+    },
+    {
+      "file": "ProveedorDetallePage.jsx",
+      "path": "ProveedorDetallePage.jsx",
+      "checks": {},
+      "modules": [
+        "datos",
+        "clientes",
+        "proveedores"
+      ],
+      "backendStatus": "none",
+      "complexity": 0,
+      "lines": 403,
+      "issues": []
+    }
+  ]
+}

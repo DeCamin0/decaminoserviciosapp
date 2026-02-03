@@ -60,6 +60,52 @@ export class AuthController {
     }
   }
 
+  @Post('refresh')
+  async refresh(@Body() body: { refreshToken: string }) {
+    try {
+      console.log('[AuthController] Refresh token request received');
+
+      if (!body.refreshToken) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'Refresh token is required',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const result = await this.authService.refreshToken(body.refreshToken);
+
+      if (!result.success) {
+        throw new HttpException(
+          {
+            success: false,
+            message: result.error || 'Invalid refresh token',
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      return {
+        success: true,
+        accessToken: result.accessToken,
+      };
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          success: false,
+          message: error.message || 'Refresh failed',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getCurrentUser(@CurrentUser() user: any) {

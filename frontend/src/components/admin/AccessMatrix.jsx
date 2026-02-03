@@ -6,7 +6,7 @@ import activityLogger from '../../utils/activityLogger';
 import { routes } from '../../utils/routes';
 
 export default function AccessMatrix() {
-  const { getAllPermissions, savePermissions } = useAdminApi();
+  const { getAllPermissions, savePermissions, deleteUnusedGroups } = useAdminApi();
   const { user: authUser } = useAuth();
   const [permissions, setPermissions] = useState({});
   const [loading, setLoading] = useState(true);
@@ -37,8 +37,10 @@ export default function AccessMatrix() {
     // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
     // { id: 'tareas', name: 'Tareas Diarias', icon: '📋', description: 'Gestión de tareas por día' },
     { id: 'empleados', name: 'Empleados', icon: '👥', description: 'Gestión de empleados' },
-    { id: 'fichar', name: 'Registro de Jornada', icon: '⏰', description: 'Registro de jornada' },
-    { id: 'solicitudes', name: 'Solicitudes', icon: '📝', description: 'Asuntos y vacaciones' },
+    { id: 'fichar-empleados', name: 'Fichar Empleados', icon: '⏰', description: 'Registro de jornada limitado (solo mis fichajes)' },
+    { id: 'fichar-admin', name: 'Fichar Admin', icon: '⏰', description: 'Registro de jornada completo (todos los fichajes y gestión)' },
+    { id: 'solicitudes-empleados', name: 'Solicitudes Empleados', icon: '📝', description: 'Solicitudes limitadas (solo mis solicitudes)' },
+    { id: 'solicitudes-admin', name: 'Solicitudes Admin', icon: '📝', description: 'Solicitudes completas (todas las solicitudes y estadísticas)' },
     { id: 'documentos', name: 'Documentos', icon: '📄', description: 'Documentos y nóminas' },
     { id: 'documentos-empleados', name: 'Documentos Empleados', icon: '📂', description: 'Archivos por empleado' },
     { id: 'cuadrantes', name: 'Cuadrantes', icon: '📅', description: 'Gestión de horarios' },
@@ -48,8 +50,13 @@ export default function AccessMatrix() {
     { id: 'aprobaciones', name: 'Aprobaciones', icon: '✅', description: 'Aprobaciones de fichajes' },
     { id: 'estadisticas', name: 'Estadísticas', icon: '📊', description: 'Informes y analítica' },
     { id: 'clientes', name: 'Clientes', icon: '👥', description: 'Gestión de clientes' },
-    { id: 'pedidos', name: 'Pedidos', icon: '🛒', description: 'Gestión de pedidos y compras' },
-    { id: 'admin', name: 'Admin Panel', icon: '⚙️', description: 'Panel de administración' }
+    { id: 'pedidos-empleados', name: 'Pedidos Empleados', icon: '🛒', description: 'Pedidos limitados (solo su comunidad)' },
+    { id: 'pedidos-admin', name: 'Pedidos Admin', icon: '🛒', description: 'Pedidos completos (todas las comunidades)' },
+    { id: 'admin', name: 'Admin Panel', icon: '⚙️', description: 'Panel de administración' },
+    { id: 'cuadernos', name: 'Cuadernos', icon: '📔', description: 'Cuadernos y documentación por centro' },
+    { id: 'proveedores', name: 'Proveedores', icon: '🏢', description: 'Gestión de proveedores' },
+    { id: 'comunicados', name: 'Comunicados', icon: '📢', description: 'Anuncios y comunicaciones (gestionar)' },
+    { id: 'hall-of-fame', name: 'Hall of Fame', icon: '🏆', description: 'Clasament y premios (calcular)' }
   ]), []);
 
   // Culorile pentru grupurile noi
@@ -78,8 +85,10 @@ export default function AccessMatrix() {
         // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
         // tareas: true,
         empleados: true,
-        fichar: true,
-        solicitudes: true,
+        'fichar-empleados': false,
+        'fichar-admin': true,
+        'solicitudes-empleados': false,
+        'solicitudes-admin': true,
         documentos: true,
         'documentos-empleados': true,
         cuadrantes: true,
@@ -89,7 +98,12 @@ export default function AccessMatrix() {
         aprobaciones: true,
         estadisticas: true,
         clientes: true,
-        pedidos: true,
+        'pedidos-empleados': false,
+        'pedidos-admin': true,
+        cuadernos: true,
+        proveedores: true,
+        comunicados: true,
+        'hall-of-fame': true,
         admin: false
       },
       Manager: {
@@ -98,8 +112,10 @@ export default function AccessMatrix() {
         // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
         // tareas: true,
         empleados: true,
-        fichar: true,
-        solicitudes: true,
+        'fichar-empleados': false,
+        'fichar-admin': true,
+        'solicitudes-empleados': false,
+        'solicitudes-admin': true,
         documentos: true,
         'documentos-empleados': true,
         cuadrantes: true,
@@ -109,7 +125,12 @@ export default function AccessMatrix() {
         aprobaciones: false,
         estadisticas: true,
         clientes: true,
-        pedidos: true,
+        'pedidos-empleados': false,
+        'pedidos-admin': true,
+        cuadernos: true,
+        proveedores: true,
+        comunicados: true,
+        'hall-of-fame': true,
         admin: false
       },
       Empleado: {
@@ -118,8 +139,10 @@ export default function AccessMatrix() {
         // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
         // tareas: false,
         empleados: false,
-        fichar: true,
-        solicitudes: true,
+        'fichar-empleados': true,
+        'fichar-admin': false,
+        'solicitudes-empleados': true,
+        'solicitudes-admin': false,
         documentos: true,
         'documentos-empleados': false,
         cuadrantes: false,
@@ -129,7 +152,12 @@ export default function AccessMatrix() {
         aprobaciones: false,
         estadisticas: false,
         clientes: false,
-        pedidos: false,
+        'pedidos-empleados': false,
+        'pedidos-admin': false,
+        cuadernos: true, // Public - toți pot accesa cuadernos
+        proveedores: false,
+        comunicados: true, // Public - toți pot citi comunicados
+        'hall-of-fame': true, // Public - toți pot vedea ranking-ul
         admin: false
       }
     };
@@ -150,6 +178,7 @@ export default function AccessMatrix() {
 
     const normalized = {};
 
+    // Prima trecere: normalizează permisiunile din backend
     rawPermissions.forEach(entry => {
       const grupoModule = entry?.grupo_module || entry?.grupoModule;
       if (!grupoModule) return;
@@ -174,8 +203,23 @@ export default function AccessMatrix() {
       normalized[grupo][module] = isPermitted;
     });
 
+    // A doua trecere: asigură că toate modulele definite în array-ul `modules` 
+    // sunt prezente pentru toate grupurile (chiar dacă nu există în backend)
+    // Astfel, modulele noi vor apărea în tabel chiar dacă nu sunt încă în DB
+    const allGroups = Object.keys(normalized);
+    const allModuleIds = modules.map(m => m.id);
+    
+    allGroups.forEach(grupo => {
+      allModuleIds.forEach(moduleId => {
+        // Dacă modulul nu există în permisiunile normalizate, setează-l implicit la false
+        if (normalized[grupo][moduleId] === undefined) {
+          normalized[grupo][moduleId] = false;
+        }
+      });
+    });
+
     return normalized;
-  }, []);
+  }, [modules]);
 
   const mergeDynamicGroups = useCallback((incomingGroups) => {
     if (!isMountedRef.current) return;
@@ -356,9 +400,37 @@ export default function AccessMatrix() {
     }
   };
 
-  const handleResetToDefaults = () => {
-    if (confirm('Ești sigur că vrei să resetezi toate permisiunile la valorile implicite?')) {
-      setPermissions({});
+  const handleResetToDefaults = async () => {
+    const confirmMessage = '⚠️ ATENȚIE: Ești sigur că vrei să resetezi TOATE permisiunile la FALSE pentru TOATE grupurile?\n\nAceastă acțiune va:\n- Seta toate permisiunile la false în baza de date\n- Elimina accesul pentru toată lumea\n- Nu poate fi anulată ușor\n\nContinuă?';
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // Setează toate permisiunile la false pentru toate grupurile și modulele
+    const resetPermissions = {};
+    userGroups.forEach(group => {
+      resetPermissions[group.id] = {};
+      modules.forEach(module => {
+        resetPermissions[group.id][module.id] = false;
+      });
+    });
+
+    setPermissions(resetPermissions);
+
+    // Salvează automat în backend
+    try {
+      setSaving(true);
+      await savePermissions(resetPermissions);
+      
+      // Log salvarea permisiunilor
+      await activityLogger.logPermissionsSaved(resetPermissions, authUser);
+      
+      alert('✅ Toate permisiunile au fost resetate la FALSE și salvate în baza de date!\n\nToate grupurile au acum acces 0 la toate modulele.');
+    } catch (error) {
+      console.error('Error resetting permissions:', error);
+      alert('❌ Eroare la resetarea permisiunilor: ' + error.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -391,6 +463,36 @@ export default function AccessMatrix() {
         delete newPermissions[groupId];
         return newPermissions;
       });
+    }
+  };
+
+  const handleDeleteUnusedGroups = async () => {
+    const confirmMessage = `⚠️ ATENȚIE: Ești sigur că vrei să ștergi TOATE permisiunile pentru grupurile NEFOLOSITE?\n\nGrupurile care SE PĂSTREAZĂ sunt cele care există în tabelul DatosEmpleados (câmpul GRUPO).\n\nToate celelalte grupuri din tabelul Permissions vor avea permisiunile șterse permanent.\n\nContinuă?`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const result = await deleteUnusedGroups();
+      
+      // Reîncarcă permisiunile pentru a actualiza UI-ul
+      const reloadedPermissions = await getAllPermissions();
+      if (reloadedPermissions && typeof reloadedPermissions === 'object') {
+        // getAllPermissions returnează deja un obiect procesat { grupo: { module: true/false } }
+        setPermissions(reloadedPermissions);
+      }
+      
+      const message = result.deleted > 0
+        ? `✅ Șterse ${result.deleted} permisiuni pentru ${result.unusedGroups.length} grupuri nefolosite:\n\n${result.unusedGroups.join(', ')}\n\nGrupuri păstrate (din DatosEmpleados):\n${result.usedGroups.join(', ')}`
+        : `ℹ️ Nu s-au găsit grupuri nefolosite. Toate grupurile din Permissions există în DatosEmpleados.\n\nGrupuri găsite în DatosEmpleados:\n${result.usedGroups.join(', ')}`;
+      
+      alert(message);
+    } catch (error) {
+      console.error('Error deleting unused groups:', error);
+      alert('❌ Eroare la ștergerea grupurilor nefolosite: ' + error.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -434,6 +536,15 @@ export default function AccessMatrix() {
             size="sm"
           >
             🔄 Reset
+          </Button>
+          <Button
+            onClick={handleDeleteUnusedGroups}
+            variant="outline"
+            size="sm"
+            disabled={saving}
+            className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
+          >
+            🗑️ Șterge Grupuri Nefolosite
           </Button>
           <Button
             onClick={handleSavePermissions}
@@ -482,20 +593,24 @@ export default function AccessMatrix() {
                       </div>
                     </div>
                   </td>
-                  {modules.map(module => (
-                    <td key={module.id} className="text-center p-4">
-                      <button
-                        onClick={() => togglePermission(group.id, module.id)}
-                        className={`w-6 h-6 rounded border-2 transition-colors ${
-                          permissions[group.id]?.[module.id]
-                            ? 'bg-red-600 border-red-600 text-white'
-                            : 'bg-white border-gray-300 hover:border-red-300'
-                        }`}
-                      >
-                        {permissions[group.id]?.[module.id] ? '✓' : ''}
-                      </button>
-                    </td>
-                  ))}
+                  {modules.map(module => {
+                    // Asigură că modulul există în permisiuni (chiar dacă e false)
+                    const hasPermission = permissions[group.id]?.[module.id] ?? false;
+                    return (
+                      <td key={module.id} className="text-center p-4">
+                        <button
+                          onClick={() => togglePermission(group.id, module.id)}
+                          className={`w-6 h-6 rounded border-2 transition-colors ${
+                            hasPermission
+                              ? 'bg-red-600 border-red-600 text-white'
+                              : 'bg-white border-gray-300 hover:border-red-300'
+                          }`}
+                        >
+                          {hasPermission ? '✓' : ''}
+                        </button>
+                      </td>
+                    );
+                  })}
                   <td className="text-center p-4">
                     <button
                       onClick={() => toggleAllForGroup(group.id)}

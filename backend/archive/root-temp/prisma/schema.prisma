@@ -213,6 +213,7 @@ model Ausencias {
   MOTIVO          String?   @db.Text
   DURACION        String?   @db.Text
   UNIDAD_DURACION String    @default("dias") @db.VarChar(50)
+  no_necesita_justificante Boolean @default(false) @map("no_necesita_justificante")
   created_at      DateTime  @default(now()) @db.Timestamp(0)
 
   @@unique([solicitud_id, CODIGO], map: "uk_aus_sol_cod")

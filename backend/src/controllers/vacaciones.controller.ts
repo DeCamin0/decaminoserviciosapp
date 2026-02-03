@@ -226,4 +226,110 @@ export class VacacionesController {
       );
     }
   }
+
+  /**
+   * PUT /api/vacaciones/anuales-personalizadas/:empleadoId
+   * Actualiza las vacaciones anuales personalizadas para un empleado
+   */
+  @Put('anuales-personalizadas/:empleadoId')
+  async updateVacacionesAnualesPersonalizadas(
+    @Param('empleadoId') empleadoId: string,
+    @Body() body: { dias_anuales: number | null },
+    @CurrentUser() user: any,
+  ) {
+    try {
+      if (!empleadoId || empleadoId.trim() === '') {
+        throw new BadRequestException('Código de empleado no válido');
+      }
+
+      const diasAnuales = body.dias_anuales;
+      if (
+        diasAnuales !== null &&
+        (typeof diasAnuales !== 'number' || diasAnuales < 0)
+      ) {
+        throw new BadRequestException(
+          'dias_anuales debe ser null o un número mayor o igual a 0',
+        );
+      }
+
+      this.logger.log(
+        `📝 Update vacaciones anuales personalizadas - empleadoId: ${empleadoId}, dias_anuales: ${diasAnuales}, requested by: ${user?.CODIGO || user?.codigo}`,
+      );
+
+      await this.vacacionesService.updateVacacionesAnualesPersonalizadas(
+        empleadoId.trim(),
+        diasAnuales,
+      );
+
+      return {
+        success: true,
+        codigo: empleadoId.trim(),
+        dias_anuales: diasAnuales,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error updating vacaciones anuales personalizadas:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar vacaciones anuales personalizadas: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * PUT /api/vacaciones/asuntos-propios-anuales-personalizadas/:empleadoId
+   * Actualiza los asuntos propios anuales personalizados para un empleado
+   */
+  @Put('asuntos-propios-anuales-personalizadas/:empleadoId')
+  async updateAsuntosPropiosAnualesPersonalizadas(
+    @Param('empleadoId') empleadoId: string,
+    @Body() body: { dias_anuales: number | null },
+    @CurrentUser() user: any,
+  ) {
+    try {
+      if (!empleadoId || empleadoId.trim() === '') {
+        throw new BadRequestException('Código de empleado no válido');
+      }
+
+      const diasAnuales = body.dias_anuales;
+      if (
+        diasAnuales !== null &&
+        (typeof diasAnuales !== 'number' || diasAnuales < 0)
+      ) {
+        throw new BadRequestException(
+          'dias_anuales debe ser null o un número mayor o igual a 0',
+        );
+      }
+
+      this.logger.log(
+        `📝 Update asuntos propios anuales personalizadas - empleadoId: ${empleadoId}, dias_anuales: ${diasAnuales}, requested by: ${user?.CODIGO || user?.codigo}`,
+      );
+
+      await this.vacacionesService.updateAsuntosPropiosAnualesPersonalizadas(
+        empleadoId.trim(),
+        diasAnuales,
+      );
+
+      return {
+        success: true,
+        codigo: empleadoId.trim(),
+        dias_anuales: diasAnuales,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error updating asuntos propios anuales personalizadas:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar asuntos propios anuales personalizadas: ${error.message}`,
+      );
+    }
+  }
 }

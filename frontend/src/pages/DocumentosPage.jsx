@@ -70,6 +70,7 @@ const formatDate = (dateString) => {
 
 export default function DocumentosPage() {
   const { user: authUser } = useAuth();
+  
 
   // Detectare platformă pentru PDF preview
   const isBrowser = typeof window !== 'undefined';
@@ -2368,6 +2369,7 @@ export default function DocumentosPage() {
           </div>
         </div>
       </div>
+
 
       {/* Botón Reportar Error */}
       <div className="flex justify-end mb-4">

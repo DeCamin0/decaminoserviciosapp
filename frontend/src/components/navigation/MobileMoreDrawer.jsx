@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { useAdminApi } from '../../hooks/useAdminApi';
@@ -344,17 +344,24 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     const canAccessFichar = shouldUseBackend ? (hasPermission('fichar') || hasPermission('dashboard')) : true;
     const canAccessSolicitudes = shouldUseBackend ? (hasPermission('solicitudes') || hasPermission('dashboard')) : true;
     const canAccessDocumentos = shouldUseBackend ? (hasPermission('documentos') || hasPermission('dashboard')) : true;
-    const canAccessCuadrantesEmpleado = shouldUseBackend ? (hasPermission('cuadrantes-empleado') || hasPermission('cuadrantes') || hasPermission('dashboard')) : true;
-    const canAccessMisInspecciones = shouldUseBackend ? (hasPermission('mis-inspecciones') || hasPermission('dashboard')) : true;
-    const canAccessComunicados = true;
+    // Pentru cuadrantes-empleado, folosim DOAR permisiunile din backend (fără fallback)
+    const canAccessCuadrantesEmpleado = hasBackendPermissions ? hasPermission('cuadrantes-empleado') : false;
+    // Pentru mis-inspecciones, folosim DOAR permisiunile din backend (fără fallback)
+    const canAccessMisInspecciones = hasBackendPermissions ? hasPermission('mis-inspecciones') : false;
+    // Pentru comunicados, folosim DOAR permisiunile din backend (fără fallback)
+    const canAccessComunicados = hasBackendPermissions ? hasPermission('comunicados') : false;
     const canManageEmployees = shouldUseBackend ? hasPermission('empleados') : isManager;
     const canManageDocuments = shouldUseBackend ? hasPermission('documentos-empleados') : isManager;
-    const canManageCuadrantes = shouldUseBackend ? hasPermission('cuadrantes') : isManager;
-    const canApprove = shouldUseBackend ? hasPermission('aprobaciones') : isManager;
-    const canInspect = shouldUseBackend ? hasPermission('inspecciones') : isManager;
+    // Pentru cuadrantes, folosim DOAR permisiunile din backend (fără fallback)
+    const canManageCuadrantes = hasBackendPermissions ? hasPermission('cuadrantes') : false;
+    // Pentru aprobaciones, folosim DOAR permisiunile din backend (fără fallback)
+    const canApprove = hasBackendPermissions ? hasPermission('aprobaciones') : false;
+    // Pentru inspecciones, folosim DOAR permisiunile din backend (fără fallback)
+    const canInspect = hasBackendPermissions ? hasPermission('inspecciones') : false;
     const canAccessAdmin = shouldUseBackend ? hasPermission('admin') : (isAdmin || isDeveloper);
     const canAccessStats = shouldUseBackend ? hasPermission('estadisticas') : (isAdmin || isDeveloper || user?.GRUPO === 'Supervisor');
-    const canAccessClientes = shouldUseBackend ? hasPermission('clientes') : (isAdmin || isDeveloper || user?.GRUPO === 'Supervisor');
+    // Pentru clientes, folosim DOAR permisiunile din backend (fără fallback)
+    const canAccessClientes = hasBackendPermissions ? hasPermission('clientes') : false;
 
     const list = [];
 
@@ -425,9 +432,20 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     return allItems.filter(item => !bottomNavPaths.includes(item.href));
   }, [allItems]);
 
-  const handleItemClick = (href) => {
-    navigate(href);
-    onClose();
+  const handleItemClick = (e, href) => {
+    // Permite deschiderea în tab nou (middle-click sau Ctrl+Click)
+    if (e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      window.open(href, '_blank');
+      return;
+    }
+    
+    // Click normal - navigare normală
+    if (e.button === 0 && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      navigate(href);
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
@@ -460,10 +478,18 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
             {filteredItems.map((item) => {
               const Icon = item.icon;
               return (
-                <button
+                <Link
                   key={item.id}
-                  onClick={() => handleItemClick(item.href)}
-                  className="relative p-4 bg-gradient-to-br from-gray-50 to-white dark:from-gray-700 dark:to-gray-800 rounded-xl border border-gray-200 dark:border-gray-600 hover:shadow-md transition-all text-left group"
+                  to={item.href}
+                  onClick={(e) => handleItemClick(e, item.href)}
+                  onMouseDown={(e) => {
+                    // Detectează middle-click (button === 1)
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      window.open(item.href, '_blank');
+                    }
+                  }}
+                  className="relative p-4 bg-gradient-to-br from-gray-50 to-white dark:from-gray-700 dark:to-gray-800 rounded-xl border border-gray-200 dark:border-gray-600 hover:shadow-md transition-all text-left group block"
                 >
                   <div className="flex flex-col items-start gap-2">
                     <div className={`p-2 rounded-lg bg-gradient-to-br ${item.gradient || 'from-gray-400 to-gray-500'} shadow-sm`}>
@@ -484,7 +510,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
                       {item.notificationCount > 99 ? '99+' : item.notificationCount}
                     </div>
                   )}
-                </button>
+                </Link>
               );
             })}
           </div>

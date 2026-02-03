@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useMemo, useCallback, useState, useEffect } from 'react';
 
 /**
  * CalendarDayCell - Componentă pentru o zi din calendar
@@ -15,6 +15,40 @@ const CalendarDayCell = memo(({
   loadingRegularizaciones = false,
   fichajes = []
 }) => {
+  // Detectează dacă e pe mobile portrait
+  const [isMobilePortrait, setIsMobilePortrait] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 767px) and (orientation: portrait)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const mediaQuery = window.matchMedia('(max-width: 767px) and (orientation: portrait)');
+    const handleChange = (e) => setIsMobilePortrait(e.matches);
+    
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleChange);
+    } else {
+      mediaQuery.addListener(handleChange);
+    }
+    
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', handleChange);
+      } else {
+        mediaQuery.removeListener(handleChange);
+      }
+    };
+  }, []);
+
+  // Calculează ziua săptămânii pentru ziua curentă
+  const dayOfWeek = useMemo(() => {
+    const [year, month] = selectedLunaNorm.split('-').map(Number);
+    const date = new Date(year, month - 1, cell.day);
+    const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    return days[date.getDay()];
+  }, [selectedLunaNorm, cell.day]);
   // Helper pentru formatare data - folosim useCallback pentru a evita recrearea la fiecare render
   const pad2 = (n) => n < 10 ? '0' + n : n;
   const formatDateYMD = useCallback((year, month, day) => year + '-' + pad2(month) + '-' + pad2(day), []);
@@ -660,6 +694,16 @@ const CalendarDayCell = memo(({
             <span className="ml-2 text-blue-600 text-lg animate-bounce">📍</span>
           )}
         </div>
+        
+        {/* Ziua săptămânii - doar pe mobile portrait */}
+        {isMobilePortrait && (
+          <div 
+            className="text-xs font-semibold mb-1 opacity-80"
+            style={{ color: textColor }}
+          >
+            {dayOfWeek}
+          </div>
+        )}
         
         {/* Tipo */}
         <div 

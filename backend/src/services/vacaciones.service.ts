@@ -289,6 +289,108 @@ export class VacacionesService {
         },
       });
 
+      // Obtener valores personalizados (si existen)
+      // Folosim query direct pentru a obține valorile din DatosEmpleados
+      // CAST la DECIMAL(10,1) pentru a forța conversia corectă
+      const empleadoPersonalizado = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT 
+          CAST(\`VACACIONES_ANUALES_PERSONALIZADAS\` AS DECIMAL(10,1)) as vacaciones_personalizadas,
+          CAST(\`ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS\` AS DECIMAL(10,1)) as asuntos_personalizados
+        FROM DatosEmpleados
+        WHERE CODIGO = ${this.escapeSql(codigo)}
+        LIMIT 1
+      `);
+
+      // Procesează valorile - DECIMAL poate fi returnat ca Decimal object, string sau number
+      let vacacionesPersonalizadas: number | null = null;
+      let asuntosPersonalizados: number | null = null;
+
+      if (empleadoPersonalizado && empleadoPersonalizado[0]) {
+        const vac = empleadoPersonalizado[0].vacaciones_personalizadas;
+        const asu = empleadoPersonalizado[0].asuntos_personalizados;
+
+        this.logger.debug(
+          `🔍 [calcularSaldo] ${codigo} - Raw valores: vac=${vac} (type: ${typeof vac}), asu=${asu} (type: ${typeof asu})`,
+        );
+
+        // Verifică dacă nu sunt NULL (poate fi null, undefined, Decimal object, sau string "NULL")
+        // IMPORTANT: 0 este o valoare validă și trebuie procesată (nu trebuie ignorată)
+        if (vac !== null && vac !== undefined && vac !== 'NULL' && vac !== '') {
+          // Handle Decimal object (from Prisma) - DECIMAL în MySQL este returnat ca Decimal object
+          if (typeof vac === 'object' && vac !== null) {
+            try {
+              // Prisma Decimal object are metode toString() și valueOf()
+              // Încearcă toNumber() dacă există (metodă specifică Decimal)
+              if (typeof vac.toNumber === 'function') {
+                vacacionesPersonalizadas = vac.toNumber();
+              }
+              // Altfel încearcă valueOf()
+              else if (typeof vac.valueOf === 'function') {
+                vacacionesPersonalizadas = Number(vac.valueOf());
+              }
+              // Altfel încearcă toString() și apoi Number()
+              else if (typeof vac.toString === 'function') {
+                vacacionesPersonalizadas = Number(vac.toString());
+              }
+              // Ultimul fallback - direct Number()
+              else {
+                vacacionesPersonalizadas = Number(vac);
+              }
+            } catch (e: any) {
+              this.logger.warn(
+                `⚠️ [calcularSaldo] Error converting vacaciones DECIMAL for ${codigo}: ${e.message}`,
+              );
+              vacacionesPersonalizadas = null;
+            }
+          } else {
+            vacacionesPersonalizadas =
+              typeof vac === 'number' ? vac : Number(vac);
+          }
+          // IMPORTANT: 0 este o valoare validă (nu trebuie să fie null)
+          // Doar NaN trebuie să fie null
+          if (isNaN(vacacionesPersonalizadas)) {
+            vacacionesPersonalizadas = null;
+          }
+          // Dacă este 0, păstrează-l (0 !== null, deci va fi folosit)
+        }
+
+        // IMPORTANT: 0 este o valoare validă și trebuie procesată (nu trebuie ignorată)
+        // NULL = folosește convenio, 0 = folosește 0 explicit
+        if (asu !== null && asu !== undefined && asu !== 'NULL' && asu !== '') {
+          // Handle Decimal object (from Prisma)
+          if (typeof asu === 'object' && asu !== null) {
+            try {
+              if (typeof asu.toNumber === 'function') {
+                asuntosPersonalizados = asu.toNumber();
+              } else if (typeof asu.valueOf === 'function') {
+                asuntosPersonalizados = Number(asu.valueOf());
+              } else if (typeof asu.toString === 'function') {
+                asuntosPersonalizados = Number(asu.toString());
+              } else {
+                asuntosPersonalizados = Number(asu);
+              }
+            } catch (e: any) {
+              this.logger.warn(
+                `⚠️ [calcularSaldo] Error converting asuntos DECIMAL for ${codigo}: ${e.message}`,
+              );
+              asuntosPersonalizados = null;
+            }
+          } else {
+            asuntosPersonalizados = typeof asu === 'number' ? asu : Number(asu);
+          }
+          // IMPORTANT: 0 este o valoare validă (nu trebuie să fie null)
+          // Doar NaN sau null efectiv trebuie să fie null
+          if (isNaN(asuntosPersonalizados)) {
+            asuntosPersonalizados = null;
+          }
+          // Dacă este 0, păstrează-l (0 !== null, deci va fi folosit)
+        }
+
+        this.logger.debug(
+          `🔍 [calcularSaldo] ${codigo} - Procesate: vac=${vacacionesPersonalizadas}, asu=${asuntosPersonalizados}`,
+        );
+      }
+
       if (!empleado) {
         throw new BadRequestException(
           `Empleado con código ${codigo} no encontrado`,
@@ -320,11 +422,26 @@ export class VacacionesService {
         };
       }
 
-      // Obtener convenio según GRUPO
+      // Obtener convenio según GRUPO (solo si no hay valores personalizados)
       const convenio = await this.getConvenioByGrupo(empleado.GRUPO);
 
-      if (!convenio) {
-        // Si no hay convenio, retornar valores por defecto (0) sin warning
+      // Usar valores personalizados si existen, sino usar convenio
+      const diasVacacionesAnuales =
+        vacacionesPersonalizadas !== null
+          ? vacacionesPersonalizadas
+          : convenio?.dias_vacaciones_anuales || 0;
+
+      const diasAsuntosPropiosAnuales =
+        asuntosPersonalizados !== null
+          ? asuntosPersonalizados
+          : convenio?.dias_asuntos_propios_anuales || 0;
+
+      if (
+        !convenio &&
+        vacacionesPersonalizadas === null &&
+        asuntosPersonalizados === null
+      ) {
+        // Si no hay convenio ni valores personalizados, retornar valores por defecto (0)
         // (algunos grupos como Developer, Supervisor no tienen convenio asignado)
         const restantesAnoAnteriorDefault =
           empleado.VACACIONES_RESTANTES_ANO_ANTERIOR
@@ -351,7 +468,7 @@ export class VacacionesService {
 
       // Calcular días generados (devengo mensual)
       const diasGeneradosVacaciones = this.calcularDiasGenerados(
-        convenio.dias_vacaciones_anuales,
+        diasVacacionesAnuales,
         fechaAlta,
       );
 
@@ -375,26 +492,32 @@ export class VacacionesService {
         diasConsumidosVacaciones;
 
       const diasRestantesAsuntosPropios =
-        convenio.dias_asuntos_propios_anuales - diasConsumidosAsuntosPropios;
+        diasAsuntosPropiosAnuales - diasConsumidosAsuntosPropios;
 
       this.logger.log(
-        `✅ Saldo calculado para ${codigo}: Vacaciones ${diasRestantesVacaciones.toFixed(1)} días (${restantesAnoAnterior.toFixed(1)} del año anterior), Asuntos Propios ${diasRestantesAsuntosPropios.toFixed(1)} días`,
+        `✅ Saldo calculado para ${codigo}: Vacaciones ${diasRestantesVacaciones.toFixed(1)} días (${restantesAnoAnterior.toFixed(1)} del año anterior, anuales: ${diasVacacionesAnuales}${vacacionesPersonalizadas !== null ? ' [personalizado]' : ''}), Asuntos Propios ${diasRestantesAsuntosPropios.toFixed(1)} días (anuales: ${diasAsuntosPropiosAnuales}${asuntosPersonalizados !== null ? ' [personalizado]' : ''})`,
       );
 
-      return {
+      const resultado = {
         vacaciones: {
-          dias_anuales: convenio.dias_vacaciones_anuales,
+          dias_anuales: diasVacacionesAnuales,
           dias_generados_hasta_hoy: diasGeneradosVacaciones,
           dias_consumidos_aprobados: diasConsumidosVacaciones,
           dias_restantes_ano_anterior: restantesAnoAnterior,
           dias_restantes: Math.max(0, diasRestantesVacaciones),
         },
         asuntos_propios: {
-          dias_anuales: convenio.dias_asuntos_propios_anuales,
+          dias_anuales: diasAsuntosPropiosAnuales,
           dias_consumidos_aprobados: diasConsumidosAsuntosPropios,
           dias_restantes: Math.max(0, diasRestantesAsuntosPropios),
         },
       };
+
+      this.logger.debug(
+        `🔍 [calcularSaldo] ${codigo} - Return: vac.dias_anuales=${resultado.vacaciones.dias_anuales}, asu.dias_anuales=${resultado.asuntos_propios.dias_anuales}`,
+      );
+
+      return resultado;
     } catch (error: any) {
       this.logger.error(`❌ Error calculando saldo para ${codigo}:`, error);
       throw new BadRequestException(
@@ -532,6 +655,88 @@ export class VacacionesService {
     } catch (error: any) {
       this.logger.error(
         `❌ Error actualizando restantes año anterior para ${codigo}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Actualiza las vacaciones anuales personalizadas para un empleado
+   */
+  async updateVacacionesAnualesPersonalizadas(
+    codigo: string,
+    diasAnuales: number | null,
+  ): Promise<void> {
+    try {
+      // Verificar que el empleado existe
+      const empleado = await this.prisma.user.findUnique({
+        where: { CODIGO: codigo },
+        select: { CODIGO: true },
+      });
+
+      if (!empleado) {
+        throw new BadRequestException(
+          `Empleado con código ${codigo} no encontrado`,
+        );
+      }
+
+      // Actualizar el campo VACACIONES_ANUALES_PERSONALIZADAS
+      const updateQuery = `
+        UPDATE DatosEmpleados
+        SET \`VACACIONES_ANUALES_PERSONALIZADAS\` = ${diasAnuales !== null ? diasAnuales : 'NULL'}
+        WHERE CODIGO = ${this.escapeSql(codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
+      this.logger.log(
+        `✅ Vacaciones anuales personalizadas actualizadas para ${codigo}: ${diasAnuales !== null ? diasAnuales + ' días' : 'NULL (usará convenio)'}`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error actualizando vacaciones anuales personalizadas para ${codigo}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Actualiza los asuntos propios anuales personalizados para un empleado
+   */
+  async updateAsuntosPropiosAnualesPersonalizadas(
+    codigo: string,
+    diasAnuales: number | null,
+  ): Promise<void> {
+    try {
+      // Verificar que el empleado existe
+      const empleado = await this.prisma.user.findUnique({
+        where: { CODIGO: codigo },
+        select: { CODIGO: true },
+      });
+
+      if (!empleado) {
+        throw new BadRequestException(
+          `Empleado con código ${codigo} no encontrado`,
+        );
+      }
+
+      // Actualizar el campo ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS
+      const updateQuery = `
+        UPDATE DatosEmpleados
+        SET \`ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS\` = ${diasAnuales !== null ? diasAnuales : 'NULL'}
+        WHERE CODIGO = ${this.escapeSql(codigo)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
+      this.logger.log(
+        `✅ Asuntos propios anuales personalizados actualizados para ${codigo}: ${diasAnuales !== null ? diasAnuales + ' días' : 'NULL (usará convenio)'}`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error actualizando asuntos propios anuales personalizados para ${codigo}:`,
         error,
       );
       throw error;

@@ -137,8 +137,20 @@ const QuickAccessOrb = ({
   }, [items, ringSize]);
 
   const handleActivate = useCallback(
-    (item: ActionItem) => {
+    (item: ActionItem, event?: React.MouseEvent) => {
       if (item.disabled) return;
+      
+      // Permite deschiderea în tab nou (middle-click sau Ctrl+Click)
+      if (event) {
+        if (event.button === 1 || (event.button === 0 && (event.ctrlKey || event.metaKey))) {
+          event.preventDefault();
+          if (item.href) {
+            window.open(item.href, '_blank');
+          }
+          return;
+        }
+      }
+      
       onSelect?.(item.id);
       if (item.href) {
         navigate(item.href);
@@ -295,7 +307,14 @@ const QuickAccessOrb = ({
                     data-qa-item={item.id}
                     aria-label={item.label}
                     aria-describedby={tooltipId}
-                    onClick={() => handleActivate(item)}
+                    onClick={(e) => handleActivate(item, e)}
+                    onMouseDown={(e) => {
+                      // Detectează middle-click (button === 1)
+                      if (e.button === 1 && item.href) {
+                        e.preventDefault();
+                        window.open(item.href, '_blank');
+                      }
+                    }}
                     disabled={item.disabled}
                     className={cn(
                       'group relative h-full w-full overflow-visible rounded-3xl bg-neutral-900/70 p-0 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300',
@@ -493,7 +512,14 @@ const QuickAccessOrb = ({
                     data-qa-item={item.id}
                     aria-label={item.label}
                     aria-describedby={tooltipId}
-                    onClick={() => handleActivate(item)}
+                    onClick={(e) => handleActivate(item, e)}
+                    onMouseDown={(e) => {
+                      // Detectează middle-click (button === 1)
+                      if (e.button === 1 && item.href) {
+                        e.preventDefault();
+                        window.open(item.href, '_blank');
+                      }
+                    }}
                     disabled={item.disabled}
                     className={cn(
                       'group absolute flex h-[78px] w-[78px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-slate-900/80 text-center text-xs shadow-[0_6px_18px_rgba(15,23,42,0.55)] backdrop-blur-md transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300',

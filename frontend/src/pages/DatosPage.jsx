@@ -823,6 +823,11 @@ const [editLoading, setEditLoading] = useState(false);
     }
   }, [authUser?.isDemo]);
 
+  // Cache pentru empleado - evită apeluri duplicate
+  const empleadoCacheRef = useRef({ codigo: null, email: null, data: null, timestamp: 0 });
+  const CACHE_DURATION = 60000; // 60 secunde cache
+  const fetchingEmpleadoRef = useRef(false);
+
   const fetchUser = useCallback(async () => {
     setOperationLoading('user', true);
     setError(null);
@@ -835,7 +840,26 @@ const [editLoading, setEditLoading] = useState(false);
       return;
     }
     
+    // Verifică cache-ul
+    const now = Date.now();
+    const cache = empleadoCacheRef.current;
+    if (cache.data && 
+        (cache.codigo === authUser?.CODIGO || cache.email === authUser?.email) &&
+        (now - cache.timestamp) < CACHE_DURATION) {
+      // Folosește cache-ul
+      setUser(cache.data);
+      setOperationLoading('user', false);
+      return;
+    }
+    
+    // Evită apeluri duplicate simultane
+    if (fetchingEmpleadoRef.current) {
+      setOperationLoading('user', false);
+      return;
+    }
+    
     try {
+      fetchingEmpleadoRef.current = true;
       // Folosim backend-ul nou (getEmpleadoMe) - returnează direct angajatul curent
       const endpoint = routes.getEmpleadoMe;
       
@@ -953,11 +977,19 @@ const [editLoading, setEditLoading] = useState(false);
         console.log('DatosPage mapped user:', mappedUser);
         console.log('FECHA DE ALTA value:', mappedUser['FECHA DE ALTA']);
         // Păstrez avatarul existent când setez user-ul nou
-        setUser(prev => ({
+        const finalUser = {
           ...mappedUser,
-          AVATAR: prev?.AVATAR || null,
-          avatar: prev?.avatar || null
-        }));
+          AVATAR: user?.AVATAR || null,
+          avatar: user?.avatar || null
+        };
+        setUser(finalUser);
+        // Actualizează cache-ul
+        empleadoCacheRef.current = {
+          codigo: authUser?.CODIGO,
+          email: authUser?.email,
+          data: finalUser,
+          timestamp: Date.now(),
+        };
         setError(null);
       } else {
         // Nu am găsit date despre angajat
@@ -980,6 +1012,7 @@ const [editLoading, setEditLoading] = useState(false);
       setError('No se pudieron cargar los datos del usuario.');
     } finally {
       setOperationLoading('user', false);
+      fetchingEmpleadoRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser, email, setOperationLoading]); // Removed 'user' from deps to avoid reset loops

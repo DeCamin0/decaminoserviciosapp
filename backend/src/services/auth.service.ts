@@ -29,6 +29,7 @@ export class AuthService {
     success: boolean;
     user?: any;
     accessToken?: string;
+    refreshToken?: string;
     error?: string;
   }> {
     try {
@@ -109,15 +110,29 @@ export class AuthService {
         contraseñaPassword || dniPassword,
       );
 
-      // Generate JWT token
+      // Generate JWT access token (30 minutes)
       const payload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
         role,
         grupo,
         passwordHash, // Hash pentru a invalida token-urile când se schimbă parola
+        type: 'access', // Mark as access token
       };
-      const accessToken = this.jwtService.sign(payload);
+      const accessToken = this.jwtService.sign(payload, {
+        expiresIn: '30m', // 30 minutes
+      });
+
+      // Generate JWT refresh token (7 days)
+      const refreshPayload = {
+        email: found.CORREO_ELECTRONICO,
+        userId: found.CODIGO,
+        passwordHash, // Hash pentru a invalida token-urile când se schimbă parola
+        type: 'refresh', // Mark as refresh token
+      };
+      const refreshToken = this.jwtService.sign(refreshPayload, {
+        expiresIn: '7d', // 7 days
+      });
 
       console.log(
         '[AuthService] Login successful for:',
@@ -128,7 +143,8 @@ export class AuthService {
       return {
         success: true,
         user: userObj,
-        accessToken, // JWT token
+        accessToken, // JWT access token (30 minutes)
+        refreshToken, // JWT refresh token (7 days)
       };
     } catch (error: any) {
       console.error('[AuthService] Login error:', error);
@@ -157,6 +173,113 @@ export class AuthService {
         error,
       );
       return null;
+    }
+  }
+
+  /**
+   * Refresh access token using refresh token
+   *
+   * @param refreshToken Refresh token string
+   * @returns New access token if successful, error otherwise
+   */
+  async refreshToken(refreshToken: string): Promise<{
+    success: boolean;
+    accessToken?: string;
+    error?: string;
+  }> {
+    try {
+      // Verify refresh token
+      const decoded = this.jwtService.verify(refreshToken);
+
+      // Check if it's a refresh token
+      if (decoded.type !== 'refresh') {
+        console.log('[AuthService] Invalid token type for refresh');
+        return { success: false, error: 'Invalid refresh token' };
+      }
+
+      // Find user by email
+      const normalizedEmail = decoded.email?.toLowerCase();
+      if (!normalizedEmail) {
+        return { success: false, error: 'Invalid token payload' };
+      }
+
+      const found = await this.prisma.user.findFirst({
+        where: {
+          CORREO_ELECTRONICO: normalizedEmail,
+        },
+      });
+
+      if (!found) {
+        console.log('[AuthService] User not found for refresh token');
+        return { success: false, error: 'User not found' };
+      }
+
+      // Validate active status
+      const estadoRaw = (found.ESTADO || '').toString().trim().toUpperCase();
+      if (estadoRaw && estadoRaw !== 'ACTIVO') {
+        console.log('[AuthService] User inactive for refresh');
+        return { success: false, error: 'Usuario inactivo' };
+      }
+
+      // Verify password hash hasn't changed (password change invalidates tokens)
+      const dniPassword = String(found.DNI_NIE || '').trim();
+      const contraseñaPassword = String(found.CONTRASENA || '').trim();
+      const currentPasswordHash = this.getPasswordHash(
+        contraseñaPassword || dniPassword,
+      );
+
+      if (decoded.passwordHash !== currentPasswordHash) {
+        console.log('[AuthService] Password changed, refresh token invalid');
+        return {
+          success: false,
+          error: 'Token invalidated by password change',
+        };
+      }
+
+      // Detect role from GRUPO
+      const grupo = found.GRUPO || '';
+      let role = 'EMPLEADOS'; // default
+      if (grupo === 'Manager' || grupo === 'Supervisor') {
+        role = 'MANAGER';
+      } else if (grupo === 'Developer') {
+        role = 'DEVELOPER';
+      } else if (grupo === 'Admin') {
+        role = 'ADMIN';
+      }
+
+      // Generate new access token
+      const payload = {
+        email: found.CORREO_ELECTRONICO,
+        userId: found.CODIGO,
+        role,
+        grupo,
+        passwordHash: currentPasswordHash,
+        type: 'access',
+      };
+      const newAccessToken = this.jwtService.sign(payload, {
+        expiresIn: '30m',
+      });
+
+      console.log(
+        '[AuthService] Token refreshed successfully for:',
+        normalizedEmail,
+      );
+      return {
+        success: true,
+        accessToken: newAccessToken,
+      };
+    } catch (error: any) {
+      console.error('[AuthService] Refresh token error:', error);
+      if (error.name === 'TokenExpiredError') {
+        return { success: false, error: 'Refresh token expired' };
+      }
+      if (error.name === 'JsonWebTokenError') {
+        return { success: false, error: 'Invalid refresh token' };
+      }
+      return {
+        success: false,
+        error: error.message || 'Error refreshing token',
+      };
     }
   }
 

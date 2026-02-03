@@ -137,19 +137,13 @@ export class HallOfFameController {
     @Query('mes') mes?: string,
     @CurrentUser() user?: any,
   ) {
-    // Verifică permisiuni
+    // Verifică permisiuni - doar Developer poate calcula
     const grupo = user?.GRUPO || user?.grupo || '';
-    const isManager = user?.isManager || false;
-    const canCalculate =
-      isManager ||
-      grupo === 'Admin' ||
-      grupo === 'Developer' ||
-      grupo === 'Manager' ||
-      grupo === 'Supervisor';
+    const canCalculate = grupo === 'Developer';
 
     if (!canCalculate) {
       throw new ForbiddenException(
-        'No tienes permisos para calcular scores. Solo los administradores y managers pueden hacerlo.',
+        'No tienes permisos para calcular scores. Solo los desarrolladores pueden hacerlo.',
       );
     }
 
@@ -188,23 +182,17 @@ export class HallOfFameController {
 
   /**
    * POST /api/hall-of-fame/calculate?mes=YYYY-MM
-   * Calculează și salvează scorurile pentru o lună (doar manageri/admini/developeri)
+   * Calculează și salvează scorurile pentru o lună (doar Developer)
    */
   @Post('calculate')
   async calculateScores(@Query('mes') mes?: string, @CurrentUser() user?: any) {
-    // Verifică permisiuni - doar manageri/admini/developeri pot calcula scoruri
+    // Verifică permisiuni - doar Developer poate calcula
     const grupo = user?.GRUPO || user?.grupo || '';
-    const isManager = user?.isManager || false;
-    const canCalculate =
-      isManager ||
-      grupo === 'Admin' ||
-      grupo === 'Developer' ||
-      grupo === 'Manager' ||
-      grupo === 'Supervisor';
+    const canCalculate = grupo === 'Developer';
 
     if (!canCalculate) {
       throw new ForbiddenException(
-        'No tienes permisos para calcular scores. Solo los administradores y managers pueden hacerlo.',
+        'No tienes permisos para calcular scores. Solo los desarrolladores pueden hacerlo.',
       );
     }
 
@@ -353,19 +341,13 @@ export class HallOfFameController {
     @Query('trimestre') trimestre?: string,
     @CurrentUser() user?: any,
   ) {
-    // Verifică permisiuni
+    // Verifică permisiuni - doar Developer poate calcula
     const grupo = user?.GRUPO || user?.grupo || '';
-    const isManager = user?.isManager || false;
-    const canCalculate =
-      isManager ||
-      grupo === 'Admin' ||
-      grupo === 'Developer' ||
-      grupo === 'Manager' ||
-      grupo === 'Supervisor';
+    const canCalculate = grupo === 'Developer';
 
     if (!canCalculate) {
       throw new ForbiddenException(
-        'No tienes permisos para calcular scores trimestrales. Solo los administradores y managers pueden hacerlo.',
+        'No tienes permisos para calcular scores trimestrales. Solo los desarrolladores pueden hacerlo.',
       );
     }
 

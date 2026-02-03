@@ -233,6 +233,13 @@ export const useAdminApi = () => {
   // Permisiuni universale pentru toți utilizatorii
   const getPermissions = useCallback(async (userGrupo = null) => {
     try {
+      // Verifică dacă există token înainte de a face request-ul
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.warn('[Permissions] No auth token available, skipping permissions fetch');
+        return getDefaultPermissions();
+      }
+
       // 1) Încearcă backend NestJS (direct DB)
       let urlBackend = routes.permissions;
       if (userGrupo) {
@@ -243,7 +250,11 @@ export const useAdminApi = () => {
 
       console.log('[Permissions] Fetching from backend:', urlBackend);
 
-      const backendRes = await fetch(urlBackend, { headers: { Accept: 'application/json' } });
+      // Folosim fetch normal (interceptat de fetchWithAuth) care adaugă automat token-ul
+      const backendRes = await fetch(urlBackend, { 
+        headers: { Accept: 'application/json' },
+        credentials: 'include' // Include cookies dacă sunt necesare
+      });
       if (backendRes.ok) {
         const backendData = await backendRes.json();
         if (backendData?.success && Array.isArray(backendData.permissions)) {
@@ -581,12 +592,56 @@ export const useAdminApi = () => {
     }
   };
 
+  // Șterge permisiunile pentru grupurile nefolosite
+  // Backend-ul obține automat grupurile folosite din DatosEmpleados
+  const deleteUnusedGroups = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const url = `${routes.permissions}/unused-groups`;
+      
+      console.log('Deleting unused groups permissions:', url);
+      
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: headers,
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error deleting unused groups:', errorText);
+        throw new Error(`Error deleting unused groups: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('Delete unused groups response:', data);
+
+      if (data && data.success) {
+        return data;
+      } else {
+        throw new Error('Invalid response format from backend');
+      }
+    } catch (error) {
+      console.error('Error deleting unused groups:', error);
+      throw error;
+    }
+  };
+
   return {
     getAdminStats,
     getPermissions,
     getPermissionsEmpleados,
     getAllPermissions,
     savePermissions,
+    deleteUnusedGroups,
     getActivityLog,
     getAllUsers
   };

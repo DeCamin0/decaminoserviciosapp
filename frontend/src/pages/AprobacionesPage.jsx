@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Card, Button, Modal, Notification } from '../components/ui';
-import { Link } from 'react-router-dom';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
 import { useAdminApi } from '../hooks/useAdminApi';
@@ -65,8 +64,6 @@ export default function AprobacionesPage() {
   const [empleados, setEmpleados] = useState([]);
 
   const userGrupo = useMemo(() => authUser?.GRUPO || authUser?.grupo || 'Empleado', [authUser?.GRUPO, authUser?.grupo]);
-  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
-  const isManager = useMemo(() => authUser?.isManager || false, [authUser?.isManager]);
   
   // Funcție helper pentru a găsi cheia corectă pentru grup în permisiuni
   const findGrupoKey = useCallback((grupo, permissions) => {
@@ -128,15 +125,15 @@ export default function AprobacionesPage() {
     loadPermissions();
   }, [userGrupo, authUser?.isDemo, getPermissions]);
 
-  // Verifică dacă utilizatorul are permisiunea de acces
+  // Verifică dacă utilizatorul are permisiunea de acces - folosim DOAR permisiunile din backend (fără fallback)
+  const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
   const canAccess = useMemo(() => {
     // Dacă permisiunile sunt încă încărcare, așteaptă
     if (loadingPermissions) {
       return null; // null = încă verificăm
     }
     
-    // Dacă avem permisiuni din backend, verificăm permisiunea 'aprobaciones'
-    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+    // Folosim DOAR permisiunile din backend - fără fallback la isManager
     if (hasBackendPermissions) {
       const grupoKey = findGrupoKey(userGrupo, userPermissions);
       if (grupoKey) {
@@ -144,9 +141,9 @@ export default function AprobacionesPage() {
       }
     }
     
-    // Fallback la verificarea veche (Manager/Supervisor)
-    return isManager;
-  }, [loadingPermissions, userPermissions, userGrupo, findGrupoKey, hasPermission, isManager]);
+    // Dacă nu există permisiuni în backend, nu permitem accesul
+    return false;
+  }, [loadingPermissions, userPermissions, userGrupo, findGrupoKey, hasPermission, hasBackendPermissions]);
 
   // Demo data for AprobacionesPage
   const setDemoAprobaciones = () => {
@@ -932,11 +929,17 @@ export default function AprobacionesPage() {
   if (!canAccess) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="text-red-600 font-bold text-xl mb-4">No tienes permisos para esta página.</div>
-          <Link to="/inicio" className="text-red-600 hover:text-red-700 underline">
-            ← Volver al Inicio
-          </Link>
+        <div className="text-center max-w-md mx-auto p-6">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">
+            Acceso Restringido
+          </h1>
+          <p className="text-gray-600 mb-4">
+            No tienes permisos configurados para acceder a la página de Aprobaciones.
+          </p>
+          <p className="text-gray-600 mb-6">
+            Por favor, contacta con tu supervisor para que te asigne los permisos necesarios.
+          </p>
+          <Back3DButton to="/inicio" title="Volver al Inicio" />
         </div>
       </div>
     );

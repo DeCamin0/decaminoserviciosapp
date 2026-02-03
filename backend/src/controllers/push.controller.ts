@@ -19,9 +19,10 @@ export class PushController {
   /**
    * GET /api/push/vapid-public-key
    * Returnează VAPID public key pentru frontend
-   * Public endpoint - nu necesită autentificare
+   * Necesită autentificare pentru securitate
    */
   @Get('vapid-public-key')
+  @UseGuards(JwtAuthGuard)
   getVapidPublicKey() {
     return {
       publicKey: this.pushService.getVapidPublicKey(),

@@ -123,6 +123,12 @@ export const useApi = () => {
       console.log('useApi response data:', data);
       return { success: true, data };
     } catch (err) {
+      // Nu logăm eroarea ca error dacă utilizatorul este deconectat (este comportament normal)
+      if (err.message && err.message.includes('User is logged out')) {
+        console.log('ℹ️ [useApi] User is logged out, skipping error log');
+        setError(null); // Nu setăm eroarea pentru a evita spam-ul în UI
+        return { success: false, error: null }; // Returnăm success: false dar fără eroare
+      }
       console.error('useApi error:', err);
       setError(err.message);
       return { success: false, error: err.message };

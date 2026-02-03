@@ -27,6 +27,9 @@ export const routes = {
   login: import.meta.env.DEV 
     ? 'http://localhost:3000/api/auth/login'
     : 'https://api.decaminoservicios.com/api/auth/login',
+  refresh: import.meta.env.DEV
+    ? 'http://localhost:3000/api/auth/refresh'
+    : 'https://api.decaminoservicios.com/api/auth/refresh',
   me: import.meta.env.DEV
     ? 'http://localhost:3000/api/me'
     : 'https://api.decaminoservicios.com/api/me',
@@ -359,6 +362,14 @@ export const routes = {
     import.meta.env.DEV
       ? `http://localhost:3000/api/vacaciones/restantes-ano-anterior/${empleadoId}`
       : `https://api.decaminoservicios.com/api/vacaciones/restantes-ano-anterior/${empleadoId}`,
+  updateVacacionesAnualesPersonalizadas: (empleadoId) =>
+    import.meta.env.DEV
+      ? `http://localhost:3000/api/vacaciones/anuales-personalizadas/${empleadoId}`
+      : `https://api.decaminoservicios.com/api/vacaciones/anuales-personalizadas/${empleadoId}`,
+  updateAsuntosPropiosAnualesPersonalizadas: (empleadoId) =>
+    import.meta.env.DEV
+      ? `http://localhost:3000/api/vacaciones/asuntos-propios-anuales-personalizadas/${empleadoId}`
+      : `https://api.decaminoservicios.com/api/vacaciones/asuntos-propios-anuales-personalizadas/${empleadoId}`,
   
   uploadBajasMedicas: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas'
@@ -532,6 +543,9 @@ export const routes = {
   getGrupos: import.meta.env.DEV
     ? 'http://localhost:3000/api/grupos'
     : 'https://api.decaminoservicios.com/api/grupos',
+  createGrupo: import.meta.env.DEV
+    ? 'http://localhost:3000/api/grupos'
+    : 'https://api.decaminoservicios.com/api/grupos',
   // Ausencias
   getAusencias: import.meta.env.DEV
     ? 'http://localhost:3000/api/ausencias'
@@ -539,6 +553,24 @@ export const routes = {
   deleteAusencia: (id) => import.meta.env.DEV
     ? `http://localhost:3000/api/ausencias/${id}`
     : `https://api.decaminoservicios.com/api/ausencias/${id}`,
+  updateNoNecesitaJustificante: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/no-necesita-justificante`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/no-necesita-justificante`,
+  updateAusenciaTipo: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/tipo`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/tipo`,
+  recordarJustificante: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/recordar-justificante`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/recordar-justificante`,
+  asociarAusencia: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/asociar`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/asociar`,
+  marcarSinAusencia: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/marcar-sin-ausencia`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/marcar-sin-ausencia`,
+  recalcularDuracion: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/recalcular-duracion`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/recalcular-duracion`,
   addAusencia: import.meta.env.DEV
     ? 'http://localhost:3000/api/ausencias'
     : 'https://api.decaminoservicios.com/api/ausencias',

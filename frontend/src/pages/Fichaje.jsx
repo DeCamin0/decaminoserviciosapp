@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { useLocation } from '../contexts/LocationContextBase';
 import { useApi } from '../hooks/useApi';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { usePermissions } from '../hooks/usePermissions';
 import { Card, Button, Modal, LoadingSpinner, Input, Notification } from '../components/ui';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { API_ENDPOINTS } from '../utils/constants';
@@ -1109,6 +1110,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       success('Utilizatorul nu este în absență pentru ziua curentă');
     }
   }, [ausencias, bajasMedicas, normalizeDateInput]);
+
 
   // Funcție pentru a încărca festivos pentru anul curent
   const fetchFestivos = useCallback(async () => {
@@ -7701,8 +7703,24 @@ export default function FichajePage() {
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
   const { isMobile } = useBreakpoint();
-  // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
-  const isManager = authUser?.isManager || false;
+  
+  // Permisiuni din backend pentru fichar - folosim DOAR permisiunile din backend
+  const { hasPermission, loading: loadingPermissions, hasBackendPermissions } = usePermissions();
+  
+  // Verifică permisiunile - SIMPLU:
+  // fichar-empleados = doar 1 tab (MiFichajeScreen)
+  // fichar-admin = acces total (toate tab-urile)
+  // Folosim DOAR permisiunile din backend - fără fallback la isManager
+  const hasFicharEmpleadosPermission = hasBackendPermissions ? hasPermission('fichar-empleados') : false;
+  const hasFicharAdminPermission = hasBackendPermissions ? hasPermission('fichar-admin') : false;
+  
+  // Acces la pagină = are cel puțin una dintre permisiuni (DOAR din backend)
+  const canAccessPage = hasFicharEmpleadosPermission || hasFicharAdminPermission;
+  
+  // Acces la toate tab-urile = doar fichar-admin
+  const canAccessAllTabs = hasFicharAdminPermission;
+  
+  // activeTab pentru manageri (personal/empleados/horas/permitidas)
   const [activeTab, setActiveTab] = useState('personal');
   const [logs, setLogs] = useState([]);
   
@@ -7718,6 +7736,103 @@ export default function FichajePage() {
     permisoFechaFin: ''
   });
   const incidenciaMessageTimeoutRef = useRef(null);
+  
+  // State pentru ausencias (folosit pentru verificarea "Ausencias justificada" în modal)
+  const [ausenciasForModal, setAusenciasForModal] = useState([]);
+  
+  // Verifică dacă există "Ausencias justificada" pentru ziua curentă
+  const hasAusenciaJustificadaHoy = useMemo(() => {
+    if (!ausenciasForModal || ausenciasForModal.length === 0) return false;
+    
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+    
+    return ausenciasForModal.some(a => {
+      const tipo = (a.TIPO || a.tipo || '').toLowerCase();
+      const esAusenciaJustificada = tipo.includes('ausencia') && tipo.includes('justificada');
+      
+      if (!esAusenciaJustificada) return false;
+      
+      const ausenciaFecha = a.FECHA || a.fecha || a.data;
+      const fechaInicio = a.fecha_inicio || a.fechaInicio || a.FECHA_INICIO;
+      const fechaFin = a.fecha_fin || a.fechaFin || a.FECHA_FIN;
+      
+      // Verifică data exactă
+      if (ausenciaFecha && ausenciaFecha.startsWith(todayStr)) {
+        return true;
+      }
+      
+      // Verifică interval de date
+      if (fechaInicio && fechaFin) {
+        const inicioDateStr = fechaInicio.split('T')[0];
+        const finDateStr = fechaFin.split('T')[0];
+        
+        if (inicioDateStr === finDateStr) {
+          return todayStr === inicioDateStr;
+        }
+        
+        const todayDateOnly = new Date(todayStr);
+        const inicioDateOnly = new Date(inicioDateStr);
+        const finDateOnly = new Date(finDateStr);
+        
+        todayDateOnly.setHours(0, 0, 0, 0);
+        inicioDateOnly.setHours(0, 0, 0, 0);
+        finDateOnly.setHours(23, 59, 59, 999);
+        
+        return todayDateOnly >= inicioDateOnly && todayDateOnly <= finDateOnly;
+      }
+      
+      // Verifică interval din ausenciaFecha
+      if (ausenciaFecha && ausenciaFecha.includes(' - ')) {
+        const [fechaInicioStr, fechaFinStr] = ausenciaFecha.split(' - ');
+        const inicio = new Date(fechaInicioStr);
+        const fin = new Date(fechaFinStr);
+        
+        const todayDateOnly = new Date(today);
+        const inicioDateOnly = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+        const finDateOnly = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
+        
+        todayDateOnly.setHours(0, 0, 0, 0);
+        inicioDateOnly.setHours(0, 0, 0, 0);
+        finDateOnly.setHours(23, 59, 59, 999);
+        
+        return todayDateOnly >= inicioDateOnly && todayDateOnly <= finDateOnly;
+      }
+      
+      return false;
+    });
+  }, [ausenciasForModal]);
+  
+  // Încarcă ausencias pentru modal (pentru verificarea "Ausencias justificada")
+  useEffect(() => {
+    const fetchAusenciasForModal = async () => {
+      if (!authUser?.CODIGO) return;
+      
+      try {
+        const token = localStorage.getItem('auth_token');
+        const url = `${routes.getAusencias}?codigo=${encodeURIComponent(authUser.CODIGO)}`;
+        const headers = {};
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const result = await callApi(url, { headers });
+        
+        if (result.success) {
+          const rawData = Array.isArray(result.data) ? result.data : [result.data];
+          setAusenciasForModal(rawData);
+        }
+      } catch (error) {
+        loggerDebug('Error fetching ausencias for modal:', error);
+      }
+    };
+    
+    fetchAusenciasForModal();
+  }, [authUser?.CODIGO, callApi]);
   
   // State pentru a detecta ce tip de incidentă poate fi înregistrată
   // State pentru notificări
@@ -9109,43 +9224,11 @@ export default function FichajePage() {
         return;
       }
 
-      if (incidenciaForm.tipo === 'Permiso Retribuido') {
-        if (!incidenciaForm.permisoFechaInicio || !incidenciaForm.permisoFechaFin) {
-          setIncidenciaMessage('Debes indicar la fecha de inicio y fin para el permiso retribuido.');
-          setIsSubmittingIncidencia(false);
-          return;
-        }
-        const inicioDate = new Date(incidenciaForm.permisoFechaInicio);
-        const finDate = new Date(incidenciaForm.permisoFechaFin);
-        if (inicioDate > finDate) {
-          setIncidenciaMessage('La fecha de fin no puede ser anterior a la fecha de inicio.');
-          setIsSubmittingIncidencia(false);
-          return;
-        }
-
-        const diffInMs = finDate.getTime() - inicioDate.getTime();
-        const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24)) + 1;
-        if (diffInDays > 5) {
-          setIncidenciaMessage('El permiso retribuido no puede exceder 5 días consecutivos.');
-          setIsSubmittingIncidencia(false);
-          return;
-        }
-      }
-
-      if (incidenciaForm.tipo === 'Ausencias justificada') {
-        if (!incidenciaForm.permisoFechaInicio || !incidenciaForm.permisoFechaFin) {
-          setIncidenciaMessage('Debes indicar la fecha de inicio y fin para la ausencia justificada.');
-          setIsSubmittingIncidencia(false);
-          return;
-        }
-        const inicioDate = new Date(incidenciaForm.permisoFechaInicio);
-        const finDate = new Date(incidenciaForm.permisoFechaFin);
-        if (inicioDate > finDate) {
-          setIncidenciaMessage('La fecha de fin no puede ser anterior a la fecha de inicio.');
-          setIsSubmittingIncidencia(false);
-          return;
-        }
-        // Sin límite de días para Ausencias justificada
+      // "Permiso Retribuido" și "Ausencias justificada" au fost mutate în "Nueva Solicitud"
+      if (incidenciaForm.tipo === 'Permiso Retribuido' || incidenciaForm.tipo === 'Ausencias justificada') {
+        setIncidenciaMessage('Este tipo de ausencia debe solicitarse en "Nueva Solicitud" en la página de Solicitudes.');
+        setIsSubmittingIncidencia(false);
+        return;
       }
 
       // Obtiene la ubicación (opcional) folosind contextul global
@@ -9314,10 +9397,8 @@ export default function FichajePage() {
         cuadrante_asignado: cuadrantePayload || null,
         sin_horario_asignado: sinHorarioAsignado
       };
-      if (incidenciaForm.tipo === 'Permiso Retribuido' || incidenciaForm.tipo === 'Ausencias justificada') {
-        ausenciaPayload.permiso_fecha_inicio = incidenciaForm.permisoFechaInicio;
-        ausenciaPayload.permiso_fecha_fin = incidenciaForm.permisoFechaFin;
-      }
+      // "Permiso Retribuido" și "Ausencias justificada" au fost mutate în "Nueva Solicitud"
+      // Nu mai procesăm aceste tipuri aici
 
       info('[Fichaje] Folosind backend-ul nou (addAusencia):', ausenciaEndpoint);
       
@@ -9472,8 +9553,37 @@ export default function FichajePage() {
         </button>
       </div>
 
-      {/* Para empleado - solo MiFichaje */}
-      {!isManager && (
+      {/* Verifică dacă utilizatorul are acces la pagină */}
+      {loadingPermissions && (
+        <Card>
+          <div className="text-center py-8">
+            <LoadingSpinner />
+            <p className="text-gray-600 mt-4">Cargando permisos...</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Dacă nu are permisiuni în backend sau nu are permisiuni pentru fichar */}
+      {!loadingPermissions && !canAccessPage && (
+        <Card>
+          <div className="text-center py-8">
+            <div className="max-w-md mx-auto">
+              <p className="text-gray-800 text-lg font-semibold mb-2">
+                No tienes acceso a esta página
+              </p>
+              <p className="text-gray-600 mb-4">
+                No tienes permisos configurados para acceder a la página de Fichaje.
+              </p>
+              <p className="text-gray-600">
+                Por favor, contacta con tu supervisor para que te asigne los permisos necesarios.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Para empleado - solo MiFichaje (fichar-empleados) */}
+      {canAccessPage && !canAccessAllTabs && (
         <Card>
           <MiFichajeScreen 
             onFicharIncidencia={handleFicharIncidencia} 
@@ -9495,8 +9605,8 @@ export default function FichajePage() {
         </Card>
       )}
 
-      {/* Para manager/supervisor - tabs con MiFichaje y Registros Empleados */}
-      {isManager && (
+      {/* Para manager/admin - tabs con MiFichaje y Registros Empleados (fichar-admin) */}
+      {canAccessAllTabs && (
         <Card>
           <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 mb-8">
             <button
@@ -9688,6 +9798,23 @@ export default function FichajePage() {
             <div className="text-center mb-6">
               <p className="text-sm font-medium text-gray-700">Elige el tipo de ausencia que mejor se adapte a tu situación</p>
             </div>
+            {/* Mesaj de avertizare dacă nu există "Ausencias justificada" pentru ziua curentă */}
+            {!hasAusenciaJustificadaHoy && (
+              <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-400 rounded-xl">
+                <div className="flex items-start gap-3">
+                  <span className="text-red-600 text-xl">⚠️</span>
+                  <div>
+                    <h3 className="text-sm font-bold text-red-800 mb-1">
+                      Debes registrar primero una &quot;Ausencias justificada&quot;
+                    </h3>
+                    <p className="text-sm text-red-700">
+                      Para poder registrar &quot;Salida del Centro&quot;, &quot;Regreso al Centro&quot; o &quot;Salida Sin Regreso&quot;, primero debes registrar una &quot;Ausencias justificada&quot; para el día de hoy.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 onClick={() =>
@@ -9698,7 +9825,16 @@ export default function FichajePage() {
                     permisoFechaFin: ''
                   }))
                 }
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg hover:shadow-xl ${incidenciaForm.tipo === 'Salida del Centro' ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 text-white' : 'bg-white/90 text-orange-700 border-2 border-orange-300/50 hover:border-orange-400'}`}>
+                disabled={!hasAusenciaJustificadaHoy}
+                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg ${
+                  !hasAusenciaJustificadaHoy
+                    ? 'bg-gray-300 text-gray-500 border-2 border-gray-300 cursor-not-allowed opacity-60'
+                    : incidenciaForm.tipo === 'Salida del Centro'
+                    ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 text-white hover:shadow-xl'
+                    : 'bg-white/90 text-orange-700 border-2 border-orange-300/50 hover:border-orange-400 hover:shadow-xl'
+                }`}
+                title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
+              >
                 <div className="text-center">
                   <span className="text-3xl block mb-2">🚶‍♂️</span>
                   <div className="text-lg font-extrabold">Salida del Centro</div>
@@ -9714,7 +9850,16 @@ export default function FichajePage() {
                     permisoFechaFin: ''
                   }))
                 }
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg hover:shadow-xl ${incidenciaForm.tipo === 'Regreso al Centro' ? 'bg-gradient-to-br from-blue-500 via-cyan-500 to-teal-500 text-white' : 'bg-white/90 text-blue-700 border-2 border-blue-300/50 hover:border-blue-400'}`}>
+                disabled={!hasAusenciaJustificadaHoy}
+                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg ${
+                  !hasAusenciaJustificadaHoy
+                    ? 'bg-gray-300 text-gray-500 border-2 border-gray-300 cursor-not-allowed opacity-60'
+                    : incidenciaForm.tipo === 'Regreso al Centro'
+                    ? 'bg-gradient-to-br from-blue-500 via-cyan-500 to-teal-500 text-white hover:shadow-xl'
+                    : 'bg-white/90 text-blue-700 border-2 border-blue-300/50 hover:border-blue-400 hover:shadow-xl'
+                }`}
+                title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
+              >
                 <div className="text-center">
                   <span className="text-3xl block mb-2">🔄</span>
                   <div className="text-lg font-extrabold">Regreso al Centro</div>
@@ -9730,71 +9875,20 @@ export default function FichajePage() {
                     permisoFechaFin: ''
                   }))
                 }
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg hover:shadow-xl ${incidenciaForm.tipo === 'Salida Sin Regreso' ? 'bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 text-white' : 'bg-white/90 text-purple-700 border-2 border-purple-300/50 hover:border-purple-400'}`}>
+                disabled={!hasAusenciaJustificadaHoy}
+                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg ${
+                  !hasAusenciaJustificadaHoy
+                    ? 'bg-gray-300 text-gray-500 border-2 border-gray-300 cursor-not-allowed opacity-60'
+                    : incidenciaForm.tipo === 'Salida Sin Regreso'
+                    ? 'bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 text-white hover:shadow-xl'
+                    : 'bg-white/90 text-purple-700 border-2 border-purple-300/50 hover:border-purple-400 hover:shadow-xl'
+                }`}
+                title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
+              >
                 <div className="text-center">
                   <span className="text-3xl block mb-2">🏠</span>
                   <div className="text-lg font-extrabold">Salida Sin Regreso</div>
                   <div className={`text-xs mt-1 ${incidenciaForm.tipo === 'Salida Sin Regreso' ? 'text-white/90' : 'text-purple-600'}`}>No regresa hoy</div>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  const today = new Date().toISOString().split('T')[0];
-                  setIncidenciaForm(f => ({
-                    ...f,
-                    tipo: 'Permiso Retribuido',
-                    permisoFechaInicio: f.permisoFechaInicio || today,
-                    permisoFechaFin: f.permisoFechaFin || today
-                  }));
-                }}
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg hover:shadow-xl ${
-                  incidenciaForm.tipo === 'Permiso Retribuido'
-                    ? 'bg-gradient-to-br from-emerald-500 via-teal-500 to-blue-500 text-white'
-                    : 'bg-white/90 text-emerald-700 border-2 border-emerald-300/50 hover:border-emerald-400'
-                }`}
-              >
-                <div className="text-center">
-                  <span className="text-3xl block mb-2">💼</span>
-                  <div className="text-lg font-extrabold">Permiso Retribuido</div>
-                  <div
-                    className={`text-xs mt-1 ${
-                      incidenciaForm.tipo === 'Permiso Retribuido'
-                        ? 'text-white/90'
-                        : 'text-emerald-600'
-                    }`}
-                  >
-                    Ausencia aprobada y remunerada
-                  </div>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  const today = new Date().toISOString().split('T')[0];
-                  setIncidenciaForm(f => ({
-                    ...f,
-                    tipo: 'Ausencias justificada',
-                    permisoFechaInicio: f.permisoFechaInicio || today,
-                    permisoFechaFin: f.permisoFechaFin || today
-                  }));
-                }}
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg hover:shadow-xl ${
-                  incidenciaForm.tipo === 'Ausencias justificada'
-                    ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-indigo-500 text-white'
-                    : 'bg-white/90 text-cyan-700 border-2 border-cyan-300/50 hover:border-cyan-400'
-                }`}
-              >
-                <div className="text-center">
-                  <span className="text-3xl block mb-2">🩺</span>
-                  <div className="text-lg font-extrabold">Ausencias justificada</div>
-                  <div
-                    className={`text-xs mt-1 ${
-                      incidenciaForm.tipo === 'Ausencias justificada'
-                        ? 'text-white/90'
-                        : 'text-cyan-600'
-                    }`}
-                  >
-                    Ausencia médica justificada
-                  </div>
                 </div>
               </button>
             </div>
@@ -9839,65 +9933,6 @@ export default function FichajePage() {
                 <p className="text-xs text-red-600 mt-1 font-medium">* Campo obligatorio</p>
               )}
             </div>
-            {(incidenciaForm.tipo === 'Permiso Retribuido' || incidenciaForm.tipo === 'Ausencias justificada') && (
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="permiso-fecha-inicio" className="block text-sm font-bold text-gray-700 mb-2">
-                    Fecha inicio {incidenciaForm.tipo === 'Ausencias justificada' ? 'de la ausencia' : 'del permiso'}
-                  </label>
-                  <Input
-                    id="permiso-fecha-inicio"
-                    type="date"
-                    value={incidenciaForm.permisoFechaInicio}
-                    onChange={(e) =>
-                      setIncidenciaForm(f => ({
-                        ...f,
-                        permisoFechaInicio: e.target.value
-                      }))
-                    }
-                    className={`w-full px-4 py-2 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg ${
-                      incidenciaForm.tipo === 'Ausencias justificada'
-                        ? 'border-cyan-200/50 focus:ring-cyan-300/50 focus:border-cyan-400'
-                        : 'border-emerald-200/50 focus:ring-emerald-300/50 focus:border-emerald-400'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="permiso-fecha-fin" className="block text-sm font-bold text-gray-700 mb-2">
-                    Fecha fin {incidenciaForm.tipo === 'Ausencias justificada' ? 'de la ausencia' : 'del permiso'}
-                  </label>
-                  <Input
-                    id="permiso-fecha-fin"
-                    type="date"
-                    value={incidenciaForm.permisoFechaFin}
-                    min={incidenciaForm.permisoFechaInicio || undefined}
-                    onChange={(e) =>
-                      setIncidenciaForm(f => ({
-                        ...f,
-                        permisoFechaFin: e.target.value
-                      }))
-                    }
-                    className={`w-full px-4 py-2 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg ${
-                      incidenciaForm.tipo === 'Ausencias justificada'
-                        ? 'border-cyan-200/50 focus:ring-cyan-300/50 focus:border-cyan-400'
-                        : 'border-emerald-200/50 focus:ring-emerald-300/50 focus:border-emerald-400'
-                    }`}
-                  />
-                </div>
-              </div>
-            )}
-            {incidenciaForm.tipo === 'Ausencias justificada' && (
-              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <div className="flex items-start gap-3">
-                  <span className="text-blue-600 text-xl">ℹ️</span>
-                  <div>
-                    <p className="text-sm font-medium text-blue-800">
-                      <strong>Aviso:</strong> Para ausencias prolongadas o repetidas, la empresa puede requerir parte de baja médica.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-end pt-2">

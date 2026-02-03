@@ -25,6 +25,100 @@ export class SolicitudesService {
   ) {}
 
   /**
+   * Verifică dacă există un conflict de vacanțe pentru același grup+centru
+   * Returnează true dacă există conflict, false dacă nu există
+   */
+  private async checkVacacionesConflict(
+    codigo: string,
+    fechaInicio: string,
+    fechaFin: string,
+    excludeSolicitudId?: string, // Pentru editare - exclude solicitarea curentă
+  ): Promise<{ hasConflict: boolean; conflictInfo?: any }> {
+    try {
+      // Obține GRUPO și CENTRO TRABAJO pentru angajat
+      const empleadoQuery = `
+        SELECT 
+          \`GRUPO\` as grupo,
+          \`CENTRO TRABAJO\` as centro
+        FROM DatosEmpleados
+        WHERE CODIGO = ${this.escapeSql(codigo)}
+        LIMIT 1
+      `;
+
+      const empleadoResult =
+        await this.prisma.$queryRawUnsafe<any[]>(empleadoQuery);
+
+      if (!empleadoResult || empleadoResult.length === 0) {
+        this.logger.warn(
+          `⚠️ [checkVacacionesConflict] Angajat cu CODIGO ${codigo} nu a fost găsit`,
+        );
+        return { hasConflict: false };
+      }
+
+      const empleado = empleadoResult[0];
+      const grupo = empleado.grupo;
+      const centro = empleado.centro;
+
+      if (!grupo || !centro) {
+        this.logger.warn(
+          `⚠️ [checkVacacionesConflict] Angajat ${codigo} nu are GRUPO sau CENTRO TRABAJO`,
+        );
+        return { hasConflict: false };
+      }
+
+      // Verifică dacă există deja o solicitare aprobată de tip Vacaciones
+      // din același grup și centru care se suprapune cu perioada
+      const conflictQuery = `
+        SELECT 
+          s.id,
+          s.codigo,
+          s.nombre,
+          s.fecha_inicio,
+          s.fecha_fin,
+          de.\`GRUPO\` as grupo,
+          de.\`CENTRO TRABAJO\` as centro
+        FROM solicitudes s
+        INNER JOIN DatosEmpleados de ON de.CODIGO = s.codigo
+        WHERE s.tipo = 'Vacaciones'
+          AND s.estado = 'Aprobada'
+          AND de.\`GRUPO\` = ${this.escapeSql(grupo)}
+          AND de.\`CENTRO TRABAJO\` = ${this.escapeSql(centro)}
+          AND s.codigo != ${this.escapeSql(codigo)}
+          AND s.fecha_inicio IS NOT NULL
+          AND s.fecha_fin IS NOT NULL
+          AND (
+            -- Suprapunere: două perioade se suprapun dacă A_start <= B_end AND A_end >= B_start
+            (${this.escapeSql(fechaInicio)} <= s.fecha_fin AND ${this.escapeSql(fechaFin)} >= s.fecha_inicio)
+          )
+          ${excludeSolicitudId ? `AND s.id != ${this.escapeSql(excludeSolicitudId)}` : ''}
+        LIMIT 1
+      `;
+
+      const conflictResult =
+        await this.prisma.$queryRawUnsafe<any[]>(conflictQuery);
+
+      if (conflictResult && conflictResult.length > 0) {
+        const conflict = conflictResult[0];
+        this.logger.warn(
+          `⚠️ [checkVacacionesConflict] Conflict detectat pentru ${codigo}: există deja o vacanță aprobată pentru ${conflict.codigo} (${conflict.nombre}) în perioada ${conflict.fecha_inicio} - ${conflict.fecha_fin}`,
+        );
+        return {
+          hasConflict: true,
+          conflictInfo: conflict,
+        };
+      }
+
+      return { hasConflict: false };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [checkVacacionesConflict] Eroare la verificarea conflictelor: ${error.message}`,
+      );
+      // În caz de eroare, nu blocăm - doar logăm
+      return { hasConflict: false };
+    }
+  }
+
+  /**
    * Formatează mesajul pentru email (HTML) din datele solicitării
    */
   private formatSolicitudEmailHtml(solicitudData: {
@@ -603,6 +697,27 @@ export class SolicitudesService {
         `📝 Create solicitud: ${data.id} (${data.tipo}), estado: ${estado}`,
       );
 
+      // Validare conflict Vacaciones - doar dacă este aprobată direct
+      if (
+        data.tipo === 'Vacaciones' &&
+        estado === 'Aprobada' &&
+        data.fecha_inicio &&
+        data.fecha_fin
+      ) {
+        const conflictCheck = await this.checkVacacionesConflict(
+          data.codigo,
+          data.fecha_inicio,
+          data.fecha_fin,
+        );
+
+        if (conflictCheck.hasConflict) {
+          const conflict = conflictCheck.conflictInfo;
+          throw new BadRequestException(
+            `No se puede aprobar esta solicitud de vacaciones: ya existe una vacación aprobada para otro empleado del mismo grupo y centro (${conflict.grupo} - ${conflict.centro}) en el período ${conflict.fecha_inicio} - ${conflict.fecha_fin}. Empleado: ${conflict.nombre} (${conflict.codigo})`,
+          );
+        }
+      }
+
       // Execută operațiile în tranzacție
       await this.prisma.$transaction(async (tx) => {
         // 1) INSERT în solicitudes
@@ -610,9 +725,162 @@ export class SolicitudesService {
 
         // 2) INSERT în Ausencias (doar dacă estado = 'Aprobada' și NU este BAJA_VOLUNTARIA)
         if (estado === 'Aprobada' && data.tipo !== 'BAJA_VOLUNTARIA') {
+          // Pentru "Permiso Retribuido", calculează zilele lucrătoare
+          // Pentru restul tipurilor, calculează toate zilele
+          const esPermisoRetribuido = data.tipo
+            .toLowerCase()
+            .includes('permiso retribuido');
+          let duracionSQL = `TIMESTAMPDIFF(DAY, ${fechaInicioSQL}, ${fechaFinSQL}) + 1`;
+          let unidadDuracionSQL = "'dias'";
+
+          if (
+            esPermisoRetribuido &&
+            fechaInicioSQL !== 'NULL' &&
+            fechaFinSQL !== 'NULL'
+          ) {
+            // Calculează zilele lucrătoare pentru Permiso Retribuido
+            const diasLaborablesQuery = `
+              WITH RECURSIVE fechas AS (
+                SELECT ${fechaInicioSQL} AS d
+                UNION ALL
+                SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM fechas 
+                WHERE d < ${fechaFinSQL}
+              ),
+              empleado_ccaa AS (
+                SELECT '' AS ccaa
+              ),
+              empleado_trabaja_festivos AS (
+                SELECT 
+                  CASE 
+                    WHEN LOWER(TRIM(TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
+                    ELSE 0
+                  END AS trabaja_festivos
+                FROM DatosEmpleados
+                WHERE CODIGO = ${this.escapeSql(data.codigo)}
+                LIMIT 1
+              ),
+              cuadrante_dia AS (
+                SELECT 
+                  f.d AS fecha,
+                  CASE 
+                    WHEN cq.CODIGO IS NOT NULL THEN
+                      CASE DAY(f.d)
+                        WHEN 1 THEN cq.ZI_1 WHEN 2 THEN cq.ZI_2 WHEN 3 THEN cq.ZI_3 WHEN 4 THEN cq.ZI_4
+                        WHEN 5 THEN cq.ZI_5 WHEN 6 THEN cq.ZI_6 WHEN 7 THEN cq.ZI_7 WHEN 8 THEN cq.ZI_8
+                        WHEN 9 THEN cq.ZI_9 WHEN 10 THEN cq.ZI_10 WHEN 11 THEN cq.ZI_11 WHEN 12 THEN cq.ZI_12
+                        WHEN 13 THEN cq.ZI_13 WHEN 14 THEN cq.ZI_14 WHEN 15 THEN cq.ZI_15 WHEN 16 THEN cq.ZI_16
+                        WHEN 17 THEN cq.ZI_17 WHEN 18 THEN cq.ZI_18 WHEN 19 THEN cq.ZI_19 WHEN 20 THEN cq.ZI_20
+                        WHEN 21 THEN cq.ZI_21 WHEN 22 THEN cq.ZI_22 WHEN 23 THEN cq.ZI_23 WHEN 24 THEN cq.ZI_24
+                        WHEN 25 THEN cq.ZI_25 WHEN 26 THEN cq.ZI_26 WHEN 27 THEN cq.ZI_27 WHEN 28 THEN cq.ZI_28
+                        WHEN 29 THEN cq.ZI_29 WHEN 30 THEN cq.ZI_30 WHEN 31 THEN cq.ZI_31
+                        ELSE NULL
+                      END
+                    ELSE NULL
+                  END AS val_cuadrante
+                FROM fechas f
+                LEFT JOIN cuadrante cq 
+                  ON BINARY cq.CODIGO = ${this.escapeSql(data.codigo)}
+                  AND BINARY cq.LUNA = DATE_FORMAT(f.d, '%Y-%m')
+              ),
+              horario_dia AS (
+                SELECT 
+                  f.d AS fecha,
+                  CASE DAYOFWEEK(f.d)
+                    WHEN 2 THEN h.lun_in1 WHEN 3 THEN h.mar_in1 WHEN 4 THEN h.mie_in1
+                    WHEN 5 THEN h.joi_in1 WHEN 6 THEN h.vin_in1
+                    WHEN 7 THEN h.sam_in1 WHEN 1 THEN h.dum_in1
+                    ELSE NULL
+                  END AS hora_in_planificata
+                FROM fechas f
+                LEFT JOIN DatosEmpleados de ON de.CODIGO = ${this.escapeSql(data.codigo)}
+                LEFT JOIN horarios h
+                  ON h.centro_nombre = de.\`CENTRO TRABAJO\`
+                  AND h.grupo_nombre = de.GRUPO
+                  AND h.vigente_desde <= f.d
+                  AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
+              ),
+              horario_multicentro_dia AS (
+                SELECT 
+                  f.d AS fecha,
+                  CASE 
+                    WHEN hm.CODIGO IS NOT NULL THEN
+                      CASE DAY(f.d)
+                        WHEN 1 THEN hm.ZI_1 WHEN 2 THEN hm.ZI_2 WHEN 3 THEN hm.ZI_3 WHEN 4 THEN hm.ZI_4
+                        WHEN 5 THEN hm.ZI_5 WHEN 6 THEN hm.ZI_6 WHEN 7 THEN hm.ZI_7 WHEN 8 THEN hm.ZI_8
+                        WHEN 9 THEN hm.ZI_9 WHEN 10 THEN hm.ZI_10 WHEN 11 THEN hm.ZI_11 WHEN 12 THEN hm.ZI_12
+                        WHEN 13 THEN hm.ZI_13 WHEN 14 THEN hm.ZI_14 WHEN 15 THEN hm.ZI_15 WHEN 16 THEN hm.ZI_16
+                        WHEN 17 THEN hm.ZI_17 WHEN 18 THEN hm.ZI_18 WHEN 19 THEN hm.ZI_19 WHEN 20 THEN hm.ZI_20
+                        WHEN 21 THEN hm.ZI_21 WHEN 22 THEN hm.ZI_22 WHEN 23 THEN hm.ZI_23 WHEN 24 THEN hm.ZI_24
+                        WHEN 25 THEN hm.ZI_25 WHEN 26 THEN hm.ZI_26 WHEN 27 THEN hm.ZI_27 WHEN 28 THEN hm.ZI_28
+                        WHEN 29 THEN hm.ZI_29 WHEN 30 THEN hm.ZI_30 WHEN 31 THEN hm.ZI_31
+                        ELSE NULL
+                      END
+                    ELSE NULL
+                  END AS val_multicentro
+                FROM fechas f
+                LEFT JOIN horario_multicentro hm 
+                  ON BINARY hm.CODIGO = ${this.escapeSql(data.codigo)}
+                  AND BINARY hm.LUNA = DATE_FORMAT(f.d, '%Y-%m')
+              )
+              SELECT COUNT(*) AS dias_laborables
+              FROM fechas f
+              CROSS JOIN empleado_ccaa ec
+              CROSS JOIN empleado_trabaja_festivos etf
+              LEFT JOIN cuadrante_dia cd ON cd.fecha = f.d
+              LEFT JOIN horario_dia hd ON hd.fecha = f.d
+              LEFT JOIN horario_multicentro_dia hmd ON hmd.fecha = f.d
+              WHERE DAYOFWEEK(f.d) BETWEEN 2 AND 6  -- Luni-Vineri
+                AND NOT EXISTS (
+                  SELECT 1 FROM fiestas fi
+                  WHERE DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+                    AND fi.active = 1
+                    AND (
+                      LOWER(fi.scope) IN ('nacional', 'national')
+                      OR (LOWER(fi.scope) IN ('autonómico', 'autonomico', 'ccaa') 
+                          AND BINARY fi.ccaa_code = BINARY ec.ccaa)
+                    )
+                    AND etf.trabaja_festivos = 0
+                )
+                AND (
+                  -- Are cuadrante cu valoare validă (nu LIB/LIBRE/etc.)
+                  (cd.val_cuadrante IS NOT NULL 
+                   AND TRIM(cd.val_cuadrante) != ''
+                   AND UPPER(TRIM(cd.val_cuadrante)) NOT IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X')
+                   AND (cd.val_cuadrante LIKE '%:%-%:%' OR cd.val_cuadrante REGEXP '^[0-9]+h'))
+                  OR
+                  -- Sau are horario_multicentro cu valoare validă
+                  (cd.val_cuadrante IS NULL 
+                   AND hmd.val_multicentro IS NOT NULL 
+                   AND TRIM(hmd.val_multicentro) != ''
+                   AND UPPER(TRIM(hmd.val_multicentro)) NOT IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X')
+                   AND (hmd.val_multicentro LIKE '%:%-%:%' OR hmd.val_multicentro REGEXP '^[0-9]+h'))
+                  OR
+                  -- Sau are horario programat
+                  (cd.val_cuadrante IS NULL AND hmd.val_multicentro IS NULL AND hd.hora_in_planificata IS NOT NULL)
+                )
+            `;
+
+            try {
+              const diasLaborablesResult =
+                await tx.$queryRawUnsafe<any[]>(diasLaborablesQuery);
+              const diasLaborables =
+                Number(diasLaborablesResult[0]?.dias_laborables) || 0;
+              duracionSQL = String(diasLaborables);
+              this.logger.log(
+                `📊 Permiso Retribuido - Zile lucrătoare calculate: ${diasLaborables} (${fechaInicioSQL} - ${fechaFinSQL})`,
+              );
+            } catch (error: any) {
+              this.logger.error(
+                `❌ Error calculând zilele lucrătoare pentru Permiso Retribuido: ${error.message}`,
+              );
+              // Fallback la calcul simplu dacă query-ul eșuează
+              duracionSQL = `TIMESTAMPDIFF(DAY, ${fechaInicioSQL}, ${fechaFinSQL}) + 1`;
+            }
+          }
+
           const insertAusenciaQuery = `
             INSERT INTO Ausencias (
-              solicitud_id, CODIGO, NOMBRE, TIPO, FECHA, HORA, LOCACION, MOTIVO, DURACION, created_at
+              solicitud_id, CODIGO, NOMBRE, TIPO, FECHA, HORA, LOCACION, MOTIVO, DURACION, UNIDAD_DURACION, created_at
             ) VALUES (
               ${this.escapeSql(data.id)},
               ${this.escapeSql(data.codigo)},
@@ -622,7 +890,8 @@ export class SolicitudesService {
               TIME_FORMAT(NOW(), '%H:%i:%s'),
               ${ip ? this.escapeSql(ip) : "''"},
               ${data.motivo ? this.escapeSql(data.motivo) : 'NULL'},
-              TIMESTAMPDIFF(DAY, ${fechaInicioSQL}, ${fechaFinSQL}) + 1,
+              ${duracionSQL},
+              ${unidadDuracionSQL},
               NOW()
             )
           `;
@@ -938,6 +1207,57 @@ export class SolicitudesService {
       `;
 
       this.logger.log(`📝 Update solicitud: ${id}, estado: ${estado}`);
+
+      // Validare conflict Vacaciones - doar când se aprobă (estado = 'Aprobada')
+      // Verifică dacă este o aprobare nouă (nu era deja Aprobada)
+      const isNewApproval =
+        estado === 'Aprobada' && solicitudBefore?.estado !== 'Aprobada';
+
+      if (tipo === 'Vacaciones' && isNewApproval) {
+        // Obține fecha_inicio și fecha_fin pentru verificare (din data sau din solicitudBefore)
+        let fechaInicioForCheck: string | null = null;
+        let fechaFinForCheck: string | null = null;
+
+        if (data.fecha_inicio !== undefined && data.fecha_inicio) {
+          const fechaInicioDate = new Date(data.fecha_inicio);
+          if (!isNaN(fechaInicioDate.getTime())) {
+            fechaInicioForCheck = fechaInicioDate.toISOString().split('T')[0];
+          }
+        } else if (solicitudBefore?.fecha_inicio) {
+          const fechaInicioDate = new Date(solicitudBefore.fecha_inicio);
+          if (!isNaN(fechaInicioDate.getTime())) {
+            fechaInicioForCheck = fechaInicioDate.toISOString().split('T')[0];
+          }
+        }
+
+        if (data.fecha_fin !== undefined && data.fecha_fin) {
+          const fechaFinDate = new Date(data.fecha_fin);
+          if (!isNaN(fechaFinDate.getTime())) {
+            fechaFinForCheck = fechaFinDate.toISOString().split('T')[0];
+          }
+        } else if (solicitudBefore?.fecha_fin) {
+          const fechaFinDate = new Date(solicitudBefore.fecha_fin);
+          if (!isNaN(fechaFinDate.getTime())) {
+            fechaFinForCheck = fechaFinDate.toISOString().split('T')[0];
+          }
+        }
+
+        if (fechaInicioForCheck && fechaFinForCheck) {
+          const conflictCheck = await this.checkVacacionesConflict(
+            codigo,
+            fechaInicioForCheck,
+            fechaFinForCheck,
+            id, // Exclude solicitarea curentă
+          );
+
+          if (conflictCheck.hasConflict) {
+            const conflict = conflictCheck.conflictInfo;
+            throw new BadRequestException(
+              `No se puede aprobar esta solicitud de vacaciones: ya existe una vacación aprobada para otro empleado del mismo grupo y centro (${conflict.grupo} - ${conflict.centro}) en el período ${conflict.fecha_inicio} - ${conflict.fecha_fin}. Empleado: ${conflict.nombre} (${conflict.codigo})`,
+            );
+          }
+        }
+      }
 
       // Execută operațiile în tranzacție
       await this.prisma.$transaction(async (tx) => {

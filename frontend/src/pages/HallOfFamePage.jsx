@@ -66,35 +66,27 @@ const HallOfFamePage = () => {
   const { isMobile } = useBreakpoint();
   const [loading, setLoading] = useState(false);
   
-  // Verifică dacă utilizatorul este manager/admin/developer
-  const isManager = authUser?.isManager || false;
+  // Verifică dacă utilizatorul este Developer (doar Developer poate calcula)
   const userGrupo = (authUser?.GRUPO || authUser?.grupo || '').trim();
   
-  // Verificare robustă pentru permisiuni de calcul
-  // Include Manager, Supervisor, Developer, Admin (case-sensitive)
-  const canCalculate = isManager || 
-    userGrupo === 'Admin' || 
-    userGrupo === 'Developer' || 
-    userGrupo === 'Manager' || 
-    userGrupo === 'Supervisor';
+  // Doar Developer poate calcula scorurile
+  const canCalculate = userGrupo === 'Developer';
   
   // Debug log (doar în development)
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log('🔍 [HallOfFame] Permission check:', {
-        isManager,
         userGrupo,
         canCalculate,
         authUserKeys: authUser ? Object.keys(authUser) : [],
         authUser: authUser ? { 
           GRUPO: authUser.GRUPO, 
           grupo: authUser.grupo, 
-          isManager: authUser.isManager,
           CODIGO: authUser.CODIGO 
         } : null,
       });
     }
-  }, [isManager, userGrupo, canCalculate, authUser]);
+  }, [userGrupo, canCalculate, authUser]);
   const [ranking, setRanking] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState('');
   // Pentru angajați normali: Top 15, pentru admin: toți (0) sau selectat manual
@@ -741,39 +733,91 @@ const HallOfFamePage = () => {
               </div>
             </Card>
           ) : (
-            <div className={`grid ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3 md:gap-4'}`}>
-              {premios.map((premio, index) => (
-                <Card
-                  key={premio.id || index}
-                  padding=""
-                  className={`${isMobile ? 'p-2' : 'p-2.5 sm:p-3 md:p-4'} transition-shadow`}
-                >
-                  <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3'}`}>
-                    <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10 sm:w-12 sm:h-12'} rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center flex-shrink-0`}>
-                      <Gift className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} text-white`} />
+            <div className={`grid ${isMobile ? 'gap-3' : 'gap-4 sm:gap-5 md:gap-6'}`}>
+              {premios.map((premio, index) => {
+                // Formatează data pentru afișare
+                const fechaPremio = premio.FECHA || '';
+                const fechaFormateada = fechaPremio ? new Date(fechaPremio).toLocaleDateString('es-ES', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                }) : '';
+                
+                return (
+                  <div
+                    key={premio.id || index}
+                    className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-50 via-yellow-50 to-amber-50 border-2 border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                  >
+                    {/* Decorative background pattern */}
+                    <div className="absolute inset-0 opacity-5">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400 rounded-full blur-3xl"></div>
+                      <div className="absolute bottom-0 left-0 w-24 h-24 bg-orange-400 rounded-full blur-2xl"></div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className={`${isMobile ? 'text-xs sm:text-sm' : 'text-sm sm:text-base md:text-lg'} font-bold text-gray-800 truncate`}>
-                        {premio.NOMBRE || premio.empleado_nombre_completo || premio.CODIGO}
-                      </h3>
-                      <p className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-500 truncate`}>
-                        {premio.centro_trabajo || '-'}
-                      </p>
-                      <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-0.5`}>
-                        {premio.MOTIVO || ''}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} font-semibold text-gray-700`}>
-                        {premio.FECHA || '-'}
+                    
+                    <div className={`relative ${isMobile ? 'p-4' : 'p-5 sm:p-6 md:p-8'}`}>
+                      {/* Header cu icon și titlu */}
+                      <div className={`flex items-start ${isMobile ? 'gap-3' : 'gap-4 sm:gap-5'} mb-4`}>
+                        <div className={`${isMobile ? 'w-16 h-16' : 'w-20 h-20 sm:w-24 sm:h-24'} rounded-2xl bg-gradient-to-br from-yellow-400 via-orange-400 to-amber-500 flex items-center justify-center flex-shrink-0 shadow-lg transform rotate-3 hover:rotate-6 transition-transform duration-300`}>
+                          <Gift className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10 sm:w-12 sm:h-12'} text-white drop-shadow-lg`} strokeWidth={2.5} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`${isMobile ? 'text-xs mb-1' : 'text-sm mb-1.5'} font-semibold text-orange-600 uppercase tracking-wide`}>
+                            🏆 Premio Otorgado
+                          </div>
+                          <h3 className={`${isMobile ? 'text-base' : 'text-lg sm:text-xl md:text-2xl'} font-bold text-gray-900 mb-1 leading-tight`}>
+                            {premio.NOMBRE || premio.empleado_nombre_completo || premio.CODIGO}
+                          </h3>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm sm:text-base'} text-gray-600 font-medium`}>
+                            {premio.centro_trabajo || '-'}
+                          </p>
+                        </div>
                       </div>
-                      <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500`}>
-                        {premio.DURACION ? `${premio.DURACION} ${premio.UNIDAD_DURACION || 'días'}` : '1 día'}
+
+                      {/* Box cu detalii premiu - similar cu email */}
+                      <div className={`${isMobile ? 'p-3' : 'p-4 sm:p-5'} bg-gradient-to-br from-yellow-100 to-orange-100 rounded-xl border-2 border-yellow-300 shadow-md mb-4`}>
+                        <div className={`${isMobile ? 'text-xs mb-2' : 'text-sm mb-3'} font-bold text-orange-800 uppercase tracking-wide`}>
+                          🎁 Tu Premio
+                        </div>
+                        <div className={`${isMobile ? 'space-y-1.5' : 'space-y-2'} text-gray-800`}>
+                          <div className="flex items-center gap-2">
+                            <Calendar className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-orange-600 flex-shrink-0`} />
+                            <div>
+                              <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>Día Libre: </span>
+                              <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-orange-700`}>
+                                {fechaFormateada || premio.FECHA || '-'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <Trophy className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-orange-600 flex-shrink-0 mt-0.5`} />
+                            <div>
+                              <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>Motivo: </span>
+                              <span className={`${isMobile ? 'text-xs' : 'text-sm'}`}>
+                                {premio.MOTIVO || 'Reconocimiento por tu destacado desempeño en el Salón de la Fama'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Award className={`${isMobile ? 'w-4 h-4' : 'w-5 h-5'} text-orange-600 flex-shrink-0`} />
+                            <div>
+                              <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>Duración: </span>
+                              <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-orange-700`}>
+                                {premio.DURACION ? `${premio.DURACION} ${premio.UNIDAD_DURACION || 'días'}` : '1 día'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer cu mesaj motivant */}
+                      <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-700 italic text-center pt-2 border-t border-orange-200`}>
+                        ✨ Este día libre es un permiso retribuido que puedes disfrutar como reconocimiento a tu esfuerzo, constancia y dedicación. ¡Sigue así!
                       </div>
                     </div>
                   </div>
-                </Card>
-              ))}
+                );
+              })}
             </div>
           )
         ) : activeTab === 'trimestral' ? (

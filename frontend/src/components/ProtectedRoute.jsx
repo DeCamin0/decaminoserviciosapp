@@ -1,11 +1,34 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useEffect, useRef } from 'react';
-import { useAdminApi } from '../hooks/useAdminApi';
+import { usePermissions } from '../hooks/usePermissions';
+
+// Mapare rute -> module pentru permisiuni
+const ROUTE_TO_MODULE = {
+  '/empleados': 'empleados',
+  '/fichar': 'fichar',
+  '/cuadrantes': 'cuadrantes',
+  '/estadisticas': 'estadisticas',
+  '/clientes': 'clientes',
+  '/documentos': 'documentos',
+  '/solicitudes': 'solicitudes',
+  '/aprobaciones': 'aprobaciones',
+  '/cuadernos': 'cuadernos',
+  '/admin': 'admin',
+  '/inspecciones': 'inspecciones',
+  '/pedidos': 'pedidos',
+  '/proveedores': 'proveedores',
+  '/comunicados': 'comunicados',
+  '/hall-of-fame': 'hall-of-fame',
+  '/documentos-empleados': 'documentos-empleados',
+  '/datos': 'datos',
+  '/inicio': 'dashboard',
+  '/': 'dashboard',
+};
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading, user } = useAuth();
-  const { getPermissions } = useAdminApi();
+  const { hasPermission, loading: permsLoading, hasBackendPermissions, getCurrentGroupPermissions } = usePermissions();
   const location = useLocation();
   const lastCheckedPath = useRef('');
 
@@ -20,49 +43,32 @@ const ProtectedRoute = ({ children }) => {
     }
   }, [location, isAuthenticated, loading]);
 
+  // Determină modulul din ruta curentă
+  const getModuleFromPath = (path) => {
+    // Caută exact match sau prefix match
+    for (const [route, module] of Object.entries(ROUTE_TO_MODULE)) {
+      if (path === route || path.startsWith(route + '/')) {
+        return module;
+      }
+    }
+    return 'dashboard'; // default
+  };
+
   // Verifică permisiunile când se navighează
   useEffect(() => {
     // Se execută doar când se schimbă ruta și utilizatorul este autentificat
     if (isAuthenticated && user && location.pathname !== lastCheckedPath.current) {
-      const checkPermissions = async () => {
-        lastCheckedPath.current = location.pathname;
-        
-        try {
-          // Determină modulul din URL
-          const path = location.pathname;
-          let module = 'inicio'; // default
-          
-          if (path.includes('/empleados')) module = 'empleados';
-          else if (path.includes('/fichar')) module = 'fichar';
-          else if (path.includes('/cuadrantes')) module = 'cuadrantes';
-          else if (path.includes('/estadisticas')) module = 'estadisticas';
-          else if (path.includes('/clientes')) module = 'clientes';
-          else if (path.includes('/documentos')) module = 'documentos';
-          else if (path.includes('/solicitudes')) module = 'solicitudes';
-          else if (path.includes('/aprobaciones')) module = 'aprobaciones';
-          else if (path.includes('/cuadernos')) module = 'cuadernos';
-          else if (path.includes('/admin')) module = 'admin';
-          
-          console.log('🔐 ProtectedRoute: Checking permissions for module:', module);
-          console.log('👤 ProtectedRoute: User grupo:', user?.GRUPO);
-          console.log('📍 ProtectedRoute: Current path:', location.pathname);
-          
-          // Verifică permisiunile pentru modulul curent
-          const permissionsData = await getPermissions(user?.GRUPO, module);
-          
-          console.log('✅ ProtectedRoute: Permissions received:', permissionsData);
-          
-        } catch (error) {
-          console.error('❌ ProtectedRoute: Error checking permissions:', error);
-        }
-      };
+      lastCheckedPath.current = location.pathname;
       
-      // Fire-and-forget; nu mai blocăm randarea UI pe permisiuni
-      checkPermissions();
+      const module = getModuleFromPath(location.pathname);
+      
+      console.log('🔐 ProtectedRoute: Checking permissions for module:', module);
+      console.log('👤 ProtectedRoute: User grupo:', user?.GRUPO);
+      console.log('📍 ProtectedRoute: Current path:', location.pathname);
     }
-  }, [location.pathname, isAuthenticated, user, getPermissions]); // Doar când se schimbă ruta
+  }, [location.pathname, isAuthenticated, user]);
 
-  if (loading) {
+  if (loading || permsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -74,6 +80,63 @@ const ProtectedRoute = ({ children }) => {
     // Salvează ruta curentă pentru a reveni după login
     sessionStorage.setItem('redirectAfterLogin', location.pathname);
     return <Navigate to="/login" replace />;
+  }
+
+  // Verifică permisiunile pentru ruta curentă
+  const module = getModuleFromPath(location.pathname);
+  const USE_NEW_PROTECTION = import.meta.env.VITE_USE_NEW_PROTECTION === 'true';
+  
+  // Dacă sistemul nou e activat SAU există permisiuni în backend, verifică permisiunile
+  const shouldCheckPermissions = USE_NEW_PROTECTION || hasBackendPermissions;
+  
+  if (shouldCheckPermissions) {
+    // Modulele publice (nu necesită permisiune explicită)
+    // "datos", "solicitudes", "fichar", "cuadrantes-empleado" și "mis-inspecciones" au fost eliminate - acum necesită permisiune explicită din backend
+    const publicModules = ['dashboard'];
+    
+    // Verifică permisiunile - folosim DOAR permisiunile din backend (fără fallback-uri)
+    let hasAccess = false;
+    if (module === 'solicitudes') {
+      const hasEmpleados = hasPermission('solicitudes-empleados');
+      const hasAdmin = hasPermission('solicitudes-admin');
+      hasAccess = hasEmpleados || hasAdmin;
+      console.log(`🔐 ProtectedRoute [solicitudes]:`, {
+        module,
+        hasEmpleados,
+        hasAdmin,
+        hasAccess,
+        userGrupo: user?.GRUPO || user?.grupo,
+        hasBackendPermissions,
+      });
+    } else if (module === 'pedidos') {
+      // Pentru pedidos, verifică ambele variante
+      hasAccess = hasPermission('pedidos-empleados') || hasPermission('pedidos-admin');
+    } else if (module === 'fichar') {
+      // Pentru fichar, verifică ambele variante noi și vechea permisiune
+      hasAccess = hasPermission('fichar-empleados') || hasPermission('fichar-admin') || hasPermission('fichar');
+    } else if (module === 'datos' || module === 'empleados' || module === 'documentos' || module === 'cuadrantes-empleado' || module === 'cuadrantes' || module === 'mis-inspecciones' || module === 'inspecciones' || module === 'aprobaciones' || module === 'clientes' || module === 'proveedores' || module === 'comunicados') {
+      // Pentru datos, empleados, documentos, cuadrantes-empleado, cuadrantes, mis-inspecciones, inspecciones, aprobaciones, clientes, proveedores și comunicados, folosim DOAR permisiunile din backend (fără fallback)
+      // Dacă nu există permisiuni în backend, nu permitem accesul
+      if (!hasBackendPermissions) {
+        hasAccess = false;
+      } else {
+        // Verifică direct din permisiunile din backend, fără fallback
+        const currentPermissions = getCurrentGroupPermissions();
+        hasAccess = currentPermissions[module] === true;
+      }
+    } else {
+      hasAccess = hasPermission(module);
+    }
+    
+    if (!publicModules.includes(module) && !hasAccess) {
+      console.warn(`🚫 ProtectedRoute: Access denied for module "${module}"`);
+      console.warn(`   User grupo: ${user?.GRUPO || user?.grupo}`);
+      console.warn(`   Module: ${module}`);
+      console.warn(`   Has permission: ${hasAccess}`);
+      console.warn(`   hasBackendPermissions: ${hasBackendPermissions}`);
+      console.warn(`   permsLoading: ${permsLoading}`);
+      return <Navigate to="/inicio" replace />;
+    }
   }
 
   return children;

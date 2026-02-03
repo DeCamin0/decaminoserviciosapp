@@ -98,37 +98,37 @@ export class HallOfFameService {
 
       const debugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
 ),
 cuadrante_dia_debug AS (
   SELECT
@@ -185,7 +185,7 @@ SELECT
   csd.horas_cuadrante_mes
 FROM cuadrante_dia_debug cdd
 CROSS JOIN cuadrante_sum_debug csd
-WHERE cdd.empleadoId = csd.empleadoId
+WHERE BINARY cdd.empleadoId = BINARY csd.empleadoId
 ORDER BY cdd.dia;
 `;
 
@@ -219,37 +219,37 @@ ORDER BY cdd.dia;
       // Debug target_initial
       const targetDebugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
 ),
 cuadrante_sum AS (
   SELECT
@@ -277,7 +277,7 @@ SELECT
   CAST(de.CODIGO AS CHAR) AS codigo_empleado,
   CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) AS horas_contrato
 FROM cuadrante_sum cs
-LEFT JOIN DatosEmpleados de ON BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+LEFT JOIN DatosEmpleados de ON BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
 WHERE cs.empleadoId = '${codigo}';
 `;
 
@@ -296,37 +296,37 @@ WHERE cs.empleadoId = '${codigo}';
       // Folosim același cuadrante_unpivot și cuadrante_sum ca în query-ul principal
       const targetInitialDebugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
 ),
 cuadrante_sum AS (
   SELECT
@@ -349,7 +349,7 @@ cuadrante_sum AS (
   GROUP BY cu.empleadoId
 )
 SELECT 
-  CAST(de.CODIGO AS CHAR) AS empleadoId,
+  CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
   cs.horas_cuadrante_mes AS cs_horas,
   CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) AS horas_contrato,
   ROUND(CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) * (DAY(@d_last) / 7), 2) AS horas_contrato_mes,
@@ -359,7 +359,7 @@ SELECT
     0
   ) AS target_initial
 FROM DatosEmpleados de
-LEFT JOIN cuadrante_sum cs ON BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+LEFT JOIN cuadrante_sum cs ON BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
 WHERE de.ESTADO = 'ACTIVO'
   AND CAST(de.CODIGO AS CHAR) = '${codigo}';
 `;
@@ -404,37 +404,37 @@ GROUP BY CODIGO, LUNA;
       // Debug cuadrante_sum din query-ul principal
       const cuadranteSumDebugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
 ),
 cuadrante_sum AS (
   SELECT
@@ -460,9 +460,9 @@ SELECT
   cs.empleadoId,
   cs.horas_cuadrante_mes,
   CAST(de.CODIGO AS CHAR) AS codigo_empleado,
-  CASE WHEN BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR) THEN 'MATCH' ELSE 'NO_MATCH' END AS join_match
+  CASE WHEN BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin THEN 'MATCH' ELSE 'NO_MATCH' END AS join_match
 FROM cuadrante_sum cs
-LEFT JOIN DatosEmpleados de ON BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+LEFT JOIN DatosEmpleados de ON BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
 WHERE cs.empleadoId = '${codigo}' OR CAST(de.CODIGO AS CHAR) = '${codigo}'
 LIMIT 10;
       `;
@@ -570,7 +570,7 @@ LIMIT 10;
           const debugTargetQuery = `${withMatch[1]},
 target_initial AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COALESCE(
       pm.horas_plan_mes,
       ROUND(CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) * (DAY(@d_last) / 7), 2),
@@ -583,8 +583,8 @@ target_initial AS (
       ELSE NULL
     END AS horas_pe_zi_contrato
   FROM DatosEmpleados de
-  LEFT JOIN plan_mes pm ON pm.empleadoId = CAST(de.CODIGO AS CHAR)
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN plan_mes pm ON BINARY pm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 cuadrante_sum_debug AS (
   SELECT
@@ -620,11 +620,11 @@ SELECT
   CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) AS horas_contrato,
   ti.target_initial
 FROM target_initial ti
-LEFT JOIN DatosEmpleados de ON CAST(de.CODIGO AS CHAR) = ti.empleadoId
-LEFT JOIN cuadrante_sum_debug cs ON cs.empleadoId = ti.empleadoId
-LEFT JOIN horario_mes_debug hm ON hm.empleadoId = ti.empleadoId
-LEFT JOIN plan_mes pm ON pm.empleadoId = ti.empleadoId
-WHERE ti.empleadoId = '${codigo}';
+LEFT JOIN DatosEmpleados de ON CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin = BINARY ti.empleadoId
+LEFT JOIN cuadrante_sum_debug cs ON BINARY cs.empleadoId = BINARY ti.empleadoId
+LEFT JOIN horario_mes_debug hm ON BINARY hm.empleadoId = BINARY ti.empleadoId
+LEFT JOIN plan_mes pm ON BINARY pm.empleadoId = BINARY ti.empleadoId
+WHERE BINARY ti.empleadoId = BINARY CAST('${codigo}' AS CHAR);
           `;
 
           const debugResults =
@@ -674,12 +674,12 @@ calitate_pontaj_debug AS (
       ELSE 0
     END AS es_incompleto
   FROM DatosEmpleados de
-  LEFT JOIN daily_plan dp ON BINARY dp.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND dp.fecha BETWEEN @d_first AND @d_today
-  LEFT JOIN fichajes_por_dia fpd ON BINARY fpd.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND fpd.workday_date = dp.fecha
-  LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND bj.fecha = dp.fecha
-  LEFT JOIN aus_dia au ON BINARY au.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND au.fecha = dp.fecha
-  LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND fd.fecha = dp.fecha
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN daily_plan dp ON BINARY dp.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND dp.fecha BETWEEN @d_first AND @d_today
+  LEFT JOIN fichajes_por_dia fpd ON BINARY fpd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND fpd.workday_date = dp.fecha
+  LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND bj.fecha = dp.fecha
+  LEFT JOIN aus_dia au ON BINARY au.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND au.fecha = dp.fecha
+  LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND fd.fecha = dp.fecha
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
     AND CAST(de.CODIGO AS CHAR) = '${codigo}'
     AND dp.horas_plan > 0
     AND dp.fecha <= @d_today
@@ -726,7 +726,7 @@ SELECT * FROM calitate_pontaj_debug ORDER BY fecha;
       // Debug simplu pentru fichajes_por_dia - verifică direct din baza de date
       const fichajesDebugQuery = `
 SELECT 
-  CAST(f.CODIGO AS CHAR) AS empleadoId,
+  CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
   f.FECHA AS fecha_fichaje,
   f.TIPO AS tipo,
   f.HORA AS hora,
@@ -809,37 +809,37 @@ WITH RECURSIVE fechas AS (
   SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM fechas WHERE d < @d_last
 ),
 cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
 ),
 cuadrante_dia_libre AS (
   SELECT
@@ -883,7 +883,7 @@ cuadrante_dia AS (
 ),
 horario_dia_m AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     DAY(f.d) AS dia,
     CASE DAYOFWEEK(f.d)
@@ -923,7 +923,7 @@ horario_dia_m AS (
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= f.d
     AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
     AND f.d >= @d_first
     AND f.d <= @d_last
     AND CAST(de.CODIGO AS CHAR) = '${codigo}'
@@ -943,7 +943,7 @@ horario_dia AS (
 ),
 empleado_flags_debug_dp AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       WHEN LOWER(TRIM(de.TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
       ELSE 0
@@ -952,13 +952,13 @@ empleado_flags_debug_dp AS (
   WHERE CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 empleado_ccaa_debug_dp AS (
-  SELECT CAST(de.CODIGO AS CHAR) AS empleadoId, @ccaa_default AS ccaa
+  SELECT CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, @ccaa_default AS ccaa
   FROM DatosEmpleados de
   WHERE CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 bajas_dia_debug_dp AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_baja
   FROM fechas f
@@ -966,7 +966,7 @@ bajas_dia_debug_dp AS (
 ),
 aus_dia_debug_dp AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_vacaciones,
     0 AS es_ausencia,
@@ -994,7 +994,7 @@ fiestas_dia_debug_dp AS (
   LEFT JOIN empleado_flags_debug_dp tf ON BINARY tf.empleadoId = BINARY ec.empleadoId
 ),
 empleado_fechas AS (
-  SELECT CAST('${codigo}' AS CHAR) AS empleadoId, f.d AS fecha, DAY(f.d) AS dia
+  SELECT CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId, f.d AS fecha, DAY(f.d) AS dia
   FROM fechas f
   WHERE f.d >= @d_first AND f.d <= @d_last
     AND DATE_FORMAT(f.d, '%Y-%m') = @lunaselectata
@@ -1014,18 +1014,18 @@ daily_plan AS (
       ELSE 0
     END AS horas_plan
   FROM empleado_fechas ef
-  LEFT JOIN cuadrante_dia_libre cdl ON cdl.empleadoId = ef.empleadoId AND cdl.fecha = ef.fecha
-  LEFT JOIN cuadrante_dia cd ON cd.empleadoId = ef.empleadoId AND cd.fecha = ef.fecha
-  LEFT JOIN horario_dia hd ON hd.empleadoId = ef.empleadoId AND hd.fecha = ef.fecha
-  LEFT JOIN bajas_dia_debug_dp bj ON bj.empleadoId = ef.empleadoId AND bj.fecha = ef.fecha
-  LEFT JOIN fiestas_dia_debug_dp fd ON fd.empleadoId = ef.empleadoId AND fd.fecha = ef.fecha
-  LEFT JOIN aus_dia_debug_dp au ON au.empleadoId = ef.empleadoId AND au.fecha = ef.fecha
-  LEFT JOIN empleado_flags_debug_dp tf ON tf.empleadoId = ef.empleadoId
+  LEFT JOIN cuadrante_dia_libre cdl ON BINARY cdl.empleadoId = BINARY ef.empleadoId AND cdl.fecha = ef.fecha
+  LEFT JOIN cuadrante_dia cd ON BINARY cd.empleadoId = BINARY ef.empleadoId AND cd.fecha = ef.fecha
+  LEFT JOIN horario_dia hd ON BINARY hd.empleadoId = BINARY ef.empleadoId AND hd.fecha = ef.fecha
+  LEFT JOIN bajas_dia_debug_dp bj ON BINARY bj.empleadoId = BINARY ef.empleadoId AND bj.fecha = ef.fecha
+  LEFT JOIN fiestas_dia_debug_dp fd ON BINARY fd.empleadoId = BINARY ef.empleadoId AND fd.fecha = ef.fecha
+  LEFT JOIN aus_dia_debug_dp au ON BINARY au.empleadoId = BINARY ef.empleadoId AND au.fecha = ef.fecha
+  LEFT JOIN empleado_flags_debug_dp tf ON BINARY tf.empleadoId = BINARY ef.empleadoId
   WHERE ef.fecha >= @d_first AND ef.fecha <= @d_last
 ),
 fichajes_por_dia_base AS (
   SELECT 
-    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.TIPO AS tipo,
     f.FECHA AS fecha,
     f.DURACION AS duracion,
@@ -1038,7 +1038,7 @@ fichajes_por_dia_base AS (
         AND EXISTS (
           SELECT 1
           FROM Fichaje f_entrada
-          WHERE f_entrada.CODIGO = f.CODIGO
+          WHERE BINARY f_entrada.CODIGO = BINARY f.CODIGO
             AND f_entrada.TIPO = 'Entrada'
             AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
             AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00')
@@ -1153,7 +1153,7 @@ WITH RECURSIVE fechas AS (
 ),
 empleado_orar AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE WHEN cq.CODIGO IS NOT NULL THEN 1 ELSE 0 END AS has_cuadrante,
     CASE WHEN h.id IS NOT NULL THEN 1 ELSE 0 END AS has_horario,
     CASE 
@@ -1162,14 +1162,14 @@ empleado_orar AS (
     END AS has_orar
   FROM DatosEmpleados de
   LEFT JOIN cuadrante cq 
-    ON TRIM(BINARY cq.CODIGO) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) 
-    AND cq.LUNA = @lunaselectata
+    ON TRIM(BINARY cq.CODIGO) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) 
+    AND BINARY cq.LUNA = BINARY @lunaselectata
   LEFT JOIN horarios h
     ON h.centro_nombre = de.\`CENTRO TRABAJO\`
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= @d_last
     AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= @d_first)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 )
 SELECT 
   CASE WHEN @d_today < @d_last THEN 'Luna curentă - folosește horas_neutre_hasta_hoy' ELSE 'Luna în trecut - folosește horas_neutre' END AS tip_calcul,
@@ -1205,7 +1205,7 @@ SELECT
           // Debug pentru ziua 4 - verifică cuadrante_dia și cuadrante_dia_libre
           const dia4DebugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 4 AS dia, cq.ZI_4 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 4 AS dia, cq.ZI_4 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
 )
 SELECT 
   cu.empleadoId,
@@ -1255,7 +1255,7 @@ FROM cuadrante_unpivot cu;
           // Debug pentru cuadrante_dia pentru ziua 4
           const cuadranteDia4DebugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 4 AS dia, cq.ZI_4 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 4 AS dia, cq.ZI_4 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
 ),
 cuadrante_dia AS (
   SELECT
@@ -1315,17 +1315,17 @@ WITH RECURSIVE fechas AS (
 ),
 empleado_flags AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       WHEN LOWER(TRIM(de.TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
       ELSE 0
     END AS trabaja_festivos
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 empleado_orar AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE WHEN cq.CODIGO IS NOT NULL THEN 1 ELSE 0 END AS has_cuadrante,
     CASE WHEN h.id IS NOT NULL THEN 1 ELSE 0 END AS has_horario,
     CASE 
@@ -1334,18 +1334,18 @@ empleado_orar AS (
     END AS has_orar
   FROM DatosEmpleados de
   LEFT JOIN cuadrante cq 
-    ON TRIM(BINARY cq.CODIGO) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) 
-    AND cq.LUNA = @lunaselectata
+    ON TRIM(BINARY cq.CODIGO) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) 
+    AND BINARY cq.LUNA = BINARY @lunaselectata
   LEFT JOIN horarios h
     ON h.centro_nombre = de.\`CENTRO TRABAJO\`
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= @d_last
     AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= @d_first)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 bajas_dia AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_baja
   FROM fechas f
@@ -1353,7 +1353,7 @@ bajas_dia AS (
 ),
 aus_raw AS (
   SELECT 
-    CAST(a.\`CODIGO\` AS CHAR) AS empleadoId,
+    CAST(a.\`CODIGO\` AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     TRIM(a.\`TIPO\`) AS tipo,
     a.\`DURACION\` AS duracion,
     TRIM(REPLACE(REPLACE(a.\`FECHA\`,'–','-'),'—','-')) AS fecha_txt
@@ -1417,7 +1417,7 @@ aus_dia AS (
 ),
 fiestas_dia AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     CASE 
       WHEN fi.active = 1
@@ -1428,41 +1428,41 @@ fiestas_dia AS (
   FROM DatosEmpleados de
   CROSS JOIN fechas f
   LEFT JOIN fiestas fi ON DATE(COALESCE(fi.observed_date, fi.date)) = f.d
-  LEFT JOIN empleado_flags tf ON BINARY tf.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  LEFT JOIN empleado_flags tf ON BINARY tf.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 cuadrante_unpivot_debug AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
 ),
 cuadrante_dia AS (
   SELECT
@@ -1484,7 +1484,7 @@ cuadrante_dia AS (
 ),
 horario_dia AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     ROUND(
       CASE DAYOFWEEK(f.d)
@@ -1505,11 +1505,11 @@ horario_dia AS (
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= f.d
     AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 fichaje_base_debug AS (
   SELECT 
-    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     STR_TO_DATE(f.FECHA, '%Y-%m-%d') AS fecha,
     f.TIPO AS tipo,
     f.HORA AS hora,
@@ -1523,7 +1523,7 @@ fichaje_base_debug AS (
         AND EXISTS (
           SELECT 1
           FROM Fichaje f_entrada
-          WHERE f_entrada.CODIGO = f.CODIGO
+          WHERE BINARY f_entrada.CODIGO = BINARY f.CODIGO
             AND f_entrada.TIPO = 'Entrada'
             AND f_entrada.FECHA = DATE_SUB(STR_TO_DATE(f.FECHA, '%Y-%m-%d'), INTERVAL 1 DAY)
             AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00')
@@ -1550,7 +1550,7 @@ fichajes_por_dia_debug AS (
 ),
 regularizaciones_debug AS (
   SELECT 
-    CAST(fr.employee_codigo AS CHAR) AS empleadoId,
+    CAST(fr.employee_codigo AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     fr.workday_date,
     fr.effective_minutes,
     fr.status
@@ -1641,7 +1641,7 @@ ORDER BY f.d;
             const horasPontateDebugQuery = `
 WITH fichaje_base_debug AS (
   SELECT 
-    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     STR_TO_DATE(f.FECHA, '%Y-%m-%d') AS fecha,
     f.TIPO AS tipo,
     f.HORA AS hora,
@@ -1655,7 +1655,7 @@ WITH fichaje_base_debug AS (
         AND EXISTS (
           SELECT 1
           FROM Fichaje f_entrada
-          WHERE f_entrada.CODIGO = f.CODIGO
+          WHERE BINARY f_entrada.CODIGO = BINARY f.CODIGO
             AND f_entrada.TIPO = 'Entrada'
             AND f_entrada.FECHA = DATE_SUB(STR_TO_DATE(f.FECHA, '%Y-%m-%d'), INTERVAL 1 DAY)
             AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00')
@@ -1733,43 +1733,43 @@ WITH RECURSIVE fechas AS (
   SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM fechas WHERE d < @d_last
 ),
 empleado_fechas AS (
-  SELECT CAST('${codigo}' AS CHAR) AS empleadoId, f.d AS fecha, DAY(f.d) AS dia
+  SELECT CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId, f.d AS fecha, DAY(f.d) AS dia
   FROM fechas f
   WHERE f.d >= @d_first AND f.d <= @d_today
     AND DATE_FORMAT(f.d, '%Y-%m') = @lunaselectata
 ),
 cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
 ),
 cuadrante_dia_libre AS (
   SELECT
@@ -1804,7 +1804,7 @@ cuadrante_dia AS (
 ),
 horario_dia_m AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     DAY(f.d) AS dia,
     CASE DAYOFWEEK(f.d)
@@ -1844,7 +1844,7 @@ horario_dia_m AS (
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= f.d
     AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
     AND f.d >= @d_first
     AND f.d <= @d_last
     AND CAST(de.CODIGO AS CHAR) = '${codigo}'
@@ -1864,7 +1864,7 @@ horario_dia AS (
 ),
 empleado_flags_debug AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       WHEN LOWER(TRIM(de.TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
       ELSE 0
@@ -1873,13 +1873,13 @@ empleado_flags_debug AS (
   WHERE CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 empleado_ccaa_debug AS (
-  SELECT CAST(de.CODIGO AS CHAR) AS empleadoId, @ccaa_default AS ccaa
+  SELECT CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, @ccaa_default AS ccaa
   FROM DatosEmpleados de
   WHERE CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 bajas_dia_debug AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_baja
   FROM fechas f
@@ -1887,7 +1887,7 @@ bajas_dia_debug AS (
 ),
 aus_dia_debug AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_vacaciones,
     0 AS es_ausencia,
@@ -1929,13 +1929,13 @@ daily_plan_debug AS (
       ELSE 0
     END AS horas_plan
   FROM empleado_fechas ef
-  LEFT JOIN cuadrante_dia_libre cdl ON cdl.empleadoId = ef.empleadoId AND cdl.fecha = ef.fecha
-  LEFT JOIN cuadrante_dia cd ON cd.empleadoId = ef.empleadoId AND cd.fecha = ef.fecha
-  LEFT JOIN horario_dia hd ON hd.empleadoId = ef.empleadoId AND hd.fecha = ef.fecha
-  LEFT JOIN bajas_dia_debug bj ON bj.empleadoId = ef.empleadoId AND bj.fecha = ef.fecha
-  LEFT JOIN fiestas_dia_debug fd ON fd.empleadoId = ef.empleadoId AND fd.fecha = ef.fecha
-  LEFT JOIN aus_dia_debug au ON au.empleadoId = ef.empleadoId AND au.fecha = ef.fecha
-  LEFT JOIN empleado_flags_debug tf ON tf.empleadoId = ef.empleadoId
+  LEFT JOIN cuadrante_dia_libre cdl ON BINARY cdl.empleadoId = BINARY ef.empleadoId AND cdl.fecha = ef.fecha
+  LEFT JOIN cuadrante_dia cd ON BINARY cd.empleadoId = BINARY ef.empleadoId AND cd.fecha = ef.fecha
+  LEFT JOIN horario_dia hd ON BINARY hd.empleadoId = BINARY ef.empleadoId AND hd.fecha = ef.fecha
+  LEFT JOIN bajas_dia_debug bj ON BINARY bj.empleadoId = BINARY ef.empleadoId AND bj.fecha = ef.fecha
+  LEFT JOIN fiestas_dia_debug fd ON BINARY fd.empleadoId = BINARY ef.empleadoId AND fd.fecha = ef.fecha
+  LEFT JOIN aus_dia_debug au ON BINARY au.empleadoId = BINARY ef.empleadoId AND au.fecha = ef.fecha
+  LEFT JOIN empleado_flags_debug tf ON BINARY tf.empleadoId = BINARY ef.empleadoId
 )
 SELECT 
   empleadoId,
@@ -1980,14 +1980,14 @@ WITH fechas AS (
 ),
 empleado_flags AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COALESCE(CAST(de.TrabajaFestivos AS UNSIGNED), 0) AS trabaja_festivos
   FROM DatosEmpleados de
   WHERE CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 bajas_dia AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_baja
   FROM fechas f
@@ -1995,7 +1995,7 @@ bajas_dia AS (
 ),
 aus_dia AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_vacaciones
   FROM fechas f
@@ -2003,7 +2003,7 @@ aus_dia AS (
 ),
 empleado_ccaa AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     @ccaa_default AS ccaa
   FROM DatosEmpleados de
   WHERE CAST(de.CODIGO AS CHAR) = '${codigo}'
@@ -2018,7 +2018,7 @@ fiestas_dia AS (
   LEFT JOIN fiestas fi ON BINARY fi.scope = BINARY 'ccaa' AND BINARY fi.ccaa_code = BINARY ec.ccaa AND DATE(COALESCE(fi.observed_date, fi.date)) = f.d AND fi.active = 1
 )
 SELECT 
-  CAST(de.CODIGO AS CHAR) AS empleadoId,
+  CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
   CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) AS horas_contrato,
   CASE 
     WHEN CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) IS NOT NULL AND CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) > 0 THEN
@@ -2051,10 +2051,10 @@ SELECT
   ) AS target_ajustat_calculat
 FROM DatosEmpleados de
 CROSS JOIN fechas f
-LEFT JOIN empleado_flags tf ON BINARY tf.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-LEFT JOIN bajas_dia bj ON TRIM(BINARY bj.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND bj.fecha = f.d
-LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND au.fecha = f.d
-LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND fd.fecha = f.d
+LEFT JOIN empleado_flags tf ON BINARY tf.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+LEFT JOIN bajas_dia bj ON TRIM(BINARY bj.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND bj.fecha = f.d
+LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND au.fecha = f.d
+LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND fd.fecha = f.d
 WHERE de.ESTADO = 'ACTIVO'
   AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 GROUP BY de.CODIGO, de.\`HORAS DE CONTRATO\`;
@@ -2096,7 +2096,7 @@ WITH fechas AS (
 ),
 bajas_dia AS (
   SELECT 
-    CAST('${codigo}' AS CHAR) AS empleadoId,
+    CAST('${codigo}' AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     0 AS es_baja
   FROM fechas f
@@ -2104,7 +2104,7 @@ bajas_dia AS (
 ),
 aus_raw AS (
   SELECT 
-    CAST(a.\`CODIGO\` AS CHAR) AS empleadoId,
+    CAST(a.\`CODIGO\` AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     TRIM(a.\`TIPO\`) AS tipo,
     a.\`DURACION\` AS duracion,
     TRIM(REPLACE(REPLACE(a.\`FECHA\`,'–','-'),'—','-')) AS fecha_txt
@@ -2168,20 +2168,20 @@ aus_dia AS (
 ),
 empleado_ccaa AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     @ccaa_default AS ccaa
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 empleado_flags AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       WHEN LOWER(TRIM(de.TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
       ELSE 0
     END AS trabaja_festivos
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 fiestas_dia AS (
   SELECT 
@@ -2213,8 +2213,8 @@ SELECT
     ELSE 0
   END AS se_numara_hasta_hoy
 FROM fechas f
-LEFT JOIN bajas_dia bj ON bj.fecha = f.d AND CAST(bj.empleadoId AS CHAR) = '${codigo}'
-LEFT JOIN aus_dia au ON au.fecha = f.d AND CAST(au.empleadoId AS CHAR) = '${codigo}'
+LEFT JOIN bajas_dia bj ON bj.fecha = f.d AND BINARY CAST(bj.empleadoId AS CHAR) = BINARY CAST('${codigo}' AS CHAR)
+LEFT JOIN aus_dia au ON au.fecha = f.d AND BINARY CAST(au.empleadoId AS CHAR) = BINARY CAST('${codigo}' AS CHAR)
 LEFT JOIN fiestas_dia fd ON fd.fecha = f.d
 WHERE f.d <= @d_today
   AND (COALESCE(bj.es_baja, 0) = 1 OR COALESCE(au.es_vacaciones, 0) = 1 OR COALESCE(fd.es_fiesta, 0) = 1)
@@ -2259,37 +2259,37 @@ ORDER BY f.d;
       // Debug cuadrante_sum din query-ul principal
       const cuadranteSumDebugQuery = `
 WITH cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
 ),
 cuadrante_sum AS (
   SELECT
@@ -2315,9 +2315,9 @@ SELECT
   cs.empleadoId,
   cs.horas_cuadrante_mes,
   CAST(de.CODIGO AS CHAR) AS codigo_empleado,
-  CASE WHEN BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR) THEN 'MATCH' ELSE 'NO_MATCH' END AS join_match
+  CASE WHEN BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin THEN 'MATCH' ELSE 'NO_MATCH' END AS join_match
 FROM cuadrante_sum cs
-LEFT JOIN DatosEmpleados de ON BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+LEFT JOIN DatosEmpleados de ON BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
 WHERE cs.empleadoId = '${codigo}' OR CAST(de.CODIGO AS CHAR) = '${codigo}'
 LIMIT 10;
       `;
@@ -2343,7 +2343,7 @@ LIMIT 10;
       // Debug cuadrante_unpivot din query-ul principal
       const cuadranteUnpivotDebugQuery = `
 SELECT 
-  CAST(cq.CODIGO AS CHAR) AS empleadoId,
+  CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
   cq.LUNA AS luna_raw,
   @lunaselectata AS luna_selectata,
   COUNT(*) AS total_rows
@@ -2383,63 +2383,63 @@ WITH fechas AS (
 ),
 empleado_orar AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE WHEN COUNT(DISTINCT cq.CODIGO) > 0 THEN 1 ELSE 0 END AS has_cuadrante,
     CASE WHEN COUNT(DISTINCT h.id) > 0 THEN 1 ELSE 0 END AS has_horario,
     CASE WHEN COUNT(DISTINCT cq.CODIGO) > 0 OR COUNT(DISTINCT h.id) > 0 THEN 1 ELSE 0 END AS has_orar
   FROM DatosEmpleados de
-  LEFT JOIN cuadrante cq ON CAST(cq.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR) AND cq.LUNA = @lunaselectata
+  LEFT JOIN cuadrante cq ON BINARY CAST(cq.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND BINARY cq.LUNA = BINARY @lunaselectata
   LEFT JOIN horarios h ON h.centro_nombre = de.\`CENTRO TRABAJO\` AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= @d_last AND (h.vigente_hasta IS NULL OR @d_first <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
   GROUP BY de.CODIGO
 ),
 cuadrante_unpivot_debug AS (
-  SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 10, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 11, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 12, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 13, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 14, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 15, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 16, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 17, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 18, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 19, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 20, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 21, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 22, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 23, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 24, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 25, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 26, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 27, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 28, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 29, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 30, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 31, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata AND CAST(cq.CODIGO AS CHAR) = '${codigo}'
 ),
 cuadrante_val_dia AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     cu.val AS val_cuadrante
   FROM DatosEmpleados de
   CROSS JOIN fechas f
-  LEFT JOIN cuadrante_unpivot_debug cu ON BINARY cu.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND cu.dia = DAY(f.d)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  LEFT JOIN cuadrante_unpivot_debug cu ON BINARY cu.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND cu.dia = DAY(f.d)
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 ),
 horario_start_dia AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     CASE DAYOFWEEK(f.d)
       WHEN 2 THEN h.lun_in1
@@ -2458,7 +2458,7 @@ horario_start_dia AS (
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= f.d
     AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO' AND CAST(de.CODIGO AS CHAR) = '${codigo}'
 )
 SELECT 
   f.d AS fecha,
@@ -2763,7 +2763,69 @@ ORDER BY f.d;
       const query = this.buildCalculateQuery();
 
       this.logger.log(`Calculating Hall of Fame scores for ${mes}...`);
-      const results = await this.prisma.$queryRawUnsafe<any[]>(query);
+
+      // Debug: Log first 1000 chars of query to see structure
+      this.logger.log(
+        `🔍 DEBUG Query preview (first 1000 chars): ${query.substring(0, 1000)}`,
+      );
+
+      // Try to execute with SET NAMES to force collation
+      let results: any[];
+      try {
+        // First, set collation for the session and connection
+        await this.prisma.$executeRawUnsafe(
+          `SET NAMES utf8mb4 COLLATE utf8mb4_bin`,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `SET SESSION collation_connection = 'utf8mb4_bin'`,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `SET SESSION collation_database = 'utf8mb4_bin'`,
+        );
+        this.logger.log(`✅ SET collation statements executed`);
+
+        results = await this.prisma.$queryRawUnsafe<any[]>(query);
+        this.logger.log(
+          `✅ Query executed successfully, got ${results?.length || 0} results`,
+        );
+      } catch (error: any) {
+        this.logger.error(`❌ Query execution failed`);
+        this.logger.error(`Error message: ${error.message}`);
+        // Try to find the problematic line by checking common patterns
+        const queryLines = query.split('\n');
+        this.logger.error(`Query has ${queryLines.length} lines`);
+        // Log lines that might have collation issues - check ALL comparisons
+        let foundIssues = 0;
+        for (let i = 0; i < queryLines.length && foundIssues < 50; i++) {
+          const line = queryLines[i];
+          // Check for any comparison with =, !=, <>, IN, etc.
+          if (
+            line.match(/[=!<>]\s*['"]|IN\s*\(|=\s*@|=\s*CAST|=\s*[a-zA-Z_]+\./)
+          ) {
+            // Skip if already has BINARY or COLLATE
+            if (!line.includes('BINARY') && !line.includes('COLLATE')) {
+              // Check if it involves string comparisons (not just numbers)
+              if (
+                line.includes("'") ||
+                line.includes('"') ||
+                line.includes('@') ||
+                line.includes('CAST')
+              ) {
+                this.logger.warn(
+                  `⚠️ Line ${i + 1} might have collation issue: ${line.trim().substring(0, 250)}`,
+                );
+                foundIssues++;
+              }
+            }
+          }
+        }
+        if (foundIssues === 0) {
+          this.logger.warn(
+            `⚠️ No obvious collation issues found. The problem might be in implicit comparisons.`,
+          );
+        }
+        throw error;
+      }
 
       if (!results || results.length === 0) {
         this.logger.warn(`No results found for ${mes}`);
@@ -3493,53 +3555,53 @@ WITH RECURSIVE fechas AS (
 
 empleado_flags AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       WHEN LOWER(TRIM(de.TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
       ELSE 0
     END AS trabaja_festivos
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 empleado_ccaa AS (
-  SELECT CAST(de.CODIGO AS CHAR)  AS empleadoId, @ccaa_default AS ccaa
+  SELECT CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, @ccaa_default AS ccaa
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 cuadrante_unpivot AS (
-  SELECT CAST(cq.CODIGO AS CHAR)  AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
-  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) , 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA = @lunaselectata
+  SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1 AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1 AS val FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 2, cq.CENTRO, cq.ZI_2 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 3, cq.CENTRO, cq.ZI_3 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 4, cq.CENTRO, cq.ZI_4 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 5, cq.CENTRO, cq.ZI_5 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 6, cq.CENTRO, cq.ZI_6 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 7, cq.CENTRO, cq.ZI_7 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 8, cq.CENTRO, cq.ZI_8 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 9, cq.CENTRO, cq.ZI_9 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 10, cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 11, cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 12, cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 13, cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 14, cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 15, cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 16, cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 17, cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 18, cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 19, cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 20, cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 21, cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 22, cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 23, cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 24, cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 25, cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 26, cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 27, cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 28, cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 29, cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 30, cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(cq.CODIGO AS CHAR) COLLATE utf8mb4_bin, 31, cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE BINARY cq.LUNA = BINARY @lunaselectata
 ),
 
 cuadrante_dia AS (
@@ -3574,7 +3636,7 @@ cuadrante_dia AS (
 
 horario_dia_m AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     DAY(f.d) AS dia,
     CASE DAYOFWEEK(f.d)
@@ -3614,7 +3676,7 @@ horario_dia_m AS (
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= f.d
     AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
     AND f.d >= @d_first
     AND f.d <= @d_last
 ),
@@ -3633,9 +3695,108 @@ horario_dia AS (
   FROM horario_dia_m
 ),
 
+horario_multicentro_unpivot AS (
+  SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, 1  AS dia, hm.CLIENTE, hm.HORARIO, hm.ZI_1  AS val FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 2 , hm.CLIENTE, hm.HORARIO, hm.ZI_2  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 3 , hm.CLIENTE, hm.HORARIO, hm.ZI_3  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 4 , hm.CLIENTE, hm.HORARIO, hm.ZI_4  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 5 , hm.CLIENTE, hm.HORARIO, hm.ZI_5  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 6 , hm.CLIENTE, hm.HORARIO, hm.ZI_6  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 7 , hm.CLIENTE, hm.HORARIO, hm.ZI_7  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 8 , hm.CLIENTE, hm.HORARIO, hm.ZI_8  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin, 9 , hm.CLIENTE, hm.HORARIO, hm.ZI_9  FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,10 , hm.CLIENTE, hm.HORARIO, hm.ZI_10 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,11 , hm.CLIENTE, hm.HORARIO, hm.ZI_11 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,12 , hm.CLIENTE, hm.HORARIO, hm.ZI_12 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,13 , hm.CLIENTE, hm.HORARIO, hm.ZI_13 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,14 , hm.CLIENTE, hm.HORARIO, hm.ZI_14 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,15 , hm.CLIENTE, hm.HORARIO, hm.ZI_15 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,16 , hm.CLIENTE, hm.HORARIO, hm.ZI_16 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,17 , hm.CLIENTE, hm.HORARIO, hm.ZI_17 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,18 , hm.CLIENTE, hm.HORARIO, hm.ZI_18 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,19 , hm.CLIENTE, hm.HORARIO, hm.ZI_19 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,20 , hm.CLIENTE, hm.HORARIO, hm.ZI_20 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,21 , hm.CLIENTE, hm.HORARIO, hm.ZI_21 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,22 , hm.CLIENTE, hm.HORARIO, hm.ZI_22 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,23 , hm.CLIENTE, hm.HORARIO, hm.ZI_23 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,24 , hm.CLIENTE, hm.HORARIO, hm.ZI_24 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,25 , hm.CLIENTE, hm.HORARIO, hm.ZI_25 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,26 , hm.CLIENTE, hm.HORARIO, hm.ZI_26 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,27 , hm.CLIENTE, hm.HORARIO, hm.ZI_27 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,28 , hm.CLIENTE, hm.HORARIO, hm.ZI_28 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,29 , hm.CLIENTE, hm.HORARIO, hm.ZI_29 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,30 , hm.CLIENTE, hm.HORARIO, hm.ZI_30 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+  UNION ALL SELECT CAST(hm.CODIGO AS CHAR) COLLATE utf8mb4_bin,31 , hm.CLIENTE, hm.HORARIO, hm.ZI_31 FROM horario_multicentro hm WHERE BINARY hm.LUNA = BINARY @lunaselectata
+),
+
+horario_multicentro_dia AS (
+  SELECT
+    hmu.empleadoId,
+    DATE_ADD(@d_first, INTERVAL (hmu.dia - 1) DAY) AS fecha,
+    hmu.dia,
+    CASE WHEN hmu.val IS NOT NULL AND TRIM(hmu.val) <> '' AND TRIM(hmu.val) NOT IN ('0','0h','LIBRE') THEN 1 ELSE 0 END AS tiene_horario_multicentro,
+    ROUND(
+      CASE 
+        WHEN UPPER(TRIM(hmu.val)) IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X','0','0h') THEN 0
+        WHEN TRIM(hmu.val) LIKE '%:%-%:%' THEN 
+          -- Format "08:00-17:00" sau "T1 07:30-19:30" sau "T2 19:30-07:30"
+          (((TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(hmu.val),' ',-1),'-',-1),' ',1), '%H:%i'))
+                                           - TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(hmu.val),' ',-1),'-', 1),' ',1), '%H:%i'))
+                                           + 86400) % 86400) / 3600)
+        WHEN TRIM(hmu.val) REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN 
+          -- Format simplu: "8", "12", "8.5"
+          CAST(TRIM(hmu.val) AS DECIMAL(10,2))
+        WHEN TRIM(hmu.val) REGEXP '^[0-9]+(\\.[0-9]+)?h$' THEN 
+          -- Format cu "h": "8h", "12h"
+          CAST(SUBSTRING_INDEX(TRIM(hmu.val), 'h', 1) AS DECIMAL(10,2))
+        ELSE 0
+      END
+    ,2) AS horas_horario_multicentro_dia,
+    hmu.HORARIO AS horario_tipo,
+    hmu.CLIENTE AS cliente
+  FROM horario_multicentro_unpivot hmu
+  WHERE hmu.val IS NOT NULL AND TRIM(hmu.val) <> '' AND TRIM(hmu.val) NOT IN ('0','0h','LIBRE')
+    AND hmu.dia >= 1 AND hmu.dia <= 31
+    AND DATE_ADD(@d_first, INTERVAL (hmu.dia - 1) DAY) >= @d_first
+    AND DATE_ADD(@d_first, INTERVAL (hmu.dia - 1) DAY) <= @d_last
+),
+
+horario_multicentro_dia_best AS (
+  -- Pentru fiecare angajat și zi, selectează cea mai bună înregistrare:
+  -- Dacă există TURNO NOCHE și TURNO DIA, preferă TURNO NOCHE (12h > 8h)
+  -- Altfel, preferă înregistrarea cu cele mai multe ore
+  SELECT 
+    empleadoId,
+    fecha,
+    dia,
+    MAX(tiene_horario_multicentro) AS tiene_horario_multicentro,
+    MAX(horas_horario_multicentro_dia) AS horas_horario_multicentro_dia
+  FROM (
+    SELECT 
+      empleadoId,
+      fecha,
+      dia,
+      tiene_horario_multicentro,
+      horas_horario_multicentro_dia,
+      CASE 
+        WHEN UPPER(horario_tipo) LIKE '%NOCHE%' OR UPPER(horario_tipo) LIKE '%T3%' THEN 1
+        WHEN UPPER(horario_tipo) LIKE '%DIA%' OR UPPER(horario_tipo) LIKE '%T1%' OR UPPER(horario_tipo) LIKE '%T2%' THEN 2
+        ELSE 3
+      END AS prioridad
+    FROM horario_multicentro_dia
+  ) ranked
+  GROUP BY empleadoId, fecha, dia
+),
+
+horario_multicentro_mes AS (
+  SELECT empleadoId, ROUND(SUM(horas_horario_multicentro_dia),2) AS horas_horario_multicentro_mes
+  FROM horario_multicentro_dia_best
+  GROUP BY empleadoId
+),
+
 bajas_raw AS (
   SELECT
-    TRIM(CAST(mc.Codigo_Empleado AS CHAR)) AS empleadoId,
+    CAST(TRIM(mc.Codigo_Empleado) AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     mc.\`Fecha baja\` AS fecha_baja_raw,
     mc.\`Fecha de alta\` AS fecha_alta_raw
   FROM MutuaCasos mc
@@ -3697,7 +3858,7 @@ bajas_dia AS (
 
 aus_raw AS (
   SELECT 
-    CAST(a.\`CODIGO\` AS CHAR) AS empleadoId,
+    CAST(a.\`CODIGO\` AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     TRIM(a.\`TIPO\`) AS tipo,
     a.\`DURACION\` AS duracion,
     TRIM(REPLACE(REPLACE(a.\`FECHA\`,'–','-'),'—','-')) AS fecha_txt
@@ -3782,10 +3943,10 @@ fiestas_dia AS (
   LEFT JOIN empleado_flags tf ON BINARY tf.empleadoId = BINARY ec.empleadoId ),
 
 empleado_fechas AS (
-  SELECT CAST(de.CODIGO AS CHAR) AS empleadoId, f.d AS fecha, DAY(f.d) AS dia
+  SELECT CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId, f.d AS fecha, DAY(f.d) AS dia
   FROM DatosEmpleados de
   CROSS JOIN fechas f
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
     AND f.d >= @d_first
     AND f.d <= @d_last
 ),
@@ -3803,6 +3964,7 @@ daily_plan AS (
       ELSE GREATEST(
         COALESCE(
           CASE WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia ELSE NULL END,
+          CASE WHEN hmd.tiene_horario_multicentro = 1 THEN hmd.horas_horario_multicentro_dia ELSE NULL END,
           CASE WHEN hd.horas_horario_dia IS NOT NULL THEN hd.horas_horario_dia ELSE NULL END,
           0
         ) - COALESCE(au.horas_ausencia_ore, 0),
@@ -3815,22 +3977,25 @@ daily_plan AS (
       WHEN fd2.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos,0) = 0 THEN 'fiesta'
       WHEN COALESCE(au.es_ausencia,0) = 1 THEN 'ausencia'
       WHEN cd.tiene_cuadrante = 1 THEN 'cuadrante'
+      WHEN hmd.tiene_horario_multicentro = 1 THEN 'horario_multicentro'
       WHEN hd.horas_horario_dia IS NOT NULL AND hd.horas_horario_dia > 0 THEN 'horario'
       ELSE 'none'
     END AS fuente
   FROM empleado_fechas ef
   LEFT JOIN cuadrante_dia cd
-    ON cd.empleadoId = ef.empleadoId AND cd.fecha = ef.fecha
+    ON BINARY cd.empleadoId = BINARY ef.empleadoId AND cd.fecha = ef.fecha
+  LEFT JOIN horario_multicentro_dia_best hmd
+    ON BINARY hmd.empleadoId = BINARY ef.empleadoId AND hmd.fecha = ef.fecha
   LEFT JOIN horario_dia hd
-    ON hd.empleadoId = ef.empleadoId AND hd.fecha = ef.fecha
+    ON BINARY hd.empleadoId = BINARY ef.empleadoId AND hd.fecha = ef.fecha
   LEFT JOIN bajas_dia bj
-    ON bj.empleadoId = ef.empleadoId AND bj.fecha = ef.fecha
+    ON BINARY bj.empleadoId = BINARY ef.empleadoId AND bj.fecha = ef.fecha
   LEFT JOIN fiestas_dia fd2
-    ON fd2.empleadoId = ef.empleadoId AND fd2.fecha = ef.fecha
+    ON BINARY fd2.empleadoId = BINARY ef.empleadoId AND fd2.fecha = ef.fecha
   LEFT JOIN aus_dia au
-    ON au.empleadoId = ef.empleadoId AND au.fecha = ef.fecha
+    ON BINARY au.empleadoId = BINARY ef.empleadoId AND au.fecha = ef.fecha
   LEFT JOIN empleado_flags tf
-    ON tf.empleadoId = ef.empleadoId
+    ON BINARY tf.empleadoId = BINARY ef.empleadoId
 ),
 
 plan_mes AS (
@@ -3838,8 +4003,10 @@ plan_mes AS (
     empleadoId,
     ROUND(SUM(horas_plan), 2) AS horas_plan_mes,
     ROUND(SUM(CASE WHEN fuente='cuadrante' THEN horas_plan ELSE 0 END), 2) AS horas_cuadrante_mes,
+    ROUND(SUM(CASE WHEN fuente='horario_multicentro' THEN horas_plan ELSE 0 END), 2) AS horas_horario_multicentro_mes,
     ROUND(SUM(CASE WHEN fuente='horario' THEN horas_plan ELSE 0 END), 2) AS horas_horario_mes,
     SUM(CASE WHEN fuente='cuadrante' THEN 1 ELSE 0 END) AS cnt_cuadrante,
+    SUM(CASE WHEN fuente='horario_multicentro' THEN 1 ELSE 0 END) AS cnt_horario_multicentro,
     SUM(CASE WHEN fuente='horario' THEN 1 ELSE 0 END) AS cnt_horario
   FROM daily_plan
   GROUP BY empleadoId
@@ -3900,33 +4067,37 @@ horario_hasta_hoy AS (
 
 empleado_orar AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE WHEN cq.CODIGO IS NOT NULL THEN 1 ELSE 0 END AS has_cuadrante,
+    CASE WHEN hmm.empleadoId IS NOT NULL THEN 1 ELSE 0 END AS has_horario_multicentro,
     CASE WHEN h.id IS NOT NULL THEN 1 ELSE 0 END AS has_horario,
     CASE 
-      WHEN cq.CODIGO IS NOT NULL OR h.id IS NOT NULL THEN 1 
+      WHEN cq.CODIGO IS NOT NULL OR hmm.empleadoId IS NOT NULL OR h.id IS NOT NULL THEN 1 
       ELSE 0 
     END AS has_orar
   FROM DatosEmpleados de
   LEFT JOIN cuadrante cq 
-    ON TRIM(BINARY cq.CODIGO) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) 
-    AND cq.LUNA = @lunaselectata
+    ON TRIM(BINARY cq.CODIGO) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) 
+    AND BINARY cq.LUNA = BINARY @lunaselectata
+  LEFT JOIN horario_multicentro_mes hmm
+    ON TRIM(BINARY hmm.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin)
   LEFT JOIN horarios h
     ON h.centro_nombre = de.\`CENTRO TRABAJO\`
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= @d_last
     AND (h.vigente_hasta IS NULL OR h.vigente_hasta >= @d_first)
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 target_initial AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
-    -- Prioritate: cuadrante > horario > HORAS_CONTRATO
-    -- Folosim cuadrante_sum/horario_mes direct (fără ajustări) pentru target_initial
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
+    -- Prioritate: cuadrante > horario_multicentro > horario > HORAS_CONTRATO
+    -- Folosim cuadrante_sum/horario_multicentro_mes/horario_mes direct (fără ajustări) pentru target_initial
     -- plan_mes deja aplică ajustări (scade zilele neutre), deci nu e potrivit pentru target_initial
     COALESCE(
       cs.horas_cuadrante_mes,
+      hmm.horas_horario_multicentro_mes,
       hm.horas_horario_mes,
       -- Pentru contract: calculăm zilele lucrătoare (luni-vineri) din lună și înmulțim cu orele pe zi
       CASE 
@@ -3944,25 +4115,28 @@ target_initial AS (
       0
     ) AS target_initial,
     cs.horas_cuadrante_mes AS cs_horas_debug,
+    hmm.horas_horario_multicentro_mes AS hmm_horas_debug,
     hm.horas_horario_mes AS hm_horas_debug,
     CASE 
       WHEN COALESCE(cs.horas_cuadrante_mes, 0) = 0 
+        AND COALESCE(hmm.horas_horario_multicentro_mes, 0) = 0
         AND COALESCE(hm.horas_horario_mes, 0) = 0 
         AND (CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) IS NOT NULL AND CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)) > 0) THEN
         COALESCE(CAST(de.\`HORAS DE CONTRATO\` AS DECIMAL(10,2)), 0) / 5  -- 5 zile lucrătoare (luni-vineri)
       ELSE NULL
     END AS horas_pe_zi_contrato
-  FROM DatosEmpleados de
-  LEFT JOIN cuadrante_sum cs ON BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN horario_mes hm ON BINARY hm.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+    FROM DatosEmpleados de
+  LEFT JOIN cuadrante_sum cs ON BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN horario_multicentro_mes hmm ON BINARY hmm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN horario_mes hm ON BINARY hm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   CROSS JOIN fechas f
-  WHERE de.ESTADO = 'ACTIVO'
-  GROUP BY de.CODIGO, cs.horas_cuadrante_mes, hm.horas_horario_mes, de.\`HORAS DE CONTRATO\`
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
+  GROUP BY de.CODIGO, cs.horas_cuadrante_mes, hmm.horas_horario_multicentro_mes, hm.horas_horario_mes, de.\`HORAS DE CONTRATO\`
 ),
 
 zile_neutre AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(DISTINCT CASE 
       WHEN bj.es_baja = 1 THEN f.d
     END) AS dias_baja,
@@ -3974,16 +4148,16 @@ zile_neutre AS (
     END) AS dias_fiesta
   FROM DatosEmpleados de
   CROSS JOIN fechas f
-  LEFT JOIN bajas_dia bj ON TRIM(BINARY bj.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND bj.fecha = f.d
-  LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND au.fecha = f.d
-  LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND fd.fecha = f.d
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN bajas_dia bj ON TRIM(BINARY bj.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND bj.fecha = f.d
+  LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND au.fecha = f.d
+  LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND fd.fecha = f.d
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 
 zile_neutre_hasta_hoy AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(DISTINCT CASE 
       WHEN f.d <= @d_today AND bj.es_baja = 1 THEN f.d
     END) AS dias_baja_hasta_hoy,
@@ -3995,10 +4169,10 @@ zile_neutre_hasta_hoy AS (
     END) AS dias_fiesta_hasta_hoy
   FROM DatosEmpleados de
   CROSS JOIN fechas f
-  LEFT JOIN bajas_dia bj ON TRIM(BINARY bj.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND bj.fecha = f.d
-  LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND au.fecha = f.d
-  LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(BINARY CAST(de.CODIGO AS CHAR)) AND fd.fecha = f.d
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN bajas_dia bj ON TRIM(BINARY bj.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND bj.fecha = f.d
+  LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND au.fecha = f.d
+  LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin) AND fd.fecha = f.d
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
     AND f.d <= @d_today
   GROUP BY de.CODIGO
 ),
@@ -4014,13 +4188,13 @@ ore_zile_neutre AS (
               -- Bajas: se scade întotdeauna
               CASE 
                 WHEN eo.has_cuadrante = 1 THEN COALESCE(cd.horas_cuadrante_dia, 0)
-                ELSE COALESCE(cd.horas_cuadrante_dia, hd.horas_horario_dia, 0)
+                ELSE COALESCE(cd.horas_cuadrante_dia, hmd.horas_horario_multicentro_dia, hd.horas_horario_dia, 0)
               END
             WHEN au.es_vacaciones = 1 THEN
               -- Vacaciones: se scade întotdeauna
               CASE 
                 WHEN eo.has_cuadrante = 1 THEN COALESCE(cd.horas_cuadrante_dia, 0)
-                ELSE COALESCE(cd.horas_cuadrante_dia, hd.horas_horario_dia, 0)
+                ELSE COALESCE(cd.horas_cuadrante_dia, hmd.horas_horario_multicentro_dia, hd.horas_horario_dia, 0)
               END
             WHEN fd.es_fiesta = 1 
               AND COALESCE(tf.trabaja_festivos, 0) = 0
@@ -4056,8 +4230,9 @@ ore_zile_neutre AS (
   LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(BINARY zn.empleadoId) AND au.fecha = f.d
   LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(BINARY zn.empleadoId) AND fd.fecha = f.d
   LEFT JOIN cuadrante_dia cd ON TRIM(BINARY cd.empleadoId) = TRIM(BINARY zn.empleadoId) AND cd.fecha = f.d
+  LEFT JOIN horario_multicentro_dia_best hmd ON TRIM(BINARY hmd.empleadoId) = TRIM(BINARY zn.empleadoId) AND hmd.fecha = f.d
   LEFT JOIN horario_dia hd ON TRIM(BINARY hd.empleadoId) = TRIM(BINARY zn.empleadoId) AND hd.fecha = f.d
-    AND eo.has_cuadrante = 0  -- Doar dacă nu are cuadrante, verificăm horario
+    AND eo.has_cuadrante = 0  -- Doar dacă nu are cuadrante, verificăm horario_multicentro și horario
   LEFT JOIN fichajes_por_dia fpd ON TRIM(BINARY fpd.empleadoId) = TRIM(BINARY zn.empleadoId) AND fpd.workday_date = f.d
   LEFT JOIN FichajeRegularizacion fr ON TRIM(BINARY CAST(fr.employee_codigo AS CHAR)) = TRIM(BINARY zn.empleadoId) AND fr.workday_date = f.d AND fr.status = 'CONFIRMED'
   WHERE (bj.es_baja = 1 OR au.es_vacaciones = 1 OR (fd.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos, 0) = 0))
@@ -4075,13 +4250,13 @@ ore_zile_neutre_hasta_hoy AS (
               -- Bajas: se scade întotdeauna
               CASE 
                 WHEN eo.has_cuadrante = 1 THEN COALESCE(cd.horas_cuadrante_dia, 0)
-                ELSE COALESCE(cd.horas_cuadrante_dia, hd.horas_horario_dia, 0)
+                ELSE COALESCE(cd.horas_cuadrante_dia, hmd.horas_horario_multicentro_dia, hd.horas_horario_dia, 0)
               END
             WHEN f.d <= @d_today AND au.es_vacaciones = 1 THEN
               -- Vacaciones: se scade întotdeauna
               CASE 
                 WHEN eo.has_cuadrante = 1 THEN COALESCE(cd.horas_cuadrante_dia, 0)
-                ELSE COALESCE(cd.horas_cuadrante_dia, hd.horas_horario_dia, 0)
+                ELSE COALESCE(cd.horas_cuadrante_dia, hmd.horas_horario_multicentro_dia, hd.horas_horario_dia, 0)
               END
             WHEN f.d <= @d_today
               AND fd.es_fiesta = 1 
@@ -4124,8 +4299,9 @@ ore_zile_neutre_hasta_hoy AS (
   LEFT JOIN aus_dia au ON TRIM(BINARY au.empleadoId) = TRIM(BINARY zn.empleadoId) AND au.fecha = f.d
   LEFT JOIN fiestas_dia fd ON TRIM(BINARY fd.empleadoId) = TRIM(BINARY zn.empleadoId) AND fd.fecha = f.d
   LEFT JOIN cuadrante_dia cd ON TRIM(BINARY cd.empleadoId) = TRIM(BINARY zn.empleadoId) AND cd.fecha = f.d
+  LEFT JOIN horario_multicentro_dia_best hmd ON TRIM(BINARY hmd.empleadoId) = TRIM(BINARY zn.empleadoId) AND hmd.fecha = f.d
   LEFT JOIN horario_dia hd ON TRIM(BINARY hd.empleadoId) = TRIM(BINARY zn.empleadoId) AND hd.fecha = f.d
-    AND eo.has_cuadrante = 0  -- Doar dacă nu are cuadrante, verificăm horario
+    AND eo.has_cuadrante = 0  -- Doar dacă nu are cuadrante, verificăm horario_multicentro și horario
   LEFT JOIN fichajes_por_dia fpd ON TRIM(BINARY fpd.empleadoId) = TRIM(BINARY zn.empleadoId) AND fpd.workday_date = f.d
   LEFT JOIN FichajeRegularizacion fr ON TRIM(BINARY CAST(fr.employee_codigo AS CHAR)) = TRIM(BINARY zn.empleadoId) AND fr.workday_date = f.d AND fr.status = 'CONFIRMED'
   WHERE f.d <= @d_today
@@ -4217,7 +4393,7 @@ target_ajustat AS (
 
 fichaje_base AS (
   SELECT 
-    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     STR_TO_DATE(f.FECHA, '%Y-%m-%d') AS fecha,
     f.TIPO AS tipo,
     STR_TO_DATE(f.HORA, '%H:%i:%s') AS hora,
@@ -4235,7 +4411,7 @@ fichaje_base AS (
         AND EXISTS (
           SELECT 1
           FROM Fichaje f_entrada
-          WHERE f_entrada.CODIGO = f.CODIGO
+          WHERE BINARY f_entrada.CODIGO = BINARY f.CODIGO
             AND f_entrada.TIPO = 'Entrada'
             AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
             AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00') -- Entrada după 17:00 = tură de noapte
@@ -4250,7 +4426,7 @@ fichaje_base AS (
 -- Include și zilele cu regularizări dar fără fichajes
 regularizaciones_sin_fichajes AS (
   SELECT
-    CAST(fr.employee_codigo AS CHAR) AS empleadoId,
+    CAST(fr.employee_codigo AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     fr.workday_date,
     fr.effective_minutes / 60.0 AS horas_reg,
     0 AS horas_fichaje
@@ -4304,19 +4480,19 @@ fichajes_por_dia_horas AS (
 
 horas_pontate AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     ROUND(SUM(
       COALESCE(fpdh.horas_reg, fpdh.horas_fichaje, 0)
     ), 2) AS horas_pontate
   FROM DatosEmpleados de
-  LEFT JOIN fichajes_por_dia_horas fpdh ON BINARY fpdh.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN fichajes_por_dia_horas fpdh ON BINARY fpdh.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 
 regularizaciones_empleado AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(DISTINCT CASE 
       WHEN fr.status = 'CONFIRMED' 
         AND fr.workday_date BETWEEN @d_first AND @d_last
@@ -4329,15 +4505,15 @@ regularizaciones_empleado AS (
     END) AS regularizaciones_pendiente
   FROM DatosEmpleados de
   LEFT JOIN FichajeRegularizacion fr 
-    ON BINARY fr.employee_codigo = BINARY CAST(de.CODIGO AS CHAR)
+    ON BINARY fr.employee_codigo = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
     AND fr.workday_date BETWEEN @d_first AND @d_last
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 
 fichajes_por_dia_base AS (
   SELECT 
-    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.TIPO AS tipo,
     f.FECHA AS fecha,
     f.DURACION AS duracion,
@@ -4354,7 +4530,7 @@ fichajes_por_dia_base AS (
         AND EXISTS (
           SELECT 1
           FROM Fichaje f_entrada
-          WHERE f_entrada.CODIGO = f.CODIGO
+          WHERE BINARY f_entrada.CODIGO = BINARY f.CODIGO
             AND f_entrada.TIPO = 'Entrada'
             AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
             AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00') -- Entrada după 17:00 = tură de noapte
@@ -4382,7 +4558,7 @@ fichajes_por_dia AS (
 -- Numără zilele cu fichele fără adresă (DIRECCION NULL sau gol)
 fichajes_sin_direccion AS (
   SELECT 
-    CAST(f.CODIGO AS CHAR) AS empleadoId,
+    CAST(f.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE
       WHEN f.TIPO = 'Salida' 
         AND f.DURACION IS NOT NULL 
@@ -4392,7 +4568,7 @@ fichajes_sin_direccion AS (
         AND EXISTS (
           SELECT 1
           FROM Fichaje f_entrada
-          WHERE f_entrada.CODIGO = f.CODIGO
+          WHERE BINARY f_entrada.CODIGO = BINARY f.CODIGO
             AND f_entrada.TIPO = 'Entrada'
             AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
             AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00')
@@ -4408,18 +4584,18 @@ fichajes_sin_direccion AS (
 
 fichajes_sin_direccion_empleado AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(DISTINCT fsd.workday_date) AS dias_sin_direccion
   FROM DatosEmpleados de
-  LEFT JOIN fichajes_sin_direccion fsd ON BINARY fsd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+  LEFT JOIN fichajes_sin_direccion fsd ON BINARY fsd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
     AND fsd.workday_date BETWEEN @d_first AND @d_today
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 
 calitate_pontaj AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(DISTINCT CASE 
       WHEN dp.horas_plan > 0
         AND dp.fecha >= @d_first
@@ -4439,27 +4615,27 @@ calitate_pontaj AS (
     COALESCE(re.regularizaciones_pendiente, 0) AS regularizaciones_pendiente,
     COALESCE(fsde.dias_sin_direccion, 0) AS fichajes_sin_direccion
   FROM DatosEmpleados de
-  LEFT JOIN daily_plan dp ON BINARY dp.empleadoId = BINARY CAST(de.CODIGO AS CHAR) 
+  LEFT JOIN daily_plan dp ON BINARY dp.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin 
     AND dp.fecha >= @d_first 
     AND dp.fecha <= @d_today
-  LEFT JOIN fichajes_por_dia fpd ON BINARY fpd.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND fpd.workday_date = dp.fecha
-  LEFT JOIN FichajeRegularizacion fr_confirmed ON BINARY fr_confirmed.employee_codigo = BINARY CAST(de.CODIGO AS CHAR) 
+  LEFT JOIN fichajes_por_dia fpd ON BINARY fpd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND fpd.workday_date = dp.fecha
+  LEFT JOIN FichajeRegularizacion fr_confirmed ON BINARY fr_confirmed.employee_codigo = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin 
     AND fr_confirmed.workday_date = dp.fecha 
     AND fr_confirmed.status = 'CONFIRMED'
     AND fr_confirmed.effective_minutes IS NOT NULL
     AND fr_confirmed.effective_minutes > 0
-  LEFT JOIN regularizaciones_empleado re ON BINARY re.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN fichajes_sin_direccion_empleado fsde ON BINARY fsde.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND bj.fecha = dp.fecha
-  LEFT JOIN aus_dia au ON BINARY au.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND au.fecha = dp.fecha
-  LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = BINARY CAST(de.CODIGO AS CHAR) AND fd.fecha = dp.fecha
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN regularizaciones_empleado re ON BINARY re.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN fichajes_sin_direccion_empleado fsde ON BINARY fsde.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND bj.fecha = dp.fecha
+  LEFT JOIN aus_dia au ON BINARY au.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND au.fecha = dp.fecha
+  LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND fd.fecha = dp.fecha
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO, fsde.dias_sin_direccion
 ),
 
 horario_start_dia AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     CASE DAYOFWEEK(f.d)
       WHEN 2 THEN h.lun_in1
@@ -4478,23 +4654,23 @@ horario_start_dia AS (
     AND h.grupo_nombre = de.GRUPO
     AND h.vigente_desde <= f.d
     AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 cuadrante_val_dia AS (
   SELECT
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     f.d AS fecha,
     cu.val AS val_cuadrante
   FROM DatosEmpleados de
   CROSS JOIN fechas f
-  LEFT JOIN cuadrante_unpivot cu ON BINARY cu.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND cu.dia = DAY(f.d)
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN cuadrante_unpivot cu ON BINARY cu.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND cu.dia = DAY(f.d)
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 punctualitate AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(DISTINCT CASE 
       WHEN eo.has_orar = 1
         AND f.d <= @d_today
@@ -4561,21 +4737,22 @@ punctualitate AS (
       THEN f.d
     END) AS zile_cu_orar
   FROM DatosEmpleados de
-  JOIN empleado_orar eo ON BINARY eo.empleadoId = BINARY CAST(de.CODIGO AS CHAR)   CROSS JOIN fechas f
-  LEFT JOIN fichaje_base fb ON BINARY fb.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND fb.fecha = f.d
-  LEFT JOIN FichajeRegularizacion fr ON BINARY fr.employee_codigo = BINARY CAST(de.CODIGO AS CHAR) AND fr.workday_date = f.d AND fr.status = 'CONFIRMED'
-  LEFT JOIN cuadrante_val_dia cvd ON BINARY cvd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND cvd.fecha = f.d
-  LEFT JOIN horario_start_dia hsd ON BINARY hsd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND hsd.fecha = f.d AND eo.has_cuadrante = 0
-  LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND bj.fecha = f.d
-  LEFT JOIN aus_dia au ON BINARY au.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND au.fecha = f.d
-  LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)  AND fd.fecha = f.d
-  WHERE de.ESTADO = 'ACTIVO'
+  JOIN empleado_orar eo ON BINARY eo.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  CROSS JOIN fechas f
+  LEFT JOIN fichaje_base fb ON BINARY fb.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND fb.fecha = f.d
+  LEFT JOIN FichajeRegularizacion fr ON BINARY fr.employee_codigo = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AND fr.workday_date = f.d AND fr.status = 'CONFIRMED'
+  LEFT JOIN cuadrante_val_dia cvd ON BINARY cvd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND cvd.fecha = f.d
+  LEFT JOIN horario_start_dia hsd ON BINARY hsd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND hsd.fecha = f.d AND eo.has_cuadrante = 0
+  LEFT JOIN bajas_dia bj ON BINARY bj.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND bj.fecha = f.d
+  LEFT JOIN aus_dia au ON BINARY au.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND au.fecha = f.d
+  LEFT JOIN fiestas_dia fd ON BINARY fd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin  AND fd.fecha = f.d
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 
 acciones_empleado AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     -- Fichajes: COUNT(*) - numără toate acțiunile (nu doar distinct per zi)
     COUNT(CASE 
       WHEN l.action IN ('fichaje_created', 'fichaje_updated', 'fichaje_deleted', 'fichaje_approved', 'fichaje_rejected')
@@ -4669,7 +4846,7 @@ acciones_empleado AS (
       OR DATE(STR_TO_DATE(l.timestamp, '%Y-%m-%d %H:%i:%s')) BETWEEN @d_first AND @d_last
       OR DATE(STR_TO_DATE(SUBSTRING(l.timestamp, 1, 10), '%Y-%m-%d')) BETWEEN @d_first AND @d_last
     )
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 
@@ -4705,7 +4882,7 @@ uso_app AS (
 -- Responsabilidad digital: Comunicaciones pendientes (3%)
 comunicaciones_pendientes AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       -- Dacă nu are comunicados asignate (nu există comunicados publicate), primește 3 puncte
       WHEN NOT EXISTS (
@@ -4721,37 +4898,50 @@ comunicaciones_pendientes AS (
             SELECT 1 
             FROM comunicados_leidos cl 
             WHERE cl.comunicado_id = c.id 
-              AND BINARY cl.user_id = BINARY CAST(de.CODIGO AS CHAR)
+              AND BINARY cl.user_id = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
           )
       ) THEN 0
       -- Dacă toate comunicados sunt citite, primește 3 puncte
       ELSE 3
     END AS score_comunicaciones
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 -- Responsabilidad digital: Documentos pendientes (3%)
+-- Include atât documentos_solicitados cât și documentele PRL
 documentos_pendientes AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
-      -- Dacă nu are cereri de documente, primește 3 puncte
-      WHEN NOT EXISTS (
-        SELECT 1 FROM documentos_solicitados ds 
-        WHERE BINARY ds.empleado_id = BINARY CAST(de.CODIGO AS CHAR)
-      ) THEN 3
-      -- Dacă are cereri și nu le-a urcat (estado = 'pendiente'), primește 0
+      -- Verifică dacă are documente PRL pendiente (PENDIENTE sau RECHAZADO)
+      WHEN EXISTS (
+        SELECT 1 FROM prl_employee_documents ped 
+        WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+          AND BINARY ped.estado IN (BINARY 'PENDIENTE', BINARY 'RECHAZADO')
+          -- Doar documentele asignate în luna curentă sau înainte
+          AND DATE(ped.asignado_en) <= @d_last
+      ) THEN 0
+      -- Verifică dacă are documentos_solicitados pendiente
       WHEN EXISTS (
         SELECT 1 FROM documentos_solicitados ds 
-        WHERE BINARY ds.empleado_id = BINARY CAST(de.CODIGO AS CHAR)
+        WHERE BINARY ds.empleado_id = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
           AND BINARY ds.estado = BINARY 'pendiente'
       ) THEN 0
-      -- Dacă totul este urcat (nu are cereri pendiente), primește 3 puncte
+      -- Dacă nu are documente asignate (nici PRL, nici documentos_solicitados), primește 3 puncte
+      WHEN NOT EXISTS (
+        SELECT 1 FROM prl_employee_documents ped 
+        WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+          AND DATE(ped.asignado_en) <= @d_last
+      ) AND NOT EXISTS (
+        SELECT 1 FROM documentos_solicitados ds 
+        WHERE BINARY ds.empleado_id = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+      ) THEN 3
+      -- Dacă toate documentele sunt completate/firmate, primește 3 puncte
       ELSE 3
     END AS score_documentos
   FROM DatosEmpleados de
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 -- Responsabilidad digital: Inspecciones (4%)
@@ -4775,18 +4965,18 @@ dias_laborables_mes AS (
 ),
 inspecciones_count_mes AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     COUNT(id.id) AS num_inspecciones
   FROM DatosEmpleados de
   LEFT JOIN InspeccionesDocumentos id 
     ON (
       -- Pentru supervizori: verifică codigo_supervisor
       (BINARY UPPER(TRIM(de.GRUPO)) = BINARY 'SUPERVISOR' 
-        AND BINARY id.codigo_supervisor = BINARY CAST(de.CODIGO AS CHAR))
+        AND BINARY id.codigo_supervisor = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin)
       OR
       -- Pentru angajați normali: verifică codigo_empleado
       (BINARY UPPER(TRIM(de.GRUPO)) <> BINARY 'SUPERVISOR' 
-        AND BINARY id.codigo_empleado = BINARY CAST(de.CODIGO AS CHAR))
+        AND BINARY id.codigo_empleado = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin)
     )
     AND id.fecha_subida IS NOT NULL
     AND TRIM(id.fecha_subida) <> ''
@@ -4796,12 +4986,12 @@ inspecciones_count_mes AS (
       OR DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) >= @d_first 
       AND DATE(STR_TO_DATE(id.fecha_subida, '%Y-%m-%d %H:%i:%s')) <= @d_last
     )
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
   GROUP BY de.CODIGO
 ),
 inspecciones_score AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     CASE 
       -- Pentru supervizori: calcul procentual bazat pe target (2 inspecții/zi lucrătoare)
       -- Formula: (num_inspecciones / (dias_laborables * 2.0)) * 4.0
@@ -4820,7 +5010,7 @@ inspecciones_score AS (
       -- Pentru angajați normali: dacă nu are inspecții, primește 4 puncte
       WHEN NOT EXISTS (
         SELECT 1 FROM InspeccionesDocumentos id 
-        WHERE BINARY id.codigo_empleado = BINARY CAST(de.CODIGO AS CHAR)
+        WHERE BINARY id.codigo_empleado = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
           AND id.fecha_subida IS NOT NULL
           AND TRIM(id.fecha_subida) <> ''
           AND (
@@ -4836,7 +5026,7 @@ inspecciones_score AS (
         COALESCE((
           SELECT (AVG(id.scor_total) / 5.0) * 4.0
           FROM InspeccionesDocumentos id 
-          WHERE BINARY id.codigo_empleado = BINARY CAST(de.CODIGO AS CHAR)
+          WHERE BINARY id.codigo_empleado = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
             AND id.scor_total IS NOT NULL
             AND id.scor_total >= 0
             AND id.scor_total <= 5
@@ -4852,9 +5042,9 @@ inspecciones_score AS (
       )
     END AS score_inspecciones
   FROM DatosEmpleados de
-  LEFT JOIN dias_laborables_mes dlm ON BINARY dlm.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN inspecciones_count_mes icm ON BINARY icm.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  WHERE de.ESTADO = 'ACTIVO'
+  LEFT JOIN dias_laborables_mes dlm ON BINARY dlm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN inspecciones_count_mes icm ON BINARY icm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 -- Responsabilidad digital: Detalii pentru breakdown
@@ -4894,24 +5084,69 @@ responsabilidad_digital_detalle AS (
       FROM comunicados c
       WHERE c.publicado = 1
     ) AS comunicaciones_totales,
-    -- Detalii documentos
+    -- Detalii documentos (documentos_solicitados + PRL)
     (
       SELECT COUNT(*) 
       FROM documentos_solicitados ds 
       WHERE BINARY ds.empleado_id = BINARY cp.empleadoId
         AND BINARY ds.estado = BINARY 'pendiente'
+    ) + (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND BINARY ped.estado IN (BINARY 'PENDIENTE', BINARY 'RECHAZADO')
+        AND DATE(ped.asignado_en) <= @d_last
     ) AS documentos_pendientes_count,
     (
       SELECT COUNT(*) 
       FROM documentos_solicitados ds 
       WHERE BINARY ds.empleado_id = BINARY cp.empleadoId
         AND BINARY ds.estado = BINARY 'completado'
+    ) + (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND BINARY ped.estado IN (BINARY 'FIRMADO', BINARY 'NO_APLICA', BINARY 'INFORMATIVO')
+        AND DATE(ped.asignado_en) <= @d_last
     ) AS documentos_completados_count,
     (
       SELECT COUNT(*) 
       FROM documentos_solicitados ds 
       WHERE BINARY ds.empleado_id = BINARY cp.empleadoId
+    ) + (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND DATE(ped.asignado_en) <= @d_last
     ) AS documentos_totales_count,
+    -- Detalii PRL separate
+    (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND BINARY ped.estado = BINARY 'PENDIENTE'
+        AND DATE(ped.asignado_en) <= @d_last
+    ) AS prl_pendientes_count,
+    (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND BINARY ped.estado = BINARY 'FIRMADO'
+        AND DATE(ped.asignado_en) <= @d_last
+    ) AS prl_firmados_count,
+    (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND BINARY ped.estado = BINARY 'RECHAZADO'
+        AND DATE(ped.asignado_en) <= @d_last
+    ) AS prl_rechazados_count,
+    (
+      SELECT COUNT(*) 
+      FROM prl_employee_documents ped 
+      WHERE BINARY CAST(ped.empleado_id AS CHAR) COLLATE utf8mb4_bin = BINARY cp.empleadoId
+        AND DATE(ped.asignado_en) <= @d_last
+    ) AS prl_totales_count,
     -- Detalii inspecciones
     COALESCE(icm.num_inspecciones, 0) AS inspecciones_count,
     COALESCE(dlm.dias_laborables, 0) AS dias_laborables_mes,
@@ -4941,9 +5176,173 @@ responsabilidad_digital_detalle AS (
   LEFT JOIN dias_laborables_mes dlm ON BINARY dlm.empleadoId = BINARY cp.empleadoId
 ),
 
+-- Ausencias: Penalizări pentru absențe nejustificate
+-- Exclude tipuri legitime: VACACIONES, ASUNTO PROPIO, BAJA (nu penalizează niciodată)
+-- PERMISO cu no_necesita_justificante = true → exclude (premii, nu penalizează)
+-- PERMISO fără flag → include (poate penaliza dacă nu are justificante)
+-- Ausencias fără justificante → -3 puncte/zi
+-- Ausencias cu justificante → 0 penalizare (justificat = legitim)
+-- Ausencias cu no_necesita_justificante = true → 0 penalizare (premii)
+ausencias_raw AS (
+  SELECT 
+    CAST(a.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
+    TRIM(a.TIPO) AS tipo,
+    a.FECHA AS fecha_txt,
+    COALESCE(a.no_necesita_justificante, 0) AS no_necesita_justificante
+  FROM Ausencias a
+  WHERE a.FECHA IS NOT NULL
+    AND TRIM(a.FECHA) <> ''
+    -- Exclude tipuri legitime care nu ar trebui penalizate:
+    -- VACACIONES, ASUNTO PROPIO, BAJA sunt permise legale (nu penalizează niciodată)
+    -- PERMISO: exclude doar dacă are no_necesita_justificante = true (premii)
+    -- PERMISO fără flag trebuie calculat (poate penaliza dacă nu are justificante)
+    AND UPPER(TRIM(a.TIPO)) NOT IN ('VACACIONES', 'VACACION')
+    AND UPPER(TRIM(a.TIPO)) NOT LIKE '%ASUNTO PROPIO%'
+    AND UPPER(TRIM(a.TIPO)) NOT LIKE '%ASUNTOS PROPIOS%'
+    AND UPPER(TRIM(a.TIPO)) NOT LIKE '%BAJA%'
+    AND NOT (
+      UPPER(TRIM(a.TIPO)) LIKE '%PERMISO%' 
+      AND COALESCE(a.no_necesita_justificante, 0) = 1
+    )
+    -- Doar ausencias din luna curentă
+    AND (
+      -- Dată simplă sau interval care începe în lună
+      DATE(STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(a.FECHA, '–', '-'), '—', '-')), ' - ', 1), '%Y-%m-%d')) >= @d_first
+      AND DATE(STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(a.FECHA, '–', '-'), '—', '-')), ' - ', 1), '%Y-%m-%d')) <= @d_last
+      -- Sau interval care se suprapune cu luna (se termină în lună)
+      OR (
+        a.FECHA LIKE '% - %'
+        AND DATE(STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(a.FECHA, '–', '-'), '—', '-')), ' - ', -1), '%Y-%m-%d')) >= @d_first
+        AND DATE(STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(a.FECHA, '–', '-'), '—', '-')), ' - ', 1), '%Y-%m-%d')) <= @d_last
+      )
+    )
+),
+ausencias_fechas AS (
+  SELECT 
+    ar.empleadoId,
+    ar.tipo,
+    ar.no_necesita_justificante,
+    -- Parsează FECHA: poate fi interval "2026-02-01 - 2026-02-05" sau dată simplă "2026-02-01"
+    CASE 
+      WHEN ar.fecha_txt LIKE '% - %' THEN
+        DATE(STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(ar.fecha_txt, '–', '-'), '—', '-')), ' - ', 1), '%Y-%m-%d'))
+      ELSE
+        DATE(STR_TO_DATE(TRIM(REPLACE(REPLACE(ar.fecha_txt, '–', '-'), '—', '-')), '%Y-%m-%d'))
+    END AS fecha_inicio,
+    CASE 
+      WHEN ar.fecha_txt LIKE '% - %' THEN
+        DATE(STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(ar.fecha_txt, '–', '-'), '—', '-')), ' - ', -1), '%Y-%m-%d'))
+      ELSE
+        DATE(STR_TO_DATE(TRIM(REPLACE(REPLACE(ar.fecha_txt, '–', '-'), '—', '-')), '%Y-%m-%d'))
+    END AS fecha_fin
+  FROM ausencias_raw ar
+  WHERE STR_TO_DATE(SUBSTRING_INDEX(TRIM(REPLACE(REPLACE(ar.fecha_txt, '–', '-'), '—', '-')), ' - ', 1), '%Y-%m-%d') IS NOT NULL
+),
+ausencias_dias AS (
+  SELECT 
+    af.empleadoId,
+    af.tipo,
+    af.no_necesita_justificante,
+    f.d AS fecha
+  FROM ausencias_fechas af
+  CROSS JOIN fechas f
+  WHERE f.d >= af.fecha_inicio
+    AND f.d <= af.fecha_fin
+    AND f.d >= @d_first
+    AND f.d <= @d_last
+),
+ausencias_con_justificante AS (
+  SELECT DISTINCT
+    ad.empleadoId,
+    ad.fecha,
+    ad.tipo
+  FROM ausencias_dias ad
+  WHERE ad.no_necesita_justificante = 0
+    AND EXISTS (
+      SELECT 1 
+      FROM documentos_solicitados ds
+      WHERE BINARY ds.empleado_id = BINARY ad.empleadoId
+        AND BINARY ds.estado = BINARY 'completado'
+        AND ds.notas IS NOT NULL
+        AND ds.notas LIKE CONCAT('%Justificante para ausencia: ', ad.tipo, ' -%')
+        AND (
+          -- Match pe dată: extrage data din notas (format: "Justificante para ausencia: TIPO - YYYY-MM-DD")
+          DATE(STR_TO_DATE(
+            SUBSTRING_INDEX(
+              SUBSTRING_INDEX(ds.notas, ' - ', -1),
+              ' ',
+              1
+            ),
+            '%Y-%m-%d'
+          )) = ad.fecha
+          -- Sau match flexibil pe interval (dacă justificantele sunt pentru prima zi din interval)
+          OR (
+            ad.fecha >= DATE(STR_TO_DATE(
+              SUBSTRING_INDEX(
+                SUBSTRING_INDEX(ds.notas, ' - ', -1),
+                ' ',
+                1
+              ),
+              '%Y-%m-%d'
+            ))
+            AND ad.fecha <= DATE(STR_TO_DATE(
+              SUBSTRING_INDEX(
+                SUBSTRING_INDEX(ds.notas, ' - ', -1),
+                ' ',
+                -1
+              ),
+              '%Y-%m-%d'
+            ))
+          )
+        )
+    )
+),
+ausencias_penalizare AS (
+  SELECT 
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
+    -- Total zile de ausencia (excluzând cele cu no_necesita_justificante)
+    COALESCE(COUNT(DISTINCT CASE 
+      WHEN ad.no_necesita_justificante = 0 THEN ad.fecha
+      ELSE NULL
+    END), 0) AS dias_ausencias_total,
+    -- Ausencias fără justificante (nu au justificante completate)
+    COALESCE(COUNT(DISTINCT CASE 
+      WHEN ad.no_necesita_justificante = 0 
+        AND NOT EXISTS (
+          SELECT 1 FROM ausencias_con_justificante acj
+          WHERE BINARY acj.empleadoId = BINARY ad.empleadoId
+            AND acj.fecha = ad.fecha
+            AND acj.tipo = ad.tipo
+        )
+      THEN ad.fecha
+      ELSE NULL
+    END), 0) AS ausencias_sin_justificante,
+    -- Ausencias cu justificante
+    COALESCE(COUNT(DISTINCT CASE 
+      WHEN ad.no_necesita_justificante = 0 
+        AND EXISTS (
+          SELECT 1 FROM ausencias_con_justificante acj
+          WHERE BINARY acj.empleadoId = BINARY ad.empleadoId
+            AND acj.fecha = ad.fecha
+            AND acj.tipo = ad.tipo
+        )
+      THEN ad.fecha
+      ELSE NULL
+    END), 0) AS ausencias_con_justificante,
+    -- Ausencias cu no_necesita_justificante (premii, nu penalizează)
+    COALESCE(COUNT(DISTINCT CASE 
+      WHEN ad.no_necesita_justificante = 1 THEN ad.fecha
+      ELSE NULL
+    END), 0) AS ausencias_premio
+  FROM DatosEmpleados de
+  LEFT JOIN ausencias_dias ad ON BINARY ad.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
+  GROUP BY de.CODIGO
+),
+
 scoring AS (
   SELECT 
-    CAST(de.CODIGO AS CHAR) AS empleadoId,
+    CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
     de.\`NOMBRE / APELLIDOS\` AS empleadoNombre,
     de.GRUPO AS grupo,
     GREATEST(0, 
@@ -4959,7 +5358,10 @@ scoring AS (
           0
         ELSE 0
       END - 
-      (COALESCE(cp.fichajes_sin_direccion, 0) * 2)
+      (COALESCE(cp.fichajes_sin_direccion, 0) * 2) -
+      -- Penalizare ausencias: doar fără justificante -3 puncte/zi
+      -- Ausencias cu justificante nu penalizează (justificat = legitim)
+      (COALESCE(ap.ausencias_sin_justificante, 0) * 3)
       -- ELIMINAT: - (COALESCE(cp.regularizaciones_confirmed, 0) * 1.5)
       -- Regularizările confirmate sunt deja incluse în horas_pontate, deci nu penalizăm
     ) AS score_indeplinire,
@@ -5020,27 +5422,36 @@ scoring AS (
       'documentos_pendientes', COALESCE(rd.documentos_pendientes_count, 0),
       'documentos_completados', COALESCE(rd.documentos_completados_count, 0),
       'documentos_totales', COALESCE(rd.documentos_totales_count, 0),
+      'prl_pendientes', COALESCE(rd.prl_pendientes_count, 0),
+      'prl_firmados', COALESCE(rd.prl_firmados_count, 0),
+      'prl_rechazados', COALESCE(rd.prl_rechazados_count, 0),
+      'prl_totales', COALESCE(rd.prl_totales_count, 0),
       'inspecciones_count', COALESCE(rd.inspecciones_count, 0),
       'dias_laborables_mes', COALESCE(rd.dias_laborables_mes, 0),
       'inspecciones_scor_medio', COALESCE(rd.inspecciones_scor_medio, NULL),
       'score_comunicaciones', COALESCE(rd.score_comunicaciones, 0),
       'score_documentos', COALESCE(rd.score_documentos, 0),
-      'score_inspecciones', COALESCE(rd.score_inspecciones, 0)
+      'score_inspecciones', COALESCE(rd.score_inspecciones, 0),
+      'ausencias_total', COALESCE(ap.dias_ausencias_total, 0),
+      'ausencias_sin_justificante', COALESCE(ap.ausencias_sin_justificante, 0),
+      'ausencias_con_justificante', COALESCE(ap.ausencias_con_justificante, 0),
+      'ausencias_premio', COALESCE(ap.ausencias_premio, 0)
     ) AS breakdown_json
   FROM DatosEmpleados de
-  JOIN empleado_orar eo ON BINARY eo.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  JOIN target_ajustat ta ON BINARY ta.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN cuadrante_sum cs ON BINARY cs.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN horario_mes hm ON BINARY hm.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN horas_pontate hp ON BINARY hp.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN calitate_pontaj cp ON BINARY cp.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN zile_neutre zn ON BINARY zn.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN zile_neutre_hasta_hoy znh ON BINARY znh.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN punctualitate p ON BINARY p.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN uso_app ua ON BINARY ua.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
-  LEFT JOIN responsabilidad_digital_detalle rd ON BINARY rd.empleadoId = BINARY CAST(de.CODIGO AS CHAR)
+  JOIN empleado_orar eo ON BINARY eo.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  JOIN target_ajustat ta ON BINARY ta.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN cuadrante_sum cs ON BINARY cs.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN horario_mes hm ON BINARY hm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN horas_pontate hp ON BINARY hp.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN calitate_pontaj cp ON BINARY cp.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN zile_neutre zn ON BINARY zn.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN zile_neutre_hasta_hoy znh ON BINARY znh.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN punctualitate p ON BINARY p.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN uso_app ua ON BINARY ua.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN responsabilidad_digital_detalle rd ON BINARY rd.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  LEFT JOIN ausencias_penalizare ap ON BINARY ap.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   CROSS JOIN max_acciones_mes mam
-  WHERE de.ESTADO = 'ACTIVO'
+  WHERE BINARY de.ESTADO = BINARY 'ACTIVO'
 ),
 
 scoring_final AS (
@@ -5093,7 +5504,7 @@ FROM scoring_final
 -- (dias_neutre = toate zilele lunii)
 -- Excludem și angajații pentru probe/teste (ex: ALEXANDRU MIHAI PAULET - 10000001)
 WHERE dias_neutre_val < DAY(@d_last)
-  AND empleadoId != '10000001'
+  AND BINARY empleadoId != BINARY '10000001'
 ORDER BY 
   score_final DESC,
   score_uso_app DESC;
@@ -5199,6 +5610,7 @@ ORDER BY
       const motivo = `Premio - Salón de la Fama - ${mesPremio} (Otorgado por: ${dadoPor})`;
 
       // Creează ausencia folosind AusenciasService
+      // IMPORTANT: Premiile din Hall of Fame nu necesită justificante
       const ausenciaResult = await this.ausenciasService.addAusencia({
         solicitud_id: solicitudId,
         codigo: codigo,
@@ -5207,6 +5619,7 @@ ORDER BY
         data: fecha,
         hora: new Date().toTimeString().slice(0, 8), // Hora actuală
         motivo: motivo,
+        no_necesita_justificante: true, // Premiile nu necesită justificante
       });
 
       // Trimite email către angajat și notificare Telegram către gestoria (async, non-blocking)

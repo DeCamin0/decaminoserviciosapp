@@ -100,17 +100,17 @@ import { DiplomasService } from './services/diplomas.service';
   imports: [
     ConfigModule,
     ScheduleModule.forRoot(), // Pentru cron jobs
-    // Rate limiting: 100 request-uri pe minut per IP (foarte generos pentru utilizatori normali)
+    // Rate limiting: mărit pentru a evita 429 la documentos-solicitados
     ThrottlerModule.forRoot([
       {
         name: 'short',
         ttl: 10000, // 10 secunde
-        limit: 20, // 20 request-uri pe 10 secunde (protecție anti-spam rapid)
+        limit: 100, // 100 request-uri pe 10 secunde (mărit pentru a evita 429)
       },
       {
         name: 'medium',
         ttl: 60000, // 1 minut
-        limit: 100, // 100 request-uri pe minut (limita principală - foarte generoasă)
+        limit: 500, // 500 request-uri pe minut (mărit pentru a evita 429)
       },
       {
         name: 'long',

@@ -8,13 +8,15 @@ import {
   subscribeToPushNotifications
 } from '../utils/pushNotifications';
 
-const NotificationsContext = createContext(null);
+export const NotificationsContext = createContext(null);
 
 /**
  * Provider pentru gestionarea notificărilor în timp real
  * Folosește WebSocket pentru a primi notificări de la server
  */
 export const NotificationsProvider = ({ children }) => {
+  // ⚠️ CRITICAL: Hooks must be called in the same order every render
+  // Always call useAuth first, then useWebSocket, then useState hooks
   const { user } = useAuth();
   const { socket, isConnected, joinRoom } = useWebSocket();
   const [notifications, setNotifications] = useState([]);

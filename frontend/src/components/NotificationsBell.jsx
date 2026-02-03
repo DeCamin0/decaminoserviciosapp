@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { Bell } from 'lucide-react';
-import { useNotifications } from '../contexts/NotificationsContext';
+import { NotificationsContext } from '../contexts/NotificationsContext';
 import { requestNotificationPermission, isNotificationPermissionGranted } from '../utils/pushNotifications';
 import Notification from './ui/Notification';
 
@@ -10,11 +10,18 @@ import Notification from './ui/Notification';
  * și un dropdown cu lista de notificări
  */
 const NotificationsBell = () => {
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  // TOATE hooks-urile trebuie apelate înainte de orice return condițional
+  const context = useContext(NotificationsContext);
   const [isOpen, setIsOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(null);
   const [hasPermission, setHasPermission] = useState(isNotificationPermissionGranted());
   const dropdownRef = useRef(null);
+  
+  // Extragem valorile din context (sau folosim valori default) - folosim useMemo pentru stabilitate
+  const notifications = useMemo(() => context?.notifications || [], [context?.notifications]);
+  const unreadCount = context?.unreadCount || 0;
+  const markAsRead = useMemo(() => context?.markAsRead || (() => {}), [context?.markAsRead]);
+  const markAllAsRead = context?.markAllAsRead || (() => {});
 
   // Închide dropdown-ul când se face click în afara lui
   useEffect(() => {
@@ -32,6 +39,8 @@ const NotificationsBell = () => {
 
   // Afișează notificarea când apare una nouă
   useEffect(() => {
+    if (!context) return; // Early return în useEffect, nu în component
+    
     const latestNotification = notifications[0];
     if (latestNotification && !latestNotification.read) {
       // Folosim setTimeout pentru a evita apelarea sincronă a setState
@@ -51,7 +60,15 @@ const NotificationsBell = () => {
       
       return () => clearTimeout(timer);
     }
-  }, [notifications, markAsRead]);
+  }, [notifications, markAsRead, context]);
+  
+  // Verificare defensivă: dacă context-ul nu este disponibil, returnăm null
+  // IMPORTANT: Această verificare trebuie să fie DUPĂ toate hooks-urile
+  if (!context) {
+    // Context-ul nu este disponibil (provider-ul nu este montat)
+    // Returnăm null pentru a evita eroarea
+    return null;
+  }
 
   const handleNotificationClick = (notification) => {
     if (!notification.read) {

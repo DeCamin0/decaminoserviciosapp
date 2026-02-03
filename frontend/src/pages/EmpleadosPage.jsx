@@ -285,6 +285,14 @@ export default function EmpleadosPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
+
+      // Log export statistici Excel
+      await activityLogger.logDataExport('estadisticas_empleados_excel', {
+        mes: mesSeleccionado || 'todos',
+        filename: `Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.xlsx`,
+        user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        email: authUser?.email
+      });
     } catch (err) {
       console.error('Error al exportar Excel:', err);
       setNotification({
@@ -324,6 +332,14 @@ export default function EmpleadosPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
+
+      // Log export statistici PDF
+      await activityLogger.logDataExport('estadisticas_empleados_pdf', {
+        mes: mesSeleccionado || 'todos',
+        filename: `Estadisticas_Empleados_${new Date().toISOString().split('T')[0]}.pdf`,
+        user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        email: authUser?.email
+      });
     } catch (err) {
       console.error('Error al exportar PDF:', err);
       setNotification({
@@ -772,6 +788,11 @@ export default function EmpleadosPage() {
 
   // Estado para lista de grupuri (din backend)
   const [gruposList, setGruposList] = useState([]);
+  
+  // State pentru modal-ul de creare grup nou
+  const [showCreateGrupoModal, setShowCreateGrupoModal] = useState(false);
+  const [newGrupoNombre, setNewGrupoNombre] = useState('');
+  const [creatingGrupo, setCreatingGrupo] = useState(false);
 
   // Estado para email
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -1219,6 +1240,82 @@ export default function EmpleadosPage() {
     }
     setOperationLoading('grupos', false);
   }, [setOperationLoading]);
+
+  // Funcție pentru crearea unui grup nou
+  const createGrupo = async (nombre) => {
+    try {
+      setCreatingGrupo(true);
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.createGrupo, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ nombre }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error al crear grupo' }));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const nuevoGrupo = data.grupo || nombre;
+
+      // Actualizează lista de grupuri
+      setGruposList(prev => [...prev, nuevoGrupo].sort());
+      setGruposListForEdit(prev => [...prev, nuevoGrupo].sort());
+
+      // Setează noul grup în ambele formulare (edit și add)
+      setEditForm(prev => ({ ...prev, GRUPO: nuevoGrupo }));
+      setAddForm(prev => ({ ...prev, GRUPO: nuevoGrupo }));
+
+      // Închide modal-ul
+      setShowCreateGrupoModal(false);
+      setNewGrupoNombre('');
+
+      // Log activitate
+      await activityLogger.logAction('create_grupo', {
+        grupo: nuevoGrupo,
+        user: authUser?.CODIGO || authUser?.codigo,
+      });
+
+      return nuevoGrupo;
+    } catch (error) {
+      console.error('Error creating grupo:', error);
+      throw error;
+    } finally {
+      setCreatingGrupo(false);
+    }
+  };
+
+  // Handler pentru crearea grupului nou
+  const handleCreateGrupo = async () => {
+    if (!newGrupoNombre.trim()) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Por favor, escribe un nombre para el grupo',
+      });
+      return;
+    }
+
+    try {
+      await createGrupo(newGrupoNombre.trim());
+      setNotification({
+        type: 'success',
+        title: 'Grupo creado',
+        message: `El grupo "${newGrupoNombre.trim()}" ha sido creado exitosamente`,
+      });
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        title: 'Error al crear grupo',
+        message: error.message || 'No se pudo crear el grupo. Por favor, intenta nuevamente.',
+      });
+    }
+  };
 
   const fetchUsers = useCallback(async () => {
     setOperationLoading('users', true);
@@ -2412,6 +2509,15 @@ export default function EmpleadosPage() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
 
+      // Log export ZIP individual
+      await activityLogger.logDataExport('empleado_zip', {
+        codigo: empleado.CODIGO,
+        nombre: empleado['NOMBRE / APELLIDOS'] || empleado.CODIGO,
+        filename,
+        user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        email: authUser?.email
+      });
+
       setNotification({
         type: 'success',
         title: 'Exportación exitosa',
@@ -2483,6 +2589,13 @@ export default function EmpleadosPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
+
+      // Log export ZIP toți angajații
+      await activityLogger.logDataExport('empleados_all_zip', {
+        filename,
+        user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+        email: authUser?.email
+      });
 
       setNotification({
         type: 'success',
@@ -5032,23 +5145,38 @@ export default function EmpleadosPage() {
                       )                      )}
                     </select>
                   ) : field === 'GRUPO' ? (
-                    <select
-                      id={fieldId}
-                      name={field}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
-                      value={addForm[field] || ''}
-                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
-                      disabled={isOperationLoading('grupos')}
-                    >
-                      <option value="">Selecciona un grupo...</option>
-                      {isOperationLoading('grupos') ? (
-                        <option value="" disabled>Cargando grupos...</option>
-                      ) : (
-                        gruposList.map((grupo) => (
-                          <option key={grupo} value={grupo}>{grupo}</option>
-                        ))
-                      )}
-                    </select>
+                    <div className="relative">
+                      <select
+                        id={fieldId}
+                        name={field}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
+                        value={addForm[field] || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__CREATE_NEW__') {
+                            setShowCreateGrupoModal(true);
+                            // Resetează select-ul la valoarea curentă
+                            e.target.value = addForm[field] || '';
+                          } else {
+                            setAddForm(prev => ({ ...prev, [field]: e.target.value }));
+                          }
+                        }}
+                        disabled={isOperationLoading('grupos')}
+                      >
+                        <option value="">Selecciona un grupo...</option>
+                        {isOperationLoading('grupos') ? (
+                          <option value="" disabled>Cargando grupos...</option>
+                        ) : (
+                          <>
+                            {gruposList.map((grupo) => (
+                              <option key={grupo} value={grupo}>{grupo}</option>
+                            ))}
+                            <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
+                              ➕ Agregar nuevo grupo...
+                            </option>
+                          </>
+                        )}
+                      </select>
+                    </div>
                   ) : field === 'DIRECCION' ? (
                     <AddressAutocomplete
                       id={fieldId}
@@ -6451,23 +6579,38 @@ export default function EmpleadosPage() {
                     placeholder="empresa (solo lectura)"
                   />
                 ) : field === 'GRUPO' ? (
-                  <select
-                    id={fieldId}
-                    name={field}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
-                    value={editForm[field] || ''}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
-                    disabled={isOperationLoading('grupos')}
-                  >
-                    <option value="">Selecciona un grupo...</option>
-                    {isOperationLoading('grupos') ? (
-                      <option value="" disabled>Cargando grupos...</option>
-                    ) : (
-                      gruposList.map((grupo) => (
-                        <option key={grupo} value={grupo}>{grupo}</option>
-                      ))
-                    )}
-                  </select>
+                  <div className="relative">
+                    <select
+                      id={fieldId}
+                      name={field}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 hover:border-gray-300"
+                      value={editForm[field] || ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__CREATE_NEW__') {
+                          setShowCreateGrupoModal(true);
+                          // Resetează select-ul la valoarea curentă
+                          e.target.value = editForm[field] || '';
+                        } else {
+                          setEditForm(prev => ({ ...prev, [field]: e.target.value }));
+                        }
+                      }}
+                      disabled={isOperationLoading('grupos')}
+                    >
+                      <option value="">Selecciona un grupo...</option>
+                      {isOperationLoading('grupos') ? (
+                        <option value="" disabled>Cargando grupos...</option>
+                      ) : (
+                        <>
+                          {gruposList.map((grupo) => (
+                            <option key={grupo} value={grupo}>{grupo}</option>
+                          ))}
+                          <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
+                            ➕ Agregar nuevo grupo...
+                          </option>
+                        </>
+                      )}
+                    </select>
+                  </div>
                 ) : field === 'NACIONALIDAD' ? (
                   <div className="relative">
                     <input
@@ -8116,6 +8259,59 @@ export default function EmpleadosPage() {
                 )}
               </Button>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal pentru crearea unui grup nou */}
+      <Modal
+        isOpen={showCreateGrupoModal}
+        onClose={() => {
+          setShowCreateGrupoModal(false);
+          setNewGrupoNombre('');
+        }}
+        title="Agregar nuevo grupo"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Nombre del grupo
+            </label>
+            <Input
+              type="text"
+              value={newGrupoNombre}
+              onChange={(e) => setNewGrupoNombre(e.target.value)}
+              placeholder="Escribe el nombre del nuevo grupo..."
+              className="w-full"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newGrupoNombre.trim() && !creatingGrupo) {
+                  handleCreateGrupo();
+                }
+              }}
+            />
+          </div>
+          
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCreateGrupoModal(false);
+                setNewGrupoNombre('');
+              }}
+              disabled={creatingGrupo}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreateGrupo}
+              loading={creatingGrupo}
+              disabled={!newGrupoNombre.trim() || creatingGrupo}
+            >
+              {creatingGrupo ? 'Creando...' : 'Crear grupo'}
+            </Button>
           </div>
         </div>
       </Modal>
