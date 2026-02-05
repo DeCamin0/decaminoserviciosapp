@@ -325,33 +325,43 @@ const getDemoEmpleados = () => [
   }
 ];
 
-const InspectionForm = ({ type }) => {
+const InspectionForm = ({ type, solicitudData }) => {
   const { user } = useAuth();
   const { t } = useTranslation();
   const { getCurrentLocation, getAddressFromCoords } = useLocation();
-  const [formData, setFormData] = useState({
-    nr: '',
-    data: new Date().toISOString().split('T')[0],
-    inspector: {
-      nume: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
-      semnaturaPng: ''
-    },
-    trabajador: {
-      nume: '',
-      semnaturaPng: '',
-      codigo: '' // Adăugat codigo_empleado
-    },
-    locatie: '',
-    centro: '',
-    centroTrabajador: '', // Centru temporar pentru angajații fără centru (doar pentru inspecția curentă)
-    supervisor: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
-    supervisor_codigo: user?.CODIGO || user?.codigo || null, // Adăugat codigo supervizor
-    puncte: [],
-    type: type,
-    observaciones: '',
-    status: 'completada',
-    codigo_empleado: '' // Adăugat la nivel principal
-  });
+  
+  // Pre-completează formData cu datele din cerere dacă există
+  const getInitialFormData = () => {
+    // Dacă există cerere, folosește ID-ul cererii pentru a transforma cererea în inspecție completă
+    const inspeccionId = solicitudData?.id || '';
+    
+    const baseData = {
+      nr: inspeccionId, // Folosește ID-ul cererii dacă există
+      data: new Date().toISOString().split('T')[0],
+      inspector: {
+        nume: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
+        semnaturaPng: ''
+      },
+      trabajador: {
+        nume: solicitudData?.trabajador || '',
+        semnaturaPng: '',
+        codigo: solicitudData?.employeeCode || ''
+      },
+      locatie: '',
+      centro: solicitudData?.centro || '',
+      centroTrabajador: solicitudData?.centro || '', // Centru temporar pentru angajații fără centru (doar pentru inspecția curentă)
+      supervisor: user?.['NOMBRE / APELLIDOS'] || user?.name || '',
+      supervisor_codigo: user?.CODIGO || user?.codigo || null, // Adăugat codigo supervizor
+      puncte: [],
+      type: type,
+      observaciones: solicitudData?.observaciones || '',
+      status: 'completada',
+      codigo_empleado: solicitudData?.employeeCode || '' // Adăugat la nivel principal
+    };
+    return baseData;
+  };
+  
+  const [formData, setFormData] = useState(getInitialFormData());
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -617,6 +627,38 @@ const InspectionForm = ({ type }) => {
         console.log('✅ Centros de Trabajo (Clientes) cargados:', centrosFromClientes.length);
         console.log('✅ Empleados cargados:', empleadosArray.length);
         
+        // Pre-completează trabajador și centro dacă există date din cerere
+        if (solicitudData && solicitudData.trabajador && solicitudData.employeeCode) {
+          // Găsește angajatul în listă
+          const empleadoEncontrado = empleadosArray.find(emp => 
+            emp.CODIGO === solicitudData.employeeCode || 
+            emp.codigo === solicitudData.employeeCode ||
+            (emp['NOMBRE / APELLIDOS'] || emp.name) === solicitudData.trabajador
+          );
+          
+          if (empleadoEncontrado) {
+            setFormData(prev => ({
+              ...prev,
+              trabajador: {
+                nume: empleadoEncontrado['NOMBRE / APELLIDOS'] || empleadoEncontrado.name || solicitudData.trabajador,
+                semnaturaPng: '',
+                codigo: empleadoEncontrado.CODIGO || empleadoEncontrado.codigo || solicitudData.employeeCode
+              },
+              codigo_empleado: empleadoEncontrado.CODIGO || empleadoEncontrado.codigo || solicitudData.employeeCode,
+              centro: solicitudData.centro && centrosFromClientes.includes(solicitudData.centro) 
+                ? solicitudData.centro 
+                : prev.centro,
+              centroTrabajador: solicitudData.centro && centrosFromClientes.includes(solicitudData.centro)
+                ? solicitudData.centro
+                : prev.centroTrabajador
+            }));
+            console.log('✅ Pre-completat trabajador și centro din cerere:', {
+              trabajador: empleadoEncontrado['NOMBRE / APELLIDOS'] || empleadoEncontrado.name,
+              centro: solicitudData.centro
+            });
+          }
+        }
+        
         // Nu setăm centru-ul automat - utilizatorul trebuie să selecteze manual
         // (Comentat pentru a permite utilizatorului să aleagă centru-ul manual)
         // const userCentro = user?.['CENTRO TRABAJO'] || 
@@ -637,7 +679,41 @@ const InspectionForm = ({ type }) => {
     };
 
     loadCentrosYEmpleados();
-  }, [user]);
+  }, [user, solicitudData]);
+
+  // Pre-completează trabajador și centro după ce se încarcă empleados și centros
+  useEffect(() => {
+    if (solicitudData && empleados.length > 0 && centros.length > 0) {
+      // Găsește angajatul în listă
+      const empleadoEncontrado = empleados.find(emp => 
+        emp.CODIGO === solicitudData.employeeCode || 
+        emp.codigo === solicitudData.employeeCode ||
+        (emp['NOMBRE / APELLIDOS'] || emp.name) === solicitudData.trabajador
+      );
+      
+      if (empleadoEncontrado) {
+        setFormData(prev => ({
+          ...prev,
+          trabajador: {
+            nume: empleadoEncontrado['NOMBRE / APELLIDOS'] || empleadoEncontrado.name || solicitudData.trabajador,
+            semnaturaPng: '',
+            codigo: empleadoEncontrado.CODIGO || empleadoEncontrado.codigo || solicitudData.employeeCode
+          },
+          codigo_empleado: empleadoEncontrado.CODIGO || empleadoEncontrado.codigo || solicitudData.employeeCode,
+          centro: solicitudData.centro && centros.includes(solicitudData.centro) 
+            ? solicitudData.centro 
+            : prev.centro,
+          centroTrabajador: solicitudData.centro && centros.includes(solicitudData.centro)
+            ? solicitudData.centro
+            : prev.centroTrabajador
+        }));
+        console.log('✅ Pre-completat trabajador și centro din cerere:', {
+          trabajador: empleadoEncontrado['NOMBRE / APELLIDOS'] || empleadoEncontrado.name,
+          centro: solicitudData.centro
+        });
+      }
+    }
+  }, [solicitudData, empleados, centros]);
 
   // Filtrează angajații când se schimbă centru-ul
   useEffect(() => {
@@ -698,12 +774,20 @@ const InspectionForm = ({ type }) => {
       calidad: 3
     }));
 
-    setFormData(prev => ({
-      ...prev,
-      puncte: initialPoints,
-      nr: generateInspectionNumber() // Generează numărul automat
-    }));
-  }, [ZONES_LIMPIEZA, ZONES_PERSONALIZADA, ZONES_SERVICIOS, generateInspectionNumber, type]);
+    setFormData(prev => {
+      // Păstrează ID-ul cererii dacă există (începe cu "SOL-")
+      // Sau dacă există solicitudData, folosește ID-ul din el
+      const newNr = (prev.nr && prev.nr.startsWith('SOL-')) 
+        ? prev.nr 
+        : (solicitudData?.id || prev.nr || generateInspectionNumber());
+      
+      return {
+        ...prev,
+        puncte: initialPoints,
+        nr: newNr
+      };
+    });
+  }, [ZONES_LIMPIEZA, ZONES_PERSONALIZADA, ZONES_SERVICIOS, generateInspectionNumber, type, solicitudData]);
 
   const validateForm = () => {
     const newErrors = {};
@@ -1598,7 +1682,7 @@ const InspectionForm = ({ type }) => {
   // Funcție pentru resetarea formularului
   const resetForm = () => {
     setFormData({
-      nr: generateInspectionNumber(), // Generează numărul nou
+      nr: solicitudData?.id || generateInspectionNumber(), // Folosește ID-ul cererii dacă există, altfel generează unul nou
       data: new Date().toISOString().split('T')[0],
       inspector: {
         nume: user?.['NOMBRE / APELLIDOS'] || user?.name || '',

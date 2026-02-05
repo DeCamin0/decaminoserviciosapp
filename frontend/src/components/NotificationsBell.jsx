@@ -135,7 +135,7 @@ const NotificationsBell = () => {
             <div className="divide-y divide-gray-200">
               {notifications.length === 0 ? (
                 <div className="p-4 text-center text-gray-500">
-                  Nu ai notificări
+                  No tienes notificaciones
                 </div>
               ) : (
                 notifications.map((notification) => (
@@ -151,14 +151,14 @@ const NotificationsBell = () => {
                         <p className={`text-sm font-medium ${
                           !notification.read ? 'text-gray-900' : 'text-gray-600'
                         }`}>
-                          {notification.title || 'Notificare'}
+                          {notification.title || 'Notificación'}
                         </p>
                         <p className="text-sm text-gray-500 mt-1">
                           {notification.message || notification.content}
                         </p>
                         {notification.timestamp && (
                           <p className="text-xs text-gray-400 mt-1">
-                            {new Date(notification.timestamp).toLocaleString('ro-RO')}
+                            {new Date(notification.timestamp).toLocaleString('es-ES')}
                           </p>
                         )}
                       </div>

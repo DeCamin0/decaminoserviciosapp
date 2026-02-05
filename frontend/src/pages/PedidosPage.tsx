@@ -90,6 +90,28 @@ type ProductoAPI = {
   };
 };
 
+type PedidosNotasImagen = {
+  id: number;
+  nota_id: number;
+  nombre_archivo: string;
+  ruta_archivo: string;
+  tipo_mime?: string | null;
+  tamano_bytes?: number | null;
+  orden: number;
+  creado_en: string;
+};
+
+type PedidosNota = {
+  id: number;
+  titulo?: string | null;
+  contenido: string;
+  creado_por?: string | null;
+  creado_en: string;
+  actualizado_en: string;
+  activo: boolean;
+  imagenes?: PedidosNotasImagen[];
+};
+
 type Cliente = {
   id?: number;
   ID?: number;
@@ -295,7 +317,7 @@ const getDemoProductos = () => [
 const PedidosPage: React.FC = () => {
   const { user } = useAuth();
   const { getPermissions } = useAdminApi();
-  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'permisos' | 'catalogo'>('nuevo-pedido');
+  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'permisos' | 'catalogo' | 'notas'>('nuevo-pedido');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [userPermissions, setUserPermissions] = useState<UserPermissions>(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
@@ -491,6 +513,21 @@ const PedidosPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
+      {/* Banner cu instrucțiuni pentru utilizatorii cu acces limitat */}
+      {/* Se afișează pentru utilizatorii care au pedidos-empleados dar NU au pedidos-admin */}
+      {(() => {
+        // Banner-ul apare pentru utilizatorii cu acces limitat (pedidos-empleados, fără acces complet)
+        const shouldShow = !canAccessAllTabs && (hasPedidosEmpleadosPermission || hasPedidosPermissionOld || canAccessMisPedidos);
+        console.log('📝 [PedidosPage] Banner check:', { 
+          canAccessAllTabs, 
+          hasPedidosEmpleadosPermission,
+          hasPedidosPermissionOld,
+          canAccessMisPedidos,
+          shouldShow 
+        });
+        return shouldShow ? <BannerNotasInstrucciones /> : null;
+      })()}
+      
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-4 mb-4">
@@ -629,6 +666,25 @@ const PedidosPage: React.FC = () => {
                         <span>Catálogo</span>
                       </div>
                     </button>
+                    
+                    <button
+                      onClick={() => setActiveTab('notas')}
+                      className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                        activeTab === 'notas'
+                          ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
+                          : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                      }`}
+                    >
+                      <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                        activeTab === 'notas' 
+                          ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
+                          : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
+                      }`}></div>
+                      <div className="relative flex items-center gap-2">
+                        <span className="text-xl">📝</span>
+                        <span>Notas</span>
+                      </div>
+                    </button>
                   </>
                 )}
               </>
@@ -645,6 +701,8 @@ const PedidosPage: React.FC = () => {
           <TabPermisosComunidad addToast={addToast} />
         ) : canAccessAllTabs && activeTab === 'catalogo' ? (
           <TabCatalogo addToast={addToast} />
+        ) : canAccessAllTabs && activeTab === 'notas' ? (
+          <TabNotas addToast={addToast} />
         ) : (
           <TabNuevoPedido addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
         )}
@@ -1703,6 +1761,47 @@ const TabGestionarPedidos: React.FC<{
     loadPedidos();
   }, [loadPedidos]);
 
+  // Șterge un pedido
+  const handleDeletePedido = async (pedidoUid: string) => {
+    if (!confirm(`¿Estás seguro de que quieres eliminar el pedido ${pedidoUid}? Esta acción no se puede deshacer y eliminará todos los datos asociados.`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.deletePedido(pedidoUid), {
+        method: 'DELETE',
+        headers,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const result = await response.json();
+      addToast('success', 'Pedido eliminado', result.message || `Pedido ${pedidoUid} eliminado correctamente (${result.deletedRows || 0} fila(s) eliminada(s))`);
+      
+      // Recargar pedidos
+      await loadPedidos();
+    } catch (error: unknown) {
+      console.error('Error eliminando pedido:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `No se pudo eliminar el pedido: ${errorMessage}`);
+    }
+  };
+
   // Încarcă lista de clienți pentru selector
   useEffect(() => {
     const loadClientes = async () => {
@@ -2631,6 +2730,14 @@ const TabGestionarPedidos: React.FC<{
                       size="sm"
                     >
                       {pedidoSeleccionado === pedido.pedido_uid ? '👁️ Ocultar' : '👁️ Ver Detalles'}
+                    </Button>
+                    <Button
+                      onClick={() => handleDeletePedido(pedido.pedido_uid)}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                      size="sm"
+                      title="Eliminar pedido permanentemente"
+                    >
+                      🗑️ Borrar
                     </Button>
                   </div>
                 </div>
@@ -4446,6 +4553,529 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ===== TAB NOTAS =====
+const TabNotas: React.FC<{ 
+  addToast: (type: ToastType, title: string, message: string, duration?: number) => void;
+}> = ({ addToast }) => {
+  const [notas, setNotas] = useState<PedidosNota[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingNota, setEditingNota] = useState<PedidosNota | null>(null);
+  const [formData, setFormData] = useState({ titulo: '', contenido: '' });
+  const [uploadingImagenes, setUploadingImagenes] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+
+  // Încarcă notele
+  const loadNotas = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(routes.getPedidosNotas, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setNotas(data);
+      } else {
+        addToast('error', 'Error', 'No se pudieron cargar las notas');
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `Error al cargar notas: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
+
+  useEffect(() => {
+    loadNotas();
+  }, [loadNotas]);
+
+  // Formatare dată
+  const formatDate = (date: string | Date) => {
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return d.toLocaleDateString('es-ES', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Deschide modal pentru notă nouă
+  const handleNewNota = () => {
+    setEditingNota(null);
+    setFormData({ titulo: '', contenido: '' });
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+    setShowModal(true);
+  };
+
+  // Deschide modal pentru editare
+  const handleEditNota = (nota: PedidosNota) => {
+    setEditingNota(nota);
+    setFormData({
+      titulo: nota.titulo || '',
+      contenido: nota.contenido || '',
+    });
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+    setShowModal(true);
+  };
+
+  // Salvează notă (creare sau actualizare)
+  const handleSaveNota = async () => {
+    if (!formData.contenido.trim()) {
+      addToast('error', 'Error', 'El contenido es requerido');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      let notaId: number;
+
+      if (editingNota) {
+        // Actualizare
+        const response = await fetch(routes.updatePedidosNota(editingNota.id), {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
+
+        if (!response.ok) throw new Error('Error al actualizar nota');
+        notaId = editingNota.id;
+        addToast('success', 'Éxito', 'Nota actualizada correctamente');
+      } else {
+        // Creare
+        const response = await fetch(routes.createPedidosNota, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
+
+        if (!response.ok) throw new Error('Error al crear nota');
+        const data = await response.json();
+        notaId = data.id;
+        addToast('success', 'Éxito', 'Nota creada correctamente');
+      }
+
+      // Upload poze dacă există
+      if (selectedFiles.length > 0) {
+        await uploadImagenes(notaId);
+      }
+
+      setShowModal(false);
+      loadNotas();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `Error: ${errorMessage}`);
+    }
+  };
+
+  // Upload poze
+  const uploadImagenes = async (notaId: number) => {
+    if (selectedFiles.length === 0) return;
+
+    setUploadingImagenes(true);
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      
+      selectedFiles.forEach((file) => {
+        formData.append('imagenes', file);
+      });
+
+      const response = await fetch(routes.uploadPedidosNotaImagenes(notaId), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error('Error al subir imágenes');
+      
+      addToast('success', 'Éxito', 'Imágenes subidas correctamente');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `Error al subir imágenes: ${errorMessage}`);
+    } finally {
+      setUploadingImagenes(false);
+    }
+  };
+
+  // Șterge notă
+  const handleDeleteNota = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(routes.deletePedidosNota(id), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Error al eliminar nota');
+      
+      addToast('success', 'Éxito', 'Nota eliminada correctamente');
+      loadNotas();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `Error: ${errorMessage}`);
+    }
+  };
+
+  // Șterge poză
+  const handleDeleteImagen = async (imagenId: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta imagen?')) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(routes.deletePedidosNotaImagen(imagenId), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Error al eliminar imagen');
+      
+      addToast('success', 'Éxito', 'Imagen eliminada correctamente');
+      loadNotas();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `Error: ${errorMessage}`);
+    }
+  };
+
+  // Gestionează selecția de fișiere
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setSelectedFiles(files);
+    
+    // Creează preview-uri
+    const urls = files.map(file => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+  };
+
+  // Obține URL-ul complet pentru o poză
+  const getImagenUrl = (rutaArchivo: string) => {
+    if (rutaArchivo.startsWith('http')) return rutaArchivo;
+    const baseUrl = import.meta.env.DEV 
+      ? 'http://localhost:3000' 
+      : 'https://api.decaminoservicios.com';
+    return `${baseUrl}${rutaArchivo}`;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <Card>
+        <div className="p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-800">Notas</h2>
+            <Button onClick={handleNewNota} variant="primary">
+              ➕ Adaugă Notă Nouă
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Listă note */}
+      {loading ? (
+        <Card>
+          <div className="p-6 text-center">
+            <span className="text-gray-500">Cargando notas...</span>
+          </div>
+        </Card>
+      ) : notas.length === 0 ? (
+        <Card>
+          <div className="p-6 text-center">
+            <span className="text-gray-500">No hay notas aún</span>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {notas.map((nota) => (
+            <Card key={nota.id} className="hover:shadow-lg transition-shadow">
+              <div className="p-6">
+                {nota.titulo && (
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                    {nota.titulo}
+                  </h3>
+                )}
+                <p className="text-gray-700 mb-4 whitespace-pre-wrap">
+                  {nota.contenido}
+                </p>
+                
+                {/* Poze */}
+                {nota.imagenes && nota.imagenes.length > 0 && (
+                  <div className="mb-4 grid grid-cols-2 gap-2">
+                    {nota.imagenes.map((imagen: PedidosNotasImagen) => (
+                      <div key={imagen.id} className="relative group">
+                        <img
+                          src={getImagenUrl(imagen.ruta_archivo)}
+                          alt={imagen.nombre_archivo}
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                        <button
+                          onClick={() => handleDeleteImagen(imagen.id)}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+                  <span>Creado: {formatDate(nota.creado_en)}</span>
+                  {nota.creado_por && <span>por {nota.creado_por}</span>}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleEditNota(nota)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    ✏️ Edit
+                  </Button>
+                  <Button
+                    onClick={() => handleDeleteNota(nota.id)}
+                    variant="outline"
+                    className="flex-1 text-red-600 hover:bg-red-50"
+                  >
+                    🗑️ Delete
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Modal creare/editare */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <h3 className="text-xl font-bold mb-4">
+                {editingNota ? 'Editar Nota' : 'Nueva Nota'}
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Título (opcional)
+                  </label>
+                  <Input
+                    value={formData.titulo}
+                    onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
+                    placeholder="Ej: Nu cumpărăm limpia cristal"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contenido *
+                  </label>
+                  <textarea
+                    value={formData.contenido}
+                    onChange={(e) => setFormData({ ...formData, contenido: e.target.value })}
+                    placeholder="Escribe el contenido de la nota..."
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    rows={6}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Imágenes (opcional)
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  />
+                  
+                  {/* Preview poze */}
+                  {previewUrls.length > 0 && (
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {previewUrls.map((url, index) => (
+                        <div key={index} className="relative">
+                          <img
+                            src={url}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-24 object-cover rounded"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-6">
+                <Button
+                  onClick={handleSaveNota}
+                  variant="primary"
+                  className="flex-1"
+                  disabled={uploadingImagenes}
+                >
+                  {uploadingImagenes ? 'Subiendo...' : 'Guardar'}
+                </Button>
+                <Button
+                  onClick={() => setShowModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ===== BANNER NOTAS INSTRUCCIONES =====
+const BannerNotasInstrucciones: React.FC = () => {
+  const [notas, setNotas] = useState<PedidosNota[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Încarcă notele
+  const loadNotas = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(routes.getPedidosNotas, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📝 [BannerNotas] Loaded notas:', data.length);
+        setNotas(data);
+      } else {
+        console.error('📝 [BannerNotas] Error response:', response.status, response.statusText);
+      }
+    } catch (error: unknown) {
+      console.error('📝 [BannerNotas] Error loading notas:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Încarcă notele la mount și actualizează periodic (la 30 secunde)
+  useEffect(() => {
+    console.log('📝 [BannerNotas] Component mounted, loading notas...');
+    loadNotas();
+    const interval = setInterval(loadNotas, 30000); // Actualizează la 30 secunde
+    return () => clearInterval(interval);
+  }, [loadNotas]);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('📝 [BannerNotas] State:', { loading, notasCount: notas.length, notas });
+  }, [loading, notas]);
+
+  // Dacă loading, nu afișăm nimic (sau poți afișa un spinner)
+  if (loading) {
+    return null;
+  }
+
+  // Dacă nu există note, nu afișăm banner-ul
+  if (notas.length === 0) {
+    console.log('📝 [BannerNotas] No notas found, not showing banner');
+    return null;
+  }
+
+  // Obține URL-ul complet pentru o poză
+  const getImagenUrl = (rutaArchivo: string) => {
+    if (rutaArchivo.startsWith('http')) return rutaArchivo;
+    const baseUrl = import.meta.env.DEV 
+      ? 'http://localhost:3000' 
+      : 'https://api.decaminoservicios.com';
+    return `${baseUrl}${rutaArchivo}`;
+  };
+
+  return (
+    <div className="mb-6 space-y-4">
+      {notas.map((nota) => (
+        <Card key={nota.id} className="border-l-4 border-purple-500 bg-gradient-to-r from-purple-50 to-white shadow-lg">
+          <div className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                  <span className="text-2xl">📝</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                {nota.titulo && (
+                  <h3 className="text-lg font-bold text-gray-800 mb-2">
+                    {nota.titulo}
+                  </h3>
+                )}
+                <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {nota.contenido}
+                </div>
+                
+                {/* Poze */}
+                {nota.imagenes && nota.imagenes.length > 0 && (
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {nota.imagenes.map((imagen: PedidosNotasImagen) => (
+                      <div key={imagen.id} className="relative group">
+                        <img
+                          src={getImagenUrl(imagen.ruta_archivo)}
+                          alt={imagen.nombre_archivo}
+                          className="w-full h-32 object-cover rounded-lg border-2 border-purple-200 hover:border-purple-400 transition-colors cursor-pointer"
+                          onClick={() => {
+                            // Deschide imaginea în modal/fullscreen
+                            window.open(getImagenUrl(imagen.ruta_archivo), '_blank');
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded-lg flex items-center justify-center">
+                          <span className="text-white opacity-0 group-hover:opacity-100 text-sm">🔍 Ver más grande</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 };

@@ -6,7 +6,7 @@ import { demo, debug } from '../../utils/logger';
 
 export default function ActivityLog() {
   const { user: authUser } = useAuth();
-  const { getActivityLog } = useAdminApi();
+  const { getActivityLog, getAllUsers } = useAdminApi();
   const [activityLog, setActivityLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState('todos');
@@ -18,6 +18,17 @@ export default function ActivityLog() {
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const isMountedRef = useRef(true);
   const getActivityLogRef = useRef(getActivityLog);
+  
+  // State pentru modal-ul de exportare logs per angajat
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [exportedLogs, setExportedLogs] = useState([]);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Demo data for ActivityLog
   const setDemoActivityLog = useCallback(() => {
@@ -170,6 +181,316 @@ export default function ActivityLog() {
     };
   }, [fetchActivityLog]);
 
+  // Încarcă lista de angajați când se deschide modal-ul
+  useEffect(() => {
+    if (showExportModal && employees.length === 0) {
+      const loadEmployees = async () => {
+        try {
+          const users = await getAllUsers();
+          setEmployees(users || []);
+        } catch (error) {
+          console.error('Error loading employees:', error);
+        }
+      };
+      loadEmployees();
+    }
+  }, [showExportModal, getAllUsers, employees.length]);
+
+  // Închide dropdown-ul când se face click în afara lui
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showEmployeeDropdown && !event.target.closest('.employee-dropdown-container')) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    if (showEmployeeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showEmployeeDropdown]);
+
+  // Filtrare angajați pentru dropdown
+  const filteredEmployees = employees.filter(emp => {
+    const nombre = (emp['NOMBRE / APELLIDOS'] || emp.nombre || emp.NOMBRE || '').toLowerCase();
+    const email = (emp['CORREO ELECTRONICO'] || emp['CORREO ELECTRONIC'] || emp.email || emp.EMAIL || '').toLowerCase();
+    const codigo = (emp.CODIGO || emp.codigo || '').toString().toLowerCase();
+    const search = employeeSearch.toLowerCase();
+    return nombre.includes(search) || email.includes(search) || codigo.includes(search);
+  });
+
+  // Handler pentru export Excel
+  const handleExportExcel = async () => {
+    const logsToExport = exportedLogs.length > 0 ? exportedLogs : filteredLog;
+    
+    if (!logsToExport || logsToExport.length === 0) {
+      alert('No hay logs para exportar');
+      return;
+    }
+
+    try {
+      const { exportToExcelWithHeader } = await import('../../utils/exportExcel');
+      
+      const columns = [
+        { key: 'user', label: 'Usuario', width: 25 },
+        { key: 'email', label: 'Email', width: 30 },
+        { key: 'action', label: 'Acción', width: 20 },
+        { key: 'timestamp', label: 'Fecha/Hora', width: 20 },
+        { key: 'url', label: 'URL', width: 30 },
+        { key: 'ip', label: 'IP', width: 15 },
+        { key: 'grupo', label: 'Grupo', width: 15 },
+        { key: 'sessionId', label: 'Sesión', width: 20 }
+      ];
+
+      const dataToExport = logsToExport.map(log => ({
+        user: log.user || log.updateby || 'N/A',
+        email: log.email || 'N/A',
+        action: getActionDescription(log.action),
+        timestamp: formatTimestamp(log.timestamp),
+        url: log.url || 'N/A',
+        ip: log.ip || 'N/A',
+        grupo: log.grupo || 'N/A',
+        sessionId: log.sessionId || 'N/A'
+      }));
+
+      const employeeName = selectedEmployee 
+        ? (selectedEmployee['NOMBRE / APELLIDOS'] || selectedEmployee.nombre || selectedEmployee.NOMBRE || 'empleado')
+        : 'todos';
+      
+      const safeName = employeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `activity_logs_${safeName}_${dateFrom || 'all'}_${dateTo || 'all'}`;
+      const reportTitle = `REGISTRO DE ACTIVIDAD${selectedEmployee ? ` - ${employeeName}` : ''}`;
+      const period = dateFrom && dateTo ? `${dateFrom} - ${dateTo}` : 'Todos los períodos';
+
+      await exportToExcelWithHeader(
+        dataToExport,
+        columns,
+        reportTitle,
+        filename,
+        {},
+        period
+      );
+
+      // Log export
+      if (authUser) {
+        const { logDataExport } = await import('../../utils/activityLogger');
+        await logDataExport('activity_logs_excel', { 
+          count: logsToExport.length, 
+          employee: employeeName,
+          dateFrom,
+          dateTo
+        }, authUser);
+      }
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('Error al exportar a Excel: ' + error.message);
+    }
+  };
+
+  // Handler pentru export PDF
+  const handleExportPDF = async () => {
+    const logsToExport = exportedLogs.length > 0 ? exportedLogs : filteredLog;
+    
+    if (!logsToExport || logsToExport.length === 0) {
+      alert('No hay logs para exportar');
+      return;
+    }
+
+    try {
+      // Încarcă pdfMake dinamic
+      const ensurePdfMake = () => new Promise((resolve, reject) => {
+        if (window.pdfMake) return resolve(window.pdfMake);
+        const s1 = document.createElement('script');
+        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
+        s1.onload = () => {
+          const s2 = document.createElement('script');
+          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
+          s2.onload = () => resolve(window.pdfMake);
+          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
+          document.head.appendChild(s2);
+        };
+        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
+        document.head.appendChild(s1);
+      });
+
+      await ensurePdfMake();
+
+      const employeeName = selectedEmployee 
+        ? (selectedEmployee['NOMBRE / APELLIDOS'] || selectedEmployee.nombre || selectedEmployee.NOMBRE || 'empleado')
+        : 'Todos los empleados';
+      
+      const period = dateFrom && dateTo ? `${dateFrom} - ${dateTo}` : 'Todos los períodos';
+
+      const tableBody = [
+        ['Usuario', 'Email', 'Acción', 'Fecha/Hora', 'URL', 'IP', 'Grupo'],
+        ...logsToExport.map(log => [
+          log.user || log.updateby || 'N/A',
+          log.email || 'N/A',
+          getActionDescription(log.action),
+          formatTimestamp(log.timestamp),
+          (log.url || 'N/A').substring(0, 40),
+          log.ip || 'N/A',
+          log.grupo || 'N/A'
+        ])
+      ];
+
+      const docDefinition = {
+        pageSize: 'A4',
+        pageOrientation: 'landscape',
+        content: [
+          {
+            text: 'DE CAMINO SERVICIOS AUXILIARES',
+            style: 'companyName'
+          },
+          {
+            text: 'Registro de Actividad de Usuarios',
+            style: 'reportTitle'
+          },
+          {
+            text: `Empleado: ${employeeName}`,
+            style: 'period',
+            margin: [0, 4, 0, 2]
+          },
+          {
+            text: `Período: ${period}`,
+            style: 'period',
+            margin: [0, 0, 0, 8]
+          },
+          {
+            table: {
+              headerRows: 1,
+              widths: [80, 100, 80, 80, 120, 60, 60],
+              body: tableBody
+            },
+            layout: {
+              fillColor: (rowIndex) => {
+                return rowIndex === 0 ? '#CC0000' : null;
+              },
+              hLineWidth: (i, node) => (i === 0 || i === node.table.body.length) ? 2 : 1,
+              vLineWidth: () => 1,
+              hLineColor: () => '#aaaaaa',
+              vLineColor: () => '#aaaaaa'
+            }
+          }
+        ],
+        styles: {
+          companyName: { 
+            fontSize: 18, 
+            bold: true, 
+            color: '#FFFFFF', 
+            fillColor: '#CC0000', 
+            alignment: 'center', 
+            margin: [0, 0, 0, 8]
+          },
+          reportTitle: { 
+            fontSize: 14, 
+            bold: true, 
+            color: '#FFFFFF', 
+            fillColor: '#0066CC', 
+            alignment: 'center',
+            margin: [0, 4, 0, 2]
+          },
+          period: { 
+            fontSize: 10, 
+            color: '#333333', 
+            alignment: 'center'
+          }
+        },
+        defaultStyle: {
+          fontSize: 8,
+          color: '#333333'
+        }
+      };
+
+      const safeName = employeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `activity_logs_${safeName}_${dateFrom || 'all'}_${dateTo || 'all'}.pdf`;
+
+      window.pdfMake.createPdf(docDefinition).download(filename);
+
+      // Log export
+      if (authUser) {
+        const { logDataExport } = await import('../../utils/activityLogger');
+        await logDataExport('activity_logs_pdf', { 
+          count: logsToExport.length, 
+          employee: employeeName,
+          dateFrom,
+          dateTo
+        }, authUser);
+      }
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('Error al exportar PDF: ' + error.message);
+    }
+  };
+
+  // Handler pentru extragerea logurilor
+  const handleExportLogs = async () => {
+    if (!selectedEmployee) {
+      alert('Por favor, selecciona un empleado');
+      return;
+    }
+
+    if (!dateFrom || !dateTo) {
+      alert('Por favor, selecciona un rango de fechas');
+      return;
+    }
+
+    setExportLoading(true);
+    try {
+      const employeeEmail = selectedEmployee['CORREO ELECTRONICO'] || 
+                            selectedEmployee['CORREO ELECTRONIC'] || 
+                            selectedEmployee.email || 
+                            selectedEmployee.EMAIL;
+      
+      if (!employeeEmail) {
+        alert('No se encontró el email del empleado seleccionado');
+        setExportLoading(false);
+        return;
+      }
+
+      const filters = {
+        email: employeeEmail,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        limit: 10000 // Limit mare pentru a obține toate logurile
+      };
+
+      const response = await getActivityLog(filters);
+      
+      let logs = [];
+      if (Array.isArray(response)) {
+        logs = response;
+      } else if (response && Array.isArray(response.logs)) {
+        logs = response.logs;
+      } else if (response && Array.isArray(response.data)) {
+        logs = response.data;
+      }
+
+      setExportedLogs(logs);
+      setShowExportModal(false);
+      
+      // Actualizează lista principală cu logurile exportate
+      setActivityLog(logs);
+      setSelectedUser(selectedEmployee['NOMBRE / APELLIDOS'] || selectedEmployee.nombre || selectedEmployee.NOMBRE || 'todos');
+      setSelectedDate('');
+      
+      // Scroll la lista de loguri pentru a vedea rezultatele
+      setTimeout(() => {
+        const logSection = document.querySelector('.activity-log-list-section');
+        if (logSection) {
+          logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error exporting logs:', error);
+      alert('Error al exportar los logs: ' + error.message);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   const formatTimestamp = (timestamp) => {
     const date = new Date(timestamp);
     return date.toLocaleString('es-ES', {
@@ -288,6 +609,12 @@ export default function ActivityLog() {
             variant="outline"
           >
             🔄 Actualizar
+          </Button>
+          <Button
+            onClick={() => setShowExportModal(true)}
+            className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+          >
+            📥 Exportar Logs por Empleado
           </Button>
         </div>
       </div>
@@ -671,12 +998,52 @@ export default function ActivityLog() {
       </div>
 
       {/* Lista de activitate */}
-      <Card>
+      <Card className="activity-log-list-section">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-semibold text-gray-800">
-              Registro de Actividad ({filteredLog.length} registros)
-            </h3>
+            <div>
+              <h3 className="text-xl font-semibold text-gray-800">
+                Registro de Actividad ({filteredLog.length} registros)
+              </h3>
+              {exportedLogs.length > 0 && (
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">📊</span>
+                      <span className="text-sm font-medium text-blue-800">
+                        Mostrando {exportedLogs.length} logs exportados
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleExportExcel}
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs py-1 px-3"
+                      >
+                        📗 Exportar Excel
+                      </Button>
+                      <Button
+                        onClick={handleExportPDF}
+                        className="bg-red-600 hover:bg-red-700 text-white text-xs py-1 px-3"
+                      >
+                        📕 Exportar PDF
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setExportedLogs([]);
+                          fetchActivityLog();
+                          setSelectedUser('todos');
+                          setSelectedDate('');
+                        }}
+                        variant="outline"
+                        className="text-xs py-1 px-3"
+                      >
+                        🔄 Ver todos los logs
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="text-sm text-gray-500">
               Mostrando las últimas {filteredLog.length} acciones
             </div>
@@ -897,6 +1264,135 @@ export default function ActivityLog() {
           </div>
         </Modal>
       )}
+
+      {/* Modal pentru exportare logs per angajat */}
+      <Modal
+        isOpen={showExportModal}
+        onClose={() => {
+          setShowExportModal(false);
+          setSelectedEmployee(null);
+          setEmployeeSearch('');
+          setDateFrom('');
+          setDateTo('');
+          setExportedLogs([]);
+        }}
+        title="Exportar Logs por Empleado"
+      >
+        <div className="space-y-6">
+          {/* Selector angajat */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Seleccionar Empleado:
+            </label>
+            <div className="relative employee-dropdown-container">
+              <Input
+                type="text"
+                value={employeeSearch}
+                onChange={(e) => {
+                  setEmployeeSearch(e.target.value);
+                  setShowEmployeeDropdown(true);
+                }}
+                onFocus={() => setShowEmployeeDropdown(true)}
+                placeholder="Buscar por nombre, email o código..."
+                className="w-full"
+              />
+              {showEmployeeDropdown && filteredEmployees.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredEmployees.slice(0, 20).map((emp, index) => {
+                    const nombre = emp['NOMBRE / APELLIDOS'] || emp.nombre || emp.NOMBRE || 'Sin nombre';
+                    const email = emp['CORREO ELECTRONICO'] || emp['CORREO ELECTRONIC'] || emp.email || emp.EMAIL || '';
+                    const codigo = emp.CODIGO || emp.codigo || '';
+                    return (
+                      <div
+                        key={index}
+                        onClick={() => {
+                          setSelectedEmployee(emp);
+                          setEmployeeSearch(nombre);
+                          setShowEmployeeDropdown(false);
+                        }}
+                        className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
+                      >
+                        <div className="font-medium text-gray-800">{nombre}</div>
+                        <div className="text-sm text-gray-500">{email}</div>
+                        {codigo && <div className="text-xs text-gray-400">Código: {codigo}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {selectedEmployee && (
+              <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="text-sm font-medium text-green-800">
+                  ✅ Seleccionado: {selectedEmployee['NOMBRE / APELLIDOS'] || selectedEmployee.nombre || selectedEmployee.NOMBRE}
+                </div>
+                <div className="text-xs text-green-600">
+                  {selectedEmployee['CORREO ELECTRONICO'] || selectedEmployee['CORREO ELECTRONIC'] || selectedEmployee.email || selectedEmployee.EMAIL}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Selector perioadă */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fecha Inicio:
+              </label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fecha Fin:
+              </label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          {/* Butoane */}
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExportModal(false);
+                setSelectedEmployee(null);
+                setEmployeeSearch('');
+                setDateFrom('');
+                setDateTo('');
+                setExportedLogs([]);
+              }}
+              disabled={exportLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleExportLogs}
+              disabled={exportLoading || !selectedEmployee || !dateFrom || !dateTo}
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+            >
+              {exportLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Exportando...
+                </>
+              ) : (
+                '📥 Exportar Logs'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 } 

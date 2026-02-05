@@ -67,7 +67,7 @@ export const showPushNotification = (notification) => {
   };
 
   const nativeNotification = new Notification(
-    notification.title || 'Nouă notificare',
+    notification.title || 'Nueva notificación',
     options
   );
 

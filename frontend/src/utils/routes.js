@@ -380,6 +380,9 @@ export const routes = {
   updateBajasMedicas: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas'
     : 'https://api.decaminoservicios.com/api/bajas-medicas',
+  deleteBajaMedica: (idCaso, idPosicion) => import.meta.env.DEV
+    ? `http://localhost:3000/api/bajas-medicas/${encodeURIComponent(idCaso)}/${encodeURIComponent(idPosicion)}`
+    : `https://api.decaminoservicios.com/api/bajas-medicas/${encodeURIComponent(idCaso)}/${encodeURIComponent(idPosicion)}`,
   createBajaMedicaManual: import.meta.env.DEV
     ? 'http://localhost:3000/api/bajas-medicas/manual'
     : 'https://api.decaminoservicios.com/api/bajas-medicas/manual',
@@ -502,6 +505,9 @@ export const routes = {
   addInspeccion: import.meta.env.DEV
     ? 'http://localhost:3000/api/inspecciones'
     : 'https://api.decaminoservicios.com/api/inspecciones',
+  createSolicitudInspeccion: import.meta.env.DEV
+    ? 'http://localhost:3000/api/inspecciones/solicitud'
+    : 'https://api.decaminoservicios.com/api/inspecciones/solicitud',
   getInspectionPDF: '/api/inspections',
   downloadInspectionDocument: import.meta.env.DEV
     ? 'http://localhost:3000/api/inspecciones/download'
@@ -571,6 +577,9 @@ export const routes = {
   recalcularDuracion: (id) => import.meta.env.DEV
     ? `http://localhost:3000/api/ausencias/${id}/recalcular-duracion`
     : `https://api.decaminoservicios.com/api/ausencias/${id}/recalcular-duracion`,
+  updateDuracion: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/ausencias/${id}/duracion`
+    : `https://api.decaminoservicios.com/api/ausencias/${id}/duracion`,
   addAusencia: import.meta.env.DEV
     ? 'http://localhost:3000/api/ausencias'
     : 'https://api.decaminoservicios.com/api/ausencias',
@@ -740,6 +749,32 @@ export const routes = {
   generarExcelPedidos: import.meta.env.DEV
     ? 'http://localhost:3000/api/pedidos/generar-excel'
     : 'https://api.decaminoservicios.com/api/pedidos/generar-excel',
+  deletePedido: (pedidoUid) => import.meta.env.DEV
+    ? `http://localhost:3000/api/pedidos/${encodeURIComponent(pedidoUid)}`
+    : `https://api.decaminoservicios.com/api/pedidos/${encodeURIComponent(pedidoUid)}`,
+  
+  // Pedidos Notas
+  getPedidosNotas: import.meta.env.DEV
+    ? 'http://localhost:3000/api/pedidos-notas'
+    : 'https://api.decaminoservicios.com/api/pedidos-notas',
+  getPedidosNota: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/pedidos-notas/${id}`
+    : `https://api.decaminoservicios.com/api/pedidos-notas/${id}`,
+  createPedidosNota: import.meta.env.DEV
+    ? 'http://localhost:3000/api/pedidos-notas'
+    : 'https://api.decaminoservicios.com/api/pedidos-notas',
+  updatePedidosNota: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/pedidos-notas/${id}`
+    : `https://api.decaminoservicios.com/api/pedidos-notas/${id}`,
+  deletePedidosNota: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/pedidos-notas/${id}`
+    : `https://api.decaminoservicios.com/api/pedidos-notas/${id}`,
+  uploadPedidosNotaImagenes: (id) => import.meta.env.DEV
+    ? `http://localhost:3000/api/pedidos-notas/${id}/imagenes`
+    : `https://api.decaminoservicios.com/api/pedidos-notas/${id}/imagenes`,
+  deletePedidosNotaImagen: (imagenId) => import.meta.env.DEV
+    ? `http://localhost:3000/api/pedidos-notas/imagenes/${imagenId}`
+    : `https://api.decaminoservicios.com/api/pedidos-notas/imagenes/${imagenId}`,
   
   // Sent Emails (Mensajes Enviados)
   getSentEmails: import.meta.env.DEV

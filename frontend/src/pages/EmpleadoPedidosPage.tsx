@@ -25,6 +25,28 @@ type Usuario = {
   comunidad: string;
 };
 
+type PedidosNotasImagen = {
+  id: number;
+  nota_id: number;
+  nombre_archivo: string;
+  ruta_archivo: string;
+  tipo_mime?: string | null;
+  tamano_bytes?: number | null;
+  orden: number;
+  creado_en: string;
+};
+
+type PedidosNota = {
+  id: number;
+  titulo?: string | null;
+  contenido: string;
+  creado_por?: string | null;
+  creado_en: string;
+  actualizado_en: string;
+  activo: boolean;
+  imagenes?: PedidosNotasImagen[];
+};
+
 type Producto = {
   id: number;
   numero: string;
@@ -226,6 +248,9 @@ const EmpleadoPedidosPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
+        {/* Banner cu instrucțiuni (note) */}
+        <BannerNotasInstrucciones />
+        
         {/* Header */}
         <div className="mb-8">
           <Link 
@@ -1792,6 +1817,120 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ===== BANNER NOTAS INSTRUCCIONES =====
+const BannerNotasInstrucciones: React.FC = () => {
+  const [notas, setNotas] = useState<PedidosNota[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Încarcă notele
+  const loadNotas = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(routes.getPedidosNotas, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📝 [BannerNotas] Loaded notas:', data.length);
+        setNotas(data);
+      } else {
+        console.error('📝 [BannerNotas] Error response:', response.status, response.statusText);
+      }
+    } catch (error: unknown) {
+      console.error('📝 [BannerNotas] Error loading notas:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Încarcă notele la mount și actualizează periodic (la 30 secunde)
+  useEffect(() => {
+    console.log('📝 [BannerNotas] Component mounted, loading notas...');
+    loadNotas();
+    const interval = setInterval(loadNotas, 30000); // Actualizează la 30 secunde
+    return () => clearInterval(interval);
+  }, [loadNotas]);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('📝 [BannerNotas] State:', { loading, notasCount: notas.length, notas });
+  }, [loading, notas]);
+
+  // Dacă loading, nu afișăm nimic
+  if (loading) {
+    return null;
+  }
+
+  // Dacă nu există note, nu afișăm banner-ul
+  if (notas.length === 0) {
+    console.log('📝 [BannerNotas] No notas found, not showing banner');
+    return null;
+  }
+
+  // Obține URL-ul complet pentru o poză
+  const getImagenUrl = (rutaArchivo: string) => {
+    if (rutaArchivo.startsWith('http')) return rutaArchivo;
+    const baseUrl = import.meta.env.DEV 
+      ? 'http://localhost:3000' 
+      : 'https://api.decaminoservicios.com';
+    return `${baseUrl}${rutaArchivo}`;
+  };
+
+  return (
+    <div className="mb-4 space-y-3">
+      {notas.map((nota) => (
+        <Card key={nota.id} className="border-l-3 border-purple-400 bg-gradient-to-r from-purple-50/80 to-white shadow-sm hover:shadow-md transition-shadow">
+          <div className="p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                  <span className="text-base">📝</span>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                {nota.titulo && (
+                  <h3 className="text-sm font-semibold text-gray-800 mb-1.5">
+                    {nota.titulo}
+                  </h3>
+                )}
+                <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {nota.contenido}
+                </div>
+                
+                {/* Poze */}
+                {nota.imagenes && nota.imagenes.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {nota.imagenes.map((imagen: PedidosNotasImagen) => (
+                      <div key={imagen.id} className="relative group">
+                        <img
+                          src={getImagenUrl(imagen.ruta_archivo)}
+                          alt={imagen.nombre_archivo}
+                          className="w-full h-20 object-cover rounded border border-purple-200 hover:border-purple-400 transition-colors cursor-pointer"
+                          onClick={() => {
+                            // Deschide imaginea în modal/fullscreen
+                            window.open(getImagenUrl(imagen.ruta_archivo), '_blank');
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded flex items-center justify-center">
+                          <span className="text-white opacity-0 group-hover:opacity-100 text-xs">🔍</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 };

@@ -27,6 +27,11 @@ import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 const checkConfirmationCache = new Map(); // key: "codigo_data", value: { promise, timestamp, result }
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minute cache pentru a preveni apeluri duplicate
 
+// Flag global pentru a preveni apelurile simultane de checkConfirmation
+let isCheckingConfirmation = false;
+const CHECK_CONFIRMATION_DEBOUNCE = 2000; // 2 secunde debounce între apeluri
+let lastCheckTime = 0;
+
 // Funcție helper pentru a obține sau crea un promise pentru checkConfirmation
 // IMPORTANT: Această funcție trebuie să primească isAuthenticated pentru a preveni apelurile după logout
 const getCheckConfirmationPromise = (callApi, codigo, data, isAuthenticated = true) => {
@@ -1942,16 +1947,35 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         
         // Verifică asincron pentru fiecare fichaje dacă necesită regularizare (doar pentru Salida fără effective_duration)
         // IMPORTANT: Nu așteptăm toate request-urile - actualizăm map-ul incremental pentru a nu bloca UI-ul
+        // IMPORTANT: Resetăm loading-ul imediat după ce datele sunt procesate, înainte de verificările asincrone
+        setLoadingLogs(false);
+        setChangingMonth(false);
+        
         // IMPORTANT: Verifică autentificarea ÎNAINTE de a procesa itemsToCheck
+        // IMPORTANT: Debounce pentru a preveni apelurile repetate
         if (!isAuthenticated || !authUser) {
           loggerDebug('Skipping check confirmation - user not authenticated (fetchLogs)');
+          return sortedLogs;
         } else {
+          const now = Date.now();
+          // Verifică dacă trebuie să așteptăm (debounce)
+          if (isCheckingConfirmation || (now - lastCheckTime < CHECK_CONFIRMATION_DEBOUNCE)) {
+            loggerDebug('Skipping check confirmation - debounce active or already checking');
+            return sortedLogs;
+          }
+          
           const itemsToCheck = sortedLogs.filter(item => 
             item.tipo === 'Salida' && 
             item.duration && 
             !(item.effective_duration && item.effective_duration.trim() !== '') && 
             !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1')
           );
+          
+          // Dacă nu există items de verificat, nu facem apeluri
+          if (itemsToCheck.length === 0) {
+            loggerDebug('No items to check for confirmation');
+            return sortedLogs;
+          }
           
           // DEDUPLICARE: Un singur apel API per codigo + data (nu per registru)
           // Folosim un Set pentru a stoca combinațiile unice de codigo + data
@@ -1968,70 +1992,77 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             }
           }
           
+          // Marchează că verificăm
+          isCheckingConfirmation = true;
+          lastCheckTime = now;
+          
           // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
           // IMPORTANT: Batch update pentru a evita re-render-uri multiple
           // IMPORTANT: Verifică autentificarea înainte de a face apelurile
           (async () => {
-            // Verifică din nou dacă utilizatorul este încă autentificat
-            if (!isAuthenticated || !authUser) {
-              loggerDebug('Skipping check confirmation - user not authenticated');
-              return;
-            }
-          
-          const updates = {}; // Colectează toate update-urile într-un singur batch
-          
-          for (const { codigo, data } of uniqueChecks.values()) {
-            // Verifică din nou autentificarea înainte de fiecare apel
-            if (!isAuthenticated || !authUser) {
-              loggerDebug('Stopping check confirmation - user logged out during processing');
-              break;
-            }
-            
             try {
-              const checkResult = await getCheckConfirmationPromise(callApi, codigo, data, isAuthenticated);
-              const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
-              
-              // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
-              // Căutăm toate registrele care corespund acestui codigo + data
-              const matchingItems = itemsToCheck.filter(item => 
-                (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
-              );
-              
-              for (const item of matchingItems) {
-                const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
-                updates[key] = checkResult.success && resultData.needs_confirmation;
+              // Verifică din nou dacă utilizatorul este încă autentificat
+              if (!isAuthenticated || !authUser) {
+                loggerDebug('Skipping check confirmation - user not authenticated');
+                return;
               }
-            } catch (error) {
-              // Dacă eroarea este 401 (Unauthorized), oprim procesarea
-              if (error?.message?.includes('Unauthorized') || error?.response?.status === 401 || error?.status === 401) {
-                loggerDebug('Stopping check confirmation - unauthorized error');
+            
+            const updates = {}; // Colectează toate update-urile într-un singur batch
+            
+            for (const { codigo, data } of uniqueChecks.values()) {
+              // Verifică din nou autentificarea înainte de fiecare apel
+              if (!isAuthenticated || !authUser) {
+                loggerDebug('Stopping check confirmation - user logged out during processing');
                 break;
               }
-              // Dacă verificarea eșuează din alte motive, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
-              const matchingItems = itemsToCheck.filter(item => 
-                (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
-              );
-              for (const item of matchingItems) {
-                const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
-                updates[key] = true;
+              
+              try {
+                const checkResult = await getCheckConfirmationPromise(callApi, codigo, data, isAuthenticated);
+                const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+                
+                // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
+                // Căutăm toate registrele care corespund acestui codigo + data
+                const matchingItems = itemsToCheck.filter(item => 
+                  (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
+                );
+                
+                for (const item of matchingItems) {
+                  const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
+                  updates[key] = checkResult.success && resultData.needs_confirmation;
+                }
+              } catch (error) {
+                // Dacă eroarea este 401 (Unauthorized), oprim procesarea
+                if (error?.message?.includes('Unauthorized') || error?.response?.status === 401 || error?.status === 401) {
+                  loggerDebug('Stopping check confirmation - unauthorized error');
+                  break;
+                }
+                // Dacă verificarea eșuează din alte motive, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+                const matchingItems = itemsToCheck.filter(item => 
+                  (item.codigo || item.CODIGO || userCodigo) === codigo && item.data === data
+                );
+                for (const item of matchingItems) {
+                  const key = `${item.codigo || item.CODIGO || userCodigo}_${item.data}_${item.tipo}`;
+                  updates[key] = true;
+                }
               }
+              // Delay între fiecare request pentru a evita rate limiting
+              await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
             }
-            // Delay între fiecare request pentru a evita rate limiting
-            await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
-          }
-          
-            // Aplică toate update-urile într-un singur batch pentru a evita re-render-uri multiple
-            if (Object.keys(updates).length > 0) {
-              setNeedsRegularizationMap(prev => ({ ...prev, ...updates }));
+            
+              // Aplică toate update-urile într-un singur batch pentru a evita re-render-uri multiple
+              if (Object.keys(updates).length > 0) {
+                setNeedsRegularizationMap(prev => ({ ...prev, ...updates }));
+              }
+            } finally {
+              // Resetăm flag-ul
+              isCheckingConfirmation = false;
             }
           })().catch(err => {
             loggerDebug('Error checking needs regularization:', err);
+            isCheckingConfirmation = false;
           });
         }
         
-        // IMPORTANT: Resetăm loading-ul imediat după ce datele sunt procesate, nu după verificare
-        setLoadingLogs(false);
-        setChangingMonth(false);
         return sortedLogs;
       } else {
         // Nu există registre pentru această lună
@@ -5303,64 +5334,81 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               }
             }
             
+            // Verifică debounce înainte de a începe verificarea
+            const now = Date.now();
+            if (isCheckingConfirmation || (now - lastCheckTime < CHECK_CONFIRMATION_DEBOUNCE)) {
+              loggerDebug('Skipping check confirmation - debounce active or already checking (second location)');
+              return;
+            }
+            
+            // Marchează că verificăm
+            isCheckingConfirmation = true;
+            lastCheckTime = now;
+            
             // Procesează secvențial cu delay între request-uri pentru a evita rate limiting
             // IMPORTANT: Batch update pentru a evita re-render-uri multiple
             // IMPORTANT: Verifică autentificarea înainte de a face apelurile
             (async () => {
-              // Verifică din nou dacă utilizatorul este încă autentificat
-              if (!authUser) {
-                loggerDebug('Skipping check confirmation - user not authenticated');
-                return;
-              }
-            
-            const updates = {}; // Colectează toate update-urile într-un singur batch
-            
-            for (const { codigo, data } of uniqueChecks.values()) {
-              // Verifică din nou autentificarea înainte de fiecare apel
-              if (!authUser) {
-                loggerDebug('Stopping check confirmation - user logged out during processing');
-                break;
-              }
-              
               try {
-                const checkResult = await getCheckConfirmationPromise(callApi, codigo, data, !!authUser);
-                const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
-                
-                // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
-                // Căutăm toate registrele care corespund acestui codigo + data
-                const matchingItems = itemsToCheck.filter(item => 
-                  (item.codigo || item.CODIGO) === codigo && item.data === data
-                );
-                
-                for (const item of matchingItems) {
-                  const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
-                  updates[key] = checkResult.success && resultData.needs_confirmation;
+                // Verifică din nou dacă utilizatorul este încă autentificat
+                if (!authUser) {
+                  loggerDebug('Skipping check confirmation - user not authenticated');
+                  return;
                 }
-              } catch (error) {
-                // Dacă eroarea este 401 (Unauthorized), oprim procesarea
-                if (error?.message?.includes('Unauthorized') || error?.response?.status === 401 || error?.status === 401) {
-                  loggerDebug('Stopping check confirmation - unauthorized error');
+              
+              const updates = {}; // Colectează toate update-urile într-un singur batch
+              
+              for (const { codigo, data } of uniqueChecks.values()) {
+                // Verifică din nou autentificarea înainte de fiecare apel
+                if (!authUser) {
+                  loggerDebug('Stopping check confirmation - user logged out during processing');
                   break;
                 }
-                // Dacă verificarea eșuează din alte motive, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
-                const matchingItems = itemsToCheck.filter(item => 
-                  (item.codigo || item.CODIGO) === codigo && item.data === data
-                );
-                for (const item of matchingItems) {
-                  const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
-                  updates[key] = true;
+                
+                try {
+                  const checkResult = await getCheckConfirmationPromise(callApi, codigo, data, !!authUser);
+                  const resultData = checkResult.data || checkResult; // callApi returnează { success: true, data }
+                  
+                  // Actualizează map-ul pentru TOATE registrele din aceeași zi pentru același angajat
+                  // Căutăm toate registrele care corespund acestui codigo + data
+                  const matchingItems = itemsToCheck.filter(item => 
+                    (item.codigo || item.CODIGO) === codigo && item.data === data
+                  );
+                  
+                  for (const item of matchingItems) {
+                    const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
+                    updates[key] = checkResult.success && resultData.needs_confirmation;
+                  }
+                } catch (error) {
+                  // Dacă eroarea este 401 (Unauthorized), oprim procesarea
+                  if (error?.message?.includes('Unauthorized') || error?.response?.status === 401 || error?.status === 401) {
+                    loggerDebug('Stopping check confirmation - unauthorized error');
+                    break;
+                  }
+                  // Dacă verificarea eșuează din alte motive, considerăm că necesită regularizare (afișăm butonul pentru siguranță)
+                  const matchingItems = itemsToCheck.filter(item => 
+                    (item.codigo || item.CODIGO) === codigo && item.data === data
+                  );
+                  for (const item of matchingItems) {
+                    const key = `${item.codigo || item.CODIGO}_${item.data}_${item.tipo}`;
+                    updates[key] = true;
+                  }
                 }
+                // Delay între fiecare request pentru a evita rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
               }
-              // Delay între fiecare request pentru a evita rate limiting
-              await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay între request-uri
-            }
-            
-              // Aplică toate update-urile într-un singur batch pentru a evita re-render-uri multiple
-              if (Object.keys(updates).length > 0) {
-                setNeedsRegularizationMap(prev => ({ ...prev, ...updates }));
+              
+                // Aplică toate update-urile într-un singur batch pentru a evita re-render-uri multiple
+                if (Object.keys(updates).length > 0) {
+                  setNeedsRegularizationMap(prev => ({ ...prev, ...updates }));
+                }
+              } finally {
+                // Resetăm flag-ul
+                isCheckingConfirmation = false;
               }
             })().catch(err => {
               loggerDebug('Error checking needs regularization:', err);
+              isCheckingConfirmation = false;
             });
           }
         } else {
@@ -9224,6 +9272,14 @@ export default function FichajePage() {
         return;
       }
 
+      // Validación: Debe seleccionar un tipo de ausencia
+      const tiposValidos = ['Salida del Centro', 'Regreso al Centro', 'Salida Sin Regreso'];
+      if (!incidenciaForm.tipo || !tiposValidos.includes(incidenciaForm.tipo)) {
+        setIncidenciaMessage('⚠️ Debes seleccionar un tipo de ausencia antes de registrar. Por favor, elige una opción: "Salida del Centro", "Regreso al Centro" o "Salida Sin Regreso".');
+        setIsSubmittingIncidencia(false);
+        return;
+      }
+
       // "Permiso Retribuido" și "Ausencias justificada" au fost mutate în "Nueva Solicitud"
       if (incidenciaForm.tipo === 'Permiso Retribuido' || incidenciaForm.tipo === 'Ausencias justificada') {
         setIncidenciaMessage('Este tipo de ausencia debe solicitarse en "Nueva Solicitud" en la página de Solicitudes.');
@@ -9937,7 +9993,26 @@ export default function FichajePage() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-end pt-2">
             <button onClick={() => setShowIncidenciaModal(false)} disabled={isSubmittingIncidencia} className="px-8 py-4 rounded-2xl font-bold transition-all duration-300 shadow-2xl bg-white/80 text-gray-600 border-2 border-gray-200/50">Cancelar</button>
-            <button onClick={handleSubmitIncidencia} disabled={isSubmittingIncidencia} className="px-8 py-4 rounded-2xl font-bold transition-all duration-300 shadow-2xl bg-gradient-to-br from-red-500 via-pink-500 to-purple-500 text-white">{isSubmittingIncidencia ? 'Registrando...' : 'Registrar Ausencia'}</button>
+            {(() => {
+              const tiposValidos = ['Salida del Centro', 'Regreso al Centro', 'Salida Sin Regreso'];
+              const tieneTipoSeleccionado = incidenciaForm.tipo && tiposValidos.includes(incidenciaForm.tipo);
+              const isDisabled = isSubmittingIncidencia || !tieneTipoSeleccionado;
+              
+              return (
+                <button 
+                  onClick={handleSubmitIncidencia} 
+                  disabled={isDisabled} 
+                  className={`px-8 py-4 rounded-2xl font-bold transition-all duration-300 shadow-2xl ${
+                    isDisabled 
+                      ? 'bg-gray-400 text-gray-600 cursor-not-allowed opacity-60' 
+                      : 'bg-gradient-to-br from-red-500 via-pink-500 to-purple-500 text-white hover:shadow-xl'
+                  }`}
+                  title={!tieneTipoSeleccionado ? 'Debes seleccionar un tipo de ausencia antes de registrar' : ''}
+                >
+                  {isSubmittingIncidencia ? 'Registrando...' : 'Registrar Ausencia'}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </Modal>

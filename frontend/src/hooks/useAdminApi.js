@@ -239,6 +239,12 @@ export const useAdminApi = () => {
         console.warn('[Permissions] No auth token available, skipping permissions fetch');
         return getDefaultPermissions();
       }
+      
+      // Verifică dacă token-ul este valid (nu este un string gol sau 'null')
+      if (token === 'null' || token === 'undefined' || token.trim() === '') {
+        console.warn('[Permissions] Invalid auth token, skipping permissions fetch');
+        return getDefaultPermissions();
+      }
 
       // 1) Încearcă backend NestJS (direct DB)
       let urlBackend = routes.permissions;
@@ -535,7 +541,22 @@ export const useAdminApi = () => {
       // Pentru moment, ignorăm user filter dacă nu e email
       // TODO: Optimizare - adăugă suport pentru user (nume) în backend
       
-      if (filters.date) {
+      // Suport pentru dateFrom și dateTo (pentru exportare logs per angajat)
+      if (filters.dateFrom) {
+        params.append('dateFrom', filters.dateFrom);
+      }
+      
+      if (filters.dateTo) {
+        params.append('dateTo', filters.dateTo);
+      }
+      
+      // Suport pentru email (pentru exportare logs per angajat)
+      if (filters.email) {
+        params.append('email', filters.email);
+      }
+      
+      // Fallback pentru filters.date (compatibilitate cu codul existent)
+      if (filters.date && !filters.dateFrom && !filters.dateTo) {
         // Transformă date (YYYY-MM-DD) în dateFrom și dateTo pentru aceeași zi
         params.append('dateFrom', filters.date);
         // Adaugă 1 zi pentru a include toată ziua

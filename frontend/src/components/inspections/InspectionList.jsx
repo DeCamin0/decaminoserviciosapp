@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
 
 import Card from '../ui/Card';
+import Modal from '../ui/Modal';
 import { routes } from '../../utils/routes';
 import { API_ENDPOINTS } from '../../utils/constants';
 import Back3DButton from '../Back3DButton.jsx';
 import PDFViewerAndroid from '../PDFViewerAndroid.jsx';
 
 
-const InspectionList = ({ onBackToSelection }) => {
+const InspectionList = ({ onBackToSelection, onlySolicitudes = false, onStartInspection }) => {
   const { user: authUser } = useAuth();
   
   // Detectare mobile pentru PDF preview
@@ -56,6 +57,10 @@ const InspectionList = ({ onBackToSelection }) => {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  
+  // State pentru modal de selectare tip inspecție
+  const [showTipoModal, setShowTipoModal] = useState(false);
+  const [selectedSolicitud, setSelectedSolicitud] = useState(null);
   
   // Cleanup pentru blob URL-uri când se schimbă previewData sau se închide modalul
   useEffect(() => {
@@ -311,9 +316,14 @@ const InspectionList = ({ onBackToSelection }) => {
           // Mapare proprietăți spaniole la engleză cu mai multe variante
           // Salvează data originală înainte de formatare pentru a putea fi folosită în filtre
           const rawDate = inspection.date || inspection.fecha || inspection.fecha_subida;
+          const tipoInspeccion = inspection.type || inspection.tipo_inspeccion || '';
+          const nombreArchivo = inspection.nombre_archivo || '';
+          // Identifică cererile: nombre_archivo începe cu "SOLICITUD-" sau tipo_inspeccion = "Solicitada"
+          const isSolicitud = nombreArchivo.startsWith('SOLICITUD-') || tipoInspeccion === 'Solicitada';
+          
           const mappedInspection = {
             id: inspection.id || inspection.id_inspeccion,
-            type: inspection.type || inspection.tipo_inspeccion,
+            type: tipoInspeccion,
             date: formatDate(rawDate),
             dateRaw: rawDate, // Data originală pentru filtrare și sortare
             inspector: inspection.inspector || inspection.inspector_nombre || inspection.Nombre_Supervisor || inspection['Nombre Supervisor'] || 'N/A',
@@ -321,14 +331,23 @@ const InspectionList = ({ onBackToSelection }) => {
             employeeCode: inspection.employeeCode || inspection.codigo_empleado || 'N/A',
             location: inspection.location || inspection.ubicacion || inspection.lugar || inspection.sitio || inspection.direccion || inspection.Locacion || 'N/A',
             centro: inspection.centro || inspection.Centro || 'N/A',
-            status: inspection.status || inspection.estado || inspection.estado_inspeccion || 'completada',
+            status: inspection.status || inspection.estado || inspection.estado_inspeccion || (isSolicitud ? 'Solicitada' : 'completada'),
             pdfUrl: inspection.pdfUrl || inspection.archivo?.url || inspection.archivo || inspection.url_pdf || 'N/A',
-            scor_total: inspection.scor_total || null
+            scor_total: inspection.scor_total || null,
+            nombre_archivo: nombreArchivo,
+            isSolicitud: isSolicitud,
+            observaciones: inspection.observaciones || null
           };
           
           return mappedInspection;
         });
-        setInspections(validInspections);
+        
+        // Dacă onlySolicitudes este true, filtrează doar cererile
+        const filteredBySolicitud = onlySolicitudes 
+          ? validInspections.filter(inspection => inspection.isSolicitud)
+          : validInspections;
+        
+        setInspections(filteredBySolicitud);
         
         // Dacă avem lista de angajați în răspuns
         if (data.employees && Array.isArray(data.employees)) {
@@ -344,7 +363,7 @@ const InspectionList = ({ onBackToSelection }) => {
       } finally {
       setLoading(false);
     }
-  }, [INSPECTIONS_WEBHOOK, authUser?.isDemo, employees, selectedCentro, selectedEmployee]);
+  }, [INSPECTIONS_WEBHOOK, authUser?.isDemo, employees, selectedCentro, selectedEmployee, onlySolicitudes]);
 
   useEffect(() => {
     // Skip real data fetch in DEMO mode
@@ -883,10 +902,12 @@ const InspectionList = ({ onBackToSelection }) => {
           </div>
           <div>
             <h1 className="text-4xl font-black bg-gradient-to-r from-green-600 via-emerald-500 to-teal-500 bg-clip-text text-transparent mb-2">
-              Lista de Inspecciones
+              {onlySolicitudes ? 'Inspecciones Solicitadas' : 'Lista de Inspecciones'}
             </h1>
             <p className="text-gray-600 text-base font-medium">
-              Ver todas las inspecciones existentes y descargar los PDFs
+              {onlySolicitudes 
+                ? 'Ver todas las solicitudes de inspección pendientes de completar' 
+                : 'Ver todas las inspecciones existentes y descargar los PDFs'}
             </p>
           </div>
         </div>
@@ -1417,9 +1438,15 @@ const InspectionList = ({ onBackToSelection }) => {
                     </div>
                     
                     <div className="flex flex-wrap gap-2">
-                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">
-                        ✓ {inspection.status}
-                      </span>
+                      {inspection.isSolicitud ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-300">
+                          ⏳ Solicitud Pendiente
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">
+                          ✓ {inspection.status}
+                        </span>
+                      )}
                       {inspection.employeeCode && (
                         <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold border border-blue-300">
                           {inspection.employeeCode}
@@ -1453,7 +1480,9 @@ const InspectionList = ({ onBackToSelection }) => {
                       <span className="text-base">👨‍💼</span>
                       <div className="flex-1">
                         <span className="font-bold text-gray-700">Inspector:</span>
-                        <span className="text-gray-600 ml-1">{inspection.inspector}</span>
+                        <span className="text-gray-600 ml-1">
+                          {inspection.isSolicitud ? 'Pendiente de asignación' : (inspection.inspector || 'N/A')}
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
@@ -1477,6 +1506,15 @@ const InspectionList = ({ onBackToSelection }) => {
                         <span className="text-gray-600 ml-1">{inspection.centro}</span>
                       </div>
                     </div>
+                    {inspection.observaciones && (
+                      <div className="flex items-start gap-2">
+                        <span className="text-base">📝</span>
+                        <div className="flex-1">
+                          <span className="font-bold text-gray-700">Observaciones:</span>
+                          <span className="text-gray-600 ml-1">{inspection.observaciones}</span>
+                        </div>
+                      </div>
+                    )}
                     
                     {/* Documentos de Materiales - doar pentru "Entrega de Materiales" */}
                     {inspection.type === 'entrega-materiales' && (
@@ -1528,35 +1566,59 @@ const InspectionList = ({ onBackToSelection }) => {
                   
                   {/* Butoane de acțiune ULTRA MODERN */}
                   <div className="relative p-4 pt-0 flex gap-3">
-                    <button
-                      onClick={() => handlePreview(inspection)}
-                      className="group/btn relative flex-1 px-4 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
-                      style={{
-                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                        boxShadow: '0 8px 20px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      <div className="absolute inset-0 bg-green-400 opacity-0 group-hover/btn:opacity-30 transition-opacity"></div>
-                      <div className="relative flex items-center justify-center gap-2">
-                        <span className="text-lg">👁️</span>
-                        <span className="text-sm">Preview</span>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={() => handleDownload(inspection)}
-                      className="group/btn relative flex-1 px-4 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
-                      style={{
-                        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                        boxShadow: '0 8px 20px rgba(59, 130, 246, 0.3)'
-                      }}
-                    >
-                      <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover/btn:opacity-30 transition-opacity"></div>
-                      <div className="relative flex items-center justify-center gap-2">
-                        <span className="text-lg">📥</span>
-                        <span className="text-sm">Descargar</span>
-                      </div>
-                    </button>
+                    {inspection.isSolicitud ? (
+                      /* Pentru cereri - buton pentru a începe inspecția */
+                      <button
+                        onClick={() => {
+                          setSelectedSolicitud(inspection);
+                          setShowTipoModal(true);
+                        }}
+                        className="group/btn relative flex-1 px-4 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
+                        style={{
+                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                          boxShadow: '0 8px 20px rgba(245, 158, 11, 0.3)'
+                        }}
+                      >
+                        <div className="absolute inset-0 bg-yellow-400 opacity-0 group-hover/btn:opacity-30 transition-opacity"></div>
+                        <div className="relative flex items-center justify-center gap-2">
+                          <span className="text-lg">🔍</span>
+                          <span className="text-sm">Iniciar Inspección</span>
+                        </div>
+                      </button>
+                    ) : (
+                      /* Pentru inspecții complete - butoane normale */
+                      <>
+                        <button
+                          onClick={() => handlePreview(inspection)}
+                          className="group/btn relative flex-1 px-4 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
+                          style={{
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            boxShadow: '0 8px 20px rgba(16, 185, 129, 0.3)'
+                          }}
+                        >
+                          <div className="absolute inset-0 bg-green-400 opacity-0 group-hover/btn:opacity-30 transition-opacity"></div>
+                          <div className="relative flex items-center justify-center gap-2">
+                            <span className="text-lg">👁️</span>
+                            <span className="text-sm">Preview</span>
+                          </div>
+                        </button>
+                        
+                        <button
+                          onClick={() => handleDownload(inspection)}
+                          className="group/btn relative flex-1 px-4 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
+                          style={{
+                            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                            boxShadow: '0 8px 20px rgba(59, 130, 246, 0.3)'
+                          }}
+                        >
+                          <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover/btn:opacity-30 transition-opacity"></div>
+                          <div className="relative flex items-center justify-center gap-2">
+                            <span className="text-lg">📥</span>
+                            <span className="text-sm">Descargar</span>
+                          </div>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1568,7 +1630,7 @@ const InspectionList = ({ onBackToSelection }) => {
       {/* Modal ULTRA MODERN pentru preview PDF */}
       {showPreviewModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-none sm:rounded-3xl max-w-5xl w-full h-full sm:h-auto sm:max-h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 transform scale-100 transition-all duration-500 flex flex-col">
+          <div className="bg-white rounded-none sm:rounded-3xl max-w-[95vw] sm:max-w-7xl w-full h-full sm:h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 transform scale-100 transition-all duration-500 flex flex-col">
             {/* Header ULTRA MODERN */}
             <div className="bg-gradient-to-r from-green-50 to-emerald-100 px-4 sm:px-6 py-3 sm:py-4 border-b border-green-200 flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -1599,7 +1661,7 @@ const InspectionList = ({ onBackToSelection }) => {
               </div>
             </div>
             
-            <div className="p-4 sm:p-6 flex-1 overflow-auto bg-gray-50 min-h-0">
+            <div className="p-4 sm:p-6 flex-1 overflow-auto bg-gray-50 min-h-0" style={{ minHeight: 'calc(95vh - 120px)' }}>
               {previewLoading ? (
                 <div className="flex flex-col items-center justify-center h-64">
                   <div className="animate-spin rounded-full h-16 w-16 border-4 border-green-500 border-t-transparent mb-4"></div>
@@ -1611,7 +1673,7 @@ const InspectionList = ({ onBackToSelection }) => {
                   <div className="text-red-600 text-xl font-bold">{previewData.error}</div>
                 </div>
               ) : previewData?.pdfUrl ? (
-                <div className="h-full bg-white rounded-xl shadow-lg p-2 pdf-preview-container">
+                <div className="bg-white rounded-xl shadow-lg p-2 pdf-preview-container" style={{ minHeight: 'calc(95vh - 180px)', height: '100%' }}>
                   {isAndroid || isIOS ? (
                     <PDFViewerAndroid 
                       pdfUrl={previewData.pdfUrl}
@@ -1630,6 +1692,7 @@ const InspectionList = ({ onBackToSelection }) => {
                 <iframe
                   src={previewData.pdfUrl}
                       className="w-full h-full border-0 rounded-lg"
+                      style={{ minHeight: 'calc(95vh - 200px)' }}
                   title={`Preview ${previewData.id}`}
                 />
                   )}
@@ -1668,6 +1731,132 @@ const InspectionList = ({ onBackToSelection }) => {
           </div>
         </div>
       )}
+
+      {/* Modal pentru selectarea tipului de inspecție */}
+      <Modal
+        isOpen={showTipoModal}
+        onClose={() => {
+          setShowTipoModal(false);
+          setSelectedSolicitud(null);
+        }}
+        title="Seleccionar Tipo de Inspección"
+        size="md"
+        showCloseButton={false}
+      >
+        {selectedSolicitud && (
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-blue-900 mb-2">Información de la Solicitud:</p>
+              <p className="text-sm text-blue-800">
+                <span className="font-semibold">Empleado:</span> {selectedSolicitud.trabajador} ({selectedSolicitud.employeeCode})
+              </p>
+              <p className="text-sm text-blue-800">
+                <span className="font-semibold">Centro:</span> {selectedSolicitud.centro}
+              </p>
+              {selectedSolicitud.observaciones && (
+                <p className="text-sm text-blue-800 mt-2">
+                  <span className="font-semibold">Observaciones:</span> {selectedSolicitud.observaciones}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Selecciona el tipo de inspección que deseas realizar:
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    if (onStartInspection) {
+                      onStartInspection('limpieza', selectedSolicitud);
+                    }
+                    setShowTipoModal(false);
+                    setSelectedSolicitud(null);
+                  }}
+                  className="p-4 border-2 border-red-200 rounded-xl hover:border-red-500 hover:bg-red-50 transition-all duration-200 text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">🧹</span>
+                    <div>
+                      <p className="font-bold text-gray-900 group-hover:text-red-600">Limpieza</p>
+                      <p className="text-xs text-gray-600">Inspección de limpieza</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (onStartInspection) {
+                      onStartInspection('servicios', selectedSolicitud);
+                    }
+                    setShowTipoModal(false);
+                    setSelectedSolicitud(null);
+                  }}
+                  className="p-4 border-2 border-blue-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">🛡️</span>
+                    <div>
+                      <p className="font-bold text-gray-900 group-hover:text-blue-600">Servicios Auxiliares</p>
+                      <p className="text-xs text-gray-600">Inspección de servicios</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (onStartInspection) {
+                      onStartInspection('personalizada', selectedSolicitud);
+                    }
+                    setShowTipoModal(false);
+                    setSelectedSolicitud(null);
+                  }}
+                  className="p-4 border-2 border-purple-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all duration-200 text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">⚙️</span>
+                    <div>
+                      <p className="font-bold text-gray-900 group-hover:text-purple-600">Personalizada</p>
+                      <p className="text-xs text-gray-600">Inspección personalizada</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (onStartInspection) {
+                      onStartInspection('entrega-materiales', selectedSolicitud);
+                    }
+                    setShowTipoModal(false);
+                    setSelectedSolicitud(null);
+                  }}
+                  className="p-4 border-2 border-orange-200 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all duration-200 text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">📦</span>
+                    <div>
+                      <p className="font-bold text-gray-900 group-hover:text-orange-600">Entrega de Materiales</p>
+                      <p className="text-xs text-gray-600">Registro de entrega</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowTipoModal(false);
+                  setSelectedSolicitud(null);
+                }}
+                className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

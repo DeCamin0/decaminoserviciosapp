@@ -90,7 +90,9 @@ export const usePermissions = () => {
   useEffect(() => {
     const loadPermissions = async () => {
       // Nu încărca permisiunile dacă utilizatorul nu este autentificat
-      if (!isAuthenticated || !user || !userGrupo || user?.isDemo) {
+      // Verifică și token-ul pentru a preveni request-uri după logout
+      const token = localStorage.getItem('auth_token');
+      if (!isAuthenticated || !user || !userGrupo || user?.isDemo || !token) {
         setLoading(false);
         setUserPermissions(null);
         permissionsCacheRef.current = null;

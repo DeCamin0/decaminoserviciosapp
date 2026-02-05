@@ -1133,6 +1133,7 @@ export default function SolicitudesPage() {
   const [editingSolicitud, setEditingSolicitud] = useState(null); // ID-ul solicitării în curs de editare
   const [originalSolicitudData, setOriginalSolicitudData] = useState(null); // Datele originale ale solicitării în curs de editare
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, solicitudId: null }); // Modal de confirmare ștergere
+  const [deleteBajaMedicaModal, setDeleteBajaMedicaModal] = useState({ isOpen: false, baja: null, mensaje: '' }); // Modal pentru ștergere baja médica cu mesaj
   const [convertirConfirm, setConvertirConfirm] = useState({ isOpen: false, ausencia: null }); // Modal de confirmare conversie ausencia
   const [convertirTipoModal, setConvertirTipoModal] = useState({ 
     isOpen: false, 
@@ -1143,6 +1144,7 @@ export default function SolicitudesPage() {
     nuevoTipo: null // Tipul selectat pentru a ști când să afișăm câmpurile de date
   }); // Modal pentru conversie tip Permiso Retribuido
   const [asociarAusenciaModal, setAsociarAusenciaModal] = useState({ isOpen: false, ausencia: null }); // Modal pentru asociere ausencias
+  const [editarDuracionModal, setEditarDuracionModal] = useState({ isOpen: false, ausencia: null, duracion: '', unidad: 'dias' }); // Modal pentru editare manuală durată
   const [selectedAusenciaIdForAsociar, setSelectedAusenciaIdForAsociar] = useState(null); // Ausencia selectată pentru asociere
   const [bajaVoluntariaPreview, setBajaVoluntariaPreview] = useState({ isOpen: false, solicitud: null, pdfUrl: null }); // Modal preview PDF Baja Voluntaria
   // Loading states centralizate
@@ -1162,6 +1164,13 @@ export default function SolicitudesPage() {
   const [vacacionesSaldo, setVacacionesSaldo] = useState({
     dias_anuales: 31, // Default fallback
     dias_restantes_ano_anterior: 0,
+    dias_restantes: 0, // Zile rămase disponibile
+  });
+  // State pentru saldo-ul real de asuntos propios (din backend)
+  const [asuntosPropiosSaldo, setAsuntosPropiosSaldo] = useState({
+    dias_anuales: 0, // Default fallback
+    dias_consumidos_aprobados: 0,
+    dias_restantes: 0,
   });
   
   // Estadísticas states
@@ -2698,8 +2707,17 @@ export default function SolicitudesPage() {
           setVacacionesSaldo({
             dias_anuales: data.vacaciones.dias_anuales || 31,
             dias_restantes_ano_anterior: data.vacaciones.dias_restantes_ano_anterior || 0,
+            dias_restantes: data.vacaciones.dias_restantes || 0,
           });
           console.log('✅ Saldo vacaciones loaded:', data.vacaciones);
+        }
+        if (data.asuntos_propios) {
+          setAsuntosPropiosSaldo({
+            dias_anuales: data.asuntos_propios.dias_anuales || 0,
+            dias_consumidos_aprobados: data.asuntos_propios.dias_consumidos_aprobados || 0,
+            dias_restantes: data.asuntos_propios.dias_restantes || 0,
+          });
+          console.log('✅ Saldo asuntos propios loaded:', data.asuntos_propios);
         }
       } else {
         console.warn('⚠️ Error fetching vacaciones saldo:', response.status);
@@ -3358,6 +3376,33 @@ export default function SolicitudesPage() {
     }
   };
 
+  const handleCalcularDuracion = async (ausenciaId) => {
+    setOperationLoading('calcular-duracion', true);
+    setErrorMsg(null);
+
+    try {
+      const result = await callApi(routes.recalcularDuracion(ausenciaId), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (result.success) {
+        // Reîncarcă datele pentru a actualiza durata
+        await fetchSolicitudes();
+        alert(result.message || 'Duración calculada correctamente');
+      } else {
+        setErrorMsg(result.message || 'Error al calcular la duración');
+      }
+    } catch (error) {
+      console.error('Error calculando duración:', error);
+      setErrorMsg(error.message || 'Error al calcular la duración');
+    } finally {
+      setOperationLoading('calcular-duracion', false);
+    }
+  };
+
   const handleMarcarSinAusencia = async (ausenciaId) => {
     setOperationLoading('marcar-sin-ausencia', true);
     setErrorMsg(null);
@@ -3406,11 +3451,9 @@ export default function SolicitudesPage() {
         setSuccessMsg(result.message || `✅ Duración recalculada: ${result.duracion} ${result.duracion === 1 ? 'día' : 'días'}`);
         setTimeout(() => setSuccessMsg(''), 5000);
         // Reîncarcă listele
-        fetchAllAusencias();
-        // Reîncarcă și pentru "Mis Solicitudes" dacă suntem în acel tab
-        if (activeTab === 'lista') {
-          fetchSolicitudes();
-        }
+        await fetchAllAusencias();
+        // Reîncarcă și pentru "Mis Solicitudes" pentru a actualiza lista
+        await fetchSolicitudes();
       } else {
         setErrorMsg(result.error || 'Error al recalcular duración');
       }
@@ -3419,6 +3462,98 @@ export default function SolicitudesPage() {
       setErrorMsg(error.message || 'Error al recalcular duración');
     } finally {
       setOperationLoading('recalcular-duracion', false);
+    }
+  };
+
+  const handleOpenEditarDuracionModal = (ausencia) => {
+    const duracion = ausencia.DURACION || ausencia.duracion || '';
+    const unidad = ausencia.UNIDAD_DURACION || ausencia.unidad_duracion || 'dias';
+    
+    // Pentru ore, formatăm durata pentru afișare (dacă este în format TIME)
+    let duracionDisplay = duracion;
+    if (unidad === 'horas' && typeof duracion === 'string' && duracion.includes(':')) {
+      // Păstrăm formatul TIME pentru editare
+      duracionDisplay = duracion;
+    } else if (unidad === 'horas' && typeof duracion === 'number') {
+      // Convertim numărul de ore în format TIME
+      const horas = Math.floor(duracion);
+      const minutos = Math.round((duracion - horas) * 60);
+      duracionDisplay = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:00`;
+    }
+    
+    setEditarDuracionModal({
+      isOpen: true,
+      ausencia: ausencia,
+      duracion: duracionDisplay.toString(),
+      unidad: unidad,
+    });
+  };
+
+  const handleUpdateDuracion = async () => {
+    const { ausencia, duracion, unidad } = editarDuracionModal;
+    if (!ausencia || !duracion) {
+      setErrorMsg('Por favor, ingrese una duración válida');
+      return;
+    }
+
+    setOperationLoading('update-duracion', true);
+    setErrorMsg(null);
+
+    try {
+      // Validează input-ul în funcție de unitate
+      let duracionValue = duracion.trim();
+      
+      if (unidad === 'horas') {
+        // Pentru ore, verifică formatul TIME (HH:MM:SS)
+        if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(duracionValue)) {
+          setErrorMsg('Formato inválido para horas. Use formato HH:MM:SS (ej: 05:30:00)');
+          setOperationLoading('update-duracion', false);
+          return;
+        }
+        // Asigură formatul complet HH:MM:SS
+        const parts = duracionValue.split(':');
+        if (parts.length === 2) {
+          duracionValue = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`;
+        } else {
+          duracionValue = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`;
+        }
+      } else {
+        // Pentru zile, verifică că este un număr
+        const duracionNum = Number(duracionValue);
+        if (isNaN(duracionNum) || duracionNum < 0) {
+          setErrorMsg('La duración debe ser un número positivo');
+          setOperationLoading('update-duracion', false);
+          return;
+        }
+        duracionValue = duracionNum;
+      }
+
+      const result = await callApi(routes.updateDuracion(ausencia.id || ausencia.ID), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          duracion: duracionValue,
+          unidad: unidad,
+        }),
+      });
+
+      if (result.success) {
+        setSuccessMsg(result.message || '✅ Duración actualizada correctamente');
+        setTimeout(() => setSuccessMsg(''), 5000);
+        setEditarDuracionModal({ isOpen: false, ausencia: null, duracion: '', unidad: 'dias' });
+        // Reîncarcă listele
+        await fetchAllAusencias();
+        await fetchSolicitudes();
+      } else {
+        setErrorMsg(result.error || 'Error al actualizar duración');
+      }
+    } catch (error) {
+      console.error('Error actualizando duración:', error);
+      setErrorMsg(error.message || 'Error al actualizar duración');
+    } finally {
+      setOperationLoading('update-duracion', false);
     }
   };
 
@@ -4208,6 +4343,12 @@ export default function SolicitudesPage() {
 
     // Validare Asunto Propio
     if (tipo === 'Asuntos Propios') {
+      // Verifică dacă utilizatorul are drepturi reale în baza de date
+      if ((asuntosPropiosSaldo.dias_anuales || 0) <= 0) {
+        setErrorMsg('No tienes derechos de Asuntos Propios asignados. Contacta con tu administrador.');
+        return false;
+      }
+      
       // Când se editează o solicitare, ignorăm validările de limite (șeful poate alege orice dată)
       const isEditing = editingSolicitud !== null;
       
@@ -4267,6 +4408,13 @@ export default function SolicitudesPage() {
 
     // Validare Vacaciones
     if (tipo === 'Vacaciones') {
+      // Verifică dacă utilizatorul are zile disponibile
+      const hasVacacionesRights = (vacacionesSaldo.dias_restantes || 0) > 0 || (vacacionesSaldo.dias_anuales || 0) > 0;
+      if (!hasVacacionesRights) {
+        setErrorMsg('No tienes días de vacaciones disponibles. Contacta con tu administrador.');
+        return false;
+      }
+      
       // Când se editează o solicitare, ignorăm validările de limite (șeful poate alege orice dată)
       const isEditing = editingSolicitud !== null;
       
@@ -7800,6 +7948,21 @@ export default function SolicitudesPage() {
                             )}
                           </div>
                         )}
+                        {/* Buton de ștergere pentru bajas medicas (doar dacă nu e MUTUA) */}
+                        {selectedTab === 'baja' && canAccessAllTabs && item.fuente && String(item.fuente).toUpperCase() !== 'MUTUA' && (
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => {
+                                setDeleteBajaMedicaModal({ isOpen: true, baja: item, mensaje: '' });
+                              }}
+                              disabled={isOperationLoading('deleteBaja')}
+                              className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Eliminar baja médica (solo si Fuente no es MUTUA)"
+                            >
+                              <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -8284,6 +8447,37 @@ export default function SolicitudesPage() {
                                   </button>
                                 ) : null;
                               })()}
+                              
+                              {/* Buton "Calcular Duración" - doar pentru "Ausencias justificada" */}
+                              {((item.tipo || item.TIPO) === 'Ausencias justificada' || (item.tipo || item.TIPO) === 'Ausencia Justificada') && (
+                                <button
+                                  onClick={() => handleCalcularDuracion(item.id || item.ID)}
+                                  disabled={isOperationLoading('calcular-duracion')}
+                                  className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Calcular duración basada en horas fichadas vs horas programadas"
+                                >
+                                  {isOperationLoading('calcular-duracion') ? (
+                                    <span className="flex items-center gap-2">
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                      Calculando...
+                                    </span>
+                                  ) : (
+                                    '🔄 Calcular Duración'
+                                  )}
+                                </button>
+                              )}
+                              
+                              {/* Buton "Editar Duración" - pentru toate ausencias */}
+                              {canAccessAllTabs && (
+                                <button
+                                  onClick={() => handleOpenEditarDuracionModal(item)}
+                                  disabled={isOperationLoading('update-duracion')}
+                                  className="px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title="Editar duración manualmente"
+                                >
+                                  ✏️ Editar Duración
+                                </button>
+                              )}
                               
                               {/* Buton "Marcar como sin ausencia" - doar pentru "Ausencias justificada" cu durata > 0 */}
                               {((item.tipo || item.TIPO) === 'Ausencias justificada' || (item.tipo || item.TIPO) === 'Ausencia Justificada') && (() => {
@@ -9154,9 +9348,25 @@ export default function SolicitudesPage() {
                       const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
                       
                       // Prevent selection of Asuntos Propios for non-allowed groups
-                      if (e.target.value === 'Asuntos Propios' && !allowedGroups.includes(currentUserGroup)) {
-                        alert('Asuntos Propios solo está disponible para usuarios de Limpiador, Developer y Auxiliar De Servicios - L.');
-                        return;
+                      if (e.target.value === 'Asuntos Propios') {
+                        if (!allowedGroups.includes(currentUserGroup)) {
+                          alert('Asuntos Propios solo está disponible para usuarios de Limpiador, Developer y Auxiliar De Servicios - L.');
+                          return;
+                        }
+                        // Verifică dacă utilizatorul are drepturi reale în baza de date
+                        if ((asuntosPropiosSaldo.dias_anuales || 0) <= 0) {
+                          alert('No tienes derechos de Asuntos Propios asignados. Contacta con tu administrador.');
+                          return;
+                        }
+                      }
+                      
+                      // Prevent selection of Vacaciones if user has no rights
+                      if (e.target.value === 'Vacaciones') {
+                        const hasVacacionesRights = (vacacionesSaldo.dias_restantes || 0) > 0 || (vacacionesSaldo.dias_anuales || 0) > 0;
+                        if (!hasVacacionesRights) {
+                          alert('No tienes días de vacaciones disponibles. Contacta con tu administrador.');
+                          return;
+                        }
                       }
                       
                       setTipo(e.target.value);
@@ -9188,30 +9398,48 @@ export default function SolicitudesPage() {
                       const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
                       const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
                       const isGroupAllowed = allowedGroups.includes(currentUserGroup);
+                      // Verifică dacă utilizatorul are drepturi reale în baza de date
+                      const hasAsuntosPropiosRights = (asuntosPropiosSaldo.dias_anuales || 0) > 0;
+                      const isDisabled = !isGroupAllowed || !hasAsuntosPropiosRights || totalAsuntoPropioDays >= 6;
                       
                       return (
                     <option 
                       value="Asuntos Propios" 
-                          disabled={!isGroupAllowed || totalAsuntoPropioDays >= 6}
+                          disabled={isDisabled}
                       style={{ 
-                            color: (!isGroupAllowed || totalAsuntoPropioDays >= 6) ? '#9ca3af' : '#6b21a8',
-                            backgroundColor: (!isGroupAllowed || totalAsuntoPropioDays >= 6) ? '#f3f4f6' : 'transparent'
+                            color: isDisabled ? '#9ca3af' : '#6b21a8',
+                            backgroundColor: isDisabled ? '#f3f4f6' : 'transparent'
                       }}
                     >
-                      📅 Asuntos Propios {totalAsuntoPropioDays >= 6 ? '(Límite alcanzado - 6/6 días)' : ''}
+                      📅 Asuntos Propios {
+                        !hasAsuntosPropiosRights ? '(Sin derechos)' :
+                        totalAsuntoPropioDays >= 6 ? '(Límite alcanzado - 6/6 días)' : ''
+                      }
                     </option>
                       );
                     })()}
-                    <option 
-                      value="Vacaciones"
-                      disabled={totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0))}
-                      style={{ 
-                        color: totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0)) ? '#9ca3af' : '#0891b2',
-                        backgroundColor: totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0)) ? '#f3f4f6' : 'transparent'
-                      }}
-                    >
-                      🏖️ Vacaciones {totalVacacionesDays >= ((vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0)) ? '(Límite alcanzado)' : ''}
-                    </option>
+                    {(() => {
+                      // Verifică dacă utilizatorul are zile disponibile (dias_restantes > 0 sau are zile anuale)
+                      const hasVacacionesRights = (vacacionesSaldo.dias_restantes || 0) > 0 || (vacacionesSaldo.dias_anuales || 0) > 0;
+                      const maxVacaciones = (vacacionesSaldo.dias_anuales || 31) + (vacacionesSaldo.dias_restantes_ano_anterior || 0);
+                      const isDisabled = !hasVacacionesRights || totalVacacionesDays >= maxVacaciones;
+                      
+                      return (
+                        <option 
+                          value="Vacaciones"
+                          disabled={isDisabled}
+                          style={{ 
+                            color: isDisabled ? '#9ca3af' : '#0891b2',
+                            backgroundColor: isDisabled ? '#f3f4f6' : 'transparent'
+                          }}
+                        >
+                          🏖️ Vacaciones {
+                            !hasVacacionesRights ? '(Sin derechos)' :
+                            totalVacacionesDays >= maxVacaciones ? '(Límite alcanzado)' : ''
+                          }
+                        </option>
+                      );
+                    })()}
                     <option 
                       value="BAJA_VOLUNTARIA"
                       style={{ 
@@ -10504,6 +10732,137 @@ export default function SolicitudesPage() {
         </div>
       </Modal>
 
+      {/* Modal pentru ștergere baja médica cu mesaj */}
+      <Modal
+        isOpen={deleteBajaMedicaModal.isOpen}
+        onClose={() => setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' })}
+        title=""
+        size="md"
+        className="max-w-lg"
+      >
+        <div className="py-4">
+          {/* Icon */}
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
+            <Trash2 className="h-8 w-8 text-red-600" />
+          </div>
+          
+          {/* Titlu */}
+          <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
+            ¿Eliminar baja médica?
+          </h3>
+          
+          {/* Informații despre baja */}
+          {deleteBajaMedicaModal.baja && (
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-semibold text-gray-700">Caso:</span>{' '}
+                  <span className="text-gray-900">{deleteBajaMedicaModal.baja.casoId}</span>
+                </div>
+                <div>
+                  <span className="font-semibold text-gray-700">Trabajador:</span>{' '}
+                  <span className="text-gray-900">{deleteBajaMedicaModal.baja.trabajador || 'N/A'}</span>
+                </div>
+                {deleteBajaMedicaModal.baja.fuente && (
+                  <div>
+                    <span className="font-semibold text-gray-700">Fuente:</span>{' '}
+                    <span className="text-gray-900">{deleteBajaMedicaModal.baja.fuente}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Mesaj de confirmare */}
+          <p className="text-gray-600 mb-4 text-center">
+            ¿Estás seguro de que deseas eliminar esta baja médica? Esta acción no se puede deshacer.
+          </p>
+
+          {/* Câmp pentru mesaj personalizat */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Mensaje para el empleado (opcional):
+            </label>
+            <textarea
+              value={deleteBajaMedicaModal.mensaje}
+              onChange={(e) => setDeleteBajaMedicaModal({ ...deleteBajaMedicaModal, mensaje: e.target.value })}
+              placeholder="Escribe un mensaje que se enviará al empleado por email junto con la confirmación de eliminación..."
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Este mensaje se enviará por email al empleado junto con la confirmación de que se ha eliminado su baja médica.
+            </p>
+          </div>
+          
+          {/* Butoane */}
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' })}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={async () => {
+                if (!deleteBajaMedicaModal.baja) return;
+                
+                try {
+                  setOperationLoading('deleteBaja', true);
+                  setErrorMsg('');
+                  const token = localStorage.getItem('auth_token');
+                  
+                  const body = deleteBajaMedicaModal.mensaje.trim() 
+                    ? { mensajePersonalizado: deleteBajaMedicaModal.mensaje.trim() }
+                    : {};
+                  
+                  const response = await fetch(
+                    routes.deleteBajaMedica(deleteBajaMedicaModal.baja.casoId, deleteBajaMedicaModal.baja.posicionId),
+                    {
+                      method: 'DELETE',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
+                    }
+                  );
+                  
+                  if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || `HTTP ${response.status}`);
+                  }
+                  
+                  const result = await response.json();
+                  setSuccessMsg(result.message || 'Baja médica eliminada correctamente');
+                  setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' });
+                  await fetchBajasMedicas();
+                } catch (error) {
+                  console.error('Error eliminando baja médica:', error);
+                  setErrorMsg(`Error al eliminar baja médica: ${error.message || error.toString()}`);
+                } finally {
+                  setOperationLoading('deleteBaja', false);
+                }
+              }}
+              disabled={isOperationLoading('deleteBaja')}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isOperationLoading('deleteBaja') ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Modal de confirmare conversie ausencia */}
       <Modal
         isOpen={convertirConfirm.isOpen}
@@ -11461,6 +11820,90 @@ export default function SolicitudesPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal pentru editare manuală durată */}
+      <Modal
+        isOpen={editarDuracionModal.isOpen}
+        onClose={() => setEditarDuracionModal({ isOpen: false, ausencia: null, duracion: '', unidad: 'dias' })}
+        title="Editar Duración"
+      >
+        <div className="space-y-4">
+          {editarDuracionModal.ausencia && (
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">Empleado:</span> {editarDuracionModal.ausencia.NOMBRE || editarDuracionModal.ausencia.nombre || 'N/A'}
+              </p>
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">Tipo:</span> {editarDuracionModal.ausencia.TIPO || editarDuracionModal.ausencia.tipo || 'N/A'}
+              </p>
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">Fecha:</span> {editarDuracionModal.ausencia.FECHA || editarDuracionModal.ausencia.fecha || 'N/A'}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Unidad:
+            </label>
+            <select
+              value={editarDuracionModal.unidad}
+              onChange={(e) => setEditarDuracionModal({ ...editarDuracionModal, unidad: e.target.value, duracion: '' })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              disabled={isOperationLoading('update-duracion')}
+            >
+              <option value="dias">Días</option>
+              <option value="horas">Horas</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Duración:
+              {editarDuracionModal.unidad === 'horas' && (
+                <span className="text-xs text-gray-500 ml-2">(Formato: HH:MM:SS, ej: 05:30:00)</span>
+              )}
+            </label>
+            <input
+              type={editarDuracionModal.unidad === 'horas' ? 'text' : 'number'}
+              value={editarDuracionModal.duracion}
+              onChange={(e) => setEditarDuracionModal({ ...editarDuracionModal, duracion: e.target.value })}
+              placeholder={editarDuracionModal.unidad === 'horas' ? '05:30:00' : '1'}
+              min="0"
+              step={editarDuracionModal.unidad === 'horas' ? undefined : '0.5'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              disabled={isOperationLoading('update-duracion')}
+            />
+          </div>
+
+          <div className="flex gap-4 justify-end pt-4 border-t border-gray-200">
+            <button
+              onClick={() => setEditarDuracionModal({ isOpen: false, ausencia: null, duracion: '', unidad: 'dias' })}
+              disabled={isOperationLoading('update-duracion')}
+              className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleUpdateDuracion}
+              disabled={isOperationLoading('update-duracion') || !editarDuracionModal.duracion}
+              className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isOperationLoading('update-duracion') ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <span>💾</span>
+                  <span>Guardar</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

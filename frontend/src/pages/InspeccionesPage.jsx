@@ -15,6 +15,7 @@ export default function InspeccionesPage() {
   const { user: authUser } = useAuth();
   const { hasPermission, loading: loadingPermissions, hasBackendPermissions } = usePermissions();
   const [selectedType, setSelectedType] = useState(null);
+  const [solicitudData, setSolicitudData] = useState(null); // Datele cererii pentru pre-completare
   const [centrosStats, setCentrosStats] = useState({
     totalCentros: 0,
     totalEmpleados: 0,
@@ -449,6 +450,61 @@ export default function InspeccionesPage() {
               </div>
             </div>
           </div>
+
+          {/* Card 6 - Lista Inspecciones Solicitadas MEGA 3D */}
+          <div
+            onClick={() => setSelectedType('solicitudes')}
+            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
+            style={{ transformStyle: 'preserve-3d' }}
+          >
+            {/* Glow effect ultra potente */}
+            <div className="absolute -inset-4 bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
+            
+            {/* Card principal con glassmorphism */}
+            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-yellow-100 overflow-hidden transition-all duration-700 group-hover:border-yellow-300 group-hover:shadow-yellow-500/50"
+                 style={{
+                   background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.4) 0%, rgba(253, 230, 138, 0.3) 50%, rgba(251, 191, 36, 0.2) 100%)',
+                   backdropFilter: 'blur(20px)',
+                   boxShadow: '0 20px 60px rgba(251, 191, 36, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
+                 }}>
+              
+              {/* Shimmer effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              
+              {/* Icon 3D con múltiples capas */}
+              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
+                   style={{ transformStyle: 'preserve-3d' }}>
+                <div className="absolute inset-0 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                <div className="relative w-24 h-24 bg-gradient-to-br from-yellow-500 to-orange-700 rounded-full flex items-center justify-center shadow-2xl"
+                     style={{
+                       boxShadow: '0 15px 35px rgba(251, 191, 36, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
+                     }}>
+                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">🔍</span>
+                </div>
+              </div>
+              
+              <h2 className="text-2xl font-black text-yellow-600 mb-3 group-hover:text-yellow-500 transition-colors">
+                Inspecciones Solicitadas
+              </h2>
+              <p className="text-gray-700 mb-4 font-medium">
+                Ver todas las solicitudes de inspección pendientes de completar.
+              </p>
+              <div className="space-y-2 text-sm text-gray-600 font-medium">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                  <span>Solo solicitudes pendientes</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                  <span>Sin PDF (aún no completadas)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                  <span>Búsqueda y filtrado</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ULTRA Statistics Glassmorphism */}
@@ -538,8 +594,8 @@ export default function InspeccionesPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      {/* Header with back button - doar pentru formulare, nu pentru pdf-generator */}
-      {selectedType !== 'pdf-generator' && (
+      {/* Header with back button - doar pentru formulare, nu pentru pdf-generator sau solicitudes */}
+      {selectedType && selectedType !== 'pdf-generator' && selectedType !== 'solicitudes' && (
         <div className="mb-8">
           <div className="flex items-center gap-4 mb-6">
             <div onClick={() => setSelectedType(null)}>
@@ -561,11 +617,31 @@ export default function InspeccionesPage() {
       )}
 
       {/* Content based on selected type */}
-      {selectedType === 'pdf-generator' ? (
-        <InspectionList onBackToSelection={() => setSelectedType(null)} />
-      ) : (
-        <InspectionForm type={selectedType} />
-      )}
+      {selectedType === 'pdf-generator' || selectedType === 'solicitudes' ? (
+        <InspectionList 
+          onBackToSelection={() => setSelectedType(null)} 
+          onlySolicitudes={selectedType === 'solicitudes'}
+          onStartInspection={(tipo, solicitudData) => {
+            // Navighează către formularul de inspecție cu datele pre-completate
+            setSolicitudData(solicitudData);
+            setSelectedType(tipo);
+          }}
+        />
+      ) : selectedType ? (
+        <>
+          <div onClick={() => {
+            setSelectedType(null);
+            setSolicitudData(null); // Resetează datele cererii când se închide formularul
+          }}>
+            <Back3DButton to="#" title="Volver a selección" onClick={(e) => { 
+              e.preventDefault(); 
+              setSelectedType(null);
+              setSolicitudData(null);
+            }} />
+          </div>
+          <InspectionForm type={selectedType} solicitudData={solicitudData} />
+        </>
+      ) : null}
     </div>
   );
 }

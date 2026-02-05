@@ -759,6 +759,16 @@ export default function EmpleadosPage() {
   const [showPDFModal, setShowPDFModal] = useState(false);
   const [pdfEmployeeData, setPdfEmployeeData] = useState(null);
 
+  // Estado para modal de solicitud de inspección
+  const [showSolicitudInspeccionModal, setShowSolicitudInspeccionModal] = useState(false);
+  const [empleadoParaInspeccion, setEmpleadoParaInspeccion] = useState(null);
+  const [solicitudFormData, setSolicitudFormData] = useState({
+    tipo_inspeccion: 'Solicitada',
+    centro: '',
+    observaciones: ''
+  });
+  const [creatingSolicitud, setCreatingSolicitud] = useState(false);
+
   // Lista de países del mundo para nacionalidad
   const paises = [
     'Afganistán', 'Albania', 'Alemania', 'Andorra', 'Angola', 'Antigua y Barbuda', 'Arabia Saudí', 'Argelia', 'Argentina', 'Armenia',
@@ -1287,6 +1297,100 @@ export default function EmpleadosPage() {
       throw error;
     } finally {
       setCreatingGrupo(false);
+    }
+  };
+
+  // Funcție pentru a deschide modalul de cerere de inspecție
+  const handleCrearSolicitudInspeccion = (empleado) => {
+    console.log('🔍 [Solicitud Inspeccion] Button clicked, empleado:', empleado);
+    setEmpleadoParaInspeccion(empleado);
+    
+    // Obține centrul din diferite proprietăți posibile
+    const centro = empleado.centro || 
+                   empleado.CENTRO || 
+                   empleado['CENTRO TRABAJO'] || 
+                   empleado.CENTRO_TRABAJO || 
+                   empleado['CENTRO_DE_TRABAJO'] || 
+                   empleado['CENTRO LABORAL'] || 
+                   '';
+    
+    setSolicitudFormData({
+      tipo_inspeccion: 'Solicitada',
+      centro: centro,
+      observaciones: ''
+    });
+    setShowSolicitudInspeccionModal(true);
+    console.log('🔍 [Solicitud Inspeccion] Modal should open, showSolicitudInspeccionModal:', true);
+  };
+
+  // Funcție pentru a crea cererea de inspecție
+  const handleSubmitSolicitudInspeccion = async () => {
+    if (!empleadoParaInspeccion) return;
+
+    setCreatingSolicitud(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const codigoEmpleado = empleadoParaInspeccion.CODIGO || empleadoParaInspeccion.codigo || '';
+      const nombreEmpleado = empleadoParaInspeccion.nombre || empleadoParaInspeccion['NOMBRE / APELLIDOS'] || '';
+
+      if (!codigoEmpleado || !nombreEmpleado) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'No se pudo obtener el código o nombre del empleado',
+          show: true
+        });
+        return;
+      }
+
+      const response = await fetch(routes.createSolicitudInspeccion, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          codigo_empleado: codigoEmpleado,
+          nombre_empleado: nombreEmpleado,
+          tipo_inspeccion: solicitudFormData.tipo_inspeccion,
+          centro: solicitudFormData.centro,
+          observaciones: solicitudFormData.observaciones,
+          solicitado_por: authUser?.name || authUser?.email || 'Sistema',
+          codigo_solicitante: authUser?.codigo || authUser?.CODIGO || '',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || 'Error al crear la solicitud');
+      }
+
+      const result = await response.json();
+
+      setNotification({
+        type: 'success',
+        title: 'Éxito',
+        message: result.message || 'Solicitud de inspección creada correctamente',
+        show: true
+      });
+
+      setShowSolicitudInspeccionModal(false);
+      setEmpleadoParaInspeccion(null);
+      setSolicitudFormData({
+        tipo_inspeccion: 'Solicitada',
+        centro: '',
+        observaciones: ''
+      });
+    } catch (error) {
+      console.error('Error creating solicitud inspeccion:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'Error al crear la solicitud de inspección',
+        show: true
+      });
+    } finally {
+      setCreatingSolicitud(false);
     }
   };
 
@@ -4591,6 +4695,17 @@ export default function EmpleadosPage() {
                                 }}>📦</span>
                               </button>
                               
+                              {/* Icon Solicitar Inspección */}
+                              <button
+                                onClick={() => handleCrearSolicitudInspeccion(user)}
+                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
+                                title="Crear solicitud de inspección"
+                              >
+                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
+                                  filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.4))',
+                                }}>🔍</span>
+                              </button>
+                              
                               {/* Icon Despido Improcedente - SOLO ADMIN */}
                               {(authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer') && (
                                 <button
@@ -5894,6 +6009,12 @@ export default function EmpleadosPage() {
                           )}
                         </div>
                       </th>
+                      <th 
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b select-none" 
+                        style={{ width: '120px' }}
+                      >
+                        Acciones
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -6148,6 +6269,15 @@ export default function EmpleadosPage() {
                           ) : (
                             <span className="text-gray-400">-</span>
                           )}
+                        </td>
+                        <td className="px-3 py-3 text-sm">
+                          <button
+                            onClick={() => handleCrearSolicitudInspeccion(emp)}
+                            className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-xs font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap"
+                            title="Crear solicitud de inspección"
+                          >
+                            🔍 Solicitar Inspección
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -8311,6 +8441,105 @@ export default function EmpleadosPage() {
               disabled={!newGrupoNombre.trim() || creatingGrupo}
             >
               {creatingGrupo ? 'Creando...' : 'Crear grupo'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal para solicitud de inspección */}
+      <Modal
+        isOpen={showSolicitudInspeccionModal}
+        onClose={() => {
+          setShowSolicitudInspeccionModal(false);
+          setEmpleadoParaInspeccion(null);
+          setSolicitudFormData({
+            tipo_inspeccion: 'Solicitada',
+            centro: '',
+            observaciones: ''
+          });
+        }}
+        title="Crear Solicitud de Inspección"
+        size="md"
+      >
+        <div className="space-y-4">
+          {empleadoParaInspeccion && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <p className="text-sm font-semibold text-blue-900">Empleado:</p>
+              <p className="text-base text-blue-800">
+                {empleadoParaInspeccion.nombre || empleadoParaInspeccion['NOMBRE / APELLIDOS'] || 'N/A'}
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Código: {empleadoParaInspeccion.CODIGO || empleadoParaInspeccion.codigo || 'N/A'}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tipo de Inspección
+            </label>
+            <select
+              value={solicitudFormData.tipo_inspeccion}
+              onChange={(e) => setSolicitudFormData({ ...solicitudFormData, tipo_inspeccion: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="Solicitada">Solicitada</option>
+              <option value="Rutinaria">Rutinaria</option>
+              <option value="Especial">Especial</option>
+              <option value="Seguridad">Seguridad</option>
+              <option value="Higiene">Higiene</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Centro de Trabajo
+            </label>
+            <input
+              type="text"
+              value={solicitudFormData.centro}
+              onChange={(e) => setSolicitudFormData({ ...solicitudFormData, centro: e.target.value })}
+              placeholder="Centro de trabajo (opcional)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Observaciones
+            </label>
+            <textarea
+              value={solicitudFormData.observaciones}
+              onChange={(e) => setSolicitudFormData({ ...solicitudFormData, observaciones: e.target.value })}
+              placeholder="Observaciones adicionales (opcional)"
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowSolicitudInspeccionModal(false);
+                setEmpleadoParaInspeccion(null);
+                setSolicitudFormData({
+                  tipo_inspeccion: 'Solicitada',
+                  centro: '',
+                  observaciones: ''
+                });
+              }}
+              disabled={creatingSolicitud}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmitSolicitudInspeccion}
+              loading={creatingSolicitud}
+              disabled={creatingSolicitud}
+            >
+              {creatingSolicitud ? 'Creando...' : 'Crear Solicitud'}
             </Button>
           </div>
         </div>
