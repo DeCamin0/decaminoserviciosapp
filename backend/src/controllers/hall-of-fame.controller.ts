@@ -78,6 +78,87 @@ export class HallOfFameController {
   }
 
   /**
+   * GET /api/hall-of-fame/trimestral?trimestre=Q1-2026&limit=10
+   * Returnează clasamentul trimestrial pentru un trimestru
+   * IMPORTANT: Această rută trebuie să fie ÎNAINTE de @Get(':codigo') pentru a evita conflictele
+   */
+  @Get('trimestral')
+  async getRankingTrimestral(
+    @Query('trimestre') trimestre?: string,
+    @Query('limit') limit?: string,
+  ) {
+    // Default: trimestrul curent
+    if (!trimestre) {
+      const now = new Date();
+      const ano = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const trimestreNum = Math.ceil(month / 3); // 1-4
+      trimestre = `Q${trimestreNum}-${ano}`;
+    }
+
+    // Normalizează formatul trimestre-ului (elimină spații, convertește Q4 2025 -> Q4-2025)
+    trimestre = trimestre.replace(/\s+/g, '-').toUpperCase();
+
+    this.logger.log(
+      `🔍 [HallOfFame] GET trimestral request - trimestre: ${trimestre}, limit: ${limit}`,
+    );
+
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    if (isNaN(limitNum) || limitNum < 0 || limitNum > 500) {
+      throw new BadRequestException('limit must be between 0 (all) and 500');
+    }
+
+    try {
+      const ranking = await this.hallOfFameService.getRankingTrimestral(
+        trimestre,
+        limitNum,
+      );
+      this.logger.log(
+        `✅ [HallOfFame] Returning ${ranking.length} records for ${trimestre}`,
+      );
+      return {
+        success: true,
+        trimestre: trimestre,
+        ranking: ranking,
+        total: ranking.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error getting trimestral ranking for ${trimestre}: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error getting trimestral ranking: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * GET /api/hall-of-fame/trimestral/latest
+   * Returnează ultimul trimestru disponibil (cel mai recent cu date)
+   * IMPORTANT: Această rută trebuie să fie ÎNAINTE de @Get(':codigo') pentru a evita conflictele
+   */
+  @Get('trimestral/latest')
+  async getLatestTrimestre() {
+    try {
+      const latestTrimestre =
+        await this.hallOfFameService.getLatestTrimestre();
+      return {
+        success: true,
+        trimestre: latestTrimestre,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error getting latest trimestre: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error getting latest trimestre: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * GET /api/hall-of-fame/:codigo?mes=YYYY-MM
    * Returnează breakdown-ul pentru un angajat specific
    */
@@ -287,50 +368,6 @@ export class HallOfFameController {
     }
   }
 
-  /**
-   * GET /api/hall-of-fame/trimestral?trimestre=Q1-2026&limit=10
-   * Returnează clasamentul trimestrial pentru un trimestru
-   */
-  @Get('trimestral')
-  async getRankingTrimestral(
-    @Query('trimestre') trimestre?: string,
-    @Query('limit') limit?: string,
-  ) {
-    // Default: trimestrul curent
-    if (!trimestre) {
-      const now = new Date();
-      const ano = now.getFullYear();
-      const month = now.getMonth() + 1; // 1-12
-      const trimestreNum = Math.ceil(month / 3); // 1-4
-      trimestre = `Q${trimestreNum}-${ano}`;
-    }
-
-    const limitNum = limit ? parseInt(limit, 10) : 100;
-    if (isNaN(limitNum) || limitNum < 0 || limitNum > 500) {
-      throw new BadRequestException('limit must be between 0 (all) and 500');
-    }
-
-    try {
-      const ranking = await this.hallOfFameService.getRankingTrimestral(
-        trimestre,
-        limitNum,
-      );
-      return {
-        success: true,
-        trimestre: trimestre,
-        ranking: ranking,
-        total: ranking.length,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Error getting trimestral ranking for ${trimestre}: ${error.message}`,
-        error.stack,
-      );
-      throw new BadRequestException(
-        `Error getting trimestral ranking: ${error.message}`,
-      );
-    }
-  }
 
   /**
    * POST /api/hall-of-fame/trimestral/calculate?trimestre=Q1-2026
@@ -376,30 +413,6 @@ export class HallOfFameController {
       );
       throw new BadRequestException(
         `Error calculating trimestral scores: ${error.message}`,
-      );
-    }
-  }
-
-  /**
-   * GET /api/hall-of-fame/trimestral/latest
-   * Returnează ultimul trimestru disponibil (cel mai recent cu date)
-   */
-  @Get('trimestral/latest')
-  async getLatestTrimestre() {
-    try {
-      // Găsește ultimul trimestru cu date
-      const latest = await this.hallOfFameService.getLatestTrimestre();
-      return {
-        success: true,
-        trimestre: latest,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Error getting latest trimestre: ${error.message}`,
-        error.stack,
-      );
-      throw new BadRequestException(
-        `Error getting latest trimestre: ${error.message}`,
       );
     }
   }

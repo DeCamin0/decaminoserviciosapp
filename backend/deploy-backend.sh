@@ -29,14 +29,57 @@ cd "$BACKEND_DIR" || exit 1
 
 # 1. Oprește procesul backend dacă rulează
 echo -e "${YELLOW}📋 Step 1: Stopping existing backend process...${NC}"
-OLD_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
+
+# Metoda 1: Găsește procese Node.js care rulează backend-ul
+OLD_PID=$(ps aux | grep -E "node.*dist.*main|node.*dist/src/main" | grep -v grep | awk '{print $2}' | head -1)
+
+# Metoda 2: Dacă nu găsește prin ps, caută procesul care folosește portul 3000
+if [ -z "$OLD_PID" ]; then
+    # Încearcă cu lsof (dacă e disponibil)
+    if command -v lsof &> /dev/null; then
+        OLD_PID=$(lsof -ti:3000 2>/dev/null | head -1)
+    fi
+fi
+
+# Metoda 3: Încearcă cu fuser (dacă e disponibil)
+if [ -z "$OLD_PID" ]; then
+    if command -v fuser &> /dev/null; then
+        OLD_PID=$(fuser 3000/tcp 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+fi
+
+# Metoda 4: Caută prin netstat/ss
+if [ -z "$OLD_PID" ]; then
+    if command -v ss &> /dev/null; then
+        OLD_PID=$(ss -tulpn 2>/dev/null | grep :3000 | grep -oP 'pid=\K\d+' | head -1)
+    elif command -v netstat &> /dev/null; then
+        OLD_PID=$(netstat -tulpn 2>/dev/null | grep :3000 | grep -oP '\d+(?=/\w+)' | head -1)
+    fi
+fi
+
 if [ -n "$OLD_PID" ]; then
-    echo "Found running backend (PID: $OLD_PID), stopping..."
-    kill "$OLD_PID" 2>/dev/null || kill -9 "$OLD_PID" 2>/dev/null || true
+    echo "Found process using port 3000 (PID: $OLD_PID), stopping..."
+    # Încearcă kill normal, apoi force kill
+    kill "$OLD_PID" 2>/dev/null && sleep 2 || kill -9 "$OLD_PID" 2>/dev/null || true
     sleep 2
+    # Verifică dacă procesul a fost oprit
+    if ps -p "$OLD_PID" > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  Process still running, force killing...${NC}"
+        kill -9 "$OLD_PID" 2>/dev/null || true
+        sleep 1
+    fi
     echo -e "${GREEN}✅ Backend process stopped${NC}"
 else
-    echo -e "${YELLOW}⚠️  No running backend process found${NC}"
+    echo -e "${YELLOW}⚠️  No running backend process found on port 3000${NC}"
+    # Verifică dacă portul este totuși ocupat
+    if command -v lsof &> /dev/null; then
+        PORT_CHECK=$(lsof -ti:3000 2>/dev/null)
+        if [ -n "$PORT_CHECK" ]; then
+            echo -e "${YELLOW}⚠️  Port 3000 is still in use (PID: $PORT_CHECK), killing...${NC}"
+            kill -9 "$PORT_CHECK" 2>/dev/null || true
+            sleep 2
+        fi
+    fi
 fi
 
 # 2. Navighează la root și actualizează codul
@@ -44,14 +87,24 @@ echo -e "${YELLOW}📋 Step 2: Updating code from git...${NC}"
 cd /opt/decaminoserviciosapp || exit 1
 
 # Gestionează conflictele locale - stochează modificările locale
-if [ -n "$(git status --porcelain deploy-backend.sh 2>/dev/null)" ]; then
-    echo -e "${YELLOW}⚠️  Local changes detected in deploy-backend.sh, stashing...${NC}"
-    git stash push -m "Local deploy-backend.sh changes before pull" deploy-backend.sh 2>/dev/null || true
+echo -e "${YELLOW}📋 Checking for local changes that might conflict...${NC}"
+cd /opt/decaminoserviciosapp || exit 1
+
+# Stash modificările locale pentru fișiere care pot cauza conflicte
+LOCAL_CHANGES=$(git status --porcelain 2>/dev/null | grep -E "(deploy-backend.sh|package-lock.json)" || true)
+if [ -n "$LOCAL_CHANGES" ]; then
+    echo -e "${YELLOW}⚠️  Local changes detected, stashing...${NC}"
+    git stash push -m "Local changes before deploy $(date +%Y%m%d-%H%M%S)" -- deploy-backend.sh backend/package-lock.json 2>/dev/null || {
+        # Dacă stash eșuează, încercă să reseteze package-lock.json (se regenerează la npm install)
+        echo -e "${YELLOW}⚠️  Stash failed, resetting package-lock.json (will be regenerated)...${NC}"
+        git checkout -- backend/package-lock.json 2>/dev/null || true
+    }
 fi
 
 # Actualizează codul
 git pull origin main || {
     echo -e "${RED}❌ Git pull failed!${NC}"
+    echo -e "${YELLOW}💡 Tip: Run 'git stash' or 'git checkout -- <file>' to resolve conflicts${NC}"
     exit 1
 }
 echo -e "${GREEN}✅ Code updated${NC}"

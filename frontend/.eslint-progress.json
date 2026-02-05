@@ -1,5 +1,5 @@
 {
-  "lastFile": "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\LocationDisplay.jsx",
+  "lastFile": "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\PeriodoSelector.jsx",
   "verifiedFiles": [
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\api\\schedules.ts",
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\App.jsx",
@@ -50,7 +50,17 @@
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\lazy\\LazyExcelComponents.jsx",
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\lazy\\LazyMapsComponents.jsx",
     "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\lazy\\LazyPDFViewer.jsx",
-    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\LocationDisplay.jsx"
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\LocationDisplay.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\MainLayout.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\MapView.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\MonthSelector.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\navigation\\MobileBottomNav.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\navigation\\MobileMoreDrawer.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\NotificationsBell.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\OfflineIndicator.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\OptimizedImage.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\PDFViewerAndroid.jsx",
+    "C:\\Users\\DEEPGAMING\\Desktop\\decamino-web\\decaminoserviciosapp\\frontend\\src\\components\\PeriodoSelector.jsx"
   ],
   "skippedFiles": []
 }

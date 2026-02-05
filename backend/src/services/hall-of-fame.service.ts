@@ -3317,6 +3317,41 @@ ORDER BY f.d;
       );
     }
 
+    // Verifică dacă există înregistrări fără ranking și calculează-l dacă e necesar
+    const countWithoutRanking = await this.prisma.hallOfFameTrimestral.count({
+      where: {
+        trimestre: trimestre,
+        ranking: null,
+        empleado_codigo: { not: '10000001' },
+      },
+    });
+
+    if (countWithoutRanking > 0) {
+      this.logger.log(
+        `⚠️ Found ${countWithoutRanking} records without ranking for ${trimestre}, calculating now...`,
+      );
+      // Calculează ranking-ul pentru toate înregistrările din trimestru
+      const allTrimestralScores =
+        await this.prisma.hallOfFameTrimestral.findMany({
+          where: {
+            trimestre: trimestre,
+            empleado_codigo: { not: '10000001' },
+          },
+          orderBy: [{ score_final: 'desc' }, { score_uso_app: 'desc' }],
+        });
+
+      // Actualizează ranking-ul
+      for (let i = 0; i < allTrimestralScores.length; i++) {
+        await this.prisma.hallOfFameTrimestral.update({
+          where: { id: allTrimestralScores[i].id },
+          data: { ranking: i + 1 },
+        });
+      }
+      this.logger.log(
+        `✅ Ranking calculated for ${allTrimestralScores.length} records in ${trimestre}`,
+      );
+    }
+
     const results = await this.prisma.hallOfFameTrimestral.findMany({
       where: {
         trimestre: trimestre,

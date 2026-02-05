@@ -326,16 +326,33 @@ const HallOfFamePage = () => {
     setLoading(true);
     try {
       const url = `${routes.getHallOfFameTrimestral}?trimestre=${selectedTrimestre}&limit=${limit}`;
+      console.log('🔍 [HallOfFame] Fetching trimestral ranking:', url);
       const result = await callApi(url, { method: 'GET' });
+      console.log('🔍 [HallOfFame] Raw result:', result);
+      console.log('🔍 [HallOfFame] result.data:', result.data);
+      console.log('🔍 [HallOfFame] result.data?.ranking:', result.data?.ranking);
+      console.log('🔍 [HallOfFame] result.ranking:', result.ranking);
       
       if (result.success && result.data?.ranking) {
+        console.log('✅ [HallOfFame] Using result.data.ranking, length:', result.data.ranking.length);
         setRankingTrimestral(result.data.ranking);
       } else if (result.success && result.ranking) {
+        console.log('✅ [HallOfFame] Using result.ranking (fallback), length:', result.ranking.length);
         // Fallback pentru format direct
         setRankingTrimestral(result.ranking);
+      } else {
+        console.warn('⚠️ [HallOfFame] No ranking data found in result:', {
+          success: result.success,
+          hasData: !!result.data,
+          hasRankingInData: !!result.data?.ranking,
+          hasRankingDirect: !!result.ranking,
+          dataKeys: result.data ? Object.keys(result.data) : [],
+        });
+        setRankingTrimestral([]);
       }
     } catch (error) {
-      console.error('Error fetching trimestral ranking:', error);
+      console.error('❌ [HallOfFame] Error fetching trimestral ranking:', error);
+      setRankingTrimestral([]);
     } finally {
       setLoading(false);
     }
