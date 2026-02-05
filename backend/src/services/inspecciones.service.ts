@@ -5,12 +5,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from './telegram.service';
 
 @Injectable()
 export class InspeccionesService {
   private readonly logger = new Logger(InspeccionesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegramService: TelegramService,
+  ) {}
 
   /**
    * Get inspecciones for a specific empleado by codigo_empleado
@@ -124,6 +128,7 @@ export class InspeccionesService {
       Nombre_Supervisor: string | null;
       Centro: string | null;
       Locacion: string | null;
+      observaciones: string | null;
       scor_total: number | null;
     }>
   > {
@@ -141,6 +146,7 @@ export class InspeccionesService {
           \`Nombre Supervisor\`,
           Centro,
           Locacion,
+          observaciones,
           scor_total
         FROM InspeccionesDocumentos
         ORDER BY fecha_subida DESC
@@ -157,6 +163,7 @@ export class InspeccionesService {
           'Nombre Supervisor': string | null;
           Centro: string | null;
           Locacion: string | null;
+          observaciones: string | null;
           scor_total: number | null;
         }>
       >(query);
@@ -172,6 +179,7 @@ export class InspeccionesService {
         Nombre_Supervisor: row['Nombre Supervisor'] || null,
         Centro: row.Centro,
         Locacion: row.Locacion,
+        observaciones: row.observaciones || null,
         scor_total: row.scor_total !== null ? Number(row.scor_total) : null,
       }));
 
@@ -245,50 +253,89 @@ export class InspeccionesService {
       this.logger.log(`📝 Creating inspeccion with ID: ${inspeccionId}`);
 
       // Check if inspeccion already exists
-      const existing = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT id FROM InspeccionesDocumentos WHERE id = ${this.escapeSql(inspeccionId)}`,
+      const existing = await this.prisma.$queryRawUnsafe<
+        Array<{
+          id: string;
+          archivo: Buffer | null;
+          nombre_archivo: string | null;
+        }>
+      >(
+        `SELECT id, archivo, nombre_archivo FROM InspeccionesDocumentos WHERE id = ${this.escapeSql(inspeccionId)}`,
       );
 
-      if (existing && existing.length > 0) {
+      // Dacă există și este o inspecție completă (are PDF), aruncă eroare
+      if (existing && existing.length > 0 && existing[0].archivo !== null) {
         this.logger.warn(
-          `⚠️ Inspeccion with ID ${inspeccionId} already exists`,
+          `⚠️ Inspeccion with ID ${inspeccionId} already exists and has PDF`,
         );
         throw new BadRequestException('Esta inspección ya existe');
       }
 
-      // Insert inspeccion into database
-      // Use Prisma raw query to match n8n snapshot behavior
-      const query = `
-        INSERT INTO InspeccionesDocumentos (
-          id,
-          tipo_inspeccion,
-          codigo_empleado,
-          nombre_empleado,
-          archivo,
-          nombre_archivo,
-          fecha_subida,
-          \`Nombre Supervisor\`,
-          codigo_supervisor,
-          Centro,
-          Locacion,
-          scor_total
-        ) VALUES (
-          ${this.escapeSql(inspeccionId)},
-          ${this.escapeSql(tipoInspeccion)},
-          ${this.escapeSql(codigoEmpleado)},
-          ${this.escapeSql(empleadoNombre)},
-          ${pdfBuffer ? `0x${pdfBuffer.toString('hex')}` : 'NULL'},
-          ${this.escapeSql(nombreArchivo)},
-          ${this.escapeSql(timestamp)},
-          ${this.escapeSql(nombreInspector)},
-          ${codigoSupervisor ? this.escapeSql(codigoSupervisor) : 'NULL'},
-          ${this.escapeSql(centroTrabajo)},
-          ${this.escapeSql(locatie)},
-          ${scorTotal !== null ? scorTotal : 'NULL'}
-        )
-      `;
+      // Dacă există dar este o cerere (fără PDF), facem UPDATE pentru a transforma cererea în inspecție completă
+      if (existing && existing.length > 0 && existing[0].archivo === null) {
+        this.logger.log(
+          `🔄 Updating solicitud ${inspeccionId} to complete inspeccion`,
+        );
 
-      await this.prisma.$executeRawUnsafe(query);
+        const updateQuery = `
+          UPDATE InspeccionesDocumentos SET
+            tipo_inspeccion = ${this.escapeSql(tipoInspeccion)},
+            codigo_empleado = ${this.escapeSql(codigoEmpleado)},
+            nombre_empleado = ${this.escapeSql(empleadoNombre)},
+            archivo = ${pdfBuffer ? `0x${pdfBuffer.toString('hex')}` : 'NULL'},
+            nombre_archivo = ${this.escapeSql(nombreArchivo)},
+            fecha_subida = ${this.escapeSql(timestamp)},
+            \`Nombre Supervisor\` = ${this.escapeSql(nombreInspector)},
+            codigo_supervisor = ${codigoSupervisor ? this.escapeSql(codigoSupervisor) : 'NULL'},
+            Centro = ${this.escapeSql(centroTrabajo)},
+            Locacion = ${this.escapeSql(locatie)},
+            observaciones = ${body.observaciones ? this.escapeSql(body.observaciones) : 'NULL'},
+            scor_total = ${scorTotal !== null ? scorTotal : 'NULL'}
+          WHERE id = ${this.escapeSql(inspeccionId)}
+        `;
+
+        await this.prisma.$executeRawUnsafe(updateQuery);
+        this.logger.log(
+          `✅ Solicitud ${inspeccionId} updated to complete inspeccion`,
+        );
+      } else {
+        // Insert inspeccion nouă în database
+        // Use Prisma raw query to match n8n snapshot behavior
+        const query = `
+          INSERT INTO InspeccionesDocumentos (
+            id,
+            tipo_inspeccion,
+            codigo_empleado,
+            nombre_empleado,
+            archivo,
+            nombre_archivo,
+            fecha_subida,
+            \`Nombre Supervisor\`,
+            codigo_supervisor,
+            Centro,
+            Locacion,
+            observaciones,
+            scor_total
+          ) VALUES (
+            ${this.escapeSql(inspeccionId)},
+            ${this.escapeSql(tipoInspeccion)},
+            ${this.escapeSql(codigoEmpleado)},
+            ${this.escapeSql(empleadoNombre)},
+            ${pdfBuffer ? `0x${pdfBuffer.toString('hex')}` : 'NULL'},
+            ${this.escapeSql(nombreArchivo)},
+            ${this.escapeSql(timestamp)},
+            ${this.escapeSql(nombreInspector)},
+            ${codigoSupervisor ? this.escapeSql(codigoSupervisor) : 'NULL'},
+            ${this.escapeSql(centroTrabajo)},
+            ${this.escapeSql(locatie)},
+            ${body.observaciones ? this.escapeSql(body.observaciones) : 'NULL'},
+            ${scorTotal !== null ? scorTotal : 'NULL'}
+          )
+        `;
+
+        await this.prisma.$executeRawUnsafe(query);
+        this.logger.log(`✅ New inspeccion created with ID: ${inspeccionId}`);
+      }
 
       // Dacă este "Entrega de Materiales", salvează documentele materialelor
       if (
@@ -388,6 +435,191 @@ export class InspeccionesService {
       }
       throw new BadRequestException(
         `Error al crear la inspección: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Create a solicitud (request) for an inspeccion (without PDF)
+   * This is used when a manager wants to request an inspection for an employee
+   * @param body - Request body with empleado data and optional notes
+   */
+  async createSolicitudInspeccion(body: {
+    codigo_empleado: string;
+    nombre_empleado: string;
+    tipo_inspeccion?: string;
+    centro?: string;
+    observaciones?: string;
+    solicitado_por?: string;
+    codigo_solicitante?: string;
+  }): Promise<{ success: boolean; message: string; id: string }> {
+    try {
+      this.logger.log('📝 Create solicitud inspeccion request');
+
+      const {
+        codigo_empleado,
+        nombre_empleado,
+        tipo_inspeccion = 'Solicitada',
+        centro = '',
+        observaciones = '',
+        solicitado_por = '',
+        codigo_solicitante = '',
+      } = body;
+
+      if (!codigo_empleado || !nombre_empleado) {
+        throw new BadRequestException(
+          'Se requiere "codigo_empleado" y "nombre_empleado"',
+        );
+      }
+
+      // Generate unique ID for the solicitud
+      const solicitudId = `SOL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const timestamp = new Date().toISOString();
+
+      // Check if solicitud already exists (unlikely but check anyway)
+      const existing = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM InspeccionesDocumentos WHERE id = ${this.escapeSql(solicitudId)}`,
+      );
+
+      if (existing && existing.length > 0) {
+        this.logger.warn(
+          `⚠️ Solicitud with ID ${solicitudId} already exists, generating new ID`,
+        );
+        // Generate new ID if collision - recursive call will generate a new ID
+        return this.createSolicitudInspeccion({
+          ...body,
+        });
+      }
+
+      // Insert solicitud into database (without PDF, archivo is NULL)
+      // Use tipo_inspeccion to indicate it's a solicitud
+      // NOTA: Locacion este pentru locația fizică, nu pentru observații
+      // Pentru cereri, Locacion este NULL deoarece nu există încă o locație fizică
+      // Observaciones se salvează în câmpul dedicat observaciones
+      const query = `
+        INSERT INTO InspeccionesDocumentos (
+          id,
+          tipo_inspeccion,
+          codigo_empleado,
+          nombre_empleado,
+          archivo,
+          nombre_archivo,
+          fecha_subida,
+          \`Nombre Supervisor\`,
+          codigo_supervisor,
+          Centro,
+          Locacion,
+          observaciones,
+          scor_total
+        ) VALUES (
+          ${this.escapeSql(solicitudId)},
+          ${this.escapeSql(tipo_inspeccion)},
+          ${this.escapeSql(codigo_empleado)},
+          ${this.escapeSql(nombre_empleado)},
+          NULL,
+          ${this.escapeSql(`SOLICITUD-${solicitudId}`)},
+          ${this.escapeSql(timestamp)},
+          NULL,
+          ${codigo_solicitante ? this.escapeSql(codigo_solicitante) : 'NULL'},
+          ${this.escapeSql(centro)},
+          NULL,
+          ${observaciones ? this.escapeSql(observaciones) : 'NULL'},
+          NULL
+        )
+      `;
+
+      await this.prisma.$executeRawUnsafe(query);
+
+      this.logger.log(
+        `✅ Solicitud inspeccion created successfully - ID: ${solicitudId}`,
+      );
+
+      // Trimite notificare Telegram către gestoria
+      try {
+        const fechaFormateada = new Date(timestamp).toLocaleDateString(
+          'es-ES',
+          {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          },
+        );
+
+        // Escape-uiește caracterele speciale Markdown pentru Telegram
+        const escapeMarkdown = (text: string): string => {
+          if (!text) return text;
+          return text
+            .replace(/_/g, '\\_')
+            .replace(/\*/g, '\\*')
+            .replace(/\[/g, '\\[')
+            .replace(/\]/g, '\\]')
+            .replace(/\(/g, '\\(')
+            .replace(/\)/g, '\\)')
+            .replace(/~/g, '\\~')
+            .replace(/`/g, '\\`')
+            .replace(/>/g, '\\>')
+            .replace(/#/g, '\\#')
+            .replace(/\+/g, '\\+')
+            .replace(/=/g, '\\=')
+            .replace(/\|/g, '\\|')
+            .replace(/\{/g, '\\{')
+            .replace(/\}/g, '\\}')
+            .replace(/\./g, '\\.')
+            .replace(/!/g, '\\!');
+        };
+
+        const nombreEscaped = escapeMarkdown(nombre_empleado);
+        const codigoEscaped = escapeMarkdown(codigo_empleado);
+        const tipoEscaped = escapeMarkdown(tipo_inspeccion);
+        const centroEscaped = escapeMarkdown(centro || 'N/A');
+        const solicitadoPorEscaped = escapeMarkdown(
+          solicitado_por || 'Sistema',
+        );
+        const observacionesEscaped = observaciones
+          ? escapeMarkdown(observaciones)
+          : '';
+
+        const telegramMessage = `
+🔍 *Nueva solicitud de inspección*
+
+👤 *Empleado:* ${nombreEscaped} (${codigoEscaped})
+📋 *Tipo:* ${tipoEscaped}
+📅 *Fecha solicitud:* ${fechaFormateada}
+🏢 *Centro:* ${centroEscaped}
+👨‍💼 *Solicitado por:* ${solicitadoPorEscaped}
+${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
+🆔 *ID Solicitud:* ${solicitudId}
+        `.trim();
+
+        await this.telegramService.sendMessage(telegramMessage);
+        this.logger.log(
+          `✅ Telegram notification sent for solicitud inspeccion - ID: ${solicitudId}`,
+        );
+      } catch (telegramError: any) {
+        // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+        // doar logăm eroarea
+        this.logger.error(
+          `⚠️ Error sending Telegram notification for solicitud inspeccion: ${telegramError.message}`,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Solicitud de inspección creada correctamente',
+        id: solicitudId,
+      };
+    } catch (error: unknown) {
+      this.logger.error(
+        'Error in InspeccionesService.createSolicitudInspeccion:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      const errorMessage =
+        error instanceof Error ? error.message : 'Error desconocido';
+      throw new BadRequestException(
+        `Error al crear la solicitud de inspección: ${errorMessage}`,
       );
     }
   }

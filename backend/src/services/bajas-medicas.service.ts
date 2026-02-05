@@ -1,6 +1,14 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
+import { EmailService } from './email.service';
+import { EmpleadosService } from './empleados.service';
+import { SentEmailsService } from './sent-emails.service';
 import * as ExcelJS from 'exceljs';
 import { sheetToJson } from '../utils/excel-helper';
 
@@ -38,6 +46,9 @@ export class BajasMedicasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly emailService: EmailService,
+    private readonly empleadosService: EmpleadosService,
+    private readonly sentEmailsService: SentEmailsService,
   ) {}
 
   private parseISODateOnlyToUtc(value: string): Date | null {
@@ -1037,6 +1048,378 @@ ${diasBaja !== null ? `📊 *Días de baja:* ${diasBaja}` : ''}
       this.logger.error('❌ Error fixing Situación for Fecha de alta:', error);
       throw new BadRequestException(
         `Error al actualizar Situación: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Formatează email-ul pentru ștergere baja médica
+   */
+  private formatBajaMedicaDeletedEmailHtml(bajaData: {
+    codigo: string;
+    nombre: string;
+    idCaso: string;
+    idPosicion: string;
+    fechaBaja?: string;
+    fechaAlta?: string;
+    mensajePersonalizado?: string;
+  }): { subject: string; html: string } {
+    const subject = `🔴 Baja médica eliminada - ${bajaData.nombre} (${bajaData.codigo})`;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .header { background-color: #f8d7da; padding: 20px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #dc3545; }
+    .info-row { margin: 10px 0; }
+    .label { font-weight: bold; color: #555; }
+    .value { color: #333; }
+    .mensaje-box { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>🔴 Baja médica eliminada</h2>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">👤 Empleado:</span>
+    <span class="value">${bajaData.nombre} (${bajaData.codigo})</span>
+  </div>
+  
+  <div class="info-row">
+    <span class="label">🆔 Caso:</span>
+    <span class="value">${bajaData.idCaso} - Posición ${bajaData.idPosicion}</span>
+  </div>
+  
+  ${
+    bajaData.fechaBaja
+      ? `
+  <div class="info-row">
+    <span class="label">📅 Fecha de baja:</span>
+    <span class="value">${bajaData.fechaBaja}</span>
+  </div>
+  `
+      : ''
+  }
+  
+  ${
+    bajaData.fechaAlta
+      ? `
+  <div class="info-row">
+    <span class="label">📅 Fecha de alta:</span>
+    <span class="value">${bajaData.fechaAlta}</span>
+  </div>
+  `
+      : ''
+  }
+  
+  ${
+    bajaData.mensajePersonalizado
+      ? `
+  <div class="mensaje-box">
+    <h3 style="margin-top: 0; color: #856404; font-size: 16px; font-weight: bold;">💬 Mensaje:</h3>
+    <p style="color: #856404; margin-bottom: 0; white-space: pre-wrap;">${bajaData.mensajePersonalizado}</p>
+  </div>
+  `
+      : ''
+  }
+  
+  <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
+  <p style="color: #888; font-size: 12px; margin-top: 20px;">
+    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+  </p>
+</body>
+</html>
+    `.trim();
+
+    return { subject, html };
+  }
+
+  /**
+   * Trimite email către angajat când se șterge o baja médica
+   */
+  private async sendBajaMedicaDeletedEmailToEmpleado(bajaData: {
+    codigo: string;
+    nombre: string;
+    idCaso: string;
+    idPosicion: string;
+    fechaBaja?: string;
+    fechaAlta?: string;
+    mensajePersonalizado?: string;
+  }): Promise<void> {
+    this.logger.log(
+      `📧 [sendBajaMedicaDeletedEmailToEmpleado] Called for baja médica delete - codigo: ${bajaData.codigo}, caso: ${bajaData.idCaso}`,
+    );
+
+    if (!this.emailService.isConfigured()) {
+      this.logger.warn(
+        `⚠️ [sendBajaMedicaDeletedEmailToEmpleado] Email service not configured. Email notification not sent to empleado for baja médica delete - codigo: ${bajaData.codigo}`,
+      );
+      return;
+    }
+
+    // Obține email-ul angajatului
+    let empleadoEmail: string | null = null;
+    if (bajaData.codigo) {
+      try {
+        const empleado = await this.empleadosService.getEmpleadoByCodigo(
+          bajaData.codigo,
+        );
+        empleadoEmail =
+          empleado?.['CORREO ELECTRONICO'] ||
+          empleado?.CORREO_ELECTRONICO ||
+          null;
+      } catch (error: any) {
+        this.logger.warn(
+          `⚠️ [sendBajaMedicaDeletedEmailToEmpleado] Could not fetch empleado email for ${bajaData.codigo}: ${error.message}`,
+        );
+      }
+    }
+
+    if (!empleadoEmail || empleadoEmail.trim() === '') {
+      this.logger.warn(
+        `⚠️ [sendBajaMedicaDeletedEmailToEmpleado] No email found for empleado ${bajaData.codigo}, skipping email notification`,
+      );
+      return;
+    }
+
+    // Definește variabilele înainte de try pentru a fi disponibile în catch
+    let subject = '';
+    let html = '';
+
+    try {
+      const emailData = this.formatBajaMedicaDeletedEmailHtml(bajaData);
+      subject = emailData.subject;
+      html = emailData.html;
+
+      this.logger.log(
+        `📧 [sendBajaMedicaDeletedEmailToEmpleado] Sending email to empleado ${empleadoEmail} for baja médica delete - subject: ${subject}`,
+      );
+      await this.emailService.sendEmail(empleadoEmail, subject, html);
+      this.logger.log(
+        `✅ [sendBajaMedicaDeletedEmailToEmpleado] Email notification sent to ${empleadoEmail} for baja médica delete ${bajaData.codigo}`,
+      );
+
+      // Salvează email-ul în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: bajaData.codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: bajaData.nombre,
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendBajaMedicaDeletedEmailToEmpleado] Eroare la salvarea email-ului în BD: ${saveError.message}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [sendBajaMedicaDeletedEmailToEmpleado] Error sending email notification to empleado for baja médica delete (non-blocking): ${error.message}`,
+      );
+
+      // Salvează și email-urile eșuate în BD
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'empleado',
+          recipientId: bajaData.codigo,
+          recipientEmail: empleadoEmail,
+          recipientName: bajaData.nombre,
+          subject: subject || `Baja médica eliminada ${bajaData.codigo}`,
+          message: html || '',
+          status: 'failed',
+          errorMessage: error.message || String(error),
+        });
+      } catch (saveError: any) {
+        this.logger.warn(
+          `⚠️ [sendBajaMedicaDeletedEmailToEmpleado] Eroare la salvarea email-ului eșuat în BD: ${saveError.message}`,
+        );
+      }
+
+      // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+    }
+  }
+
+  /**
+   * Șterge o baja médica (doar dacă nu are Fuente: MUTUA)
+   * @param idCaso - Id.Caso din MutuaCasos
+   * @param idPosicion - Id.Posición din MutuaCasos
+   * @param mensajePersonalizado - Mesaj opțional pentru angajat
+   */
+  async deleteBajaMedica(
+    idCaso: string,
+    idPosicion: string,
+    mensajePersonalizado?: string,
+  ): Promise<{ success: true; message: string; deletedRows: number }> {
+    try {
+      if (!idCaso || !idPosicion) {
+        throw new BadRequestException(
+          'Id.Caso și Id.Posición sunt obligatorii',
+        );
+      }
+
+      // Verifică dacă cazul există și obține datele necesare
+      const existingQuery = `
+        SELECT 
+          \`Fuente\`,
+          \`Codigo_Empleado\`,
+          \`Fecha baja\`,
+          \`Fecha de alta\`
+        FROM \`MutuaCasos\`
+        WHERE \`Id.Caso\` = ${this.escapeSql(idCaso)}
+          AND \`Id.Posición\` = ${this.escapeSql(idPosicion)}
+        LIMIT 1
+      `;
+
+      const existing = await this.prisma.$queryRawUnsafe<any[]>(existingQuery);
+
+      if (!existing || existing.length === 0) {
+        throw new NotFoundException(
+          `Baja médica no encontrada para Id.Caso=${idCaso}, Id.Posición=${idPosicion}`,
+        );
+      }
+
+      const fuente = existing[0]?.Fuente || existing[0]?.fuente || '';
+      const codigoEmpleado =
+        existing[0]?.['Codigo_Empleado'] ||
+        existing[0]?.Codigo_Empleado ||
+        null;
+      const fechaBaja =
+        existing[0]?.['Fecha baja'] ||
+        existing[0]?.['Fecha Baja'] ||
+        existing[0]?.['Fecha_Baja'] ||
+        null;
+      const fechaAlta =
+        existing[0]?.['Fecha de alta'] ||
+        existing[0]?.['Fecha Alta'] ||
+        existing[0]?.['Fecha_Alta'] ||
+        null;
+
+      // Verifică dacă Fuente este MUTUA
+      if (String(fuente).toUpperCase() === 'MUTUA') {
+        throw new BadRequestException(
+          'No se puede eliminar una baja médica con Fuente: MUTUA. Solo se pueden eliminar bajas con Fuente: MANUAL, EMPLEADO, etc.',
+        );
+      }
+
+      // Obține numele angajatului pentru email (înainte de ștergere)
+      let nombreEmpleado = '';
+      if (codigoEmpleado) {
+        try {
+          const empleado = await this.empleadosService.getEmpleadoByCodigo(
+            String(codigoEmpleado).trim(),
+          );
+          nombreEmpleado =
+            empleado?.['NOMBRE / APELLIDOS'] ||
+            empleado?.NOMBRE_APELLIDOS ||
+            empleado?.nombre ||
+            String(codigoEmpleado);
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ [deleteBajaMedica] Could not fetch empleado name for ${codigoEmpleado}: ${error.message}`,
+          );
+          nombreEmpleado = String(codigoEmpleado);
+        }
+      }
+
+      // Șterge cazul
+      const deleteQuery = `
+        DELETE FROM \`MutuaCasos\`
+        WHERE \`Id.Caso\` = ${this.escapeSql(idCaso)}
+          AND \`Id.Posición\` = ${this.escapeSql(idPosicion)}
+        LIMIT 1
+      `;
+
+      const result = await this.prisma.$executeRawUnsafe(deleteQuery);
+      const deletedRows = Number(result) || 0;
+
+      if (deletedRows === 0) {
+        throw new NotFoundException(
+          `Baja médica no encontrada para Id.Caso=${idCaso}, Id.Posición=${idPosicion}`,
+        );
+      }
+
+      this.logger.log(
+        `🗑️ Baja médica eliminada: Id.Caso=${idCaso}, Id.Posición=${idPosicion}, Fuente=${fuente}`,
+      );
+
+      // Trimite notificări (non-blocking)
+      if (codigoEmpleado) {
+        setImmediate(() => {
+          // Telegram notification către gestorie
+          try {
+            const bajaNotificationData = {
+              codigo: String(codigoEmpleado).trim(),
+              nombre: nombreEmpleado,
+              tipo: 'Baja Médica',
+              fecha:
+                fechaBaja && fechaAlta
+                  ? `${String(fechaBaja).slice(0, 10)} - ${String(fechaAlta).slice(0, 10)}`
+                  : fechaBaja
+                    ? String(fechaBaja).slice(0, 10)
+                    : 'N/A',
+              estado: 'Eliminada',
+              accion: 'delete' as const,
+            };
+
+            this.telegramService
+              .sendSolicitudNotification(bajaNotificationData)
+              .catch((telegramError: any) => {
+                this.logger.warn(
+                  `⚠️ [deleteBajaMedica] Error sending Telegram notification (non-blocking): ${telegramError.message}`,
+                );
+              });
+          } catch (telegramError: any) {
+            this.logger.warn(
+              `⚠️ [deleteBajaMedica] Error preparing Telegram notification (non-blocking): ${telegramError.message}`,
+            );
+          }
+
+          // Email notification către angajat
+          this.sendBajaMedicaDeletedEmailToEmpleado({
+            codigo: String(codigoEmpleado).trim(),
+            nombre: nombreEmpleado,
+            idCaso,
+            idPosicion,
+            fechaBaja: fechaBaja ? String(fechaBaja) : undefined,
+            fechaAlta: fechaAlta ? String(fechaAlta) : undefined,
+            mensajePersonalizado: mensajePersonalizado || undefined,
+          }).catch((emailError: any) => {
+            // Nu aruncăm eroarea pentru a nu opri flow-ul principal
+            this.logger.warn(
+              `⚠️ [deleteBajaMedica] Error sending email (non-blocking): ${emailError.message}`,
+            );
+          });
+        });
+      }
+
+      return {
+        success: true,
+        message: `Baja médica eliminada correctamente (Fuente: ${fuente})`,
+        deletedRows,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error eliminando baja médica Id.Caso=${idCaso}, Id.Posición=${idPosicion}:`,
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al eliminar baja médica: ${error.message}`,
       );
     }
   }

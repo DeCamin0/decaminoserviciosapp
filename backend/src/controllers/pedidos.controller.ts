@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Delete,
   Body,
   Param,
   Logger,
@@ -46,6 +47,26 @@ export class PedidosController {
       return result;
     } catch (error: any) {
       this.logger.error(`❌ [PedidosController] Error getting pedidos:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * DELETE /api/pedidos/:pedidoUid
+   * Șterge un pedido complet (toate rândurile asociate)
+   * IMPORTANT: Trebuie să fie înainte de @Get(':pedidoUid') pentru a evita conflicte de routing
+   */
+  @Delete(':pedidoUid')
+  async deletePedido(@Param('pedidoUid') pedidoUid: string) {
+    this.logger.log(
+      `🗑️ [PedidosController] Deleting pedido with UID: ${pedidoUid}`,
+    );
+    try {
+      // Decode UID dacă este URL-encoded
+      const decodedUid = decodeURIComponent(pedidoUid);
+      return await this.pedidosService.deletePedido(decodedUid);
+    } catch (error: any) {
+      this.logger.error(`❌ [PedidosController] Error deleting pedido:`, error);
       throw error;
     }
   }

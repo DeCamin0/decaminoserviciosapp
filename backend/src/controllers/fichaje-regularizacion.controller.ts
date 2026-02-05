@@ -308,10 +308,13 @@ export class FichajeRegularizacionController {
         throw new BadRequestException('employee_codigo and fecha are required');
       }
 
-      // Verifică dacă utilizatorul este manager/supervisor
-      if (!user?.isManager) {
+      // Verifică dacă utilizatorul este Developer
+      const grupo = user?.GRUPO || user?.grupo || '';
+      const isDeveloper = grupo === 'Developer';
+
+      if (!isDeveloper) {
         throw new BadRequestException(
-          'Solo supervisores y managers pueden solicitar regularizaciones',
+          'Solo los desarrolladores pueden solicitar regularizaciones',
         );
       }
 

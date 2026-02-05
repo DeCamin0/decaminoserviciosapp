@@ -95,6 +95,8 @@ import { PrlDocumentsController } from './controllers/prl-documents.controller';
 import { PrlDocumentsService } from './services/prl-documents.service';
 import { DiplomasController } from './controllers/diplomas.controller';
 import { DiplomasService } from './services/diplomas.service';
+import { PedidosNotasController } from './controllers/pedidos-notas.controller';
+import { PedidosNotasService } from './services/pedidos-notas.service';
 
 @Module({
   imports: [
@@ -168,6 +170,7 @@ import { DiplomasService } from './services/diplomas.service';
     MonitoringController,
     PrlDocumentsController,
     DiplomasController,
+    PedidosNotasController,
     // AssistantController se importa din AssistantModule
   ],
   providers: [
@@ -220,6 +223,7 @@ import { DiplomasService } from './services/diplomas.service';
     EmployeeExportService,
     PrlDocumentsService,
     DiplomasService,
+    PedidosNotasService,
   ],
 })
 export class AppModule {}

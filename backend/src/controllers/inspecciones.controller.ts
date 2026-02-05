@@ -84,6 +84,33 @@ export class InspeccionesController {
   }
 
   /**
+   * POST endpoint pentru crearea unei cereri de inspecție (fără PDF)
+   * POST /api/inspecciones/solicitud
+   */
+  @Post('solicitud')
+  async createSolicitudInspeccion(@Body() body: any) {
+    try {
+      this.logger.log('📝 Create solicitud inspeccion request received');
+
+      const result =
+        await this.inspeccionesService.createSolicitudInspeccion(body);
+
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        'Error in InspeccionesController.createSolicitudInspeccion:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        'Error al crear la solicitud de inspección',
+      );
+    }
+  }
+
+  /**
    * GET endpoint pentru descărcarea PDF-ului unei inspecții
    * GET /api/inspecciones/download?id=xxx
    */

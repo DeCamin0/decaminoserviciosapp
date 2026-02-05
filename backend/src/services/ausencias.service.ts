@@ -1225,9 +1225,12 @@ export class AusenciasService {
   /**
    * Recalculează durata unei ausencias bazat pe intervalul de date din FECHA
    */
-  async recalcularDuracion(
-    id: number,
-  ): Promise<{ success: true; message: string; duracion: number }> {
+  async recalcularDuracion(id: number): Promise<{
+    success: true;
+    message: string;
+    duracion: number;
+    unidad?: string;
+  }> {
     try {
       if (!id) {
         throw new BadRequestException('id is required');
@@ -1248,6 +1251,23 @@ export class AusenciasService {
       const ausenciaData = ausencia[0];
       const tipo = (ausenciaData.TIPO || '').toLowerCase();
       const fecha = ausenciaData.FECHA || '';
+      const codigo = ausenciaData.CODIGO || '';
+
+      // Verifică dacă este "Ausencias justificada" - calculează în ore
+      const esAusenciaJustificada =
+        (tipo.includes('ausencia') && tipo.includes('justificada')) ||
+        tipo === 'ausencias justificada' ||
+        tipo === 'ausencia justificada';
+
+      if (esAusenciaJustificada) {
+        // Calculează durata în ore pentru "Ausencias justificada"
+        return await this.recalcularDuracionHoras(
+          id,
+          ausenciaData,
+          codigo,
+          fecha,
+        );
+      }
 
       // Verifică dacă este un tip pe zile
       const esTipoZile =
@@ -1285,7 +1305,6 @@ export class AusenciasService {
 
       // Calculează durata
       let nuevaDuracion: number;
-      const codigo = ausenciaData.CODIGO || '';
       const esPermisoRetribuido = tipo.includes('permiso retribuido');
 
       if (fechaInicio === fechaFin) {
@@ -1653,6 +1672,663 @@ export class AusenciasService {
         `Error al recalcular duración: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Actualizează manual durata unei ausencias
+   */
+  async updateDuracion(
+    id: number,
+    duracion: number | string,
+    unidad: 'dias' | 'horas' = 'dias',
+  ): Promise<{
+    success: true;
+    message: string;
+    duracion: number | string;
+    unidad: string;
+  }> {
+    try {
+      if (!id) {
+        throw new BadRequestException('id is required');
+      }
+
+      // Verifică dacă ausencia există
+      const ausencia = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id, TIPO, DURACION, UNIDAD_DURACION
+        FROM Ausencias
+        WHERE id = ${Number(id)}
+        LIMIT 1
+      `);
+
+      if (!ausencia || ausencia.length === 0) {
+        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+      }
+
+      // Validează durata
+      if (unidad === 'horas') {
+        // Pentru ore, durata trebuie să fie un string în format TIME sau un număr
+        let duracionTime: string;
+        if (typeof duracion === 'string') {
+          // Verifică dacă este în format TIME (HH:MM:SS)
+          if (!/^\d{2}:\d{2}:\d{2}$/.test(duracion)) {
+            throw new BadRequestException(
+              'Formato de duración inválido para horas. Use formato HH:MM:SS (ej: 05:30:00)',
+            );
+          }
+          duracionTime = duracion;
+        } else {
+          // Convertim numărul de ore în format TIME
+          const horas = Math.floor(duracion);
+          const minutos = Math.round((duracion - horas) * 60);
+          duracionTime = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:00`;
+        }
+
+        await this.prisma.$executeRawUnsafe(`
+          UPDATE Ausencias
+          SET DURACION = ${this.escapeSql(duracionTime)},
+              UNIDAD_DURACION = 'horas'
+          WHERE id = ${Number(id)}
+        `);
+
+        this.logger.log(
+          `✅ Ausencia ${id} - Duración actualizada manualmente: ${duracionTime} horas`,
+        );
+
+        return {
+          success: true,
+          message: `Duración actualizada: ${duracionTime} horas`,
+          duracion: duracionTime,
+          unidad: 'horas',
+        };
+      } else {
+        // Pentru zile, durata trebuie să fie un număr
+        const duracionNum =
+          typeof duracion === 'number' ? duracion : Number(duracion);
+        if (isNaN(duracionNum) || duracionNum < 0) {
+          throw new BadRequestException('Duración debe ser un número positivo');
+        }
+
+        await this.prisma.$executeRawUnsafe(`
+          UPDATE Ausencias
+          SET DURACION = ${duracionNum},
+              UNIDAD_DURACION = 'dias'
+          WHERE id = ${Number(id)}
+        `);
+
+        this.logger.log(
+          `✅ Ausencia ${id} - Duración actualizada manualmente: ${duracionNum} días`,
+        );
+
+        return {
+          success: true,
+          message: `Duración actualizada: ${duracionNum} ${duracionNum === 1 ? 'día' : 'días'}`,
+          duracion: duracionNum,
+          unidad: 'dias',
+        };
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error actualizando duración manualmente para ausencia ${id}:`,
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar duración: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Normalizează o dată din format DD/MM/YYYY sau YYYY-MM-DD la format YYYY-MM-DD
+   */
+  private normalizeFechaToISO(fechaStr: string): string | null {
+    if (!fechaStr || fechaStr.trim() === '') return null;
+
+    const str = fechaStr.trim();
+
+    // Format YYYY-MM-DD (deja normalizat)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      return str;
+    }
+
+    // Format DD/MM/YYYY sau DD-MM-YYYY
+    const match = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (match) {
+      const day = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      let year = parseInt(match[3], 10);
+
+      // Convert 2-digit year to 4-digit
+      if (year < 100) {
+        year = year < 50 ? 2000 + year : 1900 + year;
+      }
+
+      // Validează
+      if (
+        month >= 1 &&
+        month <= 12 &&
+        day >= 1 &&
+        day <= 31 &&
+        year >= 1900 &&
+        year <= 2100
+      ) {
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
+
+    this.logger.warn(`⚠️ No se pudo normalizar fecha: "${fechaStr}"`);
+    return null;
+  }
+
+  /**
+   * Recalculează durata în ore pentru "Ausencias justificada"
+   * Calculează diferența între orele programate și orele fichadas
+   */
+  private async recalcularDuracionHoras(
+    id: number,
+    ausenciaData: any,
+    codigo: string,
+    fecha: string,
+  ): Promise<{
+    success: true;
+    message: string;
+    duracion: number;
+    unidad: string;
+  }> {
+    try {
+      // Parsează FECHA pentru a extrage data
+      let fechaInicio: string | null = null;
+      // Nota: Pentru moment, calculăm doar pentru o singură dată (nu interval)
+      // Dacă este interval, luăm prima dată
+      // let fechaFin: string | null = null; // Nu este folosit încă
+
+      if (fecha.includes(' - ')) {
+        const partes = fecha.split(' - ');
+        fechaInicio = partes[0]?.trim() || null;
+        // fechaFin = partes[1]?.trim() || null; // Nu este folosit încă
+      } else if (fecha) {
+        fechaInicio = fecha.trim();
+        // fechaFin = fecha.trim(); // Nu este folosit încă
+      }
+
+      if (!fechaInicio) {
+        throw new BadRequestException(
+          'No se puede calcular la duración: FECHA no válida',
+        );
+      }
+
+      // Normalizează data la format YYYY-MM-DD
+      const fechaInicioNormalizada = this.normalizeFechaToISO(fechaInicio);
+      if (!fechaInicioNormalizada) {
+        throw new BadRequestException(
+          `No se puede calcular la duración: FECHA no válida o formato incorrecto: "${fechaInicio}"`,
+        );
+      }
+
+      // Pentru moment, calculăm doar pentru o singură dată (nu interval)
+      // Dacă este interval, luăm prima dată
+      const fechaCalculo = fechaInicioNormalizada;
+
+      this.logger.log(
+        `🔍 [recalcularDuracionHoras] Calculando para ausencia ${id}, codigo ${codigo}, fecha: ${fechaCalculo} (original: ${fecha})`,
+      );
+
+      // Verifică dacă există "Salida Sin Regreso" sau "Salida Centro" asociată
+      const ausenciaAsociadaQuery = `
+        SELECT id, TIPO, DURACION, UNIDAD_DURACION
+        FROM Ausencias
+        WHERE ausencia_asociada_id = ${Number(id)}
+          AND (LOWER(TIPO) LIKE '%salida sin regreso%' OR LOWER(TIPO) LIKE '%salida centro%')
+        LIMIT 1
+      `;
+      const ausenciaAsociada = await this.prisma.$queryRawUnsafe<any[]>(
+        ausenciaAsociadaQuery,
+      );
+      const tieneSalidaSinRegreso =
+        ausenciaAsociada && ausenciaAsociada.length > 0;
+
+      // Calculează orele fichadas pentru data respectivă
+      const fichajesQuery = `
+        SELECT 
+          f.TIPO,
+          f.FECHA,
+          f.HORA,
+          f.DURACION,
+          CASE
+            WHEN f.TIPO = 'Salida' 
+              AND f.DURACION IS NOT NULL 
+              AND TRIM(f.DURACION) <> '' 
+              AND f.DURACION <> '00:00:00'
+              AND CAST(TIME(f.HORA) AS TIME) < TIME('12:00:00')
+              AND EXISTS (
+                SELECT 1
+                FROM Fichaje f_entrada
+                WHERE BINARY f_entrada.CODIGO = BINARY ${this.escapeSql(codigo)}
+                  AND f_entrada.TIPO = 'Entrada'
+                  AND f_entrada.FECHA = DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+                  AND CAST(TIME(f_entrada.HORA) AS TIME) >= TIME('17:00:00')
+              )
+            THEN DATE_SUB(f.FECHA, INTERVAL 1 DAY)
+            ELSE DATE(f.FECHA)
+          END AS workday_date
+        FROM Fichaje f
+        WHERE BINARY f.CODIGO = BINARY ${this.escapeSql(codigo)}
+          AND DATE(f.FECHA) = DATE(${this.escapeSql(fechaCalculo)})
+        ORDER BY f.FECHA, f.HORA
+      `;
+      const fichajes = await this.prisma.$queryRawUnsafe<any[]>(fichajesQuery);
+
+      this.logger.log(
+        `🔍 [recalcularDuracionHoras] Fichajes encontrados: ${fichajes.length} para fecha ${fechaCalculo}`,
+      );
+
+      // Verifică dacă există regularizare CONFIRMED pentru data respectivă
+      const regularizacionQuery = `
+        SELECT effective_minutes
+        FROM FichajeRegularizacion
+        WHERE BINARY employee_codigo = BINARY ${this.escapeSql(codigo)}
+          AND workday_date = DATE(${this.escapeSql(fechaCalculo)})
+          AND status = 'CONFIRMED'
+          AND effective_minutes IS NOT NULL
+        LIMIT 1
+      `;
+      const regularizacion =
+        await this.prisma.$queryRawUnsafe<any[]>(regularizacionQuery);
+
+      this.logger.log(
+        `🔍 [recalcularDuracionHoras] Regularizacion encontrada: ${regularizacion && regularizacion.length > 0 ? 'Sí' : 'No'}`,
+      );
+
+      // Calculează orele fichadas
+      let horasFichadas = 0;
+      if (
+        regularizacion &&
+        regularizacion.length > 0 &&
+        regularizacion[0].effective_minutes
+      ) {
+        // Folosește orele din regularizare
+        horasFichadas = Number(regularizacion[0].effective_minutes) / 60.0;
+      } else if (fichajes && fichajes.length > 0) {
+        // Calculează suma DURACION din fichajes pentru workday_date
+        const fichajesPorDia = new Map<string, number>();
+        for (const f of fichajes) {
+          const workdayDate = f.workday_date
+            ? new Date(f.workday_date).toISOString().split('T')[0]
+            : fechaCalculo;
+          if (f.DURACION && f.DURACION !== '00:00:00') {
+            const horas = this.parseTimeToHours(f.DURACION);
+            fichajesPorDia.set(
+              workdayDate,
+              (fichajesPorDia.get(workdayDate) || 0) + horas,
+            );
+          }
+        }
+        horasFichadas = fichajesPorDia.get(fechaCalculo) || 0;
+      }
+
+      // Calculează orele programate pentru data respectivă
+      // Folosim aceeași logică ca în FichajeRegularizacionService pentru consistență
+      const mesStr = fechaCalculo.substring(0, 7); // YYYY-MM
+      const dia = parseInt(fechaCalculo.split('-')[2], 10);
+
+      // Verifică cuadrante
+      const cuadranteQuery = `
+        SELECT ZI_${dia} as schedule
+        FROM cuadrante
+        WHERE BINARY CODIGO = BINARY ${this.escapeSql(codigo)}
+          AND BINARY LUNA = ${this.escapeSql(mesStr)}
+        LIMIT 1
+      `;
+      const cuadrante =
+        await this.prisma.$queryRawUnsafe<any[]>(cuadranteQuery);
+
+      if (cuadrante && cuadrante.length > 0 && cuadrante[0].schedule) {
+        const scheduleStr = cuadrante[0].schedule;
+        if (
+          scheduleStr &&
+          scheduleStr.trim() !== '' &&
+          ![
+            'LIB',
+            'LIBRE',
+            'L',
+            'DESCANSO',
+            'FESTIVO',
+            'VAC',
+            'VACACIONES',
+            'BAJA',
+            'X',
+          ].includes(scheduleStr.trim().toUpperCase())
+        ) {
+          // Parsează schedule-ul din cuadrante
+          let horasCuadrante = 0;
+          if (scheduleStr.includes(':') && scheduleStr.includes('-')) {
+            // Format "08:00-17:00" sau "T1 08:00-17:00"
+            const timeMatch = scheduleStr.match(
+              /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+            );
+            if (timeMatch) {
+              const [, h1, m1, h2, m2] = timeMatch;
+              const start = parseInt(h1) * 60 + parseInt(m1);
+              const end = parseInt(h2) * 60 + parseInt(m2);
+              const diff = (end - start + 1440) % 1440; // Handle overnight shifts
+              horasCuadrante = diff / 60.0;
+            }
+          } else if (/^\d+h/.test(scheduleStr.trim())) {
+            // Format "8h" sau "8h 30m"
+            const match = scheduleStr.trim().match(/^(\d+)h/);
+            if (match) {
+              horasCuadrante = parseFloat(match[1]);
+            }
+          }
+
+          if (horasCuadrante > 0) {
+            this.logger.log(
+              `✅ [recalcularDuracionHoras] Found cuadrante: ${scheduleStr} = ${horasCuadrante.toFixed(2)}h`,
+            );
+            const horasPlan = horasCuadrante;
+
+            // Continuă cu calculul duratei folosind horasPlan
+            const nuevaDuracionHoras =
+              fichajes.length === 0
+                ? horasPlan
+                : Math.max(0, horasPlan - horasFichadas);
+
+            const horas = Math.floor(nuevaDuracionHoras);
+            const minutos = Math.round((nuevaDuracionHoras - horas) * 60);
+            const duracionTime = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:00`;
+
+            await this.prisma.$executeRawUnsafe(`
+              UPDATE Ausencias
+              SET DURACION = ${this.escapeSql(duracionTime)},
+                  UNIDAD_DURACION = 'horas'
+              WHERE id = ${Number(id)}
+            `);
+
+            return {
+              success: true,
+              message: `Duración recalculada: ${nuevaDuracionHoras.toFixed(2)} horas (Plan: ${horasPlan.toFixed(2)}h, Fichadas: ${horasFichadas.toFixed(2)}h)`,
+              duracion: nuevaDuracionHoras,
+              unidad: 'horas',
+            };
+          }
+        }
+      }
+
+      // Fallback la horario_multicentro
+      const horarioMulticentroQuery = `
+        SELECT ZI_${dia} as schedule
+        FROM horario_multicentro
+        WHERE BINARY CODIGO = BINARY ${this.escapeSql(codigo)}
+          AND BINARY LUNA = ${this.escapeSql(mesStr)}
+        LIMIT 1
+      `;
+      const horarioMulticentro = await this.prisma.$queryRawUnsafe<any[]>(
+        horarioMulticentroQuery,
+      );
+
+      if (
+        horarioMulticentro &&
+        horarioMulticentro.length > 0 &&
+        horarioMulticentro[0].schedule
+      ) {
+        const scheduleStr = horarioMulticentro[0].schedule;
+        if (
+          scheduleStr &&
+          scheduleStr.trim() !== '' &&
+          ![
+            'LIB',
+            'LIBRE',
+            'L',
+            'DESCANSO',
+            'FESTIVO',
+            'VAC',
+            'VACACIONES',
+            'BAJA',
+            'X',
+          ].includes(scheduleStr.trim().toUpperCase())
+        ) {
+          // Parsează schedule-ul din horario_multicentro (aceeași logică ca pentru cuadrante)
+          let horasMulticentro = 0;
+          if (scheduleStr.includes(':') && scheduleStr.includes('-')) {
+            const timeMatch = scheduleStr.match(
+              /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/,
+            );
+            if (timeMatch) {
+              const [, h1, m1, h2, m2] = timeMatch;
+              const start = parseInt(h1) * 60 + parseInt(m1);
+              const end = parseInt(h2) * 60 + parseInt(m2);
+              const diff = (end - start + 1440) % 1440;
+              horasMulticentro = diff / 60.0;
+            }
+          } else if (/^\d+h/.test(scheduleStr.trim())) {
+            const match = scheduleStr.trim().match(/^(\d+)h/);
+            if (match) {
+              horasMulticentro = parseFloat(match[1]);
+            }
+          }
+
+          if (horasMulticentro > 0) {
+            this.logger.log(
+              `✅ [recalcularDuracionHoras] Found horario_multicentro: ${scheduleStr} = ${horasMulticentro.toFixed(2)}h`,
+            );
+            const horasPlan = horasMulticentro;
+
+            const nuevaDuracionHoras =
+              fichajes.length === 0
+                ? horasPlan
+                : Math.max(0, horasPlan - horasFichadas);
+
+            const horas = Math.floor(nuevaDuracionHoras);
+            const minutos = Math.round((nuevaDuracionHoras - horas) * 60);
+            const duracionTime = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:00`;
+
+            await this.prisma.$executeRawUnsafe(`
+              UPDATE Ausencias
+              SET DURACION = ${this.escapeSql(duracionTime)},
+                  UNIDAD_DURACION = 'horas'
+              WHERE id = ${Number(id)}
+            `);
+
+            return {
+              success: true,
+              message: `Duración recalculada: ${nuevaDuracionHoras.toFixed(2)} horas (Plan: ${horasPlan.toFixed(2)}h, Fichadas: ${horasFichadas.toFixed(2)}h)`,
+              duracion: nuevaDuracionHoras,
+              unidad: 'horas',
+            };
+          }
+        }
+      }
+
+      // Fallback la horario normal (din DatosEmpleados + horarios)
+      const horarioQuery = `
+        SELECT 
+          CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
+            WHEN 2 THEN h.lun_in1 WHEN 3 THEN h.mar_in1 WHEN 4 THEN h.mie_in1
+            WHEN 5 THEN h.joi_in1 WHEN 6 THEN h.vin_in1
+            WHEN 7 THEN h.sam_in1 WHEN 1 THEN h.dum_in1
+            ELSE NULL
+          END AS hora_in,
+          CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
+            WHEN 2 THEN h.lun_out1 WHEN 3 THEN h.mar_out1 WHEN 4 THEN h.mie_out1
+            WHEN 5 THEN h.joi_out1 WHEN 6 THEN h.vin_out1
+            WHEN 7 THEN h.sam_out1 WHEN 1 THEN h.dum_out1
+            ELSE NULL
+          END AS hora_out
+        FROM DatosEmpleados de
+        LEFT JOIN horarios h
+          ON h.centro_nombre = de.\`CENTRO TRABAJO\`
+          AND h.grupo_nombre = de.GRUPO
+          AND h.vigente_desde <= ${this.escapeSql(fechaCalculo)}
+          AND (h.vigente_hasta IS NULL OR ${this.escapeSql(fechaCalculo)} <= h.vigente_hasta)
+        WHERE de.CODIGO = ${this.escapeSql(codigo)}
+        LIMIT 1
+      `;
+      const horario = await this.prisma.$queryRawUnsafe<any[]>(horarioQuery);
+
+      let horasPlan = 0;
+      if (
+        horario &&
+        horario.length > 0 &&
+        horario[0].hora_in &&
+        horario[0].hora_out
+      ) {
+        // Calculează diferența între hora_in și hora_out
+        const horaIn = horario[0].hora_in;
+        const horaOut = horario[0].hora_out;
+
+        // Parsează orele (format TIME: HH:MM:SS sau Date object)
+        let hIn = 0,
+          mIn = 0,
+          hOut = 0,
+          mOut = 0;
+
+        if (horaIn instanceof Date) {
+          hIn = horaIn.getHours();
+          mIn = horaIn.getMinutes();
+        } else {
+          const partsIn = horaIn.toString().split(':');
+          hIn = parseInt(partsIn[0]) || 0;
+          mIn = parseInt(partsIn[1]) || 0;
+        }
+
+        if (horaOut instanceof Date) {
+          hOut = horaOut.getHours();
+          mOut = horaOut.getMinutes();
+        } else {
+          const partsOut = horaOut.toString().split(':');
+          hOut = parseInt(partsOut[0]) || 0;
+          mOut = parseInt(partsOut[1]) || 0;
+        }
+
+        const start = hIn * 60 + mIn;
+        const end = hOut * 60 + mOut;
+        const diff = (end - start + 1440) % 1440; // Handle overnight shifts
+        horasPlan = diff / 60.0;
+
+        this.logger.log(
+          `✅ [recalcularDuracionHoras] Found horario: ${horaIn} - ${horaOut} = ${horasPlan.toFixed(2)}h`,
+        );
+      }
+
+      // Dacă nu am găsit ore programate, încercăm să folosim orele contractului ca fallback
+      if (horasPlan === 0) {
+        this.logger.log(
+          `⚠️ [recalcularDuracionHoras] No scheduled hours found in cuadrante, horario_multicentro, or horario. Using contract hours as fallback.`,
+        );
+        // Obține orele contractului (40h/săptămână = 8h/zi pentru 5 zile)
+        const contractQuery = `
+          SELECT horas_contrato
+          FROM DatosEmpleados
+          WHERE CODIGO = ${this.escapeSql(codigo)}
+          LIMIT 1
+        `;
+        const contract =
+          await this.prisma.$queryRawUnsafe<any[]>(contractQuery);
+        if (contract && contract.length > 0 && contract[0].horas_contrato) {
+          const horasContrato = Number(contract[0].horas_contrato) || 0;
+          // Presupunem 5 zile lucrătoare pe săptămână
+          horasPlan = horasContrato / 5.0;
+          this.logger.log(
+            `✅ [recalcularDuracionHoras] Using contract hours: ${horasContrato}h/week = ${horasPlan.toFixed(2)}h/day`,
+          );
+        }
+      }
+
+      // Log pentru debugging
+      this.logger.log(
+        `🔍 [recalcularDuracionHoras] Resultados: horasPlan=${horasPlan.toFixed(2)}h, horasFichadas=${horasFichadas.toFixed(2)}h, tieneSalidaSinRegreso=${tieneSalidaSinRegreso}, fichajes.length=${fichajes.length}`,
+      );
+
+      // Calculează durata (diferența)
+      // Dacă nu există fichajes sau nu există "Salida Sin Regreso" sau "Salida Centro",
+      // punem toată ziua (orele programate)
+      let nuevaDuracionHoras = 0;
+
+      // Dacă nu a fichat deloc (nu există fichajes sau nu are ore fichadas)
+      // ȘI nu există "Salida Sin Regreso/Centro" asociată
+      // → punem toată ziua (orele programate)
+      if (!tieneSalidaSinRegreso && fichajes.length === 0) {
+        // Nu a fichat deloc și nu există "Salida Sin Regreso/Centro" - punem toată ziua
+        nuevaDuracionHoras = horasPlan;
+        this.logger.log(
+          `✅ [recalcularDuracionHoras] No fichajes y no Salida Sin Regreso - usando horasPlan: ${horasPlan.toFixed(2)}h`,
+        );
+      } else if (
+        !tieneSalidaSinRegreso &&
+        horasFichadas === 0 &&
+        fichajes.length > 0
+      ) {
+        // Există fichajes dar nu au DURACION (fichaje incomplete) - punem toată ziua
+        nuevaDuracionHoras = horasPlan;
+        this.logger.log(
+          `✅ [recalcularDuracionHoras] Fichajes sin DURACION - usando horasPlan: ${horasPlan.toFixed(2)}h`,
+        );
+      } else {
+        // Calculează diferența: ore programate - ore fichadas
+        nuevaDuracionHoras = Math.max(0, horasPlan - horasFichadas);
+        this.logger.log(
+          `✅ [recalcularDuracionHoras] Calculando diferencia: ${horasPlan.toFixed(2)}h - ${horasFichadas.toFixed(2)}h = ${nuevaDuracionHoras.toFixed(2)}h`,
+        );
+      }
+
+      // Asigură că durata este minim 0
+      if (nuevaDuracionHoras < 0) {
+        nuevaDuracionHoras = 0;
+      }
+
+      // Dacă durata este 0 dar ar trebui să fie mai mare (are ore programate), folosim orele programate
+      if (nuevaDuracionHoras === 0 && horasPlan > 0 && fichajes.length === 0) {
+        nuevaDuracionHoras = horasPlan;
+        this.logger.log(
+          `⚠️ [recalcularDuracionHoras] Durata era 0 pero tiene horasPlan - usando horasPlan: ${horasPlan.toFixed(2)}h`,
+        );
+      }
+
+      // Actualizează durata în format TIME (HH:MM:SS)
+      const horas = Math.floor(nuevaDuracionHoras);
+      const minutos = Math.round((nuevaDuracionHoras - horas) * 60);
+      const duracionTime = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:00`;
+
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE Ausencias
+        SET DURACION = ${this.escapeSql(duracionTime)},
+            UNIDAD_DURACION = 'horas'
+        WHERE id = ${Number(id)}
+      `);
+
+      this.logger.log(
+        `✅ Ausencia ${id} - Duración recalculada: ${nuevaDuracionHoras.toFixed(2)} horas (FECHA: ${fecha}, Plan: ${horasPlan.toFixed(2)}h, Fichadas: ${horasFichadas.toFixed(2)}h)`,
+      );
+
+      return {
+        success: true,
+        message: `Duración recalculada: ${nuevaDuracionHoras.toFixed(2)} horas (Plan: ${horasPlan.toFixed(2)}h, Fichadas: ${horasFichadas.toFixed(2)}h)`,
+        duracion: nuevaDuracionHoras,
+        unidad: 'horas',
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error recalculando duración en horas para ausencia ${id}:`,
+        error,
+      );
+      throw new BadRequestException(
+        `Error al recalcular duración en horas: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Parsează un string TIME (HH:MM:SS) în ore (decimal)
+   */
+  private parseTimeToHours(timeStr: string): number {
+    if (!timeStr || timeStr === '00:00:00') return 0;
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return 0;
+    const hours = Number(parts[0]) || 0;
+    const minutes = Number(parts[1]) || 0;
+    return hours + minutes / 60.0;
   }
 
   /**
@@ -2062,9 +2738,85 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
       const codigo = ausencia.CODIGO || '';
       const nombre = ausencia.NOMBRE || '';
       const tipo = ausencia.TIPO || '';
-      const fecha = ausencia.FECHA
-        ? new Date(ausencia.FECHA).toLocaleDateString('es-ES')
-        : '';
+
+      // Formatează data corect folosind parseFecha (care parsează string-uri de tip "YYYY-MM-DD" sau "YYYY-MM-DD - YYYY-MM-DD")
+      let fecha = '';
+      if (ausencia.FECHA) {
+        try {
+          const fechaStr = String(ausencia.FECHA).trim();
+
+          // Folosește parseFecha pentru a obține fecha_inicio și fecha_fin
+          const { inicio: fechaInicio, fin: fechaFin } =
+            this.parseFecha(fechaStr);
+
+          // Construiește string-ul de afișare
+          if (fechaInicio && fechaFin) {
+            if (fechaInicio === fechaFin) {
+              // Dată simplă (aceeași zi)
+              const fechaDate = new Date(fechaInicio);
+              if (!isNaN(fechaDate.getTime())) {
+                fecha = fechaDate.toLocaleDateString('es-ES', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                });
+              } else {
+                fecha = fechaInicio; // Folosește valoarea originală dacă nu poate fi formatată
+              }
+            } else {
+              // Interval de date
+              const fechaInicioDate = new Date(fechaInicio);
+              const fechaFinDate = new Date(fechaFin);
+              if (
+                !isNaN(fechaInicioDate.getTime()) &&
+                !isNaN(fechaFinDate.getTime())
+              ) {
+                const inicioFormatted = fechaInicioDate.toLocaleDateString(
+                  'es-ES',
+                  {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                  },
+                );
+                const finFormatted = fechaFinDate.toLocaleDateString('es-ES', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                });
+                fecha = `${inicioFormatted} - ${finFormatted}`;
+              } else {
+                fecha = `${fechaInicio} - ${fechaFin}`; // Folosește valorile originale
+              }
+            }
+          } else if (fechaInicio) {
+            // Doar fecha_inicio
+            const fechaDate = new Date(fechaInicio);
+            if (!isNaN(fechaDate.getTime())) {
+              fecha = fechaDate.toLocaleDateString('es-ES', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+              });
+            } else {
+              fecha = fechaInicio; // Folosește valoarea originală
+            }
+          } else {
+            // Nu s-a putut parsa, folosește valoarea originală
+            fecha = fechaStr;
+            this.logger.warn(
+              `⚠️ [recordarJustificante] Could not parse fecha, using raw value: ${fechaStr}`,
+            );
+          }
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ [recordarJustificante] Error formatting fecha: ${error.message}, fecha value: ${ausencia.FECHA}`,
+          );
+          fecha =
+            typeof ausencia.FECHA === 'string' ? String(ausencia.FECHA) : '';
+        }
+      }
+
       const motivo = ausencia.MOTIVO || undefined;
 
       if (!codigo || !nombre) {

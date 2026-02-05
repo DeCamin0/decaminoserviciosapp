@@ -39,7 +39,7 @@ export class TelegramService implements OnModuleInit {
       );
     } else {
       this.logger.warn(
-        '⚠️ Telegram gestoria bot not configured. Set TELEGRAM_BOT_TOKEN in .env to enable notifications. Using default chat ID from n8n workflow.',
+        `⚠️ Telegram gestoria bot not configured. Set TELEGRAM_BOT_TOKEN in .env to enable notifications. Using default chat ID from n8n workflow. Current config: botToken=${!!this.botToken}, chatId=${this.chatId}`,
       );
     }
 
@@ -136,7 +136,7 @@ export class TelegramService implements OnModuleInit {
       const tokenPreview = botToken
         ? `${botToken.substring(0, 10)}...`
         : 'NULL';
-      this.logger.debug(
+      this.logger.log(
         `📤 Attempting to send Telegram message (${botType} bot, token: ${tokenPreview}, chatId: ${chatId}, message length: ${message.length})`,
       );
 
@@ -157,13 +157,30 @@ export class TelegramService implements OnModuleInit {
         parse_mode: 'Markdown', // Folosim Markdown ca în n8n workflow (Cron absente.json)
       };
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      // Adăugăm timeout și signal pentru a evita blocarea
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 secunde timeout
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Telegram API request timeout (10s)');
+        }
+        throw new Error(
+          `Telegram API fetch failed: ${fetchError.message || fetchError.toString()}`,
+        );
+      }
 
       this.logger.debug(
         `📥 Telegram API response status: ${response.status} ${response.statusText}`,

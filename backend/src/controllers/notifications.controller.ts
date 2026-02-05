@@ -158,7 +158,7 @@ export class NotificationsController {
 
     return {
       success: true,
-      message: 'Notificare de test trimisă',
+      message: 'Notificación de prueba enviada',
     };
   }
 

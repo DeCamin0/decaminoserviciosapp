@@ -280,8 +280,12 @@ export class NominasService {
         throw new BadRequestException('Parámetro "nombre" requerido');
       }
 
+      // Normalizează spațiile multiple la un singur spațiu (pentru compatibilitate)
+      const nombreNormalized = nombreTrimmed.replace(/\s+/g, ' ').trim();
+
       // Construiește query-ul SQL (similar cu n8n)
       // Acceptă atât numele exact cât și cu prefix "FINIQUITO - " (pentru finiquitos salvate automat)
+      // Normalizează spațiile multiple în numele din DB pentru comparație flexibilă
       const query = `
         SELECT
           id,
@@ -294,15 +298,15 @@ export class NominasService {
         FROM Nominas
         WHERE id = ${id}
           AND (
-            LOWER(nombre) = LOWER(${this.escapeSql(nombreTrimmed)})
-            OR LOWER(nombre) = LOWER(${this.escapeSql(`FINIQUITO - ${nombreTrimmed}`)})
-            OR LOWER(TRIM(REPLACE(REPLACE(nombre, 'FINIQUITO -', ''), 'FINIQUITO-', ''))) = LOWER(${this.escapeSql(nombreTrimmed)})
+            LOWER(REGEXP_REPLACE(nombre, ' +', ' ')) = LOWER(${this.escapeSql(nombreNormalized)})
+            OR LOWER(REGEXP_REPLACE(nombre, ' +', ' ')) = LOWER(${this.escapeSql(`FINIQUITO - ${nombreNormalized}`)})
+            OR LOWER(TRIM(REGEXP_REPLACE(REPLACE(REPLACE(nombre, 'FINIQUITO -', ''), 'FINIQUITO-', ''), ' +', ' '))) = LOWER(${this.escapeSql(nombreNormalized)})
           )
         LIMIT 1;
       `.trim();
 
       this.logger.log(
-        `📝 Download nomina query: WHERE id = ${id} AND (nombre = ${nombreTrimmed} OR nombre = FINIQUITO - ${nombreTrimmed} OR nombre without prefix = ${nombreTrimmed})`,
+        `📝 Download nomina query: WHERE id = ${id} AND (nombre normalized = ${nombreNormalized} OR nombre = FINIQUITO - ${nombreNormalized} OR nombre without prefix = ${nombreNormalized})`,
       );
 
       const result = await this.prisma.$queryRawUnsafe<any[]>(query);

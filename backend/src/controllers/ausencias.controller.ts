@@ -227,4 +227,28 @@ export class AusenciasController {
       throw error;
     }
   }
+
+  @Patch(':id/duracion')
+  @UseGuards(JwtAuthGuard)
+  async updateDuracion(
+    @Param('id') id: string,
+    @Body() body: { duracion: number | string; unidad?: 'dias' | 'horas' },
+  ) {
+    try {
+      this.logger.log(
+        `✏️ Update duración manual request - id: ${id}, duracion: ${body.duracion}, unidad: ${body.unidad || 'dias'}`,
+      );
+
+      const result = await this.ausenciasService.updateDuracion(
+        Number(id),
+        body.duracion,
+        body.unidad || 'dias',
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error actualizando duración manualmente:', error);
+      throw error;
+    }
+  }
 }

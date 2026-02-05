@@ -3,8 +3,10 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Query,
+  Param,
   UseGuards,
   Logger,
   UploadedFile,
@@ -251,6 +253,40 @@ export class BajasMedicasController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error fixing Situación:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * DELETE /api/bajas-medicas/:idCaso/:idPosicion
+   * Șterge o baja médica (doar dacă nu are Fuente: MUTUA)
+   * Acceptă mesaj personalizat în body pentru email către angajat
+   */
+  @Delete(':idCaso/:idPosicion')
+  async deleteBajaMedica(
+    @Param('idCaso') idCaso: string,
+    @Param('idPosicion') idPosicion: string,
+    @Body() body?: { mensajePersonalizado?: string },
+  ) {
+    try {
+      this.logger.log(
+        `🗑️ Delete baja médica request - Id.Caso: ${idCaso}, Id.Posición: ${idPosicion}`,
+      );
+
+      // Decodează parametrii dacă sunt URL-encoded
+      const decodedIdCaso = decodeURIComponent(idCaso);
+      const decodedIdPosicion = decodeURIComponent(idPosicion);
+      const mensajePersonalizado = body?.mensajePersonalizado || undefined;
+
+      const result = await this.bajasMedicasService.deleteBajaMedica(
+        decodedIdCaso,
+        decodedIdPosicion,
+        mensajePersonalizado,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error('❌ Error deleting baja médica:', error);
       throw error;
     }
   }

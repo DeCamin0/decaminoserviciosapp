@@ -38,6 +38,8 @@ model User {
   DerechoPedidos                    String?  @db.VarChar(100)
   TrabajaFestivos                   String?  @db.VarChar(50)
   VACACIONES_RESTANTES_ANO_ANTERIOR Decimal? @map("VACACIONES_RESTANTES_ANO_ANTERIOR") @db.Decimal(5, 1)
+  VACACIONES_ANUALES_PERSONALIZADAS Decimal? @map("VACACIONES_ANUALES_PERSONALIZADAS") @db.Decimal(5, 1)
+  ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS Decimal? @map("ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS") @db.Decimal(5, 1)
   certificado_handicap_confirmado   Boolean? @map("certificado_handicap_confirmado")
   fecha_baja_programada             String?  @map("fecha_baja_programada") @db.VarChar(100)
 
@@ -214,11 +216,13 @@ model Ausencias {
   DURACION        String?   @db.Text
   UNIDAD_DURACION String    @default("dias") @db.VarChar(50)
   no_necesita_justificante Boolean @default(false) @map("no_necesita_justificante")
+  ausencia_asociada_id Int? @map("ausencia_asociada_id")
   created_at      DateTime  @default(now()) @db.Timestamp(0)
 
   @@unique([solicitud_id, CODIGO], map: "uk_aus_sol_cod")
   @@index([CODIGO, FECHA], map: "idx_ausencias_cod_fecha")
   @@index([CODIGO, TIPO, FECHA, HORA], map: "idx_ausencias_codigo_tipo_fecha_hora")
+  @@index([ausencia_asociada_id], map: "idx_ausencias_asociada_id")
 }
 
 model CarpetasDocumentos {
@@ -442,6 +446,7 @@ model InspeccionesDocumentos {
   codigo_supervisor String?  @map("codigo_supervisor") @db.VarChar(50)
   Centro            String?  @db.VarChar(300)
   Locacion          String?  @db.VarChar(500)
+  observaciones     String?  @db.Text
   scor_total        Decimal? @map("scor_total") @db.Decimal(5, 2)
 }
 
@@ -1518,4 +1523,40 @@ model Diploma {
   @@index([empleado_id], map: "idx_diploma_empleado")
   @@index([fecha_subida], map: "idx_diploma_fecha")
   @@map("diplomas")
+}
+
+// ============================================
+// PEDIDOS NOTAS - Sistema de Notas para Pedidos
+// ============================================
+
+model PedidosNotas {
+  id              Int       @id @default(autoincrement())
+  titulo          String?   @db.VarChar(255)
+  contenido       String    @db.Text
+  creado_por      String?   @db.VarChar(100)
+  creado_en       DateTime  @default(now()) @map("creado_en") @db.Timestamp(0)
+  actualizado_en  DateTime  @default(now()) @updatedAt @map("actualizado_en") @db.Timestamp(0)
+  activo          Boolean   @default(true)
+  
+  imagenes        PedidosNotasImagen[]
+  
+  @@index([activo], map: "idx_pedidos_notas_activo")
+  @@index([creado_en], map: "idx_pedidos_notas_creado")
+  @@map("pedidos_notas")
+}
+
+model PedidosNotasImagen {
+  id              Int       @id @default(autoincrement())
+  nota_id         Int       @map("nota_id")
+  nombre_archivo  String    @map("nombre_archivo") @db.VarChar(255)
+  ruta_archivo    String    @map("ruta_archivo") @db.VarChar(500)
+  tipo_mime       String?   @map("tipo_mime") @db.VarChar(100)
+  tamano_bytes    Int?      @map("tamano_bytes")
+  orden           Int       @default(0)
+  creado_en       DateTime  @default(now()) @map("creado_en") @db.Timestamp(0)
+  
+  nota            PedidosNotas @relation(fields: [nota_id], references: [id], onDelete: Cascade)
+  
+  @@index([nota_id], map: "idx_pedidos_notas_imagen_nota")
+  @@map("pedidos_notas_imagen")
 }

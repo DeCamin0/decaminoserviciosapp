@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
@@ -1769,6 +1774,66 @@ export class PedidosService {
     } catch (error: any) {
       this.logger.error(`❌ Error enviando pedidos aprobados:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Șterge un pedido complet (toate rândurile asociate cu pedido_uid)
+   * @param pedidoUid - UID-ul pedido-ului de șters
+   */
+  async deletePedido(
+    pedidoUid: string,
+  ): Promise<{ success: true; message: string; deletedRows: number }> {
+    try {
+      if (
+        !pedidoUid ||
+        typeof pedidoUid !== 'string' ||
+        pedidoUid.trim() === ''
+      ) {
+        throw new BadRequestException('pedido_uid es requerido');
+      }
+
+      const pedidoUidEscaped = this.escapeSql(pedidoUid.trim());
+
+      // Verifică dacă pedido-ul există
+      const existingPedidos = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT COUNT(*) as count
+        FROM PedidosTodos
+        WHERE pedido_uid = ${pedidoUidEscaped}
+      `);
+
+      const count = existingPedidos[0]?.count || 0;
+      if (count === 0) {
+        throw new NotFoundException(
+          `Pedido con UID ${pedidoUid} no encontrado`,
+        );
+      }
+
+      // Șterge toate rândurile asociate cu pedido_uid
+      const deleteQuery = `DELETE FROM PedidosTodos WHERE pedido_uid = ${pedidoUidEscaped}`;
+      const result = await this.prisma.$executeRawUnsafe(deleteQuery);
+      const deletedRows = Number(result) || 0;
+
+      this.logger.log(
+        `🗑️ Pedido eliminado: ${pedidoUid} (${deletedRows} filas eliminadas)`,
+      );
+
+      return {
+        success: true,
+        message: `Pedido eliminado correctamente (${deletedRows} fila(s) eliminada(s))`,
+        deletedRows,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error eliminando pedido ${pedidoUid}:`, error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al eliminar pedido: ${error.message}`,
+      );
     }
   }
 }
