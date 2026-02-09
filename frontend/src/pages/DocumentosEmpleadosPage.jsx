@@ -4008,13 +4008,11 @@ export default function DocumentosEmpleadosPage() {
       
 
       // Preparar datos para enviar en el body
-
+      // IMPORTANT: Backend așteaptă doc_id (primary key Int), nu id (CODIGO angajat)
       const deleteData = {
-
-        id: documento.id,
-
-        filename: documento.fileName || ''
-
+        id: documento.doc_id || documento.id, // Priorizăm doc_id (primary key)
+        nombre_archivo: documento.fileName || documento.nombre_archivo || '',
+        filename: documento.fileName || documento.nombre_archivo || '' // Fallback pentru compatibilitate
       };
 
       
@@ -4055,8 +4053,10 @@ export default function DocumentosEmpleadosPage() {
         
 
         // Actualizar lista de documentos oficiales localmente
-
-        setDocumentosOficiales(prev => prev.filter(doc => doc.id !== documento.id));
+        // Folosim doc_id pentru comparare (primary key)
+        setDocumentosOficiales(prev => prev.filter(doc => 
+          (doc.doc_id || doc.id) !== (documento.doc_id || documento.id)
+        ));
 
         
 

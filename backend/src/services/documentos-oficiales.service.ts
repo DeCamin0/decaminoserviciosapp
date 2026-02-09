@@ -482,25 +482,82 @@ export class DocumentosOficialesService {
         );
       }
 
-      // Build DELETE query (matching n8n snapshot logic)
-      // Note: n8n snapshot uses CAST(id AS UNSIGNED), but we use doc_id (Int primary key)
-      const query = `
-        DELETE FROM \`DocumentosOficiales\`
-        WHERE doc_id = CAST(${docIdNumber} AS UNSIGNED)
-          AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivo.trim())})
-        LIMIT 1
-      `;
+      // Normalize filename using the same method as upload (cleanFilenameKeepExt)
+      // This ensures we can find documents even if they were saved with normalized names
+      const nombreArchivoNormalized = this.cleanFilenameKeepExt(nombreArchivo);
 
       this.logger.log(
-        `🗑️ Delete documento oficial request - doc_id: ${docIdNumber}, nombre_archivo: "${nombreArchivo.trim()}"`,
+        `🗑️ Delete documento oficial request - doc_id: ${docIdNumber}, nombre_archivo: "${nombreArchivo.trim()}" (normalized: "${nombreArchivoNormalized}")`,
       );
+
+      // First, check what documents exist with this doc_id for debugging
+      const checkQuery = `
+        SELECT 
+          doc_id,
+          id,
+          nombre_archivo,
+          LENGTH(nombre_archivo) as nombre_length,
+          HEX(nombre_archivo) as nombre_hex
+        FROM \`DocumentosOficiales\`
+        WHERE doc_id = CAST(${docIdNumber} AS UNSIGNED)
+        LIMIT 5
+      `;
+
+      const existingDocs = await this.prisma.$queryRawUnsafe<any[]>(checkQuery);
+      
+      if (existingDocs.length === 0) {
+        throw new NotFoundException(
+          `Documento oficial no encontrado para doc_id=${docIdNumber}`,
+        );
+      }
+
+      // Log existing documents for debugging
+      this.logger.log(
+        `🔍 Found ${existingDocs.length} document(s) with doc_id=${docIdNumber}:`,
+      );
+      existingDocs.forEach((doc, idx) => {
+        this.logger.log(
+          `  ${idx + 1}. nombre_archivo: "${doc.nombre_archivo}" (length: ${doc.nombre_length})`,
+        );
+      });
+
+      // If only one document exists with this doc_id, delete it regardless of filename
+      // This handles cases where filename might have slight differences (spaces, encoding, etc.)
+      let query: string;
+      if (existingDocs.length === 1) {
+        this.logger.log(
+          `ℹ️ Only one document found with doc_id=${docIdNumber}, deleting by doc_id only`,
+        );
+        query = `
+          DELETE FROM \`DocumentosOficiales\`
+          WHERE doc_id = CAST(${docIdNumber} AS UNSIGNED)
+          LIMIT 1
+        `;
+      } else {
+        // Multiple documents with same doc_id - need to match by filename
+        // Use LIKE for more flexible matching (handles spaces, encoding differences)
+        const nombrePattern = nombreArchivoNormalized.replace(/%/g, '\\%').replace(/_/g, '\\_');
+        query = `
+          DELETE FROM \`DocumentosOficiales\`
+          WHERE doc_id = CAST(${docIdNumber} AS UNSIGNED)
+            AND (
+              TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivoNormalized)})
+              OR TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivo.trim())})
+              OR nombre_archivo LIKE ${this.escapeSql(`%${nombrePattern}%`)}
+            )
+          LIMIT 1
+        `;
+      }
 
       const result = await this.prisma.$executeRawUnsafe(query);
       const affectedRows = Number(result) || 0;
 
       if (affectedRows === 0) {
+        // Provide more helpful error message with actual filename from DB
+        const actualFilename = existingDocs[0]?.nombre_archivo || 'N/A';
         throw new NotFoundException(
-          `Documento oficial no encontrado para doc_id=${docIdNumber} y nombre_archivo="${nombreArchivo.trim()}"`,
+          `Documento oficial no encontrado para doc_id=${docIdNumber} y nombre_archivo="${nombreArchivo.trim()}". ` +
+          `Documento existente tiene nombre_archivo: "${actualFilename}"`,
         );
       }
 

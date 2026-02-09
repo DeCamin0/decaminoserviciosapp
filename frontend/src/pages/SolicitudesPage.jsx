@@ -747,19 +747,29 @@ function MobileSolicitudItem({ solicitud, getAusenciaDurationDisplay, formatDate
       }
     }
     
-    if (fechaNormalizada) {
+    if (fechaNormalizada && tipoAusencia) {
       // Folosim state-ul pentru lookup
       const currentMap = justificantesPorAusencia;
       
-      // MATCHING FLEXIBIL: Caută direct pe dată (key-ul este data normalizată YYYY-MM-DD)
-      justificante = currentMap.get(fechaNormalizada);
+      // PRIORITATE 1: Matching exact pe tipo_fecha (cel mai precis)
+      const keyExact = `${tipoAusencia}_${fechaNormalizada}`;
+      const keyExactSinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
       
-      // Dacă nu găsește direct pe dată, caută prin iterație (fallback pentru key-uri vechi)
+      justificante = currentMap.get(keyExact) || currentMap.get(keyExactSinEspacios);
+      
+      // PRIORITATE 2: Dacă nu găsește matching exact, caută pe dată dar VERIFICĂ TIPUL
       if (!justificante) {
         for (const [, value] of currentMap.entries()) {
+          // Verifică că data se potrivește
           if (value.fechaAusencia === fechaNormalizada) {
-            justificante = value;
-            break;
+            // IMPORTANT: Verifică că tipul se potrivește (case-insensitive, fără spații)
+            const tipoJustificante = (value.tipoAusencia || '').toLowerCase().trim();
+            const tipoAusenciaNormalizado = tipoAusencia.toLowerCase().trim();
+            
+            if (tipoJustificante === tipoAusenciaNormalizado) {
+              justificante = value;
+              break;
+            }
           }
         }
       }
@@ -772,9 +782,20 @@ function MobileSolicitudItem({ solicitud, getAusenciaDurationDisplay, formatDate
         console.log(`🔍 [MobileSolicitudItem] Sample keys:`, sampleKeys);
       }
       
-      // Verifică doar dacă data se potrivește (nu verificăm tipul)
-      if (justificante && justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
-        justificante = null;
+      // Verificare finală: asigură-te că data și tipul se potrivesc
+      if (justificante) {
+        // Verifică data
+        if (justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
+          justificante = null;
+        }
+        // Verifică tipul (case-insensitive)
+        else if (justificante.tipoAusencia && tipoAusencia) {
+          const tipoJustificante = justificante.tipoAusencia.toLowerCase().trim();
+          const tipoAusenciaNormalizado = tipoAusencia.toLowerCase().trim();
+          if (tipoJustificante !== tipoAusenciaNormalizado) {
+            justificante = null;
+          }
+        }
       }
     }
   }
@@ -6736,8 +6757,8 @@ export default function SolicitudesPage() {
                                         (solicitud.FECHA || solicitud.fecha || solicitud.fecha_inicio || solicitud.fecha_solicitud);
                       
                       if (esAusencia) {
-                        // tipoAusencia nu este folosit în acest context
-                        // const tipoAusencia = solicitud.tipo || '';
+                        // IMPORTANT: Definim tipoAusencia pentru matching cu justificante
+                        const tipoAusencia = solicitud.tipo || '';
                         // Pentru data, folosim FECHA sau prima dată disponibilă
                         // IMPORTANT: Pentru matching cu justificante, folosim prima dată din interval
                         let fechaAusencia = solicitud.FECHA || solicitud.fecha || solicitud.fecha_inicio || solicitud['fecha inicio'] || '';
@@ -6791,19 +6812,46 @@ export default function SolicitudesPage() {
                           ? justificantesPorAusencia 
                           : justificantesPorAusenciaRef.current;
                         
-                        // MATCHING FLEXIBIL: Caută doar pe dată (fără verificare de tip)
-                        // Justificantele se asociază cu orice absență din aceeași dată
+                        // PRIORITATE 1: Matching exact pe tipo_fecha (cel mai precis)
                         let justificante = null;
-                        for (const [, value] of currentMap.entries()) {
-                          if (value.fechaAusencia === fechaNormalizada) {
-                            justificante = value;
-                            break;
+                        if (tipoAusencia && fechaNormalizada) {
+                          const keyExact = `${tipoAusencia}_${fechaNormalizada}`;
+                          const keyExactSinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
+                          
+                          justificante = currentMap.get(keyExact) || currentMap.get(keyExactSinEspacios);
+                          
+                          // PRIORITATE 2: Dacă nu găsește matching exact, caută pe dată dar VERIFICĂ TIPUL
+                          if (!justificante) {
+                            for (const [, value] of currentMap.entries()) {
+                              // Verifică că data se potrivește
+                              if (value.fechaAusencia === fechaNormalizada) {
+                                // IMPORTANT: Verifică că tipul se potrivește (case-insensitive, fără spații)
+                                const tipoJustificante = (value.tipoAusencia || '').toLowerCase().trim();
+                                const tipoAusenciaNormalizado = tipoAusencia.toLowerCase().trim();
+                                
+                                if (tipoJustificante === tipoAusenciaNormalizado) {
+                                  justificante = value;
+                                  break;
+                                }
+                              }
+                            }
                           }
-                        }
-                        
-                        // Verifică doar dacă data se potrivește (nu verificăm tipul)
-                        if (justificante && justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
-                          justificante = null;
+                          
+                          // Verificare finală: asigură-te că data și tipul se potrivesc
+                          if (justificante) {
+                            // Verifică data
+                            if (justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
+                              justificante = null;
+                            }
+                            // Verifică tipul (case-insensitive)
+                            else if (justificante.tipoAusencia && tipoAusencia) {
+                              const tipoJustificante = justificante.tipoAusencia.toLowerCase().trim();
+                              const tipoAusenciaNormalizado = tipoAusencia.toLowerCase().trim();
+                              if (tipoJustificante !== tipoAusenciaNormalizado) {
+                                justificante = null;
+                              }
+                            }
+                          }
                         }
                         
                         // console.log('📄 Justificante encontrada en lista:', justificante ? 'found' : 'not found');
@@ -8288,8 +8336,8 @@ export default function SolicitudesPage() {
 
                       {/* Afișare justificante asociate cu ausencia - pentru angajați în tab-ul "ausencias" */}
                       {!canAccessAllTabs && selectedTab === 'ausencias' && (() => {
-                        // tipoAusencia nu este folosit în acest context
-                        // const tipoAusencia = item.tipo || item.TIPO || '';
+                        // IMPORTANT: Definim tipoAusencia pentru matching cu justificante
+                        const tipoAusencia = item.tipo || item.TIPO || '';
                         const fechaAusencia = item.FECHA || item.fecha || item.fecha_inicio || item['fecha inicio'] || '';
                         // Normalizează data pentru matching (format YYYY-MM-DD)
                         let fechaNormalizada = '';
@@ -8325,23 +8373,49 @@ export default function SolicitudesPage() {
                           ? justificantesPorAusencia 
                           : justificantesPorAusenciaRef.current;
                         
-                        // MATCHING FLEXIBIL: Caută doar pe dată (fără verificare de tip)
-                        // Justificantele se asociază cu orice absență din aceeași dată
+                        // PRIORITATE 1: Matching exact pe tipo_fecha (cel mai precis)
                         let justificante = null;
-                        for (const [, value] of currentMap.entries()) {
-                          if (value.fechaAusencia === fechaNormalizada) {
-                            justificante = value;
-                            break;
+                        if (tipoAusencia && fechaNormalizada) {
+                          const keyExact = `${tipoAusencia}_${fechaNormalizada}`;
+                          const keyExactSinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaNormalizada}`;
+                          
+                          justificante = currentMap.get(keyExact) || currentMap.get(keyExactSinEspacios);
+                          
+                          // PRIORITATE 2: Dacă nu găsește matching exact, caută pe dată dar VERIFICĂ TIPUL
+                          if (!justificante) {
+                            for (const [, value] of currentMap.entries()) {
+                              // Verifică că data se potrivește
+                              if (value.fechaAusencia === fechaNormalizada) {
+                                // IMPORTANT: Verifică că tipul se potrivește (case-insensitive, fără spații)
+                                const tipoJustificante = (value.tipoAusencia || '').toLowerCase().trim();
+                                const tipoAusenciaNormalizado = tipoAusencia.toLowerCase().trim();
+                                
+                                if (tipoJustificante === tipoAusenciaNormalizado) {
+                                  justificante = value;
+                                  break;
+                                }
+                              }
+                            }
+                          }
+                          
+                          // Verificare finală: asigură-te că data și tipul se potrivesc
+                          if (justificante) {
+                            // Verifică data
+                            if (justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
+                              justificante = null;
+                            }
+                            // Verifică tipul (case-insensitive)
+                            else if (justificante.tipoAusencia && tipoAusencia) {
+                              const tipoJustificante = justificante.tipoAusencia.toLowerCase().trim();
+                              const tipoAusenciaNormalizado = tipoAusencia.toLowerCase().trim();
+                              if (tipoJustificante !== tipoAusenciaNormalizado) {
+                                justificante = null;
+                              }
+                            }
                           }
                         }
                         
-                        // Verifică doar dacă data se potrivește (nu verificăm tipul)
-                        if (justificante && justificante.fechaAusencia && fechaNormalizada && justificante.fechaAusencia !== fechaNormalizada) {
-                          justificante = null;
-                        }
-                        
-                        // ELIMINAT: Fallback generic pe dată pentru a evita asocierea greșită a justificantelor
-                        // Fiecare absență trebuie să aibă propriile justificante asociate pe baza tipului și datei
+                        // IMPORTANT: Fiecare absență trebuie să aibă propriile justificante asociate pe baza tipului și datei
                         // Dacă nu se găsește matching exact, înseamnă că nu există justificante pentru această absență specifică
                         
                         // console.log('📄 Justificante encontrada (tab ausencias):', justificante ? 'found' : 'not found');
