@@ -2354,22 +2354,52 @@ export class AusenciasService {
         throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
       }
 
-      // Actualizează durata la 0 și unitatea la 'horas'
-      await this.prisma.$executeRawUnsafe(`
-        UPDATE Ausencias
-        SET DURACION = 0,
-            UNIDAD_DURACION = 'horas'
-        WHERE id = ${Number(id)}
-      `);
+      const ausenciaData = ausencia[0];
+      const tipoActual = ausenciaData.TIPO || '';
+      const tipoActualLower = String(tipoActual).toLowerCase();
 
-      this.logger.log(
-        `✅ Ausencia ${id} marcada como sin ausencia (DURACION = 0)`,
-      );
+      // Dacă este "Ausencias justificada", schimbă tipul în "Aviso"
+      const esAusenciaJustificada =
+        tipoActualLower.includes('ausencia') &&
+        tipoActualLower.includes('justificada');
+
+      let updateQuery = '';
+      let message = '';
+
+      if (esAusenciaJustificada) {
+        // Schimbă tipul în "Aviso" și setează durata la 0
+        updateQuery = `
+          UPDATE Ausencias
+          SET TIPO = ${this.escapeSql('Aviso')},
+              DURACION = 0,
+              UNIDAD_DURACION = 'horas'
+          WHERE id = ${Number(id)}
+        `;
+        message =
+          'Ausencia justificada convertida a Aviso. Duración actualizada a 0 horas.';
+        this.logger.log(
+          `✅ Ausencia ${id} (${tipoActual}) convertida a "Aviso" y marcada como sin ausencia`,
+        );
+      } else {
+        // Pentru alte tipuri, doar setează durata la 0
+        updateQuery = `
+          UPDATE Ausencias
+          SET DURACION = 0,
+              UNIDAD_DURACION = 'horas'
+          WHERE id = ${Number(id)}
+        `;
+        message =
+          'Ausencia marcada como sin ausencia. Duración actualizada a 0 horas.';
+        this.logger.log(
+          `✅ Ausencia ${id} marcada como sin ausencia (DURACION = 0)`,
+        );
+      }
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
 
       return {
         success: true,
-        message:
-          'Ausencia marcada como sin ausencia. Duración actualizada a 0 horas.',
+        message,
       };
     } catch (error: any) {
       this.logger.error(
@@ -2987,6 +3017,7 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
         'Asuntos Propios',
         'Asunto Propio',
         'Permiso Retribuido',
+        'Aviso',
       ];
 
       if (!tiposValidos.includes(nuevoTipo)) {

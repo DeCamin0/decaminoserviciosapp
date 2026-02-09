@@ -646,8 +646,90 @@ const HallOfFamePage = () => {
           </Card>
         )}
         
-        {/* Pentru angajați normali: afișează luna selectată și butoane pentru ultimele luni */}
-        {!canCalculate && selectedMonth && (() => {
+        {/* Pentru angajați normali: afișează trimestrul selectat și butoane pentru ultimele 3 trimestre (doar pentru tab trimestral) */}
+        {!canCalculate && activeTab === 'trimestral' && selectedTrimestre && (() => {
+          const now = new Date();
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth() + 1; // 1-12
+          const currentTrimestreNum = Math.ceil(currentMonth / 3); // 1-4
+          const currentTrimestre = `Q${currentTrimestreNum}-${currentYear}`;
+          const isCurrentTrimestre = selectedTrimestre === currentTrimestre;
+          
+          // Calculează ultimele 3 trimestre anterioare
+          const previousTrimestres = [];
+          const [selectedQ, selectedYear] = selectedTrimestre.match(/Q(\d)-(\d{4})/)?.slice(1).map(Number) || [currentTrimestreNum, currentYear];
+          
+          for (let i = 1; i <= 3; i++) {
+            let q = selectedQ - i;
+            let year = selectedYear;
+            
+            // Dacă q devine negativ sau zero, mergi la anul anterior
+            while (q <= 0) {
+              q += 4;
+              year -= 1;
+            }
+            
+            previousTrimestres.push(`Q${q}-${year}`);
+          }
+          
+          return (
+            <Card className={`${isMobile ? 'mb-2 p-2' : 'mb-3 sm:mb-4 md:mb-6 p-2.5 sm:p-3 md:p-4'} bg-blue-50 border border-blue-200`}>
+              <div className={`flex flex-col ${isMobile ? 'gap-1.5' : 'gap-2 sm:gap-3'}`}>
+                <div className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-2'}`}>
+                  <Calendar className={`${isMobile ? 'w-3 h-3' : 'w-4 h-4 sm:w-5 sm:h-5'} text-blue-600 flex-shrink-0`} />
+                  <span className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} font-medium text-gray-700`}>
+                    <span className="hidden sm:inline">Mostrando resultados para: </span>
+                    <strong className="break-words">{selectedTrimestre}</strong>
+                  </span>
+                </div>
+                <div className={`flex flex-nowrap items-center ${isMobile ? 'gap-1 overflow-x-auto' : 'gap-2'} ${isMobile ? 'pb-1' : ''}`}>
+                  {isCurrentTrimestre ? (
+                    <>
+                      {previousTrimestres.map((trimestre) => (
+                        <button
+                          key={trimestre}
+                          onClick={() => setSelectedTrimestre(trimestre)}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm'} bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2'}`}
+                        >
+                          <Calendar className={isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3 sm:w-4 sm:h-4'} />
+                          <span>{trimestre}</span>
+                        </button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setSelectedTrimestre(currentTrimestre)}
+                        className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm'} bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2'}`}
+                      >
+                        <Calendar className={isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3 sm:w-4 sm:h-4'} />
+                        <span className="hidden sm:inline">Volver a {currentTrimestre}</span>
+                        <span className="sm:hidden">Volver</span>
+                      </button>
+                      {previousTrimestres.map((trimestre) => (
+                        <button
+                          key={trimestre}
+                          onClick={() => setSelectedTrimestre(trimestre)}
+                          className={`${isMobile ? 'px-1.5 py-1 text-[10px]' : 'px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm'} text-white rounded-lg transition-colors flex items-center ${isMobile ? 'gap-1' : 'gap-1.5 sm:gap-2'} ${
+                            selectedTrimestre === trimestre 
+                              ? 'bg-blue-800' 
+                              : 'bg-blue-600 hover:bg-blue-700'
+                          }`}
+                        >
+                          <Calendar className={isMobile ? 'w-2.5 h-2.5' : 'w-3 h-3 sm:w-4 sm:h-4'} />
+                          <span>{trimestre}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+            </Card>
+          );
+        })()}
+
+        {/* Pentru angajați normali: afișează luna selectată și butoane pentru ultimele luni (doar pentru tab ranking) */}
+        {!canCalculate && activeTab === 'ranking' && selectedMonth && (() => {
           const now = new Date();
           const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
           const isCurrentMonth = selectedMonth === currentMonth;
@@ -856,7 +938,7 @@ const HallOfFamePage = () => {
                   Cuando se calculen los resultados trimestrales, aquí aparecerán los empleados destacados.
                 </p>
                 <p className={`${isMobile ? 'text-[10px]' : 'text-xs sm:text-sm'} text-gray-500 px-2`}>
-                  Los scores trimestrales son el promedio de los 3 meses del trimestre.
+                  Los scores trimestrales muestran el promedio de los últimos 3 trimestres.
                 </p>
                 {canCalculate && (
                   <div className={isMobile ? 'mt-3' : 'mt-4 sm:mt-6'}>
@@ -975,11 +1057,15 @@ const HallOfFamePage = () => {
                         </p>
                         <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap`}>
                           <span>Score: <strong>{formatScore(item.score_final)}</strong></span>
-                          {item.breakdown_json && (
+                          {item.breakdown_json?.trimestres && item.breakdown_json.trimestres.length > 0 ? (
                             <span className="text-gray-500">
-                              (Promedio de {item.breakdown_json.meses?.length || 3} meses)
+                              (Últimos {item.breakdown_json.trimestres.length} trimestres: {item.breakdown_json.trimestres.map(t => t.trimestre).join(', ')})
                             </span>
-                          )}
+                          ) : item.breakdown_json?.meses ? (
+                            <span className="text-gray-500">
+                              (Promedio de {item.breakdown_json.meses.length} meses)
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 

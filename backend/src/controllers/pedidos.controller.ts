@@ -150,7 +150,13 @@ export class PedidosController {
   async updatePedidoItems(
     @Param('pedidoUid') pedidoUid: string,
     @Body()
-    body: { items: any[]; subtotal: number; iva_total: number; total: number },
+    body: {
+      items: any[];
+      subtotal: number;
+      iva_total: number;
+      total: number;
+      notas?: string | null;
+    },
   ) {
     // Decodează UID-ul dacă este encodat
     const decodedUid = decodeURIComponent(pedidoUid);
@@ -166,7 +172,21 @@ export class PedidosController {
       body.subtotal,
       body.iva_total,
       body.total,
+      body.notas,
     );
+  }
+
+  @Put(':pedidoUid/notas')
+  async updatePedidoNotas(
+    @Param('pedidoUid') pedidoUid: string,
+    @Body()
+    body: { notas?: string | null },
+  ) {
+    const decodedUid = decodeURIComponent(pedidoUid);
+    this.logger.log(
+      `📝 [PedidosController] Updating notas for pedido ${decodedUid}`,
+    );
+    return this.pedidosService.updatePedidoNotas(decodedUid, body.notas);
   }
 
   @Post('generar-excel')

@@ -141,8 +141,7 @@ export class HallOfFameController {
   @Get('trimestral/latest')
   async getLatestTrimestre() {
     try {
-      const latestTrimestre =
-        await this.hallOfFameService.getLatestTrimestre();
+      const latestTrimestre = await this.hallOfFameService.getLatestTrimestre();
       return {
         success: true,
         trimestre: latestTrimestre,
@@ -367,7 +366,6 @@ export class HallOfFameController {
       );
     }
   }
-
 
   /**
    * POST /api/hall-of-fame/trimestral/calculate?trimestre=Q1-2026
