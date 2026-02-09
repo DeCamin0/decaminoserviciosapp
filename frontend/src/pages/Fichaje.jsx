@@ -1106,9 +1106,26 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     
     if (currentAbsence) {
       const absenceType = currentAbsence.TIPO || currentAbsence.tipo || 'AUSENCIA';
-      setIsOnVacationOrAbsence(true);
-      setCurrentAbsenceType(absenceType);
-      warn('Utilizatorul este în absență:', absenceType, currentAbsence);
+      const absenceTypeLower = String(absenceType).toLowerCase();
+      
+      // "Ausencias justificada" și "Aviso" permit fichajul
+      // - "Ausencias justificada": poate veni mai devreme/târziu
+      // - "Aviso": este doar o notificare, nu o absență efectivă
+      // Celelalte tipuri de absențe blochează fichajul
+      const isAusenciaJustificada = absenceTypeLower.includes('ausencia') && absenceTypeLower.includes('justificada');
+      const isAviso = absenceTypeLower === 'aviso';
+      
+      if (isAusenciaJustificada || isAviso) {
+        // Pentru "Ausencias justificada" sau "Aviso", NU blocăm fichajul
+        setIsOnVacationOrAbsence(false);
+        setCurrentAbsenceType('');
+        warn(`Utilizatorul are "${absenceType}" - fichajul este permis (${isAviso ? 'solo aviso' : 'ausencia justificada'})`);
+      } else {
+        // Pentru celelalte tipuri de absențe, blocăm fichajul
+        setIsOnVacationOrAbsence(true);
+        setCurrentAbsenceType(absenceType);
+        warn('Utilizatorul este în absență - fichajul este blocat:', absenceType, currentAbsence);
+      }
     } else {
       setIsOnVacationOrAbsence(false);
       setCurrentAbsenceType('');

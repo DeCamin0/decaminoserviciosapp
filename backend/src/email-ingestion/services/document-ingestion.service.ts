@@ -1155,6 +1155,16 @@ export class DocumentIngestionService {
                     : null;
                 }
 
+                // Pattern 3: "Actualización de datos - [NUME]" or "Re: Actualización de datos - [NUME]"
+                if (!nombreFromSubject) {
+                  subjectNameMatch = message.subject.match(
+                    /(?:Re:\s*)?Actualización\s+de\s+datos\s*-\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{4,})(?:\s*$|$)/i,
+                  );
+                  nombreFromSubject = subjectNameMatch
+                    ? subjectNameMatch[1].trim()
+                    : null;
+                }
+
                 if (nombreFromSubject) {
                   this.logger.log(
                     `🔍 Fallback: Extracted name from email subject: "${nombreFromSubject}" (subject: "${message.subject}")`,

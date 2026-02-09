@@ -596,6 +596,16 @@ export async function classifyDocument(
             : null;
         }
 
+        // Pattern 6: "Actualización de datos - [NUME]" or "Re: Actualización de datos - [NUME]"
+        if (!nombreFromSubject) {
+          subjectNameMatch = emailSubject.match(
+            /(?:Re:\s*)?Actualización\s+de\s+datos\s*-\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{4,})(?:\s*$|$)/i,
+          );
+          nombreFromSubject = subjectNameMatch
+            ? subjectNameMatch[1].trim()
+            : null;
+        }
+
         logger.log(
           `🔍 ${result.tipoDocumento} name extraction: nombreFromSubject="${nombreFromSubject || 'null'}", nombreFromFilename="${nombreFromFilename || 'null'}", nombreFromPdf="${nombreFromPdf || 'null'}"`,
         );
@@ -656,6 +666,16 @@ export async function classifyDocument(
         if (!nombreFromSubject) {
           subjectNameMatch = emailSubject.match(
             /ALTA\s+OPERARIA\/O:\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{4,})(?:\s+\d+|\s*$)/i,
+          );
+          nombreFromSubject = subjectNameMatch
+            ? subjectNameMatch[1].trim()
+            : null;
+        }
+
+        // Pattern 3: "Actualización de datos - [NUME]" or "Re: Actualización de datos - [NUME]"
+        if (!nombreFromSubject) {
+          subjectNameMatch = emailSubject.match(
+            /(?:Re:\s*)?Actualización\s+de\s+datos\s*-\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{4,})(?:\s*$|$)/i,
           );
           nombreFromSubject = subjectNameMatch
             ? subjectNameMatch[1].trim()
@@ -1151,18 +1171,34 @@ export async function classifyDocument(
   ) {
     let nombreFromSubject = null;
 
-    // Pattern 0: "ALTA OPERARIA Raul, RAMA ROMERO - 04.07.2025" or "ALTA OPERARIA SOFIA BITLAN - 09.06.2025"
-    // This pattern handles both with and without comma in name
+    // Pattern 0: "Actualización de datos - [NUME]" or "Re: Actualización de datos - [NUME]"
     let subjectNameMatch = emailSubject.match(
-      /ALTA\s+OPERARIA\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s,]+?)(?:\s*-\s*\d{2}\.\d{2}\.\d{4}|\s*$)/i,
+      /(?:Re:\s*)?Actualización\s+de\s+datos\s*-\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{4,})(?:\s*$|$)/i,
     );
     if (subjectNameMatch) {
       nombreFromSubject = subjectNameMatch[1].trim();
-      // Remove comma and clean up the name
-      nombreFromSubject = nombreFromSubject
-        .replace(/,/g, ' ')
-        .replace(/\s+/g, ' ')
-        .toUpperCase();
+      logger.log(
+        `✅ Extracted name from "Actualización de datos" pattern: ${nombreFromSubject}`,
+      );
+    }
+
+    // Pattern 1: "ALTA OPERARIA Raul, RAMA ROMERO - 04.07.2025" or "ALTA OPERARIA SOFIA BITLAN - 09.06.2025"
+    // This pattern handles both with and without comma in name
+    if (!nombreFromSubject) {
+      subjectNameMatch = emailSubject.match(
+        /ALTA\s+OPERARIA\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s,]+?)(?:\s*-\s*\d{2}\.\d{2}\.\d{4}|\s*$)/i,
+      );
+      if (subjectNameMatch) {
+        nombreFromSubject = subjectNameMatch[1].trim();
+        // Remove comma and clean up the name
+        nombreFromSubject = nombreFromSubject
+          .replace(/,/g, ' ')
+          .replace(/\s+/g, ' ')
+          .toUpperCase();
+      }
+    }
+
+    if (nombreFromSubject) {
       // Validate that it looks like a name
       const nameWords = nombreFromSubject
         .split(/\s+/)

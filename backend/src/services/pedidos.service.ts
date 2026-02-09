@@ -486,7 +486,7 @@ export class PedidosService {
           total,
           limite_excedido,
           exceso_limite,
-          notas,
+          MAX(notas) as notas,
           estado,
           creado_en,
           COUNT(*) as num_items,
@@ -509,7 +509,7 @@ export class PedidosService {
                  comunidad_codigo_postal, comunidad_localidad, comunidad_provincia,
                  comunidad_telefono, comunidad_email, comunidad_nif,
                  fecha, moneda, descuento_global, impuestos, subtotal,
-                 iva_total, total, limite_excedido, exceso_limite, notas,
+                 iva_total, total, limite_excedido, exceso_limite,
                  estado, fecha_envio, creado_en
         LIMIT 1
       `;
@@ -754,8 +754,13 @@ export class PedidosService {
     subtotal: number,
     iva_total: number,
     total: number,
+    notas?: string | null,
   ): Promise<any> {
     try {
+      this.logger.log(
+        `📝 [updatePedidoItems] Updating pedido ${pedidoUid} with notas: ${notas || '(null/empty)'}`,
+      );
+
       // Obține comanda existentă pentru a păstra datele de angajat și comunitate
       const pedidoExistente = await this.getPedidoByUid(pedidoUid);
 
@@ -899,7 +904,7 @@ export class PedidosService {
               ${total},
               ${pedidoExistente.limite_excedido ? 1 : 0},
               ${pedidoExistente.exceso_limite || 0},
-              ${this.escapeSql(pedidoExistente.notas || '')},
+              ${notas !== undefined ? (notas !== null && notas.trim() !== '' ? this.escapeSql(notas.trim()) : 'NULL') : pedidoExistente.notas && pedidoExistente.notas.trim() !== '' ? this.escapeSql(pedidoExistente.notas.trim()) : 'NULL'},
               ${productoId},
               ${this.escapeSql(numeroArticulo)},
               ${this.escapeSql(descripcion)},
@@ -926,6 +931,49 @@ export class PedidosService {
       return this.getPedidoByUid(pedidoUid);
     } catch (error: any) {
       this.logger.error(`❌ Error updating pedido ${pedidoUid} items:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Actualizează doar nota pentru o comandă
+   */
+  async updatePedidoNotas(
+    pedidoUid: string,
+    notas?: string | null,
+  ): Promise<any> {
+    try {
+      this.logger.log(
+        `📝 [updatePedidoNotas] Updating notas for pedido ${pedidoUid}: ${notas || '(null/empty)'}`,
+      );
+
+      // Obține comanda existentă
+      const pedidoExistente = await this.getPedidoByUid(pedidoUid);
+
+      if (!pedidoExistente) {
+        throw new BadRequestException(`Pedido with UID ${pedidoUid} not found`);
+      }
+
+      // Actualizează nota pentru toate rândurile din PedidosTodos pentru acest pedido_uid
+      const notasValue =
+        notas !== undefined && notas !== null && notas.trim() !== ''
+          ? this.escapeSql(notas.trim())
+          : 'NULL';
+
+      const updateQuery = `
+        UPDATE PedidosTodos 
+        SET notas = ${notasValue}
+        WHERE pedido_uid = ${this.escapeSql(pedidoUid)}
+      `;
+
+      await this.prisma.$executeRawUnsafe(updateQuery);
+
+      this.logger.log(`✅ Pedido ${pedidoUid} notas updated successfully`);
+
+      // Returnează comanda actualizată
+      return this.getPedidoByUid(pedidoUid);
+    } catch (error: any) {
+      this.logger.error(`❌ Error updating pedido ${pedidoUid} notas:`, error);
       throw error;
     }
   }
@@ -1447,6 +1495,15 @@ export class PedidosService {
         worksheet.getCell('B7').value = '';
         this.logger.warn(
           `⚠️ [Excel] SERVICIO not set - no value in database for client ${comunidadId}`,
+        );
+      }
+
+      // Row 8: NOTAS (doar dacă există)
+      if (pedido.notas && pedido.notas.trim() !== '') {
+        worksheet.getCell('A8').value = 'NOTAS:';
+        worksheet.getCell('B8').value = pedido.notas.trim();
+        this.logger.log(
+          `✅ [Excel] NOTAS added: ${pedido.notas.trim().substring(0, 50)}...`,
         );
       }
 

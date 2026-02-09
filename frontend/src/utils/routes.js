@@ -743,6 +743,12 @@ export const routes = {
       ? `http://localhost:3000/api/pedidos/${encodedUid}/items`
       : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/items`;
   },
+  updatePedidoNotas: (uid) => {
+    const encodedUid = encodeURIComponent(uid);
+    return import.meta.env.DEV
+      ? `http://localhost:3000/api/pedidos/${encodedUid}/notas`
+      : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/notas`;
+  },
   enviarPedidosAprobados: import.meta.env.DEV
     ? 'http://localhost:3000/api/pedidos/enviar-aprobados'
     : 'https://api.decaminoservicios.com/api/pedidos/enviar-aprobados',

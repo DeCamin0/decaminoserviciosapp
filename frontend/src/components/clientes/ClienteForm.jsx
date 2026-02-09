@@ -461,22 +461,31 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
               Servicio Entrega
             </label>
             <select
-              value={formData.servicio_entrega === 'Servicio 24 horas' ? 'Servicio 24 horas' : 'custom'}
+              value={
+                formData.servicio_entrega === 'Servicio 24 horas' 
+                  ? 'Servicio 24 horas' 
+                  : formData.servicio_entrega === 'Servicio 12 horas'
+                    ? 'Servicio 12 horas'
+                    : 'custom'
+              }
               onChange={(e) => {
                 if (e.target.value === 'Servicio 24 horas') {
                   handleChange('servicio_entrega', 'Servicio 24 horas');
+                } else if (e.target.value === 'Servicio 12 horas') {
+                  handleChange('servicio_entrega', 'Servicio 12 horas');
                 } else {
-                  // Când schimbă la "Personalizado", păstrează valoarea existentă dacă nu e "Servicio 24 horas", altfel setează gol
+                  // Când schimbă la "Personalizado", păstrează valoarea existentă dacă nu e unul din serviciile predefinite, altfel setează gol
                   const currentValue = formData.servicio_entrega;
-                  handleChange('servicio_entrega', currentValue === 'Servicio 24 horas' ? '' : currentValue || '');
+                  handleChange('servicio_entrega', (currentValue === 'Servicio 24 horas' || currentValue === 'Servicio 12 horas') ? '' : currentValue || '');
                 }
               }}
               className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 mb-2"
             >
               <option value="custom">Personalizado</option>
               <option value="Servicio 24 horas">Servicio 24 horas</option>
+              <option value="Servicio 12 horas">Servicio 12 horas</option>
             </select>
-            {formData.servicio_entrega !== 'Servicio 24 horas' && (
+            {formData.servicio_entrega !== 'Servicio 24 horas' && formData.servicio_entrega !== 'Servicio 12 horas' && (
               <Input
                 type="text"
                 value={formData.servicio_entrega || ''}
@@ -487,6 +496,11 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
             {formData.servicio_entrega === 'Servicio 24 horas' && (
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
                 ✓ Servicio 24 horas seleccionado
+              </div>
+            )}
+            {formData.servicio_entrega === 'Servicio 12 horas' && (
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+                ✓ Servicio 12 horas seleccionado
               </div>
             )}
             <p className="text-xs text-gray-500 mt-1">Se usará en Excel para el campo SERVICIO</p>

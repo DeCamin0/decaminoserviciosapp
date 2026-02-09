@@ -128,6 +128,30 @@ type Cliente = {
   [key: string]: unknown;
 };
 
+type HorarioData = {
+  days?: {
+    [key: string]: {
+      in1?: string;
+      out1?: string;
+      in2?: string;
+      out2?: string;
+      in3?: string;
+      out3?: string;
+    };
+  };
+  centroNombre?: string;
+  grupoNombre?: string;
+  [key: string]: unknown;
+};
+
+type CuadranteData = {
+  LUNA?: number | string;
+  luna?: number | string;
+  CODIGO?: string;
+  codigo?: string;
+  [key: string]: unknown;
+};
+
 type ComunidadDetalle = {
   id?: number;
   nombre?: string;
@@ -734,6 +758,11 @@ const TabNuevoPedido: React.FC<{
   // State pentru searchable dropdown
   const [comunidadSearchTerm, setComunidadSearchTerm] = useState('');
   const [showComunidadDropdown, setShowComunidadDropdown] = useState(false);
+  
+  // State pentru Horario Entrega
+  const [horarioEntrega, setHorarioEntrega] = useState('');
+  const [horarioEntregaTipo, setHorarioEntregaTipo] = useState<'24horas' | '12horas' | 'personalizado' | ''>('');
+  const [loadingHorario, setLoadingHorario] = useState(false);
 
   // Încarcă centrele de trabajo (comunidades) din backend sau demo
   useEffect(() => {
@@ -830,6 +859,31 @@ const TabNuevoPedido: React.FC<{
                   datosCompletos: comunidadParcial.datosCompletos,
                   productos: []
                 });
+                
+                // Actualizează horarioEntrega din datosCompletos
+                const servicioEntrega = comunidadParcial.datosCompletos?.['SERVICIO ENTREGA'] || 
+                                       comunidadParcial.datosCompletos?.SERVICIO_ENTREGA || 
+                                       comunidadParcial.datosCompletos?.servicio_entrega || '';
+                if (servicioEntrega) {
+                  const servicioStr = String(servicioEntrega).trim();
+                  if (servicioStr === 'Servicio 24 horas') {
+                    setHorarioEntregaTipo('24horas');
+                    setHorarioEntrega('Servicio 24 horas');
+                  } else if (servicioStr === 'Servicio 12 horas') {
+                    setHorarioEntregaTipo('12horas');
+                    setHorarioEntrega('Servicio 12 horas');
+                  } else if (servicioStr) {
+                    setHorarioEntregaTipo('personalizado');
+                    setHorarioEntrega(servicioStr);
+                  } else {
+                    setHorarioEntregaTipo('');
+                    setHorarioEntrega('');
+                  }
+                } else {
+                  setHorarioEntregaTipo('');
+                  setHorarioEntrega('');
+                }
+                
                 addToast('info', 'Centro encontrado parcialmente', `Se encontró una comunidad similar: "${comunidadParcial.nombre}"`);
                 
                 setTimeout(() => {
@@ -913,6 +967,172 @@ const TabNuevoPedido: React.FC<{
   const isLoadingComunidadRef = React.useRef(false);
   const lastComunidadIdRef = React.useRef<number | null>(null);
   const lastCallTimeRef = React.useRef<number>(0);
+
+  // Funcție pentru a formata orarul într-un format potrivit pentru "Horario Entrega"
+  const formatearHorario = (horario: HorarioData | null): string => {
+    // Folosește orarul dacă există
+    if (horario && horario.days) {
+      const diasSemana = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+      const nombresDias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+      
+      // Grupează zilele cu același orar
+      const horariosPorDia: Record<string, string[]> = {};
+      
+      diasSemana.forEach((diaKey, index) => {
+        const daySchedule = horario.days[diaKey];
+        if (daySchedule) {
+          const intervals: string[] = [];
+          const isValidTime = (time: string | number | null | undefined): boolean => 
+            typeof time === 'string' && /^\d{1,2}:\d{2}/.test(time);
+          
+          if (isValidTime(daySchedule.in1) && isValidTime(daySchedule.out1)) {
+            const in1 = daySchedule.in1.substring(0, 5);
+            const out1 = daySchedule.out1.substring(0, 5);
+            intervals.push(`${in1}-${out1}`);
+          }
+          if (isValidTime(daySchedule.in2) && isValidTime(daySchedule.out2)) {
+            const in2 = daySchedule.in2.substring(0, 5);
+            const out2 = daySchedule.out2.substring(0, 5);
+            intervals.push(`${in2}-${out2}`);
+          }
+          if (isValidTime(daySchedule.in3) && isValidTime(daySchedule.out3)) {
+            const in3 = daySchedule.in3.substring(0, 5);
+            const out3 = daySchedule.out3.substring(0, 5);
+            intervals.push(`${in3}-${out3}`);
+          }
+          
+          if (intervals.length > 0) {
+            const horarioStr = intervals.join(' / ');
+            if (!horariosPorDia[horarioStr]) {
+              horariosPorDia[horarioStr] = [];
+            }
+            horariosPorDia[horarioStr].push(nombresDias[index]);
+          }
+        }
+      });
+      
+      // Formatează rezultatul
+      const partes: string[] = [];
+      Object.keys(horariosPorDia).forEach(horarioStr => {
+        const dias = horariosPorDia[horarioStr];
+        if (dias.length === 1) {
+          partes.push(`${dias[0]} ${horarioStr}`);
+        } else if (dias.length === 5 && dias.includes('Lunes') && dias.includes('Viernes')) {
+          // Lunes a Viernes
+          partes.push(`Lunes a Viernes ${horarioStr}`);
+        } else {
+          // Alte combinații
+          const primerDia = dias[0];
+          const ultimoDia = dias[dias.length - 1];
+          if (dias.length === 2) {
+            partes.push(`${primerDia} y ${ultimoDia} ${horarioStr}`);
+          } else {
+            partes.push(`${primerDia}-${ultimoDia} ${horarioStr}`);
+          }
+        }
+      });
+      
+      if (partes.length > 0) {
+        return partes.join(', ');
+      }
+    }
+    
+    return '';
+  };
+
+  // Funcție pentru a încărca orarul sau cuadrantul când se selectează "Personalizado"
+  const cargarHorarioDesdeCentro = async () => {
+    if (!user || !comunidadDetalles) return;
+    
+    setLoadingHorario(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const centroTrabajo = comunidadDetalles.nombre || user?.['CENTRO TRABAJO'] || user?.CENTRO_TRABAJO || '';
+      const grupoUsuario = user?.['GRUPO'] || user?.grupo || '';
+      const codigoEmpleado = user?.CODIGO || user?.codigo || '';
+
+      let horarioEncontrado = null;
+      let cuadranteEncontrado = null;
+
+      // 1. Încearcă să obțină orarul normal (horarios)
+      if (centroTrabajo && grupoUsuario) {
+        try {
+          const { listSchedules } = await import('../api/schedules');
+          const response = await listSchedules(null);
+          
+          if (response.success && Array.isArray(response.data)) {
+            const horarioMatch = response.data.find((h: HorarioData) => 
+              h.centroNombre === centroTrabajo && h.grupoNombre === grupoUsuario
+            );
+            if (horarioMatch) {
+              horarioEncontrado = horarioMatch;
+            }
+          }
+        } catch (error) {
+          console.warn('Error fetching horarios:', error);
+        }
+      }
+
+      // 2. Încearcă să obțină cuadrantul pentru luna curentă
+      if (codigoEmpleado && !horarioEncontrado) {
+        try {
+          const currentDate = new Date();
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth() + 1;
+          const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+          
+          const response = await fetch(routes.getCuadrantes, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ codigo: codigoEmpleado })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const lista = Array.isArray(data) ? data : [data];
+            
+            const cuadranteMatch = lista.find((c: CuadranteData) => {
+              let luna = c.LUNA || c.luna;
+              const codigo = c.CODIGO || c.codigo;
+              
+              if (typeof luna === 'number') {
+                const date = new Date(Math.round((luna - 25569) * 86400 * 1000));
+                luna = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+              }
+              return luna === currentMonthFormatted && codigo === codigoEmpleado;
+            });
+            
+            if (cuadranteMatch) {
+              cuadranteEncontrado = cuadranteMatch;
+            }
+          }
+        } catch (error) {
+          console.warn('Error fetching cuadrante:', error);
+        }
+      }
+
+      // 3. Formatează și setează orarul
+      if (horarioEncontrado || cuadranteEncontrado) {
+        const horarioFormateado = formatearHorario(horarioEncontrado);
+        if (horarioFormateado) {
+          setHorarioEntrega(horarioFormateado);
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando horario desde centro:', error);
+    } finally {
+      setLoadingHorario(false);
+    }
+  };
 
   // Actualizează detaliile comunității când se selectează una
   const handleComunidadChange = async (comunidadId: number) => {
@@ -1045,6 +1265,33 @@ const TabNuevoPedido: React.FC<{
         // Actualizează produsele cu permisiunile lor
         setProductos(productosConPermisos);
         
+        // Actualizează horarioEntrega din datosCompletos
+        const servicioEntrega = comunidad?.datosCompletos?.['SERVICIO ENTREGA'] || 
+                               comunidad?.datosCompletos?.SERVICIO_ENTREGA || 
+                               comunidad?.datosCompletos?.servicio_entrega || '';
+        if (servicioEntrega) {
+          const servicioStr = String(servicioEntrega).trim();
+          if (servicioStr === 'Servicio 24 horas') {
+            setHorarioEntregaTipo('24horas');
+            setHorarioEntrega('Servicio 24 horas');
+          } else if (servicioStr === 'Servicio 12 horas') {
+            setHorarioEntregaTipo('12horas');
+            setHorarioEntrega('Servicio 12 horas');
+          } else if (servicioStr) {
+            // Dacă există o valoare personalizată, setează tipul la "personalizado"
+            setHorarioEntregaTipo('personalizado');
+            setHorarioEntrega(servicioStr);
+          } else {
+            // Dacă este gol sau null, lasă gol
+            setHorarioEntregaTipo('');
+            setHorarioEntrega('');
+          }
+        } else {
+          // Dacă nu există valoare în baza de date, lasă gol
+          setHorarioEntregaTipo('');
+          setHorarioEntrega('');
+        }
+        
         // Actualizează și detaliile comunității cu datele complete
         setComunidadDetalles({
           id: comunidadId,
@@ -1159,6 +1406,61 @@ const TabNuevoPedido: React.FC<{
       return;
     }
 
+    // Validare: Horario Entrega este obligatoriu
+    if (!horarioEntregaTipo || !horarioEntrega || horarioEntrega.trim() === '') {
+      addToast('error', 'Horario Entrega requerido', 'Por favor selecciona un tipo de Horario Entrega y complétalo antes de guardar el pedido.');
+      return;
+    }
+
+    // Verificare: Limita de 2 pedidos per centru (doar pendiente și aprobado, enviados nu se numără)
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const comunidadDetalle = comunidades.find(c => c.id === comunidadSeleccionada);
+      const comunidadId = comunidadDetalle?.datosCompletos?.id || comunidadSeleccionada;
+      const comunidadNombre = comunidadDetalle?.nombre || 'Sin comunidad';
+
+      // Obține toate pedidos pentru această comunitate
+      const response = await fetch(routes.getPedidos, {
+        method: 'GET',
+        headers,
+      });
+
+      if (response.ok) {
+        const allPedidos = await response.json();
+        const pedidosArray = Array.isArray(allPedidos) ? allPedidos : [];
+
+        // Numără doar pedidos cu status "pendiente" sau "aprobado" pentru această comunitate
+        const pedidosCount = pedidosArray.filter((p: Pedido) => {
+          const pedidoComunidadId = p.comunidad?.id || p.comunidad_id;
+          const pedidoEstado = p.estado || '';
+          const isSameComunidad = String(pedidoComunidadId) === String(comunidadId);
+          const isPendienteOrAprobado = pedidoEstado === 'pendiente' || pedidoEstado === 'aprobado';
+          return isSameComunidad && isPendienteOrAprobado;
+        }).length;
+
+        if (pedidosCount >= 2) {
+          addToast('error', 'Límite de pedidos alcanzado', 
+            `Ya tienes ${pedidosCount} pedidos pendientes o aprobados para "${comunidadNombre}". El límite es de 2 pedidos por centro. Los pedidos enviados no cuentan para este límite.`
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Error verificando límite de pedidos:', error);
+      // Nu blocăm salvarea dacă verificarea eșuează, dar logăm eroarea
+    }
+
     const comunidadNombre = comunidades.find(c => c.id === comunidadSeleccionada)?.nombre || 'Sin comunidad';
     const comunidadDetalle = comunidades.find(c => c.id === comunidadSeleccionada);
     
@@ -1244,13 +1546,55 @@ const TabNuevoPedido: React.FC<{
         console.log('📡 Backend response:', responseData);
         
         if (responseData.status === 'ok') {
-          addToast('success', 'Pedido guardado', 
-            `Pedido ${responseData.pedido_uid} guardado correctamente. Está pendiente de aprobación.`
-          );
+          // Actualizează SERVICIO_ENTREGA în Clientes dacă horarioEntrega a fost modificat
+          let servicioActualizado = false;
+          if (horarioEntrega.trim() && (comunidadDetalles?.id || comunidadSeleccionada)) {
+            try {
+              const clienteId = typeof comunidadDetalles?.id === 'number' 
+                ? comunidadDetalles.id 
+                : typeof comunidadDetalles?.datosCompletos?.id === 'number'
+                  ? comunidadDetalles.datosCompletos.id
+                  : comunidadSeleccionada;
+              
+              if (clienteId) {
+                const updateResponse = await fetch(routes.getClientes, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    action: 'edit',
+                    id: clienteId,
+                    'SERVICIO ENTREGA': horarioEntrega.trim()
+                  })
+                });
+                
+                if (updateResponse.ok) {
+                  const updateData = await updateResponse.json();
+                  if (updateData.status === 'ok' || updateResponse.status === 200) {
+                    servicioActualizado = true;
+                    console.log('✅ SERVICIO_ENTREGA actualizado en Clientes:', horarioEntrega.trim());
+                  } else {
+                    console.warn('⚠️ No se pudo actualizar SERVICIO_ENTREGA:', updateData);
+                  }
+                } else {
+                  const errorText = await updateResponse.text();
+                  console.warn('⚠️ Error actualizando SERVICIO_ENTREGA:', errorText);
+                }
+              }
+            } catch (error) {
+              console.error('Error actualizando SERVICIO_ENTREGA:', error);
+            }
+          }
+          
+          const mensaje = servicioActualizado 
+            ? `Pedido ${responseData.pedido_uid} guardado correctamente. Horario Entrega actualizado en Clientes. Está pendiente de aprobación.`
+            : `Pedido ${responseData.pedido_uid} guardado correctamente. Está pendiente de aprobación.`;
+          
+          addToast('success', 'Pedido guardado', mensaje);
           
           // Resetează comanda după salvarea cu succes
           setLineasPedido([]);
           setNotas('');
+          // Nu resetăm horarioEntrega pentru a păstra valoarea pentru următorul pedido
         } else {
           addToast('warning', 'Pedido guardado con advertencias', responseData.message || 'El pedido se guardó pero con algunas advertencias.');
         }
@@ -1271,7 +1615,7 @@ const TabNuevoPedido: React.FC<{
       <Card>
         <div className="p-6">
           <h2 className="text-xl font-semibold mb-4">Información del Pedido</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <div className="block text-sm font-medium text-gray-700 mb-1">Empleado</div>
               <p className="text-lg font-semibold text-gray-900">{usuarioActual.nombre}</p>
@@ -1326,6 +1670,77 @@ const TabNuevoPedido: React.FC<{
             <div>
               <div className="block text-sm font-medium text-gray-700 mb-1">Fecha</div>
               <p className="text-lg font-semibold text-gray-900">{formatDate()}</p>
+            </div>
+            <div>
+              <label htmlFor="horario-entrega-tipo" className="block text-sm font-medium text-gray-700 mb-1">
+                Horario Entrega <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="horario-entrega-tipo"
+                value={horarioEntregaTipo}
+                onChange={(e) => {
+                  const nuevoTipo = e.target.value as '24horas' | '12horas' | 'personalizado' | '';
+                  setHorarioEntregaTipo(nuevoTipo);
+                  if (nuevoTipo === '24horas') {
+                    setHorarioEntrega('Servicio 24 horas');
+                  } else if (nuevoTipo === '12horas') {
+                    setHorarioEntrega('Servicio 12 horas');
+                  } else if (nuevoTipo === 'personalizado') {
+                    // Când schimbă la "Personalizado", păstrează valoarea existentă dacă nu e unul din serviciile predefinite
+                    const currentValue = horarioEntrega;
+                    if (currentValue === 'Servicio 24 horas' || currentValue === 'Servicio 12 horas') {
+                      setHorarioEntrega('');
+                    }
+                    // Încarcă automat orarul sau cuadrantul dacă există
+                    if (!currentValue || currentValue === 'Servicio 24 horas' || currentValue === 'Servicio 12 horas') {
+                      cargarHorarioDesdeCentro();
+                    }
+                  } else {
+                    // Când se selectează "Selecciona..." (gol), resetează totul
+                    setHorarioEntrega('');
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 mb-2"
+              >
+                <option value="">Selecciona...</option>
+                <option value="personalizado">Personalizado</option>
+                <option value="24horas">Servicio 24 horas</option>
+                <option value="12horas">Servicio 12 horas</option>
+              </select>
+              {horarioEntregaTipo === 'personalizado' && (
+                <div className="relative">
+                  <input
+                    id="horario-entrega"
+                    type="text"
+                    value={horarioEntrega}
+                    onChange={(e) => setHorarioEntrega(e.target.value)}
+                    placeholder={loadingHorario ? "Cargando horario..." : "Ej: Lunes a Viernes 9:00-18:00"}
+                    disabled={loadingHorario}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed ${
+                      !horarioEntrega || horarioEntrega.trim() === '' 
+                        ? 'border-red-300 focus:ring-red-500' 
+                        : 'border-gray-300'
+                    }`}
+                  />
+                  {loadingHorario && (
+                    <div className="absolute right-3 top-2.5">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                    </div>
+                  )}
+                  {(!horarioEntrega || horarioEntrega.trim() === '') && !loadingHorario && (
+                    <p className="mt-1 text-xs text-red-600">Este campo es obligatorio</p>
+                  )}
+                </div>
+              )}
+              {(horarioEntregaTipo === '24horas' || horarioEntregaTipo === '12horas') && (
+                <div className="mt-1 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+                  ✓ {horarioEntrega}
+                </div>
+              )}
+              {!horarioEntregaTipo && (
+                <p className="mt-1 text-xs text-red-600">Por favor selecciona un tipo de horario</p>
+              )}
             </div>
           </div>
         </div>
@@ -1514,8 +1929,10 @@ const TabNuevoPedido: React.FC<{
                             id={`cantidad-${index}`}
                             name={`cantidad-${index}`}
                             type="number"
+                            min="1"
+                            step="1"
                             value={linea.cantidad}
-                            onChange={(e) => actualizarLinea(index, 'cantidad', Number(e.target.value))}
+                            onChange={(e) => actualizarLinea(index, 'cantidad', parseInt(e.target.value) || 1)}
                             className="w-20"
                             aria-label={`Cantidad para ${producto?.numero || 'producto'}`}
                           />
@@ -1627,6 +2044,7 @@ const TabGestionarPedidos: React.FC<{
     localidad_envio?: string;
     provincia_envio?: string;
   }>>({});
+  const [horariosEntrega, setHorariosEntrega] = useState<Record<string, string>>({});
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [clienteSearchTerms, setClienteSearchTerms] = useState<Record<string, string>>({});
@@ -1637,6 +2055,8 @@ const TabGestionarPedidos: React.FC<{
   const [excelBlob, setExcelBlob] = useState<Blob | null>(null);
   const [mensajeProveedor, setMensajeProveedor] = useState('');
   const [enviandoProveedor, setEnviandoProveedor] = useState(false);
+  const [serviciosEntrega, setServiciosEntrega] = useState<Record<number, string>>({});
+  const [loadingServicios, setLoadingServicios] = useState(false);
 
   // Funcție pentru formatarea banilor
   const formatMoney = (value: number | string | null | undefined) => {
@@ -1744,6 +2164,64 @@ const TabGestionarPedidos: React.FC<{
       }
       
       setPedidos(pedidosArray);
+      
+      // Încarcă SERVICIO_ENTREGA din Clientes pentru fiecare pedido
+      if (pedidosArray.length > 0) {
+        try {
+          const token = localStorage.getItem('auth_token');
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          };
+          
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+
+          // Obține toate ID-urile unice de comunități
+          const comunidadIds = [...new Set(pedidosArray
+            .map((p: Pedido) => p.comunidad?.id)
+            .filter((id): id is number | string => id !== undefined && id !== null)
+          )];
+
+          if (comunidadIds.length > 0) {
+            // Încarcă toți clienții o singură dată
+            const response = await fetch(routes.getClientes, {
+              method: 'GET',
+              headers,
+            });
+            
+            if (response.ok) {
+              const clientes = await response.json();
+              const clientesArray = Array.isArray(clientes) ? clientes : [clientes];
+              
+              // Creează un map cu horariosEntrega pentru fiecare comunidadId
+              const horariosMap: Record<string, string> = {};
+              
+              for (const comunidadId of comunidadIds) {
+                const cliente = clientesArray.find((c: Cliente) => 
+                  (c.id || c.ID) == comunidadId
+                );
+                
+                if (cliente) {
+                  const servicioEntrega = cliente['SERVICIO ENTREGA'] || 
+                                         cliente.SERVICIO_ENTREGA || 
+                                         cliente.servicio_entrega || '';
+                  if (servicioEntrega) {
+                    horariosMap[String(comunidadId)] = String(servicioEntrega).trim();
+                  }
+                }
+              }
+              
+              setHorariosEntrega(horariosMap);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading horarios entrega:', error);
+        }
+      }
       
       if (!Array.isArray(data) || data.length === 0) {
         console.warn('⚠️ No pedidos found or invalid response format');
@@ -1997,7 +2475,8 @@ const TabGestionarPedidos: React.FC<{
         itemsCount: pedido.items.length,
         nuevoSubtotal,
         nuevoIvaTotal,
-        nuevoTotal
+        nuevoTotal,
+        notas: pedido.notas || '(sin notas)'
       });
 
       const token = localStorage.getItem('auth_token');
@@ -2020,6 +2499,7 @@ const TabGestionarPedidos: React.FC<{
           subtotal: nuevoSubtotal,
           iva_total: nuevoIvaTotal,
           total: nuevoTotal,
+          notas: pedido.notas || null,
         }),
       });
 
@@ -2039,6 +2519,51 @@ const TabGestionarPedidos: React.FC<{
     } catch (error) {
       console.error('Error guardando cambios:', error);
       addToast('error', 'Error', 'No se pudieron guardar los cambios. Inténtalo de nuevo.');
+    }
+  };
+
+  // Salvează doar nota pentru o comandă
+  const guardarNotas = async (pedidoUid: string) => {
+    const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
+    if (!pedido) {
+      addToast('error', 'Error', 'No se encontró el pedido.');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.updatePedidoNotas(pedidoUid), {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          notas: pedido.notas || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [Frontend] Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      // Recargar pedidos pentru a obține datele actualizate din baza de date
+      await loadPedidos();
+      
+      addToast('success', 'Nota guardada', `La nota del pedido ${pedidoUid} se ha guardado correctamente.`);
+    } catch (error) {
+      console.error('Error guardando notas:', error);
+      addToast('error', 'Error', 'No se pudo guardar la nota. Inténtalo de nuevo.');
     }
   };
 
@@ -2235,6 +2760,70 @@ const TabGestionarPedidos: React.FC<{
     setMostrarPreviewEnvio(true);
   };
 
+  // Încarcă SERVICIO_ENTREGA pentru toate pedidos
+  const cargarServiciosEntrega = async () => {
+    if (pedidosParaEnviar.length === 0) return;
+
+    try {
+      setLoadingServicios(true);
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Obține toate clientes pentru a găsi SERVICIO_ENTREGA
+      const response = await fetch(routes.getClientes, { headers });
+      if (!response.ok) {
+        console.warn('⚠️ No se pudieron cargar clientes para servicios');
+        return;
+      }
+
+      const clientes = await response.json();
+      const serviciosMap: Record<number, string> = {};
+
+      // Pentru fiecare pedido, găsește servicio_entrega folosind comunidad.id
+      pedidosParaEnviar.forEach((pedido) => {
+        const comunidadId = pedido.comunidad?.id;
+        if (comunidadId) {
+          // Normalizează ID-ul pentru comparație (string vs number)
+          const comunidadIdNum = typeof comunidadId === 'string' ? parseInt(comunidadId, 10) : comunidadId;
+          
+          const cliente = Array.isArray(clientes) 
+            ? clientes.find((c: Cliente) => {
+                const cId = c.id || c.ID || c.Id;
+                const cIdNum = typeof cId === 'string' ? parseInt(cId, 10) : cId;
+                return cIdNum === comunidadIdNum && !isNaN(cIdNum);
+              })
+            : null;
+          
+          if (cliente) {
+            const servicio = cliente['SERVICIO ENTREGA'] || cliente.SERVICIO_ENTREGA || cliente.servicio_entrega || '';
+            // Setează servicio chiar dacă este gol, pentru a permite editarea
+            serviciosMap[comunidadIdNum] = servicio ? String(servicio).trim() : '';
+            console.log(`✅ [Servicios] Pedido ${pedido.pedido_uid}: comunidad_id=${comunidadIdNum}, servicio="${serviciosMap[comunidadIdNum] || '(vacío)'}"`);
+          } else {
+            // Dacă nu găsește cliente, setează gol pentru a permite editarea
+            serviciosMap[comunidadIdNum] = '';
+            console.warn(`⚠️ [Servicios] No se encontró cliente para pedido ${pedido.pedido_uid} con comunidad_id=${comunidadIdNum}`);
+          }
+        } else {
+          console.warn(`⚠️ [Servicios] Pedido ${pedido.pedido_uid} no tiene comunidad.id`);
+        }
+      });
+
+      setServiciosEntrega(serviciosMap);
+    } catch (error) {
+      console.error('Error cargando servicios entrega:', error);
+    } finally {
+      setLoadingServicios(false);
+    }
+  };
+
   // Generează Excel-ul și deschide modalul pentru preview și trimitere
   const confirmarEnvioPedidos = async () => {
     try {
@@ -2274,6 +2863,9 @@ const TabGestionarPedidos: React.FC<{
         const blob = await response.blob();
         setExcelBlob(blob);
         
+        // Încarcă servicios entrega când se deschide modalul
+        await cargarServiciosEntrega();
+        
         // Închide modalul de preview și deschide modalul Excel
         setMostrarPreviewEnvio(false);
         setMostrarModalExcel(true);
@@ -2305,12 +2897,60 @@ const TabGestionarPedidos: React.FC<{
     addToast('success', 'Excel descargado', 'El archivo Excel ha sido descargado correctamente.');
   };
 
+  // Actualizează SERVICIO_ENTREGA pentru un cliente
+  const actualizarServicioEntrega = async (clienteId: number, servicio: string) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getClientes, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'edit',
+          id: clienteId,
+          'SERVICIO ENTREGA': servicio.trim() || null
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn(`⚠️ No se pudo actualizar SERVICIO_ENTREGA para cliente ${clienteId}`);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`Error actualizando SERVICIO_ENTREGA para cliente ${clienteId}:`, error);
+      return false;
+    }
+  };
+
   // Trimite mesajul la provider și marchează comenzile ca enviado
   const enviarProveedor = async () => {
     if (!excelBlob) return;
 
     try {
       setEnviandoProveedor(true);
+      
+      // Actualizează SERVICIO_ENTREGA pentru toate pedidos modificate
+      const actualizacionesPromesas = pedidosParaEnviar.map(async (pedido) => {
+        const comunidadId = pedido.comunidad?.id;
+        if (comunidadId && serviciosEntrega[comunidadId] !== undefined) {
+          const servicioActual = serviciosEntrega[comunidadId];
+          // Actualizează SERVICIO_ENTREGA în backend
+          await actualizarServicioEntrega(comunidadId, servicioActual || '');
+        }
+      });
+      
+      await Promise.all(actualizacionesPromesas);
+
       const token = localStorage.getItem('auth_token');
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -2355,6 +2995,7 @@ const TabGestionarPedidos: React.FC<{
       setExcelBlob(null);
       setMensajeProveedor('');
       setPedidosParaEnviar([]);
+      setServiciosEntrega({});
       
       // Recargar pedidos pentru a actualiza statusurile
       await loadPedidos();
@@ -2471,6 +3112,11 @@ const TabGestionarPedidos: React.FC<{
                           {pedido.rechazado_en && ` el ${formatDate(pedido.rechazado_en)}`}
                         </div>
                       )}
+                      {pedido.comunidad?.id && horariosEntrega[String(pedido.comunidad.id)] && (
+                        <div>
+                          <strong>🕐 Horario Entrega:</strong> <span className="text-blue-600 font-medium">{horariosEntrega[String(pedido.comunidad.id)]}</span>
+                        </div>
+                      )}
                       {(pedido.direccion_envio || pedido.codigo_postal_envio || pedido.localidad_envio || pedido.provincia_envio) && (
                         <div className="md:col-span-2">
                           <strong>📍 Dirección de Envío:</strong>
@@ -2483,11 +3129,40 @@ const TabGestionarPedidos: React.FC<{
                         </div>
                       )}
                     </div>
-                    {pedido.notas && (
-                      <div className="mt-2 text-sm text-gray-600">
-                        <strong>Notas:</strong> {pedido.notas}
-                      </div>
-                    )}
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      {pedidoEditando === pedido.pedido_uid ? (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700">Notas</label>
+                            <Button
+                              onClick={() => guardarNotas(pedido.pedido_uid)}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              size="sm"
+                            >
+                              💾 Guardar Nota
+                            </Button>
+                          </div>
+                          <textarea
+                            value={pedido.notas || ''}
+                            onChange={(e) => {
+                              const updatedPedidos = pedidos.map(p => 
+                                p.pedido_uid === pedido.pedido_uid 
+                                  ? { ...p, notas: e.target.value }
+                                  : p
+                              );
+                              setPedidos(updatedPedidos);
+                            }}
+                            className="w-full p-3 border-2 border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+                            rows={4}
+                            placeholder="Notas adicionales..."
+                          />
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-700">
+                          <strong className="text-gray-800">Notas:</strong> <span className="ml-1">{pedido.notas || '(sin notas)'}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   {/* Butoane de acțiune */}
@@ -2866,11 +3541,13 @@ const TabGestionarPedidos: React.FC<{
                                 {pedidoEditando === pedido.pedido_uid ? (
                                   <Input
                                     type="number"
+                                    min="1"
+                                    step="1"
                                     value={item.cantidad}
                                     onChange={(e) => {
                                       // TODO: Actualizar cantidad en el estado
                                       const newItems = [...pedido.items];
-                                      newItems[index].cantidad = parseFloat(e.target.value) || 0;
+                                      newItems[index].cantidad = parseInt(e.target.value) || 1;
                                       // Recalcular subtotal, IVA și total pentru acest item
                                       const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
                                       const iva = subtotal * 0.21;
@@ -2887,8 +3564,6 @@ const TabGestionarPedidos: React.FC<{
                                       setPedidos(updatedPedidos);
                                     }}
                                     className="w-20 text-right"
-                                    min="0"
-                                    step="0.01"
                                   />
                                 ) : (
                                   item.cantidad
@@ -3127,6 +3802,70 @@ const TabGestionarPedidos: React.FC<{
                   <li><strong>Total items:</strong> {pedidosParaEnviar.reduce((sum, p) => sum + (p.items?.length || 0), 0)}</li>
                   <li><strong>Total valor:</strong> {formatMoney(pedidosParaEnviar.reduce((sum, p) => sum + (p.total || 0), 0))}</li>
                 </ul>
+              </div>
+
+              {/* Lista detaliată de pedidos cu servicio asignat */}
+              <div className="mb-4">
+                <h3 className="font-semibold mb-3 text-gray-800">Lista de Pedidos:</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse border border-gray-300">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="border border-gray-300 px-3 py-2 text-left">Pedido UID</th>
+                        <th className="border border-gray-300 px-3 py-2 text-left">Comunidad</th>
+                        <th className="border border-gray-300 px-3 py-2 text-left">Servicio Asignado</th>
+                        <th className="border border-gray-300 px-3 py-2 text-right">Total</th>
+                        <th className="border border-gray-300 px-3 py-2 text-right">Items</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loadingServicios ? (
+                        <tr>
+                          <td colSpan={5} className="border border-gray-300 px-3 py-4 text-center text-gray-500">
+                            Cargando servicios...
+                          </td>
+                        </tr>
+                      ) : (
+                        pedidosParaEnviar.map((pedido) => {
+                          const comunidadId = pedido.comunidad?.id;
+                          const servicio = comunidadId ? serviciosEntrega[comunidadId] : null;
+                          return (
+                            <tr key={pedido.pedido_uid} className="hover:bg-gray-50">
+                              <td className="border border-gray-300 px-3 py-2 font-mono text-xs">
+                                {pedido.pedido_uid}
+                              </td>
+                              <td className="border border-gray-300 px-3 py-2">
+                                {pedido.comunidad?.nombre || 'N/A'}
+                              </td>
+                              <td className="border border-gray-300 px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={servicio || ''}
+                                  onChange={(e) => {
+                                    if (comunidadId) {
+                                      setServiciosEntrega(prev => ({
+                                        ...prev,
+                                        [comunidadId]: e.target.value
+                                      }));
+                                    }
+                                  }}
+                                  placeholder="Sin servicio"
+                                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </td>
+                              <td className="border border-gray-300 px-3 py-2 text-right font-semibold">
+                                {formatMoney(pedido.total)}
+                              </td>
+                              <td className="border border-gray-300 px-3 py-2 text-right">
+                                {pedido.items?.length || 0}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="mb-4">
