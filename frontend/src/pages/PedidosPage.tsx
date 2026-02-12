@@ -746,6 +746,8 @@ const TabNuevoPedido: React.FC<{
   const { user } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState<'id' | 'numero' | 'descripcion' | 'precio'>('id');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [lineasPedido, setLineasPedido] = useState<LineaPedido[]>([]);
   const [notas, setNotas] = useState('');
   const [comunidades, setComunidades] = useState<Comunidad[]>([]);
@@ -1334,14 +1336,57 @@ const TabNuevoPedido: React.FC<{
     ).slice(0, 20); // Maxim 20 rezultate
   }, [comunidadesDisponibles, comunidadSearchTerm]);
 
-  // Filtrare produse
+  // Filtrare și sortare produse
   const productosFiltrados = useMemo(() => {
-    if (!searchTerm) return productos;
-    return productos.filter(producto => 
-      producto.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      producto.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [searchTerm, productos]);
+    // Filtrare
+    let filtered = productos;
+    if (searchTerm) {
+      filtered = productos.filter(producto => 
+        producto.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        producto.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Sortare
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number;
+      let bValue: string | number;
+      
+      switch (sortField) {
+        case 'numero':
+          aValue = a.numero || '';
+          bValue = b.numero || '';
+          break;
+        case 'descripcion':
+          aValue = a.descripcion || '';
+          bValue = b.descripcion || '';
+          break;
+        case 'precio':
+          aValue = a.precio || 0;
+          bValue = b.precio || 0;
+          break;
+        case 'id':
+        default:
+          aValue = a.id || 0;
+          bValue = b.id || 0;
+          break;
+      }
+      
+      // Comparare
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue, 'es', { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? comparison : -comparison;
+      }
+      
+      return 0;
+    });
+    
+    return sorted;
+  }, [searchTerm, productos, sortField, sortDirection]);
 
   // Adăugare produs în pedido
   const agregarProducto = (producto: Producto) => {
@@ -1812,13 +1857,42 @@ const TabNuevoPedido: React.FC<{
               )}
             </h3>
           </div>
-          <Input
-            label="Buscar por número o descripción"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Ej: A-100 o Pintura blanca"
-            className="mb-4"
-          />
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end mb-4">
+            <div className="flex-1 max-w-md">
+              <Input
+                label="Buscar por número o descripción"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Ej: A-100 o Pintura blanca"
+              />
+            </div>
+            
+            <div className="flex gap-2 items-end">
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-700 mb-1">
+                  Ordenar por
+                </label>
+                <select
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value as 'id' | 'numero' | 'descripcion' | 'precio')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="id">ID</option>
+                  <option value="numero">Número</option>
+                  <option value="descripcion">Descripción</option>
+                  <option value="precio">Precio</option>
+                </select>
+              </div>
+              
+              <button
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                title={sortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
+              >
+                {sortDirection === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+          </div>
           
           {loadingProductos ? (
             <div className="flex items-center justify-center p-8">
@@ -2037,6 +2111,8 @@ const TabGestionarPedidos: React.FC<{
   const [productosDisponibles, setProductosDisponibles] = useState<Producto[]>([]);
   const [buscandoProductos, setBuscandoProductos] = useState(false);
   const [searchProductoTerm, setSearchProductoTerm] = useState('');
+  const [sortFieldProductos, setSortFieldProductos] = useState<'id' | 'numero' | 'descripcion' | 'precio'>('id');
+  const [sortDirectionProductos, setSortDirectionProductos] = useState<'asc' | 'desc'>('asc');
   const [fechasEnvio, setFechasEnvio] = useState<Record<string, string>>({});
   const [direccionesEnvio, setDireccionesEnvio] = useState<Record<string, {
     direccion_envio?: string;
@@ -2057,6 +2133,58 @@ const TabGestionarPedidos: React.FC<{
   const [enviandoProveedor, setEnviandoProveedor] = useState(false);
   const [serviciosEntrega, setServiciosEntrega] = useState<Record<number, string>>({});
   const [loadingServicios, setLoadingServicios] = useState(false);
+
+  // Produse disponibile filtrate și sortate
+  const productosDisponiblesFiltrados = useMemo(() => {
+    // Filtrare
+    let filtered = productosDisponibles;
+    if (searchProductoTerm) {
+      filtered = productosDisponibles.filter(p => 
+        p.numero.toLowerCase().includes(searchProductoTerm.toLowerCase()) ||
+        p.descripcion.toLowerCase().includes(searchProductoTerm.toLowerCase())
+      );
+    }
+    
+    // Sortare
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number;
+      let bValue: string | number;
+      
+      switch (sortFieldProductos) {
+        case 'numero':
+          aValue = a.numero || '';
+          bValue = b.numero || '';
+          break;
+        case 'descripcion':
+          aValue = a.descripcion || '';
+          bValue = b.descripcion || '';
+          break;
+        case 'precio':
+          aValue = a.precio || 0;
+          bValue = b.precio || 0;
+          break;
+        case 'id':
+        default:
+          aValue = a.id || 0;
+          bValue = b.id || 0;
+          break;
+      }
+      
+      // Comparare
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirectionProductos === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue, 'es', { numeric: true, sensitivity: 'base' });
+        return sortDirectionProductos === 'asc' ? comparison : -comparison;
+      }
+      
+      return 0;
+    });
+    
+    return sorted;
+  }, [productosDisponibles, searchProductoTerm, sortFieldProductos, sortDirectionProductos]);
 
   // Funcție pentru formatarea banilor
   const formatMoney = (value: number | string | null | undefined) => {
@@ -3461,13 +3589,40 @@ const TabGestionarPedidos: React.FC<{
                               ✕ Cerrar
                             </Button>
                           </div>
-                          <Input
-                            label="Buscar producto por número o descripción"
-                            value={searchProductoTerm}
-                            onChange={(e) => setSearchProductoTerm(e.target.value)}
-                            placeholder="Ej: 70000123 o AMBIENTADOR"
-                            className="mb-3"
-                          />
+                          <div className="mb-3">
+                            <Input
+                              label="Buscar producto por número o descripción"
+                              value={searchProductoTerm}
+                              onChange={(e) => setSearchProductoTerm(e.target.value)}
+                              placeholder="Ej: 70000123 o AMBIENTADOR"
+                              className="mb-3"
+                            />
+                            <div className="flex gap-2 items-end">
+                              <div className="flex flex-col">
+                                <label className="text-sm font-medium text-gray-700 mb-1">
+                                  Ordenar por
+                                </label>
+                                <select
+                                  value={sortFieldProductos}
+                                  onChange={(e) => setSortFieldProductos(e.target.value as 'id' | 'numero' | 'descripcion' | 'precio')}
+                                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                >
+                                  <option value="id">ID</option>
+                                  <option value="numero">Número</option>
+                                  <option value="descripcion">Descripción</option>
+                                  <option value="precio">Precio</option>
+                                </select>
+                              </div>
+                              
+                              <button
+                                onClick={() => setSortDirectionProductos(sortDirectionProductos === 'asc' ? 'desc' : 'asc')}
+                                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                title={sortDirectionProductos === 'asc' ? 'Ascendente' : 'Descendente'}
+                              >
+                                {sortDirectionProductos === 'asc' ? '↑' : '↓'}
+                              </button>
+                            </div>
+                          </div>
                           {buscandoProductos ? (
                             <div className="text-center py-4">
                               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
@@ -3475,13 +3630,7 @@ const TabGestionarPedidos: React.FC<{
                             </div>
                           ) : productosDisponibles.length > 0 ? (
                             <div className="max-h-48 overflow-y-auto border rounded-lg bg-white">
-                              {productosDisponibles
-                                .filter(p => 
-                                  !searchProductoTerm || 
-                                  p.numero.toLowerCase().includes(searchProductoTerm.toLowerCase()) ||
-                                  p.descripcion.toLowerCase().includes(searchProductoTerm.toLowerCase())
-                                )
-                                .map(producto => (
+                              {productosDisponiblesFiltrados.map(producto => (
                                   <div 
                                     key={producto.id} 
                                     className="flex items-center justify-between p-3 border-b hover:bg-gray-50 cursor-pointer"
@@ -3943,6 +4092,11 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
   // State pentru searchable dropdown
   const [comunidadSearchTerm, setComunidadSearchTerm] = useState('');
   const [showComunidadDropdown, setShowComunidadDropdown] = useState(false);
+  
+  // State pentru filtrare și sortare produse
+  const [productoSearchTerm, setProductoSearchTerm] = useState('');
+  const [productoSortBy, setProductoSortBy] = useState<'descripcion' | 'numero' | 'precio'>('descripcion');
+  const [productoSortOrder, setProductoSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Încarcă centrele de trabajo (comunidades) din backend sau demo
   useEffect(() => {
@@ -4219,6 +4373,43 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
     return productos.filter(producto => obtenerPermiso(producto.id)).length;
   }, [comunidadSeleccionada, productos, obtenerPermiso]);
 
+  // Filtrare și sortare produse
+  const productosFiltradosYOrdenados = useMemo(() => {
+    let filtered = [...productos];
+    
+    // Filtrare după termenul de căutare
+    if (productoSearchTerm.trim()) {
+      const searchLower = productoSearchTerm.toLowerCase();
+      filtered = filtered.filter(producto => 
+        producto.numero.toLowerCase().includes(searchLower) ||
+        producto.descripcion.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Sortare
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (productoSortBy) {
+        case 'descripcion':
+          comparison = a.descripcion.localeCompare(b.descripcion, 'es', { sensitivity: 'base' });
+          break;
+        case 'numero':
+          comparison = a.numero.localeCompare(b.numero, 'es', { sensitivity: 'base' });
+          break;
+        case 'precio':
+          comparison = a.precio - b.precio;
+          break;
+        default:
+          comparison = 0;
+      }
+      
+      return productoSortOrder === 'asc' ? comparison : -comparison;
+    });
+    
+    return filtered;
+  }, [productos, productoSearchTerm, productoSortBy, productoSortOrder]);
+
   // Filtrare comunități pentru searchable dropdown
   const comunidadesFiltradas = useMemo(() => {
     if (!comunidadSearchTerm) return comunidades.slice(0, 10); // Primele 10 dacă nu se caută
@@ -4400,9 +4591,9 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">
                 Permisos de Productos
-                {productos.length > 0 && (
+                {productosFiltradosYOrdenados.length > 0 && (
                   <span className="text-sm font-normal text-green-600 ml-2">
-                    ({productos.length} productos disponibles)
+                    ({productosFiltradosYOrdenados.length} de {productos.length} productos)
                   </span>
                 )}
               </h3>
@@ -4415,7 +4606,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                     if (!newPermisos[comunidadSeleccionada]) {
                       newPermisos[comunidadSeleccionada] = {};
                     }
-                    productos.forEach(producto => {
+                    productosFiltradosYOrdenados.forEach(producto => {
                       newPermisos[comunidadSeleccionada][producto.id] = true;
                     });
                     setPermisos(newPermisos);
@@ -4433,7 +4624,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                     if (!newPermisos[comunidadSeleccionada]) {
                       newPermisos[comunidadSeleccionada] = {};
                     }
-                    productos.forEach(producto => {
+                    productosFiltradosYOrdenados.forEach(producto => {
                       newPermisos[comunidadSeleccionada][producto.id] = false;
                     });
                     setPermisos(newPermisos);
@@ -4445,6 +4636,45 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                 >
                   ❌ Denegar Todos
                 </Button>
+              </div>
+            </div>
+            
+            {/* Filtrare și sortare */}
+            <div className="mb-4 flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <Input
+                  type="text"
+                  placeholder="Buscar por número o descripción..."
+                  value={productoSearchTerm}
+                  onChange={(e) => setProductoSearchTerm(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={productoSortBy}
+                  onChange={(e) => setProductoSortBy(e.target.value as 'descripcion' | 'numero' | 'precio')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <option value="descripcion">Ordenar por Descripción</option>
+                  <option value="numero">Ordenar por Número</option>
+                  <option value="precio">Ordenar por Precio</option>
+                </select>
+                <button
+                  onClick={() => setProductoSortOrder(productoSortOrder === 'asc' ? 'desc' : 'asc')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center space-x-1"
+                  title={productoSortOrder === 'asc' ? 'Orden ascendente' : 'Orden descendente'}
+                >
+                  {productoSortOrder === 'asc' ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
             {loadingProductos ? (
@@ -4466,8 +4696,8 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                     </tr>
                   </thead>
                   <tbody>
-                    {productos.length > 0 ? (
-                      productos.map(producto => (
+                    {productosFiltradosYOrdenados.length > 0 ? (
+                      productosFiltradosYOrdenados.map(producto => (
                         <tr key={producto.id} className="border-b hover:bg-gray-50">
                           <td className="p-3 font-medium">{producto.numero}</td>
                           <td className="p-3">{producto.descripcion}</td>
@@ -4523,6 +4753,8 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState<'id' | 'numero' | 'descripcion' | 'precio'>('id');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProduct, setNewProduct] = useState({
@@ -4622,14 +4854,57 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Filtrare produse
+  // Filtrare și sortare produse
   const productosFiltrados = useMemo(() => {
-    if (!searchTerm) return productos;
-    return productos.filter(producto => 
-      producto.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      producto.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [searchTerm, productos]);
+    // Filtrare
+    let filtered = productos;
+    if (searchTerm) {
+      filtered = productos.filter(producto => 
+        producto.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        producto.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    
+    // Sortare
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number;
+      let bValue: string | number;
+      
+      switch (sortField) {
+        case 'numero':
+          aValue = a.numero || '';
+          bValue = b.numero || '';
+          break;
+        case 'descripcion':
+          aValue = a.descripcion || '';
+          bValue = b.descripcion || '';
+          break;
+        case 'precio':
+          aValue = a.precio || 0;
+          bValue = b.precio || 0;
+          break;
+        case 'id':
+        default:
+          aValue = a.id || 0;
+          bValue = b.id || 0;
+          break;
+      }
+      
+      // Comparare
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue, 'es', { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? comparison : -comparison;
+      }
+      
+      return 0;
+    });
+    
+    return sorted;
+  }, [searchTerm, productos, sortField, sortDirection]);
 
   // Editează produs
   const handleEditProduct = (producto: Producto) => {
@@ -4915,13 +5190,42 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       {/* Căutare și filtrare */}
       <Card>
         <div className="p-6">
-          <Input
-            label="Buscar productos"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por número o descripción..."
-            className="max-w-md"
-          />
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end">
+            <div className="flex-1 max-w-md">
+              <Input
+                label="Buscar productos"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por número o descripción..."
+              />
+            </div>
+            
+            <div className="flex gap-2 items-end">
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-700 mb-1">
+                  Ordenar por
+                </label>
+                <select
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value as 'id' | 'numero' | 'descripcion' | 'precio')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="id">ID</option>
+                  <option value="numero">Número</option>
+                  <option value="descripcion">Descripción</option>
+                  <option value="precio">Precio</option>
+                </select>
+              </div>
+              
+              <button
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                title={sortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
+              >
+                {sortDirection === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+          </div>
         </div>
       </Card>
 

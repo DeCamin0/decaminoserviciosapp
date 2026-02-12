@@ -99,6 +99,11 @@ export default function DocumentosPage() {
   
   const [autoFirmaUrl, setAutoFirmaUrl] = useState(null); // URL para click manual
 
+  // Estado para firmar documento oficial
+  const [documentoOficialToSign, setDocumentoOficialToSign] = useState(null);
+  const [documentoOficialPdfUrl, setDocumentoOficialPdfUrl] = useState(null);
+  const [showOficialSigner, setShowOficialSigner] = useState(false);
+
   // Estado para notificaciones
   const [notification, setNotification] = useState(null);
 
@@ -114,6 +119,7 @@ export default function DocumentosPage() {
   const [documentosOficiales, setDocumentosOficiales] = useState([]);
   const [documentosOficialesLoading, setDocumentosOficialesLoading] = useState(false);
   const [documentosOficialesError, setDocumentosOficialesError] = useState(null);
+  const [documentosOficialesNecesitanFirmaCount, setDocumentosOficialesNecesitanFirmaCount] = useState(0);
 
   // Estado para loading de documentos personales
   const [documentosLoading, setDocumentosLoading] = useState(false);
@@ -429,8 +435,6 @@ export default function DocumentosPage() {
       
       // Verificar si los documentos oficiales son válidos o solo mensajes de éxito
       const isValidDocumentoOficial = (item) => {
-        console.log('🔍 Validando documento oficial:', item);
-        
         // Verificar si el objeto contiene campos reales de documento oficial
         const hasValidFields = item && (
           item.id || item.documento_id || item.documentoId ||
@@ -439,7 +443,6 @@ export default function DocumentosPage() {
           item.tipo_documento || item.tipo
         );
         
-        console.log('🔍 Documento oficial válido?', hasValidFields);
         return hasValidFields;
       };
       
@@ -482,7 +485,8 @@ export default function DocumentosPage() {
           tipo: doc.tipo_documento || doc.tipo || 'Documento Oficial',
           empleadoId: authUser?.CODIGO || authUser?.id,
           empleadoEmail: email,
-          status: 'disponible'
+          status: 'disponible',
+          necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'
         }));
       } else if (data.success && data.documentos) {
         // Si la respuesta tiene estructura {success: true, documentos: [...]}
@@ -495,7 +499,8 @@ export default function DocumentosPage() {
           tipo: doc.tipo_documento || doc.tipo || 'Documento Oficial',
           empleadoId: authUser?.CODIGO || authUser?.id,
           empleadoEmail: email,
-          status: 'disponible'
+          status: 'disponible',
+          necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'
         }));
       }
 
@@ -508,6 +513,12 @@ export default function DocumentosPage() {
       
       setDocumentosOficiales(documentosOficialesOrdenados);
       console.log('✅ Documentos oficiales procesados y ordenados:', documentosOficialesOrdenados);
+      
+      // Calcula numărul de documente care necesită firmă
+      const count = documentosOficialesOrdenados.filter(
+        (doc) => doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'
+      ).length;
+      setDocumentosOficialesNecesitanFirmaCount(count);
       
     } catch (error) {
       console.error('❌ Error obteniendo documentos oficiales:', error);
@@ -1657,6 +1668,91 @@ export default function DocumentosPage() {
     }
   };
 
+  // Funcție pentru deschiderea sistemului de firmă pentru documente oficiale
+  const handleFirmarDocumentoOficial = async (documento) => {
+    try {
+      console.log('✍️ Abriendo sistema de firma para documento oficial:', documento);
+      
+      if (!documento.fileName?.toLowerCase().endsWith('.pdf')) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'Solo se pueden firmar documentos PDF'
+        });
+        return;
+      }
+
+      // Construir URL para descargar PDF
+      const downloadUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+      
+      console.log('🔍 URL para firmar:', downloadUrl);
+      
+      // Helper function pentru a obține headers cu JWT token
+      const getAuthHeaders = () => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Accept': 'application/pdf, application/json, */*',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+      };
+
+      setShowOficialSigner(true);
+      
+      try {
+        const response = await fetch(downloadUrl, { headers: getAuthHeaders() });
+        console.log('🔍 Respuesta para PDF oficial a firmar:', response.status, response.ok);
+        
+        if (response.ok) {
+          const contentType = response.headers.get('content-type');
+          console.log('🔍 Content-Type PDF oficial:', contentType);
+          
+          if (contentType && contentType.includes('application/pdf')) {
+            const blob = await response.blob();
+            console.log('🔍 Blob PDF oficial size:', blob.size);
+            
+            if (blob.size > 0) {
+              // Pentru iOS, folosim base64 (mai stabil pentru PDF-uri pe mobil)
+              // Pentru Android, folosim blob URL
+              const url = isIOS 
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              console.log('✅ URL creado para PDF oficial a firmar:', isIOS ? 'base64' : 'blob');
+              setDocumentoOficialToSign(documento);
+              setDocumentoOficialPdfUrl(url);
+            } else {
+              throw new Error('Blob vacío para PDF oficial');
+            }
+          } else {
+            throw new Error('Content-Type no es PDF para documento oficial');
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('❌ El endpoint no retorna OK para PDF oficial:', response.status, errorText);
+          throw new Error(`Error ${response.status}: ${errorText}`);
+        }
+      } catch (pdfError) {
+        console.error('❌ Error procesando PDF oficial para firmar:', pdfError);
+        setShowOficialSigner(false);
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: `Error al cargar documento para firmar: ${pdfError.message}`
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error abriendo sistema de firma:', error);
+      setShowOficialSigner(false);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: `Error al abrir el sistema de firma: ${error.message}`
+      });
+    }
+  };
+
 
 
   // Función para firmar con AutoFirma para documentos oficiales (SIMPLIFICADA)
@@ -2473,6 +2569,15 @@ export default function DocumentosPage() {
             <div className="relative flex items-center gap-2">
               <span className="text-xl">📋</span>
               <span>Documentos Oficiales</span>
+              {documentosOficialesNecesitanFirmaCount > 0 && (
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                  activeTab === 'contrato-documentos'
+                    ? 'bg-white text-purple-600'
+                    : 'bg-red-500 text-white'
+                }`}>
+                  {documentosOficialesNecesitanFirmaCount > 99 ? '99+' : documentosOficialesNecesitanFirmaCount}
+                </span>
+              )}
             </div>
           </button>
           
@@ -3239,15 +3344,48 @@ export default function DocumentosPage() {
                                 </p>
                               </div>
                             </div>
+                            
+                            {/* Badge para necesita_firma */}
+                            <div className="mt-3">
+                              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
+                                documento.necesita_firma === true
+                                  ? 'bg-green-100 text-green-700 border border-green-300'
+                                  : 'bg-gray-100 text-gray-600 border border-gray-300'
+                              }`}>
+                                {documento.necesita_firma === true ? (
+                                  <>
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span>✓ Necesita Firma</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                    <span>No Necesita Firma</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
                           </div>
                           
                           {/* Actions */}
                           <div className="flex gap-2 mb-2">
                             <button
                               onClick={() => handlePreviewDocumentOficial(documento)}
-                              className="flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
+                              disabled={documento.necesita_firma === true}
+                              className={`flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 ${
+                                documento.necesita_firma === true
+                                  ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
+                                  : 'transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
+                              }`}
+                              title={documento.necesita_firma === true ? 'Este documento requiere firma antes de poder visualizarlo' : 'Vista previa del documento'}
                             >
-                              <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                              {documento.necesita_firma !== true && (
+                                <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                              )}
                               <div className="relative flex items-center justify-center gap-1">
                                 <span className="text-xs">👁️</span>
                                 <span className="text-xs">Preview</span>
@@ -3256,9 +3394,17 @@ export default function DocumentosPage() {
                             
                             <button
                               onClick={() => handleDownloadDocumentOficial(documento)}
-                              className="flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200"
+                              disabled={documento.necesita_firma === true}
+                              className={`flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 ${
+                                documento.necesita_firma === true
+                                  ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
+                                  : 'transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
+                              }`}
+                              title={documento.necesita_firma === true ? 'Este documento requiere firma antes de poder descargarlo' : 'Descargar documento'}
                             >
-                              <div className="absolute inset-0 rounded-lg bg-green-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                              {documento.necesita_firma !== true && (
+                                <div className="absolute inset-0 rounded-lg bg-green-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                              )}
                               <div className="relative flex items-center justify-center gap-1">
                                 <span className="text-xs">⬇️</span>
                                 <span className="text-xs">Descargar</span>
@@ -3267,6 +3413,16 @@ export default function DocumentosPage() {
                           </div>
                           
                           <div className="flex gap-2">
+                            <button
+                              onClick={() => handleFirmarDocumentoOficial(documento)}
+                              className="flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200"
+                            >
+                              <div className="absolute inset-0 rounded-lg bg-orange-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                              <div className="relative flex items-center justify-center gap-1">
+                                <span className="text-xs">✍️</span>
+                                <span className="text-xs">Firmar</span>
+                              </div>
+                            </button>
                             <button
                               onClick={() => {
                                 console.log('🖱️ BOTÓN AUTOFIRMA HA SIDO PRESIONADO!');
@@ -4124,33 +4280,6 @@ export default function DocumentosPage() {
                       <p className="text-sm text-gray-500">La imagen no se pudo cargar, usa el botón de descarga</p>
                     </div>
                   </div>
-                ) : previewDocument?.fileName?.toLowerCase().endsWith('.pdf') && previewDocument?.esOficial && previewDocument?.tipo && (
-                  previewDocument.tipo.toLowerCase().includes('contrato') || 
-                  previewDocument.tipo.toLowerCase().includes('certificado') ||
-                  previewDocument.tipo.toLowerCase().includes('oficial')
-                ) ? (
-                  <div className="pdf-preview-container">
-                    <ContractSigner
-                      pdfUrl={previewDocument?.previewUrl || ''}
-                      docId={previewDocument?.id || ''}
-                      fileName={previewDocument?.fileName || ''}
-                      onClose={() => {
-                        setShowPreviewModal(false);
-                        setPreviewDocument(null);
-                      }}
-                      onSignComplete={async () => {
-                        // Actualizar lista de documentos oficiales
-                        await fetchDocumentosOficiales();
-                        setShowPreviewModal(false);
-                        setPreviewDocument(null);
-                        setNotification({
-                          type: 'success',
-                          title: 'Documento Firmado',
-                          message: 'El documento oficial ha sido firmado exitosamente'
-                        });
-                      }}
-                    />
-                  </div>
                 ) : (previewDocument?.fileName?.toLowerCase().endsWith('.pdf') && previewDocument?.isPdf !== false) ? (
                   <div className="p-4 bg-gray-50 h-[75vh] pdf-preview-container">
                     {/* Android: PDF.js rendering | iOS: <object> | Desktop: <iframe> */}
@@ -4222,16 +4351,6 @@ export default function DocumentosPage() {
               </div>
             </div>
             
-            {/* Buton de închidere fixat jos - VIZIBIL PE MOBIL */}
-            <div className="flex-shrink-0 border-t border-gray-200 bg-white sm:hidden">
-              <button
-                onClick={handleClosePreview}
-                className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold text-lg rounded-none transition-all duration-200 shadow-lg touch-manipulation"
-                aria-label="Cerrar preview"
-              >
-                Cerrar preview
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -4565,6 +4684,42 @@ export default function DocumentosPage() {
               window.URL.revokeObjectURL(prlPdfUrl);
             }
             setPrlPdfUrl(null);
+          }}
+        />
+      )}
+
+      {/* Modal pentru semnare documente oficiale */}
+      {showOficialSigner && documentoOficialToSign && documentoOficialPdfUrl && (
+        <ContractSigner
+          pdfUrl={documentoOficialPdfUrl}
+          docId={documentoOficialToSign.doc_id || documentoOficialToSign.id || ''}
+          originalFileName={documentoOficialToSign.fileName || ''}
+          onClose={() => {
+            setShowOficialSigner(false);
+            setDocumentoOficialToSign(null);
+            if (documentoOficialPdfUrl && !documentoOficialPdfUrl.startsWith('data:')) {
+              window.URL.revokeObjectURL(documentoOficialPdfUrl);
+            }
+            setDocumentoOficialPdfUrl(null);
+          }}
+          onSignComplete={async () => {
+            // Esperar un momento para que el documento se guarde completamente en la base de datos
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Actualizar lista de documentos oficiales
+            if (typeof fetchDocumentosOficiales === 'function') {
+              await fetchDocumentosOficiales();
+            }
+            setShowOficialSigner(false);
+            setDocumentoOficialToSign(null);
+            if (documentoOficialPdfUrl && !documentoOficialPdfUrl.startsWith('data:')) {
+              window.URL.revokeObjectURL(documentoOficialPdfUrl);
+            }
+            setDocumentoOficialPdfUrl(null);
+            setNotification({
+              type: 'success',
+              title: 'Documento Firmado',
+              message: 'El documento oficial ha sido firmado exitosamente'
+            });
           }}
         />
       )}

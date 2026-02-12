@@ -673,7 +673,12 @@ export class PedidosService {
   ): Promise<any> {
     try {
       // Validează statusul
-      const estadosValidos = ['pendiente', 'aprobado', 'rechazado'];
+      const estadosValidos = [
+        'pendiente',
+        'aprobado',
+        'rechazado',
+        'entregado',
+      ];
       if (!estadosValidos.includes(estado)) {
         throw new BadRequestException(
           `Estado inválido. Debe ser uno de: ${estadosValidos.join(', ')}`,
@@ -1891,6 +1896,119 @@ export class PedidosService {
       throw new BadRequestException(
         `Error al eliminar pedido: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Upload albarán pentru o comandă și actualizează statusul la "entregado"
+   */
+  async uploadAlbaran(
+    pedidoUid: string,
+    file: Express.Multer.File,
+    userInfo: string,
+  ): Promise<any> {
+    try {
+      this.logger.log(
+        `📦 Uploading albarán for pedido ${pedidoUid} by ${userInfo}`,
+      );
+
+      // Verifică dacă comanda există
+      const pedidoExists = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(pedidoUid)} LIMIT 1`,
+      );
+
+      if (!pedidoExists || pedidoExists.length === 0) {
+        throw new NotFoundException(`Pedido ${pedidoUid} no encontrado`);
+      }
+
+      // Convertește fișierul la Buffer
+      const fileBuffer = file.buffer || Buffer.from(file.buffer);
+
+      // Salvează albarán-ul în baza de date
+      // Folosim un tabel nou PedidosAlbaranes (sau adăugăm câmpuri în PedidosTodos)
+      // Pentru moment, salvăm direct în PedidosTodos folosind un câmp albaran_bytes
+      const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+      // Verifică dacă există deja un albarán pentru această comandă
+      const existingAlbaran = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(pedidoUid)} LIMIT 1`,
+      );
+
+      if (existingAlbaran && existingAlbaran.length > 0) {
+        // Actualizează albarán-ul existent
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE PedidosAlbaranes SET 
+            archivo = 0x${fileBuffer.toString('hex')},
+            nombre_archivo = ${this.escapeSql(file.originalname || 'albaran.pdf')},
+            tipo_mime = ${this.escapeSql(file.mimetype || 'application/pdf')},
+            tamano_bytes = ${fileBuffer.length},
+            subido_por = ${this.escapeSql(userInfo)},
+            subido_en = ${this.escapeSql(now)},
+            actualizado_en = ${this.escapeSql(now)}
+          WHERE pedido_uid = ${this.escapeSql(pedidoUid)}`,
+        );
+      } else {
+        // Creează un albarán nou
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO PedidosAlbaranes (
+            pedido_uid,
+            archivo,
+            nombre_archivo,
+            tipo_mime,
+            tamano_bytes,
+            subido_por,
+            subido_en,
+            actualizado_en
+          ) VALUES (
+            ${this.escapeSql(pedidoUid)},
+            0x${fileBuffer.toString('hex')},
+            ${this.escapeSql(file.originalname || 'albaran.pdf')},
+            ${this.escapeSql(file.mimetype || 'application/pdf')},
+            ${fileBuffer.length},
+            ${this.escapeSql(userInfo)},
+            ${this.escapeSql(now)},
+            ${this.escapeSql(now)}
+          )`,
+        );
+      }
+
+      // Actualizează statusul comenzii la "entregado"
+      await this.updatePedidoEstado(
+        pedidoUid,
+        'entregado',
+        undefined,
+        userInfo,
+      );
+
+      this.logger.log(
+        `✅ Albarán uploaded successfully for pedido ${pedidoUid} and status updated to entregado`,
+      );
+
+      return {
+        success: true,
+        message: 'Albarán subido correctamente y pedido marcado como entregado',
+        pedido_uid: pedidoUid,
+        estado: 'entregado',
+        albaran: {
+          nombre_archivo: file.originalname || 'albaran.pdf',
+          tipo_mime: file.mimetype || 'application/pdf',
+          tamano_bytes: fileBuffer.length,
+          subido_por: userInfo,
+          subido_en: now,
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error uploading albarán for pedido ${pedidoUid}:`,
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(`Error al subir albarán: ${error.message}`);
     }
   }
 }

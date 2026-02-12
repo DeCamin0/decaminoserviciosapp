@@ -4,6 +4,7 @@ import { PDFDocument } from 'pdf-lib';
 import SignatureCanvas from './SignatureCanvas';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
+import { fetchWithAuth } from '../utils/tokenRefresh';
 
 // Configurare worker PDF.js - folosește configurația centralizată
 import '../config/pdfjs';
@@ -27,13 +28,18 @@ const dialogStyles = `
     padding: 0;
     border-bottom: none;
     background: linear-gradient(to right, #dbeafe, #bfdbfe);
+    position: relative;
+    z-index: 1001; /* Deasupra canvas-ului PDF */
   }
 
   .dlg__body {
     flex: 1 1 auto;
-    overflow: auto;
-    padding: 16px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 12px;
     scroll-behavior: smooth;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .dlg__footer {
@@ -56,6 +62,8 @@ const dialogStyles = `
       padding: 16px 12px;
       gap: 12px;
       flex-direction: column;
+      /* Ascunde footer-ul pe mobil pentru a nu interfera cu preview-ul */
+      display: none;
     }
     
     .dlg__footer button {
@@ -68,13 +76,73 @@ const dialogStyles = `
     }
     
     .dlg__body {
-      padding-bottom: 180px; /* Space pentru footer fix - mărit pentru mobil */
+      /* Nu mai avem nevoie de padding-bottom pentru footer pe mobil */
+      padding-bottom: 16px;
       -webkit-overflow-scrolling: touch; /* Smooth scroll pe iOS */
     }
     
     /* PDF Viewer pe mobil - înălțime flexibilă */
-    .pdf-canvas-container {
-      max-height: 60vh !important; /* Mai mare pe mobil pentru vizualizare mai bună */
+    @media (max-width: 768px) {
+      .pdf-canvas-container {
+        max-height: calc(100vh - 200px) !important; /* Mai mult spațiu pentru preview pe mobil */
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+    }
+    
+    /* PDF Viewer pe desktop - înălțime mai mare */
+    @media (min-width: 769px) {
+      .pdf-canvas-container {
+        max-height: 70vh !important;
+        overflow-x: hidden;
+        overflow-y: auto;
+        max-width: 100%;
+        box-sizing: border-box;
+      }
+    }
+    
+    /* Buton fixat pentru a afișa/ascunde footer-ul pe mobil */
+    .mobile-footer-toggle {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1002;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(to bottom right, #3b82f6, #2563eb);
+      color: white;
+      border: none;
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    
+    .mobile-footer-toggle:active {
+      transform: scale(0.95);
+    }
+    
+    /* Când footer-ul este vizibil, afișează-l */
+    .dlg__footer.mobile-visible {
+      display: flex !important;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 1003;
+      background: #fff;
+      border-top: 2px solid #e5e7eb;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+    }
+    
+    .dlg__footer.mobile-visible ~ .dlg__body {
+      padding-bottom: 180px;
     }
   }
   
@@ -95,7 +163,20 @@ const dialogStyles = `
   .support-bubble { z-index: 900; }
 `;
 
-export default function ContractSigner({ pdfUrl, docId, originalFileName, onClose }) {
+export default function ContractSigner({ 
+  pdfUrl, 
+  docId, 
+  originalFileName, 
+  onClose, 
+  onSignComplete,
+  // Props pentru UPDATE în loc de INSERT (pentru documente oficiale din DocumentosEmpleadosPage)
+  empleadoId = null, // CODIGO al angajatului căruia îi aparține documentul
+  empleadoEmail = null, // Email al angajatului
+  empleadoNombre = null, // Numele angajatului
+  documentoDocId = null, // doc_id al documentului existent (pentru UPDATE)
+  updateExisting = false, // Flag pentru a face UPDATE în loc de INSERT
+  tipoDocumento = null // tipo_documento original (pentru a-l păstra la UPDATE)
+}) {
   const { user: authUser } = useAuth();
   const [pdfDocument, setPdfDocument] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -107,9 +188,11 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
   const [isPlacingSignature, setIsPlacingSignature] = useState(false); // Pentru poziționarea semnăturii
   const [draggedSignature, setDraggedSignature] = useState(null); // Pentru drag & drop vizual
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 }); // Poziția mouse-ului pentru preview
+  const [showMobileFooter, setShowMobileFooter] = useState(false); // Pentru toggle footer pe mobil
  
   const canvasRef = useRef(null);
   const signatureRef = useRef(null);
+  const renderTaskRef = useRef(null);
 
   // Desenează semnătura pe canvas-ul PDF
   const drawSignature = useCallback((context, signature) => {
@@ -180,43 +263,101 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
 
   // Randează pagina curentă
   useEffect(() => {
-    let renderTask = null;
-    
     const renderPage = async () => {
       if (!pdfDocument || !canvasRef.current) return;
 
       try {
         // Anulează operația anterioară dacă există
-        if (renderTask) {
-          renderTask.cancel();
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch {
+            // Ignoră erorile de anulare
+          }
+          renderTaskRef.current = null;
         }
 
         const page = await pdfDocument.getPage(currentPage);
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const context = canvas.getContext('2d');
+        if (!context) return;
+        
+        // Găsește containerul PDF
+        const container = canvas.closest('.pdf-canvas-container');
+        
+        // Calculează scale-ul corect bazat pe lățimea disponibilă
+        let finalScale = scale;
+        if (container) {
+          const containerRect = container.getBoundingClientRect();
+          // Lățime disponibilă = lățime container - padding (p-4 = 16px pe fiecare parte = 32px total)
+          const availableWidth = containerRect.width - 32;
+          
+          // Obține dimensiunile paginii PDF la scale 1.0
+          const viewportAtScale1 = page.getViewport({ scale: 1.0 });
+          const pdfWidth = viewportAtScale1.width;
+          
+          // Calculează scale-ul maxim pentru a se încadra în lățimea disponibilă
+          const maxScaleForWidth = availableWidth / pdfWidth;
+          
+          // FORȚĂ scale-ul să fie maxim disponibil pentru a se încadra perfect
+          finalScale = Math.min(scale, maxScaleForWidth);
+        }
 
-        const viewport = page.getViewport({ scale });
+        // Setează viewport-ul cu scale-ul calculat
+        const viewport = page.getViewport({ scale: finalScale });
+        
+        // Setează dimensiunile canvas-ului EXACT la dimensiunile viewport-ului
+        // NU folosim scalare CSS pentru a evita blur-ul
         canvas.height = viewport.height;
         canvas.width = viewport.width;
+        
+        // Curăță canvas-ul DUPĂ ce am setat dimensiunile pentru a evita conflictele
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Asigură-te că nu există o operație de render în curs înainte de a crea una nouă
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+            // Așteaptă puțin pentru ca operația să fie anulată complet
+            await new Promise(resolve => setTimeout(resolve, 10));
+          } catch {
+            // Ignoră erorile de anulare
+          }
+          renderTaskRef.current = null;
+        }
 
         const renderContext = {
           canvasContext: context,
           viewport: viewport
         };
 
-        // Creează o nouă operație de render
-        renderTask = page.render(renderContext);
-        await renderTask.promise;
+        // Creează o nouă operație de render și o salvează în ref
+        renderTaskRef.current = page.render(renderContext);
+        
+        try {
+          await renderTaskRef.current.promise;
+        } catch (renderErr) {
+          // Ignoră erorile de anulare
+          if (renderErr.name !== 'RenderingCancelled' && renderErr.name !== 'RenderingCancelledException') {
+            throw renderErr;
+          }
+        }
         
         // Desenează semnătura dacă există pentru această pagină
         if (signatures[currentPage]) {
           drawSignature(context, signatures[currentPage]);
         }
+        
+        // Curăță referința după ce render-ul este complet
+        renderTaskRef.current = null;
       } catch (err) {
         // Ignoră erorile de anulare - sunt normale când se schimbă pagina
         if (err.name !== 'RenderingCancelled' && err.name !== 'RenderingCancelledException') {
           console.error('Error rendering page:', err);
         }
+        renderTaskRef.current = null;
       }
     };
 
@@ -224,8 +365,13 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
 
     // Cleanup: anulează operația la unmount sau când se schimbă dependințele
     return () => {
-      if (renderTask) {
-        renderTask.cancel();
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+          // Ignoră erorile de anulare
+        }
+        renderTaskRef.current = null;
       }
     };
   }, [pdfDocument, currentPage, scale, signatures, drawSignature]);
@@ -254,6 +400,58 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
     signatureRef.current.clear();
   }, []);
 
+  // Funcție pentru încărcarea unei imagini (firmă scanată/fotografiată)
+  const handleLoadImageSignature = useCallback((event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Verifică dacă este o imagine
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor, selecciona un archivo de imagen');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageUrl = e.target.result;
+      
+      // Creează o imagine pentru a obține dimensiunile
+      const img = new Image();
+      img.onload = () => {
+        // Calculează dimensiunile proporționale (max 200x100, păstrând aspect ratio)
+        let width = img.width;
+        let height = img.height;
+        const maxWidth = 200;
+        const maxHeight = 100;
+        
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = width * ratio;
+          height = height * ratio;
+        }
+
+        // Activează modul de poziționare cu imaginea încărcată
+        setDraggedSignature({
+          dataUrl: imageUrl,
+          width: width,
+          height: height
+        });
+        setIsPlacingSignature(true);
+      };
+      img.onerror = () => {
+        alert('Error al cargar la imagen');
+      };
+      img.src = imageUrl;
+    };
+    reader.onerror = () => {
+      alert('Error al leer el archivo');
+    };
+    reader.readAsDataURL(file);
+    
+    // Resetează input-ul pentru a permite încărcarea aceluiași fișier din nou
+    event.target.value = '';
+  }, []);
+
   // Poziționează semnătura pe PDF
   const handlePlaceSignature = useCallback((event) => {
     if (!isPlacingSignature || !draggedSignature) return;
@@ -265,13 +463,19 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    // Convertește coordonatele la dimensiunile PDF
-    const scaleX = pdfCanvas.width / rect.width;
-    const scaleY = pdfCanvas.height / rect.height;
+    // Convertește coordonatele la dimensiunile PDF (folosind dimensiunile REALE ale canvas-ului)
+    // Canvas-ul poate fi scalat de CSS, deci trebuie să folosim dimensiunile reale
+    const actualCanvasWidth = pdfCanvas.width;
+    const actualCanvasHeight = pdfCanvas.height;
+    const displayedWidth = rect.width;
+    const displayedHeight = rect.height;
+    
+    const scaleX = actualCanvasWidth / displayedWidth;
+    const scaleY = actualCanvasHeight / displayedHeight;
 
     // Calculează poziția finală (centrul semnăturii)
-    const finalX = (x - draggedSignature.width / 2) * scaleX;
-    const finalY = (y - draggedSignature.height / 2) * scaleY;
+    const finalX = (x * scaleX) - (draggedSignature.width * scaleX / 2);
+    const finalY = (y * scaleY) - (draggedSignature.height * scaleY / 2);
 
     const newSignature = {
       dataUrl: draggedSignature.dataUrl,
@@ -321,6 +525,38 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
     });
   };
 
+  // Funcție helper pentru a converti orice imagine în PNG
+  const convertImageToPng = async (dataUrl) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          // Creează un canvas temporar
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          
+          // Desenează imaginea pe canvas (convertește în PNG)
+          ctx.drawImage(img, 0, 0);
+          
+          // Convertește canvas-ul în PNG data URL
+          const pngDataUrl = canvas.toDataURL('image/png');
+          
+          // Convertește data URL în ArrayBuffer pentru pdf-lib
+          fetch(pngDataUrl)
+            .then(res => res.arrayBuffer())
+            .then(buffer => resolve(buffer))
+            .catch(reject);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.onerror = () => reject(new Error('Error loading image'));
+      img.src = dataUrl;
+    });
+  };
+
   // Salvează PDF-ul cu toate semnăturile
   const saveSignedPDF = async () => {
     try {
@@ -343,8 +579,8 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
           const page = pages[pageNum - 1];
           const signature = signatures[pageNum];
           
-          // Convertește semnătura la PNG
-          const imageBytes = await fetch(signature.dataUrl).then(res => res.arrayBuffer());
+          // Convertește semnătura la PNG (indiferent de formatul original)
+          const imageBytes = await convertImageToPng(signature.dataUrl);
           const image = await pdfDoc.embedPng(imageBytes);
           
           // Calculează poziția direct folosind coordonatele canvas-ului intern
@@ -398,62 +634,93 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
         sizeMB: (modifiedPdfBytes.byteLength / 1024 / 1024).toFixed(2)
       });
       
-      // Creează FormData pentru fișierul binary
-      const formData = new FormData();
-      const pdfBlob = new Blob([modifiedPdfBytes], { type: 'application/pdf' });
-      const fileName = originalFileName 
-        ? originalFileName.replace(/\.pdf$/i, '_FIRMADO.pdf')
-        : `CONTRATO_EMPLEADO_${docId}_FIRMADO.pdf`;
+      // Convertește PDF-ul la Base64 (folosind chunking pentru fișiere mari)
+      const uint8Array = new Uint8Array(modifiedPdfBytes);
+      let binaryString = '';
+      const chunkSize = 8192; // 8KB chunks pentru a evita "Maximum call stack size exceeded"
       
-      formData.append('pdf', pdfBlob, fileName);
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.slice(i, i + chunkSize);
+        binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+      }
       
-      // Adaugă metadata ca JSON string
-      const metadata = {
-        documento_id: docId,
-        nombre_archivo: originalFileName || `CONTRATO_EMPLEADO_${docId}.pdf`,
-        tipo_documento: "CONTRATO firmado",
-        email_usuario: authUser?.email || "mihaipaulet1408@gmail.com",
-        fecha_firma: new Date().toISOString(),
-        estado: "semnat",
-        usuario_firma: authUser?.displayName || authUser?.name || "Alexandru Mihai Paulet"
+      const base64String = btoa(binaryString);
+      
+      // Dacă este UPDATE (pentru documente oficiale din DocumentosEmpleadosPage):
+      // - Folosește datele angajatului (nu ale utilizatorului care semnează)
+      // - Nu schimbă tipo_documento (rămâne la fel)
+      // - Nu adaugă "_FIRMADO" la nume
+      // - Folosește doc_id pentru UPDATE
+      const isUpdate = !!(updateExisting && documentoDocId);
+      
+      console.log('🔍 [ContractSigner] Save signed PDF - Context:', {
+        updateExisting,
+        documentoDocId,
+        isUpdate,
+        empleadoId,
+        empleadoEmail,
+        empleadoNombre,
+        originalFileName,
+        docId
+      });
+      
+      const userCodigo = isUpdate 
+        ? (empleadoId || docId) // Folosește CODIGO al angajatului
+        : (authUser?.CODIGO || authUser?.codigo || authUser?.userId || authUser?.id || docId);
+      
+      const fileName = isUpdate
+        ? originalFileName // Păstrează numele original (fără "_FIRMADO")
+        : (originalFileName 
+          ? originalFileName.replace(/\.pdf$/i, '_FIRMADO.pdf')
+          : `CONTRATO_EMPLEADO_${docId}_FIRMADO.pdf`);
+      
+      const nombreEmpleado = isUpdate
+        ? (empleadoNombre || null) // Folosește numele angajatului
+        : (authUser?.['NOMBRE / APELLIDOS'] 
+          || authUser?.NOMBRE_APELLIDOS 
+          || authUser?.empleadoNombre 
+          || authUser?.displayName 
+          || authUser?.name 
+          || null);
+      
+      const correoElectronico = isUpdate
+        ? (empleadoEmail || null) // Folosește email-ul angajatului
+        : (authUser?.email || null);
+      
+      // Pregătește body-ul conform așteptărilor backend-ului
+      const requestBody = {
+        signed_b64: base64String,
+        id: userCodigo, // CODIGO del empleado (al angajatului, nu al utilizatorului care semnează)
+        nombre_archivo: fileName,
+        tipo_documento: isUpdate ? (tipoDocumento || undefined) : "CONTRATO firmado", // Păstrează tipo_documento original la UPDATE
+        correo_electronico: correoElectronico,
+        nombre_empleado: nombreEmpleado,
+        fecha_creacion: new Date().toISOString(),
+        doc_id: isUpdate ? documentoDocId : undefined, // doc_id pentru UPDATE
+        update_existing: isUpdate // Flag pentru UPDATE
       };
       
-      console.log('🔍 Metadata:', metadata);
-      console.log('🔍 AuthUser:', authUser);
-      
-      formData.append('metadata', JSON.stringify(metadata));
-      
-      console.log('📤 Sending data to endpoint:', {
-        metadata: metadata,
-        pdf_size: `${(modifiedPdfBytes.byteLength / 1024 / 1024).toFixed(2)} MB`,
-        endpoint: routes.guardarDocumentoSemnat
+      console.log('🔍 [ContractSigner] Request body:', {
+        ...requestBody,
+        signed_b64: requestBody.signed_b64.substring(0, 50) + '...' // Nu logăm tot Base64-ul
       });
       
-      // Trimite la backend cu FormData (fișierul binary + metadata JSON)
-      console.log('🔍 Endpoint URL:', routes.guardarDocumentoSemnat);
-      console.log('🔍 FormData contents:', {
-        pdf: formData.get('pdf'),
-        metadata: formData.get('metadata')
-      });
-      
-      const saveResponse = await fetch(routes.guardarDocumentoSemnat, {
+      // Trimite la backend ca JSON folosind fetchWithAuth pentru refresh automat al token-ului
+      const saveResponse = await fetchWithAuth(routes.guardarDocumentoSemnat, {
         method: 'POST',
-        body: formData
-        // Nu setăm Content-Type pentru FormData - browser-ul îl setează automat cu boundary
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
       });
 
       if (saveResponse.ok) {
-        const result = await saveResponse.json();
-        console.log('✅ Response successful:', {
-          status: saveResponse.status,
-          statusText: saveResponse.statusText,
-          headers: Object.fromEntries(saveResponse.headers.entries()),
-          result: result
-        });
+        await saveResponse.json();
         alert(`✅ Documento firmado guardado exitosamente: ${originalFileName 
           ? originalFileName.replace(/\.pdf$/i, '_FIRMADO.pdf')
           : `CONTRATO_EMPLEADO_${docId}_FIRMADO.pdf`
         }`);
+        onSignComplete?.();
         onClose?.();
       } else {
         const errorText = await saveResponse.text();
@@ -501,7 +768,7 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
         <p className="text-gray-600 mb-4">{error}</p>
         <button
           onClick={onClose}
-          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+          className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
         >
           Cerrar
         </button>
@@ -551,12 +818,6 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
                   <span>Cancelar</span>
                 </button>
               )}
-              <button
-                onClick={onClose}
-                className="w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
-              >
-                <span className="text-gray-400 group-hover:text-red-500 text-xl">✕</span>
-              </button>
             </div>
           </div>
         </div>
@@ -565,68 +826,125 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
       {/* Main Content - Scrollable */}
       <main className="dlg__body">
         {/* PDF Viewer */}
-        <div className="bg-gray-50 p-4 mb-4 rounded-lg">
+        <div className="bg-gray-50 p-2 sm:p-4 mb-2 sm:mb-4 rounded-lg">
           {/* Toolbar modernizado */}
-          <div className="bg-white rounded-xl shadow-lg p-4 mb-4 border border-gray-200">
-            <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage <= 1}
-                  className="group relative px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                  <div className="relative flex items-center gap-2">
-                    <span>←</span>
-                    <span>Anterior</span>
+          <div className="bg-white rounded-xl shadow-lg p-2 sm:p-4 mb-2 sm:mb-4 border border-gray-200">
+            <div className="flex flex-col space-y-3">
+              {/* Rând 1: Navigare și Zoom */}
+              <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage <= 1}
+                    className="group relative px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                    <div className="relative flex items-center gap-2">
+                      <span>←</span>
+                      <span>Anterior</span>
+                    </div>
+                  </button>
+                  
+                  <div className="bg-gradient-to-r from-blue-100 to-blue-200 px-4 py-2 rounded-xl border border-blue-300 shadow-md">
+                    <span className="text-lg font-bold text-blue-900">
+                      {currentPage} / {totalPages}
+                    </span>
                   </div>
-                </button>
-                
-                <div className="bg-gradient-to-r from-blue-100 to-blue-200 px-4 py-2 rounded-xl border border-blue-300 shadow-md">
-                  <span className="text-lg font-bold text-blue-900">
-                    {currentPage} / {totalPages}
-                  </span>
+                  
+                  <button
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                    className="group relative px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                    <div className="relative flex items-center gap-2">
+                      <span>Siguiente</span>
+                      <span>→</span>
+                    </div>
+                  </button>
+                  
+                  {/* Buton simplu X pentru închidere */}
+                  <button
+                    onClick={onClose}
+                    className="w-10 h-10 bg-white hover:bg-gray-50 border border-gray-200 hover:border-gray-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
+                    aria-label="Cerrar preview"
+                  >
+                    <span className="text-gray-400 group-hover:text-gray-600 text-xl">✕</span>
+                  </button>
                 </div>
                 
-                <button
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={currentPage >= totalPages}
-                  className="group relative px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                  <div className="relative flex items-center gap-2">
-                    <span>Siguiente</span>
-                    <span>→</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => changeZoom(scale - 0.2)}
+                    className="group relative px-3 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                    <div className="relative flex items-center gap-1">
+                      <span>🔍</span>
+                      <span>-</span>
+                    </div>
+                  </button>
+                  
+                  <div className="bg-gradient-to-r from-green-100 to-green-200 px-4 py-2 rounded-xl border border-green-300 shadow-md">
+                    <span className="text-lg font-bold text-green-900 min-w-[60px] text-center">
+                      {Math.round(scale * 100)}%
+                    </span>
                   </div>
-                </button>
+                  
+                  <button
+                    onClick={() => changeZoom(scale + 0.2)}
+                    className="group relative px-3 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                    <div className="relative flex items-center gap-1">
+                      <span>🔍</span>
+                      <span>+</span>
+                    </div>
+                  </button>
+                </div>
               </div>
               
-              <div className="flex items-center gap-3">
+              {/* Rând 2: Butoane Limpiar și Guardar */}
+              <div className="flex items-center gap-3 w-full">
                 <button
-                  onClick={() => changeZoom(scale - 0.2)}
-                  className="group relative px-3 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                  onClick={handleClear}
+                  className="group relative flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white"
                 >
-                  <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                  <div className="relative flex items-center gap-1">
-                    <span>🔍</span>
-                    <span>-</span>
+                  <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
+                  <div className="relative flex items-center justify-center gap-2">
+                    <span>🗑️</span>
+                    <span>Limpiar Firma</span>
                   </div>
                 </button>
                 
-                <div className="bg-gradient-to-r from-green-100 to-green-200 px-4 py-2 rounded-xl border border-green-300 shadow-md">
-                  <span className="text-lg font-bold text-green-900 min-w-[60px] text-center">
-                    {Math.round(scale * 100)}%
-                  </span>
-                </div>
-                
                 <button
-                  onClick={() => changeZoom(scale + 0.2)}
-                  className="group relative px-3 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                  onClick={saveSignedPDF}
+                  disabled={Object.keys(signatures).length === 0}
+                  className={`group relative flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+                    Object.keys(signatures).length === 0
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none'
+                      : 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
+                  }`}
+                  style={{
+                    opacity: Object.keys(signatures).length === 0 ? 0.6 : 1,
+                    pointerEvents: Object.keys(signatures).length === 0 ? 'none' : 'auto'
+                  }}
                 >
-                  <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                  <div className="relative flex items-center gap-1">
-                    <span>🔍</span>
-                    <span>+</span>
+                  {Object.keys(signatures).length > 0 && (
+                    <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                  )}
+                  <div className="relative flex items-center justify-center gap-2">
+                    {Object.keys(signatures).length === 0 ? (
+                      <>
+                        <span>❌</span>
+                        <span className="text-sm">Sin firmas</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-lg">💾</span>
+                        <span className="font-bold">Guardar PDF Firmado</span>
+                      </>
+                    )}
                   </div>
                 </button>
               </div>
@@ -634,14 +952,18 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
           </div>
 
           {/* PDF Canvas Container */}
-          <div className="pdf-canvas-container bg-white rounded-lg shadow-md p-4 overflow-auto max-h-[40vh]">
-            <div className="flex justify-center relative">
+          <div className="pdf-canvas-container bg-white rounded-lg shadow-md p-2 sm:p-4 overflow-x-hidden overflow-y-auto max-h-[60vh] sm:max-h-[70vh] w-full flex items-center justify-center" style={{ boxSizing: 'border-box', position: 'relative', zIndex: 1 }}>
+            <div className="w-full flex justify-center" style={{ minWidth: 0, maxWidth: '100%' }}>
               <canvas
                 ref={canvasRef}
                 className={`border border-gray-200 rounded-lg shadow-sm ${
                   isPlacingSignature ? 'cursor-crosshair' : 'cursor-default'
                 }`}
-                style={{ maxWidth: '100%', height: 'auto' }}
+                style={{ 
+                  maxWidth: '100%',
+                  height: 'auto',
+                  display: 'block'
+                }}
                 onClick={handlePlaceSignature}
                 onMouseMove={handleCanvasMouseMove}
               />
@@ -698,7 +1020,7 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
             </h4>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
             {/* Signature Canvas */}
             <div className="md:col-span-1">
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-3 border-2 border-dashed border-gray-300 shadow-sm">
@@ -726,6 +1048,21 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
                   <span>Limpiar Firma</span>
                 </div>
               </button>
+
+              {/* Buton pentru încărcarea unei imagini (firmă scanată/fotografiată) */}
+              <label className="group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200 cursor-pointer block">
+                <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                <div className="relative flex items-center justify-center gap-2">
+                  <span className="text-lg">📷</span>
+                  <span>Cargar Firma desde Imagen</span>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLoadImageSignature}
+                  className="hidden"
+                />
+              </label>
               
               {!signatures[currentPage] ? (
                 <button
@@ -797,8 +1134,17 @@ export default function ContractSigner({ pdfUrl, docId, originalFileName, onClos
         </section>
       </main>
 
+      {/* Buton toggle pentru footer pe mobil */}
+      <button
+        onClick={() => setShowMobileFooter(!showMobileFooter)}
+        className="mobile-footer-toggle sm:hidden"
+        aria-label="Toggle footer"
+      >
+        {showMobileFooter ? '▼' : '☰'}
+      </button>
+
       {/* Footer - Sticky con botones modernos */}
-      <footer className="dlg__footer">
+      <footer className={`dlg__footer ${showMobileFooter ? 'mobile-visible' : ''}`}>
         <button
           onClick={handleClear}
           className="group relative flex-1 px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-gray-200"

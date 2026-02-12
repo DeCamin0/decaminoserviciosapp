@@ -22,6 +22,7 @@ import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } fro
 import activityLogger from '../utils/activityLogger';
 import NominasMatrixTab from '../components/gestoria/NominasMatrixTab';
 import CostePersonalTab from '../components/gestoria/CostePersonalTab';
+import { exportToExcelWithHeader } from '../utils/exportExcel';
 
 // Funcție pentru formatarea datelor în format frumos și consistent
 
@@ -297,6 +298,7 @@ export default function DocumentosEmpleadosPage() {
   // Coada pentru încărcarea avatarurilor cu concurență limitată
   const AVATAR_CONCURRENCY = 2;
   const avatarQueueRef = useRef([]);
+  const fetchDocumentosOficialesInProgressRef = useRef(false);
   const activeAvatarRequestsRef = useRef(0);
   const pendingAvatarRequestsRef = useRef(new Set());
 
@@ -406,7 +408,8 @@ export default function DocumentosEmpleadosPage() {
     });
   }, [bulkAvatarsLoaded, empleados, enqueueAvatar]);
 
-  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas', 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
+  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas'
+  const [activeEmpleadoTab, setActiveEmpleadoTab] = useState('documentos'); // 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
 
   const [uploading, setUploading] = useState(false);
 
@@ -430,11 +433,21 @@ export default function DocumentosEmpleadosPage() {
 
   const [previewError, setPreviewError] = useState(null);
 
+  // Estado para el sistema de firma de documentos oficiales
+  const [showOficialSigner, setShowOficialSigner] = useState(false);
+  const [documentoOficialToSign, setDocumentoOficialToSign] = useState(null);
+  const [documentoOficialPdfUrl, setDocumentoOficialPdfUrl] = useState(null);
+
 
 
   // Estado para el modal de confirmación de borrado
 
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  
+  // State pentru modal cu lista de angajați și statusul contractelor
+  const [showContratosModal, setShowContratosModal] = useState(false);
+  const [empleadosContratos, setEmpleadosContratos] = useState([]);
+  const [loadingContratos, setLoadingContratos] = useState(false);
 
   const [nominaToDelete, setNominaToDelete] = useState(null);
 
@@ -732,6 +745,7 @@ export default function DocumentosEmpleadosPage() {
     setFilteredEmpleados(demoEmpleados);
   }, []);
 
+
   const fetchEmpleados = useCallback(async () => {
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
@@ -808,18 +822,18 @@ export default function DocumentosEmpleadosPage() {
 
     setSelectedEmpleado(empleado);
 
-    setActiveTab('documentos');
+    setActiveEmpleadoTab('documentos'); // Folosim activeEmpleadoTab în loc de activeTab
 
     
 
     // Cargar documentos reales del empleado desde el backend
-
+    // Delay pentru a evita rate limiting
     await fetchEmpleadoDocumentos(empleado);
 
-    
+    // Delay între apeluri pentru a evita rate limiting (500ms)
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Cargar también nóminas del empleado para que aparezcan en el contador
-
     await fetchNominas(empleado);
 
   };
@@ -1138,13 +1152,13 @@ export default function DocumentosEmpleadosPage() {
 
   useEffect(() => {
 
-    if (selectedEmpleado && activeTab === 'empleados') {
+    if (selectedEmpleado && activeEmpleadoTab === 'documentos') {
 
       fetchEmpleadoDocumentos(selectedEmpleado);
 
     }
 
-  }, [selectedEmpleado, activeTab, fetchEmpleadoDocumentos]);
+  }, [selectedEmpleado, activeEmpleadoTab, fetchEmpleadoDocumentos]);
 
 
 
@@ -1858,7 +1872,7 @@ export default function DocumentosEmpleadosPage() {
       
 
       // Oficial doar dacă e pe tab-ul de Documentos Oficiales sau are flag explicit
-      const isDocumentoOficial = activeTab === 'documentos-empresa' || documento.esOficial === true;
+      const isDocumentoOficial = activeEmpleadoTab === 'documentos-empresa' || documento.esOficial === true;
 
       
 
@@ -1953,15 +1967,16 @@ export default function DocumentosEmpleadosPage() {
         // Usar endpoint de documentos oficiales
 
         // IMPORTANT: id trebuie să fie empleado_id (CODIGO), nu doc_id
-        const empleadoIdOficial = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id;
-        previewUrl = `${routes.downloadDocumentoOficial}?id=${empleadoIdOficial}&documentId=${documento.doc_id}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&preview=true`;
+        const empleadoIdOficial = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id || documento.empleadoCodigo;
+        const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || documento.empleadoEmail || documento.correo_electronico || '';
+        previewUrl = `${routes.downloadDocumentoOficial}?id=${empleadoIdOficial}&documentId=${documento.doc_id}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(documento.fileName || '')}&preview=true`;
 
         console.log('🔍 Construyendo URL para documento oficial:');
 
         console.log('  - ID (id din backend):', documento.id);
         console.log('  - Doc ID (doc_id din backend):', documento.doc_id);
 
-        console.log('  - Email:', selectedEmpleado['CORREO ELECTRONICO']);
+        console.log('  - Email:', empleadoEmail);
 
         console.log('  - FileName:', documento.fileName);
 
@@ -1971,13 +1986,14 @@ export default function DocumentosEmpleadosPage() {
 
         // Pentru documente normale folosim endpoint-ul standard de descărcare
         // IMPORTANT: id trebuie să fie empleado_id (CODIGO), nu doc_id
-        const empleadoId = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id;
-        previewUrl = `${routes.downloadDocumento}?id=${empleadoId}&email=${encodeURIComponent(selectedEmpleado['CORREO ELECTRONICO'] || '')}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}&preview=true`;
+        const empleadoId = selectedEmpleado?.CODIGO || documento.empleadoId || documento.id || documento.empleadoCodigo;
+        const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || documento.empleadoEmail || documento.correo_electronico || '';
+        previewUrl = `${routes.downloadDocumento}?id=${empleadoId}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(documento.fileName || '')}&documentId=${documento.doc_id}&preview=true`;
 
         console.log('📄 Preview para documento normal (empleados):', previewUrl);
         console.log('  - ID (empleado_id):', empleadoId);
         console.log('  - Doc ID (document_id):', documento.doc_id);
-        console.log('  - Email:', selectedEmpleado['CORREO ELECTRONICO']);
+        console.log('  - Email:', empleadoEmail);
         console.log('  - FileName:', documento.fileName);
 
       }
@@ -3202,13 +3218,13 @@ export default function DocumentosEmpleadosPage() {
 
   useEffect(() => {
 
-    if (selectedEmpleado && activeTab === 'nominas') {
+    if (selectedEmpleado && activeEmpleadoTab === 'nominas') {
 
       fetchNominas(selectedEmpleado);
 
     }
 
-  }, [selectedEmpleado, activeTab, fetchNominas]);
+  }, [selectedEmpleado, activeEmpleadoTab, fetchNominas]);
 
 
 
@@ -3224,6 +3240,12 @@ export default function DocumentosEmpleadosPage() {
 
     }
 
+    // Prevenir apeluri simultane
+    if (fetchDocumentosOficialesInProgressRef.current) {
+      console.log('⏸️ Fetch de documentos oficiales deja en progreso, saltando...');
+      return;
+    }
+
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
       console.log('🎭 DEMO mode: Skipping fetchDocumentosOficiales for empleado:', empleado['NOMBRE / APELLIDOS']);
@@ -3232,7 +3254,7 @@ export default function DocumentosEmpleadosPage() {
     }
 
     setDocumentosOficialesLoading(true);
-
+    fetchDocumentosOficialesInProgressRef.current = true;
     setDocumentosOficialesError(null);
 
 
@@ -3252,21 +3274,50 @@ export default function DocumentosEmpleadosPage() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${routes.getDocumentosOficiales}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          nombre: empleado['NOMBRE / APELLIDOS'],
-          codigo: empleado['CODIGO']
-        })
-      });
+      // Retry logic cu exponential backoff pentru erorile 429
+      const maxRetries = 3;
+      let response;
 
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          response = await fetch(`${routes.getDocumentosOficiales}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              nombre: empleado['NOMBRE / APELLIDOS'],
+              codigo: empleado['CODIGO']
+            })
+          });
 
+          // Dacă e 429, așteptăm și retry
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After');
+            const delay = retryAfter 
+              ? parseInt(retryAfter) * 1000 
+              : Math.min(1000 * Math.pow(2, attempt), 10000); // Exponential backoff, max 10s
+            
+            if (attempt < maxRetries - 1) {
+              console.log(`⏳ Rate limited (429) pentru documentos oficiales, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+          }
 
-      if (!response.ok) {
+          // Dacă nu e 429 sau am terminat retry-urile, iesim din loop
+          break;
+        } catch (error) {
+          if (attempt < maxRetries - 1) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+            console.log(`⏳ Error fetching documentos oficiales, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw error;
+          }
+        }
+      }
 
-        throw new Error(`Error HTTP: ${response.status}`);
-
+      if (!response || !response.ok) {
+        throw new Error(`Error HTTP: ${response?.status || 'Unknown'}`);
       }
 
 
@@ -3386,6 +3437,7 @@ export default function DocumentosEmpleadosPage() {
             // Câmpuri suplimentare din backend - păstrăm toate câmpurile originale
             correo_electronico: doc.correo_electronico,
             permisso_para_empleado: doc.permisso_para_empleado || null, // Câmp pentru vizibilitate
+            necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1', // Câmp pentru necesita firma
             // Adăugăm și alte câmpuri care pot fi utile
             originalData: doc // Păstrăm întregul obiect original pentru debugging
           };
@@ -3455,11 +3507,9 @@ export default function DocumentosEmpleadosPage() {
           uploadDate: doc.uploadDate || doc.fecha_creacion || doc.created_at || doc.fecha || doc.fecha_subida || doc.upload_date || doc.creation_date || doc.fecha_autor || new Date().toISOString(),
           tipo: doc.tipo_documento || doc.tipo || doc.categoria || doc.document_type || doc.type || doc.category || 'Documento Oficial',
           empleadoId: empleado['CODIGO'],
-
           empleadoEmail: empleado['CORREO ELECTRONICO'],
-
           status: 'disponible',
-
+          necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1', // Câmp pentru necesita firma
           // Câmpuri suplimentare din backend - păstrăm toate câmpurile originale
           correo_electronico: doc.correo_electronico,
           permisso_para_empleado: doc.permisso_para_empleado || null, // Câmp pentru vizibilitate
@@ -3551,6 +3601,7 @@ export default function DocumentosEmpleadosPage() {
     } finally {
 
       setDocumentosOficialesLoading(false);
+      fetchDocumentosOficialesInProgressRef.current = false;
 
     }
 
@@ -3559,22 +3610,31 @@ export default function DocumentosEmpleadosPage() {
 
 
   // Efecto pentru încărcarea documentelor oficiale când se activează tabul corespunzător
-
+  // IMPORTANT: Nu includem fetchDocumentosOficiales în dependențe pentru a evita apeluri duplicate
   useEffect(() => {
-
-    console.log('🔍 useEffect documentos oficiales - activeTab:', activeTab);
-
-    console.log('🔍 useEffect documentos oficiales - selectedEmpleado:', selectedEmpleado);
-
-    if (selectedEmpleado && activeTab === 'documentos-empresa') {
-
-      console.log('✅ Activando fetchDocumentosOficiales');
-
-      fetchDocumentosOficiales(selectedEmpleado);
-
+    // Skip dacă nu e tab-ul corect sau nu e angajat selectat
+    if (!selectedEmpleado || activeEmpleadoTab !== 'documentos-empresa') {
+      return;
     }
 
-  }, [selectedEmpleado, activeTab, fetchDocumentosOficiales]);
+    // Skip dacă deja se face un fetch
+    if (fetchDocumentosOficialesInProgressRef.current) {
+      console.log('⏸️ Fetch de documentos oficiales deja en progreso, saltando useEffect...');
+      return;
+    }
+
+    console.log('✅ Activando fetchDocumentosOficiales desde useEffect');
+
+    // Delay pentru a evita rate limiting când se schimbă rapid tab-urile
+    const timeoutId = setTimeout(() => {
+      // Verificăm din nou înainte de a face apelul (poate s-a schimbat tab-ul)
+      if (selectedEmpleado && activeEmpleadoTab === 'documentos-empresa' && !fetchDocumentosOficialesInProgressRef.current) {
+        fetchDocumentosOficiales(selectedEmpleado);
+      }
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedEmpleado, activeEmpleadoTab, fetchDocumentosOficiales]);
 
 
 
@@ -3719,6 +3779,664 @@ export default function DocumentosEmpleadosPage() {
 
     }
 
+  };
+
+  // Funcție pentru toggle necesita_firma
+  const handleToggleNecesitaFirma = async (documento) => {
+    try {
+      if (!documento.doc_id) {
+        showNotification('error', 'Error', 'No se pudo identificar el documento');
+        return;
+      }
+
+      const nuevoEstado = !documento.necesita_firma;
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(
+        `${routes.updateDocumentoOficialNecesitaFirma}/${documento.doc_id}/necesita-firma`,
+        {
+          method: 'PATCH',
+          headers: fetchHeaders,
+          body: JSON.stringify({ necesitaFirma: nuevoEstado }),
+        }
+      );
+
+      if (response.ok) {
+        // Actualizează starea locală
+        setDocumentosOficiales((prevDocs) =>
+          prevDocs.map((doc) =>
+            doc.doc_id === documento.doc_id
+              ? { ...doc, necesita_firma: nuevoEstado }
+              : doc
+          )
+        );
+
+        showNotification(
+          'success',
+          'Actualizado',
+          nuevoEstado
+            ? 'El documento ahora requiere firma'
+            : 'El documento ya no requiere firma'
+        );
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Error HTTP: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('❌ Error actualizando necesita_firma:', error);
+      showNotification(
+        'error',
+        'Error',
+        `No se pudo actualizar el estado de firma: ${error.message}`
+      );
+    }
+  };
+
+  // Funcție pentru a obține lista de angajați cu statusul contractelor
+  // Funcție pentru export Excel - Status Contratos
+  const handleExportContratosExcel = async () => {
+    if (!empleadosContratos || empleadosContratos.length === 0) {
+      showNotification('warning', 'Advertencia', 'No hay datos para exportar');
+      return;
+    }
+
+    try {
+      const columns = [
+        { key: 'codigo', label: 'Código', width: 12 },
+        { key: 'nombre', label: 'Nombre', width: 30 },
+        { key: 'email', label: 'Email', width: 30 },
+        { key: 'estado', label: 'Estado', width: 12 },
+        { key: 'tiene_contrato', label: 'Tiene CONTRATO', width: 15 },
+        { key: 'tiene_contrato_firmado', label: 'Tiene CONTRATO Firmado', width: 20 },
+        { key: 'fecha_contrato', label: 'Fecha CONTRATO', width: 15 },
+        { key: 'fecha_contrato_firmado', label: 'Fecha CONTRATO Firmado', width: 20 },
+      ];
+
+      const dataToExport = empleadosContratos.map(emp => ({
+        codigo: emp.codigo || '',
+        nombre: emp.nombre || 'Sin nombre',
+        email: emp.email || 'Sin email',
+        estado: emp.estado || 'N/A',
+        tiene_contrato: emp.tiene_contrato ? 'Sí' : 'No',
+        tiene_contrato_firmado: emp.tiene_contrato_firmado ? 'Sí' : 'No',
+        fecha_contrato: emp.fecha_contrato 
+          ? new Date(emp.fecha_contrato).toLocaleDateString('es-ES')
+          : '',
+        fecha_contrato_firmado: emp.fecha_contrato_firmado
+          ? new Date(emp.fecha_contrato_firmado).toLocaleDateString('es-ES')
+          : '',
+      }));
+
+      await exportToExcelWithHeader(
+        dataToExport,
+        columns,
+        'Status Contratos por Empleado',
+        'status_contratos_empleados',
+        {},
+        new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })
+      );
+
+      showNotification('success', 'Éxito', 'Excel exportado correctamente');
+    } catch (error) {
+      console.error('Error al exportar Excel:', error);
+      showNotification('error', 'Error', `Error al exportar Excel: ${error.message}`);
+    }
+  };
+
+  // Funcție pentru export PDF - Status Contratos
+  const handleExportContratosPDF = async () => {
+    if (!empleadosContratos || empleadosContratos.length === 0) {
+      showNotification('warning', 'Advertencia', 'No hay datos para exportar');
+      return;
+    }
+
+    try {
+      // Încarcă pdfMake dinamic
+      const ensurePdfMake = () => new Promise((resolve, reject) => {
+        if (window.pdfMake) return resolve(window.pdfMake);
+        const s1 = document.createElement('script');
+        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
+        s1.onload = () => {
+          const s2 = document.createElement('script');
+          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
+          s2.onload = () => resolve(window.pdfMake);
+          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
+          document.head.appendChild(s2);
+        };
+        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
+        document.head.appendChild(s1);
+      });
+
+      await ensurePdfMake();
+
+      const tableBody = [
+        ['Código', 'Nombre', 'Email', 'Estado', 'CONTRATO', 'FIRMADO', 'Fecha CONTRATO', 'Fecha FIRMADO']
+      ];
+
+      empleadosContratos.forEach(emp => {
+        tableBody.push([
+          emp.codigo || '',
+          emp.nombre || 'Sin nombre',
+          emp.email || 'Sin email',
+          emp.estado || 'N/A',
+          emp.tiene_contrato ? 'Sí' : 'No',
+          emp.tiene_contrato_firmado ? 'Sí' : 'No',
+          emp.fecha_contrato 
+            ? new Date(emp.fecha_contrato).toLocaleDateString('es-ES')
+            : '',
+          emp.fecha_contrato_firmado
+            ? new Date(emp.fecha_contrato_firmado).toLocaleDateString('es-ES')
+            : '',
+        ]);
+      });
+
+      const docDefinition = {
+        content: [
+          {
+            text: 'DE CAMINO SERVICIOS AUXILIARES SL',
+            style: 'companyName',
+            margin: [0, 0, 0, 8]
+          },
+          {
+            text: 'NIF: B85524536',
+            style: 'companyDetails',
+            margin: [0, 0, 0, 2]
+          },
+          {
+            text: 'Dirección: Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
+            style: 'companyDetails',
+            margin: [0, 0, 0, 2]
+          },
+          {
+            text: 'Teléfono: 910 440 275 | Email: info@decaminoservicios.com',
+            style: 'companyDetails',
+            margin: [0, 0, 0, 8]
+          },
+          {
+            text: 'Status Contratos por Empleado',
+            style: 'reportTitle',
+            margin: [0, 0, 0, 4]
+          },
+          {
+            text: `Período: ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+            style: 'period',
+            margin: [0, 0, 0, 8]
+          },
+          {
+            table: {
+              headerRows: 1,
+              widths: [50, 120, 120, 50, 50, 50, 80, 80],
+              body: tableBody
+            },
+            layout: {
+              fillColor: (rowIndex) => {
+                if (rowIndex === 0) return '#333333';
+                return rowIndex % 2 === 0 ? '#F5F5F5' : null;
+              }
+            }
+          },
+          {
+            text: `Total: ${empleadosContratos.length} empleados`,
+            style: 'totals',
+            margin: [0, 8, 0, 0]
+          }
+        ],
+        styles: {
+          companyName: {
+            fontSize: 18,
+            bold: true,
+            color: '#FFFFFF',
+            fillColor: '#CC0000',
+            alignment: 'center'
+          },
+          companyDetails: {
+            fontSize: 10,
+            bold: true,
+            color: '#333333',
+            fillColor: '#F0F0F0',
+            alignment: 'center'
+          },
+          reportTitle: {
+            fontSize: 14,
+            bold: true,
+            color: '#FFFFFF',
+            fillColor: '#0066CC',
+            alignment: 'center'
+          },
+          period: {
+            fontSize: 10,
+            color: '#333333',
+            alignment: 'center'
+          },
+          totals: {
+            fontSize: 10,
+            bold: true,
+            alignment: 'right'
+          }
+        },
+        defaultStyle: {
+          fontSize: 8,
+          color: '#333333'
+        }
+      };
+
+      const filename = `status_contratos_empleados_${new Date().toISOString().split('T')[0]}.pdf`;
+      window.pdfMake.createPdf(docDefinition).download(filename);
+
+      showNotification('success', 'Éxito', 'PDF exportado correctamente');
+    } catch (error) {
+      console.error('Error al exportar PDF:', error);
+      showNotification('error', 'Error', `Error al exportar PDF: ${error.message}`);
+    }
+  };
+
+  // State pentru modalul de selecție contracte
+  const [showContratosPreviewModal, setShowContratosPreviewModal] = useState(false);
+  const [contratosDisponibles, setContratosDisponibles] = useState([]);
+  const [empleadoParaPreview, setEmpleadoParaPreview] = useState(null);
+  const [loadingContratosPreview, setLoadingContratosPreview] = useState(false);
+
+  // Funcție pentru a obține toate contractele unui angajat și a deschide modalul de selecție
+  const handlePreviewContratoEmpleado = async (empleado) => {
+    try {
+      if (!empleado.codigo) {
+        showNotification('error', 'Error', 'No se pudo identificar el código del empleado');
+        return;
+      }
+
+      setLoadingContratosPreview(true);
+      setEmpleadoParaPreview(empleado);
+
+      // Obține documentele oficiale pentru acest angajat
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Folosim endpoint-ul pentru documentele oficiale (POST cu body)
+      const response = await fetch(routes.getDocumentosOficiales, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          codigo: empleado.codigo,
+          nombre: empleado.nombre || '',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      let documentos = [];
+      
+      if (result.success && result.data) {
+        documentos = Array.isArray(result.data) ? result.data : [];
+      } else if (result.success && result.documentos) {
+        documentos = Array.isArray(result.documentos) ? result.documentos : [];
+      } else if (Array.isArray(result)) {
+        documentos = result;
+      }
+
+      // Găsește toate contractele (CONTRATO și CONTRATO firmado)
+      // Adăugăm log-uri pentru debugging
+      console.log('🔍 [Preview Contratos] Total documentos recibidos:', documentos.length);
+      console.log('🔍 [Preview Contratos] Ejemplo de documento:', documentos[0]);
+      
+      const contratos = documentos.filter((doc) => {
+        const tipo = (doc.tipo || '').toUpperCase();
+        const tipoDocumento = (doc.tipo_documento || '').toUpperCase();
+        const nombreArchivo = (doc.nombre_archivo || doc.fileName || '').toUpperCase();
+        
+        // Verificăm dacă este CONTRATO sau CONTRATO firmado
+        const esContrato = tipo.includes('CONTRATO') || tipoDocumento.includes('CONTRATO') || nombreArchivo.includes('CONTRATO');
+        
+        if (esContrato) {
+          console.log('✅ [Preview Contratos] Contrato encontrado:', {
+            tipo,
+            tipoDocumento,
+            nombreArchivo: doc.nombre_archivo || doc.fileName,
+            doc_id: doc.doc_id
+          });
+        }
+        
+        return esContrato;
+      });
+
+      console.log('🔍 [Preview Contratos] Total contratos encontrados:', contratos.length);
+
+      if (contratos.length === 0) {
+        console.warn('⚠️ [Preview Contratos] No se encontraron contratos. Documentos recibidos:', documentos);
+        showNotification('warning', 'Advertencia', 'No se encontraron contratos para este empleado');
+        setLoadingContratosPreview(false);
+        return;
+      }
+
+      // Formatează contractele pentru afișare
+      const contratosFormateados = contratos.map(contrato => ({
+        ...contrato,
+        id: empleado.codigo,
+        empleadoId: empleado.codigo,
+        fileName: contrato.nombre_archivo || contrato.fileName || 'CONTRATO.pdf',
+        tipo: contrato.tipo || contrato.tipo_documento || 'CONTRATO',
+        tipo_documento: contrato.tipo_documento || contrato.tipo || 'CONTRATO',
+        esOficial: true,
+        doc_id: contrato.doc_id,
+        fecha_creacion: contrato.fecha_creacion,
+      }));
+
+      setContratosDisponibles(contratosFormateados);
+      setShowContratosPreviewModal(true);
+      setLoadingContratosPreview(false);
+
+    } catch (error) {
+      console.error('❌ Error al obtener contratos:', error);
+      showNotification(
+        'error',
+        'Error',
+        `No se pudieron obtener los contratos: ${error.message}`
+      );
+      setLoadingContratosPreview(false);
+    }
+  };
+
+  // Funcție pentru a deschide preview-ul unui contract selectat
+  const handlePreviewContratoSeleccionado = async (contrato) => {
+    try {
+      if (!empleadoParaPreview) {
+        showNotification('error', 'Error', 'No se pudo identificar el empleado');
+        return;
+      }
+
+      // Adăugăm datele angajatului direct în obiectul contrato pentru a evita dependența de selectedEmpleado
+      contrato.empleadoEmail = empleadoParaPreview.email || '';
+      contrato.empleadoCodigo = empleadoParaPreview.codigo;
+      contrato.correo_electronico = empleadoParaPreview.email || '';
+      
+      // Construim obiectul empleado complet pentru preview
+      const empleadoTemp = {
+        CODIGO: empleadoParaPreview.codigo,
+        'CORREO ELECTRONICO': empleadoParaPreview.email || '',
+        'NOMBRE / APELLIDOS': empleadoParaPreview.nombre || '',
+      };
+      
+      // Salvăm selectedEmpleado original
+      const selectedEmpleadoOriginal = selectedEmpleado;
+      
+      // Setăm temporar selectedEmpleado
+      setSelectedEmpleado(empleadoTemp);
+      
+      // Închidem modalul de selecție înainte de a deschide preview-ul
+      setShowContratosPreviewModal(false);
+      
+      // Așteptăm puțin pentru ca state-ul să se actualizeze
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Deschide preview-ul folosind funcția existentă
+      await handlePreviewDocument(contrato);
+      
+      // Restaurăm selectedEmpleado original după un mic delay
+      setTimeout(() => {
+        if (selectedEmpleadoOriginal) {
+          setSelectedEmpleado(selectedEmpleadoOriginal);
+        } else {
+          // Dacă nu există original, setăm la null
+          setSelectedEmpleado(null);
+        }
+      }, 1000);
+
+    } catch (error) {
+      console.error('❌ Error al abrir preview del contrato:', error);
+      showNotification(
+        'error',
+        'Error',
+        `No se pudo abrir el preview del contrato: ${error.message}`
+      );
+    }
+  };
+
+  const fetchEmpleadosConStatusContratos = async () => {
+    try {
+      setLoadingContratos(true);
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(routes.getEmpleadosConStatusContratos, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        setEmpleadosContratos(result.data);
+        setShowContratosModal(true);
+      } else {
+        throw new Error('Formato de respuesta inválido');
+      }
+    } catch (error) {
+      console.error('❌ Error obteniendo empleados con status contratos:', error);
+      showNotification(
+        'error',
+        'Error',
+        `No se pudo obtener la lista de empleados: ${error.message}`
+      );
+    } finally {
+      setLoadingContratos(false);
+    }
+  };
+
+  // Funcție pentru preview simplu al documentelor oficiale
+  const handlePreviewDocumentOficial = async (documento) => {
+    try {
+      console.log('📄 Abriendo preview para documento oficial:', documento);
+      
+      const empleadoIdOficial = selectedEmpleado?.CODIGO || documento.id || documento.empleadoId;
+      const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || documento.correo_electronico || '';
+      const previewUrl = `${routes.downloadDocumentoOficial}?id=${empleadoIdOficial}&documentId=${documento.doc_id}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+      
+      console.log('🔍 URL de preview:', previewUrl);
+      
+      const getAuthHeaders = () => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Accept': 'application/pdf, application/json, image/*, */*',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+      };
+      
+      setShowPreviewModal(true);
+      setPreviewLoading(true);
+      setPreviewError(null);
+      
+      // Para PDFs, crear blob URL
+      if (documento.fileName?.toLowerCase().endsWith('.pdf')) {
+        try {
+          const response = await fetch(previewUrl, { headers: getAuthHeaders() });
+          if (response.ok) {
+            const blob = await response.blob();
+            if (blob.size > 0) {
+              const url = (isIOS || isAndroid)
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              setPreviewDocument({ ...documento, previewUrl: url, esOficial: true, isPdf: true });
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error procesando PDF oficial:', error);
+          setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+        }
+      } else {
+        // Para otros archivos, usar URL directa
+        setPreviewDocument({ ...documento, previewUrl, esOficial: true });
+      }
+      
+      setPreviewLoading(false);
+    } catch (error) {
+      console.error('❌ Error abriendo preview:', error);
+      setPreviewError('Error al abrir el preview del documento');
+      setPreviewLoading(false);
+    }
+  };
+
+  // Funcție pentru deschiderea sistemului de firmă pentru documente oficiale
+  const handleFirmarDocumentoOficial = async (documento) => {
+    try {
+      console.log('✍️ Abriendo sistema de firma para documento oficial:', documento);
+      
+      if (!documento.fileName?.toLowerCase().endsWith('.pdf')) {
+        showNotification('error', 'Error', 'Solo se pueden firmar documentos PDF');
+        return;
+      }
+
+      const empleadoIdOficial = selectedEmpleado?.CODIGO || documento.id || documento.empleadoId;
+      const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || documento.correo_electronico || '';
+      const downloadUrl = `${routes.downloadDocumentoOficial}?id=${empleadoIdOficial}&documentId=${documento.doc_id}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+      
+      console.log('🔍 URL para firmar:', downloadUrl);
+      
+      const getAuthHeaders = () => {
+        const token = localStorage.getItem('auth_token');
+        const headers = {
+          'Accept': 'application/pdf, application/json, */*',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+      };
+
+      setShowOficialSigner(true);
+      
+      try {
+        const response = await fetch(downloadUrl, { headers: getAuthHeaders() });
+        
+        if (response.ok) {
+          const contentType = response.headers.get('content-type');
+          
+          if (contentType && contentType.includes('application/pdf')) {
+            const blob = await response.blob();
+            
+            if (blob.size > 0) {
+              const url = (isIOS || isAndroid)
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              console.log('✅ URL creado para PDF oficial a firmar');
+              console.log('🔍 [DocumentosEmpleados] Documento para firmar:', {
+                doc_id: documento.doc_id,
+                id: documento.id,
+                fileName: documento.fileName,
+                tipo: documento.tipo,
+                tipo_documento: documento.tipo_documento,
+                correo_electronico: documento.correo_electronico,
+                nombre_empleado: documento.nombre_empleado
+              });
+              setDocumentoOficialToSign(documento);
+              setDocumentoOficialPdfUrl(url);
+            } else {
+              throw new Error('Blob vacío para PDF oficial');
+            }
+          } else {
+            throw new Error('Content-Type no es PDF para documento oficial');
+          }
+        } else {
+          const errorText = await response.text();
+          throw new Error(`Error ${response.status}: ${errorText}`);
+        }
+      } catch (pdfError) {
+        console.error('❌ Error procesando PDF oficial para firmar:', pdfError);
+        setShowOficialSigner(false);
+        showNotification('error', 'Error', `Error al cargar documento para firmar: ${pdfError.message}`);
+      }
+    } catch (error) {
+      console.error('❌ Error abriendo sistema de firma:', error);
+      setShowOficialSigner(false);
+      showNotification('error', 'Error', `Error al abrir el sistema de firma: ${error.message}`);
+    }
+  };
+
+  // Funcție pentru a marca un contract ca fiind semnat
+  const handleMarcarContratoComoFirmado = async (documento) => {
+    try {
+      if (!documento.doc_id) {
+        showNotification('error', 'Error', 'No se pudo identificar el documento');
+        return;
+      }
+
+      // Verifică dacă este deja marcat ca "CONTRATO firmado"
+      if (documento.tipo === 'CONTRATO firmado' || documento.tipo_documento === 'CONTRATO firmado') {
+        showNotification('info', 'Información', 'Este contrato ya está marcado como firmado');
+        return;
+      }
+
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        fetchHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(
+        `${routes.marcarContratoComoFirmado}/${documento.doc_id}/marcar-firmado`,
+        {
+          method: 'POST',
+          headers: fetchHeaders,
+        }
+      );
+
+      if (response.ok) {
+        // Actualizează starea locală
+        setDocumentosOficiales((prevDocs) =>
+          prevDocs.map((doc) =>
+            doc.doc_id === documento.doc_id
+              ? { 
+                  ...doc, 
+                  tipo: 'CONTRATO firmado',
+                  tipo_documento: 'CONTRATO firmado',
+                  necesita_firma: false
+                }
+              : doc
+          )
+        );
+
+        showNotification(
+          'success',
+          'Contrato Marcado',
+          'El contrato ha sido marcado como firmado correctamente'
+        );
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Error HTTP: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('❌ Error marcando contrato como firmado:', error);
+      showNotification(
+        'error',
+        'Error',
+        `No se pudo marcar el contrato como firmado: ${error.message}`
+      );
+    }
   };
 
 
@@ -4322,6 +5040,29 @@ export default function DocumentosEmpleadosPage() {
               {/* Email Ingestion Button (Admin only) - Right Side */}
               {(isManager || authUser?.GRUPO === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.GRUPO === 'Supervisor') && (
                 <div className="flex items-center gap-3 relative" style={{ zIndex: 10000 }}>
+                  <button
+                    onClick={fetchEmpleadosConStatusContratos}
+                    disabled={loadingContratos}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Ver lista de empleados con status de contratos"
+                  >
+                    {loadingContratos ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>Cargando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span>Status Contratos</span>
+                      </>
+                    )}
+                  </button>
                   <EmailIngestionButton />
                   <FolderIngestionButton />
                 </div>
@@ -4337,12 +5078,16 @@ export default function DocumentosEmpleadosPage() {
           {/* Background glow effect */}
           <div className="absolute -inset-1 bg-gradient-to-r from-red-500 via-pink-500 to-red-500 rounded-2xl blur opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-200"></div>
           
-          <div className="relative bg-white/80 backdrop-blur-xl rounded-2xl p-2 border border-gray-200/50 shadow-xl">
+          {/* Tab-uri Principale (întotdeauna vizibile) */}
+          <div className="relative bg-white/80 backdrop-blur-xl rounded-2xl p-2 border border-gray-200/50 shadow-xl mb-4">
             <div className="flex flex-wrap gap-2">
               
               {/* Tab Empleados */}
               <button
-                onClick={() => setActiveTab('empleados')}
+                onClick={() => {
+                  setActiveTab('empleados');
+                  setSelectedEmpleado(null); // Reset angajat când schimbăm tab-ul principal
+                }}
                 className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
                   activeTab === 'empleados'
                     ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg shadow-red-200'
@@ -4361,7 +5106,10 @@ export default function DocumentosEmpleadosPage() {
 
               {/* Tab Gestoría Nóminas */}
               <button
-                onClick={() => setActiveTab('gestoria-nominas')}
+                onClick={() => {
+                  setActiveTab('gestoria-nominas');
+                  setSelectedEmpleado(null);
+                }}
                 className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
                   activeTab === 'gestoria-nominas'
                     ? 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-lg shadow-teal-200'
@@ -4379,7 +5127,10 @@ export default function DocumentosEmpleadosPage() {
 
               {/* Tab Coste Personal */}
               <button
-                onClick={() => setActiveTab('coste-personal')}
+                onClick={() => {
+                  setActiveTab('coste-personal');
+                  setSelectedEmpleado(null);
+                }}
                 className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
                   activeTab === 'coste-personal'
                     ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200'
@@ -4397,7 +5148,10 @@ export default function DocumentosEmpleadosPage() {
 
               {/* Tab Diplomas */}
               <button
-                onClick={() => setActiveTab('diplomas')}
+                onClick={() => {
+                  setActiveTab('diplomas');
+                  setSelectedEmpleado(null);
+                }}
                 className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
                   activeTab === 'diplomas'
                     ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-lg shadow-yellow-200'
@@ -4412,84 +5166,100 @@ export default function DocumentosEmpleadosPage() {
                   <span>Diplomas</span>
                 </div>
               </button>
-
-              {selectedEmpleado && (
-                <>
-                  {/* Tab Documentos */}
-                  <button
-                    onClick={() => setActiveTab('documentos')}
-                    className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                      activeTab === 'documentos'
-                        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200'
-                        : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50/50'
-                    }`}
-                  >
-                    {activeTab === 'documentos' && (
-                      <div className="absolute inset-0 bg-blue-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                    )}
-                    <div className="relative flex items-center gap-2">
-                      <span className="text-base">📄</span>
-                      <span>Documentos</span>
-                    </div>
-                  </button>
-
-                  {/* Tab Nóminas */}
-                  <button
-                    onClick={() => setActiveTab('nominas')}
-                    className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                      activeTab === 'nominas'
-                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg shadow-green-200'
-                        : 'text-gray-600 hover:text-green-600 hover:bg-green-50/50'
-                    }`}
-                  >
-                    {activeTab === 'nominas' && (
-                      <div className="absolute inset-0 bg-green-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                    )}
-                    <div className="relative flex items-center gap-2">
-                      <span className="text-base">💰</span>
-                      <span>Nóminas</span>
-                    </div>
-                  </button>
-
-                  {/* Tab Documentos Empresa */}
-                  <button
-                    onClick={() => setActiveTab('documentos-empresa')}
-                    className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                      activeTab === 'documentos-empresa'
-                        ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-200'
-                        : 'text-gray-600 hover:text-purple-600 hover:bg-purple-50/50'
-                    }`}
-                  >
-                    {activeTab === 'documentos-empresa' && (
-                      <div className="absolute inset-0 bg-purple-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                    )}
-                    <div className="relative flex items-center gap-2">
-                      <span className="text-base">🏢</span>
-                      <span>Empresa</span>
-                    </div>
-                  </button>
-
-                  {/* Tab Subir Documentos */}
-                  <button
-                    onClick={() => setActiveTab('subir-documentos')}
-                    className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                      activeTab === 'subir-documentos'
-                        ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-200'
-                        : 'text-gray-600 hover:text-orange-600 hover:bg-orange-50/50'
-                    }`}
-                  >
-                    {activeTab === 'subir-documentos' && (
-                      <div className="absolute inset-0 bg-orange-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                    )}
-                    <div className="relative flex items-center gap-2">
-                      <span className="text-base">📤</span>
-                      <span>Subir</span>
-                    </div>
-                  </button>
-                </>
-              )}
             </div>
           </div>
+
+          {/* Tab-uri pentru Angajat (doar când e selectat un angajat) */}
+          {selectedEmpleado && (
+            <div className="relative bg-gradient-to-r from-blue-50/80 to-purple-50/80 backdrop-blur-xl rounded-2xl p-2 border-2 border-blue-200/50 shadow-xl">
+              <div className="flex items-center justify-between mb-2 px-2">
+                <span className="text-xs font-semibold text-blue-700">📋 {selectedEmpleado['NOMBRE / APELLIDOS'] || 'Empleado'}</span>
+                <button
+                  onClick={() => setSelectedEmpleado(null)}
+                  className="group relative px-3 py-1.5 rounded-lg font-semibold text-xs transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-md hover:shadow-lg hover:from-gray-600 hover:to-gray-700"
+                  title="Volver a la lista de empleados"
+                >
+                  <div className="relative flex items-center gap-1.5">
+                    <span className="text-sm">←</span>
+                    <span>Volver</span>
+                  </div>
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {/* Tab Documentos */}
+                <button
+                  onClick={() => setActiveEmpleadoTab('documentos')}
+                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                    activeEmpleadoTab === 'documentos'
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200'
+                      : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50/50'
+                  }`}
+                >
+                  {activeEmpleadoTab === 'documentos' && (
+                    <div className="absolute inset-0 bg-blue-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                  )}
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-base">📄</span>
+                    <span>Documentos</span>
+                  </div>
+                </button>
+
+                {/* Tab Nóminas */}
+                <button
+                  onClick={() => setActiveEmpleadoTab('nominas')}
+                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                    activeEmpleadoTab === 'nominas'
+                      ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg shadow-green-200'
+                      : 'text-gray-600 hover:text-green-600 hover:bg-green-50/50'
+                  }`}
+                >
+                  {activeEmpleadoTab === 'nominas' && (
+                    <div className="absolute inset-0 bg-green-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                  )}
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-base">💰</span>
+                    <span>Nóminas</span>
+                  </div>
+                </button>
+
+                {/* Tab Documentos Empresa */}
+                <button
+                  onClick={() => setActiveEmpleadoTab('documentos-empresa')}
+                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                    activeEmpleadoTab === 'documentos-empresa'
+                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-200'
+                      : 'text-gray-600 hover:text-purple-600 hover:bg-purple-50/50'
+                  }`}
+                >
+                  {activeEmpleadoTab === 'documentos-empresa' && (
+                    <div className="absolute inset-0 bg-purple-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                  )}
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-base">🏢</span>
+                    <span>Empresa</span>
+                  </div>
+                </button>
+
+                {/* Tab Subir Documentos */}
+                <button
+                  onClick={() => setActiveEmpleadoTab('subir-documentos')}
+                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                    activeEmpleadoTab === 'subir-documentos'
+                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-200'
+                      : 'text-gray-600 hover:text-orange-600 hover:bg-orange-50/50'
+                  }`}
+                >
+                  {activeEmpleadoTab === 'subir-documentos' && (
+                    <div className="absolute inset-0 bg-orange-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                  )}
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-base">📤</span>
+                    <span>Subir</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Contenido de tabs */}
@@ -4504,7 +5274,7 @@ export default function DocumentosEmpleadosPage() {
           }}
         >
 
-          {activeTab === 'empleados' && (
+          {activeTab === 'empleados' && !selectedEmpleado && (
             <div>
               {/* Section Title and Search Bar - Side by Side */}
               <div className="flex items-center justify-between mb-8">
@@ -4758,7 +5528,7 @@ export default function DocumentosEmpleadosPage() {
             </div>
           )}
 
-          {activeTab === 'documentos' && selectedEmpleado && (
+          {activeEmpleadoTab === 'documentos' && selectedEmpleado && (
 
             <div className="space-y-4">
 
@@ -4802,7 +5572,10 @@ export default function DocumentosEmpleadosPage() {
                 </div>
 
                 <ChangeEmployee3DButton
-                  onClick={() => setActiveTab('empleados')}
+                  onClick={() => {
+                    setActiveTab('empleados');
+                    setSelectedEmpleado(null);
+                  }}
                   title="Cambiar Empleado"
                 />
 
@@ -5651,7 +6424,7 @@ export default function DocumentosEmpleadosPage() {
             </div>
           )}
 
-          {activeTab === 'nominas' && selectedEmpleado && (
+          {activeEmpleadoTab === 'nominas' && selectedEmpleado && (
 
             <div className="space-y-4">
 
@@ -5687,7 +6460,10 @@ export default function DocumentosEmpleadosPage() {
                 </div>
 
                 <ChangeEmployee3DButton
-                  onClick={() => setActiveTab('empleados')}
+                  onClick={() => {
+                    setActiveTab('empleados');
+                    setSelectedEmpleado(null);
+                  }}
                   title="Cambiar Empleado"
                 />
 
@@ -5881,7 +6657,7 @@ export default function DocumentosEmpleadosPage() {
 
 
 
-          {activeTab === 'documentos-empresa' && selectedEmpleado && (
+          {activeEmpleadoTab === 'documentos-empresa' && selectedEmpleado && (
 
             <div className="space-y-4">
 
@@ -5917,7 +6693,10 @@ export default function DocumentosEmpleadosPage() {
                 </div>
 
                 <ChangeEmployee3DButton
-                  onClick={() => setActiveTab('empleados')}
+                  onClick={() => {
+                    setActiveTab('empleados');
+                    setSelectedEmpleado(null);
+                  }}
                   title="Cambiar Empleado"
                 />
 
@@ -6109,19 +6888,30 @@ export default function DocumentosEmpleadosPage() {
                         {/* Action Buttons - Responsive */}
                         <div className="flex flex-wrap gap-2">
                           <button
-                            onClick={() => handlePreviewDocument(documento)}
-                            className="group/btn relative px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-1"
+                            onClick={() => handlePreviewDocumentOficial(documento)}
+                            className="group/btn relative px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            title="Vista previa del documento"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                             </svg>
-                            <span className="hidden sm:inline">Ver</span>
+                            <span className="hidden sm:inline">Preview</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleFirmarDocumentoOficial(documento)}
+                            className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            title="Firmar documento"
+                          >
+                            <span className="text-xs">✍️</span>
+                            <span className="hidden sm:inline">Firmar</span>
                           </button>
 
                           <button
                             onClick={() => handleDownloadDocumentOficial(documento)}
                             className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            title="Descargar documento"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -6149,6 +6939,52 @@ export default function DocumentosEmpleadosPage() {
                             </svg>
                             <span className="hidden sm:inline">AutoFirma</span>
                           </button>
+
+                          <button
+                            onClick={() => handleToggleNecesitaFirma(documento)}
+                            className={`px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1 ${
+                              documento.necesita_firma
+                                ? 'bg-green-600 hover:bg-green-700'
+                                : 'bg-gray-500 hover:bg-gray-600'
+                            }`}
+                            title={documento.necesita_firma ? 'Documento requiere firma' : 'Documento no requiere firma'}
+                          >
+                            {documento.necesita_firma ? (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span className="hidden sm:inline">✓ Necesita Firma</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                <span className="hidden sm:inline">No Firma</span>
+                              </>
+                            )}
+                          </button>
+
+                          {/* Buton pentru a marca contractul ca fiind semnat (doar pentru CONTRATO, nu pentru CONTRATO firmado) */}
+                          {(() => {
+                            const tipo = (documento.tipo || '').toUpperCase();
+                            const tipoDocumento = (documento.tipo_documento || '').toUpperCase();
+                            const esContrato = tipo === 'CONTRATO' || tipoDocumento === 'CONTRATO';
+                            const esContratoFirmado = tipo === 'CONTRATO FIRMADO' || tipoDocumento === 'CONTRATO FIRMADO' || tipo.includes('CONTRATO FIRMADO') || tipoDocumento.includes('CONTRATO FIRMADO');
+                            return esContrato && !esContratoFirmado;
+                          })() && (
+                            <button
+                              onClick={() => handleMarcarContratoComoFirmado(documento)}
+                              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                              title="Marcar contrato como firmado (ya fue firmado físicamente)"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span className="hidden sm:inline">Marcar Firmado</span>
+                            </button>
+                          )}
                         </div>
 
                       </div>
@@ -6165,7 +7001,7 @@ export default function DocumentosEmpleadosPage() {
 
 
 
-          {activeTab === 'subir-documentos' && selectedEmpleado && (
+          {activeEmpleadoTab === 'subir-documentos' && selectedEmpleado && (
 
             <div>
 
@@ -6178,7 +7014,10 @@ export default function DocumentosEmpleadosPage() {
                 </h2>
 
                 <ChangeEmployee3DButton
-                  onClick={() => setActiveTab('empleados')}
+                  onClick={() => {
+                    setActiveTab('empleados');
+                    setSelectedEmpleado(null);
+                  }}
                   title="Cambiar Empleado"
                 />
 
@@ -6915,59 +7754,169 @@ export default function DocumentosEmpleadosPage() {
                     ) : (
                       // PDF viewer activ doar dacă știm că e PDF (flag sau extensie),
                       // pentru a evita trimiterea imaginilor prin PDF.js
-                      previewDocument?.isPdf === true ||
-                      previewDocument?.fileName?.toLowerCase().endsWith('.pdf') ||
-                      activeTab === 'oficiales' ||
-                      previewDocument?.tipo === 'Documento Oficial' ||
-                      previewDocument?.tipo === 'sello' ||
-                      previewDocument?.tipo?.startsWith('contrato') ||
-                      previewDocument?.tipo?.startsWith('alta') ||
-                      previewDocument?.tipo?.includes('alta') ||
-                      previewDocument?.tipo?.includes('contrato') ||
-                      previewDocument?.tipo?.includes('oficial') ||
-                      previewDocument?.tipo?.includes('sello')
+                      // IMPORTANT: Verificăm DOAR extensia .pdf pentru a evita erorile cu ContractSigner
+                      (previewDocument?.isPdf === true || previewDocument?.fileName?.toLowerCase().endsWith('.pdf')) &&
+                      // NU folosim ContractSigner pentru fișiere non-PDF
+                      previewDocument?.fileName?.toLowerCase().endsWith('.pdf')
                     ) ? (
 
                       <div className="pdf-preview-container">
-                        {/* Pentru telefon: folosim PDFViewerAndroid (ca în DocumentosPage) */}
-                        {/* Pentru desktop: folosim ContractSigner (pentru semnare) */}
-                        {isAndroid || isIOS ? (
-                          <PDFViewerAndroid 
-                            pdfUrl={previewDocument?.previewUrl || ''} 
-                            className="w-full h-full"
-                          />
+                        {/* Pentru documentele oficiale: folosim viewer simplu (fără sistem de firmă) */}
+                        {/* Pentru alte documente: folosim ContractSigner pe desktop */}
+                        {previewDocument?.esOficial === true ? (
+                          // Viewer simplu pentru documente oficiale (fără sistem de firmă)
+                          <div className="w-full h-[75vh]">
+                            {isAndroid || isIOS ? (
+                              <PDFViewerAndroid 
+                                pdfUrl={previewDocument?.previewUrl || ''} 
+                                className="w-full h-full"
+                              />
+                            ) : (
+                              <iframe
+                                src={previewDocument?.previewUrl || ''}
+                                className="w-full h-full border-0"
+                                title={previewDocument?.fileName || 'PDF Preview'}
+                                style={{ minHeight: '600px' }}
+                              />
+                            )}
+                          </div>
                         ) : (
-                          <ContractSigner
-                            pdfUrl={previewDocument?.previewUrl || ''}
-                            docId={previewDocument?.id || ''}
-                            originalFileName={previewDocument?.fileName || ''}
-                            onClose={handleClosePreview}
-                          />
+                          // Pentru documente normale: folosim ContractSigner pe desktop
+                          <>
+                            {isAndroid || isIOS ? (
+                              <PDFViewerAndroid 
+                                pdfUrl={previewDocument?.previewUrl || ''} 
+                                className="w-full h-full"
+                              />
+                            ) : (
+                              <ContractSigner
+                                pdfUrl={previewDocument?.previewUrl || ''}
+                                docId={previewDocument?.id || ''}
+                                originalFileName={previewDocument?.fileName || ''}
+                                onClose={handleClosePreview}
+                              />
+                            )}
+                          </>
                         )}
                       </div>
 
                     ) : previewDocument?.fileName?.toLowerCase().match(/\.(doc|docx)$/i) ? (
-
-                      <div className="p-4 bg-gray-50 text-center">
-
+                      <div className="p-4 bg-gray-50 text-center py-12">
                         <div className="text-6xl mb-4">📄</div>
-
-                        <p className="text-gray-600 mb-4">Documento Word disponible para descarga</p>
-
-                        <p className="text-sm text-gray-500">Los archivos .doc/.docx se abren mejor con Microsoft Word o LibreOffice</p>
-
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-
-                          <p className="text-sm text-blue-800">
-
-                            💡 <strong>Consejo:</strong> Descarga el archivo y ábrelo con tu aplicación de procesamiento de texto preferida
-
+                        <p className="text-gray-600 mb-4 font-bold text-lg">Documento Word</p>
+                        <p className="text-sm text-gray-500 mb-6">
+                          Los archivos .doc/.docx no se pueden previsualizar directamente en el navegador.
+                        </p>
+                        <div className="mt-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200 max-w-md mx-auto">
+                          <p className="text-sm text-blue-800 mb-4">
+                            💡 <strong>Consejo:</strong> Descarga el archivo y ábrelo con Microsoft Word, LibreOffice o Google Docs
                           </p>
-
+                          <button
+                            onClick={() => {
+                              const empleadoIdDownload = selectedEmpleado?.CODIGO || previewDocument?.empleadoId || previewDocument?.id;
+                              const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || previewDocument?.empleadoEmail || previewDocument?.correo_electronico || '';
+                              const downloadUrl = previewDocument?.esOficial
+                                ? `${routes.downloadDocumentoOficial}?id=${empleadoIdDownload}&documentId=${previewDocument?.doc_id}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(previewDocument?.fileName || '')}`
+                                : `${routes.downloadDocumento}?id=${empleadoIdDownload}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(previewDocument?.fileName || '')}&documentId=${previewDocument?.doc_id}`;
+                              
+                              const token = localStorage.getItem('auth_token');
+                              const link = document.createElement('a');
+                              link.href = downloadUrl;
+                              link.download = previewDocument?.fileName || 'documento.doc';
+                              if (token) {
+                                link.setAttribute('data-token', token);
+                              }
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors inline-flex items-center space-x-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span>Descargar Documento</span>
+                          </button>
                         </div>
-
                       </div>
-
+                    ) : previewDocument?.fileName?.toLowerCase().match(/\.(xls|xlsx)$/i) ? (
+                      <div className="p-4 bg-gray-50 text-center py-12">
+                        <div className="text-6xl mb-4">📊</div>
+                        <p className="text-gray-600 mb-4 font-bold text-lg">Documento Excel</p>
+                        <p className="text-sm text-gray-500 mb-6">
+                          Los archivos .xls/.xlsx no se pueden previsualizar directamente en el navegador.
+                        </p>
+                        <div className="mt-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200 max-w-md mx-auto">
+                          <p className="text-sm text-blue-800 mb-4">
+                            💡 <strong>Consejo:</strong> Descarga el archivo y ábrelo con Microsoft Excel, LibreOffice o Google Sheets
+                          </p>
+                          <button
+                            onClick={() => {
+                              const empleadoIdDownload = selectedEmpleado?.CODIGO || previewDocument?.empleadoId || previewDocument?.id;
+                              const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || previewDocument?.empleadoEmail || previewDocument?.correo_electronico || '';
+                              const downloadUrl = previewDocument?.esOficial
+                                ? `${routes.downloadDocumentoOficial}?id=${empleadoIdDownload}&documentId=${previewDocument?.doc_id}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(previewDocument?.fileName || '')}`
+                                : `${routes.downloadDocumento}?id=${empleadoIdDownload}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(previewDocument?.fileName || '')}&documentId=${previewDocument?.doc_id}`;
+                              
+                              const token = localStorage.getItem('auth_token');
+                              const link = document.createElement('a');
+                              link.href = downloadUrl;
+                              link.download = previewDocument?.fileName || 'documento.xls';
+                              if (token) {
+                                link.setAttribute('data-token', token);
+                              }
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors inline-flex items-center space-x-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span>Descargar Documento</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : previewDocument?.fileName?.toLowerCase().match(/\.(ppt|pptx)$/i) ? (
+                      <div className="p-4 bg-gray-50 text-center py-12">
+                        <div className="text-6xl mb-4">📽️</div>
+                        <p className="text-gray-600 mb-4 font-bold text-lg">Documento PowerPoint</p>
+                        <p className="text-sm text-gray-500 mb-6">
+                          Los archivos .ppt/.pptx no se pueden previsualizar directamente en el navegador.
+                        </p>
+                        <div className="mt-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200 max-w-md mx-auto">
+                          <p className="text-sm text-blue-800 mb-4">
+                            💡 <strong>Consejo:</strong> Descarga el archivo y ábrelo con Microsoft PowerPoint, LibreOffice o Google Slides
+                          </p>
+                          <button
+                            onClick={() => {
+                              const empleadoIdDownload = selectedEmpleado?.CODIGO || previewDocument?.empleadoId || previewDocument?.id;
+                              const empleadoEmail = selectedEmpleado?.['CORREO ELECTRONICO'] || previewDocument?.empleadoEmail || previewDocument?.correo_electronico || '';
+                              const downloadUrl = previewDocument?.esOficial
+                                ? `${routes.downloadDocumentoOficial}?id=${empleadoIdDownload}&documentId=${previewDocument?.doc_id}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(previewDocument?.fileName || '')}`
+                                : `${routes.downloadDocumento}?id=${empleadoIdDownload}&email=${encodeURIComponent(empleadoEmail)}&fileName=${encodeURIComponent(previewDocument?.fileName || '')}&documentId=${previewDocument?.doc_id}`;
+                              
+                              const token = localStorage.getItem('auth_token');
+                              const link = document.createElement('a');
+                              link.href = downloadUrl;
+                              link.download = previewDocument?.fileName || 'documento.ppt';
+                              if (token) {
+                                link.setAttribute('data-token', token);
+                              }
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors inline-flex items-center space-x-2"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span>Descargar Documento</span>
+                          </button>
+                        </div>
+                      </div>
                     ) : (
 
                       <div className="p-4 bg-gray-50 text-center">
@@ -7698,6 +8647,455 @@ export default function DocumentosEmpleadosPage() {
 
         </div>
 
+      )}
+
+      {/* Modal pentru lista de angajați cu statusul contractelor */}
+      {showContratosModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b-2 border-purple-200 bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">Status Contratos por Empleado</h2>
+                    <p className="text-sm text-gray-600">Lista de empleados con estado de contratos</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowContratosModal(false)}
+                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+                >
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingContratos ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+                </div>
+              ) : empleadosContratos.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">No se encontraron empleados</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {empleadosContratos.map((empleado) => (
+                    <div
+                      key={empleado.codigo}
+                      className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-purple-300 hover:shadow-md transition-all duration-200"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                              {empleado.nombre?.charAt(0) || '?'}
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h3 className="font-bold text-gray-900">{empleado.nombre || 'Sin nombre'}</h3>
+                                {/* Badge pentru statusul angajatului */}
+                                {empleado.estado && (
+                                  <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                                    empleado.estado.toUpperCase() === 'ACTIVO' 
+                                      ? 'bg-green-100 text-green-700' 
+                                      : empleado.estado.toUpperCase() === 'INACTIVO'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-gray-100 text-gray-700'
+                                  }`}>
+                                    {empleado.estado}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-600">{empleado.email || 'Sin email'}</p>
+                              <p className="text-xs text-gray-500">Código: {empleado.codigo}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          {/* Status CONTRATO */}
+                          <div className="flex items-center space-x-2">
+                            {empleado.tiene_contrato ? (
+                              <div className="flex items-center space-x-1 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="text-xs font-semibold">CONTRATO</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-1 px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                <span className="text-xs font-semibold">Sin CONTRATO</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Status CONTRATO firmado */}
+                          <div className="flex items-center space-x-2">
+                            {empleado.tiene_contrato_firmado ? (
+                              <div className="flex items-center space-x-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                </svg>
+                                <span className="text-xs font-semibold">FIRMADO</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-1 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span className="text-xs font-semibold">Pendiente</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {empleado.fecha_contrato && (
+                        <p className="text-xs text-gray-500 mt-2 ml-13">
+                          CONTRATO: {new Date(empleado.fecha_contrato).toLocaleDateString('es-ES')}
+                        </p>
+                      )}
+                      {empleado.fecha_contrato_firmado && (
+                        <p className="text-xs text-gray-500 mt-1 ml-13">
+                          FIRMADO: {new Date(empleado.fecha_contrato_firmado).toLocaleDateString('es-ES')}
+                        </p>
+                      )}
+                      {/* Buton Preview pentru contracte - apare dacă are CONTRATO sau CONTRATO firmado */}
+                      {(empleado.tiene_contrato || empleado.tiene_contrato_firmado) && (
+                        <div className="mt-3 ml-13">
+                          <button
+                            onClick={() => handlePreviewContratoEmpleado(empleado)}
+                            disabled={loadingContratosPreview}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            title="Ver preview de contratos"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>{loadingContratosPreview ? 'Cargando...' : 'Preview'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t-2 border-gray-200 bg-gray-50 rounded-b-2xl">
+              <div className="flex justify-between items-center flex-wrap gap-3">
+                <p className="text-sm text-gray-600">
+                  Total: {empleadosContratos.length} empleados
+                </p>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleExportContratosExcel}
+                    disabled={loadingContratos || empleadosContratos.length === 0}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                    title="Exportar a Excel"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>Excel</span>
+                  </button>
+                  <button
+                    onClick={handleExportContratosPDF}
+                    disabled={loadingContratos || empleadosContratos.length === 0}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                    title="Exportar a PDF"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    <span>PDF</span>
+                  </button>
+                  <button
+                    onClick={() => setShowContratosModal(false)}
+                    className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pentru selecția contractelor pentru preview */}
+      {showContratosPreviewModal && empleadoParaPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b-2 border-blue-200 bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">Seleccionar Contrato</h2>
+                    <p className="text-sm text-gray-600">{empleadoParaPreview.nombre || 'Sin nombre'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowContratosPreviewModal(false);
+                    setContratosDisponibles([]);
+                    setEmpleadoParaPreview(null);
+                  }}
+                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+                >
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingContratosPreview ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                </div>
+              ) : contratosDisponibles.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">No se encontraron contratos</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {contratosDisponibles.map((contrato, index) => {
+                    const esFirmado = contrato.tipo === 'CONTRATO firmado' || contrato.tipo_documento === 'CONTRATO firmado';
+                    return (
+                      <div
+                        key={contrato.doc_id || index}
+                        className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:shadow-md transition-all duration-200"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                                esFirmado 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {esFirmado ? 'CONTRATO FIRMADO' : 'CONTRATO'}
+                              </span>
+                              {contrato.fecha_creacion && (
+                                <span className="text-xs text-gray-500">
+                                  {new Date(contrato.fecha_creacion).toLocaleDateString('es-ES')}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {contrato.fileName || contrato.nombre_archivo || 'CONTRATO.pdf'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handlePreviewContratoSeleccionado(contrato)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>Ver Preview</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t-2 border-gray-200 bg-gray-50 rounded-b-2xl">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowContratosPreviewModal(false);
+                    setContratosDisponibles([]);
+                    setEmpleadoParaPreview(null);
+                  }}
+                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pentru selecția contractelor pentru preview */}
+      {showContratosPreviewModal && empleadoParaPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b-2 border-blue-200 bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">Seleccionar Contrato</h2>
+                    <p className="text-sm text-gray-600">{empleadoParaPreview.nombre || 'Sin nombre'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowContratosPreviewModal(false);
+                    setContratosDisponibles([]);
+                    setEmpleadoParaPreview(null);
+                  }}
+                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
+                >
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingContratosPreview ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                </div>
+              ) : contratosDisponibles.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">No se encontraron contratos</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {contratosDisponibles.map((contrato, index) => {
+                    const esFirmado = contrato.tipo === 'CONTRATO firmado' || contrato.tipo_documento === 'CONTRATO firmado';
+                    return (
+                      <div
+                        key={contrato.doc_id || index}
+                        className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:shadow-md transition-all duration-200"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                                esFirmado 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {esFirmado ? 'CONTRATO FIRMADO' : 'CONTRATO'}
+                              </span>
+                              {contrato.fecha_creacion && (
+                                <span className="text-xs text-gray-500">
+                                  {new Date(contrato.fecha_creacion).toLocaleDateString('es-ES')}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {contrato.fileName || contrato.nombre_archivo || 'CONTRATO.pdf'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handlePreviewContratoSeleccionado(contrato)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>Ver Preview</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t-2 border-gray-200 bg-gray-50 rounded-b-2xl">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowContratosPreviewModal(false);
+                    setContratosDisponibles([]);
+                    setEmpleadoParaPreview(null);
+                  }}
+                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ContractSigner pentru documente oficiale */}
+      {showOficialSigner && documentoOficialToSign && documentoOficialPdfUrl && (
+        <ContractSigner
+          pdfUrl={documentoOficialPdfUrl}
+          docId={documentoOficialToSign.id || documentoOficialToSign.empleadoId || selectedEmpleado?.CODIGO || ''}
+          originalFileName={documentoOficialToSign.fileName || ''}
+          // Props pentru UPDATE (înlocuiește documentul existent, nu creează unul nou)
+          empleadoId={documentoOficialToSign.id || documentoOficialToSign.empleadoId || selectedEmpleado?.CODIGO || null}
+          empleadoEmail={documentoOficialToSign.correo_electronico || selectedEmpleado?.['CORREO ELECTRONICO'] || null}
+          empleadoNombre={documentoOficialToSign.nombre_empleado || selectedEmpleado?.['NOMBRE / APELLIDOS'] || null}
+          documentoDocId={documentoOficialToSign.doc_id ? Number(documentoOficialToSign.doc_id) : null}
+          updateExisting={!!(documentoOficialToSign.doc_id && Number(documentoOficialToSign.doc_id) > 0)} // Face UPDATE doar dacă există doc_id valid
+          tipoDocumento={documentoOficialToSign.tipo || documentoOficialToSign.tipo_documento || null} // Păstrează tipo_documento original
+          onClose={() => {
+            setShowOficialSigner(false);
+            setDocumentoOficialToSign(null);
+            if (documentoOficialPdfUrl && !documentoOficialPdfUrl.startsWith('data:')) {
+              window.URL.revokeObjectURL(documentoOficialPdfUrl);
+            }
+            setDocumentoOficialPdfUrl(null);
+          }}
+          onSignComplete={async () => {
+            // Esperar un momento para que el documento se guarde completamente en la base de datos
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Actualizar lista de documentos oficiales
+            if (selectedEmpleado) {
+              setTimeout(() => {
+                fetchDocumentosOficiales(selectedEmpleado);
+              }, 500);
+            }
+            setShowOficialSigner(false);
+            setDocumentoOficialToSign(null);
+            if (documentoOficialPdfUrl && !documentoOficialPdfUrl.startsWith('data:')) {
+              window.URL.revokeObjectURL(documentoOficialPdfUrl);
+            }
+            setDocumentoOficialPdfUrl(null);
+            showNotification('success', 'Documento Firmado', 'El documento oficial ha sido firmado exitosamente por la empresa');
+          }}
+        />
       )}
 
       {/* Component de notificare */}

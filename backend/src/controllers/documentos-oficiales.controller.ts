@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Query,
   Body,
@@ -16,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DocumentosOficialesService } from '../services/documentos-oficiales.service';
 
@@ -64,8 +66,13 @@ export class DocumentosOficialesController {
 
   /**
    * POST endpoint - acceptă body cu codigo și/sau nombre (pentru compatibilitate cu n8n)
+   * Mărită limită pentru a evita rate limiting când se încarcă documentele pentru un angajat
    */
   @Post()
+  @Throttle({
+    short: { ttl: 10000, limit: 200 }, // 200 request-uri / 10 secunde (în loc de 100)
+    medium: { ttl: 60000, limit: 1000 }, // 1000 request-uri / minut (în loc de 500)
+  })
   async getDocumentosOficialesPost(@Body() body: any) {
     try {
       const codigo = body.codigo;
@@ -304,6 +311,127 @@ export class DocumentosOficialesController {
   }
 
   /**
+   * Endpoint pentru actualizarea flag-ului necesita_firma
+   * PATCH /api/documentos-oficiales/:docId/necesita-firma
+   * Body: { necesitaFirma: boolean }
+   * IMPORTANT: Această rută trebuie definită înainte de rutele cu parametri mai generali
+   */
+  @Patch(':docId/necesita-firma')
+  @UseGuards(JwtAuthGuard)
+  async updateNecesitaFirma(
+    @Param('docId') docId: string,
+    @Body() body: { necesitaFirma: boolean | string | number },
+  ) {
+    try {
+      const necesitaFirma =
+        body.necesitaFirma === true ||
+        String(body.necesitaFirma).toLowerCase() === 'true' ||
+        body.necesitaFirma === 1;
+
+      this.logger.log(
+        `🔄 Update necesita_firma request - docId: ${docId}, necesitaFirma: ${necesitaFirma}`,
+      );
+
+      const result = await this.documentosOficialesService.updateNecesitaFirma(
+        docId,
+        necesitaFirma,
+      );
+
+      return {
+        success: true,
+        message: result.message,
+        affectedRows: result.affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error in DocumentosOficialesController.updateNecesitaFirma:',
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar necesita_firma: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Endpoint pentru a marca un contract ca fiind semnat
+   * POST /api/documentos-oficiales/:docId/marcar-firmado
+   * IMPORTANT: Această rută trebuie definită înainte de rutele cu parametri mai generali
+   */
+  @Post(':docId/marcar-firmado')
+  @UseGuards(JwtAuthGuard)
+  async marcarContratoComoFirmado(@Param('docId') docId: string) {
+    try {
+      this.logger.log(
+        `🔄 Marcar contrato como firmado request - docId: ${docId}`,
+      );
+
+      const result =
+        await this.documentosOficialesService.marcarContratoComoFirmado(docId);
+
+      return {
+        success: true,
+        message: result.message,
+        affectedRows: result.affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error in DocumentosOficialesController.marcarContratoComoFirmado:',
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al marcar el contrato como firmado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Endpoint pentru a obține lista de angajați cu statusul contractelor
+   * GET /api/documentos-oficiales/empleados-contratos
+   */
+  @Get('empleados-contratos')
+  @UseGuards(JwtAuthGuard)
+  async getEmpleadosConStatusContratos() {
+    try {
+      this.logger.log(`📝 Get empleados con status contratos request`);
+
+      const result =
+        await this.documentosOficialesService.getEmpleadosConStatusContratos();
+
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error in DocumentosOficialesController.getEmpleadosConStatusContratos:',
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al obtener empleados con status de contratos: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Endpoint pentru ștergerea unui documento oficial
    * POST /api/documentos-oficiales/delete (pentru compatibilitate cu n8n)
    * Accepts body: { id: number, nombre_archivo?: string, filename?: string, fileName?: string }
@@ -462,5 +590,43 @@ export class DocumentosOficialesController {
   @Post('autofirma/save')
   async saveSignedDocumentAlias(@Body() body: any) {
     return this.saveSignedDocument(body);
+  }
+
+  /**
+   * Endpoint pentru a număra documentele oficiale care necesită firmă și sunt vizibile pentru angajat
+   * GET /api/documentos-oficiales/count-necesitan-firma?codigo=XXX
+   */
+  @Get('count-necesitan-firma')
+  async countDocumentosNecesitanFirma(@Query('codigo') codigo: string) {
+    try {
+      if (!codigo) {
+        throw new BadRequestException('Se requiere codigo');
+      }
+
+      this.logger.log(
+        `📊 Count documentos que necesitan firma request - codigo: ${codigo}`,
+      );
+
+      const count =
+        await this.documentosOficialesService.countDocumentosNecesitanFirma(
+          codigo,
+        );
+
+      return {
+        success: true,
+        count,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error in DocumentosOficialesController.countDocumentosNecesitanFirma:',
+        error,
+      );
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al contar documentos que necesitan firma: ${error.message}`,
+      );
+    }
   }
 }

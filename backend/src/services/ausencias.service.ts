@@ -2142,6 +2142,7 @@ export class AusenciasService {
       }
 
       // Fallback la horario normal (din DatosEmpleados + horarios)
+      // Extrage toate turele (in1/out1, in2/out2, in3/out3) pentru a calcula suma corectă
       const horarioQuery = `
         SELECT 
           CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
@@ -2149,13 +2150,37 @@ export class AusenciasService {
             WHEN 5 THEN h.joi_in1 WHEN 6 THEN h.vin_in1
             WHEN 7 THEN h.sam_in1 WHEN 1 THEN h.dum_in1
             ELSE NULL
-          END AS hora_in,
+          END AS in1,
           CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
             WHEN 2 THEN h.lun_out1 WHEN 3 THEN h.mar_out1 WHEN 4 THEN h.mie_out1
             WHEN 5 THEN h.joi_out1 WHEN 6 THEN h.vin_out1
             WHEN 7 THEN h.sam_out1 WHEN 1 THEN h.dum_out1
             ELSE NULL
-          END AS hora_out
+          END AS out1,
+          CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
+            WHEN 2 THEN h.lun_in2 WHEN 3 THEN h.mar_in2 WHEN 4 THEN h.mie_in2
+            WHEN 5 THEN h.joi_in2 WHEN 6 THEN h.vin_in2
+            WHEN 7 THEN h.sam_in2 WHEN 1 THEN h.dum_in2
+            ELSE NULL
+          END AS in2,
+          CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
+            WHEN 2 THEN h.lun_out2 WHEN 3 THEN h.mar_out2 WHEN 4 THEN h.mie_out2
+            WHEN 5 THEN h.joi_out2 WHEN 6 THEN h.vin_out2
+            WHEN 7 THEN h.sam_out2 WHEN 1 THEN h.dum_out2
+            ELSE NULL
+          END AS out2,
+          CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
+            WHEN 2 THEN h.lun_in3 WHEN 3 THEN h.mar_in3 WHEN 4 THEN h.mie_in3
+            WHEN 5 THEN h.joi_in3 WHEN 6 THEN h.vin_in3
+            WHEN 7 THEN h.sam_in3 WHEN 1 THEN h.dum_in3
+            ELSE NULL
+          END AS in3,
+          CASE DAYOFWEEK(${this.escapeSql(fechaCalculo)})
+            WHEN 2 THEN h.lun_out3 WHEN 3 THEN h.mar_out3 WHEN 4 THEN h.mie_out3
+            WHEN 5 THEN h.joi_out3 WHEN 6 THEN h.vin_out3
+            WHEN 7 THEN h.sam_out3 WHEN 1 THEN h.dum_out3
+            ELSE NULL
+          END AS out3
         FROM DatosEmpleados de
         LEFT JOIN horarios h
           ON h.centro_nombre = de.\`CENTRO TRABAJO\`
@@ -2168,47 +2193,103 @@ export class AusenciasService {
       const horario = await this.prisma.$queryRawUnsafe<any[]>(horarioQuery);
 
       let horasPlan = 0;
-      if (
-        horario &&
-        horario.length > 0 &&
-        horario[0].hora_in &&
-        horario[0].hora_out
-      ) {
-        // Calculează diferența între hora_in și hora_out
-        const horaIn = horario[0].hora_in;
-        const horaOut = horario[0].hora_out;
+      if (horario && horario.length > 0) {
+        const h = horario[0];
+        let totalMinutes = 0;
+        let segmentsFound = 0;
 
-        // Parsează orele (format TIME: HH:MM:SS sau Date object)
-        let hIn = 0,
-          mIn = 0,
-          hOut = 0,
-          mOut = 0;
-
-        if (horaIn instanceof Date) {
-          hIn = horaIn.getHours();
-          mIn = horaIn.getMinutes();
-        } else {
-          const partsIn = horaIn.toString().split(':');
-          hIn = parseInt(partsIn[0]) || 0;
-          mIn = parseInt(partsIn[1]) || 0;
-        }
-
-        if (horaOut instanceof Date) {
-          hOut = horaOut.getHours();
-          mOut = horaOut.getMinutes();
-        } else {
-          const partsOut = horaOut.toString().split(':');
-          hOut = parseInt(partsOut[0]) || 0;
-          mOut = parseInt(partsOut[1]) || 0;
-        }
-
-        const start = hIn * 60 + mIn;
-        const end = hOut * 60 + mOut;
-        const diff = (end - start + 1440) % 1440; // Handle overnight shifts
-        horasPlan = diff / 60.0;
+        // Verifică câte segmente sunt definite (nu NULL)
+        if (h.in1 && h.out1) segmentsFound++;
+        if (h.in2 && h.out2) segmentsFound++;
+        if (h.in3 && h.out3) segmentsFound++;
 
         this.logger.log(
-          `✅ [recalcularDuracionHoras] Found horario: ${horaIn} - ${horaOut} = ${horasPlan.toFixed(2)}h`,
+          `🔍 [recalcularDuracionHoras] Found ${segmentsFound} segments in horario for ${codigo} on ${fechaCalculo}`,
+        );
+
+        // Verifică dacă toate cele 3 segmente sunt definite și dacă suma lor este 24 ore
+        // Dacă da, înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
+        if (
+          segmentsFound === 3 &&
+          h.in1 &&
+          h.out1 &&
+          h.in2 &&
+          h.out2 &&
+          h.in3 &&
+          h.out3
+        ) {
+          const seg1 = this.timeDiffMinutes(h.in1, h.out1);
+          const seg2 = this.timeDiffMinutes(h.in2, h.out2);
+          const seg3 = this.timeDiffMinutes(h.in3, h.out3);
+          const correctedSeg1 = seg1 < 0 ? seg1 + 24 * 60 : seg1;
+          const correctedSeg2 = seg2 < 0 ? seg2 + 24 * 60 : seg2;
+          const correctedSeg3 = seg3 < 0 ? seg3 + 24 * 60 : seg3;
+          const totalAllSegments =
+            correctedSeg1 + correctedSeg2 + correctedSeg3;
+
+          this.logger.log(
+            `🔍 [recalcularDuracionHoras] Checking if all 3 segments sum to 24h: seg1=${seg1} (corrected: ${correctedSeg1}), seg2=${seg2} (corrected: ${correctedSeg2}), seg3=${seg3} (corrected: ${correctedSeg3}), total=${totalAllSegments} minutes`,
+          );
+
+          // Dacă suma tuturor segmentelor este 24 ore (1440 minute) sau aproape 24 ore,
+          // înseamnă că sunt opțiuni de ture, nu ture care trebuie toate lucrate
+          if (totalAllSegments >= 23 * 60 && totalAllSegments <= 25 * 60) {
+            // Suma este aproape 24 ore - folosim doar prima tură
+            this.logger.log(
+              `⚠️ [recalcularDuracionHoras] All 3 segments sum to ~24h (${totalAllSegments} minutes) - these are shift options, not all shifts to work. Using only first segment.`,
+            );
+            const segment1 = this.timeDiffMinutes(h.in1, h.out1);
+            const correctedSegment1 =
+              segment1 < 0 ? segment1 + 24 * 60 : segment1;
+            totalMinutes = correctedSegment1;
+          } else {
+            // Dacă suma nu este 24 ore, înseamnă că sunt split shifts care trebuie toate lucrate
+            // Sumă toate segmentele
+            if (h.in1 && h.out1) {
+              const segment1 = this.timeDiffMinutes(h.in1, h.out1);
+              const correctedSegment1 =
+                segment1 < 0 ? segment1 + 24 * 60 : segment1;
+              totalMinutes += correctedSegment1;
+            }
+            if (h.in2 && h.out2) {
+              const segment2 = this.timeDiffMinutes(h.in2, h.out2);
+              const correctedSegment2 =
+                segment2 < 0 ? segment2 + 24 * 60 : segment2;
+              totalMinutes += correctedSegment2;
+            }
+            if (h.in3 && h.out3) {
+              const segment3 = this.timeDiffMinutes(h.in3, h.out3);
+              const correctedSegment3 =
+                segment3 < 0 ? segment3 + 24 * 60 : segment3;
+              totalMinutes += correctedSegment3;
+            }
+          }
+        } else {
+          // Dacă nu sunt toate cele 3 segmente definite, sumă doar segmentele disponibile
+          if (h.in1 && h.out1) {
+            const segment1 = this.timeDiffMinutes(h.in1, h.out1);
+            const correctedSegment1 =
+              segment1 < 0 ? segment1 + 24 * 60 : segment1;
+            totalMinutes += correctedSegment1;
+          }
+          if (h.in2 && h.out2) {
+            const segment2 = this.timeDiffMinutes(h.in2, h.out2);
+            const correctedSegment2 =
+              segment2 < 0 ? segment2 + 24 * 60 : segment2;
+            totalMinutes += correctedSegment2;
+          }
+          if (h.in3 && h.out3) {
+            const segment3 = this.timeDiffMinutes(h.in3, h.out3);
+            const correctedSegment3 =
+              segment3 < 0 ? segment3 + 24 * 60 : segment3;
+            totalMinutes += correctedSegment3;
+          }
+        }
+
+        horasPlan = totalMinutes / 60.0;
+
+        this.logger.log(
+          `✅ [recalcularDuracionHoras] Found horario: total = ${totalMinutes} minutes (${horasPlan.toFixed(2)}h)`,
         );
       }
 
@@ -2329,6 +2410,18 @@ export class AusenciasService {
     const hours = Number(parts[0]) || 0;
     const minutes = Number(parts[1]) || 0;
     return hours + minutes / 60.0;
+  }
+
+  /**
+   * Calculează diferența în minute între două timpuri
+   * Suportă atât Date objects cât și string-uri (format HH:MM:SS sau HH:MM)
+   */
+  private timeDiffMinutes(time1: Date | string, time2: Date | string): number {
+    const t1 =
+      typeof time1 === 'string' ? new Date(`2000-01-01 ${time1}`) : time1;
+    const t2 =
+      typeof time2 === 'string' ? new Date(`2000-01-01 ${time2}`) : time2;
+    return Math.round((t2.getTime() - t1.getTime()) / (1000 * 60));
   }
 
   /**

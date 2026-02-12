@@ -1153,8 +1153,9 @@ export default function SolicitudesPage() {
   const [motivo, setMotivo] = useState('');
   const [editingSolicitud, setEditingSolicitud] = useState(null); // ID-ul solicitării în curs de editare
   const [originalSolicitudData, setOriginalSolicitudData] = useState(null); // Datele originale ale solicitării în curs de editare
-  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, solicitudId: null }); // Modal de confirmare ștergere
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, solicitudId: null, mensaje: '' }); // Modal de confirmare ștergere cu mesaj personalizat
   const [deleteBajaMedicaModal, setDeleteBajaMedicaModal] = useState({ isOpen: false, baja: null, mensaje: '' }); // Modal pentru ștergere baja médica cu mesaj
+  const [rejectPermisoModal, setRejectPermisoModal] = useState({ isOpen: false, solicitud: null, mensaje: '' }); // Modal pentru respingere Permiso Retribuido cu mesaj personalizat
   const [convertirConfirm, setConvertirConfirm] = useState({ isOpen: false, ausencia: null }); // Modal de confirmare conversie ausencia
   const [convertirTipoModal, setConvertirTipoModal] = useState({ 
     isOpen: false, 
@@ -1213,7 +1214,7 @@ export default function SolicitudesPage() {
 
 
   // Filtros para managers
-  const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja' | 'baja_voluntaria'
+  const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja' | 'baja_voluntaria' | 'aprobacion'
   const selectedStatus = 'Todos';
   // Documentos asociados con BAJA_VOLUNTARIA: Map<solicitudId, documento>
   const [bajaVoluntariaDocumentos, setBajaVoluntariaDocumentos] = useState(new Map());
@@ -1243,6 +1244,13 @@ export default function SolicitudesPage() {
   const [showBajaConflictsModal, setShowBajaConflictsModal] = useState(false);
   const [bajaConflicts, setBajaConflicts] = useState([]);
   const [bajaConflictChoices, setBajaConflictChoices] = useState({}); // key -> action
+  
+  // Modal pentru manager să creeze solicitări pentru angajați
+  const [showManagerSolicitudModal, setShowManagerSolicitudModal] = useState(false);
+  const [managerSelectedEmpleado, setManagerSelectedEmpleado] = useState(null); // { codigo, nombre, email }
+  const [managerEmpleadoSearch, setManagerEmpleadoSearch] = useState('');
+  const [managerShowEmpleadoDropdown, setManagerShowEmpleadoDropdown] = useState(false);
+  const [managerAutoApprove, setManagerAutoApprove] = useState(true); // Checkbox "Aprobar automáticamente"
   
   // Ausencias states
   const [allAusencias, setAllAusencias] = useState([]);
@@ -1380,7 +1388,12 @@ export default function SolicitudesPage() {
     return false;
   };
 
-  const isDateDisabled = (date) => {
+  const isDateDisabled = (date, isManagerMode = false) => {
+    // În modul manager, nu blocăm nicio dată
+    if (isManagerMode) {
+      return false;
+    }
+    
     // Disable past dates, holiday block period, and full availability
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
     const today = new Date();
@@ -4307,11 +4320,26 @@ export default function SolicitudesPage() {
 
   // Funcția handleSolicitarJustificante a fost eliminată - folosim handleRecordarJustificante direct
 
-  const validateDates = () => {
+  const validateDates = (isManagerMode = false) => {
     // Pentru BAJA_VOLUNTARIA nu avem nevoie de fecha_inicio și fecha_fin
     if (tipo !== 'BAJA_VOLUNTARIA' && (!fechaInicio || !fechaFin)) {
       setErrorMsg('Por favor, selecciona las fechas de inicio y fin');
       return false;
+    }
+
+    // În modul manager, verificăm doar că fecha_fin >= fecha_inicio
+    if (isManagerMode) {
+      if (tipo !== 'BAJA_VOLUNTARIA' && fechaInicio && fechaFin) {
+        const [y1, m1, d1] = fechaInicio.split('-').map(Number);
+        const [y2, m2, d2] = fechaFin.split('-').map(Number);
+        const start = new Date(y1, m1 - 1, d1);
+        const end = new Date(y2, m2 - 1, d2);
+        if ((end - start) < 0) {
+          setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
+          return false;
+        }
+      }
+      return true; // Toate celelalte validări sunt ignorate în modul manager
     }
 
     // Check if dates are in the blocked holiday period (doar pentru solicitări noi, nu pentru editare)
@@ -4635,6 +4663,115 @@ export default function SolicitudesPage() {
     }
   };
 
+  // Funcții pentru aprobare/rechazare Permiso Retribuido
+  const handleApprovePermisoRetribuido = async (solicitud) => {
+    try {
+      setOperationLoading('approve-permiso', true);
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const data = {
+        accion: 'update',
+        id: solicitud.id || solicitud.ID,
+        estado: 'Aprobada',
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al aprobar el permiso retribuido');
+      }
+
+      const result = await response.json();
+      const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
+
+      if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
+        setSuccessMsg('Permiso retribuido aprobado correctamente.');
+        // Reîncarcă listele
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg('No se pudo aprobar el permiso retribuido.');
+      }
+    } catch (error) {
+      console.error('Error al aprobar permiso retribuido:', error);
+      setErrorMsg('Error al aprobar el permiso retribuido');
+    } finally {
+      setOperationLoading('approve-permiso', false);
+    }
+  };
+
+  const handleRejectPermisoRetribuidoClick = (solicitud) => {
+    setRejectPermisoModal({ isOpen: true, solicitud, mensaje: '' });
+  };
+
+  const handleRejectPermisoRetribuido = async () => {
+    if (!rejectPermisoModal.solicitud) return;
+    
+    try {
+      setOperationLoading('reject-permiso', true);
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const data = {
+        accion: 'update',
+        id: rejectPermisoModal.solicitud.id || rejectPermisoModal.solicitud.ID,
+        estado: 'Rechazada',
+        mensajePersonalizado: rejectPermisoModal.mensaje || undefined,
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al rechazar el permiso retribuido');
+      }
+
+      const result = await response.json();
+      const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
+
+      if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
+        setSuccessMsg('Permiso retribuido rechazado correctamente.');
+        setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '' });
+        // Reîncarcă listele
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg('No se pudo rechazar el permiso retribuido.');
+      }
+    } catch (error) {
+      console.error('Error al rechazar permiso retribuido:', error);
+      setErrorMsg('Error al rechazar el permiso retribuido');
+    } finally {
+      setOperationLoading('reject-permiso', false);
+    }
+  };
+
   const handleAdd = async () => {
     setErrorMsg('');
     setSuccessMsg('');
@@ -4683,7 +4820,8 @@ export default function SolicitudesPage() {
       codigo: solicitudCodigo,
       nombre: solicitudNombre,
       tipo: tipoPayload,
-      estado: tipoPayload === 'BAJA_VOLUNTARIA' ? 'Pendiente' : 'Aprobada',
+      // BAJA_VOLUNTARIA și Permiso Retribuido cerute de angajați trebuie aprobate de manager
+      estado: tipoPayload === 'BAJA_VOLUNTARIA' || tipoPayload === 'Permiso Retribuido' ? 'Pendiente' : 'Aprobada',
       motivo,
       // Pentru BAJA_VOLUNTARIA, nu trimitem fecha_inicio și fecha_fin
       ...(tipoPayload !== 'BAJA_VOLUNTARIA' ? {
@@ -4820,6 +4958,119 @@ export default function SolicitudesPage() {
     } finally {
       // Oprește loading-ul întotdeauna, indiferent de rezultat
       setOperationLoading('submit', false);
+    }
+  };
+
+  // Funcție pentru manager să creeze solicitări pentru angajați
+  const handleAddManagerSolicitud = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    setServerResp('');
+
+    // Verifică dacă este selectat un angajat
+    if (!managerSelectedEmpleado) {
+      setErrorMsg('Por favor, selecciona un empleado');
+      return;
+    }
+
+    // Validare cu isManagerMode=true pentru a ignora restricțiile
+    if (!validateDates(true)) {
+      return;
+    }
+
+    // Validare fecha_ultimo_dia_trabajo pentru BAJA_VOLUNTARIA
+    if (tipo === 'BAJA_VOLUNTARIA' && !fechaUltimoDiaTrabajo) {
+      setErrorMsg('El último día de trabajo es obligatorio para Baja Voluntaria.');
+      return;
+    }
+
+    setOperationLoading('submit-manager', true);
+    
+    const tipoPayload = tipo === 'Asuntos Propios' ? 'Asunto Propio' : tipo;
+    
+    // Folosește datele angajatului selectat
+    const solicitudEmail = managerSelectedEmpleado.email;
+    const solicitudCodigo = managerSelectedEmpleado.codigo;
+    const solicitudNombre = managerSelectedEmpleado.name;
+    
+    const data = {
+      accion: 'create',
+      id: Date.now(),
+      email: solicitudEmail,
+      codigo: solicitudCodigo,
+      nombre: solicitudNombre,
+      tipo: tipoPayload,
+      estado: managerAutoApprove ? 'Aprobada' : 'Pendiente',
+      motivo,
+      origen: 'MANAGER', // Marchează că este creată de manager
+      creado_por: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || '',
+      creado_por_email: authUser?.email || '',
+      // Pentru BAJA_VOLUNTARIA, nu trimitem fecha_inicio și fecha_fin
+      ...(tipoPayload !== 'BAJA_VOLUNTARIA' ? {
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+      } : {
+        fecha_inicio: fechaUltimoDiaTrabajo,
+        fecha_fin: fechaUltimoDiaTrabajo,
+      }),
+      ...(tipoPayload === 'BAJA_VOLUNTARIA' && fechaUltimoDiaTrabajo ? {
+        fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo
+      } : {}),
+    };
+
+    console.log('📤 [Manager] Creando solicitud para empleado:', data);
+
+    try {
+      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
+        ? 'http://localhost:3000/api/solicitudes'
+        : 'https://api.decaminoservicios.com/api/solicitudes');
+      
+      const result = await callApi(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+
+      let responseData = result.data;
+      if (Array.isArray(responseData) && responseData.length > 0) {
+        responseData = responseData[0];
+      }
+      
+      const isSuccess = result.success || 
+        (responseData && (responseData.success === true || responseData.status === 'ok' || responseData.solicitud_ok === 1));
+
+      if (isSuccess) {
+        await activityLogger.logSolicitudCreated(data, authUser);
+        setSuccessMsg(`Solicitud creada correctamente para ${solicitudNombre}.`);
+        setServerResp(`Status: ${responseData?.status || 'ok'} - Solicitud guardada exitosamente`);
+        
+        // Reset form și închide modalul
+        setTipo('Asuntos Propios');
+        setFechaInicio('');
+        setFechaFin('');
+        setFechaUltimoDiaTrabajo('');
+        setBajaVoluntariaDocumento(null);
+        setMotivo('');
+        setManagerSelectedEmpleado(null);
+        setManagerEmpleadoSearch('');
+        setManagerAutoApprove(true);
+        setShowManagerSolicitudModal(false);
+        
+        // Reîncarcă listele de solicitări
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg('No se pudo guardar la solicitud.');
+        setServerResp(`Error: ${result.error || responseData?.error || 'Error desconocido'}`);
+      }
+    } catch (e) {
+      setErrorMsg('No se pudo guardar la solicitud en línea');
+      setServerResp('Error: ' + (e.message || e.toString()));
+    } finally {
+      setOperationLoading('submit-manager', false);
     }
   };
 
@@ -5504,7 +5755,7 @@ export default function SolicitudesPage() {
   };
 
   const handleDeleteClick = (solicitudId) => {
-    setDeleteConfirm({ isOpen: true, solicitudId });
+    setDeleteConfirm({ isOpen: true, solicitudId, mensaje: '' });
   };
 
   const handleConvertirAusencia = async (ausencia) => {
@@ -5686,7 +5937,7 @@ export default function SolicitudesPage() {
     }
   };
 
-  const handleDelete = async (solicitudId) => {
+  const handleDelete = async (solicitudId, mensajePersonalizado = '') => {
     try {
       setOperationLoading('delete', true);
       
@@ -5718,7 +5969,8 @@ export default function SolicitudesPage() {
         const data = {
           accion: 'delete',
           id: solicitudId,
-          codigo: codigo
+          codigo: codigo,
+          ...(mensajePersonalizado.trim() ? { mensajePersonalizado: mensajePersonalizado.trim() } : {})
         };
         
         console.log('TRIMIT DELETE:', data);
@@ -5759,7 +6011,7 @@ export default function SolicitudesPage() {
         });
         
         setSuccessMsg(esAusencia ? 'Ausencia eliminada correctamente.' : 'Solicitud eliminada correctamente.');
-        setDeleteConfirm({ isOpen: false, solicitudId: null }); // Închide modalul
+        setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' }); // Închide modalul
         // Reîncarcă listele
         fetchSolicitudes();
         if (isManager) {
@@ -5768,12 +6020,12 @@ export default function SolicitudesPage() {
         setTimeout(() => setSuccessMsg(''), 2500);
       } else {
         setErrorMsg(`No se pudo eliminar ${esAusencia ? 'la ausencia' : 'la solicitud'}: ${result.error || responseData?.error || 'Error desconocido'}`);
-        setDeleteConfirm({ isOpen: false, solicitudId: null }); // Închide modalul chiar dacă e eroare
+        setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' }); // Închide modalul chiar dacă e eroare
       }
     } catch (e) {
       console.error('Error deleting solicitud/ausencia:', e);
       setErrorMsg(`Error al eliminar: ${e.message}`);
-      setDeleteConfirm({ isOpen: false, solicitudId: null }); // Închide modalul în caz de eroare
+      setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' }); // Închide modalul în caz de eroare
     } finally {
       setOperationLoading('delete', false);
     }
@@ -6207,6 +6459,15 @@ export default function SolicitudesPage() {
       filtered = filtered.filter(s => isBajaMedica(s.tipo));
     } else if (selectedTab === 'baja_voluntaria') {
       filtered = filtered.filter(s => s.tipo === 'BAJA_VOLUNTARIA');
+    } else if (selectedTab === 'aprobacion') {
+      // Tab pentru cererile pendiente de aprobare (doar Permiso Retribuido și BAJA_VOLUNTARIA)
+      filtered = filtered.filter(s => {
+        const tipo = (s.tipo || s.TIPO || '').toLowerCase();
+        const estado = (s.estado || s.ESTADO || '').toLowerCase();
+        const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
+        const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
+        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria);
+      });
     }
     if (selectedMonth > 0) {
       filtered = filtered.filter(s => {
@@ -6329,6 +6590,35 @@ export default function SolicitudesPage() {
       ...filtered
     ];
   }, [userSearchTerm, userList, getUserName]);
+
+  // Opțiuni pentru selectorul de angajat în modalul managerului
+  const managerEmpleadoOptions = useMemo(() => {
+    const term = managerEmpleadoSearch.toLowerCase().trim();
+    const mapped = (allUsers || [])
+      .map((u) => {
+        const codigo = u?.['CODIGO'] || u?.codigo || '';
+        const name = u?.['NOMBRE / APELLIDOS'] || u?.nombre || '';
+        const email = u?.['CORREO ELECTRONICO'] || u?.EMAIL || u?.email || '';
+        return {
+          codigo: String(codigo || '').trim(),
+          name: String(name || '').trim(),
+          email: String(email || '').trim(),
+        };
+      })
+      .filter((u) => u.codigo || u.email || u.name);
+
+    const filtered = term
+      ? mapped.filter((u) => {
+          return (
+            u.codigo.toLowerCase().includes(term) ||
+            u.name.toLowerCase().includes(term) ||
+            u.email.toLowerCase().includes(term)
+          );
+        })
+      : mapped;
+
+    return filtered.slice(0, 50); // Limitează la 50 pentru performanță
+  }, [managerEmpleadoSearch, allUsers]);
 
   const manualEmployeeOptions = useMemo(() => {
     const term = manualEmployeeSearch.toLowerCase().trim();
@@ -7132,8 +7422,18 @@ export default function SolicitudesPage() {
               Todas las Solicitudes
             </h2>
             
-              {/* Botones export compactos */}
-              <div className="flex gap-3">
+              {/* Botones export y crear solicitud */}
+              <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={() => setShowManagerSolicitudModal(true)}
+                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-indigo-500 to-indigo-600 text-white"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">➕</span>
+                    <span className="text-sm">Crear Solicitud para Empleado</span>
+                </div>
+              </button>
+              
               <button
                 onClick={handleExportExcel}
                   className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
@@ -7360,6 +7660,44 @@ export default function SolicitudesPage() {
                   <div className="relative flex items-center gap-2">
                     <span className="text-lg">🚪</span>
                     <span>Bajas Voluntarias</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setSelectedTab('aprobacion')}
+                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+                    selectedTab === 'aprobacion'
+                      ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-yellow-200'
+                      : 'bg-white text-yellow-600 border-2 border-yellow-200 hover:border-yellow-400 hover:bg-yellow-50'
+                  }`}
+                >
+                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                    selectedTab === 'aprobacion'
+                      ? 'bg-yellow-400 opacity-25 blur-md animate-pulse'
+                      : 'bg-yellow-400 opacity-0 group-hover:opacity-15 blur-md'
+                  }`}></div>
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-lg">⏳</span>
+                    <span>Aprobación</span>
+                    {(() => {
+                      // Numără cererile pendiente
+                      const pendientes = allSolicitudes.filter(s => {
+                        const tipo = (s.tipo || s.TIPO || '').toLowerCase();
+                        const estado = (s.estado || s.ESTADO || '').toLowerCase();
+                        const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
+                        const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
+                        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria);
+                      }).length;
+                      return pendientes > 0 ? (
+                        <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                          selectedTab === 'aprobacion'
+                            ? 'bg-white/30 text-white'
+                            : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {pendientes}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                 </button>
               </div>
@@ -7948,52 +8286,97 @@ export default function SolicitudesPage() {
                         {/* Iconițe Edit și Delete */}
                         {selectedTab !== 'baja' && (
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            {/* Butoane Preview/Aprobar/Rechazar pentru BAJA_VOLUNTARIA cu estado Pendiente */}
-                            {selectedTab === 'baja_voluntaria' && item.estado === 'Pendiente' && canAccessAllTabs ? (
-                              <>
-                                <button
-                                  onClick={() => handlePreviewBajaVoluntaria(item)}
-                                  className="group/preview relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
-                                  title="Vista previa del PDF"
-                                >
-                                  <span className="text-2xl">👁️</span>
-                                </button>
-                                <button
-                                  onClick={() => handleApproveBajaVoluntaria(item)}
-                                  disabled={isOperationLoading('approve')}
-                                  className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="Aprobar y enviar a gestoria"
-                                >
-                                  <span className="text-2xl">✅</span>
-                                </button>
-                                <button
-                                  onClick={() => handleRejectBajaVoluntaria(item)}
-                                  disabled={isOperationLoading('reject')}
-                                  className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="Rechazar"
-                                >
-                                  <span className="text-2xl">❌</span>
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => handleEdit(item)}
-                                  className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
-                                  title="Editar solicitud"
-                                >
-                                  <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteClick(item.id)}
-                                  disabled={isOperationLoading('delete')}
-                                  className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title="Eliminar solicitud"
-                                >
-                                  <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
-                                </button>
-                              </>
-                            )}
+                            {(() => {
+                              const tipo = (item.tipo || item.TIPO || '').toLowerCase();
+                              const estado = (item.estado || item.ESTADO || '').toLowerCase();
+                              const esPendiente = estado === 'pendiente';
+                              const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
+                              const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
+                              
+                              // Butoane pentru cererile pendiente în tab-ul "aprobacion" sau în tab-urile specifice
+                              const showApprovalButtons = canAccessAllTabs && esPendiente && 
+                                ((selectedTab === 'aprobacion' && (esBajaVoluntaria || esPermisoRetribuido)) ||
+                                 (selectedTab === 'baja_voluntaria' && esBajaVoluntaria) ||
+                                 (selectedTab !== 'baja_voluntaria' && selectedTab !== 'aprobacion' && esPermisoRetribuido));
+                              
+                              if (showApprovalButtons) {
+                                // Butoane pentru BAJA_VOLUNTARIA (cu preview)
+                                if (esBajaVoluntaria) {
+                                  return (
+                                    <>
+                                      <button
+                                        onClick={() => handlePreviewBajaVoluntaria(item)}
+                                        className="group/preview relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                        title="Vista previa del PDF"
+                                      >
+                                        <span className="text-2xl">👁️</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleApproveBajaVoluntaria(item)}
+                                        disabled={isOperationLoading('approve')}
+                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Aprobar y enviar a gestoria"
+                                      >
+                                        <span className="text-2xl">✅</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectBajaVoluntaria(item)}
+                                        disabled={isOperationLoading('reject')}
+                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Rechazar"
+                                      >
+                                        <span className="text-2xl">❌</span>
+                                      </button>
+                                    </>
+                                  );
+                                }
+                                
+                                // Butoane pentru Permiso Retribuido
+                                if (esPermisoRetribuido) {
+                                  return (
+                                    <>
+                                      <button
+                                        onClick={() => handleApprovePermisoRetribuido(item)}
+                                        disabled={isOperationLoading('approve-permiso')}
+                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Aprobar permiso retribuido"
+                                      >
+                                        <span className="text-2xl">✅</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectPermisoRetribuidoClick(item)}
+                                        disabled={isOperationLoading('reject-permiso')}
+                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Rechazar permiso retribuido"
+                                      >
+                                        <span className="text-2xl">❌</span>
+                                      </button>
+                                    </>
+                                  );
+                                }
+                              }
+                              
+                              // Butoane normale Edit/Delete pentru restul
+                              return (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(item)}
+                                    className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                    title="Editar solicitud"
+                                  >
+                                    <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteClick(item.id)}
+                                    disabled={isOperationLoading('delete')}
+                                    className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Eliminar solicitud"
+                                  >
+                                    <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
+                                  </button>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                         {/* Buton de ștergere pentru bajas medicas (doar dacă nu e MUTUA) */}
@@ -10752,31 +11135,48 @@ export default function SolicitudesPage() {
       {/* Modal de confirmare ștergere */}
       <Modal
         isOpen={deleteConfirm.isOpen}
-        onClose={() => setDeleteConfirm({ isOpen: false, solicitudId: null })}
+        onClose={() => setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' })}
         title=""
-        size="sm"
-        className="max-w-md"
+        size="md"
+        className="max-w-lg"
       >
-        <div className="text-center py-4">
+        <div className="py-4">
           {/* Icon */}
           <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
             <Trash2 className="h-8 w-8 text-red-600" />
           </div>
           
           {/* Titlu */}
-          <h3 className="text-xl font-bold text-gray-900 mb-2">
+          <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
             ¿Eliminar solicitud?
           </h3>
           
-          {/* Mesaj */}
-          <p className="text-gray-600 mb-6">
+          {/* Mesaj de confirmare */}
+          <p className="text-gray-600 mb-4 text-center">
             ¿Estás seguro de que deseas eliminar esta solicitud? Esta acción no se puede deshacer.
           </p>
+
+          {/* Câmp pentru mesaj personalizat */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Mensaje para el empleado (opcional):
+            </label>
+            <textarea
+              value={deleteConfirm.mensaje}
+              onChange={(e) => setDeleteConfirm({ ...deleteConfirm, mensaje: e.target.value })}
+              placeholder="Escribe un mensaje que se enviará al empleado por email junto con la confirmación de eliminación..."
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Este mensaje se enviará por email al empleado junto con la confirmación de que se ha eliminado su solicitud.
+            </p>
+          </div>
           
           {/* Butoane */}
           <div className="flex gap-3 justify-center">
             <button
-              onClick={() => setDeleteConfirm({ isOpen: false, solicitudId: null })}
+              onClick={() => setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' })}
               className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
             >
               Cancelar
@@ -10784,7 +11184,7 @@ export default function SolicitudesPage() {
             <button
               onClick={() => {
                 if (deleteConfirm.solicitudId) {
-                  handleDelete(deleteConfirm.solicitudId);
+                  handleDelete(deleteConfirm.solicitudId, deleteConfirm.mensaje);
                 }
               }}
               disabled={isOperationLoading('delete')}
@@ -10799,6 +11199,76 @@ export default function SolicitudesPage() {
                 <>
                   <Trash2 className="w-4 h-4" />
                   Eliminar
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal pentru respingere Permiso Retribuido cu mesaj personalizat */}
+      <Modal
+        isOpen={rejectPermisoModal.isOpen}
+        onClose={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '' })}
+        title=""
+        size="md"
+        className="max-w-lg"
+      >
+        <div className="py-4">
+          {/* Icon */}
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
+            <span className="text-4xl">❌</span>
+          </div>
+          
+          {/* Titlu */}
+          <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
+            ¿Rechazar permiso retribuido?
+          </h3>
+          
+          {/* Mesaj de confirmare */}
+          <p className="text-gray-600 mb-4 text-center">
+            ¿Estás seguro de que deseas rechazar este permiso retribuido? Esta acción notificará al empleado.
+          </p>
+
+          {/* Câmp pentru mesaj personalizat */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Mensaje para el empleado (opcional):
+            </label>
+            <textarea
+              value={rejectPermisoModal.mensaje}
+              onChange={(e) => setRejectPermisoModal({ ...rejectPermisoModal, mensaje: e.target.value })}
+              placeholder="Escribe un mensaje que se enviará al empleado por email junto con la notificación de rechazo..."
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Este mensaje se enviará por email al empleado junto con la notificación de que se ha rechazado su permiso retribuido.
+            </p>
+          </div>
+          
+          {/* Butoane */}
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '' })}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleRejectPermisoRetribuido}
+              disabled={isOperationLoading('reject-permiso')}
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isOperationLoading('reject-permiso') ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Rechazando...
+                </>
+              ) : (
+                <>
+                  <span className="text-lg">❌</span>
+                  Rechazar
                 </>
               )}
             </button>
@@ -11973,6 +12443,233 @@ export default function SolicitudesPage() {
                 <>
                   <span>💾</span>
                   <span>Guardar</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal pentru manager să creeze solicitări pentru angajați */}
+      <Modal
+        isOpen={showManagerSolicitudModal}
+        onClose={() => {
+          setShowManagerSolicitudModal(false);
+          setManagerSelectedEmpleado(null);
+          setManagerEmpleadoSearch('');
+          setTipo('Asuntos Propios');
+          setFechaInicio('');
+          setFechaFin('');
+          setFechaUltimoDiaTrabajo('');
+          setMotivo('');
+          setManagerAutoApprove(true);
+        }}
+        title="Crear Solicitud para Empleado"
+        size="lg"
+      >
+        <div className="space-y-6">
+          {/* Selector de angajat */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Seleccionar Empleado <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={managerEmpleadoSearch}
+                onChange={(e) => {
+                  setManagerEmpleadoSearch(e.target.value);
+                  setManagerShowEmpleadoDropdown(true);
+                }}
+                onFocus={() => setManagerShowEmpleadoDropdown(true)}
+                placeholder="Buscar por nombre, código o email..."
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+              {managerShowEmpleadoDropdown && managerEmpleadoOptions.length > 0 && (
+                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {managerEmpleadoOptions.map((emp) => (
+                    <button
+                      key={emp.codigo || emp.email}
+                      type="button"
+                      onClick={() => {
+                        setManagerSelectedEmpleado(emp);
+                        setManagerEmpleadoSearch(emp.name);
+                        setManagerShowEmpleadoDropdown(false);
+                      }}
+                      className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="font-medium text-gray-900">{emp.name}</div>
+                      <div className="text-sm text-gray-500">{emp.codigo} • {emp.email}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {managerSelectedEmpleado && (
+              <div className="mt-2 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-indigo-900">{managerSelectedEmpleado.name}</div>
+                    <div className="text-sm text-indigo-700">{managerSelectedEmpleado.codigo} • {managerSelectedEmpleado.email}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManagerSelectedEmpleado(null);
+                      setManagerEmpleadoSearch('');
+                    }}
+                    className="text-indigo-600 hover:text-indigo-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tip solicitare */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tipo de Solicitud <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={tipo}
+              onChange={(e) => {
+                setTipo(e.target.value);
+                setFechaInicio('');
+                setFechaFin('');
+              }}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="Asuntos Propios">📅 Asuntos Propios</option>
+              <option value="Vacaciones">🏖️ Vacaciones</option>
+              <option value="BAJA_VOLUNTARIA">🚪 Baja Voluntaria</option>
+              <option value="Permiso Retribuido">💼 Permiso Retribuido</option>
+              <option value="Ausencias justificada">🩺 Ausencias justificada</option>
+            </select>
+          </div>
+
+          {/* Date - doar pentru tipuri care necesită date */}
+          {tipo !== 'BAJA_VOLUNTARIA' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fecha Inicio <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={fechaInicio}
+                  onChange={(e) => setFechaInicio(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fecha Fin <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={fechaFin}
+                  onChange={(e) => setFechaFin(e.target.value)}
+                  min={fechaInicio}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Fecha último día de trabajo pentru BAJA_VOLUNTARIA */}
+          {tipo === 'BAJA_VOLUNTARIA' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Último Día de Trabajo <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={fechaUltimoDiaTrabajo}
+                onChange={(e) => setFechaUltimoDiaTrabajo(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+          )}
+
+          {/* Motivo */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Motivo <span className="text-gray-500 text-xs">(opcional)</span>
+            </label>
+            <textarea
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              rows={4}
+              placeholder="Describe el motivo de la solicitud (opcional)..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          </div>
+
+          {/* Checkbox Aprobar automáticamente */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="manager-auto-approve"
+              checked={managerAutoApprove}
+              onChange={(e) => setManagerAutoApprove(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <label htmlFor="manager-auto-approve" className="text-sm font-medium text-gray-700">
+              Aprobar automáticamente
+            </label>
+          </div>
+
+          {/* Mesaje de eroare/succes */}
+          {errorMsg && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {errorMsg}
+            </div>
+          )}
+          {successMsg && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+              {successMsg}
+            </div>
+          )}
+
+          {/* Butoane */}
+          <div className="flex gap-4 justify-end pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={() => {
+                setShowManagerSolicitudModal(false);
+                setManagerSelectedEmpleado(null);
+                setManagerEmpleadoSearch('');
+                setTipo('Asuntos Propios');
+                setFechaInicio('');
+                setFechaFin('');
+                setFechaUltimoDiaTrabajo('');
+                setMotivo('');
+                setManagerAutoApprove(true);
+                setErrorMsg('');
+                setSuccessMsg('');
+              }}
+              disabled={isOperationLoading('submit-manager')}
+              className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleAddManagerSolicitud}
+              disabled={isOperationLoading('submit-manager') || !managerSelectedEmpleado}
+              className="px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isOperationLoading('submit-manager') ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Creando...
+                </>
+              ) : (
+                <>
+                  <span>💾</span>
+                  <span>Crear Solicitud</span>
                 </>
               )}
             </button>

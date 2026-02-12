@@ -250,11 +250,85 @@ const formatDate = (date: Date): string => {
 
 // ===== COMPONENTA PRINCIPAL =====
 const EmpleadoPedidosPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'mis-pedidos'>('nuevo-pedido');
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'mis-pedidos'>('mis-pedidos'); // Default la "Mis Pedidos"
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [hasDerechoPedidos, setHasDerechoPedidos] = useState(false);
 
   // Counter pentru a asigura ID-uri unice pentru toasts
   const toastIdCounter = React.useRef(0);
+
+  // Funcție pentru verificarea câmpului DerechoPedidos
+  const checkField = (value: string | number | boolean | null | undefined): boolean => {
+    if (!value) return false;
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
+    if (typeof normalized === 'boolean') return normalized;
+    if (typeof normalized === 'number') return normalized === 1;
+    if (typeof normalized === 'string') {
+      return ['s', 'si', 'sí', '1', 'y', 'yes', 'true'].includes(normalized);
+    }
+    return false;
+  };
+
+  // Încarcă datele complete ale utilizatorului pentru a verifica DerechoPedidos
+  useEffect(() => {
+    const fetchEmpleadoCompleto = async () => {
+      if (!user?.CODIGO && !user?.email) {
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          return;
+        }
+
+        const res = await fetch(routes.getEmpleadoMe, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const empleado = data?.empleado || data?.data?.empleado || data;
+          if (empleado) {
+            // Verifică DerechoPedidos
+            const pedidosFields = [
+              'derechopedido',
+              'DerechoPedidos',
+              'derechoPedidos',
+              'derecho_pedidos',
+              'DERECHO_PEDIDOS',
+            ];
+            
+            const hasFieldPermission = pedidosFields.some(field => 
+              checkField(empleado[field])
+            );
+            
+            // Verifică și câmpuri generice care conțin "pedido"
+            const hasGenericPermission = Object.keys(empleado || {}).some(
+              (key) =>
+                key.toLowerCase().includes('pedido') && checkField(empleado[key]),
+            );
+            
+            const hasPermission = hasFieldPermission || hasGenericPermission;
+            setHasDerechoPedidos(hasPermission);
+            
+            // Dacă nu are permisiune, setează tab-ul activ la "Mis Pedidos"
+            if (!hasPermission) {
+              setActiveTab('mis-pedidos');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching empleado completo:', error);
+      }
+    };
+
+    fetchEmpleadoCompleto();
+  }, [user?.CODIGO, user?.email]);
 
   // Funcție pentru adăugarea de notificări
   const addToast = (type: ToastType, title: string, message: string, duration?: number) => {
@@ -299,25 +373,29 @@ const EmpleadoPedidosPage: React.FC = () => {
         {/* Tabs */}
         <Card className="mb-6">
           <div className="flex flex-wrap gap-3 p-4">
-            <button
-              onClick={() => setActiveTab('nuevo-pedido')}
-              className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'nuevo-pedido'
-                  ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                  : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-              }`}
-            >
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'nuevo-pedido' 
-                  ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">🛒</span>
-                <span>Nuevo Pedido</span>
-              </div>
-            </button>
+            {/* Tab "Nuevo Pedido" - afișat doar dacă are DerechoPedidos */}
+            {hasDerechoPedidos && (
+              <button
+                onClick={() => setActiveTab('nuevo-pedido')}
+                className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                  activeTab === 'nuevo-pedido'
+                    ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
+                    : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
+                }`}
+              >
+                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                  activeTab === 'nuevo-pedido' 
+                    ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
+                    : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
+                }`}></div>
+                <div className="relative flex items-center gap-2">
+                  <span className="text-xl">🛒</span>
+                  <span>Nuevo Pedido</span>
+                </div>
+              </button>
+            )}
             
+            {/* Tab "Mis Pedidos" - mereu vizibil pentru toți */}
             <button
               onClick={() => setActiveTab('mis-pedidos')}
               className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
@@ -357,7 +435,24 @@ const EmpleadoPedidosPage: React.FC = () => {
 // ✅ Helper: Obține centrul de lucru din user object (din AuthContext sau din /api/me)
 const getCentroTrabajoFromUser = (u: Record<string, unknown> | null | undefined): string | null => {
   if (!u) return null;
-  return (u['CENTRO TRABAJO'] || u['CENTRO_TRABAJO'] || u['CENTRO'] || u['CENTRO DE TRABAJO'] || null) as string | null;
+  
+  // Caută în toate variantele posibile și returnează prima valoare non-golă
+  const variants = [
+    u['CENTRO TRABAJO'],
+    u['CENTRO_TRABAJO'],
+    u['CENTRO'],
+    u['CENTRO DE TRABAJO'],
+    u['centro_trabajo'],
+    u['centroTrabajo']
+  ];
+  
+  for (const variant of variants) {
+    if (variant && typeof variant === 'string' && variant.trim()) {
+      return variant.trim();
+    }
+  }
+  
+  return null;
 };
 
 const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
@@ -1598,6 +1693,10 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
   const [productosNuevos, setProductosNuevos] = useState<LineaPedido[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
+  const [albaranFile, setAlbaranFile] = useState<File | null>(null);
+  const [albaranPreview, setAlbaranPreview] = useState<string | null>(null);
+  const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
 
   // Funcție pentru formatarea banilor
   const formatMoney = (value: number | string | null | undefined) => {
@@ -1633,6 +1732,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
         return 'bg-red-100 text-red-800 border-red-300';
       case 'pendiente':
         return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'entregado':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-300';
     }
@@ -1646,8 +1747,83 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
         return '❌ Rechazado';
       case 'pendiente':
         return '⏳ Pendiente';
+      case 'entregado':
+        return '📦 Entregado';
       default:
         return estado || 'Desconocido';
+    }
+  };
+
+  // Funcție pentru gestionarea selecției fișierului albarán
+  const handleAlbaranFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setAlbaranFile(file);
+      // Creează preview pentru imagini
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setAlbaranPreview(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setAlbaranPreview(null);
+      }
+    }
+  };
+
+  // Funcție pentru upload albarán
+  const handleUploadAlbaran = async () => {
+    if (!pedidoCargandoAlbaran || !albaranFile) {
+      addToast('error', 'Error', 'Por favor selecciona un archivo');
+      return;
+    }
+
+    setUploadingAlbaran(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const formData = new FormData();
+      formData.append('albaran', albaranFile);
+
+      const encodedUid = encodeURIComponent(pedidoCargandoAlbaran);
+      const url = import.meta.env.DEV
+        ? `http://localhost:3000/api/pedidos/${encodedUid}/albaran`
+        : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/albaran`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      await response.json();
+      
+      // Actualizează statusul comenzii în lista locală
+      setPedidos(prev => prev.map(p => 
+        p.pedido_uid === pedidoCargandoAlbaran 
+          ? { ...p, estado: 'entregado' }
+          : p
+      ));
+
+      addToast('success', 'Albarán subido', 'El albarán ha sido subido correctamente y el pedido ha sido marcado como entregado');
+      
+      // Resetează state-ul
+      setPedidoCargandoAlbaran(null);
+      setAlbaranFile(null);
+      setAlbaranPreview(null);
+    } catch (error: unknown) {
+      console.error('Error uploading albarán:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo subir el albarán';
+      addToast('error', 'Error', errorMessage);
+    } finally {
+      setUploadingAlbaran(false);
     }
   };
 
@@ -1684,36 +1860,39 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       // Obține numele comunității utilizatorului curent
       const userComunidadNombre = getCentroTrabajoFromUser(user);
       
+      // Debug: Verifică toate variantele de CENTRO TRABAJO
+      const centroVariants = {
+        'CENTRO TRABAJO': user?.['CENTRO TRABAJO'],
+        'CENTRO_TRABAJO': user?.['CENTRO_TRABAJO'],
+        'CENTRO': user?.['CENTRO'],
+        'CENTRO DE TRABAJO': user?.['CENTRO DE TRABAJO'],
+        'centro_trabajo': user?.['centro_trabajo'],
+        'centroTrabajo': user?.['centroTrabajo']
+      };
+      
       console.log('🔍 [TabMisPedidos] User info:', {
         comunidad_nombre: userComunidadNombre,
-        user: user
+        centroVariants,
+        userKeys: user ? Object.keys(user).filter(k => k.toLowerCase().includes('centro') || k.toLowerCase().includes('trabajo')) : []
       });
       console.log('🔍 [TabMisPedidos] Total pedidos received:', pedidosArray.length);
       
       // Filtrează comenzile după comunitate (nu după angajat)
-      const pedidosFiltrados = pedidosArray.filter((pedido: Pedido) => {
-        const pedidoComunidadNombre = pedido.comunidad?.nombre || '';
-        
-        // Compară numele comunității (case-insensitive, trim whitespace)
-        const match = userComunidadNombre && pedidoComunidadNombre && (
-          String(userComunidadNombre).trim().toLowerCase() === String(pedidoComunidadNombre).trim().toLowerCase()
-        );
-        
-        if (!match && pedidosArray.length > 0 && pedidosArray.indexOf(pedido) === 0) {
-          console.log('🔍 [TabMisPedidos] First pedido filtered out:', {
-            pedido_uid: pedido.pedido_uid,
-            pedido_comunidad_nombre: pedidoComunidadNombre,
-            user_comunidad_nombre: userComunidadNombre,
-            match
-          });
-        }
-        return match;
-      });
+      // Dacă utilizatorul nu are centru de lucru setat, nu afișa nimic
+      const pedidosFiltrados = userComunidadNombre 
+        ? pedidosArray.filter((pedido: Pedido) => {
+            const pedidoComunidadNombre = pedido.comunidad?.nombre || '';
+            
+            // Compară numele comunității (case-insensitive, trim whitespace)
+            const match = pedidoComunidadNombre && (
+              String(userComunidadNombre).trim().toLowerCase() === String(pedidoComunidadNombre).trim().toLowerCase()
+            );
+            
+            return match;
+          })
+        : []; // Dacă nu are centru setat, lista goală
 
-      console.log('✅ [TabMisPedidos] Pedidos filtrados:', pedidosFiltrados.length);
-      if (pedidosFiltrados.length === 0 && pedidosArray.length > 0) {
-        console.warn('⚠️ [TabMisPedidos] No pedidos matched comunidad filter. User comunidad:', userComunidadNombre, 'Sample pedido comunidad:', pedidosArray[0]?.comunidad?.nombre);
-      }
+      console.log('✅ [TabMisPedidos] Pedidos filtrados:', pedidosFiltrados.length, 'din', pedidosArray.length, 'total');
       setPedidos(pedidosFiltrados);
     } catch (error) {
       console.error('❌ Error loading pedidos:', error);
@@ -2048,7 +2227,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                 )}
 
                 {/* Butoane pentru a vedea/ascunde detalii și editare */}
-                <div className="mt-4 flex gap-2">
+                <div className="mt-4 flex gap-2 flex-wrap">
                   <Button
                     onClick={() => {
                       setPedidoSeleccionado(pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid);
@@ -2067,7 +2246,39 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                       ✏️ Editar
                     </Button>
                   )}
+                  {/* Buton Cargar Albarán - doar pentru comenzile aprobadas */}
+                  {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'entregado') && (
+                    <Button
+                      onClick={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      size="sm"
+                    >
+                      📄 {pedido.estado?.toLowerCase() === 'entregado' ? 'Ver Albarán' : 'Cargar Albarán'}
+                    </Button>
+                  )}
                 </div>
+
+                {/* Avis de atenționare pentru albarán */}
+                {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'entregado') && (
+                  <div className="mt-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                        <span className="text-yellow-600 text-lg">⚠️</span>
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm text-yellow-800 font-medium">
+                          Importante: Antes de firmar el albarán, verifica que:
+                        </p>
+                        <ul className="mt-1 text-sm text-yellow-700 list-disc list-inside space-y-1">
+                          <li>Los productos recibidos coinciden con el pedido</li>
+                          <li>Las cantidades son correctas</li>
+                          <li>El estado de los productos es adecuado</li>
+                          <li>No hay daños ni faltantes</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
           ))}
@@ -2242,6 +2453,99 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                   disabled={guardando || productosNuevos.length === 0}
                 >
                   {guardando ? 'Guardando...' : '💾 Guardar Cambios'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pentru upload albarán */}
+      {pedidoCargandoAlbaran && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">📄 Cargar Albarán</h2>
+                <button
+                  onClick={() => {
+                    setPedidoCargandoAlbaran(null);
+                    setAlbaranFile(null);
+                    setAlbaranPreview(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Pedido: <strong>{pedidoCargandoAlbaran}</strong>
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Sube una foto o PDF del albarán de entrega. El pedido será marcado como "Entregado" automáticamente.
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Seleccionar archivo (PDF, JPG, PNG)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf"
+                  onChange={handleAlbaranFileChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+
+              {albaranPreview && (
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Vista previa:</p>
+                  <div className="border border-gray-300 rounded-lg p-2">
+                    <img 
+                      src={albaranPreview} 
+                      alt="Preview albarán" 
+                      className="max-w-full h-auto max-h-64 mx-auto"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {albaranFile && !albaranPreview && (
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Archivo seleccionado: <strong>{albaranFile.name}</strong> ({(albaranFile.size / 1024).toFixed(2)} KB)
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end">
+                <Button
+                  onClick={() => {
+                    setPedidoCargandoAlbaran(null);
+                    setAlbaranFile(null);
+                    setAlbaranPreview(null);
+                  }}
+                  variant="outline"
+                  disabled={uploadingAlbaran}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleUploadAlbaran}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={!albaranFile || uploadingAlbaran}
+                >
+                  {uploadingAlbaran ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                      Subiendo...
+                    </>
+                  ) : (
+                    '📤 Subir Albarán'
+                  )}
                 </Button>
               </div>
             </div>

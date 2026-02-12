@@ -433,6 +433,18 @@ export const routes = {
   updateDocumentoOficialVisibility: import.meta.env.DEV
     ? 'http://localhost:3000/api/documentos-oficiales'
     : 'https://api.decaminoservicios.com/api/documentos-oficiales',
+  updateDocumentoOficialNecesitaFirma: import.meta.env.DEV
+    ? 'http://localhost:3000/api/documentos-oficiales'
+    : 'https://api.decaminoservicios.com/api/documentos-oficiales',
+  marcarContratoComoFirmado: import.meta.env.DEV
+    ? 'http://localhost:3000/api/documentos-oficiales'
+    : 'https://api.decaminoservicios.com/api/documentos-oficiales',
+  getEmpleadosConStatusContratos: import.meta.env.DEV
+    ? 'http://localhost:3000/api/documentos-oficiales/empleados-contratos'
+    : 'https://api.decaminoservicios.com/api/documentos-oficiales/empleados-contratos',
+  countDocumentosNecesitanFirma: (codigo) => import.meta.env.DEV
+    ? `http://localhost:3000/api/documentos-oficiales/count-necesitan-firma?codigo=${codigo}`
+    : `https://api.decaminoservicios.com/api/documentos-oficiales/count-necesitan-firma?codigo=${codigo}`,
   deleteDocumento: import.meta.env.DEV
     ? 'http://localhost:3000/api/documentos/delete'
     : 'https://api.decaminoservicios.com/api/documentos/delete',

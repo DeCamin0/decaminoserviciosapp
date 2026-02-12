@@ -186,153 +186,6 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     };
   }, [user?.CODIGO, user?.isDemo]);
 
-  // Calculează pedidosAccess
-  const pedidosAccess = useMemo(() => {
-    const empleado = user || {};
-    const grupo = empleado?.GRUPO || user?.GRUPO;
-    
-    // 🔍 LOG: Datele din DatosEmpleados (doar în dev)
-    if (import.meta.env.DEV) {
-      console.log('🔍 [MobileMoreDrawer] ===== PEDIDOS ACCESS DEBUG =====');
-      console.log('📋 [MobileMoreDrawer] User object (DatosEmpleados):', {
-      CODIGO: empleado?.CODIGO,
-      GRUPO: empleado?.GRUPO || grupo,
-      NOMBRE: empleado?.['NOMBRE / APELLIDOS'] || empleado?.NOMBRE,
-      isManager: empleado?.isManager,
-      isDemo: empleado?.isDemo,
-      // Câmpuri relevante pentru pedidos
-      derechopedido: empleado?.derechopedido,
-      DERECHO_PEDIDO: empleado?.DERECHO_PEDIDO,
-      pedidos_permitido: empleado?.pedidos_permitido,
-      canMakePedidos: empleado?.canMakePedidos,
-      PEDIDOS_PERMITIDO: empleado?.PEDIDOS_PERMITIDO,
-      DERECHO_PEDIDOS: empleado?.DERECHO_PEDIDOS,
-      PEDIDOS_ACCESO: empleado?.PEDIDOS_ACCESO,
-      ACCESO_PEDIDOS: empleado?.ACCESO_PEDIDOS,
-      // Toate câmpurile care conțin "pedido"
-      allPedidoFields: Object.keys(empleado || {}).filter(key => 
-        key.toLowerCase().includes('pedido')
-      ).reduce((acc, key) => {
-        acc[key] = empleado[key];
-        return acc;
-      }, {}),
-      });
-      
-      // 🔍 LOG: Datele din Permisos
-      console.log('🔐 [MobileMoreDrawer] Permissions object (Permisos table):', {
-      userPermissions,
-      loadingPermissions,
-      userGrupo,
-      hasBackendPermissions: userPermissions && Object.keys(userPermissions).length > 0,
-      permissionsKeys: userPermissions ? Object.keys(userPermissions) : [],
-      });
-    }
-    
-    const checkField = (value) => {
-      if (!value) return false;
-      const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
-      if (typeof normalized === 'boolean') return normalized;
-      if (typeof normalized === 'number') return normalized === 1;
-      if (typeof normalized === 'string') {
-        return ['s', 'si', 'sí', '1', 'y', 'yes', 'true'].includes(normalized);
-      }
-      return false;
-    };
-    const pedidosFields = [
-      'derechopedido', 'DERECHO_PEDIDO', 'pedidos_permitido', 'canMakePedidos',
-      'PEDIDOS_PERMITIDO', 'DERECHO_PEDIDOS', 'PEDIDOS_ACCESO', 'ACCESO_PEDIDOS',
-    ];
-    const hasFieldPermission = pedidosFields.some((field) => checkField(empleado?.[field]));
-    const hasGenericPermission = Object.keys(empleado || {}).some(
-      (key) => key.toLowerCase().includes('pedido') && checkField(empleado[key]),
-    );
-    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
-
-    // ✅ Verifică permisiunile din backend (permissos)
-    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
-    const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
-    const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
-    const shouldUseBackend = useBackendPermissions && grupoKeyExists;
-    
-    // ✅ CORECTAT: 'dashboard' verifică INDIVIDUAL (din DatosEmpleados), nu pe grup
-    // Dacă are 'dashboard: true', verifică dacă utilizatorul are 'DerechoPedidos' în datele personale
-    // Dacă are 'pedidos: true', are acces complet (manager-level)
-    const hasDashboardPermission = shouldUseBackend ? hasPermission('dashboard') : false;
-    const hasPedidosPermission = shouldUseBackend ? hasPermission('pedidos') : false;
-    
-    // Dacă are 'dashboard', verifică individual (din DatosEmpleados)
-    const hasIndividualPedidosAccess = hasDashboardPermission && (hasFieldPermission || hasGenericPermission);
-    
-    // Acces complet dacă are 'pedidos' în permisiuni SAU 'dashboard' + DerechoPedidos individual
-    const hasBackendPedidosPermission = hasPedidosPermission || hasIndividualPedidosAccess;
-    
-    // 🔍 LOG: Rezultatele verificărilor (doar în dev)
-    const grupoKey = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) : null;
-    const grupoPermissions = grupoKey && userPermissions ? userPermissions[grupoKey] : null;
-    if (import.meta.env.DEV) {
-      console.log('🔍 [MobileMoreDrawer] Permission checks:', {
-      hasSpecialAccess,
-      isManager,
-      isAdmin,
-      isDeveloper,
-      hasBackendPermissions,
-      useBackendPermissions,
-      grupoKeyExists,
-      grupoKey,
-      grupoPermissions: grupoPermissions ? {
-        ...grupoPermissions,
-        // Log explicit pentru pedidos și dashboard
-        pedidos: grupoPermissions.pedidos,
-        dashboard: grupoPermissions.dashboard,
-        // Toate cheile disponibile
-        allKeys: Object.keys(grupoPermissions),
-      } : null,
-      shouldUseBackend,
-      hasDashboardPermission,
-      hasPedidosPermission,
-      hasIndividualPedidosAccess,
-      hasBackendPedidosPermission,
-      hasFieldPermission,
-      hasGenericPermission,
-      backendSystemExists: userPermissions !== null || loadingPermissions === true,
-      });
-    }
-
-    // ✅ CORECTAT STRICT: Pentru angajații normali, verificăm DOAR permisiunile din backend
-    // Managerii/Adminii/Developerii au acces complet (hasSpecialAccess)
-    // Fallback-ul este doar pentru cazuri în care sistemul de permisiuni backend nu există deloc
-    // (de exemplu, dacă userPermissions este null și loadingPermissions este false - sistemul nu a încercat să încarce permisiuni)
-    const backendSystemExists = userPermissions !== null || loadingPermissions === true;
-    const canAccess =
-      hasSpecialAccess || // Manager/Admin/Developer au acces complet
-      hasBackendPedidosPermission || // Sau au permisiunea 'pedidos' în backend
-      (!backendSystemExists && hasFieldPermission) || // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
-      (!backendSystemExists && hasGenericPermission); // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
-    
-    // 🔍 LOG: Rezultatul final (doar în dev)
-    if (import.meta.env.DEV) {
-      console.log('✅ [MobileMoreDrawer] Final decision:', {
-        canAccess,
-        reason: hasSpecialAccess ? 'hasSpecialAccess (Manager/Admin/Developer)' :
-                 hasPedidosPermission ? 'hasPedidosPermission (permisiune pedidos pe grup)' :
-                 hasIndividualPedidosAccess ? 'hasIndividualPedidosAccess (dashboard + DerechoPedidos individual)' :
-                 (!backendSystemExists && hasFieldPermission) ? 'Fallback: hasFieldPermission (câmpuri în DatosEmpleados)' :
-                 (!backendSystemExists && hasGenericPermission) ? 'Fallback: hasGenericPermission (câmpuri generice)' :
-                 'NO ACCESS',
-        href: (hasSpecialAccess || hasPedidosPermission) ? '/pedidos' : '/empleado-pedidos',
-        role: (hasSpecialAccess || hasPedidosPermission) ? 'manager' : undefined,
-      });
-      console.log('🔍 [MobileMoreDrawer] ===== END PEDIDOS ACCESS DEBUG =====\n');
-    }
-    
-    return {
-      canAccess,
-      hint: (hasSpecialAccess || hasPedidosPermission) ? 'Gestionar pedidos y permisos' : canAccess ? 'Crear nuevos pedidos' : 'No tienes permisos',
-      href: (hasSpecialAccess || hasPedidosPermission) ? '/pedidos' : '/empleado-pedidos',
-      role: (hasSpecialAccess || hasPedidosPermission) ? 'manager' : undefined,
-    };
-  }, [user, isManager, isAdmin, isDeveloper, userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission]);
-
   // Construiește lista de iteme (similar cu DashboardPage)
   const allItems = useMemo(() => {
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
@@ -402,9 +255,28 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     if (canInspect) {
       list.push({ id: 'inspecciones', label: 'Inspecciones', hint: 'Realizar auditorías', icon: ClipboardCheck, href: '/inspecciones', role: 'manager', gradient: 'from-amber-500 via-orange-500 to-yellow-500' });
     }
-    if (pedidosAccess.canAccess) {
-      list.push({ id: 'pedidos', label: 'Pedidos', hint: pedidosAccess.hint, icon: ShoppingCart, href: pedidosAccess.href, role: pedidosAccess.role, gradient: 'from-amber-500 via-orange-500 to-yellow-500' });
-    }
+    // ✅ ACTUALIZAT: Butonul "Pedidos" este mereu vizibil pentru toți angajații
+    // Verificarea DerechoPedidos se face în EmpleadoPedidosPage
+    // Link-ul se calculează în funcție de permisiuni: /pedidos pentru admin, /empleado-pedidos pentru empleados
+    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
+    const hasPedidosAdminPermission = shouldUseBackend ? hasPermission('pedidos-admin') : false;
+    const hasPedidosPermissionOld = shouldUseBackend ? hasPermission('pedidos') : false;
+    const pedidosHref = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) 
+      ? '/pedidos' 
+      : '/empleado-pedidos';
+    const pedidosRole = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) 
+      ? 'manager' 
+      : 'empleado';
+    
+    list.push({ 
+      id: 'pedidos', 
+      label: 'Pedidos', 
+      hint: 'Gestiona tus pedidos', 
+      icon: ShoppingCart, 
+      href: pedidosHref, 
+      role: pedidosRole, 
+      gradient: 'from-amber-500 via-orange-500 to-yellow-500' 
+    });
     if (canAccessAdmin) {
       list.push({ id: 'admin-panel', label: 'Admin Panel', hint: 'Control del sistema y estadísticas avanzadas', icon: Settings, href: '/admin', role: 'manager', gradient: 'from-slate-500 via-slate-600 to-slate-700' });
     }
@@ -422,7 +294,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     return list;
   }, [
     userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission,
-    isManager, isAdmin, isDeveloper, pedidosAccess, user?.GRUPO,
+    isManager, isAdmin, isDeveloper, user?.GRUPO,
     comunicadosUnreadCount, documentosSolicitadosCount
   ]);
 

@@ -131,6 +131,7 @@ export class SolicitudesService {
     accion: 'create' | 'update' | 'delete';
     tipoAnterior?: string;
     tipoNuevo?: string;
+    mensajePersonalizado?: string;
   }): { subject: string; html: string } {
     const actionEmoji =
       solicitudData.accion === 'create'
@@ -219,6 +220,21 @@ export class SolicitudesService {
   }
   
   ${
+    solicitudData.mensajePersonalizado &&
+    (solicitudData.accion === 'delete' ||
+      (solicitudData.accion === 'update' &&
+        solicitudData.estado === 'Rechazada'))
+      ? `
+  <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
+  <div style="margin-top: 20px; padding: 15px; background-color: ${solicitudData.accion === 'delete' ? '#e3f2fd' : '#ffebee'}; border-left: 4px solid ${solicitudData.accion === 'delete' ? '#2196f3' : '#f44336'}; border-radius: 4px;">
+    <h3 style="margin-top: 0; color: ${solicitudData.accion === 'delete' ? '#1565c0' : '#c62828'}; font-size: 14px; font-weight: bold;">💬 Mensaje del administrador:</h3>
+    <div style="color: ${solicitudData.accion === 'delete' ? '#1565c0' : '#c62828'}; font-size: 13px; line-height: 1.8; white-space: pre-wrap;">${solicitudData.mensajePersonalizado}</div>
+  </div>
+  `
+      : ''
+  }
+  
+  ${
     solicitudData.tipo === 'Vacaciones' || solicitudData.tipo === 'Vacación'
       ? `
   <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;">
@@ -261,6 +277,7 @@ export class SolicitudesService {
     email?: string;
     tipoAnterior?: string;
     tipoNuevo?: string;
+    mensajePersonalizado?: string;
   }): Promise<void> {
     this.logger.log(
       `📧 [sendSolicitudEmailToEmpleado] Called for ${solicitudData.accion} - solicitud: ${solicitudData.codigo}`,
@@ -608,6 +625,9 @@ export class SolicitudesService {
     fecha_fin: string;
     ip?: string; // IP pentru LOCACION în Ausencias
     fecha_ultimo_dia_trabajo?: string; // Pentru BAJA_VOLUNTARIA
+    origen?: string; // 'EMPLEADO' sau 'MANAGER'
+    creado_por?: string; // Numele managerului care a creat solicitarea
+    creado_por_email?: string; // Email-ul managerului care a creat solicitarea
   }): Promise<any> {
     try {
       // Validează câmpurile obligatorii
@@ -642,7 +662,9 @@ export class SolicitudesService {
       let fechaUltimoDiaTrabajoSQL = 'NULL';
       let diasPreavisoSQL = 'NULL';
       let cumplePreaviso15SQL = 'FALSE';
-      const origenSQL = this.escapeSql('EMPLEADO');
+      // Acceptă 'MANAGER' dacă este specificat, altfel default 'EMPLEADO'
+      const origen = data.origen === 'MANAGER' ? 'MANAGER' : 'EMPLEADO';
+      const origenSQL = this.escapeSql(origen);
 
       if (data.tipo === 'BAJA_VOLUNTARIA' && data.fecha_ultimo_dia_trabajo) {
         const fechaUltimoDiaDate = new Date(data.fecha_ultimo_dia_trabajo);
@@ -1082,6 +1104,7 @@ export class SolicitudesService {
       fecha_inicio?: string;
       fecha_fin?: string;
       ip?: string; // IP pentru LOCACION în Ausencias
+      mensajePersonalizado?: string; // Mesaj personalizat pentru rechazar
     },
   ): Promise<any> {
     try {
@@ -1652,6 +1675,10 @@ export class SolicitudesService {
           email: solicitud.email || data.email,
           tipoAnterior: esCambioTipoAusencia ? tipoAnterior : undefined,
           tipoNuevo: esCambioTipoAusencia ? tipoNuevo : undefined,
+          mensajePersonalizado:
+            estado === 'Rechazada' && data.mensajePersonalizado
+              ? data.mensajePersonalizado
+              : undefined,
         };
 
         this.logger.log(
@@ -1920,7 +1947,11 @@ export class SolicitudesService {
    * Șterge o solicitare
    * ȘTERGE din ambele tabele: Ausencias + solicitudes (în tranzacție)
    */
-  async deleteSolicitud(id: string, codigo?: string): Promise<any> {
+  async deleteSolicitud(
+    id: string,
+    codigo?: string,
+    mensajePersonalizado?: string,
+  ): Promise<any> {
     try {
       if (!id) {
         throw new BadRequestException('id este obligatoriu pentru delete');
@@ -1982,6 +2013,7 @@ export class SolicitudesService {
           estado: solicitudInfo.estado || '',
           motivo: solicitudInfo.motivo,
           accion: 'delete' as const,
+          mensajePersonalizado: mensajePersonalizado || undefined,
         };
 
         setImmediate(() => {
@@ -1994,7 +2026,7 @@ export class SolicitudesService {
               );
             });
 
-          // Email notification
+          // Email notification către gestoria
           this.sendSolicitudEmail(solicitudNotificationData).catch(
             (emailError: any) => {
               this.logger.warn(
@@ -2002,6 +2034,16 @@ export class SolicitudesService {
               );
             },
           );
+
+          // Email notification către angajat (cu mesaj personalizat dacă există)
+          this.sendSolicitudEmailToEmpleado({
+            ...solicitudNotificationData,
+            email: solicitudInfo.email,
+          }).catch((emailError: any) => {
+            this.logger.warn(
+              `⚠️ Error sending email notification to empleado (non-blocking): ${emailError.message}`,
+            );
+          });
         });
       }
 

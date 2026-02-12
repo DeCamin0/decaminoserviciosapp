@@ -105,7 +105,6 @@ export default defineConfig({
         theme_color: '#E53935',
         background_color: '#ffffff',
         display: 'standalone',
-        orientation: 'portrait-primary',
         scope: process.env.VITE_BASE_PATH || '/',
         start_url: `${process.env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}`, // Adaugă versiunea în start_url pentru a forța actualizarea
         lang: 'es',

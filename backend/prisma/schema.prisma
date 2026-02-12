@@ -341,6 +341,7 @@ model DocumentosOficiales {
   fecha_creacion         String?  @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
   archivo                Bytes?
   Permisso_Para_Empleado String?  @map("Permisso Para Empleado") @db.VarChar(50)
+  necesita_firma         Boolean? @default(false) @map("necesita_firma")
   
   // Email ingestion fields
   status                 String?  @default("SENT") @db.VarChar(50) // PENDING_REVIEW, APPROVED, SENT, ARCHIVED, REJECTED
@@ -1559,4 +1560,23 @@ model PedidosNotasImagen {
   
   @@index([nota_id], map: "idx_pedidos_notas_imagen_nota")
   @@map("pedidos_notas_imagen")
+}
+
+// ============================================
+// PEDIDOS ALBARANES - Sistema de Albaranes para Pedidos
+// ============================================
+
+model PedidosAlbaranes {
+  id             Int       @id @default(autoincrement())
+  pedido_uid     String    @unique @map("pedido_uid") @db.VarChar(64)
+  archivo        Bytes     @map("archivo") @db.LongBlob
+  nombre_archivo String    @map("nombre_archivo") @db.VarChar(255)
+  tipo_mime      String?   @map("tipo_mime") @db.VarChar(100)
+  tamano_bytes   Int?      @map("tamano_bytes")
+  subido_por     String?   @map("subido_por") @db.VarChar(255)
+  subido_en      DateTime  @default(now()) @map("subido_en") @db.DateTime(0)
+  actualizado_en DateTime  @default(now()) @updatedAt @map("actualizado_en") @db.DateTime(0)
+
+  @@index([pedido_uid], map: "idx_pedido_uid")
+  @@map("PedidosAlbaranes")
 }

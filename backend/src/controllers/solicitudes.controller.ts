@@ -130,6 +130,7 @@ export class SolicitudesController {
             fecha_inicio: body.fecha_inicio,
             fecha_fin: body.fecha_fin,
             ip: ip,
+            mensajePersonalizado: body.mensajePersonalizado, // Mesaj personalizat opțional pentru rechazar
           },
         );
 
@@ -139,6 +140,7 @@ export class SolicitudesController {
         const result = await this.solicitudesService.deleteSolicitud(
           String(body.id),
           body.codigo,
+          body.mensajePersonalizado, // Mesaj personalizat opțional
         );
 
         return result;

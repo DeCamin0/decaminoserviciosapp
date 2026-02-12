@@ -56,6 +56,7 @@ const InicioPage = () => {
   const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
   const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
   const [documentosPRLPendientesCount, setDocumentosPRLPendientesCount] = useState(0);
+  const [documentosOficialesNecesitanFirmaCount, setDocumentosOficialesNecesitanFirmaCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [bannerStatusLoading, setBannerStatusLoading] = useState(true);
 
@@ -243,248 +244,31 @@ const InicioPage = () => {
     return hasAccess;
   }, [userPermissions, userGrupo, findGrupoKey]);
 
-  // Calculează accesul la pedidos (după definirea funcțiilor helper)
-  const pedidosAccess = useMemo(() => {
-    const empleado = empleadoCompleto || user || {};
-    const grupo = empleado?.GRUPO || user?.GRUPO;
+  // Încarcă permisiunile din backend
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!userGrupo || user?.isDemo) {
+        setLoadingPermissions(false);
+        return;
+      }
 
-    // 🔍 LOG: Datele din DatosEmpleados
-    console.log('🔍 [DashboardPage] ===== PEDIDOS ACCESS DEBUG =====');
-    console.log('📋 [DashboardPage] User object (DatosEmpleados):', {
-      CODIGO: empleado?.CODIGO,
-      GRUPO: empleado?.GRUPO || grupo,
-      NOMBRE: empleado?.['NOMBRE / APELLIDOS'] || empleado?.NOMBRE,
-      isManager: empleado?.isManager,
-      isDemo: empleado?.isDemo,
-      // Câmpuri relevante pentru pedidos
-      derechopedido: empleado?.derechopedido,
-      DERECHO_PEDIDO: empleado?.DERECHO_PEDIDO,
-      pedidos_permitido: empleado?.pedidos_permitido,
-      canMakePedidos: empleado?.canMakePedidos,
-      PEDIDOS_PERMITIDO: empleado?.PEDIDOS_PERMITIDO,
-      DERECHO_PEDIDOS: empleado?.DERECHO_PEDIDOS,
-      PEDIDOS_ACCESO: empleado?.PEDIDOS_ACCESO,
-      ACCESO_PEDIDOS: empleado?.ACCESO_PEDIDOS,
-      PEDIDOS_HABILITADO: empleado?.PEDIDOS_HABILITADO,
-      HABILITADO_PEDIDOS: empleado?.HABILITADO_PEDIDOS,
-      PEDIDOS_ACTIVO: empleado?.PEDIDOS_ACTIVO,
-      ACTIVO_PEDIDOS: empleado?.ACTIVO_PEDIDOS,
-      DerechoPedidos: empleado?.DerechoPedidos,
-      derechoPedidos: empleado?.derechoPedidos,
-      derecho_pedidos: empleado?.derecho_pedidos,
-      // Toate câmpurile care conțin "pedido"
-      allPedidoFields: Object.keys(empleado || {}).filter(key => 
-        key.toLowerCase().includes('pedido')
-      ).reduce((acc, key) => {
-        acc[key] = empleado[key];
-        return acc;
-      }, {}),
-    });
-    
-    // 🔍 LOG: Datele din Permisos
-    console.log('🔐 [DashboardPage] Permissions object (Permisos table):', {
-      userPermissions,
-      loadingPermissions,
-      userGrupo,
-      hasBackendPermissions: userPermissions && Object.keys(userPermissions).length > 0,
-      permissionsKeys: userPermissions ? Object.keys(userPermissions) : [],
-    });
-
-    const checkField = (value) => {
-      if (!value) return false;
-      const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value;
-      if (typeof normalized === 'boolean') {
-        return normalized;
+      // Nu blocăm UI; marcăm loading false imediat și populăm când sosesc
+      setLoadingPermissions(false);
+      try {
+        console.log('🔐 DashboardPage: Loading permissions for grupo (non-blocking):', userGrupo);
+        const permissions = await getPermissions(userGrupo);
+        console.log('✅ DashboardPage: Permissions loaded:', permissions);
+        setUserPermissions(permissions);
+      } catch (error) {
+        console.error('❌ DashboardPage: Error loading permissions:', error);
+        setUserPermissions(null);
       }
-      if (typeof normalized === 'number') {
-        return normalized === 1;
-      }
-      if (typeof normalized === 'string') {
-        return ['s', 'si', 'sí', '1', 'y', 'yes', 'true'].includes(normalized);
-      }
-      return false;
     };
 
-    const pedidosFields = [
-      'derechopedido',
-      'DERECHO_PEDIDO',
-      'pedidos_permitido',
-      'canMakePedidos',
-      'PEDIDOS_PERMITIDO',
-      'DERECHO_PEDIDOS',
-      'PEDIDOS_ACCESO',
-      'ACCESO_PEDIDOS',
-      'PEDIDOS_HABILITADO',
-      'HABILITADO_PEDIDOS',
-      'PEDIDOS_ACTIVO',
-      'ACTIVO_PEDIDOS',
-      'DerechoPedidos',
-      'derechoPedidos',
-      'derecho_pedidos',
-    ];
+    loadPermissions();
+  }, [userGrupo, user?.isDemo, getPermissions]);
 
-    const hasFieldPermission = pedidosFields.some((field) =>
-      checkField(empleado?.[field]),
-    );
-
-    const hasGenericPermission = Object.keys(empleado || {}).some(
-      (key) =>
-        key.toLowerCase().includes('pedido') && checkField(empleado[key]),
-    );
-
-    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
-
-    // ✅ Verifică permisiunile din backend (permissos)
-    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
-    const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
-    const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
-    const shouldUseBackend = useBackendPermissions && grupoKeyExists;
-    
-    // ✅ ACTUALIZAT: Verifică ambele tipuri de permisiuni pedidos
-    // pedidos-empleados = acces limitat (doar Nuevo Pedido, doar centrul lor)
-    // pedidos-admin = acces complet (toate tab-urile, toate comunitățile)
-    const hasDashboardPermission = shouldUseBackend ? hasPermission('dashboard') : false;
-    const hasPedidosEmpleadosPermission = shouldUseBackend ? hasPermission('pedidos-empleados') : false;
-    const hasPedidosAdminPermission = shouldUseBackend ? hasPermission('pedidos-admin') : false;
-    
-    // Fallback: verifică și permisiunea veche 'pedidos' (pentru compatibilitate)
-    const hasPedidosPermissionOld = shouldUseBackend ? hasPermission('pedidos') : false;
-    
-    // Dacă are 'dashboard', verifică individual (din DatosEmpleados) - DOAR pentru fallback strict
-    const hasIndividualPedidosAccess = hasDashboardPermission && (hasFieldPermission || hasGenericPermission);
-    
-    // ✅ CORECTAT: Acces complet dacă are 'pedidos-admin' SAU permisiunea veche 'pedidos'
-    // Acces limitat dacă are 'pedidos-empleados' ȘI verifică și DerechoPedidos din DatosEmpleados
-    // NU mai folosim hasIndividualPedidosAccess aici - doar pentru fallback strict
-    const hasBackendPedidosPermission = hasPedidosAdminPermission || hasPedidosPermissionOld;
-    
-    // ✅ ACTUALIZAT: Verifică dacă are permisiune în matrix (pentru a afișa link-ul)
-    // Link-ul apare dacă are permisiune în matrix, dar este enabled doar dacă are și DerechoPedidos
-    const hasMatrixPedidosEmpleadosPermission = hasPedidosEmpleadosPermission; // Doar permisiunea din matrix
-    const hasBackendPedidosEmpleadosPermission = hasPedidosEmpleadosPermission && (hasFieldPermission || hasGenericPermission); // Matrix + DerechoPedidos
-    
-    // ✅ ACTUALIZAT: Link-ul apare dacă are permisiune în matrix (pentru pedidos-empleados sau pedidos-admin)
-    // Link-ul este enabled (canAccess = true) doar dacă are și DerechoPedidos: SI
-    const hasAnyMatrixPedidosPermission = hasPedidosAdminPermission || hasPedidosPermissionOld || hasMatrixPedidosEmpleadosPermission;
-    
-    // 🔍 LOG: Rezultatele verificărilor
-    const grupoKey = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) : null;
-    const grupoPermissions = grupoKey && userPermissions ? userPermissions[grupoKey] : null;
-    console.log('🔍 [DashboardPage] Permission checks:', {
-      hasSpecialAccess,
-      isManager,
-      isAdmin,
-      isDeveloper,
-      hasBackendPermissions,
-      useBackendPermissions,
-      grupoKeyExists,
-      grupoKey,
-      grupoPermissions: grupoPermissions ? {
-        ...grupoPermissions,
-        // Log explicit pentru pedidos și dashboard
-        'pedidos-empleados': grupoPermissions['pedidos-empleados'],
-        'pedidos-admin': grupoPermissions['pedidos-admin'],
-        pedidos: grupoPermissions.pedidos, // Fallback pentru compatibilitate
-        dashboard: grupoPermissions.dashboard,
-        // Toate cheile disponibile
-        allKeys: Object.keys(grupoPermissions),
-      } : null,
-      shouldUseBackend,
-      hasDashboardPermission,
-      hasPedidosEmpleadosPermission,
-      hasPedidosAdminPermission,
-      hasPedidosPermissionOld,
-      hasIndividualPedidosAccess,
-      hasBackendPedidosPermission,
-      hasMatrixPedidosEmpleadosPermission,
-      hasBackendPedidosEmpleadosPermission,
-      hasAnyMatrixPedidosPermission,
-      hasFieldPermission,
-      hasGenericPermission,
-      // Log pentru verificarea combinată
-      pedidosEmpleadosCheck: {
-        hasMatrixPermission: hasPedidosEmpleadosPermission,
-        hasDerechoPedidos: hasFieldPermission || hasGenericPermission,
-        finalResult: hasPedidosEmpleadosPermission && (hasFieldPermission || hasGenericPermission),
-      },
-      backendSystemExists: userPermissions !== null || loadingPermissions === true,
-    });
-
-    // ✅ CORECTAT STRICT: Pentru angajații normali, verificăm DOAR permisiunile din backend
-    // Managerii/Adminii/Developerii au acces complet (hasSpecialAccess)
-    // Fallback-ul este doar pentru cazuri în care sistemul de permisiuni backend nu există deloc
-    // (de exemplu, dacă userPermissions este null și loadingPermissions este false - sistemul nu a încercat să încarce permisiuni)
-    const backendSystemExists = userPermissions !== null || loadingPermissions === true;
-    
-    const canAccess =
-      hasSpecialAccess || // Manager/Admin/Developer au acces complet
-      hasBackendPedidosPermission || // Sau au permisiunea 'pedidos-admin' sau 'pedidos' (veche) în backend
-      hasBackendPedidosEmpleadosPermission || // Sau au permisiunea 'pedidos-empleados' în backend ȘI DerechoPedidos: SI
-      (!backendSystemExists && hasIndividualPedidosAccess) || // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc (dashboard + DerechoPedidos)
-      (!backendSystemExists && hasFieldPermission) || // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
-      (!backendSystemExists && hasGenericPermission); // Fallback STRICT: doar dacă sistemul de permisiuni backend nu există deloc
-
-    // 🔍 LOG: Rezultatul final cu toate valorile
-    console.log('✅ [DashboardPage] Final decision - ALL VALUES:', {
-      // Valori individuale
-      hasSpecialAccess,
-      hasPedidosAdminPermission,
-      hasPedidosEmpleadosPermission,
-      hasPedidosPermissionOld,
-      hasBackendPedidosPermission,
-      hasBackendPedidosEmpleadosPermission,
-      backendSystemExists,
-      hasIndividualPedidosAccess,
-      hasFieldPermission,
-      hasGenericPermission,
-      // Calculul final
-      canAccess,
-      // Breakdown al calculului
-      canAccessBreakdown: {
-        fromSpecialAccess: hasSpecialAccess,
-        fromPedidosAdmin: hasBackendPedidosPermission,
-        fromPedidosEmpleados: hasBackendPedidosEmpleadosPermission,
-        fromFallbackIndividual: !backendSystemExists && hasIndividualPedidosAccess,
-        fromFallbackField: !backendSystemExists && hasFieldPermission,
-        fromFallbackGeneric: !backendSystemExists && hasGenericPermission,
-      },
-      reason: hasSpecialAccess ? 'hasSpecialAccess (Manager/Admin/Developer)' :
-               hasPedidosAdminPermission ? 'hasPedidosAdminPermission (permisiune pedidos-admin pe grup)' :
-               hasPedidosPermissionOld ? 'hasPedidosPermissionOld (permisiune pedidos veche - compatibilitate)' :
-               hasBackendPedidosEmpleadosPermission ? 'hasBackendPedidosEmpleadosPermission (pedidos-empleados în matrix ȘI DerechoPedidos: SI în DatosEmpleados)' :
-               (!backendSystemExists && hasIndividualPedidosAccess) ? 'Fallback STRICT: hasIndividualPedidosAccess (dashboard + DerechoPedidos - sistem backend nu există)' :
-               (!backendSystemExists && hasFieldPermission) ? 'Fallback STRICT: hasFieldPermission (câmpuri în DatosEmpleados - sistem backend nu există)' :
-               (!backendSystemExists && hasGenericPermission) ? 'Fallback STRICT: hasGenericPermission (câmpuri generice - sistem backend nu există)' :
-               'NO ACCESS',
-      href: (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) ? '/pedidos' : 
-            (hasBackendPedidosEmpleadosPermission ? '/empleado-pedidos' : null),
-      role: (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) ? 'manager' : 
-            (hasBackendPedidosEmpleadosPermission ? 'empleado' : undefined),
-    });
-    console.log('🔍 [DashboardPage] ===== END PEDIDOS ACCESS DEBUG =====\n');
-
-    const hint = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld)
-      ? 'Gestionar pedidos y permisos de productos'
-      : hasBackendPedidosEmpleadosPermission
-        ? 'Crear nuevos pedidos'
-        : canAccess
-          ? 'Crear nuevos pedidos'
-          : 'No tienes permisos para crear pedidos';
-
-    // ✅ ACTUALIZAT: Link-ul apare dacă are permisiune în matrix, dar este enabled doar dacă are și DerechoPedidos
-    // hasAnyMatrixPedidosPermission = link-ul apare (enabled sau disabled)
-    // canAccess = link-ul este enabled (colorat, funcțional)
-    return {
-      canAccess, // canAccess = true dacă are permisiune în matrix ȘI DerechoPedidos: SI
-      hasAnyMatrixPermission: hasAnyMatrixPedidosPermission, // Link-ul apare dacă are permisiune în matrix (chiar dacă nu are DerechoPedidos)
-      hint,
-      href: (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) ? '/pedidos' : 
-            (hasBackendPedidosEmpleadosPermission ? '/empleado-pedidos' : null),
-      role: (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) ? 'manager' : 
-            (hasBackendPedidosEmpleadosPermission ? 'empleado' : undefined),
-    };
-  }, [empleadoCompleto, user, isManager, isAdmin, isDeveloper, userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission]);
-
+  // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)
   // Încarcă permisiunile din backend
   useEffect(() => {
     const loadPermissions = async () => {
@@ -681,6 +465,81 @@ const InicioPage = () => {
     };
   }, [user?.CODIGO, user?.isDemo]);
 
+  // Fetch documente oficiale care necesită firmă pentru badge
+  useEffect(() => {
+    const fetchDocumentosOficialesNecesitanFirmaCount = async () => {
+      if (!user?.CODIGO || user?.isDemo) {
+        setDocumentosOficialesNecesitanFirmaCount(0);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        const url = routes.countDocumentosNecesitanFirma(user.CODIGO);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        if (response.status === 404 || response.status === 500) {
+          setDocumentosOficialesNecesitanFirmaCount(0);
+          return;
+        }
+
+        if (!response.ok) {
+          console.warn(`Warning: Error HTTP ${response.status} al obtener documentos oficiales que necesitan firma`);
+          setDocumentosOficialesNecesitanFirmaCount(0);
+          return;
+        }
+
+        const data = await response.json();
+        
+        if (data.success && typeof data.count === 'number') {
+          setDocumentosOficialesNecesitanFirmaCount(data.count);
+        } else {
+          setDocumentosOficialesNecesitanFirmaCount(0);
+        }
+      } catch (error) {
+        console.warn('Warning: Error obteniendo documentos oficiales que necesitan firma:', error);
+        setDocumentosOficialesNecesitanFirmaCount(0);
+      }
+    };
+
+    fetchDocumentosOficialesNecesitanFirmaCount();
+    
+    // Reîncarcă la fiecare 60 de secunde pentru a actualiza badge-ul
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          fetchDocumentosOficialesNecesitanFirmaCount();
+        }
+      }, 60000); // 60 secunde
+    };
+    
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        fetchDocumentosOficialesNecesitanFirmaCount();
+        startPolling();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.CODIGO, user?.isDemo]);
+
   const quickAccessItems = useMemo(() => {
     // Dacă permisiunile nu sunt încă încărcate, folosim verificările hardcodate ca fallback
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
@@ -756,8 +615,8 @@ const InicioPage = () => {
       });
     }
 
-    // Calculează totalul de notificări (documentos solicitados + PRL pendientes)
-    const totalNotifications = documentosSolicitadosCount + documentosPRLPendientesCount;
+    // Calculează totalul de notificări (documentos solicitados + PRL pendientes + documentos oficiales que necesitan firma)
+    const totalNotifications = documentosSolicitadosCount + documentosPRLPendientesCount + documentosOficialesNecesitanFirmaCount;
     
     if (canAccessDocumentos) {
       list.push({
@@ -888,44 +747,36 @@ const InicioPage = () => {
       });
     }
 
-    // 🔍 DEBUG: Verifică valoarea exactă înainte de a adăuga link-ul
-    console.log('🔍 [DashboardPage] Before adding Pedidos link:', {
-      pedidosAccessCanAccess: pedidosAccess.canAccess,
-      pedidosAccessHasAnyMatrixPermission: pedidosAccess.hasAnyMatrixPermission,
-      pedidosAccess: pedidosAccess,
-      willAddEnabled: pedidosAccess.canAccess,
-      willAddDisabled: pedidosAccess.hasAnyMatrixPermission && !pedidosAccess.canAccess,
-      willNotAdd: !pedidosAccess.hasAnyMatrixPermission,
+    // ✅ ACTUALIZAT: Butonul "Pedidos" este mereu vizibil pentru toți angajații
+    // Verificarea DerechoPedidos se face în EmpleadoPedidosPage
+    // Link-ul se calculează în funcție de permisiuni: /pedidos pentru admin, /empleado-pedidos pentru empleados
+    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
+    const hasPedidosAdminPermission = shouldUseBackend ? hasPermission('pedidos-admin') : false;
+    const hasPedidosPermissionOld = shouldUseBackend ? hasPermission('pedidos') : false;
+    const pedidosHref = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) 
+      ? '/pedidos' 
+      : '/empleado-pedidos';
+    const pedidosRole = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) 
+      ? 'manager' 
+      : 'empleado';
+    
+    console.log('✅ [DashboardPage] Adding Pedidos link:', {
+      hasSpecialAccess,
+      hasPedidosAdminPermission,
+      hasPedidosPermissionOld,
+      href: pedidosHref,
+      role: pedidosRole,
     });
     
-    // ✅ ACTUALIZAT: Link-ul apare dacă are permisiune în matrix
-    // Este enabled dacă are și DerechoPedidos: SI, disabled dacă nu are
-    if (pedidosAccess.hasAnyMatrixPermission) {
-      if (pedidosAccess.canAccess) {
-        console.log('✅ [DashboardPage] Adding ENABLED Pedidos link (has matrix permission + DerechoPedidos)');
-        list.push({
-          id: 'pedidos',
-          label: 'Pedidos',
-          hint: pedidosAccess.hint,
-          icon: <ShoppingCart className="h-6 w-6 text-white" />,
-          gradient: 'from-amber-500 via-orange-500 to-yellow-500',
-          href: pedidosAccess.href,
-          role: pedidosAccess.role,
-        });
-      } else {
-        console.log('⚠️ [DashboardPage] Adding DISABLED Pedidos link (has matrix permission but NO DerechoPedidos)');
-        list.push({
-          id: 'pedidos',
-          label: 'Pedidos',
-          hint: pedidosAccess.hint || 'No tienes permisos para crear pedidos',
-          icon: <ShoppingCart className="h-6 w-6 text-white" />,
-          gradient: 'from-amber-500 via-orange-500 to-yellow-500',
-          disabled: true, // Link-ul apare dar este disabled (gri)
-        });
-      }
-    } else {
-      console.log('❌ [DashboardPage] NOT adding Pedidos link (no matrix permission)');
-    }
+    list.push({
+      id: 'pedidos',
+      label: 'Pedidos',
+      hint: 'Gestiona tus pedidos',
+      icon: <ShoppingCart className="h-6 w-6 text-white" />,
+      gradient: 'from-amber-500 via-orange-500 to-yellow-500',
+      href: pedidosHref,
+      role: pedidosRole,
+    });
 
     const canAccessAdmin = shouldUseBackend ? hasPermission('admin') : (isAdmin || isDeveloper);
     const canAccessStats = shouldUseBackend ? hasPermission('estadisticas') : (isAdmin || isDeveloper || user?.GRUPO === 'Supervisor');
@@ -998,7 +849,6 @@ const InicioPage = () => {
     return list;
   }, [
     isManager,
-    pedidosAccess,
     isAdmin,
     isDeveloper,
     user?.GRUPO,
@@ -1010,6 +860,7 @@ const InicioPage = () => {
     comunicadosUnreadCount,
     documentosSolicitadosCount,
     documentosPRLPendientesCount,
+    documentosOficialesNecesitanFirmaCount,
   ]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)

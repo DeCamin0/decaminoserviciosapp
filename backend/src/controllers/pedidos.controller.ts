@@ -10,7 +10,11 @@ import {
   UseGuards,
   Query,
   Res,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { PedidosService } from '../services/pedidos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -238,5 +242,48 @@ export class PedidosController {
       body.enviarProveedor,
       senderId,
     );
+  }
+
+  @Post(':pedidoUid/albaran')
+  @UseInterceptors(FileInterceptor('albaran'))
+  async uploadAlbaran(
+    @Param('pedidoUid') pedidoUid: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
+  ) {
+    const decodedUid = decodeURIComponent(pedidoUid);
+
+    if (!file) {
+      throw new BadRequestException('Se requiere un archivo para el albarán');
+    }
+
+    // Obține numele și codigo-ul utilizatorului
+    let userInfo = 'unknown';
+    try {
+      const codigo = user?.userId || user?.codigo;
+      if (codigo) {
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        if (empleado) {
+          const nombre = this.empleadosService.getFormattedNombre(empleado);
+          userInfo = `${nombre} (${codigo})`;
+        } else {
+          userInfo = codigo;
+        }
+      } else {
+        userInfo = user?.email || 'unknown';
+      }
+    } catch {
+      this.logger.warn(
+        `⚠️ Could not fetch empleado info for user: ${user?.userId || user?.codigo || 'unknown'}, using fallback`,
+      );
+      userInfo = user?.userId || user?.codigo || user?.email || 'unknown';
+    }
+
+    this.logger.log(
+      `📦 [PedidosController] Uploading albarán for pedido ${decodedUid} by user: ${userInfo}`,
+    );
+
+    return this.pedidosService.uploadAlbaran(decodedUid, file, userInfo);
   }
 }

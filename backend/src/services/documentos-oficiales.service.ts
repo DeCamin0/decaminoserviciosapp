@@ -5,13 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from './telegram.service';
 import * as path from 'path';
 
 @Injectable()
 export class DocumentosOficialesService {
   private readonly logger = new Logger(DocumentosOficialesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegramService: TelegramService,
+  ) {}
 
   /**
    * Helper function pentru a escapa valori SQL (prevenir SQL injection)
@@ -65,6 +69,7 @@ export class DocumentosOficialesService {
           nombre_empleado,
           fecha_creacion,
           \`Permisso Para Empleado\` as permisso_para_empleado,
+          necesita_firma,
           detected_empleado_id,
           status
         FROM \`DocumentosOficiales\`
@@ -92,6 +97,7 @@ export class DocumentosOficialesService {
         nombre_empleado: doc.nombre_empleado,
         fecha_creacion: doc.fecha_creacion,
         permisso_para_empleado: doc.permisso_para_empleado,
+        necesita_firma: doc.necesita_firma === 1 || doc.necesita_firma === true,
       }));
     } catch (error: any) {
       this.logger.error('❌ Error fetching documentos oficiales:', error);
@@ -504,7 +510,7 @@ export class DocumentosOficialesService {
       `;
 
       const existingDocs = await this.prisma.$queryRawUnsafe<any[]>(checkQuery);
-      
+
       if (existingDocs.length === 0) {
         throw new NotFoundException(
           `Documento oficial no encontrado para doc_id=${docIdNumber}`,
@@ -536,7 +542,9 @@ export class DocumentosOficialesService {
       } else {
         // Multiple documents with same doc_id - need to match by filename
         // Use LIKE for more flexible matching (handles spaces, encoding differences)
-        const nombrePattern = nombreArchivoNormalized.replace(/%/g, '\\%').replace(/_/g, '\\_');
+        const nombrePattern = nombreArchivoNormalized
+          .replace(/%/g, '\\%')
+          .replace(/_/g, '\\_');
         query = `
           DELETE FROM \`DocumentosOficiales\`
           WHERE doc_id = CAST(${docIdNumber} AS UNSIGNED)
@@ -557,7 +565,7 @@ export class DocumentosOficialesService {
         const actualFilename = existingDocs[0]?.nombre_archivo || 'N/A';
         throw new NotFoundException(
           `Documento oficial no encontrado para doc_id=${docIdNumber} y nombre_archivo="${nombreArchivo.trim()}". ` +
-          `Documento existente tiene nombre_archivo: "${actualFilename}"`,
+            `Documento existente tiene nombre_archivo: "${actualFilename}"`,
         );
       }
 
@@ -626,9 +634,15 @@ export class DocumentosOficialesService {
     nombre_empleado?: string;
     fecha_creacion?: string | Date;
     mime?: string;
-    doc_id?: number; // ignored
+    doc_id?: number; // Dacă este prezent, face UPDATE în loc de INSERT
+    update_existing?: boolean | number | string; // Flag pentru a forța UPDATE (acceptă boolean, number sau string pentru compatibilitate)
   }): Promise<{ success: true; message: string; doc_id: number }> {
     try {
+      // Log imediat ce primește backend-ul
+      this.logger.log(
+        `🔍 [saveSignedDocument] Request received - id: ${body.id}, nombre_archivo: "${body.nombre_archivo}", update_existing: ${body.update_existing}, doc_id: ${body.doc_id}`,
+      );
+
       // Validate required fields
       if (!body.signed_b64) {
         throw new BadRequestException(
@@ -672,51 +686,201 @@ export class DocumentosOficialesService {
       // Parse fecha_creacion
       const fechaMysql = this.toMysqlDatetime(body.fecha_creacion);
 
-      // Build INSERT query (matching n8n snapshot logic)
-      // doc_id is NULL to use autoincrement
-      const query = `
-        INSERT INTO \`DocumentosOficiales\` (
-          doc_id,
-          \`id\`,
-          correo_electronico,
-          tipo_documento,
-          nombre_archivo,
-          nombre_empleado,
-          fecha_creacion,
-          archivo
-        ) VALUES (
-          NULL,
-          ${this.escapeSql(idPayload)},
-          ${this.escapeSql(correoElectronico)},
-          ${this.escapeSql(tipoDocumento)},
-          ${this.escapeSql(fileNameRaw)},
-          ${this.escapeSql(nombreEmpleado)},
-          ${fechaMysql ? this.escapeSql(fechaMysql) : 'NOW()'},
-          FROM_BASE64(${this.escapeSql(b64)})
-        )
-      `.trim();
-
+      // Verifică dacă trebuie să facem UPDATE sau INSERT
       this.logger.log(
-        `💾 Save signed document request - id: ${idPayload}, nombre_archivo: "${fileNameRaw}", nombre_empleado: "${nombreEmpleado || '(derivado)'}"`,
+        `🔍 [saveSignedDocument] Verificando modo de guardado - update_existing: ${body.update_existing}, doc_id: ${body.doc_id}`,
       );
 
-      // Execute INSERT
-      await this.prisma.$executeRawUnsafe(query);
-
-      // Get the inserted doc_id (last insert id)
-      const result = await this.prisma.$queryRawUnsafe<
-        Array<{ LAST_INSERT_ID: bigint }>
-      >('SELECT LAST_INSERT_ID() as LAST_INSERT_ID');
-      const docId = Number(result[0]?.LAST_INSERT_ID || 0);
+      // Verifică dacă update_existing este boolean true sau un număr valid (pentru compatibilitate)
+      const updateExistingFlag =
+        body.update_existing === true ||
+        body.update_existing === 1 ||
+        body.update_existing === 'true' ||
+        body.update_existing === '1';
+      const shouldUpdate =
+        updateExistingFlag && body.doc_id && Number(body.doc_id) > 0;
+      const docIdToUpdate = shouldUpdate ? Number(body.doc_id) : null;
 
       this.logger.log(
-        `✅ Documento firmado guardado: doc_id=${docId}, id="${idPayload}", nombre_archivo="${fileNameRaw}"`,
+        `🔍 [saveSignedDocument] Decisión: shouldUpdate=${shouldUpdate}, docIdToUpdate=${docIdToUpdate}`,
       );
+
+      let finalDocId: number;
+
+      if (shouldUpdate && docIdToUpdate) {
+        // UPDATE: Înlocuiește documentul existent cu cel semnat
+        // NU schimbăm tipo_documento (rămâne la fel, nu devine "CONTRATO firmado")
+        // NU schimbăm necesita_firma (rămâne la fel)
+        // NU schimbăm Permisso_Para_Empleado (rămâne la fel)
+        // Doar actualizăm archivo (fișierul) cu cel semnat
+        const updateQuery = `
+          UPDATE \`DocumentosOficiales\`
+          SET 
+            archivo = FROM_BASE64(${this.escapeSql(b64)}),
+            fecha_creacion = ${fechaMysql ? this.escapeSql(fechaMysql) : 'NOW()'}
+          WHERE doc_id = ${docIdToUpdate}
+        `.trim();
+
+        this.logger.log(
+          `💾 Update signed document request - doc_id: ${docIdToUpdate}, id: ${idPayload}, nombre_archivo: "${fileNameRaw}"`,
+        );
+
+        try {
+          await this.prisma.$executeRawUnsafe(updateQuery);
+          finalDocId = docIdToUpdate;
+        } catch (updateError: any) {
+          this.logger.error(`❌ Error executing UPDATE query:`, updateError);
+          this.logger.error(`❌ Query was: ${updateQuery.substring(0, 1000)}`);
+          throw updateError;
+        }
+
+        this.logger.log(
+          `✅ Documento firmado actualizado: doc_id=${finalDocId}, id="${idPayload}", nombre_archivo="${fileNameRaw}"`,
+        );
+
+        // IMPORTANT: Nu facem INSERT după UPDATE - returnăm direct
+        // Nu continuăm cu logica de INSERT
+      } else {
+        // INSERT: Creează un document nou (comportament vechi - doar pentru DocumentosPage)
+        this.logger.log(
+          `⚠️ [saveSignedDocument] Se va hacer INSERT (no UPDATE) - update_existing=${body.update_existing}, doc_id=${body.doc_id}`,
+        );
+        const query = `
+          INSERT INTO \`DocumentosOficiales\` (
+            doc_id,
+            \`id\`,
+            correo_electronico,
+            tipo_documento,
+            nombre_archivo,
+            nombre_empleado,
+            fecha_creacion,
+            archivo,
+            necesita_firma,
+            \`Permisso Para Empleado\`
+          ) VALUES (
+            NULL,
+            ${this.escapeSql(idPayload)},
+            ${this.escapeSql(correoElectronico)},
+            ${this.escapeSql(tipoDocumento)},
+            ${this.escapeSql(fileNameRaw)},
+            ${this.escapeSql(nombreEmpleado)},
+            ${fechaMysql ? this.escapeSql(fechaMysql) : 'NOW()'},
+            FROM_BASE64(${this.escapeSql(b64)}),
+            0,
+            'SI'
+          )
+        `.trim();
+
+        this.logger.log(
+          `💾 Save signed document request - id: ${idPayload}, nombre_archivo: "${fileNameRaw}", nombre_empleado: "${nombreEmpleado || '(derivado)'}"`,
+        );
+
+        try {
+          await this.prisma.$executeRawUnsafe(query);
+        } catch (insertError: any) {
+          this.logger.error(`❌ Error executing INSERT query:`, insertError);
+          this.logger.error(`❌ Query was: ${query.substring(0, 1000)}`);
+          throw insertError;
+        }
+
+        // Get the inserted doc_id (last insert id)
+        const result = await this.prisma.$queryRawUnsafe<
+          Array<{ LAST_INSERT_ID: bigint }>
+        >('SELECT LAST_INSERT_ID() as LAST_INSERT_ID');
+        finalDocId = Number(result[0]?.LAST_INSERT_ID || 0);
+
+        this.logger.log(
+          `✅ Documento firmado guardado: doc_id=${finalDocId}, id="${idPayload}", nombre_archivo="${fileNameRaw}"`,
+        );
+      }
+
+      // Trimite notificare Telegram către gestoria
+      try {
+        if (this.telegramService.isConfigured()) {
+          const fechaFormateada = new Date().toLocaleDateString('es-ES', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+
+          // Escape-uiește caracterele speciale Markdown pentru Telegram
+          const escapeMarkdown = (text: string): string => {
+            if (!text) return text || 'N/A';
+            return String(text)
+              .replace(/_/g, '\\_')
+              .replace(/\*/g, '\\*')
+              .replace(/\[/g, '\\[')
+              .replace(/\]/g, '\\]')
+              .replace(/\(/g, '\\(')
+              .replace(/\)/g, '\\)')
+              .replace(/~/g, '\\~')
+              .replace(/`/g, '\\`')
+              .replace(/>/g, '\\>')
+              .replace(/#/g, '\\#')
+              .replace(/\+/g, '\\+')
+              .replace(/=/g, '\\=')
+              .replace(/\|/g, '\\|')
+              .replace(/\{/g, '\\{')
+              .replace(/\}/g, '\\}')
+              .replace(/\./g, '\\.')
+              .replace(/!/g, '\\!');
+          };
+
+          const nombreEmpleadoEscaped = escapeMarkdown(nombreEmpleado || 'N/A');
+          const codigoEscaped = escapeMarkdown(idPayload);
+          const fileNameEscaped = escapeMarkdown(fileNameRaw);
+          const tipoEscaped = escapeMarkdown(
+            tipoDocumento || 'Documento Oficial',
+          );
+
+          // Determină dacă este semnat de firmă (UPDATE) sau de angajat (INSERT)
+          const esFirmadoPorEmpresa = shouldUpdate;
+          const firmadoPor = esFirmadoPorEmpresa
+            ? '🏢 *Firmado por:* Empresa'
+            : '👤 *Firmado por:* Empleado';
+
+          this.logger.log(
+            `🔍 [Telegram] shouldUpdate=${shouldUpdate}, esFirmadoPorEmpresa=${esFirmadoPorEmpresa}, firmadoPor="${firmadoPor}"`,
+          );
+
+          const telegramMessage = `✍️ *Documento Firmado*
+
+${firmadoPor}
+👤 *Empleado:* ${nombreEmpleadoEscaped}
+📋 *Código:* ${codigoEscaped}
+📄 *Archivo:* ${fileNameEscaped}
+📝 *Tipo:* ${tipoEscaped}
+📅 *Fecha:* ${fechaFormateada}
+🆔 *Doc ID:* ${String(finalDocId)}
+
+✅ El documento ha sido firmado y guardado exitosamente.`;
+
+          this.logger.log(
+            `🔍 [Telegram] Message to send (first 200 chars): ${telegramMessage.substring(0, 200)}`,
+          );
+
+          await this.telegramService.sendMessage(telegramMessage);
+          this.logger.log(
+            `✅ Notificación Telegram enviada a gestoria para documento firmado ${esFirmadoPorEmpresa ? 'por empresa' : 'por empleado'}: ${fileNameRaw}`,
+          );
+        } else {
+          this.logger.warn(
+            '⚠️ Telegram service no configurado, no se envió notificación',
+          );
+        }
+      } catch (telegramError: any) {
+        this.logger.warn(
+          `⚠️ Error enviando notificación Telegram (non-blocking): ${telegramError.message}`,
+        );
+        // Nu aruncăm eroarea pentru a nu bloca salvarea documentului
+      }
 
       return {
         success: true,
         message: 'Documento firmado guardado correctamente.',
-        doc_id: docId,
+        doc_id: finalDocId,
       };
     } catch (error: any) {
       this.logger.error('❌ Error saving signed document:', error);
@@ -811,6 +975,281 @@ export class DocumentosOficialesService {
       throw new BadRequestException(
         `Error al actualizar Permisso_Para_Empleado: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Actualizează câmpul necesita_firma pentru un document oficial
+   * @param docId - doc_id din tabela DocumentosOficiales
+   * @param necesitaFirma - valoarea boolean pentru necesita_firma
+   */
+  async updateNecesitaFirma(
+    docId: number | string,
+    necesitaFirma: boolean,
+  ): Promise<{ success: true; message: string; affectedRows: number }> {
+    try {
+      // Validate docId
+      const docIdNumber =
+        typeof docId === 'string' ? parseInt(docId, 10) : docId;
+      if (isNaN(docIdNumber) || docIdNumber <= 0) {
+        throw new BadRequestException(`Parámetro "docId" inválido: ${docId}`);
+      }
+
+      // Convert boolean to MySQL TINYINT (0 or 1)
+      const necesitaFirmaValue = necesitaFirma ? 1 : 0;
+
+      // Build UPDATE query
+      const query = `
+        UPDATE \`DocumentosOficiales\`
+        SET necesita_firma = ${necesitaFirmaValue}
+        WHERE doc_id = ${docIdNumber}
+        LIMIT 1
+      `;
+
+      this.logger.log(
+        `🔄 Update necesita_firma request - doc_id: ${docIdNumber}, necesita_firma: ${necesitaFirmaValue}`,
+      );
+
+      const result = await this.prisma.$executeRawUnsafe(query);
+      const affectedRows = Number(result) || 0;
+
+      if (affectedRows === 0) {
+        throw new NotFoundException(
+          `Documento oficial no encontrado para doc_id=${docIdNumber}`,
+        );
+      }
+
+      this.logger.log(
+        `✅ necesita_firma actualizado: doc_id=${docIdNumber}, necesita_firma=${necesitaFirmaValue}`,
+      );
+
+      return {
+        success: true,
+        message: 'necesita_firma actualizado correctamente.',
+        affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error updating necesita_firma:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al actualizar necesita_firma: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Marchează un contract ca fiind semnat (actualizează tipo_documento la "CONTRATO firmado",
+   * necesita_firma la false și Permisso_Para_Empleado la 'SI')
+   * @param docId - doc_id din tabela DocumentosOficiales
+   */
+  async marcarContratoComoFirmado(
+    docId: number | string,
+  ): Promise<{ success: true; message: string; affectedRows: number }> {
+    try {
+      // Validate docId
+      const docIdNumber =
+        typeof docId === 'string' ? parseInt(docId, 10) : docId;
+      if (isNaN(docIdNumber) || docIdNumber <= 0) {
+        throw new BadRequestException(`Parámetro "docId" inválido: ${docId}`);
+      }
+
+      // Build UPDATE query - actualizează tipo_documento, necesita_firma și Permisso_Para_Empleado
+      const query = `
+        UPDATE \`DocumentosOficiales\`
+        SET 
+          tipo_documento = ${this.escapeSql('CONTRATO firmado')},
+          necesita_firma = 0,
+          \`Permisso Para Empleado\` = 'SI'
+        WHERE doc_id = ${docIdNumber}
+        LIMIT 1
+      `;
+
+      this.logger.log(
+        `🔄 Marcar contrato como firmado - doc_id: ${docIdNumber}`,
+      );
+
+      const result = await this.prisma.$executeRawUnsafe(query);
+      const affectedRows = Number(result) || 0;
+
+      if (affectedRows === 0) {
+        throw new NotFoundException(
+          `Documento oficial no encontrado para doc_id=${docIdNumber}`,
+        );
+      }
+
+      this.logger.log(
+        `✅ Contrato marcado como firmado: doc_id=${docIdNumber}`,
+      );
+
+      return {
+        success: true,
+        message: 'Contrato marcado como firmado correctamente.',
+        affectedRows,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error marcando contrato como firmado:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al marcar el contrato como firmado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Obține lista tuturor angajaților cu statusul contractelor lor (CONTRATO / CONTRATO firmado)
+   */
+  async getEmpleadosConStatusContratos(): Promise<
+    Array<{
+      codigo: string;
+      nombre: string;
+      email: string;
+      estado: string | null;
+      tiene_contrato: boolean;
+      tiene_contrato_firmado: boolean;
+      fecha_contrato?: string;
+      fecha_contrato_firmado?: string;
+    }>
+  > {
+    try {
+      // Obține toți angajații din DatosEmpleados cu statusul lor
+      const empleadosQuery = `
+        SELECT 
+          CODIGO as codigo,
+          \`NOMBRE / APELLIDOS\` as nombre,
+          \`CORREO ELECTRONICO\` as email,
+          ESTADO as estado
+        FROM \`DatosEmpleados\`
+        WHERE CODIGO IS NOT NULL AND CODIGO != ''
+        ORDER BY \`NOMBRE / APELLIDOS\`
+      `;
+
+      const empleados =
+        await this.prisma.$queryRawUnsafe<any[]>(empleadosQuery);
+
+      this.logger.log(
+        `📝 Get empleados con status contratos - Found ${empleados.length} empleados`,
+      );
+
+      // Pentru fiecare angajat, verifică dacă are CONTRATO sau CONTRATO firmado
+      const empleadosConStatus = await Promise.all(
+        empleados.map(async (empleado) => {
+          const codigo = String(empleado.codigo || '').trim();
+          if (!codigo) {
+            return null;
+          }
+
+          // Verifică dacă are CONTRATO (nu firmado)
+          const contratoQuery = `
+            SELECT doc_id, tipo_documento, fecha_creacion
+            FROM \`DocumentosOficiales\`
+            WHERE (\`id\` = ${this.escapeSql(codigo)} OR \`detected_empleado_id\` = ${this.escapeSql(codigo)})
+              AND tipo_documento = 'CONTRATO'
+            ORDER BY fecha_creacion DESC
+            LIMIT 1
+          `;
+
+          // Verifică dacă are CONTRATO firmado
+          const contratoFirmadoQuery = `
+            SELECT doc_id, tipo_documento, fecha_creacion
+            FROM \`DocumentosOficiales\`
+            WHERE (\`id\` = ${this.escapeSql(codigo)} OR \`detected_empleado_id\` = ${this.escapeSql(codigo)})
+              AND tipo_documento = 'CONTRATO firmado'
+            ORDER BY fecha_creacion DESC
+            LIMIT 1
+          `;
+
+          const [contratos, contratosFirmados] = await Promise.all([
+            this.prisma.$queryRawUnsafe<any[]>(contratoQuery),
+            this.prisma.$queryRawUnsafe<any[]>(contratoFirmadoQuery),
+          ]);
+
+          return {
+            codigo,
+            nombre: empleado.nombre || 'Sin nombre',
+            email: empleado.email || 'Sin email',
+            estado: empleado.estado || null,
+            tiene_contrato: contratos.length > 0,
+            tiene_contrato_firmado: contratosFirmados.length > 0,
+            fecha_contrato:
+              contratos.length > 0 ? contratos[0].fecha_creacion : undefined,
+            fecha_contrato_firmado:
+              contratosFirmados.length > 0
+                ? contratosFirmados[0].fecha_creacion
+                : undefined,
+          };
+        }),
+      );
+
+      // Filtrează null-urile
+      const resultado = empleadosConStatus.filter((e) => e !== null);
+
+      this.logger.log(
+        `✅ Empleados con status contratos: ${resultado.length} empleados procesados`,
+      );
+
+      return resultado;
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error getting empleados con status contratos:',
+        error,
+      );
+      throw new BadRequestException(
+        `Error al obtener empleados con status de contratos: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Numără documentele oficiale care necesită firmă și sunt vizibile pentru un angajat
+   * @param codigo - Codigo (id) al angajatului
+   * @returns Numărul de documente care necesită firmă
+   */
+  async countDocumentosNecesitanFirma(codigo: string): Promise<number> {
+    try {
+      if (!codigo) {
+        return 0;
+      }
+
+      const query = `
+        SELECT COUNT(*) as count
+        FROM \`DocumentosOficiales\`
+        WHERE (
+          \`id\` = ${this.escapeSql(codigo)} 
+          OR \`detected_empleado_id\` = ${this.escapeSql(codigo)}
+        )
+        AND \`necesita_firma\` = 1
+        AND \`Permisso Para Empleado\` = 'SI'
+      `;
+
+      this.logger.log(
+        `📊 Count documentos que necesitan firma - codigo: ${codigo}`,
+      );
+
+      const result =
+        await this.prisma.$queryRawUnsafe<[{ count: bigint }]>(query);
+
+      const count = result[0]?.count ? Number(result[0].count) : 0;
+
+      this.logger.log(
+        `✅ Documentos que necesitan firma: ${count} (codigo: ${codigo})`,
+      );
+
+      return count;
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error counting documentos que necesitan firma: ${error.message}`,
+      );
+      return 0;
     }
   }
 }
