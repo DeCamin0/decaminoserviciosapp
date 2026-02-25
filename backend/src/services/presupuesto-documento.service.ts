@@ -44,15 +44,19 @@ const MESES_ES = [
   'diciembre',
 ];
 
-/** Ruta logo PNG (backend/assets sau frontend/public) */
+/** Ruta logo: același sursă ca în dev (frontend/public) sau backend/assets. Caută PNG/JPG sau SVG. */
 function getLogoPath(): string | null {
-  const candidates = [
-    path.join(process.cwd(), 'assets', 'logo.png'),
-    path.join(process.cwd(), '..', 'frontend', 'public', 'logo.png'),
-    path.join(__dirname, '..', '..', 'assets', 'logo.png'),
+  const names = ['logo.png', 'logo.jpg', 'logo.jpeg', 'logo.svg'];
+  const dirs = [
+    path.join(process.cwd(), 'assets'),
+    path.join(__dirname, '..', '..', '..', 'assets'),
+    path.join(process.cwd(), '..', 'frontend', 'public'),
   ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+  for (const dir of dirs) {
+    for (const name of names) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) return p;
+    }
   }
   return null;
 }
