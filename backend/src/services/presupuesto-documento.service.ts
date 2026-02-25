@@ -73,6 +73,22 @@ function getServiciosStripPath(): string | null {
   return null;
 }
 
+/** Las 3 imágenes PISCINA (igual que en informes): backend/assets/PISCINA1.png, PISCINA2.png, PISCINA3.png */
+function getPiscinaStripPaths(): [string | null, string | null, string | null] {
+  const bases = [
+    path.join(process.cwd(), 'assets'),
+    path.join(__dirname, '..', '..', 'assets'),
+  ];
+  const find = (name: string): string | null => {
+    for (const base of bases) {
+      const p = path.join(base, name);
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  };
+  return [find('PISCINA1.png'), find('PISCINA2.png'), find('PISCINA3.png')];
+}
+
 /** Ruta ștampilă pentru chenarul DE CAMINO (Aceptación) */
 function getStampPath(): string | null {
   const names = [
@@ -737,22 +753,62 @@ export class PresupuestoDocumentoService {
       });
       belowLogoY += 22;
 
-      // Banda servicios — puțin mai mică și mai aproape ca portada să nu creeze pagină goală la multe servicii
-      const serviciosStripPath = getServiciosStripPath();
+      // Banda: si es solo piscina → mismas 3 fotos que en informes (PISCINA1/2/3); si no → servicios.png
       const stripW = Math.min(520, blockCenterW);
       const stripH = 72;
-      if (serviciosStripPath) {
-        try {
-          doc.image(serviciosStripPath, (PAGE_WIDTH - stripW) / 2, belowLogoY, {
-            width: stripW,
-            height: stripH,
-          });
-          belowLogoY += stripH + 14;
-        } catch {
-          belowLogoY += 8;
+      if (esSoloPiscina) {
+        const piscinaPaths = getPiscinaStripPaths();
+        const haveAllThree =
+          piscinaPaths[0] && piscinaPaths[1] && piscinaPaths[2];
+        if (haveAllThree) {
+          const imgW = stripW / 3;
+          const stripX = (PAGE_WIDTH - stripW) / 2;
+          try {
+            for (let i = 0; i < 3; i++) {
+              const p = piscinaPaths[i];
+              if (p)
+                doc.image(p, stripX + i * imgW, belowLogoY, {
+                  width: imgW,
+                  height: stripH,
+                });
+            }
+            belowLogoY += stripH + 14;
+          } catch {
+            belowLogoY += 8;
+          }
+        } else {
+          const serviciosStripPath = getServiciosStripPath();
+          if (serviciosStripPath) {
+            try {
+              doc.image(
+                serviciosStripPath,
+                (PAGE_WIDTH - stripW) / 2,
+                belowLogoY,
+                { width: stripW, height: stripH },
+              );
+              belowLogoY += stripH + 14;
+            } catch {
+              belowLogoY += 8;
+            }
+          } else {
+            belowLogoY += 8;
+          }
         }
       } else {
-        belowLogoY += 8;
+        const serviciosStripPath = getServiciosStripPath();
+        if (serviciosStripPath) {
+          try {
+            doc.image(serviciosStripPath, (PAGE_WIDTH - stripW) / 2, belowLogoY, {
+              width: stripW,
+              height: stripH,
+            });
+            belowLogoY += stripH + 14;
+          } catch {
+            belowLogoY += 8;
+          }
+        } else {
+          belowLogoY += 8;
+        }
       }
 
       // Contact sub banda
