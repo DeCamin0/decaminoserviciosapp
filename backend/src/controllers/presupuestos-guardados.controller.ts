@@ -13,12 +13,14 @@ import {
   Request,
   Res,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
 import { PresupuestoDocumentoService } from '../services/presupuesto-documento.service';
+import { EmailService } from '../services/email.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/presupuestos-guardados')
@@ -29,6 +31,7 @@ export class PresupuestosGuardadosController {
   constructor(
     private readonly presupuestosGuardadosService: PresupuestosGuardadosService,
     private readonly presupuestoDocumentoService: PresupuestoDocumentoService,
+    private readonly emailService: EmailService,
   ) {}
 
   @Get(':id/pdf-firmado')
@@ -126,5 +129,43 @@ export class PresupuestosGuardadosController {
   async delete(@Param('id', ParseIntPipe) id: number) {
     const result = await this.presupuestosGuardadosService.remove(id);
     return result;
+  }
+
+  /** Enviar por email el PDF del presupuesto (firmado si existe, si no el generado). Body: { email: string } */
+  @Post(':id/enviar-email')
+  async enviarEmail(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { email?: string },
+  ) {
+    const email = (body?.email ?? '').trim();
+    if (!email) {
+      throw new BadRequestException('El campo email es obligatorio');
+    }
+    const presupuesto = await this.presupuestosGuardadosService.findOne(id);
+    let pdfBuffer: Buffer | null =
+      await this.presupuestosGuardadosService.getSignedPdfBuffer(id);
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      const { buffer } = await this.presupuestoDocumentoService.generarPdf(id);
+      pdfBuffer = buffer;
+    }
+    const numeroPresupuesto =
+      presupuesto.numero_presupuesto ?? String(id);
+    const filename = `presupuesto-${numeroPresupuesto}.pdf`;
+    const subject = `Presupuesto nº ${numeroPresupuesto} - De Camino Servicios`;
+    const html = `<p>Adjunto encontrará el presupuesto nº ${numeroPresupuesto}${presupuesto.cliente_nombre ? ` para ${presupuesto.cliente_nombre}` : ''}.</p><p>Saludos,<br/>De Camino Servicios Auxiliares S.L.</p>`;
+    await this.emailService.sendEmailWithAttachment(
+      email,
+      subject,
+      html,
+      pdfBuffer,
+      filename,
+    );
+    this.logger.log(
+      `Presupuesto ${id} enviado por email a ${email} (${filename})`,
+    );
+    return {
+      success: true,
+      message: `Presupuesto enviado correctamente a ${email}`,
+    };
   }
 }

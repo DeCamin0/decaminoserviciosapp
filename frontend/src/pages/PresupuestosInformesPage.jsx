@@ -205,6 +205,16 @@ export default function PresupuestosInformesPage() {
   const [presupuestoGuardadoEditarId, setPresupuestoGuardadoEditarId] = useState(null); // id când edităm unul salvat
   const [showPresupuestoPreviewModal, setShowPresupuestoPreviewModal] = useState(false);
   const [previewPresupuestoNombre, setPreviewPresupuestoNombre] = useState('');
+  // Modal Enviar Presupuesto por email
+  const [showEnviarPresupuestoModal, setShowEnviarPresupuestoModal] = useState(false);
+  const [enviarPresupuestoItem, setEnviarPresupuestoItem] = useState(null);
+  const [enviarPresupuestoEmail, setEnviarPresupuestoEmail] = useState('');
+  const [sendingEnviarPresupuesto, setSendingEnviarPresupuesto] = useState(false);
+  // Modal Enviar Informe por email
+  const [showEnviarInformeModal, setShowEnviarInformeModal] = useState(false);
+  const [enviarInformeItem, setEnviarInformeItem] = useState(null);
+  const [enviarInformeEmail, setEnviarInformeEmail] = useState('');
+  const [sendingEnviarInforme, setSendingEnviarInforme] = useState(false);
 
   // Nombre en texto plano desde HTML (Quill)
   const servicioNombreTexto = (nombre) => {
@@ -746,6 +756,78 @@ export default function PresupuestosInformesPage() {
       setNotification({ message: 'PDF firmado descargado', type: 'success' });
     } catch (error) {
       setNotification({ message: error.message || 'Error al descargar PDF firmado', type: 'error' });
+    }
+  };
+
+  const handleOpenEnviarPresupuesto = (item) => {
+    const cliente = item.cliente_id != null ? clientesList.find((c) => Number(c.id) === Number(item.cliente_id)) : null;
+    const email = cliente?.EMAIL ?? cliente?.email ?? '';
+    setEnviarPresupuestoItem(item);
+    setEnviarPresupuestoEmail(email);
+    setShowEnviarPresupuestoModal(true);
+  };
+
+  const handleEnviarPresupuestoSubmit = async () => {
+    if (!enviarPresupuestoItem || !enviarPresupuestoEmail.trim()) {
+      setNotification({ message: 'Introduce la dirección de email', type: 'error' });
+      return;
+    }
+    setSendingEnviarPresupuesto(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(routes.enviarPresupuestoEmail(enviarPresupuestoItem.id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: enviarPresupuestoEmail.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || 'Error al enviar el presupuesto por email');
+      }
+      setNotification({ message: data.message || 'Presupuesto enviado correctamente', type: 'success' });
+      setShowEnviarPresupuestoModal(false);
+      setEnviarPresupuestoItem(null);
+      setEnviarPresupuestoEmail('');
+    } catch (e) {
+      setNotification({ message: e.message || 'Error al enviar', type: 'error' });
+    } finally {
+      setSendingEnviarPresupuesto(false);
+    }
+  };
+
+  const handleOpenEnviarInforme = (inf) => {
+    const cliente = inf.cliente_id != null ? clientesList.find((c) => Number(c.id) === Number(inf.cliente_id)) : null;
+    const email = cliente?.EMAIL ?? cliente?.email ?? inf.email_empresa ?? '';
+    setEnviarInformeItem(inf);
+    setEnviarInformeEmail(email);
+    setShowEnviarInformeModal(true);
+  };
+
+  const handleEnviarInformeSubmit = async () => {
+    if (!enviarInformeItem || !enviarInformeEmail.trim()) {
+      setNotification({ message: 'Introduce la dirección de email', type: 'error' });
+      return;
+    }
+    setSendingEnviarInforme(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(routes.enviarInformeEmail(enviarInformeItem.id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: enviarInformeEmail.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || 'Error al enviar el informe por email');
+      }
+      setNotification({ message: data.message || 'Informe enviado correctamente', type: 'success' });
+      setShowEnviarInformeModal(false);
+      setEnviarInformeItem(null);
+      setEnviarInformeEmail('');
+    } catch (e) {
+      setNotification({ message: e.message || 'Error al enviar', type: 'error' });
+    } finally {
+      setSendingEnviarInforme(false);
     }
   };
 
@@ -4692,6 +4774,9 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                               <Button variant="outline" size="sm" onClick={() => handleGenerarPresupuesto(item, 'pdf')}>
                                 PDF
                               </Button>
+                              <Button variant="outline" size="sm" onClick={() => handleOpenEnviarPresupuesto(item)} className="text-blue-600 border-blue-300 hover:bg-blue-50">
+                                Enviar Presupuesto
+                              </Button>
                               <Button variant="outline" size="sm" onClick={() => handleCargarPresupuesto(item.id)}>
                                 Cargar
                               </Button>
@@ -4813,6 +4898,83 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                 Cerrar
               </Button>
             </div>
+          </div>
+        </Modal>
+
+        {/* Modal Enviar Presupuesto por email */}
+        <Modal
+          isOpen={showEnviarPresupuestoModal}
+          onClose={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); setEnviarPresupuestoEmail(''); }}
+          title="Enviar Presupuesto por email"
+        >
+          <div className="space-y-4">
+            {enviarPresupuestoItem && (
+              <>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Cliente:</span>{' '}
+                  {enviarPresupuestoItem.cliente_nombre || '—'}
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email de destino</label>
+                  <Input
+                    type="email"
+                    value={enviarPresupuestoEmail}
+                    onChange={(e) => setEnviarPresupuestoEmail(e.target.value)}
+                    placeholder="email@ejemplo.com"
+                    className="w-full"
+                  />
+                </div>
+                <p className="text-xs text-gray-500">Se enviará el PDF del presupuesto (firmado si existe, si no el generado) a la dirección indicada. Confirma antes de enviar.</p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); }} disabled={sendingEnviarPresupuesto}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleEnviarPresupuestoSubmit} disabled={sendingEnviarPresupuesto || !enviarPresupuestoEmail.trim()}>
+                    {sendingEnviarPresupuesto ? 'Enviando…' : 'Enviar'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
+
+        {/* Modal Enviar Informe por email */}
+        <Modal
+          isOpen={showEnviarInformeModal}
+          onClose={() => { setShowEnviarInformeModal(false); setEnviarInformeItem(null); setEnviarInformeEmail(''); }}
+          title="Enviar Informe por email"
+        >
+          <div className="space-y-4">
+            {enviarInformeItem && (
+              <>
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Cliente:</span>{' '}
+                  {(() => {
+                    const c = clientesList.find((x) => Number(x.id) === Number(enviarInformeItem.cliente_id));
+                    return c ? (c.NOMBRE_O_RAZON_SOCIAL ?? c['NOMBRE O RAZON SOCIAL'] ?? `Cliente ${enviarInformeItem.cliente_id}`) : (enviarInformeItem.cliente_id != null ? `Cliente ID ${enviarInformeItem.cliente_id}` : '— Sin asignar');
+                  })()}
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email de destino</label>
+                  <Input
+                    type="email"
+                    value={enviarInformeEmail}
+                    onChange={(e) => setEnviarInformeEmail(e.target.value)}
+                    placeholder="email@ejemplo.com"
+                    className="w-full"
+                  />
+                </div>
+                <p className="text-xs text-gray-500">Se enviará el PDF del informe a la dirección indicada. Confirma antes de enviar.</p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => { setShowEnviarInformeModal(false); setEnviarInformeItem(null); }} disabled={sendingEnviarInforme}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleEnviarInformeSubmit} disabled={sendingEnviarInforme || !enviarInformeEmail.trim()}>
+                    {sendingEnviarInforme ? 'Enviando…' : 'Enviar'}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </Modal>
 
@@ -5544,6 +5706,9 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                             <div className="flex items-center gap-2 flex-wrap">
                               <Button variant="outline" size="sm" onClick={() => handleDownloadInformePdf(inf.id)}>
                                 Descargar PDF
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => handleOpenEnviarInforme(inf)} className="text-blue-600 border-blue-300 hover:bg-blue-50">
+                                Enviar Informe
                               </Button>
                               {inf.firmas && inf.firmas[0] && (
                                 <Button variant="outline" size="sm" onClick={() => handleDownloadInformePdfFirmado(inf.id)}>

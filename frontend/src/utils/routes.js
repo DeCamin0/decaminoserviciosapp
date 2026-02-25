@@ -620,6 +620,9 @@ export const routes = {
   getPresupuestoPdfFirmado: (id) => (import.meta.env.DEV
     ? `http://localhost:3000/api/presupuestos-guardados/${id}/pdf-firmado`
     : `${BACKEND_PROD_URL}/api/presupuestos-guardados/${id}/pdf-firmado`),
+  enviarPresupuestoEmail: (id) => (import.meta.env.DEV
+    ? `http://localhost:3000/api/presupuestos-guardados/${id}/enviar-email`
+    : `${BACKEND_PROD_URL}/api/presupuestos-guardados/${id}/enviar-email`),
 
   getInformesItems: import.meta.env.DEV
     ? 'http://localhost:3000/api/informes/items'
@@ -657,6 +660,9 @@ export const routes = {
   getInformePdfFirmado: (id) => (import.meta.env.DEV
     ? `http://localhost:3000/api/informes/factura-config/${id}/pdf-firmado`
     : `${BACKEND_PROD_URL}/api/informes/factura-config/${id}/pdf-firmado`),
+  enviarInformeEmail: (id) => (import.meta.env.DEV
+    ? `http://localhost:3000/api/informes/factura-config/${id}/enviar-email`
+    : `${BACKEND_PROD_URL}/api/informes/factura-config/${id}/enviar-email`),
 
   // Ausencias
   getAusencias: import.meta.env.DEV

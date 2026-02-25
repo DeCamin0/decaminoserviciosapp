@@ -9,12 +9,14 @@ import {
   Res,
   UseGuards,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { InformePdfService } from '../services/informe-pdf.service';
+import { EmailService } from '../services/email.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 const CONFIG_ID = 1;
@@ -25,12 +27,14 @@ export class InformesFacturaConfigController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly informePdfService: InformePdfService,
+    private readonly emailService: EmailService,
   ) {}
 
-  /** Lista todos los informes guardados (con última firma si existe) */
+  /** Lista todos los informes guardados (con última firma si existe). Excluye id=CONFIG_ID que es solo la plantilla del formulario Factura. */
   @Get('list')
   async list() {
     const rows = await this.prisma.informes_factura_config.findMany({
+      where: { id: { not: CONFIG_ID } },
       orderBy: { updated_at: 'desc' },
       include: { firmas: { orderBy: { created_at: 'desc' }, take: 1 } },
     });
@@ -196,6 +200,46 @@ export class InformesFacturaConfigController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.sendFile(fullPath);
+  }
+
+  /** Enviar por email el PDF del informe. Body: { email: string } */
+  @Post(':id/enviar-email')
+  async enviarEmail(
+    @Param('id') id: string,
+    @Body() body: { email?: string },
+  ) {
+    const numId = parseInt(id, 10);
+    if (Number.isNaN(numId)) throw new NotFoundException('ID inválido');
+    const email = (body?.email ?? '').trim();
+    if (!email) {
+      throw new BadRequestException('El campo email es obligatorio');
+    }
+    const informe = await this.prisma.informes_factura_config.findUnique({
+      where: { id: numId },
+    });
+    if (!informe) throw new NotFoundException('Informe no encontrado');
+    const { buffer, filename } =
+      await this.informePdfService.generatePdf(numId);
+    const subject = `Informe - De Camino Servicios`;
+    const clienteNombre =
+      informe.cliente_id != null
+        ? (await this.prisma.clientes.findUnique({
+            where: { id: informe.cliente_id },
+            select: { NOMBRE_O_RAZON_SOCIAL: true },
+          }))?.NOMBRE_O_RAZON_SOCIAL ?? ''
+        : '';
+    const html = `<p>Adjunto encontrará el informe${clienteNombre ? ` para ${clienteNombre}` : ''}.</p><p>Saludos,<br/>De Camino Servicios Auxiliares S.L.</p>`;
+    await this.emailService.sendEmailWithAttachment(
+      email,
+      subject,
+      html,
+      buffer,
+      filename,
+    );
+    return {
+      success: true,
+      message: `Informe enviado correctamente a ${email}`,
+    };
   }
 
   /** Descargar PDF del informe (portada igual que presupuesto: PRESUPUESTO año + REPARACIONES VARIAS) */
