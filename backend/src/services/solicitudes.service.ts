@@ -415,7 +415,7 @@ export class SolicitudesService {
         `📧 [sendSolicitudEmail] Sending email for ${solicitudData.accion} - subject: ${subject}`,
       );
       await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
-        bcc: ['decamino.rrhh@gmail.com'],
+        bcc: this.emailService.getDefaultBcc(),
       });
       this.logger.log(
         `✅ [sendSolicitudEmail] Email notification sent to ${this.EMAIL_RECIPIENT} for ${solicitudData.accion} - solicitud ${solicitudData.codigo}`,
@@ -1575,11 +1575,7 @@ export class SolicitudesService {
               html,
               attachments,
               {
-                bcc: [
-                  'info@decaminoservicios.com',
-                  'mirisjm@gmail.com',
-                  'decamino.rrhh@gmail.com',
-                ],
+                bcc: this.emailService.getDefaultBcc(),
               },
             );
 
@@ -2323,20 +2319,12 @@ export class SolicitudesService {
           html,
           data.attachments,
           {
-            bcc: [
-              'info@decaminoservicios.com',
-              'mirisjm@gmail.com',
-              'decamino.rrhh@gmail.com',
-            ],
+            bcc: this.emailService.getDefaultBcc(),
           },
         );
       } else {
         await this.emailService.sendEmail(GESTORIA_EMAIL, subject, html, {
-          bcc: [
-            'info@decaminoservicios.com',
-            'mirisjm@gmail.com',
-            'decamino.rrhh@gmail.com',
-          ],
+          bcc: this.emailService.getDefaultBcc(),
         });
       }
 

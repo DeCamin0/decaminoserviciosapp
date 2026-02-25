@@ -8,6 +8,7 @@ import DemoBadge from './DemoBadge';
 import ThemeToggle from './ThemeToggle';
 import NotificationsBell from './NotificationsBell';
 // Folosește logo-ul din public (accesibil prin ngrok)
+// Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.svg
 const getLogoUrl = () => {
   // Verifică dacă suntem pe ngrok și folosește SVG inline
   if (window.location.hostname.includes('ngrok')) {
@@ -15,7 +16,9 @@ const getLogoUrl = () => {
   }
   // Folosește base path-ul din environment pentru path-uri relative
   const basePath = import.meta.env.VITE_BASE_PATH || '/';
-  return `${basePath}logo.svg`.replace(/\/+/g, '/'); // Remove duplicate slashes
+  // Externalizat: folosește VITE_LOGO_PATH cu fallback la logo.svg
+  const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+  return `${basePath}${logoPath}`.replace(/\/+/g, '/'); // Remove duplicate slashes
 };
 
 const MainLayout = ({ children }) => {
@@ -202,7 +205,7 @@ const MainLayout = ({ children }) => {
                 </div>
                 
                   <h1 className="text-lg lg:text-xl font-bold text-gray-900 dark:text-white">
-                    DE CAMINO SERVICIOS AUXILIARES
+                    {import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}
                   </h1>
                   {isHolidaySeason && (
                     <span className="ml-2 px-3 py-1 rounded-full bg-white/60 text-red-700 text-xs font-semibold shadow-sm backdrop-blur">

@@ -1,9 +1,10 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.02.11.1254",
+  "version": "2026.02.25.1137",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/fix-quill-vulnerability.cjs",
     "dev": "vite",
     "build": "node update-version.js && vite build",
     "build:no-version": "vite build",
@@ -37,6 +38,7 @@
     "chart.js": "^4.5.1",
     "cors": "^2.8.5",
     "d3": "^7.9.0",
+    "dompurify": "^3.3.1",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "framer-motion": "^12.23.24",
@@ -52,6 +54,8 @@
     "pdfjs-dist": "^5.4.54",
     "pdfmake": "^0.2.20",
     "qrcode": "^1.5.3",
+    "quill": "2.0.2",
+    "quill-better-table": "^1.2.10",
     "react": "^18.2.0",
     "react-apexcharts": "^1.8.0",
     "react-chartjs-2": "^5.3.1",
@@ -59,6 +63,7 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.48.2",
     "react-i18next": "^13.5.0",
+    "react-quill": "^2.0.0",
     "react-router-dom": "^6.8.1",
     "signature_pad": "^4.2.0",
     "socket.io-client": "^4.7.2",
@@ -81,7 +86,7 @@
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.3.4",
-    "fast-xml-parser": "^5.3.4",
+    "fast-xml-parser": "^5.3.6",
     "globals": "^17.2.0",
     "imagemin-svgo": "^11.0.1",
     "msw": "^2.11.3",
@@ -99,9 +104,9 @@
   "overrides": {
     "tar": "^7.5.3",
     "elliptic": "^6.6.1",
-    "fast-xml-parser": "^5.3.4",
+    "fast-xml-parser": "^5.3.6",
     "is-svg": {
-      "fast-xml-parser": "^5.3.4"
+      "fast-xml-parser": "^5.3.6"
     },
     "browserify-sign": {
       "elliptic": "^6.6.1"
@@ -126,6 +131,10 @@
           "elliptic": "^6.6.1"
         }
       }
+    },
+    "quill": "2.0.2",
+    "react-quill": {
+      "quill": "2.0.2"
     }
   },
   "msw": {

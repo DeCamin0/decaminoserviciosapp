@@ -1734,6 +1734,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
         return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'entregado':
         return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'enviado':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-300';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-300';
     }
@@ -1749,6 +1751,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
         return '⏳ Pendiente';
       case 'entregado':
         return '📦 Entregado';
+      case 'enviado':
+        return '🚚 Enviado';
       default:
         return estado || 'Desconocido';
     }
@@ -2246,8 +2250,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                       ✏️ Editar
                     </Button>
                   )}
-                  {/* Buton Cargar Albarán - doar pentru comenzile aprobadas */}
-                  {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'entregado') && (
+                  {/* Buton Cargar Albarán - pentru aprobado, enviado (a trimite) și entregado */}
+                  {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'enviado' || pedido.estado?.toLowerCase() === 'entregado') && (
                     <Button
                       onClick={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
                       className="bg-green-600 hover:bg-green-700 text-white"
@@ -2259,7 +2263,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                 </div>
 
                 {/* Avis de atenționare pentru albarán */}
-                {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'entregado') && (
+                {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'enviado' || pedido.estado?.toLowerCase() === 'entregado') && (
                   <div className="mt-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r">
                     <div className="flex items-start">
                       <div className="flex-shrink-0">

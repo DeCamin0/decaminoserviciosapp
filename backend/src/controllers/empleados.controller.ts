@@ -430,11 +430,7 @@ export class EmpleadosController {
                   attachments,
                   {
                     cc: ['marlosangeles@ancaraconsulting.es'],
-                    bcc: [
-                      'info@decaminoservicios.com',
-                      'mirisjm@gmail.com',
-                      'decamino.rrhh@gmail.com',
-                    ],
+                    bcc: this.emailService.getDefaultBcc(),
                   },
                 );
               } else {
@@ -447,11 +443,7 @@ export class EmpleadosController {
                   pdfFileName,
                   {
                     cc: ['marlosangeles@ancaraconsulting.es'],
-                    bcc: [
-                      'info@decaminoservicios.com',
-                      'mirisjm@gmail.com',
-                      'decamino.rrhh@gmail.com',
-                    ],
+                    bcc: this.emailService.getDefaultBcc(),
                   },
                 );
               }
@@ -496,7 +488,7 @@ export class EmpleadosController {
                   htmlFinal,
                   attachments,
                   {
-                    bcc: ['decamino.rrhh@gmail.com'],
+                    bcc: this.emailService.getDefaultBcc(),
                   },
                 );
               } else {
@@ -508,7 +500,7 @@ export class EmpleadosController {
                   pdfFile.buffer,
                   pdfFileName,
                   {
-                    bcc: ['decamino.rrhh@gmail.com'],
+                    bcc: this.emailService.getDefaultBcc(),
                   },
                 );
               }
@@ -690,11 +682,7 @@ export class EmpleadosController {
           html,
           attachments,
           {
-            bcc: [
-              'info@decaminoservicios.com',
-              'mirisjm@gmail.com',
-              'decamino.rrhh@gmail.com',
-            ],
+            bcc: this.emailService.getDefaultBcc(),
           },
         );
       } else {
@@ -705,11 +693,7 @@ export class EmpleadosController {
           pdfFile.buffer,
           pdfFileName,
           {
-            bcc: [
-              'info@decaminoservicios.com',
-              'mirisjm@gmail.com',
-              'decamino.rrhh@gmail.com',
-            ],
+            bcc: this.emailService.getDefaultBcc(),
           },
         );
       }
@@ -961,7 +945,7 @@ export class EmpleadosController {
 
     try {
       await this.emailService.sendEmail(email, subject, html, {
-        bcc: ['decamino.rrhh@gmail.com'],
+        bcc: this.emailService.getDefaultBcc(),
       });
 
       this.logger.log(
@@ -1421,11 +1405,7 @@ export class EmpleadosController {
               htmlEmail,
               attachments,
               {
-                bcc: [
-                  'info@decaminoservicios.com',
-                  'mirisjm@gmail.com',
-                  'decamino.rrhh@gmail.com',
-                ],
+                bcc: this.emailService.getDefaultBcc(),
               },
             );
           } else {
@@ -1434,11 +1414,7 @@ export class EmpleadosController {
               emailSubject,
               htmlEmail,
               {
-                bcc: [
-                  'info@decaminoservicios.com',
-                  'mirisjm@gmail.com',
-                  'decamino.rrhh@gmail.com',
-                ],
+                bcc: this.emailService.getDefaultBcc(),
               },
             );
           }
@@ -1625,7 +1601,7 @@ export class EmpleadosController {
             subject,
             html,
             {
-              bcc: ['info@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
+              bcc: this.emailService.getDefaultBcc(),
             },
           );
 
@@ -1786,7 +1762,7 @@ export class EmpleadosController {
             subject,
             htmlEmail,
             {
-              bcc: ['app@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
+              bcc: this.emailService.getDefaultBcc(),
             },
           );
 
@@ -1938,11 +1914,7 @@ export class EmpleadosController {
             emailSubject,
             htmlEmail,
             {
-              bcc: [
-                'info@decaminoservicios.com',
-                'mirisjm@gmail.com',
-                'decamino.rrhh@gmail.com',
-              ],
+              bcc: this.emailService.getDefaultBcc(),
             },
           );
 
@@ -2067,7 +2039,7 @@ export class EmpleadosController {
             subject,
             htmlEmail,
             {
-              bcc: ['app@decaminoservicios.com', 'decamino.rrhh@gmail.com'],
+              bcc: this.emailService.getDefaultBcc(),
             },
           );
 
@@ -2290,7 +2262,7 @@ export class EmpleadosController {
 
         try {
           await this.emailService.sendEmail(recipient.email, subiect, html, {
-            bcc: ['decamino.rrhh@gmail.com'],
+            bcc: this.emailService.getDefaultBcc(),
           });
           successCount++;
 
@@ -2599,7 +2571,7 @@ export class EmpleadosController {
             subject,
             htmlEmail,
             {
-              bcc: ['decamino.rrhh@gmail.com'],
+              bcc: this.emailService.getDefaultBcc(),
             },
           );
 

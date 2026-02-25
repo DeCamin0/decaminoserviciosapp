@@ -60,7 +60,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-red-600 via-red-500 to-red-600">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-500 to-primary-600">
       {/* Custom CSS pentru animații avansate */}
       <style>{`
         @keyframes float {
@@ -69,8 +69,8 @@ export default function LoginPage() {
         }
         
         @keyframes glow {
-          0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
-          50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.8); }
+          0%, 100% { box-shadow: 0 0 20px var(--primary-color-rgba-04, rgba(239, 68, 68, 0.4)); }
+          50% { box-shadow: 0 0 40px var(--primary-color-rgba-06, rgba(239, 68, 68, 0.8)); }
         }
         
         @keyframes shimmer {
@@ -176,7 +176,7 @@ export default function LoginPage() {
       {/* Fundal animat cu particule și gradient - TEMA ROȘU */}
       <div className="absolute inset-0">
         {/* Gradient overlay - Paleta completă de roșu */}
-        <div className="absolute inset-0 bg-gradient-to-br from-red-600/30 via-red-500/20 to-red-700/30"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-600/30 via-primary-500/20 to-primary-700/30"></div>
         
         {/* Gradient overlay simplu fără pattern */}
         <div className="absolute inset-0 opacity-20">
@@ -195,9 +195,9 @@ export default function LoginPage() {
         </div>
         
         {/* Floating elements cu animații customizate - PALETA ROȘU */}
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-gradient-to-r from-red-400/25 to-red-600/25 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-red-500/20 to-red-700/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
-        <div className="absolute top-3/4 left-1/2 w-48 h-48 bg-gradient-to-r from-red-300/30 to-red-500/25 rounded-full blur-3xl animate-float" style={{animationDelay: '4s'}}></div>
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-gradient-to-r from-primary-400/25 to-primary-600/25 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-primary-500/20 to-primary-700/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
+        <div className="absolute top-3/4 left-1/2 w-48 h-48 bg-gradient-to-r from-primary-300/30 to-primary-500/25 rounded-full blur-3xl animate-float" style={{animationDelay: '4s'}}></div>
       </div>
 
       {/* Decor sezonier de Crăciun/Reyes (activ până pe 6 ianuarie) */}
@@ -239,15 +239,19 @@ export default function LoginPage() {
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="relative group transition-all duration-500 transform hover:scale-110 hover:rotate-3"
-                title="Visita el sitio web de DE CAMINO SERVICIOS AUXILIARES"
+                title={`Visita el sitio web de ${import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}`}
               >
                 {/* Logo cu design glassmorphism */}
               <div className="relative">
-                  <div className="w-28 h-28 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl border border-white/40 group-hover:border-red-400/70 transition-all duration-500">
+                  <div className="w-28 h-28 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl border border-white/40 group-hover:border-primary-400/70 transition-all duration-500">
                   <img 
                     src={window.location.hostname.includes('ngrok') 
                       ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
-                      : './logo.svg'
+                      : (() => {
+                          const basePath = import.meta.env.VITE_BASE_PATH || '/';
+                          const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+                          return `${basePath}${logoPath}`.replace(/\/+/g, '/');
+                        })()
                     }
                     alt="De Camino Logo" 
                     className="h-20 w-20 object-contain group-hover:scale-110 transition-transform duration-500"
@@ -256,18 +260,18 @@ export default function LoginPage() {
                       e.target.nextSibling.style.display = 'block';
                     }}
                   />
-                    <div className="hidden text-white font-bold text-2xl group-hover:text-red-400 transition-colors duration-500">DC</div>
+                    <div className="hidden text-white font-bold text-2xl group-hover:text-primary-400 transition-colors duration-500">DC</div>
                   </div>
                   {/* Căciulă de Moș Crăciun pe logo (doar sezon) */}
                   {isHolidaySeason && (
                     <div className="absolute -top-2 -right-4 w-12 h-8 transform rotate-12">
-                      <div className="absolute inset-0 bg-red-500 rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow-lg border border-red-600"></div>
+                      <div className="absolute inset-0 bg-primary-500 rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow-lg border border-primary-600"></div>
                       <div className="absolute -bottom-1 left-0 right-0 h-2 bg-white rounded-full shadow-md"></div>
                       <div className="absolute -bottom-3 -right-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
                     </div>
                   )}
                   {/* Glow effect cu animație customizată - PALETA ROȘU */}
-                  <div className="absolute inset-0 w-28 h-28 bg-gradient-to-r from-red-400/40 to-red-600/40 rounded-full blur-xl animate-glow group-hover:from-red-300/60 group-hover:to-red-500/60 transition-all duration-500"></div>
+                  <div className="absolute inset-0 w-28 h-28 bg-gradient-to-r from-primary-400/40 to-primary-600/40 rounded-full blur-xl animate-glow group-hover:from-primary-300/60 group-hover:to-primary-500/60 transition-all duration-500"></div>
                 </div>
               </a>
             </div>
@@ -318,7 +322,7 @@ export default function LoginPage() {
                   }}></div>
                 </div>
             </h1>
-              <div className="w-24 h-1 bg-gradient-to-r from-white via-red-200 to-white mx-auto rounded-full"></div>
+              <div className="w-24 h-1 bg-gradient-to-r from-white via-primary-200 to-white mx-auto rounded-full"></div>
               <h2 className="text-xl font-semibold text-white/90 mb-2">
                 Portal Empresarial
             </h2>
@@ -359,7 +363,7 @@ export default function LoginPage() {
                       Correo Electrónico
                     </label>
                     <div className="relative">
-                      <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-red-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-primary-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-primary-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
                       <input
                   id="login-email"
                   name="email"
@@ -368,7 +372,7 @@ export default function LoginPage() {
                   onChange={(e) => handleInputChange('email', e.target.value)}
                   required
                   autoComplete="email"
-                        className="relative w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-400/50 transition-all duration-300"
+                        className="relative w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400/50 transition-all duration-300"
                         placeholder="tu@email.com"
                       />
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -385,7 +389,7 @@ export default function LoginPage() {
                       Contraseña
                     </label>
                     <div className="relative">
-                      <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-red-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-primary-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-primary-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
                       <input
                   id="login-password"
                   name="password"
@@ -394,7 +398,7 @@ export default function LoginPage() {
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required
                   autoComplete="current-password"
-                        className="relative w-full px-4 py-3 pr-12 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-400/50 transition-all duration-300"
+                        className="relative w-full px-4 py-3 pr-12 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400/50 transition-all duration-300"
                         placeholder="••••••••"
                       />
                       <button
@@ -420,7 +424,7 @@ export default function LoginPage() {
                 {/* Terms text - Redesignat */}
                 <div className="text-center">
                   <p className="text-sm text-gray-300 leading-relaxed">
-                    Al iniciar sesión, estás de acuerdo con los <a href="https://decaminoservicios.com/es/terminos/" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300 font-medium underline transition-colors duration-300">Términos y Condiciones</a>
+                    Al iniciar sesión, estás de acuerdo con los <a href="https://decaminoservicios.com/es/terminos/" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300 font-medium underline transition-colors duration-300">Términos y Condiciones</a>
                   </p>
                 </div>
               
@@ -428,9 +432,9 @@ export default function LoginPage() {
                 <button
                 type="submit"
                 disabled={loading}
-                  className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-red-500 to-purple-600 p-[2px] transition-all duration-300 hover:from-red-400 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-primary-500 to-purple-600 p-[2px] transition-all duration-300 hover:from-primary-400 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                  <div className="relative flex items-center justify-center px-6 py-4 bg-gradient-to-r from-red-500 to-purple-600 rounded-xl text-white font-semibold transition-all duration-300 group-hover:from-red-400 group-hover:to-purple-500">
+                  <div className="relative flex items-center justify-center px-6 py-4 bg-gradient-to-r from-primary-500 to-purple-600 rounded-xl text-white font-semibold transition-all duration-300 group-hover:from-primary-400 group-hover:to-purple-500">
                 {loading ? (
                       <div className="flex items-center">
                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>

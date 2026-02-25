@@ -30,8 +30,14 @@
 ### 🟡 MEDIUM (Cosmetic, dar vizibil)
 
 **Logo/UI Branding**
-- `frontend/src/components/MainLayout.jsx`: Logo path hardcodat
+- `frontend/src/components/MainLayout.jsx`: Logo path hardcodat (`logo.svg`)
+- `frontend/src/layouts/DesktopLayout.jsx`: Logo path hardcodat
+- `frontend/src/layouts/MobileLayout.jsx`: Logo path hardcodat (dacă există)
 - **Risc:** Client 2 va vedea logo-ul client 1 (cosmetic, nu data leak)
+
+**Culori Branding**
+- `frontend/src/utils/exportExcel.ts`: Culori hardcodate (`#CC0000` roșu, `#0066CC` albastru)
+- **Risc:** Client 2 va avea culorile client 1 în Excel-uri și UI (cosmetic, dar important pentru branding)
 
 ---
 
@@ -72,11 +78,21 @@ VITE_COMPANY_CIF=B85524536
 VITE_COMPANY_ADDRESS=Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España
 VITE_COMPANY_PHONE=910 440 275
 VITE_COMPANY_EMAIL=info@decaminoservicios.com
+
+# Branding - Logo
+VITE_LOGO_PATH=logo.svg
+
+# Branding - Culori
+VITE_PRIMARY_COLOR=#CC0000        # Roșu DeCamino
+VITE_SECONDARY_COLOR=#0066CC      # Albastru DeCamino
+VITE_ACCENT_COLOR=#E53935         # Roșu accent
 ```
 
 **Unde se folosesc:**
 - `VITE_API_URL`: `frontend/src/utils/routes.js` (toate endpoint-urile)
 - `VITE_COMPANY_*`: `frontend/src/utils/exportExcel.ts`, `SolicitudesPage.jsx` (export-uri)
+- `VITE_LOGO_PATH`: `MainLayout.jsx`, `DesktopLayout.jsx`, `MobileLayout.jsx` (logo path)
+- `VITE_PRIMARY_COLOR`, `VITE_SECONDARY_COLOR`: `exportExcel.ts` (culori Excel), componente UI (opțional)
 
 ---
 
@@ -90,15 +106,33 @@ VITE_COMPANY_EMAIL=info@decaminoservicios.com
 - **Backward compatible:** Da (default păstrat)
 
 **2. `frontend/src/utils/exportExcel.ts`**
-- **Hardcodat:** `COMPANY_INFO` object (liniile 4-10)
+- **Hardcodat:** `COMPANY_INFO` object (liniile 4-10) + culori (`#CC0000`, `#0066CC`)
 - **Schimbare:** 
 ```typescript
+// Company info din env vars
 const COMPANY_INFO = {
   name: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
   cif: import.meta.env.VITE_COMPANY_CIF || 'B85524536',
   address: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
   phone: import.meta.env.VITE_COMPANY_PHONE || '910 440 275',
   email: import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'
+};
+
+// Culori din env vars (fără # pentru Excel ARGB)
+const PRIMARY_COLOR = (import.meta.env.VITE_PRIMARY_COLOR || '#CC0000').replace('#', '');
+const SECONDARY_COLOR = (import.meta.env.VITE_SECONDARY_COLOR || '#0066CC').replace('#', '');
+
+// Înlocuiește în STYLES:
+const STYLES = {
+  companyName: {
+    fill: { fgColor: { argb: PRIMARY_COLOR } }  // ← Din env!
+  },
+  reportTitle: {
+    fill: { fgColor: { argb: SECONDARY_COLOR } }  // ← Din env!
+  },
+  totalsRow: {
+    fill: { fgColor: { argb: PRIMARY_COLOR } }   // ← Din env!
+  }
 };
 ```
 - **Backward compatible:** Da
@@ -108,9 +142,34 @@ const COMPANY_INFO = {
 - **Schimbare:** Înlocuiește cu env vars (similar cu exportExcel.ts)
 - **Backward compatible:** Da
 
+**4. `frontend/src/components/MainLayout.jsx`**
+- **Hardcodat:** Logo path (`logo.svg` - linia 18)
+- **Schimbare:**
+```javascript
+const getLogoUrl = () => {
+  if (window.location.hostname.includes('ngrok')) {
+    return 'data:image/svg+xml;base64,...'; // Keep ngrok fallback
+  }
+  const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+  const basePath = import.meta.env.VITE_BASE_PATH || '/';
+  return `${basePath}${logoPath}`.replace(/\/+/g, '/');
+};
+```
+- **Backward compatible:** Da
+
+**5. `frontend/src/layouts/DesktopLayout.jsx`**
+- **Hardcodat:** Logo path (`logo.svg` - linia 19)
+- **Schimbare:** Similar cu MainLayout.jsx
+- **Backward compatible:** Da
+
+**6. `frontend/src/layouts/MobileLayout.jsx`** (dacă există)
+- **Hardcodat:** Logo path (`logo.svg`)
+- **Schimbare:** Similar cu MainLayout.jsx
+- **Backward compatible:** Da
+
 ### Backend
 
-**4. `backend/src/main.ts`**
+**7. `backend/src/main.ts`**
 - **Hardcodat:** CORS origins (liniile 129-130, 137-138)
 - **Schimbare:**
 ```typescript
@@ -121,7 +180,7 @@ const corsOrigins = process.env.CORS_ORIGINS
 ```
 - **Backward compatible:** Da
 
-**5. `backend/src/services/email.service.ts`**
+**8. `backend/src/services/email.service.ts`**
 - **Hardcodat:** SMTP_FROM fallback (linia 204)
 - **Schimbare:**
 ```typescript
@@ -132,7 +191,7 @@ const fromEmail = options?.from ||
 ```
 - **Backward compatible:** Da
 
-**6. `backend/src/controllers/sent-emails.controller.ts`**
+**9. `backend/src/controllers/sent-emails.controller.ts`**
 - **Hardcodat:** BCC emails (liniile 325-326), inclusiv hardcodare mascată pentru 'gestoria'
 - **Schimbare (simplificat - fără hardcodări mascate):**
 ```typescript
@@ -141,7 +200,7 @@ const bccList = process.env.EMAIL_BCC?.split(',').map(e => e.trim()) || ['decami
 - **Backward compatible:** Da (default păstrat)
 - **Notă:** Dacă ai nevoie de BCC diferit pentru 'gestoria', configurează `EMAIL_BCC` în `.env` cu toate adresele necesare
 
-**7. `backend/src/controllers/monitoring.controller.ts`**
+**10. `backend/src/controllers/monitoring.controller.ts`**
 - **Hardcodat:** BCC email (linia 208)
 - **Schimbare:**
 ```typescript
@@ -149,7 +208,7 @@ const bccList = process.env.EMAIL_BCC?.split(',').map(e => e.trim()) || ['app@de
 ```
 - **Backward compatible:** Da
 
-**8. `backend/src/services/hall-of-fame.service.ts`**
+**11. `backend/src/services/hall-of-fame.service.ts`**
 - **Hardcodat:** BCC email (verifică în cod)
 - **Schimbare:** Similar cu sent-emails.controller.ts
 - **Backward compatible:** Da
@@ -288,11 +347,16 @@ cd frontend
 cp env.production.example .env.production
 # Editează .env.production cu valorile client 2:
 # - VITE_API_URL=https://api.client2.com
+# - VITE_API_URL=https://api.client2.com
 # - VITE_COMPANY_NAME=CLIENT 2 NAME SL
 # - VITE_COMPANY_CIF=CLIENT2-CIF
 # - VITE_COMPANY_ADDRESS=Client 2 Address
 # - VITE_COMPANY_PHONE=Client 2 Phone
 # - VITE_COMPANY_EMAIL=info@client2.com
+# - VITE_LOGO_PATH=logo-client2.svg
+# - VITE_PRIMARY_COLOR=#00AA00      # Verde (exemplu)
+# - VITE_SECONDARY_COLOR=#0066FF    # Albastru (exemplu)
+# - VITE_ACCENT_COLOR=#00CC00       # Verde accent (exemplu)
 ```
 
 ### Pas 6: Deploy Backend
@@ -339,8 +403,14 @@ npm run build
   - [ ] Nume companie = "CLIENT 2 NAME SL" (NU "DE CAMINO...")
   - [ ] CIF = CIF client 2 (NU "B85524536")
   - [ ] Email = email client 2 (NU "info@decaminoservicios.com")
+  - [ ] Culori = culori client 2 (NU roșu/albastru DeCamino)
 - [ ] Export PDF (SolicitudesPage): verifică header-ul
   - [ ] Date companie corecte
+
+### ✅ Branding (Logo + Culori)
+- [ ] Logo apare corect în header (logo client 2, NU logo DeCamino)
+- [ ] Culori în Excel-uri = culori client 2 (NU roșu/albastru DeCamino)
+- [ ] UI folosește culorile client 2 (dacă sunt configurate în Tailwind/CSS)
 
 ### ✅ Email-uri
 - [ ] Trimite email de test (ex: din Sent Emails)
@@ -366,21 +436,30 @@ npm run build
 
 ## SUMAR
 
-### 8 Fișiere de Modificat
+### 11 Fișiere de Modificat
 
-**Frontend (3):**
-1. `frontend/src/utils/routes.js`
-2. `frontend/src/utils/exportExcel.ts`
-3. `frontend/src/pages/SolicitudesPage.jsx`
+**Frontend (6):**
+1. `frontend/src/utils/routes.js` - API URL
+2. `frontend/src/utils/exportExcel.ts` - COMPANY_INFO + culori
+3. `frontend/src/pages/SolicitudesPage.jsx` - PDF date companie
+4. `frontend/src/components/MainLayout.jsx` - Logo path
+5. `frontend/src/layouts/DesktopLayout.jsx` - Logo path
+6. `frontend/src/layouts/MobileLayout.jsx` - Logo path (dacă există)
 
 **Backend (5):**
-4. `backend/src/main.ts`
-5. `backend/src/services/email.service.ts`
-6. `backend/src/controllers/sent-emails.controller.ts`
-7. `backend/src/controllers/monitoring.controller.ts`
-8. `backend/src/services/hall-of-fame.service.ts`
+7. `backend/src/main.ts` - CORS origins
+8. `backend/src/services/email.service.ts` - SMTP_FROM
+9. `backend/src/controllers/sent-emails.controller.ts` - BCC emails
+10. `backend/src/controllers/monitoring.controller.ts` - BCC email
+11. `backend/src/services/hall-of-fame.service.ts` - BCC email
 
-**Total:** ~50-100 linii de cod modificate, toate backward compatible.
+**Total:** ~80-120 linii de cod modificate, toate backward compatible.
+
+### Logo-uri Fizice (Manual)
+
+**Pentru fiecare client:**
+- [ ] Copiezi logo-ul clientului în `frontend/public/logo-{client-slug}.svg`
+- [ ] Setezi `VITE_LOGO_PATH=logo-{client-slug}.svg` în `.env.production`
 
 ### Ordinea Corectă de Clonare
 

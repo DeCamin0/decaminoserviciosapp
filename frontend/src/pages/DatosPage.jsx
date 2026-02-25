@@ -1876,7 +1876,7 @@ const [editLoading, setEditLoading] = useState(false);
                         name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
-                        value={editForm[field] || 'DE CAMINO SERVICIOS AUXILIARES SL'}
+                        value={editForm[field] || (import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL')}
                         readOnly={true}
                         placeholder={`${field.toLowerCase()} (solo lectura)`}
                       />

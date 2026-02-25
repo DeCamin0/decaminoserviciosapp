@@ -5852,7 +5852,7 @@ ORDER BY
           `;
 
           await this.emailService.sendEmail(empleadoEmail, subject, html, {
-            bcc: ['decamino.rrhh@gmail.com'],
+            bcc: this.emailService.getDefaultBcc(),
           });
 
           this.logger.log(

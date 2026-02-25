@@ -205,7 +205,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
 
       // Trimite email către angajat cu BCC la app@decaminoservicios.com
       await this.emailService.sendEmail(data.userEmail, subject, html, {
-        bcc: ['app@decaminoservicios.com'],
+        bcc: this.emailService.getDefaultBcc(),
       });
 
       // Salvează email-ul în BD

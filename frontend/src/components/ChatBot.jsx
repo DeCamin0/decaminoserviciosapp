@@ -5,6 +5,28 @@ import Chatbot from 'react-chatbot-kit';
 import 'react-chatbot-kit/build/main.css';
 import './ChatBot.css';
 
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
+const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#E53935';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
+
+// Helper functions pentru conversie culori
+const hexToRgb = (hex) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
+};
+
+const rgbToHex = (r, g, b) => {
+  return '#' + [r, g, b].map(x => {
+    const hex = x.toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  }).join('');
+};
+
 // Configurare pentru chatbot
 const botName = 'DeCamino AI Assistant';
 
@@ -12,6 +34,34 @@ const ChatBot = () => {
   const { user } = useAuth();
   const [isVisible, setIsVisible] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Setează CSS variables pentru culori branding
+  useEffect(() => {
+    document.documentElement.style.setProperty('--primary-color', PRIMARY_COLOR);
+    // Calculează culori derivate pentru gradient
+    const primaryRgb = hexToRgb(PRIMARY_COLOR);
+    if (primaryRgb) {
+      const darker = rgbToHex(
+        Math.max(0, primaryRgb.r - 20),
+        Math.max(0, primaryRgb.g - 20),
+        Math.max(0, primaryRgb.b - 20)
+      );
+      const darkest = rgbToHex(
+        Math.max(0, primaryRgb.r - 40),
+        Math.max(0, primaryRgb.g - 40),
+        Math.max(0, primaryRgb.b - 40)
+      );
+      document.documentElement.style.setProperty('--primary-color-darker', darker);
+      document.documentElement.style.setProperty('--primary-color-darkest', darkest);
+      document.documentElement.style.setProperty('--primary-color-rgb', `${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}`);
+      // Setează rgba variants pentru box-shadow
+      document.documentElement.style.setProperty('--primary-color-rgba-05', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.5)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-06', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.6)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-02', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.2)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-04', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.4)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-01', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.1)`);
+    }
+  }, []);
   // Store actions per message ID using ref (nu trigger re-render)
   const messageActionsRef = useRef(new Map());
   // State pentru a forța re-render când se adaugă acțiuni
@@ -593,11 +643,11 @@ const ChatBot = () => {
     botName: botName,
     customStyles: {
       botMessageBox: {
-        backgroundColor: '#E53935',
+        backgroundColor: PRIMARY_COLOR,
         color: '#FFFFFF'
       },
       chatButton: {
-        backgroundColor: '#E53935',
+        backgroundColor: PRIMARY_COLOR,
         color: '#FFFFFF'
       }
     },
@@ -690,7 +740,7 @@ const ChatBot = () => {
                       }}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: '#E53935',
+                        backgroundColor: PRIMARY_COLOR,
                         color: 'white',
                         border: 'none',
                         borderRadius: '4px',
@@ -749,7 +799,11 @@ const ChatBot = () => {
             <img 
               src={window.location.hostname.includes('ngrok') 
                 ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
-                : './logo.svg'
+                : (() => {
+                    const basePath = import.meta.env.VITE_BASE_PATH || '/';
+                    const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+                    return `${basePath}${logoPath}`.replace(/\/+/g, '/');
+                  })()
               }
               alt="Logo" 
               className="chatbot-logo"

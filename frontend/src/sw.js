@@ -94,12 +94,15 @@ self.addEventListener('push', (event) => {
   console.log('[SW] Push event received:', event);
   
   const basePath = self.location.pathname.replace(/\/sw\.js$/, '') || '/';
+  // Backward compatible: default logo.svg (env vars nu sunt disponibile în service worker)
+  // Logo path poate fi overriden prin data din push event (vezi linia 115-116)
+  const defaultLogoPath = 'logo.svg';
   
   let notificationData = {
     title: 'Nouă notificare',
     body: 'Ai primit o notificare nouă',
-    icon: `${basePath}logo.svg`,
-    badge: `${basePath}logo.svg`,
+    icon: `${basePath}${defaultLogoPath}`,
+    badge: `${basePath}${defaultLogoPath}`,
     tag: 'notification',
     requireInteraction: true,
     data: {}
@@ -112,8 +115,8 @@ self.addEventListener('push', (event) => {
       notificationData = {
         title: data.title || notificationData.title,
         body: data.message || data.body || notificationData.body,
-        icon: data.icon || `${basePath}logo.svg`,
-        badge: data.badge || `${basePath}logo.svg`,
+        icon: data.icon || `${basePath}${defaultLogoPath}`,
+        badge: data.badge || `${basePath}${defaultLogoPath}`,
         tag: data.id ? `notification-${data.id}` : `notification-${Date.now()}-${Math.random()}`,
         requireInteraction: true, // Rămâne pe ecran ca la WhatsApp
         data: data.data || {},

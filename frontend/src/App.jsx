@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
+import { COLORS } from './theme';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/AuthContextBase';
 import { GoogleMapsProvider } from './contexts/GoogleMapsContext';
@@ -58,7 +59,8 @@ import {
   LazyComunicadoCreatePage,
   LazyMensajesEnviadosPage,
   LazyHallOfFamePage,
-  LazyPRLDocumentosPage
+  LazyPRLDocumentosPage,
+  LazyPresupuestosInformesPage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -89,6 +91,53 @@ function TokenMonitor() {
 function App() {
   // Pornește migrarea PWA
   usePWAMigration();
+
+  // Setează CSS variables globale pentru culori branding
+  useEffect(() => {
+    const primaryColor = COLORS.PRIMARY;
+    document.documentElement.style.setProperty('--primary-color', primaryColor);
+    
+    // Helper pentru conversie hex to RGB
+    const hexToRgb = (hex) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : null;
+    };
+    
+    const rgbToHex = (r, g, b) => {
+      return '#' + [r, g, b].map(x => {
+        const hex = x.toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+    };
+    
+    // Calculează culori derivate pentru gradient
+    const primaryRgb = hexToRgb(primaryColor);
+    if (primaryRgb) {
+      const darker = rgbToHex(
+        Math.max(0, primaryRgb.r - 20),
+        Math.max(0, primaryRgb.g - 20),
+        Math.max(0, primaryRgb.b - 20)
+      );
+      const darkest = rgbToHex(
+        Math.max(0, primaryRgb.r - 40),
+        Math.max(0, primaryRgb.g - 40),
+        Math.max(0, primaryRgb.b - 40)
+      );
+      document.documentElement.style.setProperty('--primary-color-darker', darker);
+      document.documentElement.style.setProperty('--primary-color-darkest', darkest);
+      document.documentElement.style.setProperty('--primary-color-rgb', `${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}`);
+      // Setează rgba variants pentru box-shadow
+      document.documentElement.style.setProperty('--primary-color-rgba-05', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.5)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-06', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.6)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-02', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.2)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-04', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.4)`);
+      document.documentElement.style.setProperty('--primary-color-rgba-01', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.1)`);
+    }
+  }, []);
 
   return (
     <ThemeProvider>
@@ -405,6 +454,18 @@ function AppRoutes() {
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyPRLDocumentosPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Ruta para presupuestos e informes */}
+      <Route
+        path="/presupuestos-informes"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyPresupuestosInformesPage />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

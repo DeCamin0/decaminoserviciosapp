@@ -1,19 +1,24 @@
 import ExcelJS from 'exceljs';
 
-// Company information
+// Company information - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
 const COMPANY_INFO = {
-  name: 'DE CAMINO SERVICIOS AUXILIARES SL',
-  cif: 'B85524536',
-  address: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
-  phone: '910 440 275',
-  email: 'info@decaminoservicios.com'
+  name: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
+  cif: import.meta.env.VITE_COMPANY_CIF || 'B85524536',
+  address: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
+  phone: import.meta.env.VITE_COMPANY_PHONE || '910 440 275',
+  email: import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'
 };
+
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+// Format: hex fără # (ex: "CC0000" sau "#CC0000" → "CC0000")
+const PRIMARY_COLOR = (import.meta.env.VITE_PRIMARY_COLOR || '#CC0000').replace('#', '');
+const SECONDARY_COLOR = (import.meta.env.VITE_SECONDARY_COLOR || '#0066CC').replace('#', '');
 
 // Excel styling constants
 const STYLES = {
   companyName: {
     font: { bold: true, size: 16, color: { argb: "FFFFFF" } },
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: "CC0000" } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY_COLOR } },
     alignment: { horizontal: "center", vertical: "middle" }
   },
   companyDetails: {
@@ -22,7 +27,7 @@ const STYLES = {
   },
   reportTitle: {
     font: { bold: true, size: 14, color: { argb: "FFFFFF" } },
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: "0066CC" } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: SECONDARY_COLOR } },
     alignment: { horizontal: "center", vertical: "middle" }
   },
   period: {
@@ -36,7 +41,7 @@ const STYLES = {
   },
   totalsRow: {
     font: { bold: true, color: { argb: "FFFFFF" } },
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: "CC0000" } }
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY_COLOR } }
   }
 };
 

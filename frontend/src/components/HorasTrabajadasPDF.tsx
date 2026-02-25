@@ -301,7 +301,7 @@ const HorasTrabajadasPDF = ({
         />
         
         <View style={styles.headerText}>
-          <Text style={styles.companyName}>DE CAMINO SERVICIOS AUXILIARES</Text>
+          <Text style={styles.companyName}>{import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}</Text>
           <Text style={styles.companySubtitle}>
             {esDetallesTab ? 'DETALLE DE HORAS - PLAN VS FICHADO' : 'DETALLE DE HORAS TRABAJADAS'}
           </Text>
@@ -523,8 +523,8 @@ const HorasTrabajadasPDF = ({
       {/* Footer */}
       <View style={styles.footer}>
         <View style={styles.footerLeft}>
-          <Text>DE CAMINO SERVICIOS AUXILIARES SL</Text>
-          <Text>CIF B-85524536 - Inscrita en R.M. Madrid</Text>
+          <Text>{import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL'}</Text>
+          <Text>CIF {import.meta.env.VITE_COMPANY_CIF || 'B-85524536'} - Inscrita en R.M. Madrid</Text>
         </View>
         <View style={styles.footerRight}>
           <Text>Generado el {new Date().toLocaleDateString('es-ES')}</Text>

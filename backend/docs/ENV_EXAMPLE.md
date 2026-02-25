@@ -7,6 +7,12 @@ Copy this to `.env` in the backend folder:
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
 
+# URL unde se deschide pagina de firmă la click pe „ACEPTAR PRESUPUESTO” în PDF.
+# În development (NODE_ENV=development) se folosește http://localhost:5173 dacă nu e setat.
+# În producție pune URL-ul frontend-ului (ex: https://app.decaminoservicios.com).
+# IMPORTANT: Pe server, ruta /firmar.html trebuie servită ca fișier static (dist/firmar.html), nu prin SPA fallback.
+# FIRMAR_BASE_URL=https://app.decaminoservicios.com
+
 # n8n (for proxy endpoints that still use it)
 N8N_BASE_URL=https://n8n.decaminoservicios.com
 N8N_TIMEOUT=30000
@@ -34,6 +40,13 @@ SMTP_SECURE=true
 SMTP_USER=info@decaminoservicios.com
 SMTP_PASSWORD=your-password-here
 SMTP_FROM=De Camino Servicios Auxiliares SL <info@decaminoservicios.com>
+
+# SMTP pentru Pedidos (opțional - dacă nu sunt setate, folosește SMTP principal)
+# Folosește același SMTP_HOST, SMTP_PORT, SMTP_SECURE ca SMTP principal
+# Doar user, password și from sunt diferite
+SMTP_PEDIDOS_USER=produccion@decaminoservicios.com
+SMTP_PEDIDOS_PASSWORD=Decamino2025.
+SMTP_PEDIDOS_FROM=DE CAMINO Servicios Auxiliares SL <produccion@decaminoservicios.com>
 
 # IMAP (pentru extragerea email-urilor și documentelor)
 # Folosește aceleași credențiale ca SMTP (SMTP_USER și SMTP_PASSWORD)

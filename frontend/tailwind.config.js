@@ -32,7 +32,7 @@ export default {
           200: '#fecaca',  // Lighter red
           300: '#fca5a5',  // Light red
           400: '#f87171',  // Medium light red
-          500: '#E53935',  // DeCamino primary red
+          500: 'var(--primary-color, #E53935)',  // DeCamino primary red - dinamic din env var
           600: '#dc2626',  // Darker red
           700: '#b91c1c',  // Dark red
           800: '#991b1b',  // Very dark red

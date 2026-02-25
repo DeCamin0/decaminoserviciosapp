@@ -319,11 +319,8 @@ export class SentEmailsController {
           );
 
           // Trimite email
-          // Pentru gestoria, adaugă BCC la app@decaminoservicios.com
-          const bccList =
-            recipientType === 'gestoria'
-              ? ['app@decaminoservicios.com', 'decamino.rrhh@gmail.com']
-              : ['decamino.rrhh@gmail.com'];
+          // Folosește BCC din env var (EMAIL_BCC)
+          const bccList = this.emailService.getDefaultBcc();
 
           if (attachments.length > 0) {
             await this.emailService.sendEmailWithAttachments(

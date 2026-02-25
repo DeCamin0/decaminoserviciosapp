@@ -24,18 +24,21 @@ async function bootstrap() {
       const origin = req.headers.origin;
       console.log(`[Main] OPTIONS preflight request from origin: ${origin}`);
 
-      // Lista de origins permise - ÎNTOTDEAUNA include producția
-      const productionOrigins = [
+      // Backward compatible: dacă CORS_ORIGINS lipsește, folosește valorile vechi
+      const defaultProductionOrigins = [
         'https://app.decaminoservicios.com',
         'https://decaminoservicios.com',
       ];
-      const defaultOrigins = ['http://localhost:5173', ...productionOrigins];
+      const defaultOrigins = [
+        'http://localhost:5173',
+        ...defaultProductionOrigins,
+      ];
 
-      const corsOrigins = process.env.CORS_ORIGIN
-        ? [
-            ...process.env.CORS_ORIGIN.split(',').map((o) => o.trim()),
-            ...productionOrigins, // Adaugă întotdeauna origins-urile de producție
-          ]
+      // Suport pentru CORS_ORIGINS (nou) sau CORS_ORIGIN (vechi) pentru backward compatibility
+      const corsOriginsEnv =
+        process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
+      const corsOrigins = corsOriginsEnv
+        ? corsOriginsEnv.split(',').map((o) => o.trim())
         : defaultOrigins;
 
       const uniqueCorsOrigins = [...new Set(corsOrigins)];
@@ -124,19 +127,17 @@ async function bootstrap() {
 
   // Enable CORS for frontend communication
   // Suport pentru multiple origins (development și producție)
+  // Backward compatible: dacă CORS_ORIGINS lipsește, folosește valorile vechi
   const defaultOrigins = [
     'http://localhost:5173',
     'https://app.decaminoservicios.com',
     'https://decaminoservicios.com',
   ];
 
-  const corsOrigins = process.env.CORS_ORIGIN
-    ? [
-        ...process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
-        // Adaugă întotdeauna origins-urile default pentru siguranță
-        'https://app.decaminoservicios.com',
-        'https://decaminoservicios.com',
-      ]
+  // Suport pentru CORS_ORIGINS (nou) sau CORS_ORIGIN (vechi) pentru backward compatibility
+  const corsOriginsEnv = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
+  const corsOrigins = corsOriginsEnv
+    ? corsOriginsEnv.split(',').map((origin) => origin.trim())
     : defaultOrigins;
 
   // Elimină duplicate-urile
@@ -222,6 +223,7 @@ async function bootstrap() {
         'Access-Control-Allow-Headers',
         'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type',
       );
+      res.header('Access-Control-Expose-Headers', 'Content-Disposition');
     } else {
       // Pentru requests fără origin (mobile apps, etc.)
       res.header(
@@ -232,6 +234,7 @@ async function bootstrap() {
         'Access-Control-Allow-Headers',
         'Content-Type, Authorization, X-App-Source, X-App-Version, X-Client-Type',
       );
+      res.header('Access-Control-Expose-Headers', 'Content-Disposition');
     }
     next();
   });

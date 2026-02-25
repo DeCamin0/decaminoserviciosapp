@@ -757,7 +757,7 @@ export class NominasService {
         archivo,
         nombre_archivo,
         {
-          bcc: ['decamino.rrhh@gmail.com'],
+          bcc: this.emailService.getDefaultBcc(),
         },
       );
 

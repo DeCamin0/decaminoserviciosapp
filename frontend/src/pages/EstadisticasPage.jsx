@@ -378,8 +378,14 @@ export default function EstadisticasPage() {
         const logoImg = new Image();
         logoImg.crossOrigin = 'anonymous';
         // Folosește base path-ul din environment pentru path-uri relative
+        // Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.png
         const basePath = import.meta.env.VITE_BASE_PATH || '/';
-        logoImg.src = `${basePath}logo.png`.replace(/\/+/g, '/'); // Folosesc PNG pentru jsPDF
+        // Pentru EstadisticasPage folosim logo.png (nu logo.svg) pentru compatibilitate jsPDF
+        // Dacă VITE_LOGO_PATH este setat, înlocuim extensia cu .png
+        const logoPath = import.meta.env.VITE_LOGO_PATH 
+          ? import.meta.env.VITE_LOGO_PATH.replace(/\.(svg|jpg|jpeg)$/i, '.png')
+          : 'logo.png';
+        logoImg.src = `${basePath}${logoPath}`.replace(/\/+/g, '/'); // Folosesc PNG pentru jsPDF
         
         logoData = await new Promise((resolve) => {
           const timeout = setTimeout(() => {
@@ -422,7 +428,7 @@ export default function EstadisticasPage() {
       pdf.setFontSize(16);
       pdf.setTextColor(220, 38, 38); // Culoare roșie (#DC2626)
       pdf.setFont('helvetica', 'bold');
-      pdf.text('DE CAMINO SERVICIOS AUXILIARES', margin + (logoData ? 20 : 0), yPosition + 6);
+      pdf.text(import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES', margin + (logoData ? 20 : 0), yPosition + 6);
       
       pdf.setFontSize(12);
       pdf.setTextColor(31, 41, 55); // Gri închis
@@ -466,7 +472,7 @@ export default function EstadisticasPage() {
         pdf.setFontSize(12);
         pdf.setTextColor(220, 38, 38);
         pdf.setFont('helvetica', 'bold');
-        pdf.text('DE CAMINO SERVICIOS AUXILIARES', margin + (logoData ? 20 : 0), yPosition + 6);
+        pdf.text(import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES', margin + (logoData ? 20 : 0), yPosition + 6);
         pdf.setFontSize(9);
         pdf.setTextColor(107, 114, 128);
         pdf.setFont('helvetica', 'normal');

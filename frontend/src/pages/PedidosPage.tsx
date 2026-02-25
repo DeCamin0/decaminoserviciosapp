@@ -2105,6 +2105,8 @@ const TabGestionarPedidos: React.FC<{
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState<string>('all');
+  const [filtroCentro, setFiltroCentro] = useState<string>('all');
+  const [filtroAn, setFiltroAn] = useState<string>('all');
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<string | null>(null);
   const [pedidoEditando, setPedidoEditando] = useState<string | null>(null);
   const [mostrarAgregarProducto, setMostrarAgregarProducto] = useState<string | null>(null);
@@ -2133,6 +2135,36 @@ const TabGestionarPedidos: React.FC<{
   const [enviandoProveedor, setEnviandoProveedor] = useState(false);
   const [serviciosEntrega, setServiciosEntrega] = useState<Record<number, string>>({});
   const [loadingServicios, setLoadingServicios] = useState(false);
+
+  // Pedidos filtrate după estado, centro și an
+  const pedidosFiltrados = useMemo(() => {
+    let filtered = pedidos;
+
+    // Filtrare după estado
+    if (filtroEstado !== 'all') {
+      filtered = filtered.filter(p => p.estado === filtroEstado);
+    }
+
+    // Filtrare după centro (comunidad)
+    if (filtroCentro !== 'all') {
+      filtered = filtered.filter(p => {
+        const centroNombre = p.comunidad?.nombre || '';
+        return centroNombre === filtroCentro;
+      });
+    }
+
+    // Filtrare după an
+    if (filtroAn !== 'all') {
+      filtered = filtered.filter(p => {
+        if (!p.fecha) return false;
+        const date = new Date(p.fecha);
+        const an = date.getFullYear().toString();
+        return an === filtroAn;
+      });
+    }
+
+    return filtered;
+  }, [pedidos, filtroEstado, filtroCentro, filtroAn]);
 
   // Produse disponibile filtrate și sortate
   const productosDisponiblesFiltrados = useMemo(() => {
@@ -3141,7 +3173,17 @@ const TabGestionarPedidos: React.FC<{
       <Card>
         <div className="p-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <h2 className="text-2xl font-bold text-gray-800">Gestionar Pedidos</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-2xl font-bold text-gray-800">Gestionar Pedidos</h2>
+              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold">
+                {pedidosFiltrados.length} {pedidosFiltrados.length === 1 ? 'pedido' : 'pedidos'}
+                {pedidosFiltrados.length !== pedidos.length && (
+                  <span className="text-gray-500 ml-1">
+                    (de {pedidos.length} total)
+                  </span>
+                )}
+              </span>
+            </div>
             
             <div className="flex items-center gap-4 flex-wrap">
               <label className="text-sm font-medium text-gray-700">Filtrar por estado:</label>
@@ -3156,6 +3198,34 @@ const TabGestionarPedidos: React.FC<{
                 <option value="rechazado">Rechazados</option>
                 <option value="enviado">Enviados</option>
               </select>
+
+              <label className="text-sm font-medium text-gray-700">Filtrar por centro:</label>
+              <select
+                value={filtroCentro}
+                onChange={(e) => setFiltroCentro(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-w-[200px]"
+              >
+                <option value="all">Todos</option>
+                {Array.from(new Set(pedidos.map(p => p.comunidad?.nombre).filter(Boolean))).sort().map(centro => (
+                  <option key={centro} value={centro}>{centro}</option>
+                ))}
+              </select>
+
+              <label className="text-sm font-medium text-gray-700">Filtrar por año:</label>
+              <select
+                value={filtroAn}
+                onChange={(e) => setFiltroAn(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="all">Todos</option>
+                {Array.from(new Set(pedidos.map(p => {
+                  if (!p.fecha) return null;
+                  const date = new Date(p.fecha);
+                  return date.getFullYear().toString();
+                }).filter(Boolean))).sort((a, b) => (b || '').localeCompare(a || '')).map(an => (
+                  <option key={an} value={an}>{an}</option>
+                ))}
+              </select>
               
               <Button
                 onClick={loadPedidos}
@@ -3165,14 +3235,14 @@ const TabGestionarPedidos: React.FC<{
                 {loading ? '🔄 Cargando...' : '🔄 Actualizar'}
               </Button>
 
-              {pedidos.filter(p => p.estado === 'aprobado').length > 0 && (
+              {pedidosFiltrados.filter(p => p.estado === 'aprobado').length > 0 && (
                 <Button
                   onClick={abrirPreviewEnvio}
                   className="bg-green-600 hover:bg-green-700 text-white"
                   disabled={loading}
                   title="Ver preview y enviar todas las órdenes aprobadas. Se generará un Excel y se marcarán como 'enviado'."
                 >
-                  📤 Enviar Todos los Aprobados ({pedidos.filter(p => p.estado === 'aprobado').length})
+                  📤 Enviar Todos los Aprobados ({pedidosFiltrados.filter(p => p.estado === 'aprobado').length})
                 </Button>
               )}
             </div>
@@ -3188,7 +3258,7 @@ const TabGestionarPedidos: React.FC<{
             <p className="text-gray-600">Cargando pedidos...</p>
           </div>
         </Card>
-      ) : pedidos.length === 0 ? (
+      ) : pedidosFiltrados.length === 0 ? (
         <Card>
           <div className="p-12 text-center">
             <div className="text-6xl mb-4">📦</div>
@@ -3198,7 +3268,7 @@ const TabGestionarPedidos: React.FC<{
         </Card>
       ) : (
         <div className="space-y-4">
-          {pedidos.map((pedido) => (
+          {pedidosFiltrados.map((pedido) => (
             <Card key={pedido.pedido_uid} className="overflow-hidden">
               <div className="p-6">
                 {/* Header del pedido */}

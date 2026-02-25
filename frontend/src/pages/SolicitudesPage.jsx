@@ -24,6 +24,11 @@ import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react
 import { usePolling } from '../hooks/usePolling';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
+const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
+
 const MONTHS = [
   'Todas las meses', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -5596,11 +5601,11 @@ export default function SolicitudesPage() {
             table: {
               widths: ['*'],
               body: [
-                [{ text: 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
-                [{ text: 'NIF: B85524536', style: 'companyDetails' }],
-                [{ text: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: 'Teléfono: 910 440 275', style: 'companyDetails' }],
-                [{ text: 'Email: info@decaminoservicios.com', style: 'companyDetails' }]
+                [{ text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
+                [{ text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`, style: 'companyDetails' }],
+                [{ text: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
+                [{ text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'}`, style: 'companyDetails' }],
+                [{ text: `Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`, style: 'companyDetails' }]
               ]
             },
             layout: 'noBorders',
@@ -5626,7 +5631,7 @@ export default function SolicitudesPage() {
             fontSize: 18, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#CC0000', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center', 
             margin: [0, 0, 0, 8]
           },
@@ -5642,7 +5647,7 @@ export default function SolicitudesPage() {
             fontSize: 12, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#0066CC', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center',
             margin: [0, 4, 0, 2]
           },

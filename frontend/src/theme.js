@@ -1,6 +1,11 @@
 // Theme colors for DeCamino app
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
+const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#E53935';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
+
 export const COLORS = {
-  PRIMARY: '#E53935', // Red
+  PRIMARY: PRIMARY_COLOR, // Red
   PRIMARY_LIGHT: '#FFCDD2', // Light red
   SECONDARY: '#FFFFFF', // White
   TEXT_PRIMARY: '#222222', // Dark text

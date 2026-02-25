@@ -226,7 +226,7 @@ const EmployeePDF = ({ employeeData, createdBy }) => {
           />
           
           <View style={styles.headerText}>
-            <Text style={styles.companyName}>DE CAMINO SERVICIOS AUXILIARES</Text>
+            <Text style={styles.companyName}>{import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}</Text>
             <Text style={styles.documentTitle}>FICHA DE EMPLEADO</Text>
             <Text style={styles.documentDate}>
               Generado el {new Date().toLocaleDateString('es-ES')} por {createdBy || 'Sistema'}

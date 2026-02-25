@@ -1,3 +1,6 @@
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+const PRIMARY_COLOR = import.meta.env.VITE_PRIMARY_COLOR || '#E53935';
+
 // Funcție pentru a încărca pdfMake dinamic
 const loadPdfMake = async () => {
   if (window.pdfMake) {
@@ -67,9 +70,12 @@ const getDeCaminoLogo = () => {
       // Fallback dacă logo-ul nu există
       resolve(null);
     };
+    // Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.svg
+    const basePath = import.meta.env.VITE_BASE_PATH || '/';
+    const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
     img.src = window.location.hostname.includes('ngrok') 
       ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
-      : './logo.svg';
+      : `${basePath}${logoPath}`.replace(/\/+/g, '/');
   });
 };
 
@@ -128,7 +134,7 @@ export const generateInspectionPDF = async (inspectionData) => {
             alignment: 'left'
           },
           {
-            text: 'DE CAMINO SERVICIOS AUXILIARES SL',
+            text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
             style: 'headerTitle',
             alignment: 'right'
           }
@@ -376,18 +382,18 @@ export const generateInspectionPDF = async (inspectionData) => {
         headerTitle: {
           fontSize: 16,
           bold: true,
-          color: '#E53935'
+          color: PRIMARY_COLOR
         },
         mainTitle: {
           fontSize: 20,
           bold: true,
-          color: '#E53935',
+          color: PRIMARY_COLOR,
           margin: [0, 20, 0, 20]
         },
         sectionTitle: {
           fontSize: 14,
           bold: true,
-          color: '#E53935',
+          color: PRIMARY_COLOR,
           margin: [0, 10, 0, 10]
         },
         label: {
@@ -403,7 +409,7 @@ export const generateInspectionPDF = async (inspectionData) => {
           fontSize: 10,
           bold: true,
           color: '#FFFFFF',
-          fillColor: '#E53935',
+          fillColor: PRIMARY_COLOR,
           alignment: 'center'
         },
         tableCell: {
@@ -412,7 +418,7 @@ export const generateInspectionPDF = async (inspectionData) => {
         },
         checkbox: {
           fontSize: 12,
-          color: '#E53935'
+          color: PRIMARY_COLOR
         },
         checkboxLabel: {
           fontSize: 10,
@@ -429,7 +435,7 @@ export const generateInspectionPDF = async (inspectionData) => {
         signatureTitle: {
           fontSize: 10,
           bold: true,
-          color: '#E53935',
+          color: PRIMARY_COLOR,
           alignment: 'center',
           margin: [0, 0, 0, 10]
         },

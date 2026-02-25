@@ -189,7 +189,7 @@ export class ScheduledMessagesCronService {
         const html = `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">${recipient.nombre && recipient.nombre !== 'Gestoria' ? `<p>Hola <strong>${recipient.nombre}</strong>,</p>` : '<p>Hola,</p>'}${htmlMessage ? `<div style="white-space: pre-wrap;">${htmlMessage.replace(/\n/g, '<br>')}</div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p></body></html>`;
 
         await this.emailService.sendEmail(recipient.email, subject, html, {
-          bcc: ['decamino.rrhh@gmail.com'],
+          bcc: this.emailService.getDefaultBcc(),
         });
 
         // Salvează email-ul în BD

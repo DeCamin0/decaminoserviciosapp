@@ -46,6 +46,15 @@ import { HorasPermitidasController } from './controllers/horas-permitidas.contro
 import { HorasPermitidasService } from './services/horas-permitidas.service';
 import { GruposController } from './controllers/grupos.controller';
 import { GruposService } from './services/grupos.service';
+import { PlantillasController } from './controllers/plantillas.controller';
+import { PlantillasService } from './services/plantillas.service';
+import { PresupuestosGuardadosController } from './controllers/presupuestos-guardados.controller';
+import { PresupuestosFirmadoController } from './controllers/presupuestos-firmado.controller';
+import { InformesFirmadoController } from './controllers/informes-firmado.controller';
+import { InformesItemsController } from './controllers/informes-items.controller';
+import { InformesModule } from './informes/informes.module';
+import { PresupuestosGuardadosService } from './services/presupuestos-guardados.service';
+import { PresupuestoDocumentoService } from './services/presupuesto-documento.service';
 import { HorasTrabajadasController } from './controllers/horas-trabajadas.controller';
 import { HorasTrabajadasService } from './services/horas-trabajadas.service';
 import { SolicitudesController } from './controllers/solicitudes.controller';
@@ -123,6 +132,7 @@ import { PedidosNotasService } from './services/pedidos-notas.service';
     AuthModule,
     NotificationsModule,
     PrismaModule,
+    InformesModule,
     ComunicadosModule,
     VacacionesModule,
     AssistantModule,
@@ -150,6 +160,11 @@ import { PedidosNotasService } from './services/pedidos-notas.service';
     HorasAsignadasController,
     HorasPermitidasController,
     GruposController,
+    PlantillasController,
+    PresupuestosGuardadosController,
+    PresupuestosFirmadoController,
+    InformesFirmadoController,
+    InformesItemsController,
     HorasTrabajadasController,
     SolicitudesController,
     ActivityLogsController,
@@ -198,6 +213,9 @@ import { PedidosNotasService } from './services/pedidos-notas.service';
     HorasAsignadasService,
     HorasPermitidasService,
     GruposService,
+    PlantillasService,
+    PresupuestosGuardadosService,
+    PresupuestoDocumentoService,
     HorasTrabajadasService,
     SolicitudesService,
     ActivityLogsService,

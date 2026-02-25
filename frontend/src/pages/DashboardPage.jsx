@@ -832,6 +832,24 @@ const InicioPage = () => {
       });
     }
 
+    // Presupuestos e Informes - apare pentru toți care au acces la Clientes
+    // Dacă există permisiuni în backend, verifică permisiunea; altfel apare pentru manageri
+    const canAccessPresupuestos = hasBackendPermissions 
+      ? (hasPermission('presupuestos-informes') || canAccessClientes)
+      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
+    
+    if (canAccessPresupuestos) {
+      list.push({
+        id: 'presupuestos-informes',
+        label: 'Presupuestos e Informes',
+        hint: 'Generar presupuestos e informes automáticamente',
+        icon: <FileText className="h-6 w-6 text-white" />,
+        gradient: 'from-indigo-500 via-purple-500 to-pink-500',
+        href: '/presupuestos-informes',
+        role: 'manager',
+      });
+    }
+
     // Salón de la Fama - verifică permisiunea din backend
     const canAccessHallOfFame = shouldUseBackend ? hasPermission('hall-of-fame') : true;
     
@@ -1359,7 +1377,7 @@ const InicioPage = () => {
       try {
         const baseUrl = import.meta.env.DEV 
           ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+          : (import.meta.env.VITE_API_URL || 'https://api.decaminoservicios.com');
         const token = localStorage.getItem('auth_token');
         
         const userEmail = user.email || user.CORREO_ELECTRONICO;
@@ -1473,7 +1491,7 @@ const InicioPage = () => {
                   try {
                     const baseUrl = import.meta.env.DEV 
                       ? 'http://localhost:3000' 
-                      : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+                      : (import.meta.env.VITE_API_URL || 'https://api.decaminoservicios.com');
                     const token = localStorage.getItem('auth_token');
                     
                     const userName = user['NOMBRE / APELLIDOS'] || user.NOMBRE_APELLIDOS || user.nombre || 'Usuario';
@@ -1642,7 +1660,7 @@ const InicioPage = () => {
               <p className="mx-auto max-w-3xl text-sm leading-relaxed text-gray-600 sm:text-base md:mx-0">
                 Este es tu panel en{' '}
                 <span className="rounded-md bg-blue-50 px-2 py-1 font-semibold text-blue-700">
-                  DE CAMINO SERVICIOS AUXILIARES
+                  {import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}
                 </span>
                 . Aquí tienes acceso directo a todo lo que necesitas:{' '}
                 <span className="inline-flex items-center gap-1 font-medium text-green-700">
@@ -1685,7 +1703,7 @@ const InicioPage = () => {
                           const token = localStorage.getItem('auth_token');
                           const baseUrl = import.meta.env.DEV 
                             ? 'http://localhost:3000' 
-                            : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+                            : (import.meta.env.VITE_API_URL || 'https://api.decaminoservicios.com');
                           const response = await fetch(`${baseUrl}/api/notifications/test`, {
                             method: 'POST',
                             headers: {

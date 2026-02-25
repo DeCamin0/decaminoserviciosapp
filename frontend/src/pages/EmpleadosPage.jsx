@@ -19,6 +19,11 @@ import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHe
 import CorregirNombresTab from '../components/employees/CorregirNombresTab';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
+const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
+
 // Funcție helper pentru transformare automată în majuscule
 const toUpperCaseIfNeeded = (field, value) => {
   // Câmpuri care NU trebuie transformate în majuscule
@@ -44,6 +49,12 @@ const toUpperCaseIfNeeded = (field, value) => {
   
   // Pentru restul câmpurilor text, transformăm totul în majuscule
   return value.toUpperCase();
+};
+
+// Elimină tag-uri HTML din text (pentru afișare în dropdown GRUPO)
+const stripHtml = (str) => {
+  if (str == null || typeof str !== 'string') return '';
+  return str.replace(/<[^>]+>/g, '').trim() || str;
 };
 
 // Función para generar el código
@@ -639,7 +650,6 @@ export default function EmpleadosPage() {
       'DerechoPedidos': ['DerechoPedidos', 'derechoPedidos', 'derecho_pedidos'],
       'TrabajaFestivos': ['TrabajaFestivos', 'trabajaFestivos', 'trabaja_festivos'],
       'Contraseña': ['Contraseña', 'CONTRASEÑA', 'contraseña', 'contrasena', 'Contraseña ', 'password', 'PASSWORD'],
-      'CuantoPuedeGastar': ['CuantoPuedeGastar', 'cuantoPuedeGastar', 'cuanto_puede_gastar'],
     };
 
     const mapped = { ...raw };
@@ -679,7 +689,7 @@ export default function EmpleadosPage() {
   const [addForm, setAddForm] = useState(() => ({
     ...Object.fromEntries(SHEET_FIELDS.map(f => [f, ''])),
     CODIGO: generateCodigo(),
-    EMPRESA: 'DE CAMINO SERVICIOS AUXILIARES SL',
+    EMPRESA: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
     ESTADO: 'PENDIENTE', // Default pentru angajați noi
     DerechoPedidos: 'NO',
     TrabajaFestivos: 'NO',
@@ -1251,50 +1261,23 @@ export default function EmpleadosPage() {
     setOperationLoading('grupos', false);
   }, [setOperationLoading]);
 
-  // Funcție pentru crearea unui grup nou
+  // Adaugă un grup nou doar în form (lista de grupuri vine din DatosEmpleados; la salvare empleado GRUPO se persistă acolo)
   const createGrupo = async (nombre) => {
+    const nuevoGrupo = (nombre || '').trim();
+    if (!nuevoGrupo) return null;
+    setCreatingGrupo(true);
     try {
-      setCreatingGrupo(true);
-      const token = localStorage.getItem('auth_token');
-      const response = await fetch(routes.createGrupo, {
-        method: 'POST',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ nombre }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Error al crear grupo' }));
-        throw new Error(errorData.message || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const nuevoGrupo = data.grupo || nombre;
-
-      // Actualizează lista de grupuri
       setGruposList(prev => [...prev, nuevoGrupo].sort());
       setGruposListForEdit(prev => [...prev, nuevoGrupo].sort());
-
-      // Setează noul grup în ambele formulare (edit și add)
       setEditForm(prev => ({ ...prev, GRUPO: nuevoGrupo }));
       setAddForm(prev => ({ ...prev, GRUPO: nuevoGrupo }));
-
-      // Închide modal-ul
       setShowCreateGrupoModal(false);
       setNewGrupoNombre('');
-
-      // Log activitate
       await activityLogger.logAction('create_grupo', {
         grupo: nuevoGrupo,
         user: authUser?.CODIGO || authUser?.codigo,
       });
-
       return nuevoGrupo;
-    } catch (error) {
-      console.error('Error creating grupo:', error);
-      throw error;
     } finally {
       setCreatingGrupo(false);
     }
@@ -1798,7 +1781,7 @@ export default function EmpleadosPage() {
       setAddForm({
         ...Object.fromEntries(SHEET_FIELDS.map(f => [f, ''])),
         CODIGO: generateCodigo(),
-        EMPRESA: 'DE CAMINO SERVICIOS AUXILIARES SL',
+        EMPRESA: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
         ESTADO: 'PENDIENTE', // Default pentru angajați noi
         DerechoPedidos: 'NO',
         TrabajaFestivos: 'NO',
@@ -2361,7 +2344,7 @@ export default function EmpleadosPage() {
       formData.append('recipientType', 'gestoria');
       formData.append('recipientEmail', 'mdelosangeles@ancaraconsulting.es');
       formData.append('subject', `Lista de Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
-      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>`);
+      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL'}</strong></p>`);
       formData.append('attachments', excelFile);
 
       setNotification({
@@ -2828,11 +2811,11 @@ export default function EmpleadosPage() {
             table: {
               widths: ['*'],
               body: [
-                [{ text: 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
-                [{ text: 'NIF: B85524536', style: 'companyDetails' }],
-                [{ text: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: 'Teléfono: 910 440 275', style: 'companyDetails' }],
-                [{ text: 'Email: info@decaminoservicios.com', style: 'companyDetails' }]
+                [{ text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
+                [{ text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`, style: 'companyDetails' }],
+                [{ text: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
+                [{ text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'}`, style: 'companyDetails' }],
+                [{ text: `Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`, style: 'companyDetails' }]
               ]
             },
             layout: 'noBorders',
@@ -2859,7 +2842,7 @@ export default function EmpleadosPage() {
             fontSize: 18, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#CC0000', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center', 
             margin: [0, 0, 0, 8]
           },
@@ -2875,7 +2858,7 @@ export default function EmpleadosPage() {
             fontSize: 12, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#0066CC', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center',
             margin: [0, 4, 0, 2]
           },
@@ -4764,7 +4747,6 @@ export default function EmpleadosPage() {
                     {field === 'ESTADO' && '📊'} 
                     {field === 'DerechoPedidos' && '🛒'} 
                     {field === 'TrabajaFestivos' && '🎉'} 
-                    {field === 'CuantoPuedeGastar' && '💰'} 
                     {field}
                   </label>
                   {field === 'CODIGO' ? (
@@ -5206,24 +5188,6 @@ export default function EmpleadosPage() {
                       <option value="NO">❌ NO</option>
                       <option value="SI">✅ SI</option>
                     </select>
-                  ) : field === 'CuantoPuedeGastar' ? (
-                    <div className="space-y-2">
-                      <input
-                        id={fieldId}
-                        name={field}
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 hover:border-gray-300"
-                        value={addForm[field] || ''}
-                        onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
-                        placeholder="0.00"
-                      />
-                      <div className="text-xs text-gray-500 flex items-center gap-1">
-                        <span>💰</span>
-                        <span>Límite de gasto en EUR</span>
-                      </div>
-                    </div>
                   ) : field === 'TIPO DE CONTRATO' ? (
                     <select
                       id={fieldId}
@@ -5283,7 +5247,7 @@ export default function EmpleadosPage() {
                         ) : (
                           <>
                             {gruposList.map((grupo) => (
-                              <option key={grupo} value={grupo}>{grupo}</option>
+                              <option key={grupo} value={grupo}>{stripHtml(grupo)}</option>
                             ))}
                             <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
                               ➕ Agregar nuevo grupo...
@@ -6203,7 +6167,7 @@ export default function EmpleadosPage() {
                                         }}
                                         className="px-3 py-2 text-xs hover:bg-blue-50 cursor-pointer"
                                       >
-                                        {grupo}
+                                        {stripHtml(grupo)}
                                       </div>
                                     ))}
                                   </div>
@@ -6387,7 +6351,6 @@ export default function EmpleadosPage() {
                   {field === 'DerechoPedidos' && '🛒'} 
                   {field === 'TrabajaFestivos' && '🎉'} 
                   {field === 'Contraseña' && '🔑'} 
-                  {field === 'CuantoPuedeGastar' && '💰'} 
                   {field === 'fecha_baja_programada' && '📅'} 
                   {field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' && '🏖️'} 
                   {field === 'certificado_handicap_confirmado' && '♿'} 
@@ -6704,7 +6667,7 @@ export default function EmpleadosPage() {
                     name={field}
                     type="text"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 cursor-not-allowed"
-                    value={editForm[field] || 'DE CAMINO SERVICIOS AUXILIARES SL'}
+                    value={editForm[field] || (import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL')}
                     readOnly={true}
                     placeholder="empresa (solo lectura)"
                   />
@@ -6732,7 +6695,7 @@ export default function EmpleadosPage() {
                       ) : (
                         <>
                           {gruposList.map((grupo) => (
-                            <option key={grupo} value={grupo}>{grupo}</option>
+                            <option key={grupo} value={grupo}>{stripHtml(grupo)}</option>
                           ))}
                           <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
                             ➕ Agregar nuevo grupo...
@@ -6907,24 +6870,6 @@ export default function EmpleadosPage() {
                         <span>La contraseña es solo de lectura y no se puede editar aquí</span>
                       </p>
                     )}
-                  </div>
-                ) : field === 'CuantoPuedeGastar' ? (
-                  <div className="space-y-2">
-                    <input
-                      id={fieldId}
-                      name={field}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 hover:border-gray-300"
-                      value={editForm[field] || ''}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
-                      placeholder="0.00"
-                    />
-                    <div className="text-xs text-gray-500 flex items-center gap-1">
-                      <span>💰</span>
-                      <span>Límite de gasto en EUR</span>
-                    </div>
                   </div>
                 ) : field === 'TIPO DE CONTRATO' ? (
                   <select
@@ -7377,7 +7322,7 @@ export default function EmpleadosPage() {
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 bg-white"
                 >
                   {gruposList.map((g) => (
-                    <option key={g} value={g}>{g}</option>
+                    <option key={g} value={g}>{stripHtml(g)}</option>
                   ))}
                 </select>
               </div>

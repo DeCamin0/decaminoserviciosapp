@@ -50,11 +50,15 @@ export const showPushNotification = (notification) => {
     return null;
   }
 
+  // Folosește base path-ul din environment pentru path-uri relative
+  // Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.svg
+  const basePath = import.meta.env.VITE_BASE_PATH || '/';
+  const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+  
   const options = {
     body: notification.message || notification.content,
-    // Folosește base path-ul din environment pentru path-uri relative
-    icon: `${import.meta.env.VITE_BASE_PATH || '/'}logo.svg`.replace(/\/+/g, '/'), // Iconița aplicației
-    badge: `${import.meta.env.VITE_BASE_PATH || '/'}logo.svg`.replace(/\/+/g, '/'), // Badge pentru notificări
+    icon: `${basePath}${logoPath}`.replace(/\/+/g, '/'), // Iconița aplicației
+    badge: `${basePath}${logoPath}`.replace(/\/+/g, '/'), // Badge pentru notificări
     image: notification.image, // Imagine opțională
     // Folosește ID-ul unic pentru fiecare notificare, nu tag comun - astfel toate notificările rămân separate
     tag: notification.id ? `notification-${notification.id}` : `notification-${Date.now()}-${Math.random()}`, // Tag unic pentru fiecare notificare

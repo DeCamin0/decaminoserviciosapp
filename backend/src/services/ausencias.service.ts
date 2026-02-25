@@ -335,7 +335,7 @@ export class AusenciasService {
       html = emailData.html;
 
       await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
-        bcc: ['decamino.rrhh@gmail.com'],
+        bcc: this.emailService.getDefaultBcc(),
       });
       this.logger.log(
         `✅ Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia ${ausenciaData.codigo}`,
@@ -596,7 +596,7 @@ export class AusenciasService {
         `📧 [sendAusenciaDeletedEmail] Sending email for ausencia delete - subject: ${subject}`,
       );
       await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
-        bcc: ['decamino.rrhh@gmail.com'],
+        bcc: this.emailService.getDefaultBcc(),
       });
       this.logger.log(
         `✅ [sendAusenciaDeletedEmail] Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia delete ${ausenciaData.codigo}`,
@@ -2677,7 +2677,7 @@ export class AusenciasService {
           `;
 
           await this.emailService.sendEmail(empleadoEmail, subject, html, {
-            bcc: ['decamino.rrhh@gmail.com'],
+            bcc: this.emailService.getDefaultBcc(),
           });
 
           this.logger.log(

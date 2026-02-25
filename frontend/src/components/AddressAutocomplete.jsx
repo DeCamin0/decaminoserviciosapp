@@ -6,7 +6,10 @@ import { routes } from '../utils/routes';
  * Component pentru autocompletare adrese
  * Folosește Nominatim (OpenStreetMap) - gratuit
  */
-const AddressAutocomplete = ({ value, onChange, placeholder, id, name, className = '' }) => {
+/**
+ * @param {Object} [onAddressSelected] - Optional. When user selects a suggestion and we have structured data, called with { displayName, postcode, city, state }.
+ */
+const AddressAutocomplete = ({ value, onChange, placeholder, id, name, className = '', onAddressSelected }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -129,31 +132,39 @@ const AddressAutocomplete = ({ value, onChange, placeholder, id, name, className
     const numberFromQuery = extractNumber(value);
     let finalAddress = suggestion.display_name;
     
-    // Folosim reverse geocoding cu coordonatele exacte pentru a obține adresa completă cu codul poștal corect
+    let addressResult = null;
     if (suggestion.lat && suggestion.lon) {
       try {
         setIsLoading(true);
         const url = routes.getAddressFromCoords(suggestion.lat, suggestion.lon);
         const response = await callApi(url);
-        
-        if (response?.success && response?.data?.address?.display_name) {
-          // Folosim adresa obținută prin reverse geocoding (are codul poștal corect)
-          finalAddress = response.data.address.display_name;
+
+        if (response?.success && response?.data?.address) {
+          const data = response.data.address;
+          finalAddress = data.display_name || finalAddress;
+          const addr = data.address || {};
+          addressResult = {
+            displayName: finalAddress,
+            postcode: data.postcode || addr.postcode || '',
+            city: addr.city || addr.town || addr.village || addr.municipality || '',
+            state: addr.state || addr.region || '',
+          };
         }
       } catch (error) {
         console.warn('Error getting precise address:', error);
-        // Continuăm cu adresa din sugestie dacă reverse geocoding eșuează
       } finally {
         setIsLoading(false);
       }
     }
-    
-    // Dacă există un număr în query, îl adăugăm în adresă
+
     if (numberFromQuery) {
       finalAddress = addNumberToAddress(finalAddress, numberFromQuery);
     }
 
     onChange({ target: { value: finalAddress, name } });
+    if (onAddressSelected && addressResult) {
+      onAddressSelected({ ...addressResult, displayName: finalAddress });
+    }
     setShowSuggestions(false);
     setSuggestions([]);
     if (inputRef.current) {

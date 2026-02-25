@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aceptación de Presupuesto - De Camino Servicios</title>
+  <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 35%, #dc2626 70%, #e53935 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      color: #1a1a1a;
+      line-height: 1.5;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+    .page-wrap {
+      width: 100%;
+      max-width: 480px;
+    }
+    .logo-wrap {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .logo-wrap img {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.95);
+      padding: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(12px);
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      padding: 32px 28px;
+    }
+    .card-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin: 0 0 6px;
+      text-align: center;
+    }
+    .card-subtitle {
+      text-align: center;
+      color: #525252;
+      font-size: 0.9rem;
+      margin: 0 0 4px;
+    }
+    #id-info {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #dc2626;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-top: 14px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: #374151;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      font-size: 1rem;
+      background: #fff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #dc2626;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+    }
+    select { cursor: pointer; }
+    .pad-wrap {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      margin-top: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+      background: #fafafa;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 160px;
+      touch-action: none;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .btn-clear {
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .btn-clear:hover { background: #e5e7eb; }
+    .btn-submit {
+      width: 100%;
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      color: white;
+      margin-top: 24px;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 1rem;
+      box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
+    }
+    .btn-submit:hover:not(:disabled) {
+      background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+      box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45);
+    }
+    .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+    .checkbox-wrap {
+      margin: 20px 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: #dc2626; }
+    .checkbox-wrap label { margin: 0; font-weight: 500; color: #374151; }
+    .formalizacion-block {
+      margin: 16px 0 20px;
+      padding: 12px 14px;
+      background: #f8fafc;
+      border-radius: 10px;
+      border-left: 3px solid #dc2626;
+      font-size: 0.75rem;
+      line-height: 1.45;
+      color: #374151;
+    }
+    .formalizacion-block .formalizacion-title {
+      font-weight: 700;
+      color: #1a1a1a;
+      margin: 0 0 8px;
+      font-size: 0.8rem;
+    }
+    .formalizacion-block p { margin: 0 0 6px; }
+    .formalizacion-block p:last-child { margin-bottom: 0; }
+    .error { color: #b91c1c; font-size: 0.9rem; margin-top: 10px; }
+    .success { color: #15803d; font-size: 0.95rem; margin-top: 16px; font-weight: 500; }
+    .req { color: #dc2626; }
+    .verify-note {
+      font-size: 0.8rem;
+      color: #525252;
+      background: #f8fafc;
+      border-left: 3px solid #dc2626;
+      padding: 8px 12px;
+      margin-bottom: 16px;
+      border-radius: 0 8px 8px 0;
+    }
+    .servicios-section {
+      margin-bottom: 20px;
+      padding: 14px;
+      background: #f8fafc;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+    }
+    .servicios-section h3 {
+      font-size: 1rem;
+      margin: 0 0 12px;
+      color: #1a1a1a;
+    }
+    .servicios-table-wrap { overflow-x: auto; margin-bottom: 12px; }
+    .servicios-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    .servicios-table th, .servicios-table td {
+      border: 1px solid #e5e7eb;
+      padding: 8px 10px;
+      text-align: left;
+      background: #fff;
+    }
+    .servicios-table th { font-weight: 600; color: #374151; background: #f3f4f6; }
+    .servicios-table tr.radio-row td { vertical-align: middle; }
+    .servicios-table .col-radio { width: 28px; text-align: center; }
+    .servicios-table .col-radio input { width: auto; margin: 0; accent-color: #dc2626; }
+    .servicios-table .precio-block { line-height: 1.3; }
+    .servicios-variante-note {
+      font-size: 0.75rem;
+      color: #525252;
+      margin-top: 8px;
+    }
+    .datos-piscina-section {
+      margin: 18px 0;
+      padding: 14px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 12px;
+    }
+    .datos-piscina-title {
+      font-weight: 700;
+      color: #166534;
+      margin: 0 0 12px;
+      font-size: 0.95rem;
+    }
+    .datos-piscina-note {
+      font-size: 0.8rem;
+      color: #525252;
+      margin: 4px 0 12px;
+    }
+
+    .firmar-footer {
+      width: 100%;
+      max-width: 480px;
+      padding: 24px 16px 16px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .firmar-footer p.footer-credits {
+      color: rgba(255, 255, 255, 0.95);
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin: 0 0 12px;
+    }
+    .firmar-footer .footer-logo-link {
+      display: inline-block;
+      margin-bottom: 10px;
+      transition: transform 0.2s;
+    }
+    .firmar-footer .footer-logo-link:hover { transform: scale(1.08); }
+    .firmar-footer .footer-logo-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid #1f2937;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .firmar-footer .footer-logo-circle img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+    .firmar-footer .footer-copy {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.75rem;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .firmar-footer .footer-copy a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .firmar-footer .footer-copy .mini-logo {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      border: 1px solid #1f2937;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .firmar-footer .footer-copy .mini-logo img {
+      width: 12px;
+      height: 12px;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <div class="main">
+  <div class="page-wrap">
+    <div class="logo-wrap">
+      <img src="./logo.svg" alt="De Camino" onerror="this.style.display='none'" />
+    </div>
+    <div class="card">
+      <h1 class="card-title">Aceptación de Presupuesto</h1>
+      <p class="card-subtitle">Ha accedido al portal seguro de firma de De Camino Servicios.</p>
+      <p class="card-subtitle" style="margin-bottom: 8px; font-size: 0.8rem;">Todos los campos son obligatorios.</p>
+      <p class="verify-note">Por favor, compruebe que todos los datos (nombre de cliente, dirección, CIF, representante, etc.) son correctos antes de firmar.</p>
+      <p id="id-info"></p>
+
+      <div id="servicios-section" class="servicios-section" style="display: none;">
+        <h3>Servicios contractados</h3>
+        <div class="servicios-table-wrap">
+          <table class="servicios-table" id="servicios-table">
+            <thead id="servicios-thead"></thead>
+            <tbody id="servicios-tbody"></tbody>
+          </table>
+        </div>
+        <p id="servicios-variante-note" class="servicios-variante-note" style="display: none;">Seleccione la variante que acepta (obligatorio).</p>
+      </div>
+
+  <form id="form" novalidate>
+    <label for="nombre_comunidad">Nombre de Cliente <span class="req">*</span></label>
+    <input type="text" id="nombre_comunidad" name="nombre_comunidad" required placeholder="Obligatorio" />
+
+    <label for="cif">CIF <span class="req">*</span></label>
+    <input type="text" id="cif" name="cif" required placeholder="Obligatorio" />
+
+    <label for="direccion">Dirección <span class="req">*</span></label>
+    <input type="text" id="direccion" name="direccion" required placeholder="Obligatorio" />
+
+    <label for="nombre_representante">Nombre del representante <span class="req">*</span></label>
+    <input type="text" id="nombre_representante" name="nombre_representante" required placeholder="Obligatorio" />
+
+    <label for="cargo">Cargo <span class="req">*</span></label>
+    <select id="cargo" name="cargo" required>
+      <option value="">Seleccione...</option>
+      <option value="Presidente">Presidente</option>
+      <option value="Administrador">Administrador</option>
+    </select>
+
+    <label for="email">Email <span class="req">*</span></label>
+    <input type="email" id="email" name="email" required placeholder="Obligatorio" />
+
+    <label for="telefono">Teléfono <span class="req">*</span></label>
+    <input type="tel" id="telefono" name="telefono" required placeholder="Obligatorio" />
+
+    <label for="iban">IBAN <span class="req">*</span></label>
+    <input type="text" id="iban" name="iban" required placeholder="Ej. ES64 0081 5585 3600 0107 1512" />
+
+    <label for="fecha_inicio_servicio">Fecha inicio servicio <span class="req">*</span></label>
+    <input type="date" id="fecha_inicio_servicio" name="fecha_inicio_servicio" required />
+
+    <div id="datos-piscina-section" class="datos-piscina-section" style="display:none;">
+      <p class="datos-piscina-title">Datos piscina (obligatorios)</p>
+      <label for="nombre_presidente">Nombre presidente <span class="req">*</span></label>
+      <input type="text" id="nombre_presidente" name="nombre_presidente" placeholder="Ej. Juan García" />
+      <label for="dni_presidente">D.N.I. presidente <span class="req">*</span></label>
+      <input type="text" id="dni_presidente" name="dni_presidente" placeholder="Ej. 12345678A" maxlength="12" />
+      <p class="datos-piscina-note">El teléfono se tomará del campo "Teléfono" indicado arriba.</p>
+      <label for="n_viviendas">Nº de viviendas <span class="req">*</span></label>
+      <input type="text" id="n_viviendas" name="n_viviendas" placeholder="Ej. 48" />
+      <label for="recogida_llaves">Recogida llaves instalaciones <span class="req">*</span></label>
+      <input type="text" id="recogida_llaves" name="recogida_llaves" placeholder="Ej. Portería, lunes a viernes 9-14h" />
+    </div>
+
+    <label>Firma <span class="req">*</span></label>
+    <div class="pad-wrap">
+      <canvas id="signature-pad"></canvas>
+    </div>
+    <button type="button" class="btn btn-clear" id="btn-clear">Limpiar firma</button>
+
+    <div class="checkbox-wrap">
+      <input type="checkbox" id="acepto" name="acepto" required />
+      <label for="acepto">Acepto condiciones contractuales</label>
+    </div>
+
+    <div class="formalizacion-block">
+      <p class="formalizacion-title">Formalización del contrato</p>
+      <p>El presente presupuesto, junto con sus condiciones contractuales, quedará formalizado como contrato de prestación de servicios desde el momento de su aceptación mediante firma manuscrita o electrónica por parte de la Comunidad de Propietarios.</p>
+      <p>La firma electrónica realizada a través del sistema habilitado tendrá plena validez jurídica conforme a la normativa vigente.</p>
+      <p>Para cualquier discrepancia o controversia derivada de la interpretación o ejecución del presente contrato, las partes se someten expresamente a los Juzgados y Tribunales de Madrid.</p>
+      <p>En Madrid, a la fecha de la firma electrónica.</p>
+    </div>
+
+    <button type="submit" class="btn btn-submit" id="btn-submit" disabled>Firmar y aceptar</button>
+  </form>
+
+  <p id="message" class="error" style="display:none;"></p>
+  <p id="success" class="success" style="display:none;"></p>
+    </div>
+  </div>
+  </div>
+
+  <footer class="firmar-footer">
+    <p class="footer-credits">Este sistema ha sido diseñado y desarrollado por DeCamino</p>
+    <a href="https://decamino.es" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
+      <div class="footer-logo-circle">
+        <img src="/DeCamino-04.svg" alt="DeCamino Logo" />
+      </div>
+    </a>
+    <div class="footer-copy">
+      <span>© <span id="footer-year"></span></span>
+      <a href="https://decamino.es" target="_blank" rel="noopener noreferrer" title="DeCamino">
+        <div class="mini-logo">
+          <img src="/DeCamino-04.svg" alt="DeCamino" />
+        </div>
+      </a>
+      <span>Todos los derechos reservados</span>
+    </div>
+  </footer>
+  <script>document.getElementById('footer-year').textContent = new Date().getFullYear();</script>
+
+  <script>
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var quotationId = params.get('id') ? parseInt(params.get('id'), 10) : null;
+      var numeroPresupuesto = null;
+      var API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000'
+        : 'https://api.decaminoservicios.com';
+
+      var ofertaEconomicaRows = null;
+      var esSoloPiscina = false;
+
+      function fmtNum(n) {
+        if (n == null || isNaN(n)) return '-';
+        return Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function renderServiciosContractados(oferta, soloPiscina) {
+        var section = document.getElementById('servicios-section');
+        var thead = document.getElementById('servicios-thead');
+        var tbody = document.getElementById('servicios-tbody');
+        var note = document.getElementById('servicios-variante-note');
+        if (!oferta || oferta.length === 0) {
+          section.style.display = 'none';
+          return;
+        }
+        ofertaEconomicaRows = oferta;
+        esSoloPiscina = soloPiscina === true;
+        section.style.display = 'block';
+        var hasVariantes = oferta.length > 1;
+        note.style.display = hasVariantes ? 'block' : 'none';
+        document.getElementById('servicios-variante-note').textContent = hasVariantes
+          ? 'Marque los servicios que acepta (al menos uno).'
+          : (document.getElementById('servicios-variante-note').textContent || '');
+
+        var headerHtml = '<tr><th class="col-radio">' + (hasVariantes ? '<span title="Seleccione">✓</span>' : '') + '</th><th>DESCRIPCIÓN</th><th>MENSUALIDAD</th>';
+        if (!esSoloPiscina) headerHtml += '<th>ANUALIDAD</th>';
+        headerHtml += '</tr>';
+        thead.innerHTML = headerHtml;
+
+        var rowsHtml = '';
+        oferta.forEach(function(row, idx) {
+          var mens = fmtNum(row.mensualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.mensualidadConIva) + '€ IVA incl.</small>';
+          var anu = esSoloPiscina ? '' : (fmtNum(row.anualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.anualidadConIva) + '€ IVA incl.</small>');
+          var input = hasVariantes ? '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check">' : '';
+          rowsHtml += '<tr class="radio-row"><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
+          if (!esSoloPiscina) rowsHtml += '<td class="precio-block">' + anu + '</td>';
+          rowsHtml += '</tr>';
+        });
+        tbody.innerHTML = rowsHtml;
+        if (hasVariantes) {
+          tbody.querySelectorAll('input[name="selected_oferta"]').forEach(function(cb) {
+            cb.addEventListener('change', updateSubmitState);
+          });
+        }
+        var datosPiscinaSection = document.getElementById('datos-piscina-section');
+        var np = document.getElementById('nombre_presidente');
+        var dni = document.getElementById('dni_presidente');
+        var nv = document.getElementById('n_viviendas');
+        var rl = document.getElementById('recogida_llaves');
+        if (datosPiscinaSection) datosPiscinaSection.style.display = esSoloPiscina ? 'block' : 'none';
+        if (np) np.required = esSoloPiscina;
+        if (dni) dni.required = esSoloPiscina;
+        if (nv) nv.required = esSoloPiscina;
+        if (rl) rl.required = esSoloPiscina;
+        if (np || dni || nv || rl) {
+          [np, dni, nv, rl].forEach(function(el) {
+            if (el) {
+              el.removeEventListener('input', updateSubmitState);
+              el.removeEventListener('change', updateSubmitState);
+              el.addEventListener('input', updateSubmitState);
+              el.addEventListener('change', updateSubmitState);
+            }
+          });
+        }
+        updateSubmitState();
+      }
+
+      if (!quotationId) {
+        document.getElementById('id-info').textContent = 'No se ha indicado presupuesto (falta ?id= en la URL).';
+      } else {
+        document.getElementById('id-info').textContent = 'Presupuesto nº ' + quotationId;
+        fetch(API_BASE + '/api/presupuestos/' + quotationId + '/datos-firma')
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (data) {
+              numeroPresupuesto = data.numero_presupuesto || null;
+              var num = numeroPresupuesto || quotationId;
+              document.getElementById('id-info').textContent = 'Presupuesto nº ' + num;
+              if (data.cliente_nombre) document.getElementById('nombre_comunidad').value = data.cliente_nombre;
+              if (data.cif) document.getElementById('cif').value = data.cif;
+              if (data.direccion) document.getElementById('direccion').value = data.direccion;
+              if (data.iban) document.getElementById('iban').value = data.iban;
+              if (data.oferta_economica && data.oferta_economica.length > 0) {
+                renderServiciosContractados(data.oferta_economica, data.es_solo_piscina);
+              }
+            }
+            if (typeof updateSubmitState === 'function') updateSubmitState();
+          })
+          .catch(function() {})
+          .then(function() { if (typeof updateSubmitState === 'function') updateSubmitState(); });
+      }
+
+      var canvas = document.getElementById('signature-pad');
+      var ratio = Math.max(window.devicePixelRatio || 1, 1);
+      canvas.width = canvas.offsetWidth * ratio;
+      canvas.height = 180 * ratio;
+      canvas.getContext('2d').scale(ratio, ratio);
+      var signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(250, 250, 250)' });
+
+      function resizeCanvas() {
+        var w = canvas.offsetWidth;
+        canvas.width = w * ratio;
+        canvas.height = 180 * ratio;
+        canvas.getContext('2d').scale(ratio, ratio);
+        signaturePad.clear();
+      }
+      window.addEventListener('resize', resizeCanvas);
+
+      document.getElementById('btn-clear').addEventListener('click', function() {
+        signaturePad.clear();
+        updateSubmitState();
+      });
+
+      signaturePad.addEventListener('endStroke', updateSubmitState);
+
+      function allRequiredFieldsValid() {
+        var nombre_comunidad = document.getElementById('nombre_comunidad').value.trim();
+        var cif = document.getElementById('cif').value.trim();
+        var direccion = document.getElementById('direccion').value.trim();
+        var nombre_representante = document.getElementById('nombre_representante').value.trim();
+        var cargo = document.getElementById('cargo').value;
+        var email = document.getElementById('email').value.trim();
+        var telefono = document.getElementById('telefono').value.trim();
+        var iban = document.getElementById('iban').value.trim();
+        var fechaInicio = document.getElementById('fecha_inicio_servicio').value.trim();
+        var signed = !signaturePad.isEmpty();
+        var acepto = document.getElementById('acepto').checked;
+        var varianteOk = true;
+        if (ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
+          var checked = document.querySelectorAll('input[name="selected_oferta"]:checked');
+          varianteOk = checked.length > 0;
+        }
+        var piscinaOk = true;
+        if (esSoloPiscina) {
+          var nombrePres = document.getElementById('nombre_presidente') && document.getElementById('nombre_presidente').value.trim();
+          var dniPres = document.getElementById('dni_presidente') && document.getElementById('dni_presidente').value.trim();
+          var nViviendas = document.getElementById('n_viviendas') && document.getElementById('n_viviendas').value.trim();
+          var recogidaLlaves = document.getElementById('recogida_llaves') && document.getElementById('recogida_llaves').value.trim();
+          piscinaOk = !!(nombrePres && dniPres && nViviendas && recogidaLlaves);
+        }
+        return nombre_comunidad && cif && direccion && nombre_representante && cargo && email && telefono && iban && fechaInicio && signed && acepto && varianteOk && piscinaOk;
+      }
+
+      function updateSubmitState() {
+        document.getElementById('btn-submit').disabled = !allRequiredFieldsValid();
+      }
+      document.getElementById('acepto').addEventListener('change', updateSubmitState);
+
+      function syncNombrePresidente() {
+        var cargo = document.getElementById('cargo');
+        var nombreRep = document.getElementById('nombre_representante');
+        var nombrePres = document.getElementById('nombre_presidente');
+        if (cargo && cargo.value === 'Presidente' && nombreRep && nombrePres) {
+          nombrePres.value = nombreRep.value.trim();
+        }
+      }
+      document.getElementById('cargo').addEventListener('change', function() {
+        syncNombrePresidente();
+        updateSubmitState();
+      });
+      document.getElementById('nombre_representante').addEventListener('input', syncNombrePresidente);
+      document.getElementById('nombre_representante').addEventListener('change', syncNombrePresidente);
+
+      ['nombre_comunidad', 'cif', 'direccion', 'nombre_representante', 'cargo', 'email', 'telefono', 'iban', 'fecha_inicio_servicio', 'nombre_presidente', 'dni_presidente', 'n_viviendas', 'recogida_llaves'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', updateSubmitState);
+          el.addEventListener('change', updateSubmitState);
+        }
+      });
+      updateSubmitState();
+
+      document.getElementById('form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (!quotationId) {
+          showMessage('Falta el identificador del presupuesto en la URL.', true);
+          return;
+        }
+        var missing = [];
+        if (!document.getElementById('nombre_comunidad').value.trim()) missing.push('Nombre de Cliente');
+        if (!document.getElementById('cif').value.trim()) missing.push('CIF');
+        if (!document.getElementById('direccion').value.trim()) missing.push('Dirección');
+        if (!document.getElementById('nombre_representante').value.trim()) missing.push('Nombre del representante');
+        if (!document.getElementById('cargo').value) missing.push('Cargo');
+        if (!document.getElementById('email').value.trim()) missing.push('Email');
+        if (!document.getElementById('telefono').value.trim()) missing.push('Teléfono');
+        if (!document.getElementById('iban').value.trim()) missing.push('IBAN');
+        if (!document.getElementById('fecha_inicio_servicio').value.trim()) missing.push('Fecha inicio servicio');
+        if (signaturePad.isEmpty()) missing.push('Firma');
+        if (!document.getElementById('acepto').checked) missing.push('Aceptación de condiciones');
+        if (ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
+          var checked = document.querySelectorAll('input[name="selected_oferta"]:checked');
+          if (checked.length === 0) missing.push('Seleccione al menos un servicio');
+        }
+        if (esSoloPiscina) {
+          if (!document.getElementById('nombre_presidente').value.trim()) missing.push('Nombre presidente');
+          if (!document.getElementById('dni_presidente').value.trim()) missing.push('D.N.I. presidente');
+          if (!document.getElementById('n_viviendas').value.trim()) missing.push('Nº de viviendas');
+          if (!document.getElementById('recogida_llaves').value.trim()) missing.push('Recogida llaves instalaciones');
+        }
+        if (missing.length > 0) {
+          showMessage('Por favor complete todos los campos obligatorios: ' + missing.join(', ') + '.', true);
+          return;
+        }
+
+        var selectedOfertaIndices = [];
+        if (ofertaEconomicaRows && ofertaEconomicaRows.length > 0) {
+          var checked = document.querySelectorAll('input[name="selected_oferta"]:checked');
+          if (checked.length > 0) {
+            selectedOfertaIndices = Array.from(checked).map(function(el) { return parseInt(el.value, 10); }).sort(function(a, b) { return a - b; });
+          } else if (ofertaEconomicaRows.length === 1) {
+            selectedOfertaIndices = [0];
+          }
+        }
+        if (selectedOfertaIndices.length === 0 && ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
+          showMessage('Seleccione al menos un servicio de la lista.', true);
+          return;
+        }
+
+        var now = new Date();
+        var fechaHora = now.toISOString();
+        var payload = {
+          quotation_id: quotationId,
+          numero_presupuesto: numeroPresupuesto || String(quotationId),
+          fecha_hora: fechaHora,
+          nombre_comunidad: document.getElementById('nombre_comunidad').value.trim(),
+          cif: document.getElementById('cif').value.trim(),
+          direccion: document.getElementById('direccion').value.trim(),
+          nombre_representante: document.getElementById('nombre_representante').value.trim(),
+          cargo: document.getElementById('cargo').value,
+          email: document.getElementById('email').value.trim(),
+          telefono: document.getElementById('telefono').value.trim(),
+          iban: document.getElementById('iban').value.trim(),
+          fecha_inicio_servicio: document.getElementById('fecha_inicio_servicio').value.trim(),
+          firma_base64: signaturePad.toDataURL('image/png'),
+          selected_oferta_indices: selectedOfertaIndices,
+          selected_oferta_index: selectedOfertaIndices.length > 0 ? selectedOfertaIndices[0] : 0
+        };
+        if (esSoloPiscina) {
+          payload.nombre_presidente = document.getElementById('nombre_presidente').value.trim();
+          payload.dni_presidente = document.getElementById('dni_presidente').value.trim();
+          payload.n_viviendas = document.getElementById('n_viviendas').value.trim();
+          payload.recogida_llaves = document.getElementById('recogida_llaves').value.trim();
+        }
+
+        var btn = document.getElementById('btn-submit');
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+        showMessage('', true);
+        showSuccess('', true);
+
+        generateAndDownloadPdf(payload, now).then(function(pdfDataUrl) {
+          var pdfStr = pdfDataUrl || '';
+          if (pdfStr.length < 500) {
+            showMessage('No se pudo generar el PDF correctamente. Inténtelo de nuevo.');
+            btn.disabled = false;
+            btn.textContent = 'Firmar y aceptar';
+            return Promise.reject(new Error('PDF inválido'));
+          }
+          payload.pdf_base64 = pdfStr;
+          var a = document.createElement('a');
+          a.href = pdfDataUrl;
+          a.download = 'aceptacion-presupuesto-' + quotationId + '.pdf';
+          a.click();
+          return fetch(API_BASE + '/api/presupuestos/firmado', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }).then(function(res) {
+          if (!res.ok) throw new Error('Error al registrar la firma: ' + res.status);
+          return res.json();
+        }).then(function(data) {
+          var msg = 'Presupuesto aceptado y firmado correctamente. El documento de confirmación se ha descargado.';
+          if (data && data.email_enviado) {
+            msg += ' Se ha enviado una copia a su correo electrónico.';
+          }
+          showSuccess(msg);
+          btn.textContent = 'Completado';
+          btn.disabled = true;
+        }).catch(function(err) {
+          showMessage(err.message || 'Error al enviar la firma. Compruebe la conexión.');
+          btn.disabled = false;
+          btn.textContent = 'Firmar y aceptar';
+        });
+      });
+
+      function showMessage(text, hideSuccess) {
+        var el = document.getElementById('message');
+        el.textContent = text;
+        el.style.display = text ? 'block' : 'none';
+        if (hideSuccess) document.getElementById('success').style.display = 'none';
+      }
+      function showSuccess(text, hideError) {
+        var el = document.getElementById('success');
+        el.textContent = text;
+        el.style.display = text ? 'block' : 'none';
+        if (hideError) document.getElementById('message').style.display = 'none';
+      }
+
+      function generateAndDownloadPdf(payload, signedAt) {
+        return new Promise(function(resolve) {
+          var { jsPDF } = window.jspdf;
+          var doc = new jsPDF();
+          var y = 20;
+          doc.setFontSize(16);
+          doc.text('Documento firmado electrónicamente', 20, y);
+          y += 14;
+          doc.setFontSize(10);
+          doc.text('Presupuesto nº: ' + (payload.numero_presupuesto || payload.quotation_id), 20, y);
+          y += 8;
+          doc.text('Fecha y hora: ' + payload.fecha_hora, 20, y);
+          y += 8;
+          doc.text('Comunidad: ' + payload.nombre_comunidad, 20, y);
+          y += 6;
+          doc.text('CIF: ' + payload.cif, 20, y);
+          y += 6;
+          doc.text('Dirección: ' + payload.direccion, 20, y);
+          y += 6;
+          doc.text('Representante: ' + payload.nombre_representante + ' (' + payload.cargo + ')', 20, y);
+          y += 6;
+          doc.text('Email: ' + payload.email + '  Teléfono: ' + payload.telefono, 20, y);
+          y += 6;
+          doc.text('IBAN: ' + (payload.iban || '-'), 20, y);
+          y += 14;
+          try {
+            doc.addImage(payload.firma_base64, 'PNG', 20, y, 100, 40);
+            y += 50;
+          } catch (e) { y += 10; }
+          doc.text('IP: (registrada en servidor)', 20, y);
+          y += 6;
+          doc.text('User-Agent: (registrado en servidor)', 20, y);
+          var pdfDataUrl = doc.output('dataurlstring');
+          resolve(pdfDataUrl);
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

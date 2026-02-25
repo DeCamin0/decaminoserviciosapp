@@ -27,6 +27,11 @@ import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 const checkConfirmationCache = new Map(); // key: "codigo_data", value: { promise, timestamp, result }
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minute cache pentru a preveni apeluri duplicate
 
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
+const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
+
 // Flag global pentru a preveni apelurile simultane de checkConfirmation
 let isCheckingConfirmation = false;
 const CHECK_CONFIRMATION_DEBOUNCE = 2000; // 2 secunde debounce între apeluri
@@ -5720,11 +5725,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             table: {
               widths: ['*'],
               body: [
-                [{ text: 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
-                [{ text: 'NIF: B85524536', style: 'companyDetails' }],
-                [{ text: 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: 'Teléfono: 910 440 275', style: 'companyDetails' }],
-                [{ text: 'Email: info@decaminoservicios.com', style: 'companyDetails' }]
+                [{ text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
+                [{ text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`, style: 'companyDetails' }],
+                [{ text: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
+                [{ text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'}`, style: 'companyDetails' }],
+                [{ text: `Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`, style: 'companyDetails' }]
               ]
             },
             layout: 'noBorders',
@@ -5757,10 +5762,10 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             fontSize: 18, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#CC0000', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center', 
             margin: [0, 0, 0, 8],
-            background: '#CC0000'
+            background: PRIMARY_COLOR
           },
           companyDetails: { 
             fontSize: 10, 
@@ -5774,7 +5779,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             fontSize: 12, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#0066CC', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center',
             margin: [0, 4, 0, 2]
           },
@@ -5787,7 +5792,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             fontSize: 12, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#0066CC', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center',
             margin: [0, 0, 0, 4]
           },

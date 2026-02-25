@@ -289,6 +289,13 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     if (canAccessClientes) {
       list.push({ id: 'clientes', label: 'Clientes', hint: 'Gestión de clientes y proveedores', icon: Users, href: '/clientes', role: 'manager', gradient: 'from-teal-500 via-cyan-500 to-sky-500' });
     }
+    // Presupuestos e Informes - apare pentru toți care au acces la Clientes
+    const canAccessPresupuestos = hasBackendPermissions 
+      ? (hasPermission('presupuestos-informes') || canAccessClientes)
+      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
+    if (canAccessPresupuestos) {
+      list.push({ id: 'presupuestos-informes', label: 'Presupuestos e Informes', hint: 'Generar presupuestos e informes automáticamente', icon: FileText, href: '/presupuestos-informes', role: 'manager', gradient: 'from-indigo-500 via-purple-500 to-pink-500' });
+    }
     list.push({ id: 'hall-of-fame', label: 'Salón de la Fama', hint: 'Clasament lunar', icon: Trophy, href: '/hall-of-fame', gradient: 'from-yellow-400 via-amber-500 to-orange-500' });
 
     return list;

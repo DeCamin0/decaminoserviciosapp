@@ -124,7 +124,7 @@ export class DocumentDistributionService {
       `;
 
       await this.emailService.sendEmail(employeeEmail, subject, html, {
-        bcc: ['decamino.rrhh@gmail.com'],
+        bcc: this.emailService.getDefaultBcc(),
       });
 
       this.logger.log(

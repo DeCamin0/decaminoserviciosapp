@@ -1750,7 +1750,7 @@ export class PedidosService {
             `📧 Enviando email a ${providerEmail} con Excel adjunto (CC: ${ccEmails.join(', ')}, BCC: ${bccEmails.join(', ')})...`,
           );
 
-          await this.emailService.sendEmailWithAttachment(
+          await this.emailService.sendEmailWithAttachmentForPedidos(
             providerEmail,
             subject,
             htmlContent,

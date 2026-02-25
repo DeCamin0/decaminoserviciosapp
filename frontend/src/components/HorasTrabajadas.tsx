@@ -1787,7 +1787,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
 
       const docDefinition = {
         content: [
-          { text: 'DE CAMINO SERVICIOS AUXILIARES', style: 'companyName' },
+          { text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES', style: 'companyName' },
           { text: 'Reporte de Empleados Sin Registros', style: 'reportTitle' },
           { text: `Período: ${formattedMonth} hasta ${formattedDate}`, style: 'period' },
           { text: `Total de empleados sin registros: ${empleadosSinRegistros.length}`, style: 'totalCount', margin: [0, 10, 0, 10] },
@@ -1838,7 +1838,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
 
       // Header
       worksheet.mergeCells('A1:D1');
-      worksheet.getCell('A1').value = 'DE CAMINO SERVICIOS AUXILIARES';
+      worksheet.getCell('A1').value = import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES';
       worksheet.getCell('A1').font = { bold: true, size: 16 };
       worksheet.getCell('A1').alignment = { horizontal: 'center' };
 

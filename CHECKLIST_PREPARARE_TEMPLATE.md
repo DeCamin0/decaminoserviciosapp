@@ -219,6 +219,15 @@ const COMPANY_INFO = {
   phone: '910 440 275',
   email: 'info@decaminoservicios.com'
 };
+
+const STYLES = {
+  companyName: {
+    fill: { fgColor: { argb: "CC0000" } }  // ← Hardcodat roșu!
+  },
+  reportTitle: {
+    fill: { fgColor: { argb: "0066CC" } }  // ← Hardcodat albastru!
+  }
+};
 ```
 
 **După:**
@@ -230,6 +239,22 @@ const COMPANY_INFO = {
   address: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
   phone: import.meta.env.VITE_COMPANY_PHONE || '910 440 275',
   email: import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'
+};
+
+// Culori din env vars (fără # pentru Excel ARGB)
+const PRIMARY_COLOR = (import.meta.env.VITE_PRIMARY_COLOR || '#CC0000').replace('#', '');
+const SECONDARY_COLOR = (import.meta.env.VITE_SECONDARY_COLOR || '#0066CC').replace('#', '');
+
+const STYLES = {
+  companyName: {
+    fill: { fgColor: { argb: PRIMARY_COLOR } }  // ← Din env!
+  },
+  reportTitle: {
+    fill: { fgColor: { argb: SECONDARY_COLOR } }  // ← Din env!
+  },
+  totalsRow: {
+    fill: { fgColor: { argb: PRIMARY_COLOR } }   // ← Din env!
+  }
 };
 ```
 
@@ -290,10 +315,13 @@ VITE_COMPANY_ADDRESS=Your Company Address
 VITE_COMPANY_PHONE=Your Phone Number
 VITE_COMPANY_EMAIL=info@yourcompany.com
 
-# Branding
+# Branding - Logo
 VITE_LOGO_PATH=logo.svg
-VITE_PRIMARY_COLOR=#CC0000
-VITE_SECONDARY_COLOR=#0066CC
+
+# Branding - Culori
+VITE_PRIMARY_COLOR=#CC0000        # Roșu (exemplu)
+VITE_SECONDARY_COLOR=#0066CC      # Albastru (exemplu)
+VITE_ACCENT_COLOR=#E53935         # Roșu accent (exemplu)
 ```
 
 **Status:** [ ] Creat
@@ -313,6 +341,7 @@ VITE_COMPANY_EMAIL=info@decaminoservicios.com
 VITE_LOGO_PATH=logo.svg
 VITE_PRIMARY_COLOR=#CC0000
 VITE_SECONDARY_COLOR=#0066CC
+VITE_ACCENT_COLOR=#E53935
 ```
 
 **Status:** [ ] Creat (local, nu în Git)
@@ -925,11 +954,12 @@ chmod +x scripts/*.sh
 ### Fișiere de Modificat (Backward Compatible)
 
 **Frontend:**
-1. ✅ `frontend/src/utils/exportExcel.ts` - COMPANY_INFO din env
+1. ✅ `frontend/src/utils/exportExcel.ts` - COMPANY_INFO + culori din env
 2. ✅ `frontend/src/utils/routes.js` - URL-uri din env
-3. ✅ `frontend/src/components/MainLayout.jsx` - Logo din env
-4. ✅ `frontend/src/components/DesktopLayout.jsx` - Logo din env
-5. ✅ `frontend/src/pages/EmpleadosPage.jsx` - Verifică hardcodate (BCC emails, etc.)
+3. ✅ `frontend/src/pages/SolicitudesPage.jsx` - PDF date companie din env
+4. ✅ `frontend/src/components/MainLayout.jsx` - Logo path din env
+5. ✅ `frontend/src/layouts/DesktopLayout.jsx` - Logo path din env
+6. ✅ `frontend/src/layouts/MobileLayout.jsx` - Logo path din env (dacă există)
 
 **Backend:**
 1. ✅ `backend/src/main.ts` - CORS origins din env

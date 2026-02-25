@@ -50,6 +50,7 @@ export default function AccessMatrix() {
     { id: 'aprobaciones', name: 'Aprobaciones', icon: '✅', description: 'Aprobaciones de fichajes' },
     { id: 'estadisticas', name: 'Estadísticas', icon: '📊', description: 'Informes y analítica' },
     { id: 'clientes', name: 'Clientes', icon: '👥', description: 'Gestión de clientes' },
+    { id: 'presupuestos-informes', name: 'Presupuestos e Informes', icon: '📋', description: 'Generar presupuestos e informes automáticamente' },
     { id: 'pedidos-empleados', name: 'Pedidos Empleados', icon: '🛒', description: 'Pedidos limitados (solo su comunidad)' },
     { id: 'pedidos-admin', name: 'Pedidos Admin', icon: '🛒', description: 'Pedidos completos (todas las comunidades)' },
     { id: 'admin', name: 'Admin Panel', icon: '⚙️', description: 'Panel de administración' },

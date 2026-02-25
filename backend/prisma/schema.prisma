@@ -979,15 +979,143 @@ model horario_multicentro {
   @@index([CLIENTE], map: "idx_horario_multicentro_cliente")
 }
 
-model grupos_referencia {
-  id         Int      @id @default(autoincrement())
-  nombre     String   @unique @db.VarChar(200)
-  activo     Boolean  @default(true)
-  created_at DateTime @default(now()) @db.Timestamp(0)
-  updated_at DateTime @updatedAt @db.Timestamp(0)
+enum TipoGrupo {
+  grupo_empleado
+  servicio_presupuesto
+}
+
+// Servicii pentru presupuestos (fost grupos_referencia)
+model servicios_referencia {
+  id                    Int         @id @default(autoincrement())
+  nombre                String      @unique @db.VarChar(200)
+  descripcion_operativa String?     @db.Text
+  tipo                  TipoGrupo   @default(servicio_presupuesto)
+  activo                Boolean     @default(true)
+  created_at            DateTime    @default(now()) @db.Timestamp(0)
+  updated_at            DateTime    @updatedAt @db.Timestamp(0)
 
   @@index([activo], map: "idx_grupos_referencia_activo")
-  @@map("grupos_referencia")
+  @@index([tipo], map: "idx_grupos_referencia_tipo")
+  @@map("servicios_referencia")
+}
+
+model plantillas_presupuesto {
+  id                    Int         @id @default(autoincrement())
+  nombre                String      @db.VarChar(500)
+  descripcion_operativa String?     @db.Text
+  activo                Boolean     @default(true)
+  created_at            DateTime    @default(now()) @db.Timestamp(0)
+  updated_at            DateTime    @updatedAt @db.Timestamp(0)
+
+  @@index([activo], map: "idx_plantillas_activo")
+  @@index([created_at], map: "idx_plantillas_created")
+  @@map("plantillas_presupuesto")
+}
+
+model presupuestos_guardados {
+  id                  Int      @id @default(autoincrement())
+  nombre              String   @db.VarChar(500)
+  cliente_id          Int?     @map("cliente_id") @db.Int
+  cliente_nombre      String?  @map("cliente_nombre") @db.VarChar(500)
+  numero_presupuesto  String?  @map("numero_presupuesto") @db.VarChar(50)
+  payload             Json     @db.Json
+  created_by          String?  @map("created_by") @db.VarChar(50)
+  created_at          DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at          DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  firmas              presupuestos_firmas[]
+
+  @@index([created_at], map: "idx_presupuestos_guardados_created")
+  @@map("presupuestos_guardados")
+}
+
+model presupuestos_firmas {
+  id                    Int       @id @default(autoincrement())
+  presupuesto_id        Int       @map("presupuesto_id") @db.Int
+  fecha_hora            String    @map("fecha_hora") @db.VarChar(50)
+  nombre_comunidad      String    @map("nombre_comunidad") @db.VarChar(500)
+  cif                   String    @map("cif") @db.VarChar(50)
+  direccion             String    @map("direccion") @db.VarChar(1000)
+  nombre_representante  String    @map("nombre_representante") @db.VarChar(255)
+  cargo                 String    @map("cargo") @db.VarChar(100)
+  email                 String    @map("email") @db.VarChar(255)
+  telefono             String    @map("telefono") @db.VarChar(50)
+  firma_imagen_base64   String    @map("firma_imagen_base64") @db.LongText
+  ip                    String?   @map("ip") @db.VarChar(100)
+  user_agent           String?   @map("user_agent") @db.VarChar(500)
+  pdf_path              String?   @map("pdf_path") @db.VarChar(500)
+  original_pdf_sha256   String?   @map("original_pdf_sha256") @db.VarChar(64)
+  original_pdf_size_bytes Int?    @map("original_pdf_size_bytes") @db.Int
+  signed_pdf_sha256     String?   @map("signed_pdf_sha256") @db.VarChar(64)
+  signed_pdf_size_bytes Int?     @map("signed_pdf_size_bytes") @db.Int
+  created_at            DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+
+  presupuesto           presupuestos_guardados @relation(fields: [presupuesto_id], references: [id], onDelete: Cascade)
+
+  @@index([presupuesto_id], map: "idx_presupuestos_firmas_presupuesto")
+  @@map("presupuestos_firmas")
+}
+
+/// Ítems para presupuestos por ítems / Factura (importados desde Excel ITEMS o gestionados en app)
+model informes_items {
+  id           Int      @id @default(autoincrement())
+  item_id      String   @map("item_id") @db.VarChar(50)
+  nombre       String   @db.VarChar(500)
+  descripcion  String?  @db.Text
+  precio       Decimal  @db.Decimal(12, 2)
+  observaciones String? @db.VarChar(500)
+  activo       Boolean  @default(true) @db.TinyInt
+  created_at   DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at   DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@unique([item_id], map: "uniq_informes_items_item_id")
+  @@index([activo], map: "idx_informes_items_activo")
+  @@map("informes_items")
+}
+
+/// Configuración del tab Factura / presupuesto por ítems (un solo registro, id=1). Incluye lineas del informe guardado para generación posterior.
+model informes_factura_config {
+  id                    Int      @id @default(autoincrement())
+  tasa_iva              Decimal  @default(21) @map("tasa_iva") @db.Decimal(5, 2)
+  tasa_descuento        Decimal  @default(0) @map("tasa_descuento") @db.Decimal(5, 2)
+  incluir_descripcion   Boolean  @default(true) @map("incluir_descripcion") @db.TinyInt
+  filas_articulo        Int      @default(3) @map("filas_articulo") @db.Int
+  titulo_empresa        String?  @map("titulo_empresa") @db.VarChar(500)
+  direccion_empresa     String?  @map("direccion_empresa") @db.VarChar(500)
+  cp_poblacion_empresa  String?  @map("cp_poblacion_empresa") @db.VarChar(200)
+  email_empresa         String?  @map("email_empresa") @db.VarChar(255)
+  telefono_empresa      String?  @map("telefono_empresa") @db.VarChar(100)
+  cliente_id            Int?     @map("cliente_id") @db.Int
+  lineas_json           Json?    @map("lineas_json") @db.Json
+  informe_final_temporada Boolean @default(false) @map("informe_final_temporada") @db.TinyInt
+  created_at            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at            DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  firmas                informes_firmas[]
+
+  @@map("informes_factura_config")
+}
+
+model informes_firmas {
+  id                    Int      @id @default(autoincrement())
+  informe_id            Int      @map("informe_id") @db.Int
+  fecha_hora            String   @map("fecha_hora") @db.VarChar(50)
+  nombre_comunidad      String   @map("nombre_comunidad") @db.VarChar(500)
+  cif                   String   @map("cif") @db.VarChar(50)
+  direccion             String   @map("direccion") @db.VarChar(1000)
+  nombre_representante  String   @map("nombre_representante") @db.VarChar(255)
+  cargo                 String   @map("cargo") @db.VarChar(100)
+  email                 String   @map("email") @db.VarChar(255)
+  telefono              String   @map("telefono") @db.VarChar(50)
+  firma_imagen_base64   String   @map("firma_imagen_base64") @db.LongText
+  ip                    String?  @map("ip") @db.VarChar(100)
+  user_agent            String?  @map("user_agent") @db.VarChar(500)
+  pdf_path              String?  @map("pdf_path") @db.VarChar(500)
+  created_at            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  informe               informes_factura_config @relation(fields: [informe_id], references: [id], onDelete: Cascade)
+
+  @@index([informe_id], map: "idx_informes_firmas_informe")
+  @@map("informes_firmas")
 }
 
 model metodos_de_cobro {

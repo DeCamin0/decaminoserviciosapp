@@ -4,6 +4,9 @@ import { useAdminApi } from '../../hooks/useAdminApi';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { demo, debug } from '../../utils/logger';
 
+// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
+const PRIMARY_COLOR = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+
 export default function ActivityLog() {
   const { user: authUser } = useAuth();
   const { getActivityLog, getAllUsers } = useAdminApi();
@@ -341,7 +344,7 @@ export default function ActivityLog() {
         pageOrientation: 'landscape',
         content: [
           {
-            text: 'DE CAMINO SERVICIOS AUXILIARES',
+            text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES',
             style: 'companyName'
           },
           {
@@ -366,7 +369,7 @@ export default function ActivityLog() {
             },
             layout: {
               fillColor: (rowIndex) => {
-                return rowIndex === 0 ? '#CC0000' : null;
+                return rowIndex === 0 ? PRIMARY_COLOR : null;
               },
               hLineWidth: (i, node) => (i === 0 || i === node.table.body.length) ? 2 : 1,
               vLineWidth: () => 1,
@@ -380,7 +383,7 @@ export default function ActivityLog() {
             fontSize: 18, 
             bold: true, 
             color: '#FFFFFF', 
-            fillColor: '#CC0000', 
+            fillColor: PRIMARY_COLOR, 
             alignment: 'center', 
             margin: [0, 0, 0, 8]
           },

@@ -8,9 +8,9 @@ Externalizează hardcodate-urile critice în env vars, astfel încât:
 
 ---
 
-## 📋 LISTA DE LUCRU (8 Fișiere)
+## 📋 LISTA DE LUCRU (11 Fișiere)
 
-### Frontend (3 fișiere)
+### Frontend (6 fișiere)
 
 #### 1. `frontend/src/utils/routes.js`
 **Ce face:** Toate endpoint-urile folosesc `https://api.decaminoservicios.com` hardcodat
@@ -24,10 +24,11 @@ Externalizează hardcodate-urile critice în env vars, astfel încât:
 ---
 
 #### 2. `frontend/src/utils/exportExcel.ts`
-**Ce face:** COMPANY_INFO hardcodat (nume, CIF, adresă, telefon, email)
+**Ce face:** COMPANY_INFO hardcodat (nume, CIF, adresă, telefon, email) + culori hardcodate (`#CC0000`, `#0066CC`)
 
 **Modificare:**
 ```typescript
+// Company info din env vars
 const COMPANY_INFO = {
   name: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
   cif: import.meta.env.VITE_COMPANY_CIF || 'B85524536',
@@ -35,9 +36,26 @@ const COMPANY_INFO = {
   phone: import.meta.env.VITE_COMPANY_PHONE || '910 440 275',
   email: import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'
 };
+
+// Culori din env vars (fără # pentru Excel ARGB)
+const PRIMARY_COLOR = (import.meta.env.VITE_PRIMARY_COLOR || '#CC0000').replace('#', '');
+const SECONDARY_COLOR = (import.meta.env.VITE_SECONDARY_COLOR || '#0066CC').replace('#', '');
+
+// Înlocuiește în STYLES:
+const STYLES = {
+  companyName: {
+    fill: { fgColor: { argb: PRIMARY_COLOR } }  // ← Din env!
+  },
+  reportTitle: {
+    fill: { fgColor: { argb: SECONDARY_COLOR } }  // ← Din env!
+  },
+  totalsRow: {
+    fill: { fgColor: { argb: PRIMARY_COLOR } }   // ← Din env!
+  }
+};
 ```
 
-**Test:** Export Excel → verifică că apare "DE CAMINO..." (default-ul funcționează)
+**Test:** Export Excel → verifică că apare "DE CAMINO..." și culorile roșu/albastru (default-urile funcționează)
 
 ---
 
@@ -52,9 +70,50 @@ const COMPANY_INFO = {
 
 ---
 
+#### 4. `frontend/src/components/MainLayout.jsx`
+**Ce face:** Logo path hardcodat (`logo.svg`)
+
+**Modificare:**
+```javascript
+const getLogoUrl = () => {
+  if (window.location.hostname.includes('ngrok')) {
+    return 'data:image/svg+xml;base64,...'; // Keep ngrok fallback
+  }
+  const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+  const basePath = import.meta.env.VITE_BASE_PATH || '/';
+  return `${basePath}${logoPath}`.replace(/\/+/g, '/');
+};
+```
+
+**Test:** Verifică că logo-ul apare corect (default-ul `logo.svg` funcționează)
+
+---
+
+#### 5. `frontend/src/layouts/DesktopLayout.jsx`
+**Ce face:** Logo path hardcodat (`logo.svg`)
+
+**Modificare:**
+- Similar cu MainLayout.jsx
+- Folosește `VITE_LOGO_PATH` cu fallback la `logo.svg`
+
+**Test:** Verifică că logo-ul apare corect pe desktop
+
+---
+
+#### 6. `frontend/src/layouts/MobileLayout.jsx` (dacă există)
+**Ce face:** Logo path hardcodat (`logo.svg`)
+
+**Modificare:**
+- Similar cu MainLayout.jsx
+- Folosește `VITE_LOGO_PATH` cu fallback la `logo.svg`
+
+**Test:** Verifică că logo-ul apare corect pe mobile
+
+---
+
 ### Backend (5 fișiere)
 
-#### 4. `backend/src/main.ts`
+#### 7. `backend/src/main.ts`
 **Ce face:** CORS origins hardcodate (`https://app.decaminoservicios.com`, `https://decaminoservicios.com`)
 
 **Modificare:**
@@ -69,7 +128,7 @@ const corsOrigins = process.env.CORS_ORIGINS
 
 ---
 
-#### 5. `backend/src/services/email.service.ts`
+#### 8. `backend/src/services/email.service.ts`
 **Ce face:** SMTP_FROM fallback hardcodat (linia ~204)
 
 **Modificare:**
@@ -84,7 +143,7 @@ const fromEmail = options?.from ||
 
 ---
 
-#### 6. `backend/src/controllers/sent-emails.controller.ts`
+#### 9. `backend/src/controllers/sent-emails.controller.ts`
 **Ce face:** BCC emails hardcodate (liniile ~325-326), inclusiv hardcodare mascată pentru 'gestoria'
 
 **Modificare:**
@@ -98,7 +157,7 @@ const bccList = process.env.EMAIL_BCC?.split(',').map(e => e.trim()) || ['decami
 
 ---
 
-#### 7. `backend/src/controllers/monitoring.controller.ts`
+#### 10. `backend/src/controllers/monitoring.controller.ts`
 **Ce face:** BCC email hardcodat (linia ~208)
 
 **Modificare:**
@@ -110,7 +169,7 @@ const bccList = process.env.EMAIL_BCC?.split(',').map(e => e.trim()) || ['app@de
 
 ---
 
-#### 8. `backend/src/services/hall-of-fame.service.ts`
+#### 11. `backend/src/services/hall-of-fame.service.ts`
 **Ce face:** BCC email hardcodat (verifică în cod exact unde)
 
 **Modificare:**
@@ -118,6 +177,38 @@ const bccList = process.env.EMAIL_BCC?.split(',').map(e => e.trim()) || ['app@de
 - Folosește `process.env.EMAIL_BCC` cu fallback
 
 **Test:** Hall of Fame email → verifică că BCC e corect
+
+---
+
+## 🎨 LOGO-URI ȘI CULORI (Manual pentru fiecare client)
+
+### Logo-uri Fizice
+
+**Pentru fiecare client nou:**
+1. Copiezi logo-ul clientului în `frontend/public/logo-{client-slug}.svg`
+2. Setezi `VITE_LOGO_PATH=logo-{client-slug}.svg` în `.env.production`
+
+**Exemplu pentru Client 2:**
+```bash
+# 1. Copiezi logo-ul
+cp client2-logo.svg frontend/public/logo-client2.svg
+
+# 2. Setezi în .env.production
+echo "VITE_LOGO_PATH=logo-client2.svg" >> frontend/.env.production
+```
+
+**Notă:** Logo-urile fizice NU se externalizează automat - trebuie copiate manual pentru fiecare client.
+
+### Culori
+
+Culorile se externalizează automat prin env vars (`VITE_PRIMARY_COLOR`, `VITE_SECONDARY_COLOR`). Pentru fiecare client, setezi culorile în `.env.production`.
+
+**Exemplu pentru Client 2 (verde în loc de roșu):**
+```env
+VITE_PRIMARY_COLOR=#00AA00      # Verde
+VITE_SECONDARY_COLOR=#0066FF    # Albastru
+VITE_ACCENT_COLOR=#00CC00       # Verde accent
+```
 
 ---
 
@@ -145,6 +236,14 @@ VITE_COMPANY_CIF=B85524536
 VITE_COMPANY_ADDRESS=Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España
 VITE_COMPANY_PHONE=910 440 275
 VITE_COMPANY_EMAIL=info@decaminoservicios.com
+
+# Branding - Logo
+VITE_LOGO_PATH=logo.svg
+
+# Branding - Culori
+VITE_PRIMARY_COLOR=#CC0000        # Roșu DeCamino
+VITE_SECONDARY_COLOR=#0066CC      # Albastru DeCamino
+VITE_ACCENT_COLOR=#E53935         # Roșu accent
 ```
 
 ---
@@ -153,11 +252,12 @@ VITE_COMPANY_EMAIL=info@decaminoservicios.com
 
 După ce faci toate modificările:
 
-- [ ] Toate cele 8 fișiere modificate
+- [ ] Toate cele 11 fișiere modificate
 - [ ] Testează producția actuală:
   - [ ] Login funcționează
-  - [ ] Export Excel → verifică header (apare "DE CAMINO...")
+  - [ ] Export Excel → verifică header (apare "DE CAMINO...") și culori (roșu/albastru)
   - [ ] Export PDF → verifică header
+  - [ ] Logo apare corect în header (logo.svg)
   - [ ] Trimite email → verifică "From" și "BCC"
   - [ ] CORS funcționează (frontend → backend)
 - [ ] Commit modificările
@@ -178,7 +278,7 @@ După ce faci toate modificările:
 
 ## ⏱️ TIMP ESTIMAT
 
-- **Modificări cod:** ~1-2 ore (8 fișiere, ~50-100 linii)
+- **Modificări cod:** ~2-3 ore (11 fișiere, ~80-120 linii)
 - **Testare:** ~1 oră
 - **Deploy:** ~30 min
 
