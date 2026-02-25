@@ -27,58 +27,20 @@ fi
 
 cd "$BACKEND_DIR" || exit 1
 
-# 1. Oprește procesul backend dacă rulează
-echo -e "${YELLOW}📋 Step 1: Stopping existing backend process...${NC}"
-
-# Metoda 1: Găsește procese Node.js care rulează backend-ul
-OLD_PID=$(ps aux | grep -E "node.*dist.*main|node.*dist/src/main" | grep -v grep | awk '{print $2}' | head -1)
-
-# Metoda 2: Dacă nu găsește prin ps, caută procesul care folosește portul 3000
-if [ -z "$OLD_PID" ]; then
-    # Încearcă cu lsof (dacă e disponibil)
-    if command -v lsof &> /dev/null; then
-        OLD_PID=$(lsof -ti:3000 2>/dev/null | head -1)
-    fi
-fi
-
-# Metoda 3: Încearcă cu fuser (dacă e disponibil)
-if [ -z "$OLD_PID" ]; then
-    if command -v fuser &> /dev/null; then
-        OLD_PID=$(fuser 3000/tcp 2>/dev/null | awk '{print $1}' | head -1)
-    fi
-fi
-
-# Metoda 4: Caută prin netstat/ss
-if [ -z "$OLD_PID" ]; then
-    if command -v ss &> /dev/null; then
-        OLD_PID=$(ss -tulpn 2>/dev/null | grep :3000 | grep -oP 'pid=\K\d+' | head -1)
-    elif command -v netstat &> /dev/null; then
-        OLD_PID=$(netstat -tulpn 2>/dev/null | grep :3000 | grep -oP '\d+(?=/\w+)' | head -1)
-    fi
-fi
-
-if [ -n "$OLD_PID" ]; then
-    echo "Found process using port 3000 (PID: $OLD_PID), stopping..."
-    # Încearcă kill normal, apoi force kill
-    kill "$OLD_PID" 2>/dev/null && sleep 2 || kill -9 "$OLD_PID" 2>/dev/null || true
-    sleep 2
-    # Verifică dacă procesul a fost oprit
-    if ps -p "$OLD_PID" > /dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  Process still running, force killing...${NC}"
-        kill -9 "$OLD_PID" 2>/dev/null || true
-        sleep 1
-    fi
-    echo -e "${GREEN}✅ Backend process stopped${NC}"
+# 1. Oprește backend-ul (systemd sau fallback la kill pe port)
+echo -e "${YELLOW}📋 Step 1: Stopping backend...${NC}"
+if systemctl is-active --quiet decamino-backend 2>/dev/null; then
+    systemctl stop decamino-backend
+    echo -e "${GREEN}✅ Backend stopped (systemd)${NC}"
 else
-    echo -e "${YELLOW}⚠️  No running backend process found on port 3000${NC}"
-    # Verifică dacă portul este totuși ocupat
-    if command -v lsof &> /dev/null; then
-        PORT_CHECK=$(lsof -ti:3000 2>/dev/null)
-        if [ -n "$PORT_CHECK" ]; then
-            echo -e "${YELLOW}⚠️  Port 3000 is still in use (PID: $PORT_CHECK), killing...${NC}"
-            kill -9 "$PORT_CHECK" 2>/dev/null || true
-            sleep 2
-        fi
+    # Fallback: oprește procesul pe port 3000
+    OLD_PID=$(lsof -ti:3000 2>/dev/null | head -1)
+    if [ -n "$OLD_PID" ]; then
+        echo "Stopping process on port 3000 (PID: $OLD_PID)..."
+        kill "$OLD_PID" 2>/dev/null && sleep 2 || kill -9 "$OLD_PID" 2>/dev/null || true
+        echo -e "${GREEN}✅ Backend process stopped${NC}"
+    else
+        echo -e "${YELLOW}⚠️  No running backend found${NC}"
     fi
 fi
 
@@ -108,6 +70,16 @@ git pull origin main || {
     exit 1
 }
 echo -e "${GREEN}✅ Code updated${NC}"
+
+# Șterge frontend/ și archive/ dacă au revenit la pull (VPS păstrează doar backend)
+if [ -d "/opt/decaminoserviciosapp/frontend" ]; then
+    echo -e "${YELLOW}📋 Removing frontend/ (VPS = backend only)...${NC}"
+    rm -rf /opt/decaminoserviciosapp/frontend
+fi
+if [ -d "/opt/decaminoserviciosapp/archive" ]; then
+    echo -e "${YELLOW}📋 Removing archive/ (VPS = backend only)...${NC}"
+    rm -rf /opt/decaminoserviciosapp/archive
+fi
 
 # 3. Intră în backend
 cd "$BACKEND_DIR" || exit 1
@@ -335,50 +307,39 @@ else
     echo -e "${YELLOW}   You may need to manually add 'client_max_body_size 50m;' to your nginx config${NC}"
 fi
 
-# 9. Repornește backend-ul
+# 9. Repornește backend-ul (systemd sau fallback la nohup)
 echo -e "${YELLOW}📋 Step 9: Starting backend...${NC}"
-# NestJS compilează în dist/src/main.js (nu dist/main.js)
-MAIN_JS="dist/src/main.js"
-if [ ! -f "$MAIN_JS" ]; then
-    # Fallback la dist/main.js dacă există
-    MAIN_JS="dist/main.js"
-fi
-
-# Exportă variabilele de mediu din .env înainte de a porni backend-ul
-if [ -f ".env" ]; then
-    echo -e "${YELLOW}📋 Loading environment variables from .env...${NC}"
-    set -a
-    source .env
-    set +a
-    echo -e "${GREEN}✅ Environment variables loaded${NC}"
-fi
-
-# Exportă variabilele de mediu din .env înainte de a porni backend-ul
-if [ -f ".env" ]; then
-    set -a
-    source .env
-    set +a
-fi
-
-# Pornește backend-ul în background
-nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
-sleep 3
-
-# 10. Verifică că rulează
-NEW_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
-if [ -n "$NEW_PID" ]; then
-    echo -e "${GREEN}✅ Backend started successfully (PID: $NEW_PID)${NC}"
-    echo -e "${GREEN}📝 Logs: $LOG_FILE${NC}"
-    echo ""
-    echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
-    echo ""
-    echo "To view logs: tail -f $LOG_FILE"
-    echo "To check status: ps aux | grep 'node dist'"
-    echo "To stop backend: kill $NEW_PID"
+if systemctl list-unit-files | grep -q "decamino-backend.service"; then
+    systemctl start decamino-backend
+    sleep 3
+    if systemctl is-active --quiet decamino-backend; then
+        echo -e "${GREEN}✅ Backend started (systemd)${NC}"
+        echo ""
+        echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
+        echo ""
+        echo "To view logs: journalctl -u decamino-backend -f"
+        echo "To check status: systemctl status decamino-backend"
+    else
+        echo -e "${RED}❌ Backend failed to start!${NC}"
+        journalctl -u decamino-backend -n 30 --no-pager
+        exit 1
+    fi
 else
-    echo -e "${RED}❌ Backend failed to start!${NC}"
-    echo "Check logs: $LOG_FILE"
-    tail -20 "$LOG_FILE"
-    exit 1
+    # Fallback: pornește cu nohup (dacă nu există systemd)
+    MAIN_JS="dist/src/main.js"
+    [ ! -f "$MAIN_JS" ] && MAIN_JS="dist/main.js"
+    if [ -f ".env" ]; then set -a; source .env; set +a; fi
+    nohup node "$MAIN_JS" > "$LOG_FILE" 2>&1 &
+    sleep 3
+    NEW_PID=$(ps aux | grep "node dist" | grep -v grep | awk '{print $2}' | head -1)
+    if [ -n "$NEW_PID" ]; then
+        echo -e "${GREEN}✅ Backend started (PID: $NEW_PID)${NC}"
+        echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
+        echo "To view logs: tail -f $LOG_FILE"
+    else
+        echo -e "${RED}❌ Backend failed to start!${NC}"
+        tail -20 "$LOG_FILE"
+        exit 1
+    fi
 fi
 
