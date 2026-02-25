@@ -1043,6 +1043,7 @@ model presupuestos_firmas {
   ip                    String?   @map("ip") @db.VarChar(100)
   user_agent           String?   @map("user_agent") @db.VarChar(500)
   pdf_path              String?   @map("pdf_path") @db.VarChar(500)
+  pdf_content           Bytes?    @map("pdf_content") @db.LongBlob
   original_pdf_sha256   String?   @map("original_pdf_sha256") @db.VarChar(64)
   original_pdf_size_bytes Int?    @map("original_pdf_size_bytes") @db.Int
   signed_pdf_sha256     String?   @map("signed_pdf_sha256") @db.VarChar(64)

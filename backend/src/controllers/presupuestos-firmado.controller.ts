@@ -338,6 +338,7 @@ export class PresupuestosFirmadoController {
         ip: ip || null,
         user_agent: userAgent || null,
         pdf_path: pdfPath,
+        pdf_content: pdfBuffer && pdfBuffer.length > 0 ? pdfBuffer : undefined,
         original_pdf_sha256: originalPdfSha256 ?? undefined,
         original_pdf_size_bytes: originalPdfSizeBytes ?? undefined,
         signed_pdf_sha256: signedPdfSha256 ?? undefined,

@@ -86,7 +86,19 @@ export class PresupuestosGuardadosService {
     });
   }
 
-  /** Devuelve la ruta relativa del PDF firmado (el enviado por email) si existe. */
+  /** Devuelve el buffer del PDF firmado si está guardado en BD (pdf_content). */
+  async getSignedPdfBuffer(presupuestoId: number): Promise<Buffer | null> {
+    const firma = await this.prisma.presupuestos_firmas.findFirst({
+      where: { presupuesto_id: presupuestoId },
+      orderBy: { created_at: 'desc' },
+      select: { pdf_content: true },
+    });
+    const raw = firma?.pdf_content;
+    if (!raw || (Array.isArray(raw) && raw.length === 0)) return null;
+    return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+  }
+
+  /** Devuelve la ruta relativa del PDF firmado (fichero en disco) si existe. Fallback cuando no hay pdf_content en BD. */
   async getSignedPdfPath(presupuestoId: number): Promise<string | null> {
     const firma = await this.prisma.presupuestos_firmas.findFirst({
       where: { presupuesto_id: presupuestoId, pdf_path: { not: null } },

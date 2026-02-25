@@ -36,6 +36,18 @@ export class PresupuestosGuardadosController {
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
   ) {
+    const filename = `presupuesto-${id}-firmado.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
+    const pdfBuffer =
+      await this.presupuestosGuardadosService.getSignedPdfBuffer(id);
+    if (pdfBuffer && pdfBuffer.length > 0) {
+      res.send(pdfBuffer);
+      return;
+    }
     const pdfPath =
       await this.presupuestosGuardadosService.getSignedPdfPath(id);
     if (!pdfPath) {
@@ -47,12 +59,6 @@ export class PresupuestosGuardadosController {
     if (!fs.existsSync(absolutePath)) {
       throw new NotFoundException('Archivo PDF firmado no encontrado');
     }
-    const filename = `presupuesto-${id}-firmado.pdf`;
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-    );
     res.sendFile(absolutePath);
   }
 
