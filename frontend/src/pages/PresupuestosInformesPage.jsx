@@ -961,6 +961,12 @@ export default function PresupuestosInformesPage() {
     } else if (activeTab === 'presupuestos') {
       fetchServicios(); // Para poder elegir servicio en el modal "Crear nuevo presupuesto"
       fetchPresupuestosGuardados();
+      // Cargar clientes para poder rellenar el email en el modal "Enviar Presupuesto"
+      const token = localStorage.getItem('auth_token');
+      fetch(routes.getClientes, { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setClientesList(Array.isArray(data) ? data : (data?.data ?? [])))
+        .catch(() => setClientesList([]));
     } else if (activeTab === 'clientes') {
       setLoadingClientes(true);
       const token = localStorage.getItem('auth_token');
@@ -4775,7 +4781,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 PDF
                               </Button>
                               <Button variant="outline" size="sm" onClick={() => handleOpenEnviarPresupuesto(item)} className="text-blue-600 border-blue-300 hover:bg-blue-50">
-                                Enviar Presupuesto
+                                {(item.firma_fecha || item.firma_at) ? 'Enviar Presupuesto firmado' : 'Enviar Presupuesto'}
                               </Button>
                               <Button variant="outline" size="sm" onClick={() => handleCargarPresupuesto(item.id)}>
                                 Cargar
@@ -4905,7 +4911,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
         <Modal
           isOpen={showEnviarPresupuestoModal}
           onClose={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); setEnviarPresupuestoEmail(''); }}
-          title="Enviar Presupuesto por email"
+          title={enviarPresupuestoItem && (enviarPresupuestoItem.firma_fecha || enviarPresupuestoItem.firma_at) ? 'Enviar Presupuesto firmado por email' : 'Enviar Presupuesto por email'}
         >
           <div className="space-y-4">
             {enviarPresupuestoItem && (
@@ -4924,7 +4930,11 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     className="w-full"
                   />
                 </div>
-                <p className="text-xs text-gray-500">Se enviará el PDF del presupuesto (firmado si existe, si no el generado) a la dirección indicada. Confirma antes de enviar.</p>
+                <p className="text-xs text-gray-500">
+                  {enviarPresupuestoItem && (enviarPresupuestoItem.firma_fecha || enviarPresupuestoItem.firma_at)
+                    ? 'Se enviará el PDF del presupuesto firmado a la dirección indicada. Confirma antes de enviar.'
+                    : 'Se enviará el PDF del presupuesto a la dirección indicada. Confirma antes de enviar.'}
+                </p>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="outline" onClick={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); }} disabled={sendingEnviarPresupuesto}>
                     Cancelar

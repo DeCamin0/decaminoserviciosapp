@@ -228,7 +228,52 @@ export class InformesFacturaConfigController {
             select: { NOMBRE_O_RAZON_SOCIAL: true },
           }))?.NOMBRE_O_RAZON_SOCIAL ?? ''
         : '';
-    const html = `<p>Adjunto encontrará el informe${clienteNombre ? ` para ${clienteNombre}` : ''}.</p><p>Saludos,<br/>De Camino Servicios Auxiliares S.L.</p>`;
+    const clienteTexto = clienteNombre
+      ? ` para <strong>${clienteNombre}</strong>`
+      : '';
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+    .content { background-color: #ffffff; padding: 30px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
+    .info-box { background-color: #f8f9fa; border-left: 4px solid #4CAF50; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #888; font-size: 12px; text-align: center; }
+    .signature { margin-top: 30px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 style="margin: 0; font-size: 24px;">📄 DE CAMINO SERVICIOS AUXILIARES S.L.</h1>
+  </div>
+  <div class="content">
+    <h2 style="color: #4CAF50; margin-top: 0;">Informe</h2>
+    <p>Estimado/a cliente,</p>
+    <p>Adjunto encontrará el informe correspondiente a <strong>${clienteNombre || 'su comunidad'}</strong>.</p>
+    <p>El documento se envía en formato PDF y puede firmarse de cualquiera de las siguientes formas:</p>
+    <ul style="margin: 10px 0; padding-left: 25px;">
+      <li><strong>Firma electrónica</strong> (válida legalmente)</li>
+      <li><strong>Firma manuscrita</strong> y entrega en mano</li>
+    </ul>
+    <p>Ambas opciones son válidas a efectos administrativos.</p>
+    <div class="info-box">
+      <p style="margin: 0;">Puede descargar el documento desde los archivos adjuntos del correo.</p>
+    </div>
+    <p>Quedamos a su disposición para cualquier aclaración.</p>
+    <p>Saludos cordiales,</p>
+    <div class="signature">
+      <p style="margin: 5px 0;"><strong>De Camino Servicios Auxiliares S.L.</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">info@decaminoservicios.com · Tfno. 645 111 999</p>
+    </div>
+    <div class="footer">
+      <p>Este correo ha sido enviado desde la aplicación de gestión De Camino.</p>
+    </div>
+  </div>
+</body>
+</html>`;
     await this.emailService.sendEmailWithAttachment(
       email,
       subject,
