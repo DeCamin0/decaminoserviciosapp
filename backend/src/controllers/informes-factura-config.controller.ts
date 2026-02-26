@@ -202,11 +202,11 @@ export class InformesFacturaConfigController {
     res.sendFile(fullPath);
   }
 
-  /** Enviar por email el PDF del informe. Body: { email: string } */
+  /** Enviar por email el PDF del informe. Body: { email: string, mensaje?: string } */
   @Post(':id/enviar-email')
   async enviarEmail(
     @Param('id') id: string,
-    @Body() body: { email?: string },
+    @Body() body: { email?: string; mensaje?: string },
   ) {
     const numId = parseInt(id, 10);
     if (Number.isNaN(numId)) throw new NotFoundException('ID inválido');
@@ -223,13 +223,19 @@ export class InformesFacturaConfigController {
     const subject = `Informe - De Camino Servicios`;
     const clienteNombre =
       informe.cliente_id != null
-        ? (await this.prisma.clientes.findUnique({
-            where: { id: informe.cliente_id },
-            select: { NOMBRE_O_RAZON_SOCIAL: true },
-          }))?.NOMBRE_O_RAZON_SOCIAL ?? ''
+        ? ((
+            await this.prisma.clientes.findUnique({
+              where: { id: informe.cliente_id },
+              select: { NOMBRE_O_RAZON_SOCIAL: true },
+            })
+          )?.NOMBRE_O_RAZON_SOCIAL ?? '')
         : '';
-    const clienteTexto = clienteNombre
-      ? ` para <strong>${clienteNombre}</strong>`
+    const mensajeAdicional = (body?.mensaje ?? '').trim();
+    const mensajeHtml = mensajeAdicional
+      ? `<div class="additional-message" style="background-color: #e8f4f8; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; border-radius: 4px;">
+      <h3 style="margin-top: 0; color: #2196F3;">💬 Mensaje adicional:</h3>
+      <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${mensajeAdicional.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\n/g, '<br>')}</div>
+    </div>`
       : '';
     const html = `
 <!DOCTYPE html>
@@ -259,6 +265,7 @@ export class InformesFacturaConfigController {
       <li><strong>Firma manuscrita</strong> y entrega en mano</li>
     </ul>
     <p>Ambas opciones son válidas a efectos administrativos.</p>
+    ${mensajeHtml}
     <div class="info-box">
       <p style="margin: 0;">Puede descargar el documento desde los archivos adjuntos del correo.</p>
     </div>

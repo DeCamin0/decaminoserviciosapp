@@ -131,11 +131,11 @@ export class PresupuestosGuardadosController {
     return result;
   }
 
-  /** Enviar por email el PDF del presupuesto (firmado si existe, si no el generado). Body: { email: string } */
+  /** Enviar por email el PDF del presupuesto (firmado si existe, si no el generado). Body: { email: string, mensaje?: string } */
   @Post(':id/enviar-email')
   async enviarEmail(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { email?: string },
+    @Body() body: { email?: string; mensaje?: string },
   ) {
     const email = (body?.email ?? '').trim();
     if (!email) {
@@ -149,8 +149,7 @@ export class PresupuestosGuardadosController {
       const { buffer } = await this.presupuestoDocumentoService.generarPdf(id);
       pdfBuffer = buffer;
     }
-    const numeroPresupuesto =
-      presupuesto.numero_presupuesto ?? String(id);
+    const numeroPresupuesto = presupuesto.numero_presupuesto ?? String(id);
     const filename = esFirmado
       ? `presupuesto-${numeroPresupuesto}-firmado.pdf`
       : `presupuesto-${numeroPresupuesto}.pdf`;
@@ -163,6 +162,13 @@ export class PresupuestosGuardadosController {
       : `el presupuesto nº <strong>${numeroPresupuesto}</strong>`;
     const clienteTexto = presupuesto.cliente_nombre
       ? ` para <strong>${presupuesto.cliente_nombre}</strong>`
+      : '';
+    const mensajeAdicional = (body?.mensaje ?? '').trim();
+    const mensajeHtml = mensajeAdicional
+      ? `<div class="additional-message" style="background-color: #e8f4f8; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; border-radius: 4px;">
+      <h3 style="margin-top: 0; color: #2196F3;">💬 Mensaje adicional:</h3>
+      <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${mensajeAdicional.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\n/g, '<br>')}</div>
+    </div>`
       : '';
     const html = `
 <!DOCTYPE html>
@@ -192,6 +198,7 @@ export class PresupuestosGuardadosController {
       <li><strong>Firma manuscrita</strong> y entrega en mano</li>
     </ul>
     <p>Ambas opciones son válidas a efectos administrativos.</p>
+    ${mensajeHtml}
     <div class="info-box">
       <p style="margin: 0;">Puede descargar el documento desde los archivos adjuntos del correo.</p>
     </div>

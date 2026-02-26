@@ -189,14 +189,17 @@ export default function PresupuestosInformesPage() {
   });
   const [presupuestoCalculoCubosRest, setPresupuestoCalculoCubosRest] = useState([]);
 
-  // Estado para Piscina (mantenimiento verano: horas, días, precio mensual)
+  // Estado para Piscina (mantenimiento verano: horas, días, precio mensual, horarioPeriodos por variante)
   const [presupuestoCalculoPiscina, setPresupuestoCalculoPiscina] = useState({
     concepto: 'Mantenimiento integral en piscina comunitaria',
     horas: '',
     dias: '',
     precioSinIva: '',
+    horarioPeriodos: [],
   });
   const [presupuestoCalculoPiscinaRest, setPresupuestoCalculoPiscinaRest] = useState([]);
+  // Horario piscina (una sola vez al final del presupuesto, orientativo) — no por variante
+  const [presupuestoHorarioPiscina, setPresupuestoHorarioPiscina] = useState([]);
 
   // Presupuestos guardados: listă, încărcare, editare, vista previa
   const [presupuestosGuardadosList, setPresupuestosGuardadosList] = useState([]);
@@ -209,11 +212,13 @@ export default function PresupuestosInformesPage() {
   const [showEnviarPresupuestoModal, setShowEnviarPresupuestoModal] = useState(false);
   const [enviarPresupuestoItem, setEnviarPresupuestoItem] = useState(null);
   const [enviarPresupuestoEmail, setEnviarPresupuestoEmail] = useState('');
+  const [enviarPresupuestoMensaje, setEnviarPresupuestoMensaje] = useState('');
   const [sendingEnviarPresupuesto, setSendingEnviarPresupuesto] = useState(false);
   // Modal Enviar Informe por email
   const [showEnviarInformeModal, setShowEnviarInformeModal] = useState(false);
   const [enviarInformeItem, setEnviarInformeItem] = useState(null);
   const [enviarInformeEmail, setEnviarInformeEmail] = useState('');
+  const [enviarInformeMensaje, setEnviarInformeMensaje] = useState('');
   const [sendingEnviarInforme, setSendingEnviarInforme] = useState(false);
 
   // Nombre en texto plano desde HTML (Quill)
@@ -368,18 +373,97 @@ export default function PresupuestosInformesPage() {
         : (precio ?? '');
     return { ...c, precioSinIva: precioStr, concepto: c.concepto ?? 'Gestión cubos de basura' };
   };
+  // Convierte YYYY-MM-DD (input date) a DD/MM para el PDF
+  const dateToDDMM = (yyyyMmDd) => {
+    if (!yyyyMmDd || typeof yyyyMmDd !== 'string') return '';
+    const parts = yyyyMmDd.trim().split('-');
+    if (parts.length !== 3) return yyyyMmDd;
+    const [, m, d] = parts;
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}`;
+  };
+  // Convierte DD/MM o YYYY-MM-DD a YYYY-MM-DD para <input type="date"> (año actual si solo DD/MM)
+  const toDateInputValue = (val) => {
+    if (!val || typeof val !== 'string') return '';
+    const v = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const match = v.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+    if (!match) return '';
+    const d = match[1].padStart(2, '0');
+    const m = match[2].padStart(2, '0');
+    const y = match[3] || new Date().getFullYear();
+    return `${y}-${m}-${d}`;
+  };
+  // Construye string horario para PDF desde los 4 campos de tiempo
+  const buildHorarioString = (t1d, t1h, t2d, t2h) => {
+    const a = [t1d, t1h].filter(Boolean).join(' - ');
+    const b = [t2d, t2h].filter(Boolean).join(' - ');
+    if (a && b) return `${a} / ${b}`;
+    return a || b || '';
+  };
+  // Días entre fechaDesde y fechaHasta (YYYY-MM-DD), inclusivo; devuelve null si falta alguna
+  const diasEntreFechas = (fechaDesde, fechaHasta) => {
+    if (!fechaDesde || !fechaHasta || typeof fechaDesde !== 'string' || typeof fechaHasta !== 'string') return null;
+    const d1 = new Date(fechaDesde.trim());
+    const d2 = new Date(fechaHasta.trim());
+    if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return null;
+    const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+    return diff >= 0 ? diff + 1 : null;
+  };
+  // Horas entre dos horas "HH:MM"; devuelve null si falta alguna o es inválida
+  const horasEntreHoras = (desde, hasta) => {
+    if (!desde || !hasta || typeof desde !== 'string' || typeof hasta !== 'string') return null;
+    const toMins = (h) => {
+      const parts = h.trim().split(':');
+      if (parts.length < 2) return null;
+      const m = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+      return Number.isNaN(m) ? null : m;
+    };
+    const m1 = toMins(desde);
+    const m2 = toMins(hasta);
+    if (m1 == null || m2 == null) return null;
+    const diff = m2 - m1;
+    return diff >= 0 ? Math.round((diff / 60) * 10) / 10 : null;
+  };
+
+  // Parsea "12:00 - 15:00 / 16:30 - 21:30" a { turn1Desde, turn1Hasta, turn2Desde, turn2Hasta }
+  const parseHorarioString = (s) => {
+    if (!s || typeof s !== 'string') return { turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' };
+    const parts = s.split('/').map((x) => x.trim());
+    const [p1, p2] = parts;
+    const parseTurn = (str) => {
+      const m = (str || '').match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+      return m ? { desde: m[1].length === 4 ? '0' + m[1] : m[1], hasta: m[2].length === 4 ? '0' + m[2] : m[2] } : { desde: '', hasta: '' };
+    };
+    const t1 = parseTurn(p1);
+    const t2 = p2 ? parseTurn(p2) : { desde: '', hasta: '' };
+    return { turn1Desde: t1.desde, turn1Hasta: t1.hasta, turn2Desde: t2.desde, turn2Hasta: t2.hasta };
+  };
+
   const normalizarPiscinaParaPayload = (p) => {
     if (!p) return p;
     const precioNum = parsePrecioEurosSpanish(p.precioSinIva);
     const precioStr = Number.isInteger(precioNum) ? String(precioNum) : precioNum.toFixed(2);
     const horas = p.horas != null && p.horas !== '' ? Number(p.horas) : undefined;
     const dias = p.dias != null && p.dias !== '' ? Number(p.dias) : undefined;
+    const horarioPeriodos = (p.horarioPeriodos || []).map((periodo) => {
+      const fechaDesde = (periodo.fechaDesde || '').trim();
+      const fechaHasta = (periodo.fechaHasta || '').trim();
+      const horario = periodo.turn1Desde != null || periodo.turn1Hasta != null || periodo.turn2Desde != null || periodo.turn2Hasta != null
+        ? buildHorarioString(periodo.turn1Desde, periodo.turn1Hasta, periodo.turn2Desde, periodo.turn2Hasta)
+        : (periodo.horario || '').trim();
+      return {
+        fechaDesde: fechaDesde ? (fechaDesde.includes('-') ? dateToDDMM(fechaDesde) : fechaDesde) : '',
+        fechaHasta: fechaHasta ? (fechaHasta.includes('-') ? dateToDDMM(fechaHasta) : fechaHasta) : '',
+        horario,
+      };
+    }).filter((h) => h.fechaDesde || h.fechaHasta || h.horario);
     return {
       ...p,
       precioSinIva: precioStr,
       concepto: p.concepto ?? 'Mantenimiento integral en piscina comunitaria',
       horas: horas,
       dias: dias,
+      horarioPeriodos,
     };
   };
   const descripcionPiscina = (calc) => {
@@ -471,6 +555,11 @@ export default function PresupuestosInformesPage() {
     presupuestoCalculoCubosRest: presupuestoCalculoCubosRest.map(normalizarCubosParaPayload),
     presupuestoCalculoPiscina: normalizarPiscinaParaPayload(presupuestoCalculoPiscina),
     presupuestoCalculoPiscinaRest: presupuestoCalculoPiscinaRest.map(normalizarPiscinaParaPayload),
+    presupuestoHorarioPiscina: (presupuestoHorarioPiscina || []).map((p) => ({
+      fechaDesde: (p.fechaDesde || '').trim() ? (p.fechaDesde.includes('-') ? dateToDDMM(p.fechaDesde) : p.fechaDesde.trim()) : '',
+      fechaHasta: (p.fechaHasta || '').trim() ? (p.fechaHasta.includes('-') ? dateToDDMM(p.fechaHasta) : p.fechaHasta.trim()) : '',
+      horario: buildHorarioString(p.turn1Desde, p.turn1Hasta, p.turn2Desde, p.turn2Hasta) || (p.horario || '').trim(),
+    })).filter((h) => h.fechaDesde || h.fechaHasta || h.horario),
     presupuestoClienteId,
     presupuestoClienteNombre,
     presupuestoClienteEsNuevo,
@@ -627,12 +716,40 @@ export default function PresupuestosInformesPage() {
       if (p.presupuestoCalculoPiscina) {
         const pi = p.presupuestoCalculoPiscina;
         const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
-        setPresupuestoCalculoPiscina({ concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: pi.horas ?? '', dias: pi.dias ?? '', precioSinIva: precioStr });
+        setPresupuestoCalculoPiscina({
+          concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+          horas: pi.horas ?? '',
+          dias: pi.dias ?? '',
+          precioSinIva: precioStr,
+          horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
+          const turns = parseHorarioString(h.horario);
+          return {
+            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+            horario: h.horario ?? '',
+            ...turns,
+          };
+        }) : [],
+        });
       }
       if (Array.isArray(p.presupuestoCalculoPiscinaRest)) {
         setPresupuestoCalculoPiscinaRest(p.presupuestoCalculoPiscinaRest.map((pi) => {
           const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
-          return { concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: pi.horas ?? '', dias: pi.dias ?? '', precioSinIva: precioStr };
+          return {
+            concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+            horas: pi.horas ?? '',
+            dias: pi.dias ?? '',
+            precioSinIva: precioStr,
+            horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
+          const turns = parseHorarioString(h.horario);
+          return {
+            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+            horario: h.horario ?? '',
+            ...turns,
+          };
+        }) : [],
+          };
         }));
       } else {
         const listPi = p.selectedServiciosPresupuesto || [];
@@ -640,10 +757,29 @@ export default function PresupuestosInformesPage() {
         if (nPiscina > 1 && p.presupuestoCalculoPiscina) {
           const pi = p.presupuestoCalculoPiscina;
           const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
-          setPresupuestoCalculoPiscinaRest(Array(nPiscina - 1).fill(null).map(() => ({ concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: pi.horas ?? '', dias: pi.dias ?? '', precioSinIva: precioStr })));
+          setPresupuestoCalculoPiscinaRest(Array(nPiscina - 1).fill(null).map(() => ({
+            concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+            horas: pi.horas ?? '',
+            dias: pi.dias ?? '',
+            precioSinIva: precioStr,
+            horarioPeriodos: [],
+          })));
         } else {
           setPresupuestoCalculoPiscinaRest([]);
         }
+      }
+      if (Array.isArray(p.presupuestoHorarioPiscina)) {
+        setPresupuestoHorarioPiscina(p.presupuestoHorarioPiscina.map((h) => {
+          const turns = parseHorarioString(h.horario);
+          return {
+            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+            horario: h.horario ?? '',
+            ...turns,
+          };
+        }));
+      } else {
+        setPresupuestoHorarioPiscina([]);
       }
       if (p.presupuestoClienteId !== undefined) setPresupuestoClienteId(p.presupuestoClienteId);
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
@@ -778,7 +914,7 @@ export default function PresupuestosInformesPage() {
       const res = await fetch(routes.enviarPresupuestoEmail(enviarPresupuestoItem.id), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email: enviarPresupuestoEmail.trim() }),
+        body: JSON.stringify({ email: enviarPresupuestoEmail.trim(), mensaje: enviarPresupuestoMensaje.trim() || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -788,6 +924,7 @@ export default function PresupuestosInformesPage() {
       setShowEnviarPresupuestoModal(false);
       setEnviarPresupuestoItem(null);
       setEnviarPresupuestoEmail('');
+      setEnviarPresupuestoMensaje('');
     } catch (e) {
       setNotification({ message: e.message || 'Error al enviar', type: 'error' });
     } finally {
@@ -814,7 +951,7 @@ export default function PresupuestosInformesPage() {
       const res = await fetch(routes.enviarInformeEmail(enviarInformeItem.id), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email: enviarInformeEmail.trim() }),
+        body: JSON.stringify({ email: enviarInformeEmail.trim(), mensaje: enviarInformeMensaje.trim() || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -824,6 +961,7 @@ export default function PresupuestosInformesPage() {
       setShowEnviarInformeModal(false);
       setEnviarInformeItem(null);
       setEnviarInformeEmail('');
+      setEnviarInformeMensaje('');
     } catch (e) {
       setNotification({ message: e.message || 'Error al enviar', type: 'error' });
     } finally {
@@ -923,12 +1061,40 @@ export default function PresupuestosInformesPage() {
       if (p.presupuestoCalculoPiscina) {
         const pi = p.presupuestoCalculoPiscina;
         const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
-        setPresupuestoCalculoPiscina({ concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: pi.horas ?? '', dias: pi.dias ?? '', precioSinIva: precioStr });
+        setPresupuestoCalculoPiscina({
+          concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+          horas: pi.horas ?? '',
+          dias: pi.dias ?? '',
+          precioSinIva: precioStr,
+          horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
+          const turns = parseHorarioString(h.horario);
+          return {
+            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+            horario: h.horario ?? '',
+            ...turns,
+          };
+        }) : [],
+        });
       }
       if (Array.isArray(p.presupuestoCalculoPiscinaRest)) {
         setPresupuestoCalculoPiscinaRest(p.presupuestoCalculoPiscinaRest.map((pi) => {
           const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
-          return { concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: pi.horas ?? '', dias: pi.dias ?? '', precioSinIva: precioStr };
+          return {
+            concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+            horas: pi.horas ?? '',
+            dias: pi.dias ?? '',
+            precioSinIva: precioStr,
+            horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
+          const turns = parseHorarioString(h.horario);
+          return {
+            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+            horario: h.horario ?? '',
+            ...turns,
+          };
+        }) : [],
+          };
         }));
       } else {
         const listPi = p.selectedServiciosPresupuesto || [];
@@ -936,10 +1102,29 @@ export default function PresupuestosInformesPage() {
         if (nPiscina > 1 && p.presupuestoCalculoPiscina) {
           const pi = p.presupuestoCalculoPiscina;
           const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
-          setPresupuestoCalculoPiscinaRest(Array(nPiscina - 1).fill(null).map(() => ({ concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: pi.horas ?? '', dias: pi.dias ?? '', precioSinIva: precioStr })));
+          setPresupuestoCalculoPiscinaRest(Array(nPiscina - 1).fill(null).map(() => ({
+            concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+            horas: pi.horas ?? '',
+            dias: pi.dias ?? '',
+            precioSinIva: precioStr,
+            horarioPeriodos: [],
+          })));
         } else {
           setPresupuestoCalculoPiscinaRest([]);
         }
+      }
+      if (Array.isArray(p.presupuestoHorarioPiscina)) {
+        setPresupuestoHorarioPiscina(p.presupuestoHorarioPiscina.map((h) => {
+          const turns = parseHorarioString(h.horario);
+          return {
+            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+            horario: h.horario ?? '',
+            ...turns,
+          };
+        }));
+      } else {
+        setPresupuestoHorarioPiscina([]);
       }
       if (p.presupuestoClienteId !== undefined) setPresupuestoClienteId(p.presupuestoClienteId);
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
@@ -3039,7 +3224,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                   const last = presupuestoCalculoPiscinaRest.length > 0
                                     ? presupuestoCalculoPiscinaRest[presupuestoCalculoPiscinaRest.length - 1]
                                     : presupuestoCalculoPiscina;
-                                  setPresupuestoCalculoPiscinaRest(prev => [...prev, { ...last }]);
+                                  setPresupuestoCalculoPiscinaRest(prev => [...prev, { ...last, horarioPeriodos: Array.isArray(last.horarioPeriodos) ? [...last.horarioPeriodos] : [] }]);
                                 }
                               }}
                               title="Añadir otra variante del mismo servicio (formulario independiente)"
@@ -4606,6 +4791,149 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         </div>
                         );
                       })}
+
+                      {/* Horario por periodos (opcional) — una sola vez al final, orientativo; se refleja en el PDF 2.7 */}
+                      <div className="mt-6 p-4 bg-sky-50/80 border border-sky-200 rounded-lg">
+                        <h4 className="text-sm font-semibold text-sky-800 mb-1">Horario por periodos (opcional)</h4>
+                        <p className="text-xs text-gray-600 mb-2">
+                          Añade periodos con fechas y dos turnos de horario. Es orientativo y se muestra una sola vez en el PDF 2.7 (sección Horario).
+                        </p>
+                        <div className="space-y-3">
+                          {(() => {
+                            const horarioList = (presupuestoHorarioPiscina?.length) ? presupuestoHorarioPiscina : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                            return horarioList.map((periodo, idx) => {
+                              const dias = diasEntreFechas(periodo.fechaDesde, periodo.fechaHasta);
+                              const h1 = horasEntreHoras(periodo.turn1Desde, periodo.turn1Hasta);
+                              const h2 = horasEntreHoras(periodo.turn2Desde, periodo.turn2Hasta);
+                              const horasTotal = (h1 != null ? h1 : 0) + (h2 != null ? h2 : 0);
+                              return (
+                              <div key={idx} className="p-3 bg-white border border-sky-200 rounded space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="text-xs text-gray-600 w-full">Fechas</label>
+                                  <input
+                                    type="date"
+                                    className="min-w-[130px] border border-gray-300 rounded px-2 py-1.5 text-sm"
+                                    value={periodo.fechaDesde ?? ''}
+                                    onChange={(e) => {
+                                      const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                      const empty = { fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' };
+                                      if (list[idx]) list[idx] = { ...list[idx], fechaDesde: e.target.value };
+                                      else list[idx] = { ...empty, fechaDesde: e.target.value };
+                                      const hasAny = list.some((x) => x.fechaDesde || x.fechaHasta || x.turn1Desde || x.turn1Hasta || x.turn2Desde || x.turn2Hasta);
+                                      setPresupuestoHorarioPiscina(hasAny ? list : [{ ...empty, fechaDesde: e.target.value }]);
+                                    }}
+                                  />
+                                  <span className="text-gray-400">→</span>
+                                  <input
+                                    type="date"
+                                    className="min-w-[130px] border border-gray-300 rounded px-2 py-1.5 text-sm"
+                                    value={periodo.fechaHasta ?? ''}
+                                    onChange={(e) => {
+                                      const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                      const empty = { fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' };
+                                      if (list[idx]) list[idx] = { ...list[idx], fechaHasta: e.target.value };
+                                      else list[idx] = { ...empty, fechaHasta: e.target.value };
+                                      const hasAny = list.some((x) => x.fechaDesde || x.fechaHasta || x.turn1Desde || x.turn1Hasta || x.turn2Desde || x.turn2Hasta);
+                                      setPresupuestoHorarioPiscina(hasAny ? list : [{ ...empty, fechaHasta: e.target.value }]);
+                                    }}
+                                  />
+                                  {dias != null && (
+                                    <span className="text-sm font-medium text-sky-700 whitespace-nowrap">({dias} días)</span>
+                                  )}
+                                  {(presupuestoHorarioPiscina?.length > 0) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPresupuestoHorarioPiscina((prev) => (prev || []).filter((_, i) => i !== idx))}
+                                      className="p-1.5 text-red-600 hover:bg-red-50 rounded ml-auto"
+                                      title="Eliminar periodo"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-sky-100">
+                                  <div>
+                                    <label className="text-xs text-gray-600 block mb-0.5">
+                                      Turno 1 {h1 != null && <span className="ml-1 font-medium text-sky-700">({h1} h)</span>}
+                                    </label>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="time"
+                                        className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
+                                        value={periodo.turn1Desde ?? ''}
+                                        onChange={(e) => {
+                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          if (list[idx]) list[idx] = { ...list[idx], turn1Desde: e.target.value };
+                                          else list[idx] = { ...list[idx] || {}, turn1Desde: e.target.value };
+                                          setPresupuestoHorarioPiscina(list);
+                                        }}
+                                      />
+                                      <span className="text-gray-400">-</span>
+                                      <input
+                                        type="time"
+                                        className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
+                                        value={periodo.turn1Hasta ?? ''}
+                                        onChange={(e) => {
+                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          if (list[idx]) list[idx] = { ...list[idx], turn1Hasta: e.target.value };
+                                          else list[idx] = { ...list[idx] || {}, turn1Hasta: e.target.value };
+                                          setPresupuestoHorarioPiscina(list);
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-600 block mb-0.5">
+                                      Turno 2 {h2 != null && <span className="ml-1 font-medium text-sky-700">({h2} h)</span>}
+                                    </label>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="time"
+                                        className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
+                                        value={periodo.turn2Desde ?? ''}
+                                        onChange={(e) => {
+                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          if (list[idx]) list[idx] = { ...list[idx], turn2Desde: e.target.value };
+                                          else list[idx] = { ...list[idx] || {}, turn2Desde: e.target.value };
+                                          setPresupuestoHorarioPiscina(list);
+                                        }}
+                                      />
+                                      <span className="text-gray-400">-</span>
+                                      <input
+                                        type="time"
+                                        className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
+                                        value={periodo.turn2Hasta ?? ''}
+                                        onChange={(e) => {
+                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          if (list[idx]) list[idx] = { ...list[idx], turn2Hasta: e.target.value };
+                                          else list[idx] = { ...list[idx] || {}, turn2Hasta: e.target.value };
+                                          setPresupuestoHorarioPiscina(list);
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                                {horasTotal > 0 && (
+                                  <p className="text-xs text-gray-600 pt-0.5 border-t border-sky-100">
+                                    Total por día: <span className="font-semibold text-sky-700">{horasTotal} h</span>
+                                    {dias != null && dias > 0 && (
+                                      <span className="ml-2">· En el periodo: <span className="font-semibold text-sky-700">{Math.round(horasTotal * dias * 10) / 10} h</span></span>
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                              );
+                            });
+                          } )() }
+                          <button
+                            type="button"
+                            onClick={() => setPresupuestoHorarioPiscina([...(presupuestoHorarioPiscina || []), { fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }])}
+                            className="text-xs text-sky-600 hover:text-sky-800 font-medium flex items-center gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Añadir otro periodo
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -4910,7 +5238,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
         {/* Modal Enviar Presupuesto por email */}
         <Modal
           isOpen={showEnviarPresupuestoModal}
-          onClose={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); setEnviarPresupuestoEmail(''); }}
+          onClose={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); setEnviarPresupuestoEmail(''); setEnviarPresupuestoMensaje(''); }}
           title={enviarPresupuestoItem && (enviarPresupuestoItem.firma_fecha || enviarPresupuestoItem.firma_at) ? 'Enviar Presupuesto firmado por email' : 'Enviar Presupuesto por email'}
         >
           <div className="space-y-4">
@@ -4930,13 +5258,23 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     className="w-full"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje adicional (opcional)</label>
+                  <textarea
+                    value={enviarPresupuestoMensaje}
+                    onChange={(e) => setEnviarPresupuestoMensaje(e.target.value)}
+                    placeholder="Añade un mensaje personalizado al correo si lo deseas..."
+                    className="w-full min-h-[80px] px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                  />
+                </div>
                 <p className="text-xs text-gray-500">
                   {enviarPresupuestoItem && (enviarPresupuestoItem.firma_fecha || enviarPresupuestoItem.firma_at)
                     ? 'Se enviará el PDF del presupuesto firmado a la dirección indicada. Confirma antes de enviar.'
                     : 'Se enviará el PDF del presupuesto a la dirección indicada. Confirma antes de enviar.'}
                 </p>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); }} disabled={sendingEnviarPresupuesto}>
+                  <Button variant="outline" onClick={() => { setShowEnviarPresupuestoModal(false); setEnviarPresupuestoItem(null); setEnviarPresupuestoMensaje(''); }} disabled={sendingEnviarPresupuesto}>
                     Cancelar
                   </Button>
                   <Button onClick={handleEnviarPresupuestoSubmit} disabled={sendingEnviarPresupuesto || !enviarPresupuestoEmail.trim()}>
@@ -4951,7 +5289,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
         {/* Modal Enviar Informe por email */}
         <Modal
           isOpen={showEnviarInformeModal}
-          onClose={() => { setShowEnviarInformeModal(false); setEnviarInformeItem(null); setEnviarInformeEmail(''); }}
+          onClose={() => { setShowEnviarInformeModal(false); setEnviarInformeItem(null); setEnviarInformeEmail(''); setEnviarInformeMensaje(''); }}
           title="Enviar Informe por email"
         >
           <div className="space-y-4">
@@ -4974,9 +5312,19 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     className="w-full"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje adicional (opcional)</label>
+                  <textarea
+                    value={enviarInformeMensaje}
+                    onChange={(e) => setEnviarInformeMensaje(e.target.value)}
+                    placeholder="Añade un mensaje personalizado al correo si lo deseas..."
+                    className="w-full min-h-[80px] px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                  />
+                </div>
                 <p className="text-xs text-gray-500">Se enviará el PDF del informe a la dirección indicada. Confirma antes de enviar.</p>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => { setShowEnviarInformeModal(false); setEnviarInformeItem(null); }} disabled={sendingEnviarInforme}>
+                  <Button variant="outline" onClick={() => { setShowEnviarInformeModal(false); setEnviarInformeItem(null); setEnviarInformeMensaje(''); }} disabled={sendingEnviarInforme}>
                     Cancelar
                   </Button>
                   <Button onClick={handleEnviarInformeSubmit} disabled={sendingEnviarInforme || !enviarInformeEmail.trim()}>
@@ -5210,7 +5558,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       } else if (tipo === 'piscina') {
                         const prevPiscina = newSelected.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length;
                         if (prevPiscina === 1) setPresupuestoCalculoPiscina((p) => ({ concepto: p?.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: p?.horas ?? '', dias: p?.dias ?? '', precioSinIva: p?.precioSinIva ?? '' }));
-                        else setPresupuestoCalculoPiscinaRest((prev) => [...prev, { concepto: 'Mantenimiento integral en piscina comunitaria', horas: '', dias: '', precioSinIva: '' }]);
+                        else setPresupuestoCalculoPiscinaRest((prev) => [...prev, { concepto: 'Mantenimiento integral en piscina comunitaria', horas: '', dias: '', precioSinIva: '', horarioPeriodos: [] }]);
                       }
                     }
                   }

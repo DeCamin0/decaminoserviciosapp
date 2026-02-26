@@ -9,6 +9,10 @@ const BRAND_RED = '#CC0000';
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const FOOTER_Y = 808;
+/** Y para numeración "Pag. x de y" – por encima de la línea De Camino (FOOTER_Y 808) para que quede en la página. */
+const PAGE_NUM_Y = 778;
+/** Límite inferior del contenido en página 2 (tabla): el chenar SUB TOTAL + numeración no deben solaparse. */
+const TABLE_SAFE_BOTTOM = PAGE_NUM_Y - 30;
 const FOOTER_LINE =
   'De Camino Servicios Auxiliares S.L. CIF: B-85524536 Inscrita en el registro Mercantil – T26005- L Folio 180 Secc. 8 HOJA M-468812';
 
@@ -202,7 +206,11 @@ export class InformePdfService {
     const filename = `presupuesto-reparaciones-${numeroPresupuesto}.pdf`;
 
     const buffer = await new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: MARGIN });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: MARGIN,
+        bufferPages: true,
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -481,6 +489,9 @@ export class InformePdfService {
         const xTotal = xPrecio + wPrecio + gap;
         const mainRowHeight = 20;
         const headerHeight = 28;
+        const boxPadding = 16;
+        const lineHBox = 24;
+        const boxH = lineHBox * 3 + boxPadding * 2;
 
         // Header cu fundal (gri) și contur roșu
         doc
@@ -511,6 +522,75 @@ export class InformePdfService {
         });
         tableY += headerHeight;
 
+        const addTableContinuationPage = () => {
+          doc.addPage({ size: 'A4', margin: MARGIN });
+          if (logoPath) {
+            try {
+              doc.opacity(0.1);
+              doc.image(
+                logoPath,
+                (PAGE_WIDTH - 400) / 2,
+                (PAGE_HEIGHT - 400) / 2,
+                {
+                  width: 400,
+                  height: 400,
+                },
+              );
+              doc.opacity(1);
+              doc.image(logoPath, MARGIN, 40, {
+                width: smallLogoSize,
+                height: smallLogoSize,
+              });
+            } catch {
+              // skip
+            }
+          }
+          doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
+          doc.text(tituloEmpresa, headerRightX, 40, { width: headerRightW });
+          let hy =
+            40 + doc.heightOfString(tituloEmpresa, { width: headerRightW }) + 4;
+          doc.font('Helvetica').fontSize(9);
+          doc.text(direccionEmpresa, headerRightX, hy, { width: headerRightW });
+          hy += 12;
+          doc.text(cpPoblacionEmpresa, headerRightX, hy, {
+            width: headerRightW,
+          });
+          hy += 12;
+          doc.text(`Tfno: ${telefonoEmpresa}`, headerRightX, hy, {
+            width: headerRightW,
+          });
+          hy += 12;
+          doc.text(emailEmpresa, headerRightX, hy, { width: headerRightW });
+          tableY = 150;
+          doc
+            .fillColor('#E8E8E8')
+            .rect(tableLeft, tableY, tableW, headerHeight)
+            .fill();
+          doc
+            .strokeColor(BRAND_RED)
+            .lineWidth(0.8)
+            .rect(tableLeft, tableY, tableW, headerHeight)
+            .stroke();
+          doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(9);
+          doc.text('Descripción', xDesc + 8, tableY + (headerHeight - 10) / 2, {
+            width: wDesc - 16,
+            ellipsis: true,
+          });
+          doc.text('Cant.', xCant, tableY + (headerHeight - 10) / 2, {
+            width: wCant,
+            align: 'right',
+          });
+          doc.text('P. unit. (€)', xPrecio, tableY + (headerHeight - 10) / 2, {
+            width: wPrecio,
+            align: 'right',
+          });
+          doc.text('Total (€)', xTotal, tableY + (headerHeight - 10) / 2, {
+            width: wTotal,
+            align: 'right',
+          });
+          tableY += headerHeight;
+        };
+
         doc.font('Helvetica').fontSize(9).fillColor('#333333');
         for (let i = 0; i < lineas.length; i++) {
           const lin = lineas[i];
@@ -525,6 +605,17 @@ export class InformePdfService {
           const cant = Number(lin.cantidad) || 0;
           const precio = Number(lin.precioUnitario) || 0;
           const total = cant * precio;
+
+          const subDescW = wDesc - 20;
+          const estRowH =
+            mainRowHeight +
+            (descripcionLarga
+              ? doc.heightOfString(descripcionLarga, { width: subDescW }) + 8
+              : 0);
+          if (tableY + estRowH + boxH + 25 > TABLE_SAFE_BOTTOM) {
+            addTableContinuationPage();
+          }
+
           if (i > 0) {
             doc.strokeColor('#e0e0e0').lineWidth(0.3);
             doc.moveTo(tableLeft, tableY).lineTo(tableRight, tableY).stroke();
@@ -551,7 +642,6 @@ export class InformePdfService {
           // Sub ítem: descripcion (text lung din ítem), font mai mic, gri — doar dacă există și e diferit de nombre
           if (descripcionLarga) {
             doc.font('Helvetica-Oblique').fontSize(7.5).fillColor('#666666');
-            const subDescW = wDesc - 20;
             const subDescH = doc.heightOfString(descripcionLarga, {
               width: subDescW,
             });
@@ -577,9 +667,6 @@ export class InformePdfService {
         const total = Math.round((subtotal + iva) * 100) / 100;
         const boxW = 240;
         const boxX = tableRight - boxW;
-        const boxPadding = 16;
-        const lineH = 24;
-        const boxH = lineH * 3 + boxPadding * 2;
         const labelW = 100;
         const valueW = 90;
         doc.fillColor('#f8f8f8').rect(boxX, tableY, boxW, boxH).fill();
@@ -601,23 +688,28 @@ export class InformePdfService {
         doc.text(
           `${tasaIva}% I.V.A.`,
           boxX + boxPadding,
-          tableY + boxPadding + lineH,
+          tableY + boxPadding + lineHBox,
           { width: labelW },
         );
         doc.text(
           fmtEuro(iva),
           boxX + boxW - boxPadding - valueW,
-          tableY + boxPadding + lineH,
+          tableY + boxPadding + lineHBox,
           { width: valueW, align: 'right' },
         );
         doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a1a');
-        doc.text('TOTAL:', boxX + boxPadding, tableY + boxPadding + lineH * 2, {
-          width: labelW,
-        });
+        doc.text(
+          'TOTAL:',
+          boxX + boxPadding,
+          tableY + boxPadding + lineHBox * 2,
+          {
+            width: labelW,
+          },
+        );
         doc.text(
           fmtEuro(total),
           boxX + boxW - boxPadding - valueW,
-          tableY + boxPadding + lineH * 2,
+          tableY + boxPadding + lineHBox * 2,
           { width: valueW, align: 'right' },
         );
         tableY += boxH + 18;
@@ -915,6 +1007,18 @@ export class InformePdfService {
         height: PAGE_HEIGHT - FOOTER_Y - 12,
         ellipsis: true,
       });
+
+      // Numerotare "Pag. x de y" în dreapta jos, pe toate paginile exceptând coperta (pagina 0)
+      const pageRange = doc.bufferedPageRange();
+      const totalPages = pageRange.count;
+      for (let i = 1; i < totalPages; i++) {
+        doc.switchToPage(i);
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND_RED);
+        doc.text(`Pag. ${i + 1} de ${totalPages}`, MARGIN, PAGE_NUM_Y, {
+          width: PAGE_WIDTH - MARGIN * 2,
+          align: 'right',
+        });
+      }
 
       doc.end();
     });

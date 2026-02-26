@@ -18,6 +18,8 @@ const BRAND_RED = '#CC0000';
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const FOOTER_Y = 808;
+/** Y pentru numerotare „Pag. x de y” – deasupra liniei De Camino (FOOTER_Y 808) ca să rămână pe pagină. */
+const PAGE_NUM_Y = 778;
 const FOOTER_LINE =
   'De Camino Servicios Auxiliares S.L. CIF: B-85524536 Inscrita en el registro Mercantil – T26005- L Folio 180 Secc. 8 HOJA M-468812';
 
@@ -601,7 +603,11 @@ export class PresupuestoDocumentoService {
     }
 
     const buffer = await new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: MARGIN });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: MARGIN,
+        bufferPages: true,
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -798,10 +804,15 @@ export class PresupuestoDocumentoService {
         const serviciosStripPath = getServiciosStripPath();
         if (serviciosStripPath) {
           try {
-            doc.image(serviciosStripPath, (PAGE_WIDTH - stripW) / 2, belowLogoY, {
-              width: stripW,
-              height: stripH,
-            });
+            doc.image(
+              serviciosStripPath,
+              (PAGE_WIDTH - stripW) / 2,
+              belowLogoY,
+              {
+                width: stripW,
+                height: stripH,
+              },
+            );
             belowLogoY += stripH + 14;
           } catch {
             belowLogoY += 8;
@@ -2007,6 +2018,13 @@ export class PresupuestoDocumentoService {
           const match = desc.match(/(\d+)\s*horas?/i);
           if (match) horasPiscinaStr = match[1];
         }
+        if (horasPiscinaStr === '__') {
+          const calcPiscina = (payload.presupuestoCalculoPiscina ||
+            {}) as Record<string, unknown>;
+          const h = calcPiscina.horas;
+          if (h != null && String(h).trim() !== '')
+            horasPiscinaStr = String(h).trim();
+        }
         doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
         doc.text(
           'El horario de apertura de la piscina será de ',
@@ -2023,13 +2041,54 @@ export class PresupuestoDocumentoService {
             `El horario de apertura de la piscina será de ${horasPiscinaStr} horas diarias:`,
             { width: horarioContentWidth },
           ) + 8;
-        doc.font('Helvetica-Bold').fontSize(10);
-        doc.text(
-          'Horario a definir por la Comunidad',
-          horarioContentX,
-          horarioY,
-          { width: horarioContentWidth },
+        // Horario por periodos (una sola vez, orientativo; viene en payload.presupuestoHorarioPiscina)
+        const horarioPeriodos = (payload.presupuestoHorarioPiscina ||
+          []) as Array<{
+          fechaDesde?: string;
+          fechaHasta?: string;
+          horario?: string;
+        }>;
+        const horarioPeriodosFiltrados = horarioPeriodos.filter(
+          (p) =>
+            (p.fechaDesde && String(p.fechaDesde).trim()) ||
+            (p.fechaHasta && String(p.fechaHasta).trim()) ||
+            (p.horario && String(p.horario).trim()),
         );
+        if (horarioPeriodosFiltrados.length > 0) {
+          doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
+          for (const p of horarioPeriodosFiltrados) {
+            const desde = (p.fechaDesde || '').trim();
+            const hasta = (p.fechaHasta || '').trim();
+            const hor = (p.horario || '').trim();
+            const line =
+              desde && hasta
+                ? `${desde} AL ${hasta}${hor ? ': ' + hor : ''}`
+                : hor || `${desde} ${hasta}`.trim();
+            if (line) {
+              doc.text(line, horarioContentX, horarioY, {
+                width: horarioContentWidth,
+              });
+              horarioY +=
+                doc.heightOfString(line, { width: horarioContentWidth }) + 6;
+            }
+          }
+        } else {
+          doc.font('Helvetica-Bold').fontSize(10);
+          doc.text(
+            'Horario a definir por la Comunidad',
+            horarioContentX,
+            horarioY,
+            { width: horarioContentWidth },
+          );
+        }
+        horarioY += 14;
+        doc.font('Helvetica-Oblique').fontSize(9).fillColor('#555555');
+        const notaHorario =
+          'Los horarios indicados son orientativos y quedarán sujetos a confirmación con el cliente.';
+        doc.text(notaHorario, horarioContentX, horarioY, {
+          width: horarioContentWidth,
+          align: 'justify',
+        });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
         doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
@@ -2931,9 +2990,9 @@ export class PresupuestoDocumentoService {
           );
           ofertaY += rowH;
         }
-        ofertaY += 20;
+        ofertaY += 24;
 
-        doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
+        doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a1a');
         doc.text(
           'Los pagos se harán efectivos de la siguiente forma:',
           MARGIN,
@@ -2944,27 +3003,27 @@ export class PresupuestoDocumentoService {
           doc.heightOfString(
             'Los pagos se harán efectivos de la siguiente forma:',
             { width: ofertaFullWidth },
-          ) + 10;
-        doc.font('Helvetica').fontSize(9).fillColor('#333333');
+          ) + 18;
         const pagosPiscina = [
           '25% Firma del contrato.',
           '25% 1 de Julio.',
           '25% 1 de Agosto.',
           '25% 1 de Septiembre.',
         ];
-        const bulletChar = '\u2022'; // • (bullet) — Helvetica lo incluye; ❖ no y se ve como "V"
+        const bulletChar = '\u2022';
+        const lineGapPagos = 12;
         for (const p of pagosPiscina) {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(11);
           doc.text(bulletChar + ' ', MARGIN, ofertaY, {
             continued: true,
             width: ofertaFullWidth,
           });
-          doc.fillColor('#1a1a1a').font('Helvetica');
+          doc.fillColor('#1a1a1a').font('Helvetica').fontSize(11);
           doc.text(p, { width: ofertaFullWidth });
           ofertaY +=
             doc.heightOfString(bulletChar + ' ' + p, {
               width: ofertaFullWidth,
-            }) + 5;
+            }) + lineGapPagos;
         }
       } else {
         doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
@@ -3064,9 +3123,9 @@ export class PresupuestoDocumentoService {
           ofertaY += rowH;
         }
 
-        ofertaY += 16;
+        ofertaY += 20;
         if (ofertaSoloPiscinaPdf && filasOfertaPdf.length > 0) {
-          doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
+          doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a1a');
           doc.text(
             'Los pagos se harán efectivos de la siguiente forma:',
             MARGIN,
@@ -3077,113 +3136,119 @@ export class PresupuestoDocumentoService {
             doc.heightOfString(
               'Los pagos se harán efectivos de la siguiente forma:',
               { width: ofertaFullWidth },
-            ) + 10;
-          doc.font('Helvetica').fontSize(9).fillColor('#333333');
-          const pagosPiscina = [
+            ) + 18;
+          const pagosPiscina2 = [
             '25% Firma del contrato.',
             '25% 1 de Julio.',
             '25% 1 de Agosto.',
             '25% 1 de Septiembre.',
           ];
-          const bulletChar = '\u2022';
-          for (const p of pagosPiscina) {
-            doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
-            doc.text(bulletChar + ' ', MARGIN, ofertaY, {
+          const bulletChar2 = '\u2022';
+          const lineGapPagos2 = 12;
+          for (const p of pagosPiscina2) {
+            doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(11);
+            doc.text(bulletChar2 + ' ', MARGIN, ofertaY, {
               continued: true,
               width: ofertaFullWidth,
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
+            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(11);
             doc.text(p, { width: ofertaFullWidth });
             ofertaY +=
-              doc.heightOfString(bulletChar + ' ' + p, {
+              doc.heightOfString(bulletChar2 + ' ' + p, {
                 width: ofertaFullWidth,
-              }) + 5;
+              }) + lineGapPagos2;
           }
-          ofertaY += 12;
+          ofertaY += 16;
         }
-        doc.font('Helvetica').fontSize(9).fillColor('#333333');
-        doc.text(
-          'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.',
-          MARGIN,
-          ofertaY,
-          { width: ofertaFullWidth, align: 'left' },
-        );
-        ofertaY +=
-          doc.heightOfString(
+        // Condiciones económicas, Revisión de precios y Formalización solo para presupuestos normales (no piscina)
+        if (!ofertaSoloPiscinaPdf) {
+          doc.font('Helvetica').fontSize(9).fillColor('#333333');
+          doc.text(
             'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.',
-            { width: ofertaFullWidth },
-          ) + 14;
+            MARGIN,
+            ofertaY,
+            { width: ofertaFullWidth, align: 'left' },
+          );
+          ofertaY +=
+            doc.heightOfString(
+              'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.',
+              { width: ofertaFullWidth },
+            ) + 14;
 
-        // Sub tabel: Condiciones económicas, Revisión de precios, Formalización (tot pe prima pagină Oferta)
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
-        doc.text('Condiciones económicas', MARGIN, ofertaY, {
-          width: ofertaFullWidth,
-        });
-        ofertaY += 14;
-        doc.font('Helvetica').fontSize(9).fillColor('#333333');
-        const bullet = '• ';
-        doc.text(
-          bullet + 'Facturación mensual mediante recibo domiciliado.',
-          MARGIN,
-          ofertaY,
-          { width: ofertaFullWidth },
-        );
-        ofertaY +=
-          doc.heightOfString(
+          // Sub tabel: Condiciones económicas, Revisión de precios, Formalización (tot pe prima pagină Oferta)
+          doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+          doc.text('Condiciones económicas', MARGIN, ofertaY, {
+            width: ofertaFullWidth,
+          });
+          ofertaY += 14;
+          doc.font('Helvetica').fontSize(9).fillColor('#333333');
+          const bullet = '• ';
+          doc.text(
             bullet + 'Facturación mensual mediante recibo domiciliado.',
+            MARGIN,
+            ofertaY,
             { width: ofertaFullWidth },
-          ) + 3;
-        doc.text(
-          bullet +
-            'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
-          MARGIN,
-          ofertaY,
-          { width: ofertaFullWidth },
-        );
-        ofertaY +=
-          doc.heightOfString(
+          );
+          ofertaY +=
+            doc.heightOfString(
+              bullet + 'Facturación mensual mediante recibo domiciliado.',
+              { width: ofertaFullWidth },
+            ) + 3;
+          doc.text(
             bullet +
               'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
+            MARGIN,
+            ofertaY,
             { width: ofertaFullWidth },
-          ) + 3;
-        doc.text(
-          bullet +
-            'El presupuesto tiene una validez de 60 días desde su emisión.',
-          MARGIN,
-          ofertaY,
-          { width: ofertaFullWidth },
-        );
-        ofertaY +=
-          doc.heightOfString(
+          );
+          ofertaY +=
+            doc.heightOfString(
+              bullet +
+                'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
+              { width: ofertaFullWidth },
+            ) + 3;
+          doc.text(
             bullet +
               'El presupuesto tiene una validez de 60 días desde su emisión.',
+            MARGIN,
+            ofertaY,
             { width: ofertaFullWidth },
-          ) + 12;
+          );
+          ofertaY +=
+            doc.heightOfString(
+              bullet +
+                'El presupuesto tiene una validez de 60 días desde su emisión.',
+              { width: ofertaFullWidth },
+            ) + 12;
 
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
-        doc.text('Revisión de precios', MARGIN, ofertaY, {
-          width: ofertaFullWidth,
-        });
-        ofertaY += 14;
-        doc.font('Helvetica').fontSize(9).fillColor('#333333');
-        const revText =
-          'Los precios están calculados conforme al convenio laboral aplicable y podrán actualizarse únicamente en caso de modificaciones legales obligatorias (SMI, convenio colectivo, normativa laboral o fiscal).';
-        doc.text(revText, MARGIN, ofertaY, {
-          width: ofertaFullWidth,
-          align: 'justify',
-        });
-        ofertaY += doc.heightOfString(revText, { width: ofertaFullWidth }) + 12;
+          doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+          doc.text('Revisión de precios', MARGIN, ofertaY, {
+            width: ofertaFullWidth,
+          });
+          ofertaY += 14;
+          doc.font('Helvetica').fontSize(9).fillColor('#333333');
+          const revText =
+            'Los precios están calculados conforme al convenio laboral aplicable y podrán actualizarse únicamente en caso de modificaciones legales obligatorias (SMI, convenio colectivo, normativa laboral o fiscal).';
+          doc.text(revText, MARGIN, ofertaY, {
+            width: ofertaFullWidth,
+            align: 'justify',
+          });
+          ofertaY +=
+            doc.heightOfString(revText, { width: ofertaFullWidth }) + 12;
 
-        doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
-        doc.text('Formalización', MARGIN, ofertaY, { width: ofertaFullWidth });
-        ofertaY += 14;
-        doc.font('Helvetica').fontSize(9).fillColor('#333333');
-        const formText =
-          'La prestación del servicio se formalizará mediante contrato tras la aprobación del presupuesto por la Comunidad.';
-        doc.text(formText, MARGIN, ofertaY, {
-          width: ofertaFullWidth,
-          align: 'justify',
-        });
+          doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+          doc.text('Formalización', MARGIN, ofertaY, {
+            width: ofertaFullWidth,
+          });
+          ofertaY += 14;
+          doc.font('Helvetica').fontSize(9).fillColor('#333333');
+          const formText =
+            'La prestación del servicio se formalizará mediante contrato tras la aprobación del presupuesto por la Comunidad.';
+          doc.text(formText, MARGIN, ofertaY, {
+            width: ofertaFullWidth,
+            align: 'justify',
+          });
+        }
       }
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
@@ -4006,6 +4071,18 @@ export class PresupuestoDocumentoService {
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
           ellipsis: true,
+        });
+      }
+
+      // Numerotare "Pag. x de y" în dreapta jos, pe toate paginile exceptând coperta (pagina 0)
+      const pageRange = doc.bufferedPageRange();
+      const totalPages = pageRange.count;
+      for (let i = 1; i < totalPages; i++) {
+        doc.switchToPage(i);
+        doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND_RED);
+        doc.text(`Pag. ${i + 1} de ${totalPages}`, MARGIN, PAGE_NUM_Y, {
+          width: PAGE_WIDTH - MARGIN * 2,
+          align: 'right',
         });
       }
 
