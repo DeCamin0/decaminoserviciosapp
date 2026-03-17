@@ -48,20 +48,10 @@ fi
 echo -e "${YELLOW}📋 Step 2: Updating code from git...${NC}"
 cd /opt/decaminoserviciosapp || exit 1
 
-# Gestionează conflictele locale - stochează modificările locale
-echo -e "${YELLOW}📋 Checking for local changes that might conflict...${NC}"
+# Resetează fișiere care au modificări locale pe VPS ca pull-ul să nu eșueze (codul oficial e în repo)
+echo -e "${YELLOW}📋 Resetting local-only files so git pull can run...${NC}"
 cd /opt/decaminoserviciosapp || exit 1
-
-# Stash modificările locale pentru fișiere care pot cauza conflicte
-LOCAL_CHANGES=$(git status --porcelain 2>/dev/null | grep -E "(deploy-backend.sh|package-lock.json)" || true)
-if [ -n "$LOCAL_CHANGES" ]; then
-    echo -e "${YELLOW}⚠️  Local changes detected, stashing...${NC}"
-    git stash push -m "Local changes before deploy $(date +%Y%m%d-%H%M%S)" -- deploy-backend.sh backend/package-lock.json 2>/dev/null || {
-        # Dacă stash eșuează, încercă să reseteze package-lock.json (se regenerează la npm install)
-        echo -e "${YELLOW}⚠️  Stash failed, resetting package-lock.json (will be regenerated)...${NC}"
-        git checkout -- backend/package-lock.json 2>/dev/null || true
-    }
-fi
+git checkout -- backend/deploy-backend.sh backend/package-lock.json 2>/dev/null || true
 
 # Actualizează codul
 git pull origin main || {
