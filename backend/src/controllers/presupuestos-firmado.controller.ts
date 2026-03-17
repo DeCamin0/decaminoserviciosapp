@@ -48,6 +48,8 @@ export interface PresupuestoFirmadoDto {
   n_viviendas?: string;
   /** Solo piscina: recogida llaves instalaciones. */
   recogida_llaves?: string;
+  /** Si el cliente desmarcó Mantenimiento invernal y acepta Recuperación de Agua (650 € sin IVA). */
+  recuperacion_agua?: boolean;
   ip?: string;
   user_agent?: string;
 }
@@ -154,6 +156,7 @@ export class PresupuestosFirmadoController {
       anualidadConIva: number;
     }> = [];
     let es_solo_piscina = false;
+    let recuperacion_agua_precio = 650;
     if (p.payload && typeof p.payload === 'object') {
       const payload = p.payload as Record<string, unknown>;
       const raw = payload.ofertaEconomica;
@@ -171,6 +174,12 @@ export class PresupuestosFirmadoController {
           hasPiscina(r.descripcion),
         );
       }
+      // Precio Recuperación de Agua (€ sin IVA) definido en el presupuesto; por defecto 650
+      const rawRecuperacion = payload.recuperacionAguaPrecio;
+      recuperacion_agua_precio =
+        typeof rawRecuperacion === 'number'
+          ? rawRecuperacion
+          : Number(String(rawRecuperacion ?? '').trim()) || 650;
     }
 
     return {
@@ -181,6 +190,7 @@ export class PresupuestosFirmadoController {
       iban: iban || null,
       oferta_economica: oferta_economica.length ? oferta_economica : null,
       es_solo_piscina: oferta_economica.length > 0 ? es_solo_piscina : null,
+      recuperacion_agua_precio,
     };
   }
 
@@ -231,6 +241,8 @@ export class PresupuestosFirmadoController {
           newPayload.selectedOfertaIndices = selectedOfertaIndices;
         if (selectedOfertaIndex !== undefined)
           newPayload.selectedOfertaIndex = selectedOfertaIndex;
+        if (body.recuperacion_agua === true)
+          newPayload.recuperacion_agua = true;
         await this.presupuestosGuardadosService.update(presupuestoId, {
           ...(nombreCliente && { cliente_nombre: nombreCliente }),
           payload: newPayload,

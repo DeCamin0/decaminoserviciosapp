@@ -1,0 +1,143 @@
+<!doctype html>
+<html data-primary-color="#2563A8" lang="es"  data-version="2026.03.17.1435">
+  <head>
+    <script id="vite-primary-set">(function(){var d=document.documentElement;d.style.setProperty('--primary-color','#2563A8');d.style.setProperty('--primary-color-darker','#114f94');d.style.setProperty('--primary-color-darkest','#003b80');d.style.setProperty('--primary-color-rgb','37, 99, 168');d.style.setProperty('--primary-color-rgba-01','rgba(37,99,168,0.1)');d.style.setProperty('--primary-color-rgba-02','rgba(37,99,168,0.2)');d.style.setProperty('--primary-color-rgba-04','rgba(37,99,168,0.4)');d.style.setProperty('--primary-color-rgba-05','rgba(37,99,168,0.5)');d.style.setProperty('--primary-color-rgba-06','rgba(37,99,168,0.6)');})();</script>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./LOGO_hera.png" />
+    <link rel="shortcut icon" href="./LOGO_hera.png" />
+    <link rel="apple-touch-icon" href="./LOGO_hera.png" />
+    
+    <!-- Social preview (Open Graph / Twitter) – injectat la build din env (multi-client) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="HERA FACILITY SERVICES SL" />
+    <meta property="og:title" content="HERA FACILITY SERVICES SL" />
+    <meta property="og:description" content="Portal Empresarial - Gestión de empleados, documentos y servicios auxiliares." />
+    <meta property="og:image" content="/LOGO_hera.png" />
+    <meta property="og:image:alt" content="Logo" />
+    <meta property="og:url" content="/" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="HERA FACILITY SERVICES SL" />
+    <meta name="twitter:description" content="Portal Empresarial - Gestión de empleados, documentos y servicios auxiliares." />
+    <meta name="twitter:image" content="/LOGO_hera.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Permissions-Policy" content="unload=*, geolocation=(self)" />
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="unsafe-none" />
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin" />
+    <!-- Forțează upgrade la HTTPS pentru orice resursă încărcată (mitigare mixed-content pe client) -->
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <!-- Fix pentru Edge -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="format-detection" content="telephone=no" />
+    <!-- Title injected at build from VITE_APP_NAME / VITE_COMPANY_NAME (see vite.config.js) -->
+    <title>HERA FACILITY SERVICES SL</title>
+    <style id="vite-primary-vars">:root{--primary-color:#2563A8;--primary-color-darker:#114f94;--primary-color-darkest:#003b80;--primary-color-rgb:37, 99, 168;--primary-color-rgba-01:rgba(37,99,168,0.1);--primary-color-rgba-02:rgba(37,99,168,0.2);--primary-color-rgba-04:rgba(37,99,168,0.4);--primary-color-rgba-05:rgba(37,99,168,0.5);--primary-color-rgba-06:rgba(37,99,168,0.6);}</style>
+    
+    <!-- ⚠️ CRITICAL: Global error suppression - MUST be FIRST script -->
+    <script>
+    (function() {
+      'use strict';
+      
+      // Suppress Google Maps errors: 'get', 'CJ', 'google is not defined'
+      const suppressError = function(msg, stack) {
+        const msgStr = String(msg || '');
+        const stackStr = String(stack || '');
+        
+        // Suprimă erorile Google Maps specifice
+        const isGoogleMapsError = 
+          (msgStr.includes('google is not defined') || stackStr.includes('google is not defined')) ||
+          ((msgStr.includes('Cannot read properties of undefined') || 
+            stackStr.includes('Cannot read properties of undefined')) &&
+           (msgStr.includes('reading \'get\'') || msgStr.includes('reading \'CJ\'') ||
+            stackStr.includes('reading \'get\'') || stackStr.includes('reading \'CJ\'')));
+        
+        return isGoogleMapsError;
+      };
+      
+      // Override console.error IMMEDIATELY
+      const originalConsoleError = console.error;
+      console.error = function() {
+        const msg = arguments[0];
+        const stack = arguments[1]?.stack || '';
+        if (suppressError(msg, stack)) return;
+        originalConsoleError.apply(console, arguments);
+      };
+      
+      // Global error handler - catch ALL errors
+      window.addEventListener('error', function(event) {
+        if (suppressError(event.message, event.error?.stack)) {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          return false;
+        }
+      }, true);
+      
+      // Promise rejection handler
+      window.addEventListener('unhandledrejection', function(event) {
+        const msg = event.reason?.message || event.reason?.toString() || '';
+        const stack = event.reason?.stack || '';
+        
+        // Suprimă erorile Bluebird promise (_isBound, _receiverAt)
+        const isBluebirdError = 
+          stack.includes('promise.js') && 
+          (stack.includes('_isBound') || stack.includes('_receiverAt') || stack.includes('_migrateCallback'));
+        
+        if (suppressError(msg, stack) || isBluebirdError) {
+          if (isBluebirdError) {
+            console.warn('⚠️ Suppressed Bluebird promise error (likely from mammoth or other library)');
+          }
+          event.preventDefault();
+          return false;
+        }
+      }, true);
+      
+      // Window.onerror - ultimate catch
+      window.onerror = function(msg, url, line, col, error) {
+        if (suppressError(msg, error?.stack)) return true;
+        return false;
+      };
+    })();
+    </script>
+    
+    <!-- Enforce HTTPS dacă pagina e deschisă accidental pe http -->
+    <script>
+      if (location.protocol === 'http:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+      }
+    </script>
+
+    <!-- AutoScript pentru semnarea cu AutoFirma -->
+    <script type="text/javascript" src="./vendor/autoscript.js"></script>
+
+    <!-- Detectare mod de interacțiune -->
+    <script>
+      (function(){
+        function setMode(){
+          const d = document.documentElement;
+          if (matchMedia('(hover: none) and (pointer: fine)').matches)
+            d.setAttribute('data-mode','tv');
+          else if (matchMedia('(hover: none) and (pointer: coarse)').matches)
+            d.setAttribute('data-mode','touch');
+          else d.setAttribute('data-mode','desktop');
+        }
+        setMode();
+        matchMedia('(hover: none) and (pointer: fine)').addEventListener('change', setMode);
+        matchMedia('(hover: none) and (pointer: coarse)').addEventListener('change', setMode);
+      })();
+    </script>
+
+    <script type="module" crossorigin src="/assets/index-UNgq7NLb.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/crypto-polyfill-CC8UybW1.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-kLfoUshJ.js">
+    <link rel="modulepreload" crossorigin href="/assets/react-core-lN5kkNWp.js">
+    <link rel="modulepreload" crossorigin href="/assets/excel-export-DX_OHiR6.js">
+    <link rel="modulepreload" crossorigin href="/assets/animation-libs-CuhG3AID.js">
+    <link rel="stylesheet" crossorigin href="/assets/vendor-D4t2wutE.css">
+    <link rel="stylesheet" crossorigin href="/assets/react-core-yGIACKtP.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-BOEOdxeo.css">
+  <link rel="manifest" href="/manifest.webmanifest"></head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

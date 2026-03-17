@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="./%VITE_LOGO_PATH%" />
-  <title>Aceptación de Presupuesto - %VITE_APP_NAME%</title>
+  <link rel="icon" href="./LOGO_hera.png" />
+  <title>Aceptación de Presupuesto - HERA FACILITY SERVICES SL</title>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
@@ -13,7 +13,7 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       margin: 0;
       min-height: 100vh;
-      background: linear-gradient(135deg, %VITE_PRIMARY_DARK% 0%, %VITE_PRIMARY_COLOR% 50%, %VITE_PRIMARY_COLOR% 100%);
+      background: linear-gradient(135deg, #003b80 0%, #2563A8 50%, #2563A8 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -70,7 +70,7 @@
     #id-info {
       text-align: center;
       font-size: 0.9rem;
-      color: %VITE_PRIMARY_COLOR%;
+      color: #2563A8;
       font-weight: 600;
       margin-bottom: 20px;
     }
@@ -93,7 +93,7 @@
     }
     input:focus, select:focus {
       outline: none;
-      border-color: %VITE_PRIMARY_COLOR%;
+      border-color: #2563A8;
       box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
     }
     select { cursor: pointer; }
@@ -129,7 +129,7 @@
     .btn-clear:hover { background: #e5e7eb; }
     .btn-submit {
       width: 100%;
-      background: linear-gradient(135deg, %VITE_PRIMARY_COLOR% 0%, %VITE_PRIMARY_COLOR% 100%);
+      background: linear-gradient(135deg, #2563A8 0%, #2563A8 100%);
       color: white;
       margin-top: 24px;
       padding: 14px;
@@ -138,7 +138,7 @@
       box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
     }
     .btn-submit:hover:not(:disabled) {
-      background: linear-gradient(135deg, %VITE_PRIMARY_COLOR% 0%, %VITE_PRIMARY_DARK% 100%);
+      background: linear-gradient(135deg, #2563A8 0%, #003b80 100%);
       box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45);
     }
     .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -148,14 +148,14 @@
       align-items: flex-start;
       gap: 12px;
     }
-    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: %VITE_PRIMARY_COLOR%; }
+    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: #2563A8; }
     .checkbox-wrap label { margin: 0; font-weight: 500; color: #374151; }
     .formalizacion-block {
       margin: 16px 0 20px;
       padding: 12px 14px;
       background: #f8fafc;
       border-radius: 10px;
-      border-left: 3px solid %VITE_PRIMARY_COLOR%;
+      border-left: 3px solid #2563A8;
       font-size: 0.75rem;
       line-height: 1.45;
       color: #374151;
@@ -168,14 +168,14 @@
     }
     .formalizacion-block p { margin: 0 0 6px; }
     .formalizacion-block p:last-child { margin-bottom: 0; }
-    .error { color: %VITE_PRIMARY_COLOR%; font-size: 0.9rem; margin-top: 10px; }
+    .error { color: #2563A8; font-size: 0.9rem; margin-top: 10px; }
     .success { color: #15803d; font-size: 0.95rem; margin-top: 16px; font-weight: 500; }
-    .req { color: %VITE_PRIMARY_COLOR%; }
+    .req { color: #2563A8; }
     .verify-note {
       font-size: 0.8rem;
       color: #525252;
       background: #f8fafc;
-      border-left: 3px solid %VITE_PRIMARY_COLOR%;
+      border-left: 3px solid #2563A8;
       padding: 8px 12px;
       margin-bottom: 16px;
       border-radius: 0 8px 8px 0;
@@ -207,8 +207,7 @@
     .servicios-table th { font-weight: 600; color: #374151; background: #f3f4f6; }
     .servicios-table tr.radio-row td { vertical-align: middle; }
     .servicios-table .col-radio { width: 28px; text-align: center; }
-    .servicios-table .col-radio input { width: auto; margin: 0; accent-color: %VITE_PRIMARY_COLOR%; }
-    .servicios-table .recuperacion-incl { font-size: 0.75rem; color: #666; font-weight: 600; }
+    .servicios-table .col-radio input { width: auto; margin: 0; accent-color: #2563A8; }
     .servicios-table .precio-block { line-height: 1.3; }
     .servicios-variante-note {
       font-size: 0.75rem;
@@ -304,11 +303,11 @@
   <div class="main">
   <div class="page-wrap">
     <div class="logo-wrap">
-      <img src="./%VITE_LOGO_PATH%" alt="%VITE_APP_NAME%" onerror="this.style.display='none'" />
+      <img src="./LOGO_hera.png" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" />
     </div>
     <div class="card">
       <h1 class="card-title">Aceptación de Presupuesto</h1>
-      <p class="card-subtitle">Ha accedido al portal seguro de firma de %VITE_APP_NAME%.</p>
+      <p class="card-subtitle">Ha accedido al portal seguro de firma de HERA FACILITY SERVICES SL.</p>
       <p class="card-subtitle" style="margin-bottom: 8px; font-size: 0.8rem;">Todos los campos son obligatorios.</p>
       <p class="verify-note">Por favor, compruebe que todos los datos (nombre de cliente, dirección, CIF, representante, etc.) son correctos antes de firmar.</p>
       <p id="id-info"></p>
@@ -399,14 +398,14 @@
 
   <footer class="firmar-footer">
     <p class="footer-credits">Este sistema ha sido diseñado y desarrollado por DeCamino</p>
-    <a href="%VITE_EXTERNAL_SITE_URL%" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
+    <a href="https://herafs.com" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
       <div class="footer-logo-circle">
         <img src="/DeCamino-04.svg" alt="DeCamino Logo" />
       </div>
     </a>
     <div class="footer-copy">
       <span>© <span id="footer-year"></span></span>
-      <a href="%VITE_EXTERNAL_SITE_URL%" target="_blank" rel="noopener noreferrer" title="DeCamino">
+      <a href="https://herafs.com" target="_blank" rel="noopener noreferrer" title="DeCamino">
         <div class="mini-logo">
           <img src="/DeCamino-04.svg" alt="DeCamino" />
         </div>
@@ -421,30 +420,12 @@
       var params = new URLSearchParams(window.location.search);
       var quotationId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var numeroPresupuesto = null;
-      var API_BASE = ('%VITE_API_URL%' && '%VITE_API_URL%'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      var API_BASE = ('https://api.herafs.com' && 'https://api.herafs.com'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
         : '');
 
       var ofertaEconomicaRows = null;
-      var ofertaOriginal = null;
       var esSoloPiscina = false;
-      function buildRecuperacionAguaRow(precioSinIva) {
-        var p = (precioSinIva != null && !isNaN(Number(precioSinIva))) ? Number(precioSinIva) : 650;
-        var conIva = Math.round(p * 1.21 * 100) / 100;
-        return {
-          descripcion: 'Recuperación de Agua',
-          mensualidadSinIva: p,
-          mensualidadConIva: conIva,
-          anualidadSinIva: p,
-          anualidadConIva: conIva
-        };
-      }
-      var RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(650);
-
-      function isMantenimientoInvernalRow(desc) {
-        if (!desc || typeof desc !== 'string') return false;
-        return desc.indexOf('Mantenimiento invernal') !== -1;
-      }
 
       function fmtNum(n) {
         if (n == null || isNaN(n)) return '-';
@@ -478,16 +459,8 @@
         oferta.forEach(function(row, idx) {
           var mens = fmtNum(row.mensualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.mensualidadConIva) + '€ IVA incl.</small>';
           var anu = esSoloPiscina ? '' : (fmtNum(row.anualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.anualidadConIva) + '€ IVA incl.</small>');
-          var isInvernal = isMantenimientoInvernalRow(row.descripcion);
-          var isRecuperacion = row.descripcion === 'Recuperación de Agua';
-          var dataAttr = isInvernal ? ' data-invernal="1"' : '';
-          var input = '';
-          if (hasVariantes && !isRecuperacion) {
-            input = '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check"' + dataAttr + '>';
-          } else if (isRecuperacion) {
-            input = '<span class="recuperacion-incl" title="Incluido al renunciar al mantenimiento invernal">Incl.</span>';
-          }
-          rowsHtml += '<tr class="radio-row' + (isRecuperacion ? ' recuperacion-row' : '') + '"><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
+          var input = hasVariantes ? '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check">' : '';
+          rowsHtml += '<tr class="radio-row"><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
           if (!esSoloPiscina) rowsHtml += '<td class="precio-block">' + anu + '</td>';
           rowsHtml += '</tr>';
         });
@@ -495,22 +468,6 @@
         if (hasVariantes) {
           tbody.querySelectorAll('input[name="selected_oferta"]').forEach(function(cb) {
             cb.addEventListener('change', updateSubmitState);
-          });
-          var conRecuperacion = ofertaOriginal && oferta.length === ofertaOriginal.length + 1 && oferta[oferta.length - 1].descripcion === 'Recuperación de Agua';
-          if (!conRecuperacion) {
-            tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) { cb.checked = true; });
-          }
-          tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) {
-            cb.addEventListener('change', function onInvernalChange() {
-              if (this.checked) {
-                ofertaEconomicaRows = ofertaOriginal.slice();
-                renderServiciosContractados(ofertaEconomicaRows, esSoloPiscina);
-              } else {
-                ofertaEconomicaRows = ofertaOriginal.slice();
-                ofertaEconomicaRows.push(buildRecuperacionAguaRow(window.recuperacionAguaPrecio));
-                renderServiciosContractados(ofertaEconomicaRows, esSoloPiscina);
-              }
-            });
           });
         }
         var datosPiscinaSection = document.getElementById('datos-piscina-section');
@@ -551,17 +508,8 @@
               if (data.cif) document.getElementById('cif').value = data.cif;
               if (data.direccion) document.getElementById('direccion').value = data.direccion;
               if (data.iban) document.getElementById('iban').value = data.iban;
-              if (data.recuperacion_agua_precio != null && !isNaN(Number(data.recuperacion_agua_precio))) {
-                window.recuperacionAguaPrecio = Number(data.recuperacion_agua_precio);
-                RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(window.recuperacionAguaPrecio);
-              } else {
-                window.recuperacionAguaPrecio = 650;
-              }
               if (data.oferta_economica && data.oferta_economica.length > 0) {
-                ofertaOriginal = data.oferta_economica;
-                ofertaEconomicaRows = data.oferta_economica.slice();
-                esSoloPiscina = !!data.es_solo_piscina;
-                renderServiciosContractados(ofertaEconomicaRows, data.es_solo_piscina);
+                renderServiciosContractados(data.oferta_economica, data.es_solo_piscina);
               }
             }
             if (typeof updateSubmitState === 'function') updateSubmitState();
@@ -684,7 +632,6 @@
         }
 
         var selectedOfertaIndices = [];
-        var recuperacionAgua = false;
         if (ofertaEconomicaRows && ofertaEconomicaRows.length > 0) {
           var checked = document.querySelectorAll('input[name="selected_oferta"]:checked');
           if (checked.length > 0) {
@@ -692,13 +639,8 @@
           } else if (ofertaEconomicaRows.length === 1) {
             selectedOfertaIndices = [0];
           }
-          var tieneRecuperacionRow = ofertaOriginal && ofertaEconomicaRows.length === ofertaOriginal.length + 1 && ofertaEconomicaRows[ofertaEconomicaRows.length - 1].descripcion === 'Recuperación de Agua';
-          if (tieneRecuperacionRow) {
-            recuperacionAgua = true;
-            selectedOfertaIndices = selectedOfertaIndices.filter(function(i) { return i < ofertaOriginal.length; });
-          }
         }
-        if (selectedOfertaIndices.length === 0 && !recuperacionAgua && ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
+        if (selectedOfertaIndices.length === 0 && ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
           showMessage('Seleccione al menos un servicio de la lista.', true);
           return;
         }
@@ -720,9 +662,8 @@
           fecha_inicio_servicio: document.getElementById('fecha_inicio_servicio').value.trim(),
           firma_base64: signaturePad.toDataURL('image/png'),
           selected_oferta_indices: selectedOfertaIndices,
-          selected_oferta_index: selectedOfertaIndices.length > 0 ? selectedOfertaIndices[0] : (recuperacionAgua ? -1 : 0)
+          selected_oferta_index: selectedOfertaIndices.length > 0 ? selectedOfertaIndices[0] : 0
         };
-        if (recuperacionAgua) payload.recuperacion_agua = true;
         if (esSoloPiscina) {
           payload.nombre_presidente = document.getElementById('nombre_presidente').value.trim();
           payload.dni_presidente = document.getElementById('dni_presidente').value.trim();

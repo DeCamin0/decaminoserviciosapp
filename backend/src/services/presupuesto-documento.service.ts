@@ -3428,6 +3428,31 @@ export class PresupuestoDocumentoService {
           ) {
             filasOfertaPdf = [ofertaEconomica[selectedOfertaIndex]];
           }
+          if (payload.recuperacion_agua === true) {
+            const precioRecuperacion =
+              typeof payload.recuperacionAguaPrecio === 'number'
+                ? payload.recuperacionAguaPrecio
+                : Number(String((payload as any).recuperacionAguaPrecio ?? '').trim()) || 650;
+            const conIva = Math.round(precioRecuperacion * 1.21 * 100) / 100;
+            const recuperacionRow = {
+              descripcion: 'Recuperación de Agua',
+              mensualidadSinIva: precioRecuperacion,
+              mensualidadConIva: conIva,
+              anualidadSinIva: precioRecuperacion,
+              anualidadConIva: conIva,
+            };
+            const soloRecuperacion =
+              (!Array.isArray(selectedOfertaIndices) ||
+                selectedOfertaIndices.length === 0) &&
+              (typeof selectedOfertaIndex !== 'number' ||
+                selectedOfertaIndex < 0 ||
+                selectedOfertaIndex >= ofertaEconomica.length);
+            if (soloRecuperacion) {
+              filasOfertaPdf = [recuperacionRow];
+            } else {
+              filasOfertaPdf = [...filasOfertaPdf, recuperacionRow];
+            }
+          }
         }
         const ofertaSoloPiscinaPdf =
           filasOfertaPdf.length > 0 &&
@@ -3580,6 +3605,17 @@ export class PresupuestoDocumentoService {
           }
           ofertaY += 24;
 
+          doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+          const notaRecuperacion =
+            'EN CASO DE RENUNCIA AL MANTENIMIENTO INVERNAL, SERÁ OBLIGATORIA LA CONTRATACIÓN DEL SERVICIO DE RECUPERACIÓN DE AGUA.';
+          doc.text(notaRecuperacion, MARGIN, ofertaY, {
+            width: ofertaFullWidth,
+            align: 'left',
+          });
+          ofertaY +=
+            doc.heightOfString(notaRecuperacion, { width: ofertaFullWidth }) +
+            18;
+
           doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a1a');
           doc.text(
             'Los pagos se harán efectivos de la siguiente forma:',
@@ -3716,6 +3752,18 @@ export class PresupuestoDocumentoService {
 
           ofertaY += 20;
           if (ofertaSoloPiscinaPdf && filasOfertaPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+            const notaRecuperacionPdf =
+              'EN CASO DE RENUNCIA AL MANTENIMIENTO INVERNAL, SERÁ OBLIGATORIA LA CONTRATACIÓN DEL SERVICIO DE RECUPERACIÓN DE AGUA.';
+            doc.text(notaRecuperacionPdf, MARGIN, ofertaY, {
+              width: ofertaFullWidth,
+              align: 'left',
+            });
+            ofertaY +=
+              doc.heightOfString(notaRecuperacionPdf, {
+                width: ofertaFullWidth,
+              }) + 18;
+
             doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a1a1a');
             doc.text(
               'Los pagos se harán efectivos de la siguiente forma:',

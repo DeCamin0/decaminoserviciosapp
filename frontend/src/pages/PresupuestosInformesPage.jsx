@@ -204,6 +204,8 @@ export default function PresupuestosInformesPage() {
     conLona: false,
     precio: '1800',
   });
+  // Recuperación de Agua (precio editable; se ofrece si el cliente renuncia al mantenimiento invernal)
+  const [recuperacionAguaPrecio, setRecuperacionAguaPrecio] = useState('650');
   // Horario piscina (una sola vez al final del presupuesto, orientativo) — no por variante
   const [presupuestoHorarioPiscina, setPresupuestoHorarioPiscina] = useState([]);
 
@@ -582,6 +584,7 @@ export default function PresupuestosInformesPage() {
       conLona: mantenimientoInvernalPiscina.conLona,
       precio: String(mantenimientoInvernalPiscina.precio ?? '').trim() || '0',
     },
+    recuperacionAguaPrecio: String(recuperacionAguaPrecio ?? '').trim() || '650',
     presupuestoClienteId,
     presupuestoClienteNombre,
     presupuestoClienteEsNuevo,
@@ -807,6 +810,10 @@ export default function PresupuestosInformesPage() {
         const mi = p.mantenimientoInvernalPiscina;
         const precioStr = typeof mi.precio === 'number' ? (Number.isInteger(mi.precio) ? String(mi.precio) : mi.precio.toFixed(2)) : String(mi.precio ?? '1800').trim();
         setMantenimientoInvernalPiscina({ conLona: !!mi.conLona, precio: precioStr || '1800' });
+      }
+      if (p.recuperacionAguaPrecio !== undefined) {
+        const v = typeof p.recuperacionAguaPrecio === 'number' ? String(p.recuperacionAguaPrecio) : String(p.recuperacionAguaPrecio ?? '650').trim();
+        setRecuperacionAguaPrecio(v || '650');
       }
       if (p.presupuestoClienteId !== undefined) setPresupuestoClienteId(p.presupuestoClienteId);
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
@@ -1151,6 +1158,10 @@ export default function PresupuestosInformesPage() {
         const mi = p.mantenimientoInvernalPiscina;
         const precioStr = typeof mi.precio === 'number' ? (Number.isInteger(mi.precio) ? String(mi.precio) : mi.precio.toFixed(2)) : String(mi.precio ?? '1800').trim();
         setMantenimientoInvernalPiscina({ conLona: !!mi.conLona, precio: precioStr || '1800' });
+      }
+      if (p.recuperacionAguaPrecio !== undefined) {
+        const v = typeof p.recuperacionAguaPrecio === 'number' ? String(p.recuperacionAguaPrecio) : String(p.recuperacionAguaPrecio ?? '650').trim();
+        setRecuperacionAguaPrecio(v || '650');
       }
       if (p.presupuestoClienteId !== undefined) setPresupuestoClienteId(p.presupuestoClienteId);
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
@@ -4993,6 +5004,30 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       </div>
                       <p className="text-xs text-gray-500 mt-2">
                         {mantenimientoInvernalPiscina.conLona ? 'Con lona' : 'Sin lona'} — precio introducido: {mantenimientoInvernalPiscina.precio || '0'} € + IVA
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Recuperación de Agua (precio por defecto 650 € sin IVA; obligatorio si el cliente renuncia al mantenimiento invernal) */}
+                  {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && (
+                    <div className="p-5 bg-white border border-gray-200 rounded-lg shadow-sm mt-4">
+                      <p className="text-sm font-medium text-gray-800 mb-3">
+                        RECUPERACIÓN DE AGUA — Precio por defecto: 650,00 EUROS (I.V.A. No Incluido). Obligatorio en caso de renuncia al mantenimiento invernal.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <label className="inline-flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">Precio (€ sin IVA):</span>
+                          <Input
+                            type="text"
+                            value={recuperacionAguaPrecio}
+                            onChange={(e) => setRecuperacionAguaPrecio(e.target.value)}
+                            placeholder="650"
+                            className="w-28"
+                          />
+                        </label>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Precio introducido: {recuperacionAguaPrecio || '650'} € + IVA ({((Number(recuperacionAguaPrecio) || 650) * 1.21).toFixed(2)} € IVA incl.)
                       </p>
                     </div>
                   )}
