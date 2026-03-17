@@ -44,7 +44,9 @@ export default registerAs('company', () => {
   /** Stamp HERA when presupuestoPresentacionKey=hera (e.g. sello hera firma 10-07-25.png). Optional. */
   const stampPathHera = opt('COMPANY_STAMP_PATH_HERA');
   /** Presupuesto: 'decamino' = texto presentación Decamino, 'hera' = texto presentación HERA. Por defecto 'decamino'. */
-  const presupuestoPresentacionKey = (opt('COMPANY_PRESUPUESTO_PRESENTACION_KEY') || 'decamino').toLowerCase();
+  const presupuestoPresentacionKey = (
+    opt('COMPANY_PRESUPUESTO_PRESENTACION_KEY') || 'decamino'
+  ).toLowerCase();
 
   const legalRegistryText =
     opt('COMPANY_LEGAL_REGISTRY_TEXT') ||

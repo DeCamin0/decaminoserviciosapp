@@ -1165,6 +1165,15 @@ model solicitudes {
   cumple_preaviso_15  Boolean?  @default(false)
 }
 
+model VacationBlockedPeriod {
+  id           Int      @id @default(autoincrement())
+  fecha_inicio DateTime @map("fecha_inicio") @db.Date
+  fecha_fin    DateTime @map("fecha_fin") @db.Date
+  created_at   DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  @@map("vacation_blocked_periods")
+}
+
 enum ChatRoomType {
   centro
   dm

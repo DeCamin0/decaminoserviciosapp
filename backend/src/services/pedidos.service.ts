@@ -142,9 +142,7 @@ export class PedidosService {
 
       const horarioEntrega = (pedidoData.pedido as any).horario_entrega;
       if (!horarioEntrega || String(horarioEntrega).trim() === '') {
-        throw new BadRequestException(
-          'horario_entrega es obligatorio',
-        );
+        throw new BadRequestException('horario_entrega es obligatorio');
       }
 
       // Generează UID pentru pedido
@@ -1069,7 +1067,9 @@ export class PedidosService {
     let logoCompanyExt: 'png' | 'jpeg' = 'png';
     let logoVymaBuffer: Buffer | null = null;
 
-    const companyLogoPath = this.configService.get<{ logoPath?: string }>('company')?.logoPath;
+    const companyLogoPath = this.configService.get<{ logoPath?: string }>(
+      'company',
+    )?.logoPath;
     const logoDirs = [
       path.join(process.cwd(), 'assets'),
       path.join(__dirname, '..', '..', '..', 'assets'),
@@ -1096,15 +1096,22 @@ export class PedidosService {
       );
     }
     try {
-      this.logger.log(`🔍 [Excel] Looking for company logo at: ${companyLogoResolved}`);
+      this.logger.log(
+        `🔍 [Excel] Looking for company logo at: ${companyLogoResolved}`,
+      );
       if (fs.existsSync(companyLogoResolved)) {
         const fileBuffer = fs.readFileSync(companyLogoResolved);
         logoCompanyBuffer = Buffer.from(fileBuffer) as any;
         const ext = path.extname(companyLogoResolved).toLowerCase();
         logoCompanyExt = ext === '.jpg' || ext === '.jpeg' ? 'jpeg' : 'png';
-        this.logger.log(`✅ Logo compañía cargado para Excel (${path.basename(companyLogoResolved)})`);
+        this.logger.log(
+          `✅ Logo compañía cargado para Excel (${path.basename(companyLogoResolved)})`,
+        );
       } else {
-        this.logger.warn('⚠️ Logo compañía no encontrado en:', companyLogoResolved);
+        this.logger.warn(
+          '⚠️ Logo compañía no encontrado en:',
+          companyLogoResolved,
+        );
       }
     } catch (error) {
       this.logger.warn('⚠️ Error cargando logo compañía:', error);
@@ -1234,7 +1241,8 @@ export class PedidosService {
 
       // Row 3: INSPECTOR
       worksheet.getCell('A3').value = 'INSPECTOR';
-      worksheet.getCell('B3').value = pedido.empleado?.nombre || pedido.aprobado_por || 'AURA';
+      worksheet.getCell('B3').value =
+        pedido.empleado?.nombre || pedido.aprobado_por || 'AURA';
 
       // Row 4: APROBADO POR (sub Inspector)
       worksheet.getCell('A4').value = 'APROBADO POR:';
@@ -1433,10 +1441,12 @@ export class PedidosService {
 
       // Row 8: TELÉFONO ENTREGA (din pedido sau din Clientes)
       worksheet.getCell('A8').value = 'TELÉFONO ENTREGA:';
-      const telefonoEntregaPedido = (pedido as { telefono_entrega?: string }).telefono_entrega;
-      const telefonoEntregaExcel = (telefonoEntregaPedido && String(telefonoEntregaPedido).trim() !== '')
-        ? String(telefonoEntregaPedido).trim()
-        : telefonEntrega;
+      const telefonoEntregaPedido = (pedido as { telefono_entrega?: string })
+        .telefono_entrega;
+      const telefonoEntregaExcel =
+        telefonoEntregaPedido && String(telefonoEntregaPedido).trim() !== ''
+          ? String(telefonoEntregaPedido).trim()
+          : telefonEntrega;
       worksheet.getCell('B8').value = telefonoEntregaExcel || '';
 
       // Row 9: SERVICIO
@@ -1770,8 +1780,15 @@ export class PedidosService {
             brandRed?: string;
             portadaTextColor?: string;
           }>('company');
-          const accentColor = (companyTheme?.brandRed && companyTheme.brandRed.trim()) ? companyTheme.brandRed.trim() : '#d32f2f';
-          const textColor = (companyTheme?.portadaTextColor && companyTheme.portadaTextColor.trim()) ? companyTheme.portadaTextColor.trim() : '#333';
+          const accentColor =
+            companyTheme?.brandRed && companyTheme.brandRed.trim()
+              ? companyTheme.brandRed.trim()
+              : '#d32f2f';
+          const textColor =
+            companyTheme?.portadaTextColor &&
+            companyTheme.portadaTextColor.trim()
+              ? companyTheme.portadaTextColor.trim()
+              : '#333';
 
           let htmlContent = `
             <html>
@@ -1803,11 +1820,26 @@ export class PedidosService {
           const providerEmail = 'pedidos@vyma.es';
           const excelFileName = `PEDIDOS ${fecha}.xlsx`;
           const ccEmails = ['sergio.jurado@vyma.es'];
-          const companyEmail = this.configService.get<{ email?: string; emailBcc?: string }>('company')?.email ?? '';
-          const pedidosEmail = this.configService.get<string>('SMTP_PEDIDOS_USER') ?? '';
-          const emailBccRaw = this.configService.get<{ emailBcc?: string }>('company')?.emailBcc ?? '';
-          const bccFromConfig = emailBccRaw ? emailBccRaw.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
-          const bccEmails = [...new Set([companyEmail, pedidosEmail, ...bccFromConfig].filter(Boolean))];
+          const companyEmail =
+            this.configService.get<{ email?: string; emailBcc?: string }>(
+              'company',
+            )?.email ?? '';
+          const pedidosEmail =
+            this.configService.get<string>('SMTP_PEDIDOS_USER') ?? '';
+          const emailBccRaw =
+            this.configService.get<{ emailBcc?: string }>('company')
+              ?.emailBcc ?? '';
+          const bccFromConfig = emailBccRaw
+            ? emailBccRaw
+                .split(',')
+                .map((e: string) => e.trim())
+                .filter(Boolean)
+            : [];
+          const bccEmails = [
+            ...new Set(
+              [companyEmail, pedidosEmail, ...bccFromConfig].filter(Boolean),
+            ),
+          ];
 
           this.logger.log(
             `📧 Enviando email a ${providerEmail} con Excel adjunto (CC: ${ccEmails.join(', ')}, BCC: ${bccEmails.join(', ')})...`,

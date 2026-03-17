@@ -449,10 +449,11 @@ export class ScheduledMessagesController {
         updateData.endDate = new Date(body.endDate);
       if (body.sendTime !== undefined) updateData.sendTime = body.sendTime;
       if (body.recurrence !== undefined) {
-        updateData.recurrence =
-          ['daily', 'weekly', 'monthly'].includes(body.recurrence) ?
-            body.recurrence :
-            null;
+        updateData.recurrence = ['daily', 'weekly', 'monthly'].includes(
+          body.recurrence,
+        )
+          ? body.recurrence
+          : null;
       }
       if (body.recurrenceDayOfWeek !== undefined)
         updateData.recurrenceDayOfWeek =

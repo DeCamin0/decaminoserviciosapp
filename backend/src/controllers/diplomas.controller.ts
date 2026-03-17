@@ -356,11 +356,10 @@ export class DiplomasController {
 
       // Angajații pot descărca doar propriile diplome; Admin/Developer pot descărca orice diplomă
       const grupo = user.grupo || user.GRUPO || '';
-      const isAdminOrDeveloper =
-        grupo === 'Admin' || grupo === 'Developer';
+      const isAdminOrDeveloper = grupo === 'Admin' || grupo === 'Developer';
       const empleadoId = isAdminOrDeveloper
         ? null
-        : (user.CODIGO || user.codigo || user.userId);
+        : user.CODIGO || user.codigo || user.userId;
 
       this.logger.log(
         `📥 Descargando diploma ${diplomaIdNum} para empleado ${empleadoId ?? '(admin)'}`,

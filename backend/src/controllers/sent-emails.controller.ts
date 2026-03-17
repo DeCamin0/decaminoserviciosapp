@@ -214,8 +214,12 @@ export class SentEmailsController {
       } else if (recipientType === 'gestoria') {
         const gestoriaEmail =
           recipientEmail ||
-          this.configService.get<{ gestoriaEmail?: string; email?: string }>('company')?.gestoriaEmail ||
-          this.configService.get<{ gestoriaEmail?: string; email?: string }>('company')?.email ||
+          this.configService.get<{ gestoriaEmail?: string; email?: string }>(
+            'company',
+          )?.gestoriaEmail ||
+          this.configService.get<{ gestoriaEmail?: string; email?: string }>(
+            'company',
+          )?.email ||
           '';
         recipients = [
           {
@@ -292,7 +296,9 @@ export class SentEmailsController {
           .map((line) => line.trim())
           .filter((line) => line.length > 0)
           .join('\n');
-        const companyName = (this.configService.get('company') as any)?.legalName ?? 'DE CAMINO SERVICIOS AUXILIARES SL';
+        const companyName =
+          (this.configService.get('company') as any)?.legalName ??
+          'DE CAMINO SERVICIOS AUXILIARES SL';
         return `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${additionalMsgCleaned ? `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;"><strong>Mensaje adicional:</strong><br><div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div></div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${companyName}</strong></p></body></html>`;
       };
 

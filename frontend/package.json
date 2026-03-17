@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.02.27.1627",
+  "version": "2026.03.17.1255",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/fix-quill-vulnerability.cjs",
@@ -12,7 +12,9 @@
     "dev:client2": "vite --mode client2 --port 5174",
     "build": "node update-version.js && vite build",
     "build:frontend:decamino": "node update-version.js && vite build --mode decamino",
+    "build:frontend:decamino:prod": "node update-version.js && cross-env VITE_API_URL=https://api.decaminoservicios.com VITE_API_BASE_URL=https://api.decaminoservicios.com vite build --mode decamino",
     "build:frontend:hera": "node update-version.js && vite build --mode hera",
+    "build:frontend:hera:prod": "node update-version.js && cross-env VITE_API_URL=https://api.herafs.com VITE_API_BASE_URL=https://api.herafs.com vite build --mode hera",
     "build:client2": "node update-version.js && vite build --mode client2",
     "build:no-version": "vite build",
     "version:bump": "node scripts/versioning.js patch",

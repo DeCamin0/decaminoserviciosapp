@@ -61,7 +61,12 @@ export class EmpleadosController {
   /** CC list pentru emailuri către gestoria (din COMPANY_GESTORIA_CC, comma-separated). */
   private getGestoriaCcList(): string[] {
     const cc = (this.getCompany().gestoriaCc || '').trim();
-    return cc ? cc.split(',').map((e) => e.trim()).filter(Boolean) : [];
+    return cc
+      ? cc
+          .split(',')
+          .map((e) => e.trim())
+          .filter(Boolean)
+      : [];
   }
 
   @Get('me')
@@ -441,7 +446,9 @@ export class EmpleadosController {
             }
 
             if (enviarAGestoria) {
-              const gestoriaTo = (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
+              const gestoriaTo =
+                (this.getCompany().gestoriaEmail || this.getCompany().email) ??
+                '';
               const gestoriaCc = this.getGestoriaCcList();
               // Dacă este bifat: trimite la gestoria cu CC și BCC (din env)
               if (attachments.length > 1) {
@@ -695,7 +702,8 @@ export class EmpleadosController {
         });
       }
 
-      const gestoriaTo = (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
+      const gestoriaTo =
+        (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
       const gestoriaCc = this.getGestoriaCcList();
       // Trimite la gestoria (To + CC din env)
       if (attachments.length > 1) {
@@ -1429,7 +1437,8 @@ export class EmpleadosController {
             });
           }
 
-          const gestoriaToUpd = (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
+          const gestoriaToUpd =
+            (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
           const gestoriaCcUpd = this.getGestoriaCcList();
           // Trimite la gestoria (To + CC din env)
           if (attachments.length > 0) {
@@ -1502,7 +1511,9 @@ export class EmpleadosController {
             await this.sentEmailsService.saveSentEmail({
               senderId,
               recipientType: 'gestoria',
-              recipientEmail: (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '',
+              recipientEmail:
+                (this.getCompany().gestoriaEmail || this.getCompany().email) ??
+                '',
               recipientName: 'Gestoria',
               subject:
                 emailSubject ||
@@ -1944,7 +1955,8 @@ export class EmpleadosController {
             </div>
           `;
 
-          const gestoriaToAprob = (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
+          const gestoriaToAprob =
+            (this.getCompany().gestoriaEmail || this.getCompany().email) ?? '';
           const gestoriaCcAprob = this.getGestoriaCcList();
           // Trimite la gestoria (To + CC din env)
           await this.emailService.sendEmail(

@@ -15,7 +15,7 @@ const wantClient2 =
   process.env.ENV_FILE === '.env.client2.local' ||
   process.env.ENV_FILE === '.env.hera.local';
 const envFilePreferred = wantClient2
-  ? (process.env.ENV_FILE || '.env.hera.local')
+  ? process.env.ENV_FILE || '.env.hera.local'
   : process.env.ENV_FILE || '.env.decamino.local';
 const envFileFallback = wantClient2 ? '.env.client2.local' : '.env';
 const envPathPreferred = resolve(cwd, envFilePreferred);

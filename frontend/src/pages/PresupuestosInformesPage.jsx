@@ -199,6 +199,11 @@ export default function PresupuestosInformesPage() {
     horarioPeriodos: [],
   });
   const [presupuestoCalculoPiscinaRest, setPresupuestoCalculoPiscinaRest] = useState([]);
+  // Mantenimiento invernal piscina (antes de OFERTA ECONOMICA): con lona / sin lona + precio
+  const [mantenimientoInvernalPiscina, setMantenimientoInvernalPiscina] = useState({
+    conLona: false,
+    precio: '1800',
+  });
   // Horario piscina (una sola vez al final del presupuesto, orientativo) — no por variante
   const [presupuestoHorarioPiscina, setPresupuestoHorarioPiscina] = useState([]);
 
@@ -541,7 +546,19 @@ export default function PresupuestosInformesPage() {
         anualidadConIva = precioSinIvaMes * 12 * 1.21;
       }
       return { descripcion, mensualidadSinIva, mensualidadConIva, anualidadSinIva, anualidadConIva };
-    });
+    }).concat(
+      selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio) > 0
+        ? [{
+            descripcion: mantenimientoInvernalPiscina.conLona
+              ? 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)'
+              : 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)',
+            mensualidadSinIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio),
+            mensualidadConIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio) * 1.21,
+            anualidadSinIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio),
+            anualidadConIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio) * 1.21,
+          }]
+        : []
+    );
   };
 
   const buildPayload = () => ({
@@ -561,6 +578,10 @@ export default function PresupuestosInformesPage() {
       fechaHasta: (p.fechaHasta || '').trim() ? (p.fechaHasta.includes('-') ? dateToDDMM(p.fechaHasta) : p.fechaHasta.trim()) : '',
       horario: buildHorarioString(p.turn1Desde, p.turn1Hasta, p.turn2Desde, p.turn2Hasta) || (p.horario || '').trim(),
     })).filter((h) => h.fechaDesde || h.fechaHasta || h.horario),
+    mantenimientoInvernalPiscina: {
+      conLona: mantenimientoInvernalPiscina.conLona,
+      precio: String(mantenimientoInvernalPiscina.precio ?? '').trim() || '0',
+    },
     presupuestoClienteId,
     presupuestoClienteNombre,
     presupuestoClienteEsNuevo,
@@ -781,6 +802,11 @@ export default function PresupuestosInformesPage() {
         }));
       } else {
         setPresupuestoHorarioPiscina([]);
+      }
+      if (p.mantenimientoInvernalPiscina && typeof p.mantenimientoInvernalPiscina === 'object') {
+        const mi = p.mantenimientoInvernalPiscina;
+        const precioStr = typeof mi.precio === 'number' ? (Number.isInteger(mi.precio) ? String(mi.precio) : mi.precio.toFixed(2)) : String(mi.precio ?? '1800').trim();
+        setMantenimientoInvernalPiscina({ conLona: !!mi.conLona, precio: precioStr || '1800' });
       }
       if (p.presupuestoClienteId !== undefined) setPresupuestoClienteId(p.presupuestoClienteId);
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
@@ -1120,6 +1146,11 @@ export default function PresupuestosInformesPage() {
         }));
       } else {
         setPresupuestoHorarioPiscina([]);
+      }
+      if (p.mantenimientoInvernalPiscina && typeof p.mantenimientoInvernalPiscina === 'object') {
+        const mi = p.mantenimientoInvernalPiscina;
+        const precioStr = typeof mi.precio === 'number' ? (Number.isInteger(mi.precio) ? String(mi.precio) : mi.precio.toFixed(2)) : String(mi.precio ?? '1800').trim();
+        setMantenimientoInvernalPiscina({ conLona: !!mi.conLona, precio: precioStr || '1800' });
       }
       if (p.presupuestoClienteId !== undefined) setPresupuestoClienteId(p.presupuestoClienteId);
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
@@ -4932,6 +4963,40 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     </div>
                   )}
 
+                  {/* Mantenimiento invernal piscina (solo si hay servicio piscina) — antes de OFERTA ECONOMICA */}
+                  {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && (
+                    <div className="p-5 bg-white border border-gray-200 rounded-lg shadow-sm mt-4">
+                      <p className="text-sm font-medium text-gray-800 mb-3">
+                        COSTE MANTENIMIENTO INVERNAL DE INSTALACIONES Y AGUA PISCINA SIN LONA: 1.800,00 EUROS (I.V.A. No Incluido)
+                      </p>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={mantenimientoInvernalPiscina.conLona}
+                            onChange={(e) => setMantenimientoInvernalPiscina((prev) => ({ ...prev, conLona: e.target.checked }))}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                          <span className="text-sm text-gray-700">Con lona</span>
+                        </label>
+                        <span className="text-sm text-gray-500">|</span>
+                        <label className="inline-flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">Precio (€ sin IVA):</span>
+                          <Input
+                            type="text"
+                            value={mantenimientoInvernalPiscina.precio}
+                            onChange={(e) => setMantenimientoInvernalPiscina((prev) => ({ ...prev, precio: e.target.value }))}
+                            placeholder="1800"
+                            className="w-28"
+                          />
+                        </label>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {mantenimientoInvernalPiscina.conLona ? 'Con lona' : 'Sin lona'} — precio introducido: {mantenimientoInvernalPiscina.precio || '0'} € + IVA
+                      </p>
+                    </div>
+                  )}
+
                   {/* OFERTA ECONOMICA — tabla con todos los servicios seleccionados; solo 2 columnas (DESCRIPCION, MENSUALIDAD) si todo es piscina */}
                   {selectedServiciosPresupuesto.length > 0 && (() => {
                     const ofertaSoloPiscina = selectedServiciosPresupuesto.every((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina');
@@ -5018,6 +5083,28 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 </tr>
                               );
                             })}
+                            {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && (() => {
+                              const precioInvernal = parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio);
+                              if (precioInvernal <= 0) return null;
+                              const desc = mantenimientoInvernalPiscina.conLona
+                                ? 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)'
+                                : 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)';
+                              return (
+                                <tr key="mantenimiento-invernal" className="border-b border-gray-200">
+                                  <td className="border border-gray-300 px-3 py-2 text-gray-800">{desc}</td>
+                                  <td className="border border-gray-300 px-3 py-2">
+                                    <div>{precioInvernal.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
+                                    <div className="text-gray-600">{(precioInvernal * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
+                                  </td>
+                                  {!ofertaSoloPiscina && (
+                                    <td className="border border-gray-300 px-3 py-2">
+                                      <div>{precioInvernal.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
+                                      <div className="text-gray-600">{(precioInvernal * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })()}
                           </tbody>
                         </table>
                       </div>

@@ -58,6 +58,44 @@ const stripHtml = (str) => {
   return str.replace(/<[^>]+>/g, '').trim() || str;
 };
 
+// Mensaje predeterminado de bienvenida según la firma (config multi-client: Decamino, HERA, etc.)
+const getWelcomeEmailDefault = () => {
+  const company = config.COMPANY_NAME || 'la empresa';
+  const companyLegal = config.COMPANY_NAME_LEGAL || config.COMPANY_NAME || company;
+  const appName = config.APP_NAME || config.COMPANY_NAME || 'De Camino';
+  const appUrl = config.APP_URL || 'https://app.decaminoservicios.com';
+  return {
+    subiect: `Bienvenido/a a ${company} - Acceso a la aplicación interna`,
+    mensaje: `Hola,
+
+Bienvenido/a a ${company}. Estamos encantados de tenerte en el equipo.
+
+Deberás utilizar la aplicación interna ${appName} para todas las gestiones laborales.
+
+El uso de la aplicación es obligatorio y sustituye completamente el uso de documentos en papel.
+
+La aplicación ${appName} se utiliza para:
+- fichaje y registro de horas trabajadas
+- consulta de horarios y cuadrantes
+- solicitud de vacaciones, días libres y asunto propio
+- acceso a documentación e información interna
+
+📲 Cómo acceder a la aplicación
+
+La aplicación no se descarga desde Google Play ni App Store. Se utiliza desde el navegador del móvil o del ordenador.
+
+Accede al siguiente enlace: ${appUrl}
+
+Si tienes cualquier problema técnico o duda sobre el uso de la aplicación, puedes contactar con Recursos Humanos.
+
+Un cordial saludo.
+
+Atentamente:
+RRHH
+${companyLegal}`,
+  };
+};
+
 // Función para generar el código
 const generateCodigo = () => {
   return Date.now().toString().slice(-8); // Usa timestamp en lugar de random
@@ -877,6 +915,12 @@ export default function EmpleadosPage() {
   const [emailSuccess, setEmailSuccess] = useState(false);
   const [selectedUserForEmail, setSelectedUserForEmail] = useState(null);
   const [emailProgress, setEmailProgress] = useState(null); // { total, current, success, failed, status }
+  // Modal "Enviar email de bienvenida a todos los empleados"
+  const [showWelcomeEmailModal, setShowWelcomeEmailModal] = useState(false);
+  const [welcomeEmailSubject, setWelcomeEmailSubject] = useState(() => getWelcomeEmailDefault().subiect);
+  const [welcomeEmailMessage, setWelcomeEmailMessage] = useState(() => getWelcomeEmailDefault().mensaje);
+  const [welcomeEmailLoading, setWelcomeEmailLoading] = useState(false);
+  const [welcomeEmailError, setWelcomeEmailError] = useState(null);
   
   // WebSocket pentru progres email
   const { socket } = useWebSocket('/notifications');
@@ -2582,6 +2626,56 @@ export default function EmpleadosPage() {
         message: error.message || 'Error al enviar la lista de IBAN. Por favor, inténtalo de nuevo.',
         show: true
       });
+    }
+  };
+
+  const openWelcomeEmailModal = () => {
+    const def = getWelcomeEmailDefault();
+    setWelcomeEmailSubject(def.subiect);
+    setWelcomeEmailMessage(def.mensaje);
+    setWelcomeEmailError(null);
+    setShowWelcomeEmailModal(true);
+  };
+
+  const handleSendWelcomeEmailToAll = async () => {
+    const subiect = (welcomeEmailSubject || '').trim();
+    const mesaj = (welcomeEmailMessage || '').trim();
+    if (!subiect || !mesaj) {
+      setWelcomeEmailError('Asunto y mensaje son obligatorios.');
+      return;
+    }
+    setWelcomeEmailError(null);
+    setWelcomeEmailLoading(true);
+    try {
+      const authToken = localStorage.getItem('auth_token');
+      const response = await fetch(routes.sendNotificacion, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authToken ? `Bearer ${authToken}` : '',
+        },
+        body: JSON.stringify({
+          mesaj,
+          subiect,
+          destinatar: 'toti',
+        }),
+      });
+      const result = response.ok ? await response.json() : { success: false };
+      if (result && result.success) {
+        setNotification({
+          type: 'success',
+          title: 'Email enviado',
+          message: result.destinatari ? `Enviado a ${result.destinatari} empleado(s).` : 'Email de bienvenida enviado correctamente.',
+          show: true,
+        });
+        setShowWelcomeEmailModal(false);
+      } else {
+        setWelcomeEmailError(result?.message || 'Error al enviar el correo.');
+      }
+    } catch (err) {
+      setWelcomeEmailError(err?.message || 'No se pudo enviar el correo.');
+    } finally {
+      setWelcomeEmailLoading(false);
     }
   };
 
@@ -4561,6 +4655,43 @@ export default function EmpleadosPage() {
                     </div>
                     
                     {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  </button>
+
+                  {/* Enviar email de bienvenida a todos - TEAL/CYAN */}
+                  <button
+                    onClick={openWelcomeEmailModal}
+                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(8, 145, 178, 0.1) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '0.75rem',
+                      border: '1px solid rgba(6, 182, 212, 0.25)',
+                      boxShadow: '0 4px 12px rgba(6, 182, 212, 0.15)',
+                      padding: '0.75rem'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(6, 182, 212, 0.25)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(6, 182, 212, 0.15)';
+                    }}
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-cyan-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+                    <div className="relative flex items-center gap-2 justify-center">
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                          boxShadow: '0 2px 8px rgba(6, 182, 212, 0.3)'
+                        }}
+                      >
+                        <span className="text-base">✉️</span>
+                      </div>
+                      <span className="text-sm font-bold text-cyan-800">Email bienvenida a todos</span>
+                    </div>
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
                   </button>
                 </div>
@@ -7266,6 +7397,75 @@ export default function EmpleadosPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Enviar email de bienvenida a todos los empleados */}
+      <Modal
+        isOpen={showWelcomeEmailModal}
+        onClose={() => !welcomeEmailLoading && setShowWelcomeEmailModal(false)}
+        title=""
+        size="lg"
+      >
+        <div className="max-w-xl mx-auto">
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-full flex items-center justify-center mx-auto mb-3">
+              <span className="text-white text-xl">✉️</span>
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-1">Email de bienvenida a todos</h2>
+            <p className="text-gray-600 text-sm">Se enviará a todos los empleados activos. Puedes editar el asunto y el mensaje antes de enviar.</p>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Asunto</label>
+              <Input
+                value={welcomeEmailSubject}
+                onChange={(e) => setWelcomeEmailSubject(e.target.value)}
+                placeholder="Ej: Bienvenida a la empresa"
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Mensaje</label>
+              <textarea
+                value={welcomeEmailMessage}
+                onChange={(e) => setWelcomeEmailMessage(e.target.value)}
+                placeholder="Escribe el mensaje de bienvenida..."
+                rows={8}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 resize-y"
+              />
+            </div>
+            {welcomeEmailError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {welcomeEmailError}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={() => !welcomeEmailLoading && setShowWelcomeEmailModal(false)}
+              disabled={welcomeEmailLoading}
+              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSendWelcomeEmailToAll}
+              disabled={welcomeEmailLoading}
+              className="px-5 py-2 rounded-lg bg-cyan-600 text-white font-medium hover:bg-cyan-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {welcomeEmailLoading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Enviar a todos'
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal para enviar email - Diseño moderno */}
       <Modal

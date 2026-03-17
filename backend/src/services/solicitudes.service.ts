@@ -34,7 +34,10 @@ export class SolicitudesService {
 
   /** Email destinatar principal gestoria (baja, despido, etc.) – din COMPANY_GESTORIA_EMAIL sau COMPANY_EMAIL. */
   private getGestoriaEmail(): string {
-    const c = this.configService.get<{ gestoriaEmail?: string; email?: string }>('company');
+    const c = this.configService.get<{
+      gestoriaEmail?: string;
+      email?: string;
+    }>('company');
     return ((c?.gestoriaEmail || c?.email) ?? '').trim();
   }
 
@@ -152,6 +155,76 @@ export class SolicitudesService {
    * Verifică dacă nici o zi din interval nu depășește capacitatea pentru Vacaciones (limită pe grup).
    * Returnează { allowed: false, firstBadDate } dacă există cel puțin o zi fără disponibilitate.
    */
+  /** Perioade blocate pentru vacanțe (luni sau intervale) – nu se pot solicita vacanțe în aceste zile. */
+  async getVacationBlockedPeriods(): Promise<
+    { id: number; fecha_inicio: Date; fecha_fin: Date }[]
+  > {
+    const rows = await this.prisma.vacationBlockedPeriod.findMany({
+      orderBy: { fecha_inicio: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      fecha_inicio: r.fecha_inicio,
+      fecha_fin: r.fecha_fin,
+    }));
+  }
+
+  async createVacationBlockedPeriod(dto: {
+    fecha_inicio: string;
+    fecha_fin: string;
+  }): Promise<{ id: number; fecha_inicio: Date; fecha_fin: Date }> {
+    const start = new Date(dto.fecha_inicio);
+    const end = new Date(dto.fecha_fin);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+      throw new BadRequestException(
+        'fecha_inicio y fecha_fin deben ser fechas válidas y fecha_fin >= fecha_inicio',
+      );
+    }
+    const created = await this.prisma.vacationBlockedPeriod.create({
+      data: {
+        fecha_inicio: start,
+        fecha_fin: end,
+      },
+    });
+    return {
+      id: created.id,
+      fecha_inicio: created.fecha_inicio,
+      fecha_fin: created.fecha_fin,
+    };
+  }
+
+  async deleteVacationBlockedPeriod(id: number): Promise<void> {
+    await this.prisma.vacationBlockedPeriod.delete({ where: { id } });
+  }
+
+  /** Verifică dacă intervalul [fechaInicio, fechaFin] se suprapune cu vreo perioadă blocată. */
+  private async checkVacacionesBlockedPeriods(
+    fechaInicio: string,
+    fechaFin: string,
+  ): Promise<{ allowed: boolean; firstBadDate?: string }> {
+    const periods = await this.getVacationBlockedPeriods();
+    if (!periods.length) return { allowed: true };
+    const start = new Date(fechaInicio);
+    const end = new Date(fechaFin);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    let cur = new Date(start);
+    while (cur <= end) {
+      const dateStr = cur.toISOString().split('T')[0];
+      for (const p of periods) {
+        const pStart = new Date(p.fecha_inicio);
+        const pEnd = new Date(p.fecha_fin);
+        pStart.setHours(0, 0, 0, 0);
+        pEnd.setHours(0, 0, 0, 0);
+        if (cur >= pStart && cur <= pEnd) {
+          return { allowed: false, firstBadDate: dateStr };
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return { allowed: true };
+  }
+
   private async checkVacacionesRangeAvailability(
     codigo: string,
     fechaInicio: string,
@@ -163,6 +236,14 @@ export class SolicitudesService {
       const end = new Date(fechaFin);
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
         return { allowed: true };
+      }
+
+      const blocked = await this.checkVacacionesBlockedPeriods(
+        fechaInicio,
+        fechaFin,
+      );
+      if (!blocked.allowed) {
+        return { allowed: false, firstBadDate: blocked.firstBadDate };
       }
 
       const empleadoQuery = `
@@ -187,7 +268,7 @@ export class SolicitudesService {
       const sizeResult =
         await this.prisma.$queryRawUnsafe<any[]>(groupSizeQuery);
       const groupSize = Number(sizeResult?.[0]?.cnt) || 1;
-      const maxAllowed = Math.max(1, Math.ceil(groupSize * 0.15));
+      const maxAllowed = Math.max(1, Math.ceil(groupSize * 0.1));
 
       const excludeClause = excludeSolicitudId
         ? `AND s.id != ${this.escapeSql(excludeSolicitudId)}`
@@ -206,7 +287,9 @@ export class SolicitudesService {
       const rows = await this.prisma.$queryRawUnsafe<any[]>(overlapQuery);
       if (!rows?.length) return { allowed: true };
 
-      const sameGroupRows = rows.filter((r) => this.normalizeGroup(r.grupo) === grupoEmpleado);
+      const sameGroupRows = rows.filter(
+        (r) => this.normalizeGroup(r.grupo) === grupoEmpleado,
+      );
       const dayCount: Record<string, number> = {};
       for (const r of sameGroupRows) {
         const a = new Date(r.fecha_inicio);
@@ -727,7 +810,8 @@ export class SolicitudesService {
         conditions.push(`estado = ${this.escapeSql(filters.ESTADO.trim())}`);
       }
 
-      // Filtrare pe lună (MES) - format: YYYY-MM
+      // Filtrare pe lună (MES) - format: YYYY-MM — returnăm orice solicitare a cărei perioadă SE SUPrapune cu luna
+      // (ex.: vacanță 29 iul - 5 aug trebuie să apară și la MES=2026-07 și la MES=2026-08)
       if (filters.MES && filters.MES.trim() !== '') {
         const mesTrimmed = filters.MES.trim();
 
@@ -738,11 +822,10 @@ export class SolicitudesService {
           );
         }
 
-        // Filtrare bazată pe fecha_inicio (DateTime) - verifică dacă începe în luna respectivă
-        // Frontend-ul face filtrarea finală pentru suprapuneri (vezi filterSolicitudesByMonth)
-        // Asta e mai simplu și mai performant
+        const firstDay = `${mesTrimmed}-01`;
+        // Suprapunere: perioada [fecha_inicio, fecha_fin] intersectează luna => fecha_inicio <= lastDay AND fecha_fin >= firstDay
         conditions.push(
-          `(fecha_inicio IS NOT NULL AND DATE_FORMAT(fecha_inicio, '%Y-%m') = ${this.escapeSql(mesTrimmed)})`,
+          `(fecha_inicio IS NOT NULL AND fecha_fin IS NOT NULL AND fecha_inicio <= LAST_DAY(STR_TO_DATE(${this.escapeSql(firstDay)}, '%Y-%m-%d')) AND fecha_fin >= ${this.escapeSql(firstDay)})`,
         );
       }
 
@@ -967,10 +1050,7 @@ export class SolicitudesService {
             );
           }
         }
-        if (
-          data.tipo === 'Asunto Propio' ||
-          data.tipo === 'Asuntos Propios'
-        ) {
+        if (data.tipo === 'Asunto Propio' || data.tipo === 'Asuntos Propios') {
           const rangeCheck = await this.checkAsuntoPropioRangeAvailability(
             data.codigo,
             data.fecha_inicio,
@@ -1557,10 +1637,7 @@ export class SolicitudesService {
             );
           }
         }
-        if (
-          tipo === 'Asunto Propio' ||
-          tipo === 'Asuntos Propios'
-        ) {
+        if (tipo === 'Asunto Propio' || tipo === 'Asuntos Propios') {
           const rangeCheck = await this.checkAsuntoPropioRangeAvailability(
             codigo,
             inicioStr,

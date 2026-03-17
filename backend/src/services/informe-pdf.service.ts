@@ -146,15 +146,19 @@ function getStampPathDefault(): string | null {
 }
 
 /** Ruta stamp per company: HERA folosește COMPANY_STAMP_PATH_HERA, Decamino COMPANY_STAMP_PATH / fallback. */
-function getStampPathForCompany(company: {
-  presupuestoPresentacionKey?: string;
-  stampPath?: string;
-  stampPathHera?: string;
-} | null): string | null {
+function getStampPathForCompany(
+  company: {
+    presupuestoPresentacionKey?: string;
+    stampPath?: string;
+    stampPathHera?: string;
+  } | null,
+): string | null {
   const key = (company as any)?.presupuestoPresentacionKey;
   const name =
     key === 'hera'
-      ? ((company as any)?.stampPathHera || (company as any)?.stampPath || 'stampila_hera-removebg-preview.png')
+      ? (company as any)?.stampPathHera ||
+        (company as any)?.stampPath ||
+        'stampila_hera-removebg-preview.png'
       : (company as any)?.stampPath;
   if (name && String(name).trim()) {
     for (const dir of STAMP_CANDIDATES) {

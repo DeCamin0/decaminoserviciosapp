@@ -151,6 +151,38 @@ HERA_EOF
 
 echo "✅ .env (Decamino) creat."
 echo "✅ .env.client2 (HERA) creat."
+
+# ---------- Frontend: VITE_APP_URL în .env (dacă există frontend/) ----------
+FRONTEND_DIR="$BACKEND_DIR/../frontend"
+if [ -d "$FRONTEND_DIR" ]; then
+  # Decamino: asigură VITE_APP_URL în frontend/.env.production sau .env
+  for ENVFILE in "$FRONTEND_DIR/.env.production" "$FRONTEND_DIR/.env"; do
+    if [ -f "$ENVFILE" ]; then
+      if ! grep -q "^VITE_APP_URL=" "$ENVFILE" 2>/dev/null; then
+        echo "" >> "$ENVFILE"
+        echo "# URL aplicación interna (email bienvenida)" >> "$ENVFILE"
+        echo "VITE_APP_URL=https://app.decaminoservicios.com" >> "$ENVFILE"
+        echo "✅ Adăugat VITE_APP_URL în $ENVFILE (Decamino)"
+      fi
+      break
+    fi
+  done
+  # HERA: asigură VITE_APP_URL în frontend/.env.client2 sau .env.client2.example
+  for ENVFILE in "$FRONTEND_DIR/.env.client2" "$FRONTEND_DIR/.env.client2.example"; do
+    if [ -f "$ENVFILE" ]; then
+      if ! grep -q "^VITE_APP_URL=" "$ENVFILE" 2>/dev/null; then
+        echo "" >> "$ENVFILE"
+        echo "# URL aplicación interna (email bienvenida)" >> "$ENVFILE"
+        echo "VITE_APP_URL=https://app.herafs.com" >> "$ENVFILE"
+        echo "✅ Adăugat VITE_APP_URL în $ENVFILE (HERA)"
+      fi
+      break
+    fi
+  done
+else
+  echo "ℹ Frontend/ nu există (VPS backend-only); VITE_APP_URL se folosește la build frontend din .env.example / .env.client2.example"
+fi
+
 echo ""
 echo "Apoi: systemctl start decamino-backend   și (dacă ai serviciul) systemctl start hera-backend"
 echo "Sau:  ./deploy-backend.sh"

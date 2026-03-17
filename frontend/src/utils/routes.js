@@ -150,6 +150,9 @@ export const routes = {
   // Solicitudes (Requests)
   // Folosește GET pentru listare, POST cu accion: 'create'/'update'/'delete' pentru modificări
   getSolicitudesByEmail: `${BACKEND_BASE}/api/solicitudes`,
+  getVacationBlockedPeriods: `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods`,
+  createVacationBlockedPeriod: `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods`,
+  deleteVacationBlockedPeriod: (id) => `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods/${id}`,
   
   // Vacaciones (Vacations & Asuntos Propios)
   getVacacionesSaldo: `${BACKEND_BASE}/api/vacaciones/saldo`,

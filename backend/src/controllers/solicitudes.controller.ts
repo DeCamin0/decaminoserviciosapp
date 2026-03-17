@@ -12,6 +12,8 @@ import {
   UploadedFiles,
   Param,
   Res,
+  Delete,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
@@ -354,5 +356,56 @@ export class SolicitudesController {
       this.logger.error('❌ Error generating preview PDF:', error);
       throw error;
     }
+  }
+
+  /** Lista perioadelor blocate pentru vacanțe (luni/intervale) – doar manageri. */
+  @Get('vacation-blocked-periods')
+  async getVacationBlockedPeriods(@CurrentUser() user: any) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden ver los periodos bloqueados.',
+      );
+    }
+    return this.solicitudesService.getVacationBlockedPeriods();
+  }
+
+  /** Creare perioadă blocată – doar manageri. Body: { fecha_inicio: 'YYYY-MM-DD', fecha_fin: 'YYYY-MM-DD' } */
+  @Post('vacation-blocked-periods')
+  async createVacationBlockedPeriod(
+    @CurrentUser() user: any,
+    @Body() body: { fecha_inicio: string; fecha_fin: string },
+  ) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden crear periodos bloqueados.',
+      );
+    }
+    if (!body?.fecha_inicio || !body?.fecha_fin) {
+      throw new BadRequestException(
+        'fecha_inicio y fecha_fin son obligatorios',
+      );
+    }
+    return this.solicitudesService.createVacationBlockedPeriod(body);
+  }
+
+  /** Ștergere perioadă blocată – doar manageri. */
+  @Delete('vacation-blocked-periods/:id')
+  async deleteVacationBlockedPeriod(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden eliminar periodos bloqueados.',
+      );
+    }
+    await this.solicitudesService.deleteVacationBlockedPeriod(id);
+    return { success: true };
   }
 }

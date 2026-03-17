@@ -9,14 +9,13 @@ const inferApiBase = () => {
 
 const fromEnv = (key) => (import.meta.env[key] != null && String(import.meta.env[key]).trim() !== '' ? String(import.meta.env[key]).trim() : '');
 
-// API URLs. HERA (mode client2 sau hera) = mereu 3002; Decamino = 3000 sau din env.
+// API URLs. HERA (mode client2 | hera): dacă VITE_API_URL/VITE_API_BASE_URL sunt setate (prod) le folosim, altfel localhost:3002.
 const isHera = typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.MODE === 'client2' || import.meta.env.MODE === 'hera');
-const isClient2 = isHera;
 const HERA_BASE = 'http://localhost:3002';
 const API_URL_RAW = fromEnv('VITE_API_URL');
 const API_BASE_URL_RAW = fromEnv('VITE_API_BASE_URL') || API_URL_RAW;
-const API_URL = isHera ? HERA_BASE : API_URL_RAW;
-const API_BASE_URL_FULL = isHera ? HERA_BASE : API_BASE_URL_RAW;
+const API_URL = isHera ? (API_URL_RAW || HERA_BASE) : API_URL_RAW;
+const API_BASE_URL_FULL = isHera ? (API_BASE_URL_RAW || HERA_BASE) : API_BASE_URL_RAW;
 const API_BASE_RELATIVE = inferApiBase();
 const devFallback = isHera ? HERA_BASE : 'http://localhost:3000';
 const BACKEND_BASE = API_BASE_URL_FULL || API_URL || (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV ? devFallback : '');
@@ -48,6 +47,8 @@ export const config = {
 
   APP_NAME: fromEnv('VITE_APP_NAME') || fromEnv('VITE_COMPANY_NAME'),
   APP_VERSION: fromEnv('VITE_APP_VERSION') || '1.0.0',
+  /** URL de la aplicación interna (email bienvenida). Por build: Decamino → app.decaminoservicios.com, HERA → app.herafs.com; o VITE_APP_URL */
+  APP_URL: fromEnv('VITE_APP_URL') || (isHera ? 'https://app.herafs.com' : 'https://app.decaminoservicios.com'),
 
   N8N_BASE_URL: fromEnv('VITE_N8N_BASE_URL'),
 

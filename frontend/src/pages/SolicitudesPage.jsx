@@ -1186,6 +1186,8 @@ export default function SolicitudesPage() {
   const [allUsers, setAllUsers] = useState([]);
   const [totalAsuntoPropioDays, setTotalAsuntoPropioDays] = useState(0);
   const [totalVacacionesDays, setTotalVacacionesDays] = useState(0);
+  // Anul pentru filtrarea listei "Mis Solicitudes" (doar vacanțe/solicitudini din acel an)
+  const [misSolicitudesYear, setMisSolicitudesYear] = useState(() => new Date().getFullYear());
   // State pentru datele complete ale utilizatorului (inclusiv certificado_handicap_confirmado)
   const [empleadoCompleto, setEmpleadoCompleto] = useState(null);
   // State pentru saldo-ul real de vacanțe (din backend)
@@ -1245,6 +1247,12 @@ export default function SolicitudesPage() {
   const [manualSelectedEmployee, setManualSelectedEmployee] = useState(null); // { codigo, name, email }
   const [manualBajaFechaBaja, setManualBajaFechaBaja] = useState('');
   const [manualBajaFechaAlta, setManualBajaFechaAlta] = useState('');
+  // Perioade blocate pentru vacanțe (modal Bloquear periodos)
+  const [showVacationBlockedPeriodsModal, setShowVacationBlockedPeriodsModal] = useState(false);
+  const [vacationBlockedPeriods, setVacationBlockedPeriods] = useState([]);
+  const [newBlockedPeriodInicio, setNewBlockedPeriodInicio] = useState('');
+  const [newBlockedPeriodFin, setNewBlockedPeriodFin] = useState('');
+  const [blockedPeriodsYear, setBlockedPeriodsYear] = useState(() => new Date().getFullYear());
 
   // Conflicte MANUAL vs MUTUA (după upload Excel)
   const [showBajaConflictsModal, setShowBajaConflictsModal] = useState(false);
@@ -1260,6 +1268,56 @@ export default function SolicitudesPage() {
   
   // Ausencias states
   const [allAusencias, setAllAusencias] = useState([]);
+
+  // Verifică dacă o solicitare se suprapune cu un an dat (pentru filtrarea "Mis Solicitudes" pe an)
+  const solicitudOverlapsYear = useCallback((solicitud, year) => {
+    let startStr = solicitud.fecha_inicio || solicitud['fecha inicio'] || solicitud.fecha;
+    let endStr = solicitud.fecha_fin || solicitud['fecha fin'] || solicitud.fecha;
+    if (solicitud.FECHA && solicitud.FECHA.includes(' - ')) {
+      const parts = solicitud.FECHA.split(' - ');
+      startStr = parts[0]?.trim();
+      endStr = parts[1]?.trim();
+    }
+    if (!startStr) return false;
+    const start = new Date(startStr.trim());
+    const end = endStr ? new Date(endStr.trim()) : start;
+    if (isNaN(start.getTime())) return false;
+    const endDate = isNaN(end.getTime()) ? start : end;
+    const yearStart = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31, 23, 59, 59);
+    return start <= yearEnd && endDate >= yearStart;
+  }, []);
+
+  // Lista filtrată pe an pentru "Mis Solicitudes" și totaluri pentru acel an
+  const { solicitudesForYear, totalVacacionesDaysForYear, totalAsuntoPropioDaysForYear } = useMemo(() => {
+    const year = misSolicitudesYear;
+    const filtered = solicitudes.filter(s => solicitudOverlapsYear(s, year));
+    let vacaciones = 0;
+    let asunto = 0;
+    filtered.forEach(item => {
+      const tipo = (item.tipo || item.TIPO || '').toLowerCase();
+      let startStr = item.fecha_inicio || item['fecha inicio'] || item.fecha;
+      let endStr = item.fecha_fin || item['fecha fin'] || item.fecha;
+      if (item.FECHA && item.FECHA.includes(' - ')) {
+        const parts = item.FECHA.split(' - ');
+        startStr = parts[0]?.trim();
+        endStr = parts[1]?.trim();
+      }
+      if (startStr) {
+        const start = new Date(startStr);
+        const end = endStr ? new Date(endStr) : start;
+        const days = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
+        const numDays = Math.max(1, Math.floor(days));
+        if (tipo.includes('vacacion')) vacaciones += numDays;
+        else if (tipo.includes('asunto') || tipo.includes('propio')) asunto += numDays;
+      }
+    });
+    return {
+      solicitudesForYear: filtered,
+      totalVacacionesDaysForYear: vacaciones,
+      totalAsuntoPropioDaysForYear: asunto,
+    };
+  }, [solicitudes, misSolicitudesYear, solicitudOverlapsYear]);
 
   // States pentru solicitare justificante (documentos solicitados) - ELIMINAT (folosim recordarJustificante direct)
   
@@ -1378,7 +1436,7 @@ export default function SolicitudesPage() {
     return occupiedDates.includes(dateStr);
   };
 
-  // Check if a date is in the blocked holiday period (Dec 6 - Jan 6)
+  // Check if a date is in the blocked holiday period (Dec 6 - Jan 6) or in any configurable blocked period
   const isInHolidayBlockPeriod = (dateStr) => {
     const date = new Date(dateStr);
     const month = date.getMonth() + 1; // getMonth() returns 0-11
@@ -1390,7 +1448,18 @@ export default function SolicitudesPage() {
     if (month === 1 && date.getDate() <= 6) {
       return true; // January 1-6
     }
-    
+    // Perioade blocate configurate (din API)
+    if (vacationBlockedPeriods?.length) {
+      const d = new Date(dateStr);
+      d.setHours(0, 0, 0, 0);
+      for (const p of vacationBlockedPeriods) {
+        const start = new Date(p.fecha_inicio);
+        const end = new Date(p.fecha_fin);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        if (d >= start && d <= end) return true;
+      }
+    }
     return false;
   };
 
@@ -1451,7 +1520,7 @@ export default function SolicitudesPage() {
   // Calculate availability limits based on month and group
   const getAvailabilityLimit = (month, groupSize, tipo) => {
     if (tipo === 'Vacaciones') {
-      const percentage = 0.15; // 15% all year
+      const percentage = 0.10; // 10% all year
       return Math.max(1, Math.ceil(groupSize * percentage)); // At least 1 person
     } else if (tipo === 'Asunto Propio') {
       // For Asuntos Propios: max 4 people per day globally
@@ -2974,6 +3043,22 @@ export default function SolicitudesPage() {
 
     activityLogger.logPageAccess('solicitudes', authUser);
   }, [authUser, canAccessAllTabs, activeTab, fetchSolicitudes, fetchVacacionesSaldo, fetchAllSolicitudes, fetchAllUsers, fetchAllAusencias, fetchBajasMedicas, setDemoSolicitudes, setOperationLoading]);
+
+  const fetchVacationBlockedPeriods = useCallback(async () => {
+    if (authUser?.isDemo || !canAccessAllTabs) return;
+    try {
+      const res = await callApi(routes.getVacationBlockedPeriods, { method: 'GET' });
+      const list = (res?.data ?? res) ?? [];
+      setVacationBlockedPeriods(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.warn('Error fetching vacation blocked periods:', e);
+      setVacationBlockedPeriods([]);
+    }
+  }, [authUser?.isDemo, canAccessAllTabs, callApi]);
+
+  useEffect(() => {
+    if (canAccessAllTabs) fetchVacationBlockedPeriods();
+  }, [canAccessAllTabs, fetchVacationBlockedPeriods]);
   useEffect(() => {
     if (selectedTab === 'baja' && canAccessAllTabs) {
       fetchBajasMedicas();
@@ -4377,19 +4462,28 @@ export default function SolicitudesPage() {
       return true; // Toate celelalte validări sunt ignorate în modul manager
     }
 
-    // Check if dates are in the blocked holiday period (doar pentru solicitări noi, nu pentru editare)
-    // La editare, perioada de blocare este ignorată complet
-    if (tipo === 'Vacaciones' && editingSolicitud === null && (isInHolidayBlockPeriod(fechaInicio) || isInHolidayBlockPeriod(fechaFin))) {
-      setErrorMsg('No se pueden solicitar vacaciones durante el período de empleada (6 Dic - 6 Ene)');
-      return false;
-    }
-
     const [y1, m1, d1] = fechaInicio.split('-').map(Number);
     const [y2, m2, d2] = fechaFin.split('-').map(Number);
     const start = new Date(y1, m1 - 1, d1);
     const end = new Date(y2, m2 - 1, d2);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Check if any day in range is in a blocked period (6 Dic - 6 Ene or periodos bloqueados)
+    if (tipo === 'Vacaciones' && editingSolicitud === null) {
+      const checkBlock = new Date(start);
+      checkBlock.setHours(0, 0, 0, 0);
+      const endCheckBlock = new Date(end);
+      endCheckBlock.setHours(0, 0, 0, 0);
+      while (checkBlock <= endCheckBlock) {
+        const dateStr = checkBlock.toISOString().split('T')[0];
+        if (isInHolidayBlockPeriod(dateStr)) {
+          setErrorMsg('El rango incluye días bloqueados (período empleada 6 Dic - 6 Ene o periodos bloqueados en gestión). Elige solo días permitidos.');
+          return false;
+        }
+        checkBlock.setDate(checkBlock.getDate() + 1);
+      }
+    }
 
     // No permitir rango que incluya días sin disponibilidad (ocupados / bloqueados)
     if (editingSolicitud === null && (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios')) {
@@ -6155,6 +6249,27 @@ export default function SolicitudesPage() {
     }
   };
 
+  // Zile din intervalul selectat care sunt ocupate (sin disponibilidad) — pentru avertisment în UI
+  const occupiedDaysInRange = useMemo(() => {
+    if (editingSolicitud !== null || (!fechaInicio || !fechaFin || !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin))) return [];
+    const [y1, m1, d1] = fechaInicio.split('-').map(Number);
+    const [y2, m2, d2] = fechaFin.split('-').map(Number);
+    const start = new Date(y1, m1 - 1, d1);
+    const end = new Date(y2, m2 - 1, d2);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return [];
+    const list = [];
+    const check = new Date(start);
+    check.setHours(0, 0, 0, 0);
+    const endCheck = new Date(end);
+    endCheck.setHours(0, 0, 0, 0);
+    while (check <= endCheck) {
+      const dateStr = check.toISOString().split('T')[0];
+      if (dateAvailability[dateStr]?.isFull) list.push(dateStr);
+      check.setDate(check.getDate() + 1);
+    }
+    return list;
+  }, [fechaInicio, fechaFin, dateAvailability, editingSolicitud]);
+
   // Calculează zilele lucrătoare (exclude weekend-urile, Luni-Vineri)
   const calculateWorkingDays = (fechaInicio, fechaFin) => {
     if (!fechaInicio || !fechaFin || fechaInicio === '-' || fechaFin === '-' || fechaInicio === '' || fechaFin === '') return 0;
@@ -6927,21 +7042,40 @@ export default function SolicitudesPage() {
         </div>
 
         {activeTab === 'lista' ? (
-          // Lista de solicitudes del usuario
+          // Lista de solicitudes del usuario (filtrada por año seleccionado)
           <div>
             <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2 mb-4' : 'mb-6'}`}>
-              <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-900`}>
-                Mis Solicitudes
-              </h2>
-              <div className={`flex ${isMobile ? 'flex-wrap gap-1.5' : 'gap-3'}`}>
-                {totalAsuntoPropioDays > 0 && (
+              <div className="flex flex-wrap items-center gap-2 gap-y-2">
+                <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-900`}>
+                  Mis Solicitudes
+                </h2>
+                <label className="inline-flex items-center gap-1.5 text-sm text-gray-600">
+                  <span>Año:</span>
+                  <select
+                    value={misSolicitudesYear}
+                    onChange={(e) => setMisSolicitudesYear(Number(e.target.value))}
+                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-800 shadow-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  >
+                    {(() => {
+                      const currentYear = new Date().getFullYear();
+                      const years = [];
+                      for (let y = currentYear + 1; y >= currentYear - 6; y--) years.push(y);
+                      return years.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ));
+                    })()}
+                  </select>
+                </label>
+              </div>
+              <div className={`flex ${isMobile ? 'flex-wrap gap-1.5 mt-1' : 'gap-3'}`}>
+                {totalAsuntoPropioDaysForYear > 0 && (
                   <span className={`inline-flex items-center ${isMobile ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-sm'} font-medium rounded-full bg-purple-100 text-purple-800 border border-purple-200`}>
-                    📅 Asunto Propio: {totalAsuntoPropioDays} días
+                    📅 Asunto Propio: {totalAsuntoPropioDaysForYear} días
                   </span>
                 )}
-                {totalVacacionesDays > 0 && (
+                {totalVacacionesDaysForYear > 0 && (
                   <span className={`inline-flex items-center ${isMobile ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-sm'} font-medium rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200`}>
-                    🏖️ Vacaciones: {totalVacacionesDays} días
+                    🏖️ Vacaciones: {totalVacacionesDaysForYear} días
                   </span>
                 )}
               </div>
@@ -6951,13 +7085,13 @@ export default function SolicitudesPage() {
               <div className="flex justify-center py-8">
                 <LoadingSpinner size="lg" text="Cargando solicitudes..." />
               </div>
-            ) : solicitudes.length === 0 ? (
+            ) : solicitudesForYear.length === 0 ? (
               <div className={`text-center ${isMobile ? 'py-4 text-sm' : 'py-8'} text-gray-500`}>
-                No tienes solicitudes aún.
+                {solicitudes.length === 0 ? 'No tienes solicitudes aún.' : `No tienes solicitudes en ${misSolicitudesYear}.`}
               </div>
             ) : (
               <div className={isMobile ? "space-y-2" : "space-y-3"}>
-                {solicitudes.map((solicitud, index) => (
+                {solicitudesForYear.map((solicitud, index) => (
                   isMobile ? (
                     <MobileSolicitudItem
                       key={solicitud.id || index}
@@ -7443,6 +7577,17 @@ export default function SolicitudesPage() {
             
               {/* Botones export y crear solicitud */}
               <div className="flex gap-3 flex-wrap">
+              {selectedTab === 'vacaciones' && (
+                <button
+                  onClick={() => { setErrorMsg(''); setShowVacationBlockedPeriodsModal(true); fetchVacationBlockedPeriods(); }}
+                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">🔒</span>
+                    <span className="text-sm">Bloquear periodos vacaciones</span>
+                  </div>
+                </button>
+              )}
               <button
                 onClick={() => setShowManagerSolicitudModal(true)}
                   className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-indigo-500 to-indigo-600 text-white"
@@ -10263,7 +10408,7 @@ export default function SolicitudesPage() {
                                 // Fallback: use maxAllowed to estimate group size if allUsers is not loaded
                                 // maxAllowed is calculated as percentage of groupSize, so we can reverse it
                                 // For Vacaciones: maxAllowed = Math.ceil(groupSize * percentage), so groupSize ≈ maxAllowed / percentage
-                                const percentage = 0.15; // 15% all year
+                                const percentage = 0.10; // 10% all year
                                 const estimatedGroupSize = Math.ceil(firstAvailability.maxAllowed / percentage);
                                 totalInGroup = estimatedGroupSize;
                                 totalInCenter = 'N/A'; // Can't calculate without allUsers
@@ -10340,7 +10485,7 @@ export default function SolicitudesPage() {
                           📊 Reglas de Disponibilidad:
                         </p>
                         <p className="text-xs text-blue-600 mt-1">
-                            • {tipo === 'Vacaciones' ? '15%' : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
+                            • {tipo === 'Vacaciones' ? '10%' : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
                         </p>
                       </div>
                       )}
@@ -10355,6 +10500,20 @@ export default function SolicitudesPage() {
                         </p>
                         <p className="text-xs text-green-600 mt-1">
                           Desde: {fechaInicio} hasta: {fechaFin}
+                        </p>
+                      </div>
+                    )}
+                    {/* Avertisment când intervalul include zile ocupate (sin disponibilidad) */}
+                    {occupiedDaysInRange.length > 0 && (
+                      <div className="mt-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                        <p className="text-sm font-medium text-amber-800">
+                          ⚠️ No puedes incluir en el intervalo días ya ocupados
+                        </p>
+                        <p className="text-xs text-amber-700 mt-1">
+                          Los siguientes días están ocupados por otras solicitudes o sin disponibilidad: {occupiedDaysInRange.join(', ')}. Elige solo días disponibles o cambia el rango.
+                        </p>
+                        <p className="text-xs text-amber-600 mt-1">
+                          No se podrá enviar la solicitud hasta que el rango no incluya días ocupados.
                         </p>
                       </div>
                     )}
@@ -12465,6 +12624,178 @@ export default function SolicitudesPage() {
                 </>
               )}
             </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Bloquear periodos vacaciones */}
+      <Modal
+        isOpen={showVacationBlockedPeriodsModal}
+        onClose={() => {
+          setShowVacationBlockedPeriodsModal(false);
+          setNewBlockedPeriodInicio('');
+          setNewBlockedPeriodFin('');
+        }}
+        title="Bloquear periodos para vacaciones"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Las fechas dentro de estos periodos no se podrán solicitar como vacaciones. Puedes bloquear meses enteros con los checkboxes o intervalos concretos abajo.
+          </p>
+          {/* Bloquear por mes entero: año + 12 checkboxes */}
+          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">Bloquear mes entero</h4>
+            <div className="flex items-center gap-3 mb-3">
+              <label className="text-xs font-medium text-gray-600">Año:</label>
+              <select
+                value={blockedPeriodsYear}
+                onChange={(e) => setBlockedPeriodsYear(Number(e.target.value))}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                {[new Date().getFullYear(), new Date().getFullYear() + 1, new Date().getFullYear() + 2].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {monthNames.map((name, idx) => {
+                const month1 = idx + 1;
+                const firstDay = `${blockedPeriodsYear}-${String(month1).padStart(2, '0')}-01`;
+                const lastDay = (() => {
+                  const d = new Date(blockedPeriodsYear, month1, 0);
+                  return `${blockedPeriodsYear}-${String(month1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                })();
+                const isBlocked = vacationBlockedPeriods.some((p) => {
+                  const inicio = (typeof p.fecha_inicio === 'string' ? p.fecha_inicio : p.fecha_inicio?.split?.('T')[0] ?? '').slice(0, 10);
+                  const fin = (typeof p.fecha_fin === 'string' ? p.fecha_fin : p.fecha_fin?.split?.('T')[0] ?? '').slice(0, 10);
+                  return inicio <= firstDay && fin >= lastDay;
+                });
+                const periodIdForMonth = vacationBlockedPeriods.find((p) => {
+                  const inicio = (typeof p.fecha_inicio === 'string' ? p.fecha_inicio : p.fecha_inicio?.split?.('T')[0] ?? '').slice(0, 10);
+                  const fin = (typeof p.fecha_fin === 'string' ? p.fecha_fin : p.fecha_fin?.split?.('T')[0] ?? '').slice(0, 10);
+                  return inicio === firstDay && fin === lastDay;
+                })?.id;
+                return (
+                  <label key={idx} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!isBlocked}
+                      onChange={async (e) => {
+                        setErrorMsg('');
+                        if (e.target.checked) {
+                          try {
+                            await callApi(routes.createVacationBlockedPeriod, {
+                              method: 'POST',
+                              body: JSON.stringify({ fecha_inicio: firstDay, fecha_fin: lastDay }),
+                              headers: { 'Content-Type': 'application/json' },
+                            });
+                            await fetchVacationBlockedPeriods();
+                          } catch (err) {
+                            setErrorMsg(err?.message || 'Error al bloquear el mes.');
+                          }
+                        } else if (periodIdForMonth != null) {
+                          try {
+                            await callApi(routes.deleteVacationBlockedPeriod(periodIdForMonth), { method: 'DELETE' });
+                            await fetchVacationBlockedPeriods();
+                          } catch (err) {
+                            setErrorMsg(err?.message || 'Error al desbloquear.');
+                          }
+                        }
+                      }}
+                      className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-gray-700">{name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          {/* Intervalo personalizado */}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">O añade un intervalo concreto</h4>
+            <div className="flex gap-2 flex-wrap items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Desde</label>
+                <input
+                  type="date"
+                  value={newBlockedPeriodInicio}
+                  onChange={(e) => setNewBlockedPeriodInicio(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Hasta</label>
+                <input
+                  type="date"
+                  value={newBlockedPeriodFin}
+                  onChange={(e) => setNewBlockedPeriodFin(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!newBlockedPeriodInicio || !newBlockedPeriodFin) {
+                    setErrorMsg('Indica desde y hasta.');
+                    return;
+                  }
+                  if (new Date(newBlockedPeriodFin) < new Date(newBlockedPeriodInicio)) {
+                    setErrorMsg('La fecha hasta debe ser igual o posterior a desde.');
+                    return;
+                  }
+                  setErrorMsg('');
+                  try {
+                    await callApi(routes.createVacationBlockedPeriod, {
+                      method: 'POST',
+                      body: JSON.stringify({ fecha_inicio: newBlockedPeriodInicio, fecha_fin: newBlockedPeriodFin }),
+                      headers: { 'Content-Type': 'application/json' },
+                    });
+                    setNewBlockedPeriodInicio('');
+                    setNewBlockedPeriodFin('');
+                    await fetchVacationBlockedPeriods();
+                  } catch (e) {
+                    setErrorMsg(e?.message || 'Error al crear el periodo bloqueado.');
+                  }
+                }}
+                className="px-4 py-2 rounded-lg font-medium bg-amber-500 hover:bg-amber-600 text-white text-sm"
+              >
+                Añadir periodo
+              </button>
+            </div>
+          </div>
+          {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">Periodos bloqueados actuales</h4>
+            {vacationBlockedPeriods.length === 0 ? (
+              <p className="text-sm text-gray-500">Ninguno. Usa los checkboxes o el intervalo arriba.</p>
+            ) : (
+              <ul className="space-y-2 max-h-40 overflow-y-auto">
+                {vacationBlockedPeriods.map((p) => {
+                  const inicio = typeof p.fecha_inicio === 'string' ? p.fecha_inicio : (p.fecha_inicio?.split?.('T')[0] ?? '');
+                  const fin = typeof p.fecha_fin === 'string' ? p.fecha_fin : (p.fecha_fin?.split?.('T')[0] ?? '');
+                  return (
+                    <li key={p.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg text-sm">
+                      <span>{inicio} — {fin}</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await callApi(routes.deleteVacationBlockedPeriod(p.id), { method: 'DELETE' });
+                            await fetchVacationBlockedPeriods();
+                          } catch (e) {
+                            setErrorMsg(e?.message || 'Error al eliminar.');
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-800 font-medium"
+                      >
+                        Eliminar
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </div>
       </Modal>

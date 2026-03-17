@@ -3,11 +3,12 @@ import { io } from 'socket.io-client';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useSessionExpired } from '../contexts/SessionExpiredContext';
 import { isTokenFullyExpired } from '../utils/tokenRefresh';
-import { config } from '../config/env';
+import { BASE_URL } from '../utils/routes';
 
 /**
  * Hook pentru gestionarea conexiunii WebSocket
  * Conectează automat la server și gestionează reconexiunea
+ * Folosește același BASE_URL ca restul app (routes) ca să meargă și în producție.
  */
 export const useWebSocket = (namespace = '/notifications') => {
   const { user } = useAuth();
@@ -21,7 +22,7 @@ export const useWebSocket = (namespace = '/notifications') => {
   const maxReconnectAttempts = 5;
 
   const getSocketUrl = () => {
-    return (import.meta.env.VITE_BACKEND_URL && String(import.meta.env.VITE_BACKEND_URL).trim()) || config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+    return BASE_URL || '';
   };
 
   // Conectare la WebSocket
