@@ -43,8 +43,8 @@ export function useTokenMonitor(checkInterval = 30000) {
         // Token-ul e valid, verifică timpul rămas pentru a preveni expirarea bruscă
         const timeRemaining = getTokenTimeRemaining();
         
-        // Dacă mai sunt mai puțin de 2 minute, încercă refresh preventiv
-        if (timeRemaining > 0 && timeRemaining < 120) {
+        // Refresh preventiv când mai sunt mai puțin de 10 minute (evită deconectare la 30 min)
+        if (timeRemaining > 0 && timeRemaining < 10 * 60) {
           try {
             isCheckingRef.current = true;
             await getValidAccessToken();

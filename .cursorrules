@@ -15,7 +15,11 @@
 - Întotdeauna: Analizez → Raportez în română → Aștept aprobare → Aplic modificările
 - Raportul trebuie să includă: problemă găsită, severitate (Critical/Medium/Minor), fișiere afectate, soluție propusă, impact tehnic
 
-### 2. Prisma & DB Safety (BLOC CRITIC)
+### 2. Multi-Client: ambele baze (DECAMINO + HERA)
+- **Migrațiile** și **modificările** de schema/DB se aplică **întotdeauna pe ambele baze** (Decamino și HERA), nu doar pe una.
+- Detalii: **MASTER_LEAD_INSTRUCTION.md** → secțiunea **3.1) Multi-Client**.
+
+### 3. Prisma & DB Safety (BLOC CRITIC)
 - **STRICT INTERZIS** fără aprobare explicită "Aprobat pentru modificări DB":
   - `prisma migrate dev/deploy`
   - `prisma db push`
@@ -28,13 +32,13 @@
 - **PERMIS fără aprobare**: queries Prisma pe schema existentă, optimizări query, servicii NestJS care citesc/scriu pe tabele existente
 - Backend folosește **100% Prisma** (nu TypeORM - deprecat)
 
-### 3. Git Workflow
+### 4. Git Workflow
 - **NICIODATĂ** pe `main`/`master` direct
 - Propun branch `feature/...` sau `fix/...` pentru fiecare task
 - Listez exact fișierele vizate înainte de commit
 - **Nu rulez comenzi git** - doar propun, utilizatorul le rulează
 
-### 4. Compatibilitate UI
+### 5. Compatibilitate UI
 - Mențin compatibilitatea UI în timpul migrării n8n → backend
 - Frontend folosește deja backend-ul pentru majoritatea endpoint-urilor (vezi MASTER pentru lista completă)
 - Endpoint-uri nemigrate rămân prin n8n proxy (`/api/n8n/*`)

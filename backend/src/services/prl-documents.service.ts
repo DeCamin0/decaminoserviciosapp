@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import AdmZip from 'adm-zip';
 import * as iconv from 'iconv-lite';
@@ -28,7 +29,16 @@ export class PrlDocumentsService {
     private readonly notificationsService: NotificationsService,
     private readonly emailService: EmailService,
     private readonly telegramService: TelegramService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getCompanyName(): string {
+    const c = this.configService.get<{
+      legalNameShort?: string;
+      legalName?: string;
+    }>('company');
+    return (c?.legalNameShort ?? c?.legalName ?? '').trim();
+  }
 
   /**
    * Helper function pentru a escapa valori SQL
@@ -1186,9 +1196,13 @@ export class PrlDocumentsService {
       const año = ahora.getFullYear();
       const fechaFormateada = `a ${dia} de ${mes} de ${año}`;
 
-      // Valori default pentru firmă
-      const empresaDefault = 'De Camino Servicios Auxiliares SL';
-      const cifDefault = 'B85524536';
+      // Valori din company config (multi-client)
+      const company =
+        this.configService.get<{ legalNameShort?: string; cif?: string }>(
+          'company',
+        ) ?? {};
+      const empresaDefault = company.legalNameShort ?? '';
+      const cifDefault = company.cif ?? '';
 
       // Log pentru debugging
       const beforeReplace = {
@@ -1590,7 +1604,7 @@ export class PrlDocumentsService {
             html += `
               <p style="margin-top: 20px;">Puedes acceder a estos documentos desde tu portal de empleados.</p>
               ${documentosConFirma.length > 0 ? `<p style="color: #856404; font-weight: bold;">⚠️ IMPORTANTE: Los documentos marcados como "REQUIERE FIRMA" deben ser descargados, firmados y devueltos a través del portal.</p>` : ''}
-              <p>Saludos,<br>Equipo De Camino Servicios</p>
+              <p>Saludos,<br>${this.getCompanyName() ? `Equipo ${this.getCompanyName()}` : 'Equipo'}</p>
             `;
 
             if (this.emailService.isConfigured()) {

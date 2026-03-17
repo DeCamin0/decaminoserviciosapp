@@ -25,18 +25,31 @@ export default {
         tv: { 'raw': '(hover: none) and (pointer: fine)' },
       },
       colors: {
-        // Culorile DeCamino - bazate pe theme.js
+        // Brand primary – 500/600/700 din CSS vars (per client: DeCamino roșu, HERA albastru)
         primary: {
-          50: '#fef2f2',   // Very light red
-          100: '#fee2e2',  // Light red
-          200: '#fecaca',  // Lighter red
-          300: '#fca5a5',  // Light red
-          400: '#f87171',  // Medium light red
-          500: 'var(--primary-color, #E53935)',  // DeCamino primary red - dinamic din env var
-          600: '#dc2626',  // Darker red
-          700: '#b91c1c',  // Dark red
-          800: '#991b1b',  // Very dark red
-          900: '#7f1d1d',  // Darkest red
+          50: 'var(--primary-color-rgba-01, #fef2f2)',
+          100: 'var(--primary-color-rgba-02, #fee2e2)',
+          200: 'var(--primary-color-rgba-02, #fecaca)',
+          300: 'var(--primary-color-rgba-04, #fca5a5)',
+          400: 'var(--primary-color-rgba-05, #f87171)',
+          500: 'var(--primary-color, #E53935)',
+          600: 'var(--primary-color-darker, #dc2626)',
+          700: 'var(--primary-color-darkest, #b91c1c)',
+          800: 'var(--primary-color-darkest, #991b1b)',
+          900: 'var(--primary-color-darkest, #7f1d1d)',
+        },
+        // Red = brand primary per client (butoane, taburi, focus) – toate red-* devin culoarea brand
+        red: {
+          50: 'var(--primary-color-rgba-01, #fef2f2)',
+          100: 'var(--primary-color-rgba-02, #fee2e2)',
+          200: 'var(--primary-color-rgba-02, #fecaca)',
+          300: 'var(--primary-color-rgba-04, #fca5a5)',
+          400: 'var(--primary-color-rgba-05, #f87171)',
+          500: 'var(--primary-color, #E53935)',
+          600: 'var(--primary-color-darker, #dc2626)',
+          700: 'var(--primary-color-darkest, #b91c1c)',
+          800: 'var(--primary-color-darkest, #991b1b)',
+          900: 'var(--primary-color-darkest, #7f1d1d)',
         },
         secondary: {
           50: '#ffffff',   // Pure white

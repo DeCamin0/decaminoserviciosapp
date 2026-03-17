@@ -1,8 +1,7 @@
 import { useState, useCallback } from 'react';
+import { config } from '../config/env';
 
-const BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:3000'
-  : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+const BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
 // Interceptor pentru a loga toate request-urile (inclusiv OPTIONS preflight)
 if (typeof window !== 'undefined') {

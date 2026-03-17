@@ -12,6 +12,7 @@ import CalendarDayCell from '../components/CalendarDayCell.jsx';
 import DeclararNoPunchModal from '../components/DeclararNoPunchModal.jsx';
 
 import { routes } from '../utils/routes.js';
+import { config } from '../config/env';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import activityLogger from '../utils/activityLogger';
 
@@ -1180,9 +1181,7 @@ export default function CuadrantesEmpleadoPage() {
     const checkBannerStatus = async () => {
       setBannerStatusLoading(true);
       try {
-        const baseUrl = import.meta.env.DEV 
-          ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
         const token = localStorage.getItem('auth_token');
         
         const userEmail = authUser?.email || authUser?.CORREO_ELECTRONICO;

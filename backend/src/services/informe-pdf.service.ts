@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
 
 const MARGIN = 50;
-const BRAND_RED = '#CC0000';
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const FOOTER_Y = 808;
@@ -13,8 +13,6 @@ const FOOTER_Y = 808;
 const PAGE_NUM_Y = 778;
 /** Límite inferior del contenido en página 2 (tabla): el chenar SUB TOTAL + numeración no deben solaparse. */
 const TABLE_SAFE_BOTTOM = PAGE_NUM_Y - 30;
-const FOOTER_LINE =
-  'De Camino Servicios Auxiliares S.L. CIF: B-85524536 Inscrita en el registro Mercantil – T26005- L Folio 180 Secc. 8 HOJA M-468812';
 
 const MESES_ES = [
   'enero',
@@ -62,7 +60,20 @@ function generarTextoIntroDesdeLineas(
   );
 }
 
-function getLogoPath(): string | null {
+/** Logo path: optional company logo from env (COMPANY_LOGO_PATH), then fallback to logo.png in assets. Multi-client: set COMPANY_LOGO_PATH in .env. */
+function getLogoPath(companyLogoPath?: string | null): string | null {
+  const name = companyLogoPath && String(companyLogoPath).trim();
+  if (name) {
+    const dirs = [
+      path.join(process.cwd(), 'assets'),
+      path.join(process.cwd(), '..', 'frontend', 'public'),
+      path.join(__dirname, '..', '..', 'assets'),
+    ];
+    for (const dir of dirs) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) return p;
+    }
+  }
   const candidates = [
     path.join(process.cwd(), 'assets', 'logo.png'),
     path.join(process.cwd(), '..', 'frontend', 'public', 'logo.png'),
@@ -101,21 +112,31 @@ function getServiciosStripPath(): string | null {
   return null;
 }
 
-function getStampPath(): string | null {
+const STAMP_CANDIDATES = [
+  path.join(process.cwd(), 'assets'),
+  path.join(__dirname, '..', '..', 'assets'),
+  path.join(process.cwd(), '..', 'frontend', 'public'),
+  process.cwd(),
+  path.join(process.cwd(), '..'),
+  path.join(__dirname, '..', '..', '..'),
+];
+
+/** Ruta ștampilă EMPRESA (fallback Decamino). */
+function getStampPathDefault(): string | null {
+  const envStamp = (process.env.COMPANY_STAMP_PATH || '').trim();
+  if (envStamp) {
+    for (const dir of STAMP_CANDIDATES) {
+      const p = path.join(dir, envStamp);
+      if (fs.existsSync(p)) return p;
+    }
+  }
   const names = [
     'stampila-2-image2.jpeg',
     'stampila-2-image2.jpg',
     'stampila.jpeg',
     'stampila.jpg',
   ];
-  const candidates = [
-    path.join(process.cwd(), 'assets'),
-    path.join(__dirname, '..', '..', 'assets'),
-    path.join(process.cwd(), '..', 'frontend', 'public'),
-    process.cwd(),
-    path.join(process.cwd(), '..'),
-  ];
-  for (const dir of candidates) {
+  for (const dir of STAMP_CANDIDATES) {
     for (const name of names) {
       const p = path.join(dir, name);
       if (fs.existsSync(p)) return p;
@@ -124,9 +145,37 @@ function getStampPath(): string | null {
   return null;
 }
 
+/** Ruta stamp per company: HERA folosește COMPANY_STAMP_PATH_HERA, Decamino COMPANY_STAMP_PATH / fallback. */
+function getStampPathForCompany(company: {
+  presupuestoPresentacionKey?: string;
+  stampPath?: string;
+  stampPathHera?: string;
+} | null): string | null {
+  const key = (company as any)?.presupuestoPresentacionKey;
+  const name =
+    key === 'hera'
+      ? ((company as any)?.stampPathHera || (company as any)?.stampPath || 'stampila_hera-removebg-preview.png')
+      : (company as any)?.stampPath;
+  if (name && String(name).trim()) {
+    for (const dir of STAMP_CANDIDATES) {
+      const p = path.join(dir, String(name).trim());
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  if (key === 'hera') return null;
+  return getStampPathDefault();
+}
+
 @Injectable()
 export class InformePdfService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  private getCompany() {
+    return this.configService.get('company') ?? {};
+  }
 
   /** opts.datosFirma: cuando viene de firma electrónica, se dibuja la imagen y datos del formulario en página 3 (FIRMA CLIENTE). opts.evidencias: hashes SHA-256 para bloque Evidencias (integridad). */
   async generatePdf(
@@ -216,13 +265,18 @@ export class InformePdfService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // Página 1: igual que presupuesto — fondo rojo, título, subtítulo, logo, cliente, nº, banda, contact, footer
-      doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill(BRAND_RED);
+      // Página 1: igual que presupuesto — fondo (brandRed o COMPANY_PORTADA_BG – ex. albastru deschis HERA), título, logo, cliente, banda, contact, footer
+      const company = this.getCompany();
+      const portadaBg = company.portadaBg ?? company.brandRed;
+      const portadaTextColor = company.portadaTextColor ?? '#FFFFFF';
+      doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill(portadaBg);
 
-      const logoPath = getLogoPath();
+      const logoPath = getLogoPath(
+        this.configService.get<string>('company.logoPath'),
+      );
 
       const titleY = 40;
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(34);
+      doc.fillColor(portadaTextColor).font('Helvetica-Bold').fontSize(34);
       doc.text(tituloPortada, 0, titleY, {
         width: PAGE_WIDTH,
         align: 'center',
@@ -231,7 +285,7 @@ export class InformePdfService {
       const titleH = doc.heightOfString(tituloPortada, { width: PAGE_WIDTH });
       const lineY = titleY + titleH + 10;
       const lineW = Math.min(280, PAGE_WIDTH - 80);
-      doc.strokeColor('#FFFFFF').lineWidth(2);
+      doc.strokeColor(portadaTextColor).lineWidth(2);
       doc
         .moveTo((PAGE_WIDTH - lineW) / 2, lineY)
         .lineTo((PAGE_WIDTH + lineW) / 2, lineY)
@@ -265,7 +319,7 @@ export class InformePdfService {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      doc.fillColor('#FFFFFF').font('Helvetica').fontSize(20);
+      doc.fillColor(portadaTextColor).font('Helvetica').fontSize(20);
       let clientBlockHeight = 0;
       if (clientLines.length >= 2) {
         doc.text(clientLines[0], blockCenterX, belowLogoY, {
@@ -362,22 +416,27 @@ export class InformePdfService {
       }
 
       doc.font('Helvetica').fontSize(14);
-      doc.text('www.decaminoservicios.com', blockCenterX, belowLogoY, {
+      doc.text(this.getCompany().website ?? '', blockCenterX, belowLogoY, {
         align: 'center',
         width: blockCenterW,
       });
-      doc.text('Tfno: 645 111 999', blockCenterX, belowLogoY + 20, {
-        align: 'center',
-        width: blockCenterW,
-      });
-      doc.text('info@decaminoservicios.com', blockCenterX, belowLogoY + 40, {
+      doc.text(
+        `Tfno: ${this.getCompany().phone ?? ''}`,
+        blockCenterX,
+        belowLogoY + 20,
+        {
+          align: 'center',
+          width: blockCenterW,
+        },
+      );
+      doc.text(this.getCompany().email ?? '', blockCenterX, belowLogoY + 40, {
         align: 'center',
         width: blockCenterW,
       });
 
-      doc.fontSize(7).fillColor('#FFFFFF').font('Helvetica');
+      doc.fontSize(7).fillColor(portadaTextColor).font('Helvetica');
       const footerHeight = PAGE_HEIGHT - FOOTER_Y - 12;
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: footerHeight,
@@ -405,24 +464,24 @@ export class InformePdfService {
           // skip
         }
       }
-      // Date firma lângă logo (din informe sau default DE CAMINO)
+      // Date firma lângă logo (din informe sau default company config)
       const tituloEmpresa =
         (informe.titulo_empresa && String(informe.titulo_empresa).trim()) ||
-        'DE CAMINO SERVICIOS AUXILIARES, S.L.';
+        (company.legalName ?? '');
       const direccionEmpresa =
         (informe.direccion_empresa &&
           String(informe.direccion_empresa).trim()) ||
-        'Avda. Euzkadi 14, Local 5';
+        (company.addressLine1 ?? '');
       const cpPoblacionEmpresa =
         (informe.cp_poblacion_empresa &&
           String(informe.cp_poblacion_empresa).trim()) ||
-        '28702 - San Sebastián de los Reyes';
+        (company.cpPoblacion ?? '');
       const emailEmpresa =
         (informe.email_empresa && String(informe.email_empresa).trim()) ||
-        'info@decaminoservicios.com';
+        (company.email ?? '');
       const telefonoEmpresa =
         (informe.telefono_empresa && String(informe.telefono_empresa).trim()) ||
-        '645 111 999';
+        (company.phone ?? '');
       const headerRightX = MARGIN + smallLogoSize + 16;
       const headerRightW = PAGE_WIDTH - headerRightX - MARGIN;
       doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
@@ -499,7 +558,7 @@ export class InformePdfService {
           .rect(tableLeft, tableY, tableW, headerHeight)
           .fill();
         doc
-          .strokeColor(BRAND_RED)
+          .strokeColor(this.getCompany().brandRed)
           .lineWidth(0.8)
           .rect(tableLeft, tableY, tableW, headerHeight)
           .stroke();
@@ -567,7 +626,7 @@ export class InformePdfService {
             .rect(tableLeft, tableY, tableW, headerHeight)
             .fill();
           doc
-            .strokeColor(BRAND_RED)
+            .strokeColor(this.getCompany().brandRed)
             .lineWidth(0.8)
             .rect(tableLeft, tableY, tableW, headerHeight)
             .stroke();
@@ -649,7 +708,9 @@ export class InformePdfService {
             tableY += subDescH + 8;
           }
         }
-        doc.strokeColor('#CC0000').lineWidth(0.8);
+        doc
+          .strokeColor((this.getCompany().brandRed as string) || '#CC0000')
+          .lineWidth(0.8);
         doc.moveTo(tableLeft, tableY).lineTo(tableRight, tableY).stroke();
         tableY += 20;
 
@@ -671,7 +732,7 @@ export class InformePdfService {
         const valueW = 90;
         doc.fillColor('#f8f8f8').rect(boxX, tableY, boxW, boxH).fill();
         doc
-          .strokeColor(BRAND_RED)
+          .strokeColor(this.getCompany().brandRed)
           .lineWidth(0.8)
           .rect(boxX, tableY, boxW, boxH)
           .stroke();
@@ -728,7 +789,7 @@ export class InformePdfService {
 
       // Footer pagina 2
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -792,7 +853,7 @@ export class InformePdfService {
       doc.font('Helvetica').fontSize(8).fillColor('#333333');
       doc.strokeColor('#888888').lineWidth(0.5);
       doc.text('FIRMA EMPRESA:', MARGIN, page3Y);
-      const stampPath = getStampPath();
+      const stampPath = getStampPathForCompany(this.getCompany());
       const stampW = 56;
       const stampH = 42;
       const firmaEmpresaContentX = MARGIN + stampW + 14;
@@ -901,10 +962,7 @@ export class InformePdfService {
       } else {
         // Botón "ACEPTAR INFORME" en el PDF (enlace a firmar-informe.html), como en presupuesto
         const firmarBaseUrl =
-          process.env.FIRMAR_BASE_URL ||
-          (process.env.NODE_ENV === 'production'
-            ? 'https://app.decaminoservicios.com'
-            : 'http://localhost:5173');
+          process.env.FIRMAR_BASE_URL || this.getCompany().frontendAppUrl || '';
         const firmarUrl = `${firmarBaseUrl}/firmar-informe.html?id=${informeId}`;
         const btnW = 160;
         const btnH = 28;
@@ -1001,7 +1059,7 @@ export class InformePdfService {
       }
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1013,7 +1071,10 @@ export class InformePdfService {
       const totalPages = pageRange.count;
       for (let i = 1; i < totalPages; i++) {
         doc.switchToPage(i);
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND_RED);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .fillColor(this.getCompany().brandRed);
         doc.text(`Pag. ${i + 1} de ${totalPages}`, MARGIN, PAGE_NUM_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'right',

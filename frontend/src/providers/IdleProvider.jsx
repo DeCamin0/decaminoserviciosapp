@@ -2,6 +2,7 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import IdleWarningModal from '@/components/IdleWarningModal.jsx'
 import { useAuth } from '@/contexts/AuthContextBase'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { getValidAccessToken } from '@/utils/tokenRefresh'
 
 export const IdleContext = createContext({
   resetActivityTimer: () => {},
@@ -70,6 +71,8 @@ export default function IdleProvider({ children }) {
     setIsModalSticky(false)
     writeStorage(now)
     broadcast('activity', { ts: now })
+    // La activitate: refresh token dacă e aproape de expirare (sesiunea nu mai expiră la 30 min dacă userul e activ)
+    getValidAccessToken().catch(() => {})
   }, [timeoutMin, warnSec, writeStorage, broadcast])
 
   const performLogout = useCallback(async () => {

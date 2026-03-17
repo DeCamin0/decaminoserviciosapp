@@ -8,12 +8,20 @@ import {
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/permissions')
 export class PermissionsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  private getCompanyEmail(): string {
+    return this.configService.get<{ email?: string }>('company')?.email ?? '';
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard)
@@ -80,14 +88,14 @@ export class PermissionsController {
             permitted: String(perm.permitted || 'false'),
             last_updated:
               perm.last_updated || new Date().toISOString().split('T')[0],
-            updated_by: perm.updated_by || 'admin@decamino.com',
+            updated_by: perm.updated_by || this.getCompanyEmail(),
           },
           create: {
             grupo_module: perm.grupo_module,
             permitted: String(perm.permitted || 'false'),
             last_updated:
               perm.last_updated || new Date().toISOString().split('T')[0],
-            updated_by: perm.updated_by || 'admin@decamino.com',
+            updated_by: perm.updated_by || this.getCompanyEmail(),
           },
         });
         results.push(result);

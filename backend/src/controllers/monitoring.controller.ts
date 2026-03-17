@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, Query, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MonitoringService } from '../services/monitoring.service';
 import { TelegramService } from '../services/telegram.service';
@@ -20,7 +21,16 @@ export class MonitoringController {
     private readonly sentEmailsService: SentEmailsService,
     private readonly activityLogsService: ActivityLogsService,
     private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getCompanyName(): string {
+    const company = this.configService.get<{
+      legalNameShort?: string;
+      legalName?: string;
+    }>('company');
+    return (company?.legalNameShort ?? company?.legalName ?? '').trim();
+  }
 
   /**
    * Endpoint pentru raportarea erorilor din frontend
@@ -128,7 +138,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
   /**
    * Endpoint pentru trimiterea email-ului de confirmare către angajat
    * când închide banner-ul despre baja médica
-   * Trimite email către angajat + BCC la app@decaminoservicios.com
+   * Trimite email către angajat + BCC din company config (getDefaultBcc)
    */
   @Post('banner-baja-medica-confirmation')
   async sendBannerConfirmationEmail(
@@ -171,7 +181,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
 </head>
 <body>
   <div class="header">
-    <h1 style="margin: 0; font-size: 24px;">🩺 DE CAMINO SERVICIOS AUXILIARES SL</h1>
+    <h1 style="margin: 0; font-size: 24px;">🩺 ${this.getCompanyName()}</h1>
   </div>
   
   <div class="content">
@@ -190,7 +200,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
     <p>Si tiene alguna pregunta o necesita asistencia, no dude en contactarnos.</p>
     
     <div class="signature">
-      <p style="margin: 5px 0;"><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+      <p style="margin: 5px 0;"><strong>${this.getCompanyName()}</strong></p>
       <p style="margin: 5px 0; color: #888; font-size: 14px;">Sistema de Gestión de Empleados</p>
     </div>
     
@@ -203,7 +213,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
 </html>
       `.trim();
 
-      // Trimite email către angajat cu BCC la app@decaminoservicios.com
+      // Trimite email către angajat cu BCC din company config
       await this.emailService.sendEmail(data.userEmail, subject, html, {
         bcc: this.emailService.getDefaultBcc(),
       });

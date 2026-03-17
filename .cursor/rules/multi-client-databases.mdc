@@ -1,0 +1,26 @@
+---
+description: Migrații și modificări DB pe ambele baze (Decamino + HERA)
+alwaysApply: true
+---
+
+# Multi-Client: două baze de date
+
+Proiectul are **două clienți** cu **două baze de date**:
+- **Decamino** → `.env.decamino.local` → `decamino_db`
+- **HERA** → `.env.hera.local` → `hera_facility_db`
+
+## Regulă obligatorie
+
+- **Migrațiile** (SQL, Prisma, scripturi `run-*-migration.js`) se aplică **pe ambele baze**, nu doar pe una.
+- **Modificările** de schema (coloane, tabele, ALTER TABLE) se fac **identic pe ambele**.
+- La orice migrare nouă: documentează sau oferă comenzi pentru **ambele** env (ex. `node scripts/run-X.js .env.decamino.local` și același cu `.env.hera.local`).
+
+## Exemplu
+
+Script migrare cu parametru env:
+```bash
+node scripts/run-horario-telefono-entrega-migration.js .env.decamino.local
+node scripts/run-horario-telefono-entrega-migration.js .env.hera.local
+```
+
+Referință: **MASTER_LEAD_INSTRUCTION.md** secțiunea **3.1) Multi-Client**.

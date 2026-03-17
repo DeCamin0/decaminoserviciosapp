@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Send, Search, User, XCircle } from 'lucide-react';
 import { routes } from '../utils/routes';
+import { config } from '../config/env';
 
 /**
  * Modal pentru trimiterea notificărilor către alți angajați
@@ -134,9 +135,7 @@ const SendNotificationModal = ({ isOpen, onClose, currentUser }) => {
     setSuccess(false);
 
     try {
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       
       const token = localStorage.getItem('auth_token');
 

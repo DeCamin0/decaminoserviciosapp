@@ -29,11 +29,9 @@ export class PushService {
 
     if (publicKey && privateKey) {
       this.vapidKeys = { publicKey, privateKey };
-      webpush.setVapidDetails(
-        'mailto:admin@decaminoservicios.com', // Contact email pentru VAPID
-        publicKey,
-        privateKey,
-      );
+      const contactEmail =
+        this.configService.get<{ email?: string }>('company')?.email ?? '';
+      webpush.setVapidDetails(`mailto:${contactEmail}`, publicKey, privateKey);
       this.logger.log('✅ VAPID keys configurate din environment variables');
       this.logger.log(
         `🔑 VAPID Public Key (folosit): ${publicKey.substring(0, 30)}...`,
@@ -50,8 +48,10 @@ export class PushService {
         '⚠️ Pentru producție, setează VAPID_PUBLIC_KEY și VAPID_PRIVATE_KEY în .env',
       );
       this.vapidKeys = webpush.generateVAPIDKeys();
+      const contactEmail =
+        this.configService.get<{ email?: string }>('company')?.email ?? '';
       webpush.setVapidDetails(
-        'mailto:admin@decaminoservicios.com',
+        `mailto:${contactEmail}`,
         this.vapidKeys.publicKey,
         this.vapidKeys.privateKey,
       );

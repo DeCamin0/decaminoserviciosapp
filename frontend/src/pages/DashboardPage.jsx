@@ -33,6 +33,7 @@ import {
   normalizeDetalles,
   fetchMonthlyAlerts as fetchMonthlyAlertsData
 } from '../utils/monthlyAlerts';
+import { config } from '../config/env.js';
 import activityLogger from '../utils/activityLogger';
 
 const InicioPage = () => {
@@ -705,7 +706,7 @@ const InicioPage = () => {
         label: 'Documentos PRL',
         hint: 'Gestión documentos PRL por puesto',
         icon: <ShieldCheck className="h-6 w-6 text-white" />,
-        gradient: 'from-red-500 via-rose-500 to-pink-500',
+        gradient: 'from-primary-500 via-primary-600 to-primary-700',
         href: '/prl-documentos',
         role: 'manager',
       });
@@ -938,7 +939,7 @@ const InicioPage = () => {
         // Adaugă token-ul JWT dacă există
         const headers = {
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
           'X-Client-Type': 'web-browser',
           'User-Agent': 'DeCamino-Web-Client/1.0'
         };
@@ -1221,7 +1222,7 @@ const InicioPage = () => {
       const token = localStorage.getItem('auth_token');
       const headers = {
         'X-App-Source': 'DeCamino-Web-App',
-        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-App-Version': config.APP_VERSION,
         'X-Client-Type': 'web-browser',
         'User-Agent': 'DeCamino-Web-Client/1.0'
       };
@@ -1375,9 +1376,7 @@ const InicioPage = () => {
       }
 
       try {
-        const baseUrl = import.meta.env.DEV 
-          ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_URL || 'https://api.decaminoservicios.com');
+        const baseUrl = config.BACKEND_BASE || config.API_URL || '';
         const token = localStorage.getItem('auth_token');
         
         const userEmail = user.email || user.CORREO_ELECTRONICO;
@@ -1489,9 +1488,7 @@ const InicioPage = () => {
 
                   // Trimite email de confirmare către angajat (cu BCC la info@decaminoservicios.com)
                   try {
-                    const baseUrl = import.meta.env.DEV 
-                      ? 'http://localhost:3000' 
-                      : (import.meta.env.VITE_API_URL || 'https://api.decaminoservicios.com');
+                    const baseUrl = config.BACKEND_BASE || config.API_URL || '';
                     const token = localStorage.getItem('auth_token');
                     
                     const userName = user['NOMBRE / APELLIDOS'] || user.NOMBRE_APELLIDOS || user.nombre || 'Usuario';
@@ -1660,7 +1657,7 @@ const InicioPage = () => {
               <p className="mx-auto max-w-3xl text-sm leading-relaxed text-gray-600 sm:text-base md:mx-0">
                 Este es tu panel en{' '}
                 <span className="rounded-md bg-blue-50 px-2 py-1 font-semibold text-blue-700">
-                  {import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}
+                  {config.COMPANY_NAME}
                 </span>
                 . Aquí tienes acceso directo a todo lo que necesitas:{' '}
                 <span className="inline-flex items-center gap-1 font-medium text-green-700">
@@ -1701,9 +1698,7 @@ const InicioPage = () => {
                       onClick={async () => {
                         try {
                           const token = localStorage.getItem('auth_token');
-                          const baseUrl = import.meta.env.DEV 
-                            ? 'http://localhost:3000' 
-                            : (import.meta.env.VITE_API_URL || 'https://api.decaminoservicios.com');
+                          const baseUrl = config.BACKEND_BASE || config.API_URL || '';
                           const response = await fetch(`${baseUrl}/api/notifications/test`, {
                             method: 'POST',
                             headers: {
@@ -1756,13 +1751,13 @@ const InicioPage = () => {
         </div>
       </div>
 
-      {/* Acceso rápido - Quick Access Orb */}
+      {/* Acceso rápido - Quick Access Orb – culori brand (primary) */}
       <div className="card relative overflow-visible py-8">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-red-50/30 via-white to-purple-50/30"></div>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary-500/10 via-white to-purple-50/30"></div>
         <div className="relative z-10 flex flex-col gap-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-red-500 to-red-600 text-2xl text-white shadow-lg">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 text-2xl text-white shadow-lg">
                 ⚡
               </div>
               <div>

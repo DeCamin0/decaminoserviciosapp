@@ -1,58 +1,10 @@
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-const PRIMARY_COLOR = import.meta.env.VITE_PRIMARY_COLOR || '#E53935';
+import { config } from '../config/env.js';
+import { getPdfMake } from './getPdfMake.js';
 
-// Funcție pentru a încărca pdfMake dinamic
-const loadPdfMake = async () => {
-  if (window.pdfMake) {
-    console.log('✅ pdfMake already loaded');
-    return window.pdfMake;
-  }
-  
-  console.log('📥 Loading pdfMake dynamically...');
-  
-  return new Promise((resolve, reject) => {
-    // Încarcă pdfMake
-    const script1 = document.createElement('script');
-    script1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-    script1.onload = () => {
-      console.log('✅ pdfMake loaded');
-      
-      // Încarcă fonturile
-      const script2 = document.createElement('script');
-      script2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-      script2.onload = () => {
-        console.log('✅ Fonts loaded');
-        console.log('window.pdfMake:', window.pdfMake);
-        console.log('window.pdfMake.vfs:', window.pdfMake?.vfs);
-        resolve(window.pdfMake);
-      };
-      script2.onerror = () => {
-        console.error('❌ Failed to load fonts');
-        reject(new Error('Failed to load pdfMake fonts'));
-      };
-      document.head.appendChild(script2);
-    };
-    script1.onerror = () => {
-      console.error('❌ Failed to load pdfMake');
-      reject(new Error('Failed to load pdfMake'));
-    };
-    document.head.appendChild(script1);
-  });
-};
+const rawColor = config.PRIMARY_COLOR || '#E53935';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
-const getPdfMake = async () => {
-  console.log('🔍 Checking pdfMake availability...');
-  
-  if (!window.pdfMake) {
-    console.log('📥 pdfMake not found, loading dynamically...');
-    return await loadPdfMake();
-  }
-  
-  console.log('✅ pdfMake found and ready to use');
-  return window.pdfMake;
-};
-
-// Funcție pentru a obține logo-ul DeCamino ca base64
+// Funcție pentru a obține logo-ul companiei ca base64
 const getDeCaminoLogo = () => {
   // Încearcă să încarci logo-ul din public
   return new Promise((resolve) => {
@@ -70,9 +22,8 @@ const getDeCaminoLogo = () => {
       // Fallback dacă logo-ul nu există
       resolve(null);
     };
-    // Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.svg
-    const basePath = import.meta.env.VITE_BASE_PATH || '/';
-    const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+    const basePath = config.BASE_PATH || '/';
+    const logoPath = config.LOGO_PATH || 'logo.svg';
     img.src = window.location.hostname.includes('ngrok') 
       ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
       : `${basePath}${logoPath}`.replace(/\/+/g, '/');
@@ -134,7 +85,7 @@ export const generateInspectionPDF = async (inspectionData) => {
             alignment: 'left'
           },
           {
-            text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
+            text: config.COMPANY_NAME,
             style: 'headerTitle',
             alignment: 'right'
           }

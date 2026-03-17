@@ -7,6 +7,7 @@ import Back3DButton from '../components/Back3DButton';
 import { routes } from '../utils/routes';
 import activityLogger from '../utils/activityLogger';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { config } from '../config/env';
 
 export default function MensajesEnviadosPage() {
   const { user: authUser } = useAuth();
@@ -90,6 +91,9 @@ export default function MensajesEnviadosPage() {
     startDate: '',
     endDate: '',
     sendTime: '09:00',
+    recurrence: 'daily',
+    recurrenceDayOfWeek: 1,
+    recurrenceDayOfMonth: 1,
     isActive: true,
   });
   
@@ -108,9 +112,7 @@ export default function MensajesEnviadosPage() {
         const token = localStorage.getItem('auth_token');
         if (!token) return;
 
-        const baseUrl = import.meta.env.DEV 
-          ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
         // Încarcă angajații
         const empleadosRes = await fetch(`${baseUrl}/api/empleados`, {
@@ -196,9 +198,7 @@ export default function MensajesEnviadosPage() {
         return;
       }
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
       const queryParams = new URLSearchParams();
       // Nu trimite recipientType dacă este gol sau "all" pentru a obține toate mesajele
@@ -334,9 +334,7 @@ export default function MensajesEnviadosPage() {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
       const response = await fetch(`${baseUrl}/api/scheduled-messages`, {
         headers: {
@@ -375,14 +373,20 @@ export default function MensajesEnviadosPage() {
       showToastMessage('error', 'Completa todos los campos obligatorios');
       return;
     }
+    if (scheduledForm.recurrence === 'weekly' && (scheduledForm.recurrenceDayOfWeek == null || scheduledForm.recurrenceDayOfWeek === '')) {
+      showToastMessage('error', 'Selecciona el día de la semana para mensaje semanal');
+      return;
+    }
+    if (scheduledForm.recurrence === 'monthly' && (scheduledForm.recurrenceDayOfMonth == null || scheduledForm.recurrenceDayOfMonth < 1 || scheduledForm.recurrenceDayOfMonth > 31)) {
+      showToastMessage('error', 'Selecciona el día del mes (1-31) para mensaje mensual');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
       const url = editingScheduled 
         ? `${baseUrl}/api/scheduled-messages/${editingScheduled.id}`
@@ -424,6 +428,9 @@ export default function MensajesEnviadosPage() {
           startDate: '',
           endDate: '',
           sendTime: '09:00',
+          recurrence: 'daily',
+          recurrenceDayOfWeek: 1,
+          recurrenceDayOfMonth: 1,
           isActive: true,
         });
         loadScheduledMessages();
@@ -445,9 +452,7 @@ export default function MensajesEnviadosPage() {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
       const response = await fetch(`${baseUrl}/api/scheduled-messages/${id}`, {
         method: 'DELETE',
@@ -533,9 +538,7 @@ export default function MensajesEnviadosPage() {
         throw new Error('No estás autenticado');
       }
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
       const formData = new FormData();
       formData.append('recipientType', recipientType);
@@ -546,7 +549,7 @@ export default function MensajesEnviadosPage() {
         formData.append('grupo', selectedGrupo);
       }
       if (recipientType === 'gestoria') {
-        formData.append('recipientEmail', 'altemprado@gmail.com');
+        formData.append('recipientEmail', config.COMPANY_GESTORIA_EMAIL || config.COMPANY_EMAIL || '');
       }
       formData.append('subject', subject);
       formData.append('message', message);
@@ -1154,9 +1157,7 @@ export default function MensajesEnviadosPage() {
                                         return;
                                       }
 
-                                    const baseUrl = import.meta.env.DEV 
-                                      ? 'http://localhost:3000' 
-                                      : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+                                    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
                                     const response = await fetch(`${baseUrl}/api/sent-emails/${email.id}`, {
                                       method: 'DELETE',
@@ -1235,9 +1236,7 @@ export default function MensajesEnviadosPage() {
                           return;
                         }
 
-                        const baseUrl = import.meta.env.DEV 
-                          ? 'http://localhost:3000' 
-                          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+                        const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
                         const response = await fetch(`${baseUrl}/api/scheduled-messages/test-trigger`, {
                           method: 'POST',
@@ -1341,7 +1340,13 @@ export default function MensajesEnviadosPage() {
                                   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
                                     return 'N/A';
                                   }
-                                  return `${start.toLocaleDateString('es-ES')} - ${end.toLocaleDateString('es-ES')}`;
+                                  const rec = msg.recurrence || 'daily';
+                                  const recLabel = rec === 'weekly'
+                                    ? ` · Semanal (${['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][msg.recurrence_day_of_week ?? 0]})`
+                                    : rec === 'monthly'
+                                      ? ` · Mensual (día ${msg.recurrence_day_of_month ?? 1})`
+                                      : ' · Diario';
+                                  return `${start.toLocaleDateString('es-ES')} - ${end.toLocaleDateString('es-ES')}${recLabel}`;
                                 } catch {
                                   return 'N/A';
                                 }
@@ -1376,9 +1381,7 @@ export default function MensajesEnviadosPage() {
                                         return;
                                       }
 
-                                      const baseUrl = import.meta.env.DEV 
-                                        ? 'http://localhost:3000' 
-                                        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+                                      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
                                       const response = await fetch(`${baseUrl}/api/scheduled-messages/${msg.id}/recipients`, {
                                         headers: {
@@ -1411,6 +1414,7 @@ export default function MensajesEnviadosPage() {
                                 <button
                                   onClick={() => {
                                     setEditingScheduled(msg);
+                                    const rec = msg.recurrence || 'daily';
                                     setScheduledForm({
                                       name: msg.name,
                                       recipientType: recipientType,
@@ -1422,6 +1426,9 @@ export default function MensajesEnviadosPage() {
                                       startDate: startDate ? (typeof startDate === 'string' ? startDate.split('T')[0] : new Date(startDate).toISOString().split('T')[0]) : '',
                                       endDate: endDate ? (typeof endDate === 'string' ? endDate.split('T')[0] : new Date(endDate).toISOString().split('T')[0]) : '',
                                       sendTime: sendTime || '09:00',
+                                      recurrence: rec,
+                                      recurrenceDayOfWeek: msg.recurrence_day_of_week ?? 1,
+                                      recurrenceDayOfMonth: msg.recurrence_day_of_month ?? 1,
                                       isActive: isActive,
                                     });
                                     setShowScheduledModal(true);
@@ -1554,7 +1561,7 @@ export default function MensajesEnviadosPage() {
                 type="email"
                 value={scheduledForm.recipientEmail}
                 onChange={(e) => setScheduledForm({ ...scheduledForm, recipientEmail: e.target.value })}
-                placeholder="altemprado@gmail.com"
+                placeholder={config.COMPANY_GESTORIA_EMAIL || config.COMPANY_EMAIL || 'gestoria@...'}
               />
             </div>
           )}
@@ -1602,6 +1609,59 @@ export default function MensajesEnviadosPage() {
               placeholder="Mensaje adicional (solo para gestoria)..."
             />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Frecuencia
+            </label>
+            <select
+              value={scheduledForm.recurrence}
+              onChange={(e) => setScheduledForm({ ...scheduledForm, recurrence: e.target.value })}
+              className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            >
+              <option value="daily">Diario (cada día en el intervalo)</option>
+              <option value="weekly">Semanal (un día a la semana)</option>
+              <option value="monthly">Mensual (un día al mes)</option>
+            </select>
+          </div>
+
+          {scheduledForm.recurrence === 'weekly' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Día de la semana
+              </label>
+              <select
+                value={scheduledForm.recurrenceDayOfWeek}
+                onChange={(e) => setScheduledForm({ ...scheduledForm, recurrenceDayOfWeek: Number(e.target.value) })}
+                className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value={0}>Domingo</option>
+                <option value={1}>Lunes</option>
+                <option value={2}>Martes</option>
+                <option value={3}>Miércoles</option>
+                <option value={4}>Jueves</option>
+                <option value={5}>Viernes</option>
+                <option value={6}>Sábado</option>
+              </select>
+            </div>
+          )}
+
+          {scheduledForm.recurrence === 'monthly' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Día del mes (1-31)
+              </label>
+              <select
+                value={scheduledForm.recurrenceDayOfMonth}
+                onChange={(e) => setScheduledForm({ ...scheduledForm, recurrenceDayOfMonth: Number(e.target.value) })}
+                className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

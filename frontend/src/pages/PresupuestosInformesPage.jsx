@@ -12,6 +12,7 @@ import DOMPurify from 'dompurify';
 import QuillBetterTable from 'quill-better-table';
 import 'quill-better-table/dist/quill-better-table.css';
 import mammoth from 'mammoth';
+import { config } from '../config/env.js';
 
 // Register table module
 if (!ReactQuill.Quill.imports['modules/better-table']) {
@@ -44,11 +45,11 @@ export default function PresupuestosInformesPage() {
     tasa_descuento: 0,
     incluir_descripcion: true,
     filas_articulo: 3,
-    titulo_empresa: 'DE CAMINO SERVICIOS AUXILIARES, S.L.',
-    direccion_empresa: 'Avda. Euzkadi 14, Local 5',
-    cp_poblacion_empresa: '28702 - San Sebastián de los Reyes',
-    email_empresa: 'info@decaminoservicios.com',
-    telefono_empresa: '645 111 999',
+    titulo_empresa: config.COMPANY_NAME_LEGAL || config.COMPANY_NAME || '',
+    direccion_empresa: config.COMPANY_ADDRESS || '',
+    cp_poblacion_empresa: config.COMPANY_CP_POBLACION || '',
+    email_empresa: config.COMPANY_EMAIL || '',
+    telefono_empresa: config.COMPANY_PHONE || '',
     informe_final_temporada: false,
   });
   /** Lista de presupuestos guardados cargada en tab Factura (para mostrar último Presupuesto nr del cliente) */
@@ -578,7 +579,7 @@ export default function PresupuestosInformesPage() {
       ? selectedServiciosPresupuesto.map((s) => servicioNombreTexto(s.nombre)).join(', ')
       : 'Servicios';
     // Sempre salvar en formato: DE CAMINO - PRESUPUESTO 2026 - cliente - servicios
-    const nombre = `DE CAMINO - PRESUPUESTO ${new Date().getFullYear()} - ${clientePart} - ${serviciosPart}`;
+    const nombre = `${config.COMPANY_NAME} - PRESUPUESTO ${new Date().getFullYear()} - ${clientePart} - ${serviciosPart}`;
     const payload = buildPayload();
     try {
       setSavingPresupuesto(true);
@@ -829,37 +830,31 @@ export default function PresupuestosInformesPage() {
     }
   };
 
-  const handleGenerarPresupuesto = async (item, format = 'docx') => {
+  const handleGenerarPresupuesto = async (item) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(routes.getPresupuestoGenerarDocumento(item.id, format), {
+      const response = await fetch(routes.getPresupuestoGenerarDocumento(item.id, 'pdf', config.IS_HERA ? 'hera' : null), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(errText || 'Error al generar documento');
+        throw new Error(errText || 'Error al generar PDF');
       }
       const blob = await response.blob();
-      const nombreSanit = (item.nombre || '').trim().replace(/[/\\?%*:|"<>]/g, '-').substring(0, 200);
-      const ext = format === 'pdf' ? '.pdf' : '.docx';
-      let filename = nombreSanit ? `${nombreSanit}${ext}` : (format === 'pdf' ? 'Presupuesto.pdf' : 'Presupuesto.docx');
+      let filename = (item.nombre || 'Presupuesto').trim().replace(/[/\\?%*:|"<>]/g, '-').substring(0, 200);
+      if (!filename.endsWith('.pdf')) filename = filename ? `${filename}.pdf` : 'Presupuesto.pdf';
       const disp = response.headers.get('Content-Disposition');
       if (disp) {
         const match = disp.match(/filename\*=(?:UTF-8'')([^";\n]+)/i) || disp.match(/filename="([^"]+)"/);
         if (match && match[1]) filename = decodeURIComponent(match[1].trim());
       }
-      const contentType = response.headers.get('Content-Type') || '';
-      if (contentType.includes('wordprocessingml') && filename.endsWith('.pdf'))
-        filename = filename.slice(0, -4) + '.docx';
-      if (contentType.includes('pdf') && filename.endsWith('.docx'))
-        filename = filename.slice(0, -5) + '.pdf';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      setNotification({ message: format === 'pdf' ? 'PDF descargado' : 'Documento descargado', type: 'success' });
+      setNotification({ message: 'PDF descargado', type: 'success' });
     } catch (error) {
       setNotification({ message: error.message || 'Error al generar presupuesto', type: 'error' });
     }
@@ -5102,10 +5097,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                               <Button variant="outline" size="sm" onClick={() => handlePreviuPresupuesto(item)}>
                                 Vista previa
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleGenerarPresupuesto(item, 'docx')}>
-                                DOCX
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => handleGenerarPresupuesto(item, 'pdf')}>
+                              <Button variant="outline" size="sm" onClick={() => handleGenerarPresupuesto(item)}>
                                 PDF
                               </Button>
                               <Button variant="outline" size="sm" onClick={() => handleOpenEnviarPresupuesto(item)} className="text-blue-600 border-blue-300 hover:bg-blue-50">
@@ -5689,7 +5681,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                             <Input
                               value={facturaForm.titulo_empresa}
                               onChange={(e) => setFacturaForm(prev => ({ ...prev, titulo_empresa: e.target.value }))}
-                              placeholder="Ej: DE CAMINO SERVICIOS AUXILIARES, S.L."
+                              placeholder="Ej: Razón Social, S.L."
                               className="w-full"
                             />
                           </div>
@@ -5718,7 +5710,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 type="email"
                                 value={facturaForm.email_empresa}
                                 onChange={(e) => setFacturaForm(prev => ({ ...prev, email_empresa: e.target.value }))}
-                                placeholder="info@decaminoservicios.com"
+                                placeholder="email@empresa.com"
                                 className="w-full"
                               />
                             </div>

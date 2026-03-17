@@ -3,9 +3,11 @@ import { Card, Button, Input, Modal } from '../../components/ui';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { demo, debug } from '../../utils/logger';
+import { config } from '../../config/env.js';
+import { getPdfMake } from '../../utils/getPdfMake';
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-const PRIMARY_COLOR = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+const rawColor = config.PRIMARY_COLOR || '#CC0000';
+const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
 export default function ActivityLog() {
   const { user: authUser } = useAuth();
@@ -302,23 +304,7 @@ export default function ActivityLog() {
     }
 
     try {
-      // Încarcă pdfMake dinamic
-      const ensurePdfMake = () => new Promise((resolve, reject) => {
-        if (window.pdfMake) return resolve(window.pdfMake);
-        const s1 = document.createElement('script');
-        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-        s1.onload = () => {
-          const s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-          s2.onload = () => resolve(window.pdfMake);
-          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
-          document.head.appendChild(s2);
-        };
-        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
-        document.head.appendChild(s1);
-      });
-
-      await ensurePdfMake();
+      const pdfMake = await getPdfMake();
 
       const employeeName = selectedEmployee 
         ? (selectedEmployee['NOMBRE / APELLIDOS'] || selectedEmployee.nombre || selectedEmployee.NOMBRE || 'empleado')
@@ -344,7 +330,7 @@ export default function ActivityLog() {
         pageOrientation: 'landscape',
         content: [
           {
-            text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES',
+            text: config.COMPANY_NAME,
             style: 'companyName'
           },
           {
@@ -410,7 +396,7 @@ export default function ActivityLog() {
       const safeName = employeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `activity_logs_${safeName}_${dateFrom || 'all'}_${dateTo || 'all'}.pdf`;
 
-      window.pdfMake.createPdf(docDefinition).download(filename);
+      pdfMake.createPdf(docDefinition).download(filename);
 
       // Log export
       if (authUser) {

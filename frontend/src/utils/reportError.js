@@ -1,7 +1,8 @@
 /**
  * Helper functions pentru raportarea erorilor prin WhatsApp
- * Reutilizabil pe toate paginile
+ * Reutilizabil pe toate paginile. Numărul folosit: config.WHATSAPP_PHONE (per client) sau parametrul phone.
  */
+import { config } from '../config/env.js';
 
 // Helper: escape safe strings
 export const safe = (v) => (v === null || v === undefined ? "" : String(v).trim());
@@ -89,14 +90,15 @@ export const buildErrorReportMessage = ({
 /**
  * Deschide WhatsApp cu mesajul de raportare eroare
  * @param {string} message - Mesajul formatat
- * @param {string} phone - Numărul de telefon (default: 34635289087)
+ * @param {string} [phone] - Numărul de telefon (E.164); dacă lipsește, folosește config.WHATSAPP_PHONE (per client)
  */
-export const openWhatsAppErrorReport = (message, phone = "34635289087") => {
+export const openWhatsAppErrorReport = (message, phone) => {
+  const whatsappPhone = phone || config.WHATSAPP_PHONE || '34635289087';
   const text = encodeURIComponent(message);
-  const whatsappUrl = `https://wa.me/${phone}?text=${text}`;
+  const whatsappUrl = `https://wa.me/${whatsappPhone}?text=${text}`;
   
   // Try WhatsApp Desktop protocol first (opens in app, not browser)
-  const whatsappDesktopUrl = `whatsapp://send?phone=${phone}&text=${text}`;
+  const whatsappDesktopUrl = `whatsapp://send?phone=${whatsappPhone}&text=${text}`;
   
   // Create a temporary link to try WhatsApp Desktop
   const link = document.createElement('a');

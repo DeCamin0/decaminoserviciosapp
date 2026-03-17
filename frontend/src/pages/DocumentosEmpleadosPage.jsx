@@ -23,14 +23,14 @@ import activityLogger from '../utils/activityLogger';
 import NominasMatrixTab from '../components/gestoria/NominasMatrixTab';
 import CostePersonalTab from '../components/gestoria/CostePersonalTab';
 import { exportToExcelWithHeader } from '../utils/exportExcel';
+import { config } from '../config/env.js';
+import { getPdfMake } from '../utils/getPdfMake';
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
-const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+// Branding din config (multi-client)
+const rawColor = config.PRIMARY_COLOR || '#CC0000';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
-// Debug log - verifică dacă env var e setat
 if (import.meta.env.DEV) {
-  console.log('🎨 [DocumentosEmpleadosPage] PRIMARY_COLOR:', PRIMARY_COLOR, '| VITE_PRIMARY_COLOR env:', import.meta.env.VITE_PRIMARY_COLOR || '(not set)');
+  console.log('🎨 [DocumentosEmpleadosPage] PRIMARY_COLOR:', PRIMARY_COLOR, '| from config');
 }
 
 // Funcție pentru formatarea datelor în format frumos și consistent
@@ -773,7 +773,7 @@ export default function DocumentosEmpleadosPage() {
       const response = await fetch(routes.getEmpleados, {
         headers: {
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
           'X-Client-Type': 'web-browser',
           'User-Agent': 'DeCamino-Web-Client/1.0'
         }
@@ -3906,23 +3906,7 @@ export default function DocumentosEmpleadosPage() {
     }
 
     try {
-      // Încarcă pdfMake dinamic
-      const ensurePdfMake = () => new Promise((resolve, reject) => {
-        if (window.pdfMake) return resolve(window.pdfMake);
-        const s1 = document.createElement('script');
-        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-        s1.onload = () => {
-          const s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-          s2.onload = () => resolve(window.pdfMake);
-          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
-          document.head.appendChild(s2);
-        };
-        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
-        document.head.appendChild(s1);
-      });
-
-      await ensurePdfMake();
+      const pdfMake = await getPdfMake();
 
       const tableBody = [
         ['Código', 'Nombre', 'Email', 'Estado', 'CONTRATO', 'FIRMADO', 'Fecha CONTRATO', 'Fecha FIRMADO']
@@ -3948,22 +3932,22 @@ export default function DocumentosEmpleadosPage() {
       const docDefinition = {
         content: [
           {
-            text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
+            text: config.COMPANY_NAME,
             style: 'companyName',
             margin: [0, 0, 0, 8]
           },
           {
-            text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`,
+            text: `NIF: ${config.COMPANY_CIF}`,
             style: 'companyDetails',
             margin: [0, 0, 0, 2]
           },
           {
-            text: `Dirección: ${import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España'}`,
+            text: `Dirección: ${config.COMPANY_ADDRESS}`,
             style: 'companyDetails',
             margin: [0, 0, 0, 2]
           },
           {
-            text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'} | Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`,
+            text: `Teléfono: ${config.COMPANY_PHONE} | Email: ${config.COMPANY_EMAIL}`,
             style: 'companyDetails',
             margin: [0, 0, 0, 8]
           },
@@ -4036,7 +4020,7 @@ export default function DocumentosEmpleadosPage() {
       };
 
       const filename = `status_contratos_empleados_${new Date().toISOString().split('T')[0]}.pdf`;
-      window.pdfMake.createPdf(docDefinition).download(filename);
+      pdfMake.createPdf(docDefinition).download(filename);
 
       showNotification('success', 'Éxito', 'PDF exportado correctamente');
     } catch (error) {

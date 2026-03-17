@@ -3,6 +3,7 @@ import { Card, Button, Input } from '../components/ui';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import { Link } from 'react-router-dom';
+import { config } from '../config/env';
 
 // Funcție pentru a converti Buffer la base64
 const bufferToBase64 = (bufferData: number[]): string => {
@@ -469,6 +470,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const [cantidadesProductos, setCantidadesProductos] = useState<{[key: number]: number}>({});
   const [horarioEntrega, setHorarioEntrega] = useState('');
   const [horarioEntregaTipo, setHorarioEntregaTipo] = useState<'24horas' | '12horas' | 'personalizado' | ''>('');
+  const [telefonoEntrega, setTelefonoEntrega] = useState('');
   const [loadingHorario, setLoadingHorario] = useState(false);
   
   // Nu mai avem nevoie de state pentru dropdown - comunitatea se selectează automat
@@ -621,6 +623,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           setHorarioEntregaTipo('');
           setHorarioEntrega('');
         }
+        const telefonoEntregaCliente = comunidadEncontrada?.datosCompletos?.['TELEFONO ENTREGA'] ||
+          comunidadEncontrada?.datosCompletos?.TELEFON_ENTREGA ||
+          comunidadEncontrada?.datosCompletos?.telefono_entrega || '';
+        setTelefonoEntrega(telefonoEntregaCliente ? String(telefonoEntregaCliente).trim() : '');
         
         // Nu folosim "Comunidad no encontrada" dacă avem numele din lista de comunități
         if (nombreFinal !== 'Comunidad no encontrada' || comunidadEncontrada) {
@@ -1040,11 +1046,11 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     return (totalActual + precioTotal) <= limite;
   };
 
-  // Actualizează cantitatea pentru un produs
+  // Actualizează cantitatea pentru un produs (permite 0 pentru ștergere; onBlur pune 1)
   const actualizarCantidadProducto = (productoId: number, cantidad: number) => {
     setCantidadesProductos(prev => ({
       ...prev,
-      [productoId]: Math.max(1, cantidad) // Minimum 1
+      [productoId]: Math.max(0, cantidad)
     }));
   };
 
@@ -1114,7 +1120,11 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
     // Validare: Horario Entrega este obligatoriu
     if (!horarioEntregaTipo || !horarioEntrega || horarioEntrega.trim() === '') {
-      addToast('error', 'Horario Entrega requerido', 'Por favor selecciona un tipo de Horario Entrega y complétalo antes de guardar el pedido.');
+      addToast('error', 'Horario obligatorio', 'Por favor selecciona un tipo de horario y complétalo.');
+      return;
+    }
+    if (!telefonoEntrega || telefonoEntrega.trim() === '') {
+      addToast('error', 'Teléfono de entrega requerido', 'Por favor introduce el teléfono de entrega antes de guardar el pedido.');
       return;
     }
 
@@ -1204,6 +1214,8 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         limite_excedido: getLimiteGasto() ? calcularSubtotal() > getLimiteGasto() : false,
         exceso_limite: getLimiteGasto() ? (calcularSubtotal() > getLimiteGasto() ? 1 : 0) : 0,
         estado: 'pendiente', // Status pentru aprobare de către supervizor
+        horario_entrega: horarioEntrega.trim(),
+        telefono_entrega: telefonoEntrega.trim(),
         items: lineasPedido.map(linea => {
           const producto = productos.find(p => p.id === linea.producto_id);
           return {
@@ -1402,6 +1414,27 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                 <p className="mt-1 text-xs text-red-600">Por favor selecciona un tipo de horario</p>
               )}
             </div>
+            <div>
+              <label htmlFor="telefono-entrega" className="block text-sm font-medium text-gray-700 mb-1">
+                Teléfono Entrega <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="telefono-entrega"
+                type="tel"
+                value={telefonoEntrega}
+                onChange={(e) => setTelefonoEntrega(e.target.value)}
+                placeholder="Ej: 612 345 678"
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 ${
+                  !telefonoEntrega || telefonoEntrega.trim() === ''
+                    ? 'border-gray-300'
+                    : 'border-gray-300'
+                }`}
+                aria-required="true"
+              />
+              {(!telefonoEntrega || telefonoEntrega.trim() === '') && (
+                <p className="mt-1 text-xs text-gray-500">Requerido para la entrega del pedido</p>
+              )}
+            </div>
           </div>
         </div>
       </Card>
@@ -1537,15 +1570,44 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                     <div className="flex-shrink-0 flex items-center gap-2">
                       <div className="flex items-center gap-1">
                         <label htmlFor={`cantidad-${producto.id}`} className="text-xs text-gray-600">Cant:</label>
-                        <Input
-                          id={`cantidad-${producto.id}`}
-                          type="number"
-                          min="1"
-                          value={cantidadesProductos[producto.id] || 1}
-                          onChange={(e) => actualizarCantidadProducto(producto.id, parseInt(e.target.value) || 1)}
-                          className="w-16 h-8 text-sm"
-                          aria-label={`Cantidad para ${producto.descripcion}`}
-                        />
+                        <div className="flex items-center gap-0.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="!min-w-7 !w-7 !p-0 h-8 text-sm shrink-0"
+                            aria-label="Restar cantidad"
+                            onClick={() => actualizarCantidadProducto(producto.id, Math.max(0, (cantidadesProductos[producto.id] ?? 1) - 1))}
+                          >
+                            −
+                          </Button>
+                          <Input
+                            id={`cantidad-${producto.id}`}
+                            type="number"
+                            min="0"
+                            value={cantidadesProductos[producto.id] === 0 ? '' : (cantidadesProductos[producto.id] ?? 1)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === '') actualizarCantidadProducto(producto.id, 0);
+                              else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidadProducto(producto.id, n); }
+                            }}
+                            onBlur={() => {
+                              if ((cantidadesProductos[producto.id] ?? 1) === 0) actualizarCantidadProducto(producto.id, 1);
+                            }}
+                            className="!w-12 h-8 text-sm shrink-0"
+                            aria-label={`Cantidad para ${producto.descripcion}`}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="!min-w-7 !w-7 !p-0 h-8 text-sm shrink-0"
+                            aria-label="Sumar cantidad"
+                            onClick={() => actualizarCantidadProducto(producto.id, (cantidadesProductos[producto.id] ?? 0) + 1)}
+                          >
+                            +
+                          </Button>
+                        </div>
                       </div>
                       <Button
                         onClick={() => agregarProducto(producto, cantidadesProductos[producto.id] || 1)}
@@ -1594,17 +1656,44 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                         </td>
                         <td className="py-2">
                           <label htmlFor={`cantidad-pedido-${index}`} className="sr-only">Cantidad</label>
-                          <Input
-                            id={`cantidad-pedido-${index}`}
-                            name={`cantidad-pedido-${index}`}
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={linea.cantidad}
-                            onChange={(e) => actualizarCantidad(index, parseInt(e.target.value) || 1)}
-                            className="w-20"
-                            aria-label={`Cantidad para ${producto?.descripcion || 'producto'}`}
-                          />
+                          <div className="flex items-center gap-1 w-fit">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                              aria-label="Restar cantidad"
+                              onClick={() => actualizarCantidad(index, Math.max(0, linea.cantidad - 1))}
+                            >
+                              −
+                            </Button>
+                            <Input
+                              id={`cantidad-pedido-${index}`}
+                              name={`cantidad-pedido-${index}`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={linea.cantidad === 0 ? '' : linea.cantidad}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '') actualizarCantidad(index, 0);
+                                else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidad(index, n); }
+                              }}
+                              onBlur={() => { if (linea.cantidad === 0) actualizarCantidad(index, 1); }}
+                              className="!w-14 shrink-0"
+                              aria-label={`Cantidad para ${producto?.descripcion || 'producto'}`}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                              aria-label="Sumar cantidad"
+                              onClick={() => actualizarCantidad(index, (linea.cantidad || 0) + 1)}
+                            >
+                              +
+                            </Button>
+                          </div>
                         </td>
                         <td className="py-2">
                           <Button
@@ -1790,9 +1879,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       formData.append('albaran', albaranFile);
 
       const encodedUid = encodeURIComponent(pedidoCargandoAlbaran);
-      const url = import.meta.env.DEV
-        ? `http://localhost:3000/api/pedidos/${encodedUid}/albaran`
-        : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/albaran`;
+      const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+      const url = `${base}/api/pedidos/${encodedUid}/albaran`;
 
       const response = await fetch(url, {
         method: 'POST',
@@ -2007,9 +2095,9 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
     }
   };
 
-  // Funcție pentru a actualiza cantitatea unui produs nou
+  // Funcție pentru a actualiza cantitatea unui produs nou (permite 0; onBlur pune 1)
   const actualizarCantidadProducto = (index: number, nuevaCantidad: number) => {
-    if (nuevaCantidad < 1) return;
+    if (nuevaCantidad < 0) return;
     const nuevos = [...productosNuevos];
     const item = nuevos[index];
     item.cantidad = nuevaCantidad;
@@ -2091,9 +2179,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       const pedidoUid = pedidoEditando.startsWith('=') ? pedidoEditando.substring(1) : pedidoEditando;
       const encodedUid = encodeURIComponent(pedidoUid);
       
-      const url = import.meta.env.DEV
-        ? `http://localhost:3000/api/pedidos/${encodedUid}/items`
-        : `https://api.decaminoservicios.com/api/pedidos/${encodedUid}/items`;
+      const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+      const url = `${base}/api/pedidos/${encodedUid}/items`;
 
       const response = await fetch(url, {
         method: 'PUT',
@@ -2404,14 +2491,41 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                             <td className="px-3 py-2">{item.numero_articulo || 'N/A'}</td>
                             <td className="px-3 py-2">{item.descripcion || 'N/A'}</td>
                             <td className="px-3 py-2 text-right">
-                              <input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={item.cantidad}
-                                onChange={(e) => actualizarCantidadProducto(index, parseInt(e.target.value) || 1)}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded text-right"
-                              />
+                              <div className="flex items-center justify-end gap-1 w-fit ml-auto">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                                  aria-label="Restar cantidad"
+                                  onClick={() => actualizarCantidadProducto(index, Math.max(0, (item.cantidad || 0) - 1))}
+                                >
+                                  −
+                                </Button>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={item.cantidad === 0 ? '' : item.cantidad}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    if (v === '') actualizarCantidadProducto(index, 0);
+                                    else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidadProducto(index, n); }
+                                  }}
+                                  onBlur={() => { if (item.cantidad === 0) actualizarCantidadProducto(index, 1); }}
+                                  className="w-14 px-2 py-1 border border-gray-300 rounded text-right shrink-0"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                                  aria-label="Sumar cantidad"
+                                  onClick={() => actualizarCantidadProducto(index, (item.cantidad || 0) + 1)}
+                                >
+                                  +
+                                </Button>
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-right">{formatMoney(item.precio_unitario)}</td>
                             <td className="px-3 py-2 text-right font-semibold">{formatMoney(item.total_linea)}</td>
@@ -2617,9 +2731,7 @@ const BannerNotasInstrucciones: React.FC = () => {
   // Obține URL-ul complet pentru o poză
   const getImagenUrl = (rutaArchivo: string) => {
     if (rutaArchivo.startsWith('http')) return rutaArchivo;
-    const baseUrl = import.meta.env.DEV 
-      ? 'http://localhost:3000' 
-      : 'https://api.decaminoservicios.com';
+    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
     return `${baseUrl}${rutaArchivo}`;
   };
 

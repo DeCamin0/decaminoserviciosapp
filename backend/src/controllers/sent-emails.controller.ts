@@ -22,6 +22,7 @@ import { EmpleadosService } from '../services/empleados.service';
 import { NotificationsService } from '../services/notifications.service';
 import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('api/sent-emails')
 export class SentEmailsController {
@@ -33,6 +34,7 @@ export class SentEmailsController {
     private readonly empleadosService: EmpleadosService,
     private readonly notificationsService: NotificationsService,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -210,9 +212,14 @@ export class SentEmailsController {
           }))
           .filter((r) => r.email && r.email.trim() !== '');
       } else if (recipientType === 'gestoria') {
+        const gestoriaEmail =
+          recipientEmail ||
+          this.configService.get<{ gestoriaEmail?: string; email?: string }>('company')?.gestoriaEmail ||
+          this.configService.get<{ gestoriaEmail?: string; email?: string }>('company')?.email ||
+          '';
         recipients = [
           {
-            email: recipientEmail || 'altemprado@gmail.com',
+            email: gestoriaEmail,
             nombre: 'Gestoria',
           },
         ];
@@ -285,7 +292,8 @@ export class SentEmailsController {
           .map((line) => line.trim())
           .filter((line) => line.length > 0)
           .join('\n');
-        return `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${additionalMsgCleaned ? `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;"><strong>Mensaje adicional:</strong><br><div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div></div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p></body></html>`;
+        const companyName = (this.configService.get('company') as any)?.legalName ?? 'DE CAMINO SERVICIOS AUXILIARES SL';
+        return `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${additionalMsgCleaned ? `<div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #007bff;"><strong>Mensaje adicional:</strong><br><div style="white-space: pre-wrap;">${additionalMsgCleaned.replace(/\n/g, '<br>')}</div></div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${companyName}</strong></p></body></html>`;
       };
 
       let successCount = 0;

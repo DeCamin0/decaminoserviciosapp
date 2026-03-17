@@ -1,0 +1,148 @@
+================================================================================
+  CUM DESCHID CLIENȚII (Decamino + HERA) – development local + deploy VPS
+================================================================================
+
+Proiectul are doi clienți: Decamino (client 1) și HERA (client 2).
+Fiecare are propriul backend (port diferit) și opțional propriul frontend.
+
+--------------------------------------------------------------------------------
+1. AMBELE CLIENȚI ÎN PARALEL (recomandat pentru dev)
+--------------------------------------------------------------------------------
+
+  a) Pornești ambele backend-uri dintr-o singură comandă:
+
+     cd backend
+     npm run dev:both
+
+     → Decamino pe port 3000 (imediat)
+     → HERA pe port 3002 (după ~12 secunde)
+
+  b) În alte două terminale, frontend-urile:
+
+     Terminal 2 (Decamino):
+     cd frontend
+     npm run dev
+     → http://localhost:5173  (apelează API 3000)
+
+     Terminal 3 (HERA):
+     cd frontend
+     npm run dev:frontend:hera
+     → http://localhost:5174  (apelează API 3002)
+
+--------------------------------------------------------------------------------
+2. DOAR CLIENT 1 (Decamino)
+--------------------------------------------------------------------------------
+
+  Backend (baza Decamino, port 3000):
+     cd backend
+     npm run start:dev
+
+  Frontend:
+     cd frontend
+     npm run dev
+     → http://localhost:5173
+
+--------------------------------------------------------------------------------
+3. DOAR CLIENT 2 (HERA)
+--------------------------------------------------------------------------------
+
+  Backend (baza HERA, port 3002, folosește .env.client2.local):
+     cd backend
+     npm run client2
+
+  Frontend (interfața HERA):
+     cd frontend
+     npm run dev:frontend:hera
+     → http://localhost:5174  (apelează http://localhost:3002)
+
+--------------------------------------------------------------------------------
+REZUMAT RAPID
+--------------------------------------------------------------------------------
+
+| Ce vrei              | Backend (în backend/)   | Frontend (în frontend/)   | URL API       |
+|----------------------|-------------------------|---------------------------|---------------|
+| Client 1 (Decamino)   | npm run start:dev       | npm run dev               | localhost:3000 |
+| Client 2 (HERA)      | npm run client2         | npm run dev:frontend:hera | localhost:3002 |
+| Ambele în paralel    | npm run dev:both        | npm run dev + npm run dev:frontend:hera (2 terminale) | 3000 + 3002 |
+
+Porturi: Decamino = 3000, HERA = 3002.
+Fișiere env backend: Decamino = .env / .env.decamino.local, HERA = .env.client2.local.
+
+Frontend HERA: comanda oficială este  npm run dev:frontend:hera  (port 5174, mode hera).
+  Pentru ca HERA să aibă nume companie / email gestoria corecte: copiază frontend/.env.client2.example → frontend/.env.hera.local (o singură dată).
+
+--------------------------------------------------------------------------------
+4. DEPLOY PE VPS – ambele backend-uri (Decamino + HERA)
+--------------------------------------------------------------------------------
+
+Pe VPS rulează același cod din /opt/decaminoserviciosapp/backend. Diferența e
+doar fișierul .env și portul.
+
+  a) Decamino (client 1):
+     - Serviciu systemd: decamino-backend
+     - Folosește: .env (sau .env.production copiat în .env)
+     - PORT=3000
+     - Domeniu API: api.decaminoservicios.com → proxy → 3000
+
+  b) HERA (client 2):
+     - Serviciu systemd: hera-backend (trebuie creat o dată)
+     - Trebuie setat: ENV_FILE=.env.client2 și PORT=3002
+     - Fișier în backend: .env.client2 (copie din .env.client2.example, cu
+       DB_NAME=hera_facility_db, JWT_SECRET altul, COMPANY_* HERA, CORS/API HERA)
+     - PORT=3002
+     - Domeniu API: api.herafs.com → proxy (container hera-backend-proxy) → 3002
+
+  c) Comanda de deploy (din /opt/decaminoserviciosapp/backend):
+     ./deploy-backend.sh
+
+     - Oprește decamino-backend, git pull, npm install, prisma generate,
+       migrate deploy (pe baza din .env), npm run build.
+     - Pornește decamino-backend (port 3000).
+     - Dacă există hera-backend.service, îl repornește și pe el (port 3002).
+
+  d) Exemplu unitate systemd pentru HERA (creată o singură dată):
+
+     sudo nano /etc/systemd/system/hera-backend.service
+
+     [Unit]
+     Description=Backend HERA (api.herafs.com) - Client 2
+     After=network.target
+
+     [Service]
+     Type=simple
+     User=root
+     WorkingDirectory=/opt/decaminoserviciosapp/backend
+     Environment=ENV_FILE=.env.client2
+     Environment=PORT=3002
+     ExecStart=/usr/bin/node dist/src/main.js
+     Restart=always
+     RestartSec=5
+
+     [Install]
+     WantedBy=multi-user.target
+
+     Apoi: sudo systemctl daemon-reload && sudo systemctl enable hera-backend
+
+  e) Fișiere .env pe VPS (în backend/):
+     - .env          → Decamino (PORT=3000, DB_NAME=decamino_db)
+     - .env.client2  → HERA (PORT=3002, DB_NAME=hera_facility_db)
+
+  Detalii complete: docs/VPS-HERA-CHECKLIST-SIGUR.md, docs/VPS-ENV-CHECKLIST.md,
+  docs/SETUP-API-HERAFACILITY.md.
+
+--------------------------------------------------------------------------------
+5. INFORMES – Ítems „Líneas de factura” la HERA (client 2)
+--------------------------------------------------------------------------------
+
+La HERA, dropdown-ul „Seleccionar item” din Informes rămâne gol dacă baza HERA
+nu are rânduri în tabelul informes_items. Decamino și HERA au baze de date separate.
+
+Pentru a copia ítems din Decamino în HERA (același catalog de ítems):
+
+  cd backend
+  node scripts/import-informes-items-decamino-to-hera.js
+
+Cerințe: .env (Decamino) și .env.client2.local (HERA) cu DB_* corecte; Decamino
+trebuie să aibă deja ítems (ex. importați cu import-informes-items-from-excel.js).
+
+================================================================================

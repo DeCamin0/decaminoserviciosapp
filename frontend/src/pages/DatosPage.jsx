@@ -9,6 +9,7 @@ import { useLoadingState } from '../hooks/useLoadingState';
 import { useApi } from '../hooks/useApi';
 import { API_ENDPOINTS } from '../utils/constants';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
+import { config } from '../config/env';
 
 // Función para calcular la antigüedad
 const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
@@ -874,10 +875,10 @@ const [editLoading, setEditLoading] = useState(false);
       
       const token = localStorage.getItem('auth_token');
       const headers = {
-        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Source': (config.APP_NAME || config.COMPANY_NAME || 'Web-App').replace(/\s+/g, '-'),
         'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
         'X-Client-Type': 'web-browser',
-        'User-Agent': 'DeCamino-Web-Client/1.0'
+        'User-Agent': (config.APP_NAME || config.COMPANY_NAME || 'Web-Client') + '/1.0'
       };
       
       if (token) {
@@ -1199,7 +1200,7 @@ const [editLoading, setEditLoading] = useState(false);
                         />
                       ) : user?.isDemo ? (
                         <img 
-                          src="/DeCamino-04.svg" 
+                          src={`${(config.BASE_PATH || '/').replace(/\/+$/, '')}/${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')} 
                           alt="Avatar DEMO" 
                           className="w-full h-full object-contain p-2"
                         />
@@ -1284,7 +1285,7 @@ const [editLoading, setEditLoading] = useState(false);
                         />
                       ) : user?.isDemo ? (
                         <img 
-                          src="/DeCamino-04.svg" 
+                          src={`${(config.BASE_PATH || '/').replace(/\/+$/, '')}/${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')} 
                           alt="Avatar DEMO" 
                           className="w-full h-full object-contain p-2"
                         />
@@ -1876,7 +1877,7 @@ const [editLoading, setEditLoading] = useState(false);
                         name={field}
                         type="text"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
-                        value={editForm[field] || (import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL')}
+                        value={editForm[field] || (import.meta.env.VITE_COMPANY_NAME || import.meta.env.VITE_APP_NAME || '')}
                         readOnly={true}
                         placeholder={`${field.toLowerCase()} (solo lectura)`}
                       />
@@ -2099,10 +2100,10 @@ const [editLoading, setEditLoading] = useState(false);
                     const token = localStorage.getItem('auth_token');
                     const headers = {
                       'Content-Type': 'application/json',
-                      'X-App-Source': 'DeCamino-Web-App',
+                      'X-App-Source': (config.APP_NAME || config.COMPANY_NAME || 'Web-App').replace(/\s+/g, '-'),
                       'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
                       'X-Client-Type': 'web-browser',
-                      'User-Agent': 'DeCamino-Web-Client/1.0'
+                      'User-Agent': (config.APP_NAME || config.COMPANY_NAME || 'Web-Client') + '/1.0'
                     };
                     
                     if (token) {

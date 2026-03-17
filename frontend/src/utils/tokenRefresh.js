@@ -1,12 +1,11 @@
 /**
  * Token Refresh Utility
- * 
- * Gestionează refresh automat al access token-ului când expiră
+ * Gestionează refresh automat al access token-ului când expiră.
+ * Multi-client: BASE_URL din config (env), fără fallback.
  */
+import { config } from '../config/env';
 
-const BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:3000'
-  : 'https://api.decaminoservicios.com';
+const BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
 
 // Event emitter pentru session expired
 let sessionExpiredCallback = null;
@@ -48,9 +47,9 @@ function isTokenExpiredOrNearExpiry(token) {
     const now = Date.now();
     const timeUntilExpiry = exp - now;
     
-    // Considerăm token-ul expirat dacă mai are mai puțin de 5 minute
-    // sau dacă a expirat deja
-    return timeUntilExpiry < 5 * 60 * 1000; // 5 minutes
+    // Considerăm token-ul „aproape expirat” dacă mai are mai puțin de 10 minute
+    // (refresh mai devreme = utilizatorul activ nu e deconectat la 30 min)
+    return timeUntilExpiry < 10 * 60 * 1000; // 10 minutes
   } catch (error) {
     console.error('[TokenRefresh] Error decoding token:', error);
     return true; // Considerăm expirat dacă nu putem decoda

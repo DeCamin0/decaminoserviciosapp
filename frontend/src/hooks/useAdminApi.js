@@ -1,6 +1,7 @@
 // Hook pentru API-ul de administrare
 import { useCallback } from 'react';
 import { routes } from '../utils/routes.js';
+import { config } from '../config/env';
 
 export const useAdminApi = () => {
   // Statistici generale
@@ -409,7 +410,7 @@ export const useAdminApi = () => {
             grupo_module: grupoModule,
             permitted: permitted,
             last_updated: new Date().toISOString().split('T')[0], // YYYY-MM-DD
-            updated_by: 'admin@decamino.com'
+            updated_by: config.COMPANY_EMAIL || ''
           });
         }
       }
@@ -459,10 +460,10 @@ export const useAdminApi = () => {
       const token = localStorage.getItem('auth_token');
       const headers = {
         'Content-Type': 'application/json',
-        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Source': (config.APP_NAME || config.COMPANY_NAME || 'Web-App').replace(/\s+/g, '-'),
         'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
         'X-Client-Type': 'web-browser',
-        'User-Agent': 'DeCamino-Web-Client/1.0'
+        'User-Agent': (config.APP_NAME || config.COMPANY_NAME || 'Web-Client') + '/1.0'
       };
       
       if (token) {
@@ -515,9 +516,7 @@ export const useAdminApi = () => {
       }
       
       // Construiește URL-ul pentru backend
-      const baseUrl = import.meta.env.DEV
-        ? 'http://localhost:3000/api/activity-logs'
-        : 'https://api.decaminoservicios.com/api/activity-logs';
+      const baseUrl = `${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/activity-logs`;
       
       const params = new URLSearchParams();
       

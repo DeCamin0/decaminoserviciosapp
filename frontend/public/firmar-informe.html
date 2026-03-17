@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aceptación de Informe - De Camino Servicios</title>
+  <link rel="icon" href="./%VITE_LOGO_PATH%" />
+  <title>Aceptación de Informe - %VITE_APP_NAME%</title>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; min-height: 100vh; background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 35%, #dc2626 70%, #e53935 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; color: #1a1a1a; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; min-height: 100vh; background: linear-gradient(135deg, %VITE_PRIMARY_DARK% 0%, %VITE_PRIMARY_COLOR% 50%, %VITE_PRIMARY_COLOR% 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 16px; color: #1a1a1a; }
     .main { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
     .page-wrap { width: 100%; max-width: 480px; }
     .logo-wrap { text-align: center; margin-bottom: 20px; }
@@ -15,20 +16,20 @@
     .card { background: rgba(255,255,255,0.98); border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); padding: 32px 28px; }
     .card-title { font-size: 1.5rem; font-weight: 700; color: #1a1a1a; margin: 0 0 6px; text-align: center; }
     .card-subtitle { text-align: center; color: #525252; font-size: 0.9rem; margin: 0 0 16px; }
-    #id-info { text-align: center; font-size: 0.9rem; color: #dc2626; font-weight: 600; margin-bottom: 20px; }
+    #id-info { text-align: center; font-size: 0.9rem; color: %VITE_PRIMARY_COLOR%; font-weight: 600; margin-bottom: 20px; }
     label { display: block; margin-top: 14px; margin-bottom: 6px; font-weight: 600; font-size: 0.875rem; color: #374151; }
     input, select { width: 100%; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 12px; font-size: 1rem; background: #fff; }
-    input:focus, select:focus { outline: none; border-color: #dc2626; }
+    input:focus, select:focus { outline: none; border-color: %VITE_PRIMARY_COLOR%; }
     .pad-wrap { border: 1px solid #e5e7eb; border-radius: 12px; margin: 8px 0; overflow: hidden; background: #fafafa; }
     canvas { display: block; width: 100%; height: 160px; touch-action: none; }
     .btn-clear { padding: 10px 18px; border: none; border-radius: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; background: #f3f4f6; color: #374151; }
-    .btn-submit { width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: white; margin-top: 24px; }
-    .btn-submit:hover:not(:disabled) { background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%); }
+    .btn-submit { width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; background: linear-gradient(135deg, %VITE_PRIMARY_COLOR% 0%, %VITE_PRIMARY_COLOR% 100%); color: white; margin-top: 24px; }
+    .btn-submit:hover:not(:disabled) { background: linear-gradient(135deg, %VITE_PRIMARY_COLOR% 0%, %VITE_PRIMARY_DARK% 100%); }
     .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
     .checkbox-wrap { margin: 20px 0; display: flex; align-items: flex-start; gap: 12px; }
-    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: #dc2626; }
+    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: %VITE_PRIMARY_COLOR%; }
     .checkbox-wrap label { margin: 0; font-weight: 500; }
-    #message { color: #b91c1c; font-size: 0.9rem; margin-top: 10px; display: none; }
+    #message { color: %VITE_PRIMARY_COLOR%; font-size: 0.9rem; margin-top: 10px; display: none; }
     #success { color: #15803d; font-size: 0.95rem; margin-top: 16px; font-weight: 500; display: none; }
     .download-wrap { margin-top: 16px; }
     .btn-download { display: inline-block; padding: 12px 20px; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; background: #15803d; color: white; text-decoration: none; border: none; }
@@ -38,26 +39,26 @@
 <body>
   <div class="main">
     <div class="page-wrap">
-      <div class="logo-wrap"><img src="./logo.svg" alt="De Camino" onerror="this.style.display='none'" /></div>
+      <div class="logo-wrap"><img src="./%VITE_LOGO_PATH%" alt="%VITE_APP_NAME%" onerror="this.style.display='none'" /></div>
       <div class="card">
         <h1 class="card-title">Aceptación de Informe</h1>
         <p class="card-subtitle">Firma electrónica del informe / presupuesto. Todos los campos son obligatorios.</p>
         <p id="id-info"></p>
 
         <form id="form">
-          <label for="nombre_comunidad">Nombre de cliente / comunidad <span style="color:#dc2626">*</span></label>
+          <label for="nombre_comunidad">Nombre de cliente / comunidad <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <input type="text" id="nombre_comunidad" required placeholder="Nombre o razón social" />
 
-          <label for="cif">CIF <span style="color:#dc2626">*</span></label>
+          <label for="cif">CIF <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <input type="text" id="cif" required placeholder="CIF / NIF" />
 
-          <label for="direccion">Dirección <span style="color:#dc2626">*</span></label>
+          <label for="direccion">Dirección <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <input type="text" id="direccion" required placeholder="Dirección completa" />
 
-          <label for="nombre_representante">Nombre del representante <span style="color:#dc2626">*</span></label>
+          <label for="nombre_representante">Nombre del representante <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <input type="text" id="nombre_representante" required placeholder="Nombre y apellidos" />
 
-          <label for="cargo">Cargo <span style="color:#dc2626">*</span></label>
+          <label for="cargo">Cargo <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <select id="cargo" required>
             <option value="">— Seleccione —</option>
             <option value="Presidente">Presidente</option>
@@ -66,13 +67,13 @@
             <option value="Otro">Otro</option>
           </select>
 
-          <label for="email">Email <span style="color:#dc2626">*</span></label>
+          <label for="email">Email <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <input type="email" id="email" required placeholder="correo@ejemplo.com" />
 
-          <label for="telefono">Teléfono <span style="color:#dc2626">*</span></label>
+          <label for="telefono">Teléfono <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <input type="tel" id="telefono" required placeholder="Teléfono de contacto" />
 
-          <label>Firma <span style="color:#dc2626">*</span></label>
+          <label>Firma <span style="color:%VITE_PRIMARY_COLOR%">*</span></label>
           <div class="pad-wrap">
             <canvas id="signature-pad"></canvas>
           </div>
@@ -100,7 +101,7 @@
       var informeId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:3000'
-        : (window.location.origin || 'https://api.decaminoservicios.com');
+        : (window.location.origin || '%VITE_API_URL%');
 
       if (!informeId) {
         document.getElementById('id-info').textContent = 'No se ha indicado informe (falta ?id= en la URL).';

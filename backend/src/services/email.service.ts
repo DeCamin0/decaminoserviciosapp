@@ -265,14 +265,22 @@ export class EmailService {
       return this.transporter;
     }
 
-    // Creează transporter separat pentru pedidos (folosește același host/port/secure)
-    const smtpHost = this.configService.get<string>('SMTP_HOST');
-    const smtpPort = this.configService.get<number>('SMTP_PORT') || 587;
-    const smtpSecure = this.configService.get<string>('SMTP_SECURE') === 'true';
+    // Creează transporter separat pentru pedidos
+    // Preferă SMTP_PEDIDOS_HOST/PORT/SECURE (permite Client 2 doar pedidos fără SMTP general)
+    const smtpHost =
+      this.configService.get<string>('SMTP_PEDIDOS_HOST') ||
+      this.configService.get<string>('SMTP_HOST');
+    const smtpPort =
+      this.configService.get<number>('SMTP_PEDIDOS_PORT') ||
+      this.configService.get<number>('SMTP_PORT') ||
+      587;
+    const smtpSecure =
+      (this.configService.get<string>('SMTP_PEDIDOS_SECURE') ||
+        this.configService.get<string>('SMTP_SECURE')) === 'true';
 
     if (!smtpHost) {
       throw new Error(
-        'SMTP_HOST not configured. Cannot create pedidos transporter.',
+        'SMTP (SMTP_PEDIDOS_HOST sau SMTP_HOST) not configured. Cannot create pedidos transporter.',
       );
     }
 
@@ -319,8 +327,20 @@ export class EmailService {
         .map((email) => email.trim())
         .filter(Boolean);
     }
-    // Backward compatible: folosește valorile vechi dacă env var lipsește
-    return ['decamino.rrhh@gmail.com'];
+    const company = this.configService.get<{ emailBcc?: string }>('company');
+    if (company?.emailBcc) {
+      return company.emailBcc
+        .split(',')
+        .map((e) => e.trim())
+        .filter(Boolean);
+    }
+    const fallback = process.env.COMPANY_EMAIL_BCC || '';
+    return fallback
+      ? fallback
+          .split(',')
+          .map((e) => e.trim())
+          .filter(Boolean)
+      : [];
   }
 
   /**
@@ -328,12 +348,21 @@ export class EmailService {
    * Backward compatible: dacă COMPANY_NAME sau COMPANY_EMAIL lipsesc, folosește valorile vechi
    */
   getDefaultFromEmail(): string {
+    const company = this.configService.get<{
+      emailFromName?: string;
+      email?: string;
+    }>('company');
     const companyName =
+      company?.emailFromName ||
       this.configService.get<string>('COMPANY_NAME') ||
-      'DE CAMINO Servicios Auxiliares SL';
+      process.env.COMPANY_EMAIL_FROM_NAME ||
+      process.env.COMPANY_LEGAL_NAME_SHORT ||
+      '';
     const companyEmail =
+      company?.email ||
       this.configService.get<string>('COMPANY_EMAIL') ||
-      'info@decaminoservicios.com';
+      process.env.COMPANY_EMAIL ||
+      '';
     return `${companyName} <${companyEmail}>`;
   }
 

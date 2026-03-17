@@ -14,9 +14,15 @@ export class TelegramService implements OnModuleInit {
   private generalChatId: string | null = null;
   private _isGeneralConfigured = false;
 
+  /** Etichetă client pentru a distinge mesajele (ex: "HERA", "DeCamino"). Opțional din TELEGRAM_CLIENT_LABEL. */
+  private clientLabel: string | null = null;
+
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
+    this.clientLabel =
+      (this.configService.get<string>('TELEGRAM_CLIENT_LABEL') || '').trim() ||
+      null;
     // Configurare bot gestoria (existent)
     this.botToken =
       this.configService.get<string>('TELEGRAM_BOT_TOKEN') || null;
@@ -132,12 +138,16 @@ export class TelegramService implements OnModuleInit {
     botType: 'gestoria' | 'general',
   ): Promise<void> {
     try {
-      // Log pentru debugging (fără token complet pentru securitate)
+      // Prefix pentru a distinge clientul (ex: [HERA], [DeCamino]) – același chat, mesaje separate
+      const text = this.clientLabel
+        ? `[${this.clientLabel}]\n\n${message}`
+        : message;
+
       const tokenPreview = botToken
         ? `${botToken.substring(0, 10)}...`
         : 'NULL';
       this.logger.log(
-        `📤 Attempting to send Telegram message (${botType} bot, token: ${tokenPreview}, chatId: ${chatId}, message length: ${message.length})`,
+        `📤 Attempting to send Telegram message (${botType} bot, token: ${tokenPreview}, chatId: ${chatId}, message length: ${text.length})`,
       );
 
       if (!botToken || !chatId) {
@@ -153,7 +163,7 @@ export class TelegramService implements OnModuleInit {
 
       const requestBody = {
         chat_id: chatId,
-        text: message,
+        text,
         parse_mode: 'Markdown', // Folosim Markdown ca în n8n workflow (Cron absente.json)
       };
 

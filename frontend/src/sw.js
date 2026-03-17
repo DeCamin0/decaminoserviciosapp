@@ -45,21 +45,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// SOLUȚIE PROFESIONALĂ: NU interceptăm deloc request-urile către backend-ul nostru
-// Toate request-urile către api.decaminoservicios.com sau localhost:3000 trec direct la backend
-// Astfel, nu există probleme de cache pentru niciun endpoint
-// Interceptăm doar:
-// 1. Asset-urile statice (JS, CSS, imagini) - deja acoperite de precacheAndRoute
-// 2. Request-urile către n8n (pentru endpoint-urile nemigrate)
-
-// IMPORTANT: Nu adăugăm niciun route pentru backend-ul nostru
-// Astfel, toate request-urile către backend trec direct, fără interceptare
-// Aceasta este soluția profesională - funcționează pentru TOATE endpoint-urile, nu doar pentru cele pe care le adăugăm manual
+// SOLUȚIE: request-urile către backend trec direct; interceptăm doar n8n (origin din env la build)
+const N8N_ORIGIN = (import.meta.env.VITE_N8N_BASE_URL && String(import.meta.env.VITE_N8N_BASE_URL).trim()) || '';
 
 // Cache pentru n8n (pentru endpoint-urile nemigrate: EmpleadoPedidosPage, etc.)
 registerRoute(
   ({ url }) => {
-    return url.origin === 'https://n8n.decaminoservicios.com';
+    return N8N_ORIGIN ? url.origin === N8N_ORIGIN : false;
   },
   new NetworkFirst({
     cacheName: 'n8n-api-cache',

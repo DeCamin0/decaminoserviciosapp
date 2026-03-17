@@ -1,5 +1,6 @@
 // Dev-only fetch regulator with rate limit + queue + backoff for n8n calls
 // Keeps prod untouched; hook via installRegulatedFetch() in main.
+import { config as appConfig } from '../config/env';
 
 const config = {
   enabled: typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'development',
@@ -43,13 +44,16 @@ const shouldRegulate = (urlString) => {
     const url = new URL(urlString, window.location.origin);
     const host = url.hostname;
     const path = url.pathname || '';
-    // Target n8n domains or the known webhook/proxy paths (pentru endpoint-urile nemigrate)
-    // Și backend-ul nostru pentru rate limiting consistent
-    return host.includes('n8n.decaminoservicios.com') ||
+    // Target configured n8n/API hosts or known paths (multi-client: no hardcoded domains)
+    const apiBase = appConfig.API_BASE_URL || appConfig.API_URL || '';
+    const n8nBase = appConfig.N8N_BASE_URL || '';
+    const apiHost = apiBase ? (() => { try { return new URL(apiBase).hostname; } catch { return ''; } })() : '';
+    const n8nHost = n8nBase ? (() => { try { return new URL(n8nBase).hostname; } catch { return ''; } })() : '';
+    return (n8nHost && host === n8nHost) ||
       path.startsWith('/webhook') ||
       path.startsWith('/api/n8n') ||
-      host.includes('api.decaminoservicios.com') ||
-      host === 'localhost' && url.port === '3000'; // Backend local în development
+      (apiHost && host === apiHost) ||
+      (host === 'localhost' && url.port === '3000');
   } catch {
     return false;
   }

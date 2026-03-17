@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { LocationContext } from './LocationContextBase';
+import { config } from '../config/env';
 
 export const LocationProvider = ({ children }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
@@ -16,9 +17,7 @@ export const LocationProvider = ({ children }) => {
   const getAddressFromCoords = useCallback(async (latitude, longitude) => {
     try {
       // Construim URL-ul către backend-ul nostru
-      const BASE_URL = import.meta.env.DEV
-        ? 'http://localhost:3000'
-        : 'https://api.decaminoservicios.com';
+      const BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       
       const url = `${BASE_URL}/api/geocoding/reverse?lat=${latitude}&lon=${longitude}`;
       

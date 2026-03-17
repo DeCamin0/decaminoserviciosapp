@@ -6,6 +6,7 @@ import { routes } from '../utils/routes';
 import { Link, Navigate } from 'react-router-dom';
 import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import { config } from '../config/env';
 
 // ===== TIPURI TYPESCRIPT =====
 
@@ -761,9 +762,10 @@ const TabNuevoPedido: React.FC<{
   const [comunidadSearchTerm, setComunidadSearchTerm] = useState('');
   const [showComunidadDropdown, setShowComunidadDropdown] = useState(false);
   
-  // State pentru Horario Entrega
+  // State pentru Horario Entrega y Teléfono Entrega
   const [horarioEntrega, setHorarioEntrega] = useState('');
   const [horarioEntregaTipo, setHorarioEntregaTipo] = useState<'24horas' | '12horas' | 'personalizado' | ''>('');
+  const [telefonoEntrega, setTelefonoEntrega] = useState('');
   const [loadingHorario, setLoadingHorario] = useState(false);
 
   // Încarcă centrele de trabajo (comunidades) din backend sau demo
@@ -885,6 +887,10 @@ const TabNuevoPedido: React.FC<{
                   setHorarioEntregaTipo('');
                   setHorarioEntrega('');
                 }
+                const telEnt = comunidadParcial.datosCompletos?.['TELEFONO ENTREGA'] ||
+                  comunidadParcial.datosCompletos?.TELEFON_ENTREGA ||
+                  comunidadParcial.datosCompletos?.telefono_entrega || '';
+                setTelefonoEntrega(telEnt ? String(telEnt).trim() : '');
                 
                 addToast('info', 'Centro encontrado parcialmente', `Se encontró una comunidad similar: "${comunidadParcial.nombre}"`);
                 
@@ -1293,6 +1299,10 @@ const TabNuevoPedido: React.FC<{
           setHorarioEntregaTipo('');
           setHorarioEntrega('');
         }
+        const telefonoEntregaCliente = comunidad?.datosCompletos?.['TELEFONO ENTREGA'] ||
+          comunidad?.datosCompletos?.TELEFON_ENTREGA ||
+          comunidad?.datosCompletos?.telefono_entrega || '';
+        setTelefonoEntrega(telefonoEntregaCliente ? String(telefonoEntregaCliente).trim() : '');
         
         // Actualizează și detaliile comunității cu datele complete
         setComunidadDetalles({
@@ -1453,7 +1463,11 @@ const TabNuevoPedido: React.FC<{
 
     // Validare: Horario Entrega este obligatoriu
     if (!horarioEntregaTipo || !horarioEntrega || horarioEntrega.trim() === '') {
-      addToast('error', 'Horario Entrega requerido', 'Por favor selecciona un tipo de Horario Entrega y complétalo antes de guardar el pedido.');
+      addToast('error', 'Horario obligatorio', 'Por favor selecciona un tipo de horario y complétalo.');
+      return;
+    }
+    if (!telefonoEntrega || telefonoEntrega.trim() === '') {
+      addToast('error', 'Teléfono de entrega requerido', 'Por favor introduce el teléfono de entrega antes de guardar el pedido.');
       return;
     }
 
@@ -1546,6 +1560,8 @@ const TabNuevoPedido: React.FC<{
         limite_excedido: false,
         exceso_limite: 0,
         estado: 'pendiente',
+        horario_entrega: horarioEntrega.trim(),
+        telefono_entrega: telefonoEntrega.trim(),
         items: lineasPedido.map(linea => {
           const producto = productos.find(p => p.id === linea.producto_id);
           const subtotalLinea = linea.cantidad * linea.precio_unitario;
@@ -1787,6 +1803,23 @@ const TabNuevoPedido: React.FC<{
                 <p className="mt-1 text-xs text-red-600">Por favor selecciona un tipo de horario</p>
               )}
             </div>
+            <div>
+              <label htmlFor="telefono-entrega" className="block text-sm font-medium text-gray-700 mb-1">
+                Teléfono Entrega <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="telefono-entrega"
+                type="tel"
+                value={telefonoEntrega}
+                onChange={(e) => setTelefonoEntrega(e.target.value)}
+                placeholder="Ej: 612 345 678"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                aria-required="true"
+              />
+              {(!telefonoEntrega || telefonoEntrega.trim() === '') && (
+                <p className="mt-1 text-xs text-gray-500">Requerido para la entrega del pedido</p>
+              )}
+            </div>
           </div>
         </div>
       </Card>
@@ -1999,17 +2032,46 @@ const TabNuevoPedido: React.FC<{
                         </td>
                         <td className="p-2">
                           <label htmlFor={`cantidad-${index}`} className="sr-only">Cantidad</label>
-                          <Input
-                            id={`cantidad-${index}`}
-                            name={`cantidad-${index}`}
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={linea.cantidad}
-                            onChange={(e) => actualizarLinea(index, 'cantidad', parseInt(e.target.value) || 1)}
-                            className="w-20"
-                            aria-label={`Cantidad para ${producto?.numero || 'producto'}`}
-                          />
+                          <div className="flex items-center gap-1 w-fit">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                              aria-label="Restar cantidad"
+                              onClick={() => actualizarLinea(index, 'cantidad', Math.max(0, linea.cantidad - 1))}
+                            >
+                              −
+                            </Button>
+                            <Input
+                              id={`cantidad-${index}`}
+                              name={`cantidad-${index}`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={linea.cantidad === 0 ? '' : linea.cantidad}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '') actualizarLinea(index, 'cantidad', 0);
+                                else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarLinea(index, 'cantidad', n); }
+                              }}
+                              onBlur={() => {
+                                if (linea.cantidad === 0) actualizarLinea(index, 'cantidad', 1);
+                              }}
+                              className="!w-14 shrink-0"
+                              aria-label={`Cantidad para ${producto?.numero || 'producto'}`}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                              aria-label="Sumar cantidad"
+                              onClick={() => actualizarLinea(index, 'cantidad', (linea.cantidad || 0) + 1)}
+                            >
+                              +
+                            </Button>
+                          </div>
                         </td>
                         <td className="p-2">{formatMoney(linea.precio_unitario)}</td>
                         <td className="p-2">
@@ -2121,12 +2183,17 @@ const TabGestionarPedidos: React.FC<{
     codigo_postal_envio?: string;
     localidad_envio?: string;
     provincia_envio?: string;
+    telefono_entrega?: string;
   }>>({});
   const [horariosEntrega, setHorariosEntrega] = useState<Record<string, string>>({});
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loadingClientes, setLoadingClientes] = useState(false);
   const [clienteSearchTerms, setClienteSearchTerms] = useState<Record<string, string>>({});
   const [showClienteDropdowns, setShowClienteDropdowns] = useState<Record<string, boolean>>({});
+  const [addressSuggestions, setAddressSuggestions] = useState<Record<string, Array<{ display_name: string; address?: { road?: string; house_number?: string; postcode?: string; city?: string; town?: string; village?: string; state?: string } }>>>({});
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState<Record<string, boolean>>({});
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = useState<Record<string, boolean>>({});
+  const addressSearchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mostrarPreviewEnvio, setMostrarPreviewEnvio] = useState(false);
   const [pedidosParaEnviar, setPedidosParaEnviar] = useState<Pedido[]>([]);
   const [mostrarModalExcel, setMostrarModalExcel] = useState(false);
@@ -2243,18 +2310,26 @@ const TabGestionarPedidos: React.FC<{
     }
   };
 
-  // Funcție pentru a converti o dată în format pentru input datetime-local (fără conversie UTC)
-  const formatDateForInput = (date: string | Date | null | undefined): string => {
+  // Format doar dată (zi/lună/an) pentru afișare - Fecha de Envío fără oră
+  const formatDateOnly = (date: string | Date | null | undefined) => {
+    if (!date) return 'N/A';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return d.toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Format pentru input type="date" (YYYY-MM-DD) - Fecha de Envío fără oră
+  const formatDateOnlyForInput = (date: string | Date | null | undefined): string => {
     if (!date) return '';
     try {
       const d = typeof date === 'string' ? new Date(date) : date;
-      // Folosim getFullYear, getMonth, etc. pentru a obține valorile în timezone local
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
+      return `${year}-${month}-${day}`;
     } catch {
       return '';
     }
@@ -2775,10 +2850,36 @@ const TabGestionarPedidos: React.FC<{
   };
 
   // Guarda dirección de envío
+  // Autocompletare dirección de envío (Nominatim / OpenStreetMap, gratuit)
+  const fetchAddressSuggestions = React.useCallback(async (query: string, pedidoUid: string) => {
+    const q = query.trim();
+    if (q.length < 3) {
+      setAddressSuggestions(prev => ({ ...prev, [pedidoUid]: [] }));
+      setAddressSuggestionsLoading(prev => ({ ...prev, [pedidoUid]: false }));
+      return;
+    }
+    setAddressSuggestionsLoading(prev => ({ ...prev, [pedidoUid]: true }));
+    try {
+      const searchQuery = encodeURIComponent(q + (q.toLowerCase().includes('españa') || q.toLowerCase().includes('spain') ? '' : ' España'));
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${searchQuery}&format=json&addressdetails=1&limit=5`,
+        { headers: { 'Accept-Language': 'es', 'User-Agent': 'DeCaminoPedidosApp/1.0' } }
+      );
+      const data = await res.json();
+      setAddressSuggestions(prev => ({ ...prev, [pedidoUid]: data || [] }));
+    } catch {
+      setAddressSuggestions(prev => ({ ...prev, [pedidoUid]: [] }));
+    } finally {
+      setAddressSuggestionsLoading(prev => ({ ...prev, [pedidoUid]: false }));
+    }
+  }, []);
+
   const guardarDireccionEnvio = async (pedidoUid: string) => {
     const direccion = direccionesEnvio[pedidoUid];
-    if (!direccion || (!direccion.direccion_envio && !direccion.codigo_postal_envio && !direccion.localidad_envio && !direccion.provincia_envio)) {
-      addToast('warning', 'Datos requeridos', 'Debes completar al menos un campo de dirección de envío.');
+    const hasAddress = direccion?.direccion_envio || direccion?.codigo_postal_envio || direccion?.localidad_envio || direccion?.provincia_envio;
+    const hasPhone = direccion?.telefono_entrega != null && String(direccion.telefono_entrega).trim() !== '';
+    if (!direccion || (!hasAddress && !hasPhone)) {
+      addToast('warning', 'Datos requeridos', 'Debes completar al menos un campo de dirección de envío o teléfono de envío.');
       return;
     }
 
@@ -3296,7 +3397,7 @@ const TabGestionarPedidos: React.FC<{
                       <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
                       <div><strong>Total:</strong> <span className="font-bold text-purple-600">{formatMoney(pedido.total)}</span></div>
                       {pedido.fecha_envio && (
-                        <div><strong>Fecha de Envío:</strong> {formatDate(pedido.fecha_envio)}</div>
+                        <div><strong>Fecha de Envío:</strong> {formatDateOnly(pedido.fecha_envio)}</div>
                       )}
                       {pedido.aprobado_por && (
                         <div className="text-green-600">
@@ -3310,9 +3411,14 @@ const TabGestionarPedidos: React.FC<{
                           {pedido.rechazado_en && ` el ${formatDate(pedido.rechazado_en)}`}
                         </div>
                       )}
-                      {pedido.comunidad?.id && horariosEntrega[String(pedido.comunidad.id)] && (
+                      {(pedido.horario_entrega || (pedido.comunidad?.id && horariosEntrega[String(pedido.comunidad.id)])) && (
                         <div>
-                          <strong>🕐 Horario Entrega:</strong> <span className="text-blue-600 font-medium">{horariosEntrega[String(pedido.comunidad.id)]}</span>
+                          <strong>🕐 Horario Entrega:</strong> <span className="text-blue-600 font-medium">{pedido.horario_entrega || horariosEntrega[String(pedido.comunidad?.id)]}</span>
+                        </div>
+                      )}
+                      {pedido.telefono_entrega && (
+                        <div>
+                          <strong>📞 Teléfono Entrega:</strong> <span className="text-blue-600 font-medium">{pedido.telefono_entrega}</span>
                         </div>
                       )}
                       {(pedido.direccion_envio || pedido.codigo_postal_envio || pedido.localidad_envio || pedido.provincia_envio) && (
@@ -3382,12 +3488,12 @@ const TabGestionarPedidos: React.FC<{
                       <>
                         <div className="mb-2">
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Fecha de Envío:
+                            Fecha de Envío (solo fecha; el horario está en Horario Entrega):
                           </label>
                           <div className="flex gap-2">
                             <input
-                              type="datetime-local"
-                              value={fechasEnvio[pedido.pedido_uid] || formatDateForInput(pedido.fecha_envio)}
+                              type="date"
+                              value={fechasEnvio[pedido.pedido_uid] || formatDateOnlyForInput(pedido.fecha_envio)}
                               onChange={(e) => {
                                 setFechasEnvio(prev => ({
                                   ...prev,
@@ -3395,7 +3501,7 @@ const TabGestionarPedidos: React.FC<{
                                 }));
                               }}
                               className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                              min={formatDateForInput(new Date())}
+                              min={formatDateOnlyForInput(new Date())}
                             />
                             <Button
                               onClick={() => guardarFechaEnvio(pedido.pedido_uid)}
@@ -3508,21 +3614,79 @@ const TabGestionarPedidos: React.FC<{
                                 )}
                               </div>
                             </div>
-                            <input
-                              type="text"
-                              placeholder="Dirección"
-                              value={direccionesEnvio[pedido.pedido_uid]?.direccion_envio || pedido.direccion_envio || ''}
-                              onChange={(e) => {
-                                setDireccionesEnvio(prev => ({
-                                  ...prev,
-                                  [pedido.pedido_uid]: {
-                                    ...prev[pedido.pedido_uid],
-                                    direccion_envio: e.target.value
-                                  }
-                                }));
-                              }}
-                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
+                            <div className="relative">
+                              <input
+                                type="text"
+                                placeholder="Dirección (escribe para buscar y autocompletar)"
+                                value={direccionesEnvio[pedido.pedido_uid]?.direccion_envio || pedido.direccion_envio || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setDireccionesEnvio(prev => ({
+                                    ...prev,
+                                    [pedido.pedido_uid]: {
+                                      ...prev[pedido.pedido_uid],
+                                      direccion_envio: value
+                                    }
+                                  }));
+                                  if (addressSearchTimeoutRef.current) clearTimeout(addressSearchTimeoutRef.current);
+                                  addressSearchTimeoutRef.current = setTimeout(() => {
+                                    setShowAddressSuggestions(prev => ({ ...prev, [pedido.pedido_uid]: true }));
+                                    fetchAddressSuggestions(value, pedido.pedido_uid);
+                                  }, 400);
+                                }}
+                                onFocus={() => {
+                                  const list = addressSuggestions[pedido.pedido_uid];
+                                  if (list && list.length > 0) setShowAddressSuggestions(prev => ({ ...prev, [pedido.pedido_uid]: true }));
+                                }}
+                                onBlur={() => {
+                                  setTimeout(() => {
+                                    setShowAddressSuggestions(prev => ({ ...prev, [pedido.pedido_uid]: false }));
+                                  }, 200);
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                              {addressSuggestionsLoading[pedido.pedido_uid] && (
+                                <div className="absolute right-3 top-2.5 text-gray-400">
+                                  <span className="animate-pulse text-xs">Buscando...</span>
+                                </div>
+                              )}
+                              {showAddressSuggestions[pedido.pedido_uid] && (addressSuggestions[pedido.pedido_uid]?.length > 0) && (
+                                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                  {addressSuggestions[pedido.pedido_uid].map((item: { display_name: string; address?: { road?: string; house_number?: string; postcode?: string; city?: string; town?: string; village?: string; state?: string } }, idx: number) => {
+                                    const addr = item.address || {};
+                                    const localidad = addr.city || addr.town || addr.village || '';
+                                    const provincia = addr.state || '';
+                                    const cp = addr.postcode || '';
+                                    const calle = [addr.road, addr.house_number].filter(Boolean).join(' ') || item.display_name;
+                                    return (
+                                      <div
+                                        key={idx}
+                                        onClick={() => {
+                                          setDireccionesEnvio(prev => ({
+                                            ...prev,
+                                            [pedido.pedido_uid]: {
+                                              ...prev[pedido.pedido_uid],
+                                              direccion_envio: calle || item.display_name,
+                                              codigo_postal_envio: cp,
+                                              localidad_envio: localidad,
+                                              provincia_envio: provincia,
+                                            }
+                                          }));
+                                          setShowAddressSuggestions(prev => ({ ...prev, [pedido.pedido_uid]: false }));
+                                          setAddressSuggestions(prev => ({ ...prev, [pedido.pedido_uid]: [] }));
+                                        }}
+                                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0 text-left"
+                                      >
+                                        <div className="text-sm font-medium text-gray-900">{item.display_name}</div>
+                                        {(cp || localidad || provincia) && (
+                                          <div className="text-xs text-gray-500">{[cp, localidad, provincia].filter(Boolean).join(', ')}</div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
                             <div className="grid grid-cols-3 gap-2">
                               <input
                                 type="text"
@@ -3568,6 +3732,24 @@ const TabGestionarPedidos: React.FC<{
                                   }));
                                 }}
                                 className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Teléfono (envío)</label>
+                              <input
+                                type="tel"
+                                placeholder="Ej: 612 345 678"
+                                value={direccionesEnvio[pedido.pedido_uid]?.telefono_entrega ?? (pedido as { telefono_entrega?: string }).telefono_entrega ?? ''}
+                                onChange={(e) => {
+                                  setDireccionesEnvio(prev => ({
+                                    ...prev,
+                                    [pedido.pedido_uid]: {
+                                      ...prev[pedido.pedido_uid],
+                                      telefono_entrega: e.target.value
+                                    }
+                                  }));
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               />
                             </div>
                             <Button
@@ -3758,32 +3940,85 @@ const TabGestionarPedidos: React.FC<{
                               <td className="p-2">{item.descripcion}</td>
                               <td className="p-2 text-right">
                                 {pedidoEditando === pedido.pedido_uid ? (
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    value={item.cantidad}
-                                    onChange={(e) => {
-                                      // TODO: Actualizar cantidad en el estado
-                                      const newItems = [...pedido.items];
-                                      newItems[index].cantidad = parseInt(e.target.value) || 1;
-                                      // Recalcular subtotal, IVA și total pentru acest item
-                                      const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
-                                      const iva = subtotal * 0.21;
-                                      newItems[index].subtotal_linea = subtotal;
-                                      newItems[index].iva_linea = iva;
-                                      newItems[index].total_linea = subtotal + iva;
-                                      
-                                      // Actualizar pedido în lista
-                                      const updatedPedidos = pedidos.map(p => 
-                                        p.pedido_uid === pedido.pedido_uid 
-                                          ? { ...p, items: newItems }
-                                          : p
-                                      );
-                                      setPedidos(updatedPedidos);
-                                    }}
-                                    className="w-20 text-right"
-                                  />
+                                  <div className="flex items-center justify-end gap-1 w-fit ml-auto">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                                      aria-label="Restar cantidad"
+                                      onClick={() => {
+                                        const newItems = [...pedido.items];
+                                        newItems[index].cantidad = Math.max(0, (newItems[index].cantidad || 0) - 1);
+                                        const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
+                                        const iva = subtotal * 0.21;
+                                        newItems[index].subtotal_linea = subtotal;
+                                        newItems[index].iva_linea = iva;
+                                        newItems[index].total_linea = subtotal + iva;
+                                        setPedidos(pedidos.map(p =>
+                                          p.pedido_uid === pedido.pedido_uid ? { ...p, items: newItems } : p
+                                        ));
+                                      }}
+                                    >
+                                      −
+                                    </Button>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={item.cantidad === 0 ? '' : item.cantidad}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        const newItems = [...pedido.items];
+                                        newItems[index].cantidad = v === '' ? 0 : (parseInt(v, 10) ?? 0);
+                                        if (newItems[index].cantidad < 0) newItems[index].cantidad = 0;
+                                        const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
+                                        const iva = subtotal * 0.21;
+                                        newItems[index].subtotal_linea = subtotal;
+                                        newItems[index].iva_linea = iva;
+                                        newItems[index].total_linea = subtotal + iva;
+                                        setPedidos(pedidos.map(p =>
+                                          p.pedido_uid === pedido.pedido_uid ? { ...p, items: newItems } : p
+                                        ));
+                                      }}
+                                      onBlur={() => {
+                                        const newItems = [...pedido.items];
+                                        if (newItems[index].cantidad === 0) {
+                                          newItems[index].cantidad = 1;
+                                          const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
+                                          const iva = subtotal * 0.21;
+                                          newItems[index].subtotal_linea = subtotal;
+                                          newItems[index].iva_linea = iva;
+                                          newItems[index].total_linea = subtotal + iva;
+                                          setPedidos(pedidos.map(p =>
+                                            p.pedido_uid === pedido.pedido_uid ? { ...p, items: newItems } : p
+                                          ));
+                                        }
+                                      }}
+                                      className="!w-14 text-right shrink-0"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
+                                      aria-label="Sumar cantidad"
+                                      onClick={() => {
+                                        const newItems = [...pedido.items];
+                                        newItems[index].cantidad = (newItems[index].cantidad || 0) + 1;
+                                        const subtotal = newItems[index].cantidad * newItems[index].precio_unitario;
+                                        const iva = subtotal * 0.21;
+                                        newItems[index].subtotal_linea = subtotal;
+                                        newItems[index].iva_linea = iva;
+                                        newItems[index].total_linea = subtotal + iva;
+                                        setPedidos(pedidos.map(p =>
+                                          p.pedido_uid === pedido.pedido_uid ? { ...p, items: newItems } : p
+                                        ));
+                                      }}
+                                    >
+                                      +
+                                    </Button>
+                                  </div>
                                 ) : (
                                   item.cantidad
                                 )}
@@ -3824,7 +4059,7 @@ const TabGestionarPedidos: React.FC<{
                               <td className="p-2 text-right">{formatMoney(item.iva_linea)}</td>
                               <td className="p-2 text-right font-semibold">{formatMoney(item.total_linea)}</td>
                               <td className="p-2 text-left">
-                                {pedido.fecha_envio ? formatDate(pedido.fecha_envio) : 'No asignada'}
+                                {pedido.fecha_envio ? formatDateOnly(pedido.fecha_envio) : 'No asignada'}
                               </td>
                               {pedidoEditando === pedido.pedido_uid && (
                                 <td className="p-2 text-center">
@@ -3907,7 +4142,7 @@ const TabGestionarPedidos: React.FC<{
                       <div><strong>Pedido UID:</strong> {pedido.pedido_uid}</div>
                       <div><strong>Empleado:</strong> {pedido.empleado?.nombre || 'N/A'}</div>
                       <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
-                      <div><strong>Fecha Envío:</strong> {formatDate(pedido.fecha_envio) || 'No asignada'}</div>
+                      <div><strong>Fecha Envío:</strong> {formatDateOnly(pedido.fecha_envio) || 'No asignada'}</div>
                       <div><strong>Total:</strong> {formatMoney(pedido.total)}</div>
                       <div><strong>Items:</strong> {pedido.items?.length || 0}</div>
                       {pedido.aprobado_por && (
@@ -3931,6 +4166,10 @@ const TabGestionarPedidos: React.FC<{
                             {(!pedido.comunidad?.direccion && !pedido.comunidad?.codigo_postal && !pedido.comunidad?.localidad && !pedido.comunidad?.provincia) && 'No especificada'}
                           </span>
                         )}
+                      </div>
+                      <div className="col-span-2">
+                        <strong>📞 Teléfono (envío):</strong>{' '}
+                        <span>{(pedido as { telefono_entrega?: string }).telefono_entrega || 'No especificado'}</span>
                       </div>
                     </div>
                     
@@ -5896,9 +6135,7 @@ const TabNotas: React.FC<{
   // Obține URL-ul complet pentru o poză
   const getImagenUrl = (rutaArchivo: string) => {
     if (rutaArchivo.startsWith('http')) return rutaArchivo;
-    const baseUrl = import.meta.env.DEV 
-      ? 'http://localhost:3000' 
-      : 'https://api.decaminoservicios.com';
+    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
     return `${baseUrl}${rutaArchivo}`;
   };
 
@@ -6136,9 +6373,7 @@ const BannerNotasInstrucciones: React.FC = () => {
   // Obține URL-ul complet pentru o poză
   const getImagenUrl = (rutaArchivo: string) => {
     if (rutaArchivo.startsWith('http')) return rutaArchivo;
-    const baseUrl = import.meta.env.DEV 
-      ? 'http://localhost:3000' 
-      : 'https://api.decaminoservicios.com';
+    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
     return `${baseUrl}${rutaArchivo}`;
   };
 

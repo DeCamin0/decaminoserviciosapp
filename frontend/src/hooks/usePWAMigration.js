@@ -1,4 +1,12 @@
 import { useEffect } from 'react';
+import { config } from '../config/env';
+
+/** Production host from env (EXTERNAL_SITE_URL); no hardcoded domain. */
+const getProductionHost = () => {
+  const u = config.EXTERNAL_SITE_URL || '';
+  if (!u) return '';
+  try { return new URL(u).hostname; } catch { return ''; }
+};
 
 /**
  * Hook pentru migrarea automată PWA de la rădăcină la /app
@@ -7,28 +15,23 @@ import { useEffect } from 'react';
 export const usePWAMigration = () => {
   useEffect(() => {
     const handlePWAMigration = () => {
-      // Detectează dacă rulează ca PWA
-      const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
                     window.navigator.standalone === true;
-      
-      // Detectează dacă e pe domain-ul de producție
-      const isProduction = window.location.hostname.includes('decaminoservicios.com');
+      const prodHost = getProductionHost();
+      const isProduction = prodHost ? window.location.hostname === prodHost : false;
       
       // Detectează dacă e pe rădăcină (nu pe /app)
       const isOnRoot = window.location.pathname === '/' || 
                        window.location.pathname === '/index.html';
       
-      console.log('🔍 PWA Migration Check:', {
-        isPWA,
-        isProduction,
-        isOnRoot,
-        currentPath: window.location.pathname
-      });
+      if (import.meta.env.DEV) {
+        console.debug('PWA Migration Check:', { isPWA, isProduction, isOnRoot, currentPath: window.location.pathname });
+      }
       
       // Nou: nu mai redirecționăm PWA-ul către /app, aplicația rulează în root
       // Păstrăm doar logging-ul pentru diagnostic
-      if (isPWA && isProduction && isOnRoot) {
-        console.log('ℹ️ PWA Migration disabled: app serves from root "/"');
+      if (import.meta.env.DEV && isPWA && isProduction && isOnRoot) {
+        console.debug('PWA Migration disabled: app serves from root "/"');
       }
     };
 
@@ -59,8 +62,8 @@ export const usePWAMigrationNotification = () => {
       const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
                     window.navigator.standalone === true;
       
-      const isProduction = window.location.hostname.includes('decaminoservicios.com');
-      
+      const prodHost = getProductionHost();
+      const isProduction = prodHost ? window.location.hostname === prodHost : false;
       const hasMigrated = sessionStorage.getItem('pwa-migrated');
       
       if (isPWA && isProduction && !hasMigrated) {

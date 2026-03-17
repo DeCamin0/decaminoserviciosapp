@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
+import { config } from '../config/env';
 import {
   ArrowLeft,
   Calendar,
@@ -225,9 +226,7 @@ const ComunicadoDetailPage = () => {
     setShowFilePreview(true);
 
     try {
-      const BASE_URL = import.meta.env.DEV
-        ? 'http://localhost:3000'
-        : 'https://api.decaminoservicios.com';
+      const BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       
       const downloadUrl = `${BASE_URL}/api/comunicados/${id}/download`;
       const token = localStorage.getItem('auth_token');
@@ -475,7 +474,7 @@ const ComunicadoDetailPage = () => {
                     Ver preview
                   </button>
                   <a
-                    href={`${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/comunicados/${id}/download`}
+                    href={`${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/comunicados/${id}/download`}
                     download={comunicado.nombre_archivo}
                     className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
                     onClick={(e) => {
@@ -484,7 +483,7 @@ const ComunicadoDetailPage = () => {
                       if (token) {
                         e.preventDefault();
                         fetch(
-                          `${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/comunicados/${id}/download`,
+                          `${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/comunicados/${id}/download`,
                           {
                             headers: {
                               Authorization: `Bearer ${token}`,

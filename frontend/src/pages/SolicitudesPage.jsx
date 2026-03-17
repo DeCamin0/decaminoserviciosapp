@@ -23,10 +23,11 @@ import activityLogger from '../utils/activityLogger';
 import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import { config } from '../config/env.js';
+import { getPdfMake } from '../utils/getPdfMake';
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
-const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+// Branding din config (multi-client)
+const rawColor = config.PRIMARY_COLOR || '#CC0000';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
 const MONTHS = [
@@ -2019,7 +2020,7 @@ export default function SolicitudesPage() {
     if (cached && editingSolicitud === null && (Date.now() - cached.timestamp) < CACHE_DURATION) {
       console.log('✅ Using cached occupied dates for:', cacheKey);
       setOccupiedDates(cached.occupiedDates);
-      setDateAvailability(cached.dateAvailability);
+      setDateAvailability(prev => ({ ...prev, ...(cached.dateAvailability || {}) }));
       return;
     }
     
@@ -2143,7 +2144,7 @@ export default function SolicitudesPage() {
                   isManager: isManager
                 });
                 const availability = calculateDateAvailability(allSolicitudesData, usersData, year, month);
-                setDateAvailability(availability);
+                setDateAvailability(prev => ({ ...prev, ...availability }));
                 console.log('🔍 Calculated date availability:', availability);
                 return; // Exit early after setting availability
               }
@@ -2245,7 +2246,7 @@ export default function SolicitudesPage() {
             }
             
             const availability = calculateDateAvailability(allSolicitudesData, allUsers, year, month);
-            setDateAvailability(availability);
+            setDateAvailability(prev => ({ ...prev, ...availability }));
             console.log('🔍 Calculated date availability:', availability);
             console.log('🔍 Using solicitudes data:', allSolicitudesData.length, 'requests');
             
@@ -2274,7 +2275,12 @@ export default function SolicitudesPage() {
             }
           }
         } else {
-          setDateAvailability({});
+          setDateAvailability(prev => {
+            const next = { ...prev };
+            const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+            Object.keys(next).forEach(k => { if (k.startsWith(monthPrefix)) delete next[k]; });
+            return next;
+          });
           // Salvează în cache și pentru cazul când nu există disponibilitate
           if (editingSolicitud === null) {
             occupiedDatesCacheRef.current.set(cacheKey, {
@@ -2344,6 +2350,30 @@ export default function SolicitudesPage() {
       }
     }
   }, [editingSolicitud, tipo, calendarYear, calendarMonth, allUsers, loadOccupiedDates]);
+
+  // Cargar disponibilidad para todos los meses del rango seleccionado (Vacaciones / Asuntos Propios)
+  // para poder validar que no se incluyan días ocupados al enviar
+  useEffect(() => {
+    if (editingSolicitud !== null) return;
+    if (tipo !== 'Vacaciones' && tipo !== 'Asunto Propio' && tipo !== 'Asuntos Propios') return;
+    if (!fechaInicio || !fechaFin || !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin)) return;
+    const [y1, m1, d1] = fechaInicio.split('-').map(Number);
+    const [y2, m2, d2] = fechaFin.split('-').map(Number);
+    const start = new Date(y1, m1 - 1, d1);
+    const end = new Date(y2, m2 - 1, d2);
+    if (end < start) return;
+    const monthsToLoad = new Set();
+    const cur = new Date(start);
+    while (cur <= end) {
+      monthsToLoad.add(`${cur.getFullYear()}-${cur.getMonth()}`);
+      cur.setMonth(cur.getMonth() + 1);
+      cur.setDate(1);
+    }
+    monthsToLoad.forEach(key => {
+      const [y, m] = key.split('-').map(Number);
+      loadOccupiedDates(y, m);
+    });
+  }, [tipo, fechaInicio, fechaFin, editingSolicitud, loadOccupiedDates]);
 
   // Demo solicitudes data
   const setDemoSolicitudes = useCallback(() => {
@@ -2460,7 +2490,7 @@ export default function SolicitudesPage() {
           if (!codigo && !email) return;
 
           // Caută documente cu tipo_documento = 'Baja Voluntaria' pentru acest angajat
-          const documentosUrl = `${routes.getDocumentos || (import.meta.env.DEV ? 'http://localhost:3000/api/documentos' : 'https://api.decaminoservicios.com/api/documentos')}${codigo ? `?empleadoId=${codigo}` : email ? `?email=${encodeURIComponent(email)}` : ''}`;
+          const documentosUrl = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${codigo}` : email ? `?email=${encodeURIComponent(email)}` : ''}`;
           
           const response = await fetch(documentosUrl, {
             method: 'GET',
@@ -2826,7 +2856,7 @@ export default function SolicitudesPage() {
         headers: {
           'Content-Type': 'application/json',
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
           'X-Client-Type': 'web-browser',
           'User-Agent': 'DeCamino-Web-Client/1.0',
         },
@@ -4361,6 +4391,22 @@ export default function SolicitudesPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // No permitir rango que incluya días sin disponibilidad (ocupados / bloqueados)
+    if (editingSolicitud === null && (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios')) {
+      const check = new Date(start);
+      check.setHours(0, 0, 0, 0);
+      const endCheck = new Date(end);
+      endCheck.setHours(0, 0, 0, 0);
+      while (check <= endCheck) {
+        const dateStr = check.toISOString().split('T')[0];
+        if (dateAvailability[dateStr]?.isFull) {
+          setErrorMsg('El rango seleccionado incluye días sin disponibilidad (ocupados por otras solicitudes o bloqueados). Por favor, elige solo días disponibles.');
+          return false;
+        }
+        check.setDate(check.getDate() + 1);
+      }
+    }
+
     // Calculează zilele din solicitarea originală dacă se editează
     let originalDays = 0;
     if (editingSolicitud !== null && originalSolicitudData) {
@@ -4536,9 +4582,7 @@ export default function SolicitudesPage() {
     try {
       setOperationLoading('preview', true);
       const token = localStorage.getItem('auth_token');
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const response = await fetch(`${endpoint}/baja-voluntaria/${solicitud.id}/preview-pdf`, {
         method: 'GET',
@@ -4572,9 +4616,7 @@ export default function SolicitudesPage() {
     try {
       setOperationLoading('approve', true);
       const token = localStorage.getItem('auth_token');
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const data = {
         accion: 'update',
@@ -4622,9 +4664,7 @@ export default function SolicitudesPage() {
     try {
       setOperationLoading('reject', true);
       const token = localStorage.getItem('auth_token');
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const data = {
         accion: 'update',
@@ -4673,9 +4713,7 @@ export default function SolicitudesPage() {
     try {
       setOperationLoading('approve-permiso', true);
       const token = localStorage.getItem('auth_token');
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const data = {
         accion: 'update',
@@ -4729,9 +4767,7 @@ export default function SolicitudesPage() {
     try {
       setOperationLoading('reject-permiso', true);
       const token = localStorage.getItem('auth_token');
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const data = {
         accion: 'update',
@@ -4849,9 +4885,7 @@ export default function SolicitudesPage() {
 
     try {
       // Folosește backend-ul nou pentru create/update
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const result = await callApi(endpoint, {
         method: 'POST',
@@ -5026,9 +5060,7 @@ export default function SolicitudesPage() {
     console.log('📤 [Manager] Creando solicitud para empleado:', data);
 
     try {
-      const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-        ? 'http://localhost:3000/api/solicitudes'
-        : 'https://api.decaminoservicios.com/api/solicitudes');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
       
       const result = await callApi(endpoint, {
         method: 'POST',
@@ -5392,23 +5424,7 @@ export default function SolicitudesPage() {
 
   const handleExportPDF = async () => {
     try {
-      // Încarcă pdfMake dinamic
-      const ensurePdfMake = () => new Promise((resolve, reject) => {
-        if (window.pdfMake) return resolve(window.pdfMake);
-        const s1 = document.createElement('script');
-        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-        s1.onload = () => {
-          const s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-          s2.onload = () => resolve(window.pdfMake);
-          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
-          document.head.appendChild(s2);
-        };
-        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
-        document.head.appendChild(s1);
-      });
-
-      await ensurePdfMake();
+      const pdfMake = await getPdfMake();
 
       const dataToExport = canAccessAllTabs ? getFilteredSolicitudes : solicitudes;
       
@@ -5601,11 +5617,11 @@ export default function SolicitudesPage() {
             table: {
               widths: ['*'],
               body: [
-                [{ text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
-                [{ text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`, style: 'companyDetails' }],
-                [{ text: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'}`, style: 'companyDetails' }],
-                [{ text: `Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`, style: 'companyDetails' }]
+                [{ text: config.COMPANY_NAME, style: 'companyName' }],
+                [{ text: `NIF: ${config.COMPANY_CIF}`, style: 'companyDetails' }],
+                [{ text: config.COMPANY_ADDRESS, style: 'companyDetails' }],
+                [{ text: `Teléfono: ${config.COMPANY_PHONE}`, style: 'companyDetails' }],
+                [{ text: `Email: ${config.COMPANY_EMAIL}`, style: 'companyDetails' }]
               ]
             },
             layout: 'noBorders',
@@ -5691,7 +5707,7 @@ export default function SolicitudesPage() {
 
       filename += '.pdf';
 
-      window.pdfMake.createPdf(docDefinition).download(filename);
+      pdfMake.createPdf(docDefinition).download(filename);
 
       // Log export-ul de date
       await activityLogger.logDataExport('solicitudes_pdf', {
@@ -5981,9 +5997,7 @@ export default function SolicitudesPage() {
         console.log('TRIMIT DELETE:', data);
         
         // Folosește backend-ul nou pentru delete
-        const endpoint = routes.getSolicitudesByEmail || (import.meta.env.DEV
-          ? 'http://localhost:3000/api/solicitudes'
-          : 'https://api.decaminoservicios.com/api/solicitudes');
+        const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
         
         result = await callApi(endpoint, {
           method: 'POST',
@@ -8639,7 +8653,7 @@ export default function SolicitudesPage() {
                             {(() => {
                               const documento = bajaVoluntariaDocumentos.get(item.id);
                               if (documento) {
-                                const downloadUrl = `${routes.downloadDocumento || (import.meta.env.DEV ? 'http://localhost:3000/api/documentos/download' : 'https://api.decaminoservicios.com/api/documentos/download')}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
+                                const downloadUrl = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
                                 return (
                                   <div className="bg-indigo-50 p-4 rounded-lg group-hover:bg-indigo-100 transition-colors duration-300 border border-indigo-200 col-span-full">
                                     <span className="block text-xs font-medium text-indigo-700 mb-2">📄 Documento firmado</span>

@@ -9,7 +9,8 @@ declare global {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+import { config } from '../../config/env';
+const API_BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '/api';
 
 interface ApiResponse<T> {
   data: T;

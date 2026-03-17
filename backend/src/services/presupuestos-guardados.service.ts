@@ -4,6 +4,7 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -33,10 +34,11 @@ function servicioNombreTexto(nombre: unknown): string {
   return s;
 }
 
-/** Siempre guardar en formato: DE CAMINO - PRESUPUESTO YYYY - cliente - servicios */
+/** Formato: "{prefix} - PRESUPUESTO YYYY - cliente - servicios". prefix din company.legalNameShort (Decamino/HERA). */
 function buildNombrePresupuesto(
   clienteNombre: string | null | undefined,
   payload: Record<string, unknown>,
+  prefix: string = 'DE CAMINO',
 ): string {
   const year = new Date().getFullYear();
   const clientePart = (clienteNombre || '').trim() || 'Cliente';
@@ -47,14 +49,18 @@ function buildNombrePresupuesto(
     servicios.length > 0
       ? servicios.map((s) => servicioNombreTexto(s?.nombre)).join(', ')
       : 'Servicios';
-  return `DE CAMINO - PRESUPUESTO ${year} - ${clientePart} - ${serviciosPart}`;
+  const p = (prefix && String(prefix).trim()) || 'DE CAMINO';
+  return `${p} - PRESUPUESTO ${year} - ${clientePart} - ${serviciosPart}`;
 }
 
 @Injectable()
 export class PresupuestosGuardadosService {
   private readonly logger = new Logger(PresupuestosGuardadosService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async findAll(): Promise<PresupuestoGuardadoDto[]> {
     const rows = await this.prisma.presupuestos_guardados.findMany({
@@ -140,7 +146,14 @@ export class PresupuestosGuardadosService {
     if (!dto.payload || typeof dto.payload !== 'object') {
       throw new BadRequestException('El payload del presupuesto es requerido');
     }
-    const nombre = buildNombrePresupuesto(dto.cliente_nombre, dto.payload);
+    const companyPrefix =
+      (this.configService.get('company') as any)?.legalNameShort?.trim() ||
+      'DE CAMINO';
+    const nombre = buildNombrePresupuesto(
+      dto.cliente_nombre,
+      dto.payload,
+      companyPrefix,
+    );
     const row = await this.prisma.presupuestos_guardados.create({
       data: {
         nombre,
@@ -195,7 +208,14 @@ export class PresupuestosGuardadosService {
       dto.cliente_nombre !== undefined
         ? dto.cliente_nombre
         : existing.cliente_nombre;
-    const nombre = buildNombrePresupuesto(clienteNombre, payload);
+    const companyPrefix =
+      (this.configService.get('company') as any)?.legalNameShort?.trim() ||
+      'DE CAMINO';
+    const nombre = buildNombrePresupuesto(
+      clienteNombre,
+      payload,
+      companyPrefix,
+    );
     const row = await this.prisma.presupuestos_guardados.update({
       where: { id },
       data: {

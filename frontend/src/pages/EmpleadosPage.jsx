@@ -18,10 +18,11 @@ import activityLogger from '../utils/activityLogger';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
 import CorregirNombresTab from '../components/employees/CorregirNombresTab';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import { config } from '../config/env.js';
+import { getPdfMake } from '../utils/getPdfMake';
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
-const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+// Branding din config (multi-client)
+const rawColor = config.PRIMARY_COLOR || '#CC0000';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
 // Funcție helper pentru transformare automată în majuscule
@@ -689,7 +690,7 @@ export default function EmpleadosPage() {
   const [addForm, setAddForm] = useState(() => ({
     ...Object.fromEntries(SHEET_FIELDS.map(f => [f, ''])),
     CODIGO: generateCodigo(),
-    EMPRESA: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
+    EMPRESA: config.COMPANY_NAME,
     ESTADO: 'PENDIENTE', // Default pentru angajați noi
     DerechoPedidos: 'NO',
     TrabajaFestivos: 'NO',
@@ -813,6 +814,11 @@ export default function EmpleadosPage() {
   const [showCreateGrupoModal, setShowCreateGrupoModal] = useState(false);
   const [newGrupoNombre, setNewGrupoNombre] = useState('');
   const [creatingGrupo, setCreatingGrupo] = useState(false);
+
+  // State pentru modal-ul de creare tip de contract nou
+  const [showCreateContractTypeModal, setShowCreateContractTypeModal] = useState(false);
+  const [newContractTypeNombre, setNewContractTypeNombre] = useState('');
+  const [creatingContractType, setCreatingContractType] = useState(false);
 
   // Estado para email
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -1280,6 +1286,62 @@ export default function EmpleadosPage() {
       return nuevoGrupo;
     } finally {
       setCreatingGrupo(false);
+    }
+  };
+
+  // Creare tip de contract nou (persistat în backend)
+  const createContractType = async (nombre) => {
+    const nuevoTipo = (nombre || '').trim();
+    if (!nuevoTipo) return null;
+    setCreatingContractType(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.getContractTypes, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ tipo: nuevoTipo }),
+      });
+      const data = await response.json();
+      if (data.success === false || data.error) {
+        throw new Error(data.error || 'Error al crear tipo de contrato');
+      }
+      if (!response.ok) throw new Error('Error de red');
+      await fetchContractTypes();
+      setEditForm(prev => ({ ...prev, 'TIPO DE CONTRATO': nuevoTipo }));
+      setAddForm(prev => ({ ...prev, 'TIPO DE CONTRATO': nuevoTipo }));
+      setShowCreateContractTypeModal(false);
+      setNewContractTypeNombre('');
+      return nuevoTipo;
+    } finally {
+      setCreatingContractType(false);
+    }
+  };
+
+  const handleCreateContractType = async () => {
+    if (!newContractTypeNombre.trim()) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Escribe el nombre del tipo de contrato',
+      });
+      return;
+    }
+    try {
+      await createContractType(newContractTypeNombre.trim());
+      setNotification({
+        type: 'success',
+        title: 'Tipo de contrato creado',
+        message: `"${newContractTypeNombre.trim()}" se ha añadido correctamente`,
+      });
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'No se pudo crear el tipo de contrato.',
+      });
     }
   };
 
@@ -1781,7 +1843,7 @@ export default function EmpleadosPage() {
       setAddForm({
         ...Object.fromEntries(SHEET_FIELDS.map(f => [f, ''])),
         CODIGO: generateCodigo(),
-        EMPRESA: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
+        EMPRESA: config.COMPANY_NAME,
         ESTADO: 'PENDIENTE', // Default pentru angajați noi
         DerechoPedidos: 'NO',
         TrabajaFestivos: 'NO',
@@ -1821,7 +1883,7 @@ export default function EmpleadosPage() {
       const fetchHeaders = {
         'Content-Type': 'application/json',
         'X-App-Source': 'DeCamino-Web-App',
-        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+        'X-App-Version': config.APP_VERSION,
         'X-Client-Type': 'web-browser',
         'User-Agent': 'DeCamino-Web-Client/1.0',
       };
@@ -2232,9 +2294,7 @@ export default function EmpleadosPage() {
       // Fetch toate bajas medicas din Mutua
       let allBajasMedicas = [];
       try {
-        const baseUrl = import.meta.env.DEV 
-          ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
         const token = localStorage.getItem('auth_token');
         const url = `${baseUrl}/api/bajas-medicas`; // Fără codigo pentru a obține toate
         
@@ -2336,15 +2396,13 @@ export default function EmpleadosPage() {
         throw new Error('No estás autenticado');
       }
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
 
       const formData = new FormData();
       formData.append('recipientType', 'gestoria');
-      formData.append('recipientEmail', 'mdelosangeles@ancaraconsulting.es');
+      formData.append('recipientEmail', config.COMPANY_GESTORIA_EMAIL || config.COMPANY_EMAIL || '');
       formData.append('subject', `Lista de Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
-      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL'}</strong></p>`);
+      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${config.COMPANY_NAME}</strong></p>`);
       formData.append('attachments', excelFile);
 
       setNotification({
@@ -2471,9 +2529,7 @@ export default function EmpleadosPage() {
         throw new Error('No estás autenticado');
       }
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
 
       // Trimite la gestorie (default: altemprado@gmail.com)
       // BCC-urile automat adăugate sunt: app@decaminoservicios.com și decamino.rrhh@gmail.com
@@ -2481,7 +2537,7 @@ export default function EmpleadosPage() {
       formData.append('recipientType', 'gestoria');
       // Nu specificăm recipientEmail pentru a folosi default-ul gestoriei: altemprado@gmail.com
       formData.append('subject', `Lista de IBAN - Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
-      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de IBAN de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>`);
+      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de IBAN de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${config.COMPANY_NAME}</strong></p>`);
       formData.append('attachments', excelFile);
 
       setNotification({
@@ -2566,7 +2622,7 @@ export default function EmpleadosPage() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
         },
       });
 
@@ -2647,7 +2703,7 @@ export default function EmpleadosPage() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
         },
       });
 
@@ -2701,23 +2757,7 @@ export default function EmpleadosPage() {
 
   const handleExportPDF = async () => {
     try {
-      // Încarcă pdfMake dinamic
-      const ensurePdfMake = () => new Promise((resolve, reject) => {
-        if (window.pdfMake) return resolve(window.pdfMake);
-        const s1 = document.createElement('script');
-        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-        s1.onload = () => {
-          const s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-          s2.onload = () => resolve(window.pdfMake);
-          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
-          document.head.appendChild(s2);
-        };
-        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
-        document.head.appendChild(s1);
-      });
-
-      await ensurePdfMake();
+      const pdfMake = await getPdfMake();
 
       // Folosește întotdeauna getFilteredUsers pentru a respecta toate filtrele (searchTerm, searchBy, statusFilter)
       const dataToExport = getFilteredUsers;
@@ -2811,11 +2851,11 @@ export default function EmpleadosPage() {
             table: {
               widths: ['*'],
               body: [
-                [{ text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
-                [{ text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`, style: 'companyDetails' }],
-                [{ text: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'}`, style: 'companyDetails' }],
-                [{ text: `Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`, style: 'companyDetails' }]
+                [{ text: config.COMPANY_NAME, style: 'companyName' }],
+                [{ text: `NIF: ${config.COMPANY_CIF}`, style: 'companyDetails' }],
+                [{ text: config.COMPANY_ADDRESS, style: 'companyDetails' }],
+                [{ text: `Teléfono: ${config.COMPANY_PHONE}`, style: 'companyDetails' }],
+                [{ text: `Email: ${config.COMPANY_EMAIL}`, style: 'companyDetails' }]
               ]
             },
             layout: 'noBorders',
@@ -2881,7 +2921,7 @@ export default function EmpleadosPage() {
         ? `empleados_busqueda_${searchTerm.toLowerCase().replace(/\s+/g, '_')}.pdf`
         : 'empleados.pdf';
 
-      window.pdfMake.createPdf(docDefinition).download(filename);
+      pdfMake.createPdf(docDefinition).download(filename);
 
       // Log export-ul de date
       await activityLogger.logDataExport('empleados_pdf', {
@@ -3445,9 +3485,7 @@ export default function EmpleadosPage() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const baseUrl = import.meta.env.DEV
-        ? 'http://localhost:3000'
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
 
       const formData = new FormData();
       formData.append('codigo', selectedUserForDespido.CODIGO);
@@ -5189,25 +5227,39 @@ export default function EmpleadosPage() {
                       <option value="SI">✅ SI</option>
                     </select>
                   ) : field === 'TIPO DE CONTRATO' ? (
-                    <select
-                      id={fieldId}
-                      name={field}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
-                      value={addForm[field] || ''}
-                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
-                      disabled={isOperationLoading('contractTypes')}
-                    >
-                      <option value="">Seleccionar tipo de contrato...</option>
-                      {isOperationLoading('contractTypes') ? (
-                        <option value="" disabled>Cargando tipos...</option>
-                      ) : (
-                        contractTypes.map((contractType) => (
-                          <option key={contractType.id} value={contractType.tipo}>
-                            {contractType.tipo}
-                          </option>
-                        ))
-                      )}
-                    </select>
+                    <div className="relative">
+                      <select
+                        id={fieldId}
+                        name={field}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                        value={addForm[field] || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__CREATE_NEW__') {
+                            setShowCreateContractTypeModal(true);
+                            e.target.value = addForm[field] || '';
+                          } else {
+                            setAddForm(prev => ({ ...prev, [field]: e.target.value }));
+                          }
+                        }}
+                        disabled={isOperationLoading('contractTypes')}
+                      >
+                        <option value="">Seleccionar tipo de contrato...</option>
+                        {isOperationLoading('contractTypes') ? (
+                          <option value="" disabled>Cargando tipos...</option>
+                        ) : (
+                          <>
+                            {contractTypes.map((contractType) => (
+                              <option key={contractType.id} value={contractType.tipo}>
+                                {contractType.tipo}
+                              </option>
+                            ))}
+                            <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
+                              ➕ Agregar nuevo tipo de contrato...
+                            </option>
+                          </>
+                        )}
+                      </select>
+                    </div>
                   ) : field === 'HORAS DE CONTRATO' ? (
                     <select
                       id={fieldId}
@@ -6667,7 +6719,7 @@ export default function EmpleadosPage() {
                     name={field}
                     type="text"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 cursor-not-allowed"
-                    value={editForm[field] || (import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL')}
+                    value={editForm[field] || (config.COMPANY_NAME)}
                     readOnly={true}
                     placeholder="empresa (solo lectura)"
                   />
@@ -6872,25 +6924,39 @@ export default function EmpleadosPage() {
                     )}
                   </div>
                 ) : field === 'TIPO DE CONTRATO' ? (
-                  <select
-                    id={fieldId}
-                    name={field}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
-                    value={editForm[field] || ''}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
-                    disabled={isOperationLoading('contractTypes')}
-                  >
-                    <option value="">Seleccionar tipo de contrato...</option>
-                    {isOperationLoading('contractTypes') ? (
-                      <option value="" disabled>Cargando tipos...</option>
-                    ) : (
-                      contractTypes.map((contractType) => (
-                        <option key={contractType.id} value={contractType.tipo}>
-                          {contractType.tipo}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  <div className="relative">
+                    <select
+                      id={fieldId}
+                      name={field}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                      value={editForm[field] || ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__CREATE_NEW__') {
+                          setShowCreateContractTypeModal(true);
+                          e.target.value = editForm[field] || '';
+                        } else {
+                          setEditForm(prev => ({ ...prev, [field]: e.target.value }));
+                        }
+                      }}
+                      disabled={isOperationLoading('contractTypes')}
+                    >
+                      <option value="">Seleccionar tipo de contrato...</option>
+                      {isOperationLoading('contractTypes') ? (
+                        <option value="" disabled>Cargando tipos...</option>
+                      ) : (
+                        <>
+                          {contractTypes.map((contractType) => (
+                            <option key={contractType.id} value={contractType.tipo}>
+                              {contractType.tipo}
+                            </option>
+                          ))}
+                          <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
+                            ➕ Agregar nuevo tipo de contrato...
+                          </option>
+                        </>
+                      )}
+                    </select>
+                  </div>
                 ) : field === 'HORAS DE CONTRATO' ? (
                   <select
                     id={fieldId}
@@ -8386,6 +8452,58 @@ export default function EmpleadosPage() {
               disabled={!newGrupoNombre.trim() || creatingGrupo}
             >
               {creatingGrupo ? 'Creando...' : 'Crear grupo'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal para agregar nuevo tipo de contrato */}
+      <Modal
+        isOpen={showCreateContractTypeModal}
+        onClose={() => {
+          setShowCreateContractTypeModal(false);
+          setNewContractTypeNombre('');
+        }}
+        title="Agregar nuevo tipo de contrato"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Nombre del tipo de contrato
+            </label>
+            <Input
+              type="text"
+              value={newContractTypeNombre}
+              onChange={(e) => setNewContractTypeNombre(e.target.value)}
+              placeholder="Ej: Indefinido, Temporal, 40 horas..."
+              className="w-full"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newContractTypeNombre.trim() && !creatingContractType) {
+                  handleCreateContractType();
+                }
+              }}
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCreateContractTypeModal(false);
+                setNewContractTypeNombre('');
+              }}
+              disabled={creatingContractType}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleCreateContractType}
+              loading={creatingContractType}
+              disabled={!newContractTypeNombre.trim() || creatingContractType}
+            >
+              {creatingContractType ? 'Creando...' : 'Crear tipo de contrato'}
             </Button>
           </div>
         </div>

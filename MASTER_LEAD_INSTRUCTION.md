@@ -108,6 +108,23 @@
 
 ---
 
+## 3.1) Multi-Client — două baze de date (DECAMINO + HERA)
+
+**Regulă obligatorie (de acum înainte):**
+- **Migrațiile** (SQL sau Prisma) se aplică **pe ambele baze de date**: Decamino și HERA.
+- **Modificările** care afectează schema (coloane, tabele, scripturi de migrare) se fac **identic pe ambele**.
+- Nu facem niciodată o migrare sau o schimbare de structură doar pe o singură bază.
+
+**Cum:**
+- **Decamino**: `.env.decamino.local` → `decamino_db` (sau DB_NAME din acel env).
+- **HERA**: `.env.hera.local` → `hera_facility_db` (sau DB_NAME din acel env).
+- Pentru scripturi Node (ex. `backend/scripts/run-*-migration.js`): rulează scriptul de două ori, o dată cu fiecare env (ex. `node scripts/run-horario-telefono-entrega-migration.js .env.decamino.local` și același cu `.env.hera.local`), sau documentează în script/comentarii că trebuie rulate pe ambele.
+- La orice migrare nouă: indic în raport/comentariu că trebuie aplicată pe **ambele** baze și cum (comenzi exacte sau script cu parametru env).
+
+**Referință env:** `docs/ENV_VARIABLES_REPORT.md` — structură per client (backend/frontend).
+
+---
+
 ## 4) Arhitectură Actuală (Stare Reală - Ianuarie 2025)
 
 ### Frontend (`frontend/`)

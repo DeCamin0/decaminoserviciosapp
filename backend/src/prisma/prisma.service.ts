@@ -11,23 +11,23 @@ export class PrismaService
     super({
       datasources: {
         db: {
+          // Mereu din ConfigService (baza clientului curent), nu din process.env.DATABASE_URL – ca HERA să nu folosească niciodată decamino_db
           url: (() => {
-            const dbUrl = process.env.DATABASE_URL;
-            if (dbUrl) {
-              // Dacă DATABASE_URL există, asigură-te că are charset=utf8mb4
-              if (!dbUrl.includes('charset=')) {
-                const separator = dbUrl.includes('?') ? '&' : '?';
-                return `${dbUrl}${separator}charset=utf8mb4`;
-              }
-              return dbUrl;
+            const db = configService?.get<{
+              host: string;
+              port: number;
+              username: string;
+              password: string;
+              database: string;
+            }>('database');
+            if (db) {
+              return `mysql://${db.username}:${encodeURIComponent(db.password)}@${db.host}:${db.port}/${db.database}?charset=utf8mb4`;
             }
-            // Build DATABASE_URL from separate env vars if not set
             const host = process.env.DB_HOST || 'localhost';
             const port = process.env.DB_PORT || '3306';
             const user = process.env.DB_USERNAME || 'root';
             const password = process.env.DB_PASSWORD || '';
             const database = process.env.DB_NAME || 'decaminoservicios';
-            // Adaugă charset=utf8mb4 pentru a păstra caracterele speciale UTF-8
             return `mysql://${user}:${encodeURIComponent(password)}@${host}:${port}/${database}?charset=utf8mb4`;
           })(),
         },

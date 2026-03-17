@@ -81,16 +81,16 @@ const SessionExpiredBanner = () => {
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-      {/* Backdrop cu blur */}
-      <div className="absolute inset-0 bg-gradient-to-br from-red-500/30 via-red-600/40 to-red-700/50 backdrop-blur-md animate-fade-in" />
+      {/* Backdrop cu blur – culori primary (client) */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary-500/30 via-primary-600/40 to-primary-700/50 backdrop-blur-md animate-fade-in" />
       
       {/* Modal container */}
       <div className="relative w-full max-w-md transform transition-all duration-500 ease-out animate-scale-in">
         {/* Glassmorphism card */}
-        <div className="relative overflow-hidden rounded-3xl bg-white/95 backdrop-blur-xl border-2 border-red-200 shadow-2xl">
+        <div className="relative overflow-hidden rounded-3xl bg-white/95 backdrop-blur-xl border-2 border-primary-100 shadow-2xl">
           {/* Animated gradient border pentru urgent */}
           {isUrgent && (
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-red-500 via-red-600 to-red-700 p-[2px] animate-pulse">
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-primary-500 via-primary-600 to-primary-700 p-[2px] animate-pulse">
               <div className="h-full w-full rounded-3xl bg-white/95 backdrop-blur-xl" />
             </div>
           )}
@@ -101,7 +101,7 @@ const SessionExpiredBanner = () => {
             <div className="flex items-center justify-center mb-6">
               <div className={`relative ${isUrgent ? 'animate-pulse' : ''}`}>
                 {/* Warning icon cu glow effect */}
-                <div className={`w-20 h-20 rounded-full ${isLoggingOut ? 'bg-gradient-to-br from-gray-500 to-gray-600' : 'bg-gradient-to-br from-red-500 to-red-600'} flex items-center justify-center shadow-lg`}>
+                <div className={`w-20 h-20 rounded-full ${isLoggingOut ? 'bg-gradient-to-br from-gray-500 to-gray-600' : 'bg-gradient-to-br from-primary-500 to-primary-600'} flex items-center justify-center shadow-lg`}>
                   {isLoggingOut ? (
                     <LogOut className="w-10 h-10 text-white" />
                   ) : (
@@ -110,7 +110,7 @@ const SessionExpiredBanner = () => {
                 </div>
                 {/* Glow effect */}
                 {!isLoggingOut && (
-                  <div className="absolute inset-0 rounded-full bg-red-500/30 blur-xl animate-ping" />
+                  <div className="absolute inset-0 rounded-full bg-primary-500/30 blur-xl animate-ping" />
                 )}
               </div>
             </div>
@@ -138,34 +138,34 @@ const SessionExpiredBanner = () => {
                 </div>
               ) : (
                 <div className="relative w-32 h-32">
-                  {/* Background circle */}
+                  {/* Background circle – primary cu opacitate */}
                   <svg className="w-32 h-32 transform -rotate-90" viewBox="0 0 100 100">
                     <circle
                       cx="50"
                       cy="50"
                       r="45"
-                      stroke="rgba(239, 68, 68, 0.2)"
                       strokeWidth="8"
                       fill="none"
+                      style={{ stroke: 'var(--primary-color)', strokeOpacity: 0.2 }}
                     />
-                    {/* Progress circle */}
+                    {/* Progress circle – culoare primary client */}
                     <circle
                       cx="50"
                       cy="50"
                       r="45"
-                      stroke={isUrgent ? '#ef4444' : '#f59e0b'}
                       strokeWidth="8"
                       fill="none"
                       strokeLinecap="round"
                       strokeDasharray={`${2 * Math.PI * 45}`}
                       strokeDashoffset={`${2 * Math.PI * 45 * (1 - progress / 100)}`}
                       className="transition-all duration-1000 ease-out"
+                      style={{ stroke: 'var(--primary-color-darker, var(--primary-color))' }}
                     />
                   </svg>
                   
                   {/* Countdown number */}
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className={`text-5xl font-bold ${isUrgent ? 'text-red-600' : 'text-gray-900'}`}>
+                    <span className={`text-5xl font-bold ${isUrgent ? 'text-primary-600' : 'text-gray-900'}`}>
                       {countdown}
                     </span>
                   </div>
@@ -203,9 +203,9 @@ const SessionExpiredBanner = () => {
                 <button
                   type="button"
                   onClick={handleLogoutNow}
-                  className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-500 to-red-600 px-8 py-4 text-white font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 ease-out"
+                  className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary-500 to-primary-600 px-8 py-4 text-white font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 ease-out"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-red-400 to-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-primary-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   <span className="relative flex items-center justify-center gap-2">
                     <LogOut className="w-5 h-5" />
                     Ir al inicio de sesión ahora

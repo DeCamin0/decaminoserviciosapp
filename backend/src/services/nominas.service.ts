@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 
@@ -29,6 +30,7 @@ export class NominasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -741,7 +743,7 @@ export class NominasService {
             <div class="footer">
               <p><strong>Atentamente,</strong></p>
               <p><strong>RRHH</strong></p>
-              <p><strong>DE CAMINO SERVICIOS AUXILIARES SL</strong></p>
+              <p><strong>${(this.configService.get('company') as any)?.legalName ?? 'DE CAMINO SERVICIOS AUXILIARES SL'}</strong></p>
             </div>
           </div>
         </body>

@@ -4,10 +4,9 @@ import { routes } from '../utils/routes';
 import Chatbot from 'react-chatbot-kit';
 import 'react-chatbot-kit/build/main.css';
 import './ChatBot.css';
+import { config } from '../config/env.js';
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
-const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#E53935';
+const rawColor = config.PRIMARY_COLOR || '#E53935';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
 // Helper functions pentru conversie culori
@@ -26,9 +25,6 @@ const rgbToHex = (r, g, b) => {
     return hex.length === 1 ? '0' + hex : hex;
   }).join('');
 };
-
-// Configurare pentru chatbot
-const botName = 'DeCamino AI Assistant';
 
 const ChatBot = () => {
   const { user } = useAuth();
@@ -632,15 +628,15 @@ const ChatBot = () => {
   };
 
   // Configurare pentru chatbot (mutat după definirea funcțiilor pentru a avea acces la handleDownload și messageActions)
-  const config = React.useMemo(() => ({
+  const chatbotConfig = React.useMemo(() => ({
     initialMessages: [
       {
         id: 1,
-        message: `¡Hola ${userName}! Soy el asistente AI de DeCamino. Estoy aquí para ayudarte con cualquier duda sobre la empresa, el equipo, los horarios o las estadísticas. Pregunta lo que necesites, pero por favor evita enviar spam o mensajes repetidos.`,
+        message: `¡Hola ${userName}! Soy el asistente AI de ${config.APP_NAME || config.COMPANY_NAME || 'la empresa'}. Estoy aquí para ayudarte con cualquier duda sobre la empresa, el equipo, los horarios o las estadísticas. Pregunta lo que necesites, pero por favor evita enviar spam o mensajes repetidos.`,
         trigger: 'user_input'
       }
     ],
-    botName: botName,
+    botName: config.APP_NAME ? `${config.APP_NAME} Asistente` : (config.COMPANY_NAME ? `${config.COMPANY_NAME} Asistente` : 'Asistente AI'),
     customStyles: {
       botMessageBox: {
         backgroundColor: PRIMARY_COLOR,
@@ -790,7 +786,7 @@ const ChatBot = () => {
           <div className="chatbot-header">
             <div>
               <div className="chatbot-title">
-                {botName}
+                {chatbotConfig.botName}
               </div>
               <div className="chatbot-subtitle">
                 Estoy aquí para ayudarte. Pregunta sobre horarios, fichajes o cualquier otro tema.
@@ -800,8 +796,8 @@ const ChatBot = () => {
               src={window.location.hostname.includes('ngrok') 
                 ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
                 : (() => {
-                    const basePath = import.meta.env.VITE_BASE_PATH || '/';
-                    const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+                    const basePath = config.BASE_PATH || '/';
+                    const logoPath = config.LOGO_PATH || 'logo.svg';
                     return `${basePath}${logoPath}`.replace(/\/+/g, '/');
                   })()
               }
@@ -815,7 +811,7 @@ const ChatBot = () => {
           
           <div className="chatbot-content">
             <Chatbot
-              config={config}
+              config={chatbotConfig}
               actionProvider={ActionProvider}
               messageParser={MessageParser}
             />

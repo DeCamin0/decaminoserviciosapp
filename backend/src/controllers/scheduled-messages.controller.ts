@@ -43,6 +43,9 @@ export class ScheduledMessagesController {
         startDate,
         endDate,
         sendTime,
+        recurrence,
+        recurrenceDayOfWeek,
+        recurrenceDayOfMonth,
       } = body;
 
       if (
@@ -75,6 +78,18 @@ export class ScheduledMessagesController {
           startDate: new Date(startDate),
           endDate: new Date(endDate),
           sendTime,
+          recurrence:
+            recurrence && ['daily', 'weekly', 'monthly'].includes(recurrence)
+              ? recurrence
+              : undefined,
+          recurrenceDayOfWeek:
+            recurrence === 'weekly' && recurrenceDayOfWeek != null
+              ? Number(recurrenceDayOfWeek)
+              : undefined,
+          recurrenceDayOfMonth:
+            recurrence === 'monthly' && recurrenceDayOfMonth != null
+              ? Number(recurrenceDayOfMonth)
+              : undefined,
           createdBy,
         });
 
@@ -433,6 +448,22 @@ export class ScheduledMessagesController {
       if (body.endDate !== undefined)
         updateData.endDate = new Date(body.endDate);
       if (body.sendTime !== undefined) updateData.sendTime = body.sendTime;
+      if (body.recurrence !== undefined) {
+        updateData.recurrence =
+          ['daily', 'weekly', 'monthly'].includes(body.recurrence) ?
+            body.recurrence :
+            null;
+      }
+      if (body.recurrenceDayOfWeek !== undefined)
+        updateData.recurrenceDayOfWeek =
+          body.recurrenceDayOfWeek != null
+            ? Number(body.recurrenceDayOfWeek)
+            : null;
+      if (body.recurrenceDayOfMonth !== undefined)
+        updateData.recurrenceDayOfMonth =
+          body.recurrenceDayOfMonth != null
+            ? Number(body.recurrenceDayOfMonth)
+            : null;
 
       const updated =
         await this.scheduledMessagesService.updateScheduledMessage(

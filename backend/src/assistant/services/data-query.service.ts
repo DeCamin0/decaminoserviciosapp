@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RbacService, AccessLevel } from './rbac.service';
 import { calculateCuadranteHours } from '../../utils/cuadrante-hours-helper';
@@ -12,6 +13,7 @@ export class DataQueryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbacService: RbacService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -519,34 +521,31 @@ export class DataQueryService {
 
     // Prisma nu suportă multiple statements, trebuie să folosim mysql2 direct
     try {
-      // Get database connection info from Prisma (same as MonthlyAlertsService)
-      const dbUrl =
-        process.env.DATABASE_URL ||
-        (() => {
-          const host = process.env.DB_HOST || 'localhost';
-          const port = parseInt(process.env.DB_PORT || '3306');
-          const user = process.env.DB_USERNAME || 'root';
-          const password = process.env.DB_PASSWORD || '';
-          const database = process.env.DB_NAME || 'decaminoservicios';
-          return { host, port, user, password, database };
-        })();
+      // Folosim ConfigService (baza clientului curent: DeCamino sau HERA), nu process.env.DATABASE_URL
+      const dbConfig = this.configService.get<{
+        host: string;
+        port: number;
+        username: string;
+        password: string;
+        database: string;
+      }>('database');
+      const connectionConfig = dbConfig
+        ? {
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.username,
+            password: dbConfig.password,
+            database: dbConfig.database,
+          }
+        : {
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '3306'),
+            user: process.env.DB_USERNAME || 'root',
+            password: process.env.DB_PASSWORD || '',
+            database: process.env.DB_NAME || 'decaminoservicios',
+          };
 
-      // Parse DATABASE_URL if it exists
-      let connectionConfig: any;
-      if (typeof dbUrl === 'string') {
-        const url = new URL(dbUrl);
-        connectionConfig = {
-          host: url.hostname,
-          port: parseInt(url.port || '3306'),
-          user: url.username,
-          password: decodeURIComponent(url.password),
-          database: url.pathname.slice(1),
-        };
-      } else {
-        connectionConfig = dbUrl;
-      }
-
-      // Create connection with multipleStatements enabled (same as MonthlyAlertsService)
+      // Create connection with multipleStatements enabled
       const connection = await mysql.createConnection({
         ...connectionConfig,
         multipleStatements: true,

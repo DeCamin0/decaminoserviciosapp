@@ -1,17 +1,16 @@
 import ExcelJS from 'exceljs';
+import { config } from '../config/env.js';
 
-// Company information - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
 const COMPANY_INFO = {
-  name: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL',
-  cif: import.meta.env.VITE_COMPANY_CIF || 'B85524536',
-  address: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España',
-  phone: import.meta.env.VITE_COMPANY_PHONE || '910 440 275',
-  email: import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'
+  name: config.COMPANY_NAME,
+  cif: config.COMPANY_CIF,
+  address: config.COMPANY_ADDRESS,
+  phone: config.COMPANY_PHONE,
+  email: config.COMPANY_EMAIL
 };
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-// Format: hex fără # (ex: "CC0000" sau "#CC0000" → "CC0000")
-const PRIMARY_COLOR = (import.meta.env.VITE_PRIMARY_COLOR || '#CC0000').replace('#', '');
+const rawPrimary = config.PRIMARY_COLOR || '#CC0000';
+const PRIMARY_COLOR = (rawPrimary.startsWith('#') ? rawPrimary : `#${rawPrimary}`).replace('#', '');
 const SECONDARY_COLOR = (import.meta.env.VITE_SECONDARY_COLOR || '#0066CC').replace('#', '');
 
 // Excel styling constants

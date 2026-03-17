@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
 import { EmailService } from './email.service';
@@ -11,7 +12,6 @@ import { DocumentosService } from './documentos.service';
 @Injectable()
 export class SolicitudesService {
   private readonly logger = new Logger(SolicitudesService.name);
-  private readonly EMAIL_RECIPIENT = 'solicitudes@decaminoservicios.com';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -22,7 +22,29 @@ export class SolicitudesService {
     private readonly empleadosService: EmpleadosService,
     private readonly bajaVoluntariaPdfService: BajaVoluntariaPdfService,
     private readonly documentosService: DocumentosService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getSolicitudesEmail(): string {
+    return (
+      this.configService.get<{ solicitudesEmail?: string }>('company')
+        ?.solicitudesEmail ?? ''
+    );
+  }
+
+  /** Email destinatar principal gestoria (baja, despido, etc.) – din COMPANY_GESTORIA_EMAIL sau COMPANY_EMAIL. */
+  private getGestoriaEmail(): string {
+    const c = this.configService.get<{ gestoriaEmail?: string; email?: string }>('company');
+    return ((c?.gestoriaEmail || c?.email) ?? '').trim();
+  }
+
+  private getCompanyName(): string {
+    const c = this.configService.get<{
+      legalNameShort?: string;
+      legalName?: string;
+    }>('company');
+    return (c?.legalNameShort ?? c?.legalName ?? '').trim();
+  }
 
   /**
    * Verifică dacă există un conflict de vacanțe pentru același grup+centru
@@ -115,6 +137,192 @@ export class SolicitudesService {
       );
       // În caz de eroare, nu blocăm - doar logăm
       return { hasConflict: false };
+    }
+  }
+
+  /** Normalizează numele grupului pentru regula de disponibilitate (aliniat cu frontend). */
+  private normalizeGroup(grupo: string | null | undefined): string {
+    if (!grupo || typeof grupo !== 'string') return '';
+    const t = grupo.trim();
+    if (t === 'Auxiliar De Servicios - L') return 'Limpiador';
+    return t;
+  }
+
+  /**
+   * Verifică dacă nici o zi din interval nu depășește capacitatea pentru Vacaciones (limită pe grup).
+   * Returnează { allowed: false, firstBadDate } dacă există cel puțin o zi fără disponibilitate.
+   */
+  private async checkVacacionesRangeAvailability(
+    codigo: string,
+    fechaInicio: string,
+    fechaFin: string,
+    excludeSolicitudId?: string,
+  ): Promise<{ allowed: boolean; firstBadDate?: string }> {
+    try {
+      const start = new Date(fechaInicio);
+      const end = new Date(fechaFin);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        return { allowed: true };
+      }
+
+      const empleadoQuery = `
+        SELECT \`GRUPO\` as grupo FROM DatosEmpleados
+        WHERE CODIGO = ${this.escapeSql(codigo)} LIMIT 1
+      `;
+      const empleadoResult =
+        await this.prisma.$queryRawUnsafe<any[]>(empleadoQuery);
+      if (!empleadoResult?.length) return { allowed: true };
+      const grupoEmpleado = this.normalizeGroup(empleadoResult[0].grupo);
+      if (!grupoEmpleado) return { allowed: true };
+
+      const groupSizeQuery = `
+        SELECT COUNT(*) as cnt FROM DatosEmpleados
+        WHERE (
+          CASE
+            WHEN TRIM(\`GRUPO\`) IN (${this.escapeSql('Limpiador')}, ${this.escapeSql('Auxiliar De Servicios - L')}) THEN ${this.escapeSql('Limpiador')}
+            ELSE TRIM(\`GRUPO\`)
+          END
+        ) = ${this.escapeSql(grupoEmpleado)}
+      `;
+      const sizeResult =
+        await this.prisma.$queryRawUnsafe<any[]>(groupSizeQuery);
+      const groupSize = Number(sizeResult?.[0]?.cnt) || 1;
+      const maxAllowed = Math.max(1, Math.ceil(groupSize * 0.15));
+
+      const excludeClause = excludeSolicitudId
+        ? `AND s.id != ${this.escapeSql(excludeSolicitudId)}`
+        : '';
+      const overlapQuery = `
+        SELECT s.id, s.fecha_inicio, s.fecha_fin, TRIM(de.\`GRUPO\`) as grupo
+        FROM solicitudes s
+        INNER JOIN DatosEmpleados de ON de.CODIGO = s.codigo
+        WHERE s.tipo = 'Vacaciones'
+          AND s.estado IN ('Aprobada', 'Pendiente')
+          AND s.fecha_inicio IS NOT NULL AND s.fecha_fin IS NOT NULL
+          AND s.fecha_inicio <= ${this.escapeSql(fechaFin)}
+          AND s.fecha_fin >= ${this.escapeSql(fechaInicio)}
+          ${excludeClause}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(overlapQuery);
+      if (!rows?.length) return { allowed: true };
+
+      const sameGroupRows = rows.filter((r) => this.normalizeGroup(r.grupo) === grupoEmpleado);
+      const dayCount: Record<string, number> = {};
+      for (const r of sameGroupRows) {
+        const a = new Date(r.fecha_inicio);
+        const b = new Date(r.fecha_fin);
+        const d = new Date(a);
+        d.setHours(0, 0, 0, 0);
+        const endD = new Date(b);
+        endD.setHours(0, 0, 0, 0);
+        while (d <= endD) {
+          const dateStr = d.toISOString().split('T')[0];
+          dayCount[dateStr] = (dayCount[dateStr] || 0) + 1;
+          d.setDate(d.getDate() + 1);
+        }
+      }
+
+      let cur = new Date(start);
+      cur.setHours(0, 0, 0, 0);
+      const endCheck = new Date(end);
+      endCheck.setHours(0, 0, 0, 0);
+      while (cur <= endCheck) {
+        const dateStr = cur.toISOString().split('T')[0];
+        if ((dayCount[dateStr] || 0) >= maxAllowed) {
+          return { allowed: false, firstBadDate: dateStr };
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      return { allowed: true };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [checkVacacionesRangeAvailability] ${error.message}`,
+      );
+      return { allowed: true };
+    }
+  }
+
+  /**
+   * Verifică dacă nici o zi din interval nu depășește capacitatea pentru Asuntos Propios (max 4 global, max 1 per centru).
+   */
+  private async checkAsuntoPropioRangeAvailability(
+    codigo: string,
+    fechaInicio: string,
+    fechaFin: string,
+    excludeSolicitudId?: string,
+  ): Promise<{ allowed: boolean; firstBadDate?: string }> {
+    try {
+      const start = new Date(fechaInicio);
+      const end = new Date(fechaFin);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        return { allowed: true };
+      }
+
+      const empleadoQuery = `
+        SELECT \`CENTRO TRABAJO\` as centro FROM DatosEmpleados
+        WHERE CODIGO = ${this.escapeSql(codigo)} LIMIT 1
+      `;
+      const empleadoResult =
+        await this.prisma.$queryRawUnsafe<any[]>(empleadoQuery);
+      const centroEmpleado = empleadoResult?.[0]?.centro ?? '';
+
+      const excludeClause = excludeSolicitudId
+        ? `AND s.id != ${this.escapeSql(excludeSolicitudId)}`
+        : '';
+      const overlapQuery = `
+        SELECT s.id, s.codigo, s.fecha_inicio, s.fecha_fin, TRIM(de.\`CENTRO TRABAJO\`) as centro
+        FROM solicitudes s
+        INNER JOIN DatosEmpleados de ON de.CODIGO = s.codigo
+        WHERE (s.tipo = 'Asunto Propio' OR s.tipo = 'Asuntos Propios')
+          AND s.estado IN ('Aprobada', 'Pendiente')
+          AND s.fecha_inicio IS NOT NULL AND s.fecha_fin IS NOT NULL
+          AND s.fecha_inicio <= ${this.escapeSql(fechaFin)}
+          AND s.fecha_fin >= ${this.escapeSql(fechaInicio)}
+          ${excludeClause}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(overlapQuery);
+      if (!rows?.length) return { allowed: true };
+
+      const globalDayCount: Record<string, number> = {};
+      const centerDayCount: Record<string, number> = {};
+      for (const r of rows) {
+        const a = new Date(r.fecha_inicio);
+        const b = new Date(r.fecha_fin);
+        const d = new Date(a);
+        d.setHours(0, 0, 0, 0);
+        const endD = new Date(b);
+        endD.setHours(0, 0, 0, 0);
+        const cen = String(r.centro || '').trim();
+        while (d <= endD) {
+          const dateStr = d.toISOString().split('T')[0];
+          globalDayCount[dateStr] = (globalDayCount[dateStr] || 0) + 1;
+          if (cen === centroEmpleado) {
+            centerDayCount[dateStr] = (centerDayCount[dateStr] || 0) + 1;
+          }
+          d.setDate(d.getDate() + 1);
+        }
+      }
+
+      let cur = new Date(start);
+      cur.setHours(0, 0, 0, 0);
+      const endCheck = new Date(end);
+      endCheck.setHours(0, 0, 0, 0);
+      while (cur <= endCheck) {
+        const dateStr = cur.toISOString().split('T')[0];
+        if ((globalDayCount[dateStr] || 0) >= 4) {
+          return { allowed: false, firstBadDate: dateStr };
+        }
+        if ((centerDayCount[dateStr] || 0) >= 1) {
+          return { allowed: false, firstBadDate: dateStr };
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      return { allowed: true };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [checkAsuntoPropioRangeAvailability] ${error.message}`,
+      );
+      return { allowed: true };
     }
   }
 
@@ -254,7 +462,7 @@ export class SolicitudesService {
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
-    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+    Este es un mensaje automático del sistema${this.getCompanyName() ? ` ${this.getCompanyName()}` : ''}.
   </p>
 </body>
 </html>
@@ -414,11 +622,16 @@ export class SolicitudesService {
       this.logger.log(
         `📧 [sendSolicitudEmail] Sending email for ${solicitudData.accion} - subject: ${subject}`,
       );
-      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
-        bcc: this.emailService.getDefaultBcc(),
-      });
+      await this.emailService.sendEmail(
+        this.getSolicitudesEmail(),
+        subject,
+        html,
+        {
+          bcc: this.emailService.getDefaultBcc(),
+        },
+      );
       this.logger.log(
-        `✅ [sendSolicitudEmail] Email notification sent to ${this.EMAIL_RECIPIENT} for ${solicitudData.accion} - solicitud ${solicitudData.codigo}`,
+        `✅ [sendSolicitudEmail] Email notification sent to ${this.getSolicitudesEmail()} for ${solicitudData.accion} - solicitud ${solicitudData.codigo}`,
       );
 
       // Salvează email-ul în BD
@@ -426,7 +639,7 @@ export class SolicitudesService {
         await this.sentEmailsService.saveSentEmail({
           senderId: solicitudData.codigo || 'system',
           recipientType: 'gestoria',
-          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientEmail: this.getSolicitudesEmail(),
           recipientName: 'Solicitudes',
           subject,
           message: html,
@@ -447,7 +660,7 @@ export class SolicitudesService {
         await this.sentEmailsService.saveSentEmail({
           senderId: solicitudData.codigo || 'system',
           recipientType: 'gestoria',
-          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientEmail: this.getSolicitudesEmail(),
           recipientName: 'Solicitudes',
           subject:
             subject ||
@@ -737,6 +950,37 @@ export class SolicitudesService {
           throw new BadRequestException(
             `No se puede aprobar esta solicitud de vacaciones: ya existe una vacación aprobada para otro empleado del mismo grupo y centro (${conflict.grupo} - ${conflict.centro}) en el período ${conflict.fecha_inicio} - ${conflict.fecha_fin}. Empleado: ${conflict.nombre} (${conflict.codigo})`,
           );
+        }
+      }
+
+      // Validare: nici o zi din rango să nu fie fără disponibilitate (Vacaciones / Asuntos Propios)
+      if (data.fecha_inicio && data.fecha_fin) {
+        if (data.tipo === 'Vacaciones') {
+          const rangeCheck = await this.checkVacacionesRangeAvailability(
+            data.codigo,
+            data.fecha_inicio,
+            data.fecha_fin,
+          );
+          if (!rangeCheck.allowed) {
+            throw new BadRequestException(
+              `El rango seleccionado incluye días sin disponibilidad (ocupados por otras solicitudes o límite de grupo). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+            );
+          }
+        }
+        if (
+          data.tipo === 'Asunto Propio' ||
+          data.tipo === 'Asuntos Propios'
+        ) {
+          const rangeCheck = await this.checkAsuntoPropioRangeAvailability(
+            data.codigo,
+            data.fecha_inicio,
+            data.fecha_fin,
+          );
+          if (!rangeCheck.allowed) {
+            throw new BadRequestException(
+              `El rango seleccionado incluye días sin disponibilidad (ocupados o límite por centro). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+            );
+          }
         }
       }
 
@@ -1282,6 +1526,55 @@ export class SolicitudesService {
         }
       }
 
+      // Validare disponibilitate pe rango (Vacaciones / Asuntos Propios) la update
+      const fechaInicioRange =
+        data.fecha_inicio !== undefined
+          ? data.fecha_inicio
+          : solicitudBefore?.fecha_inicio;
+      const fechaFinRange =
+        data.fecha_fin !== undefined
+          ? data.fecha_fin
+          : solicitudBefore?.fecha_fin;
+      if (fechaInicioRange && fechaFinRange) {
+        const inicioStr =
+          typeof fechaInicioRange === 'string'
+            ? fechaInicioRange
+            : new Date(fechaInicioRange).toISOString().split('T')[0];
+        const finStr =
+          typeof fechaFinRange === 'string'
+            ? fechaFinRange
+            : new Date(fechaFinRange).toISOString().split('T')[0];
+        if (tipo === 'Vacaciones') {
+          const rangeCheck = await this.checkVacacionesRangeAvailability(
+            codigo,
+            inicioStr,
+            finStr,
+            id,
+          );
+          if (!rangeCheck.allowed) {
+            throw new BadRequestException(
+              `El rango seleccionado incluye días sin disponibilidad (ocupados por otras solicitudes o límite de grupo). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+            );
+          }
+        }
+        if (
+          tipo === 'Asunto Propio' ||
+          tipo === 'Asuntos Propios'
+        ) {
+          const rangeCheck = await this.checkAsuntoPropioRangeAvailability(
+            codigo,
+            inicioStr,
+            finStr,
+            id,
+          );
+          if (!rangeCheck.allowed) {
+            throw new BadRequestException(
+              `El rango seleccionado incluye días sin disponibilidad (ocupados o límite por centro). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+            );
+          }
+        }
+      }
+
       // Execută operațiile în tranzacție
       await this.prisma.$transaction(async (tx) => {
         // 1) UPDATE în solicitudes
@@ -1454,7 +1747,7 @@ export class SolicitudesService {
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
-    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+    Este es un mensaje automático del sistema${this.getCompanyName() ? ` ${this.getCompanyName()}` : ''}.
   </p>
 </body>
 </html>
@@ -1568,9 +1861,9 @@ export class SolicitudesService {
             }
 
             // Trimite email către gestoria cu PDF și documentul angajatului (dacă există)
-            const GESTORIA_EMAIL = 'altemprado@gmail.com';
+            const gestoriaEmail = this.getGestoriaEmail();
             await this.emailService.sendEmailWithAttachments(
-              GESTORIA_EMAIL,
+              gestoriaEmail,
               subject,
               html,
               attachments,
@@ -1580,7 +1873,7 @@ export class SolicitudesService {
             );
 
             this.logger.log(
-              `✅ Email cu ${attachments.length} attachment(s) trimis către gestoria pentru Baja voluntaria ${id}`,
+              `✅ Email cu ${attachments.length} attachment(s) trimis către gestoria (${gestoriaEmail}) pentru Baja voluntaria ${id}`,
             );
 
             // Actualizează enviado_gestoria și fecha_envio_gestoria
@@ -1612,7 +1905,7 @@ export class SolicitudesService {
               await this.sentEmailsService.saveSentEmail({
                 senderId: codigo,
                 recipientType: 'gestoria',
-                recipientEmail: GESTORIA_EMAIL,
+                recipientEmail: gestoriaEmail,
                 recipientName: 'Gestoria',
                 subject,
                 message: html,
@@ -2303,18 +2596,18 @@ export class SolicitudesService {
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
-    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+    Este es un mensaje automático del sistema${this.getCompanyName() ? ` ${this.getCompanyName()}` : ''}.
   </p>
 </body>
 </html>
       `.trim();
 
-      // Trimite email către gestoria
-      const GESTORIA_EMAIL = 'altemprado@gmail.com';
+      // Trimite email către gestoria (destinatar din env: COMPANY_GESTORIA_EMAIL)
+      const gestoriaEmail = this.getGestoriaEmail();
 
       if (data.attachments && data.attachments.length > 0) {
         await this.emailService.sendEmailWithAttachments(
-          GESTORIA_EMAIL,
+          gestoriaEmail,
           subject,
           html,
           data.attachments,
@@ -2323,13 +2616,13 @@ export class SolicitudesService {
           },
         );
       } else {
-        await this.emailService.sendEmail(GESTORIA_EMAIL, subject, html, {
+        await this.emailService.sendEmail(gestoriaEmail, subject, html, {
           bcc: this.emailService.getDefaultBcc(),
         });
       }
 
       this.logger.log(
-        `✅ Email trimis către gestoria pentru despido improcedente ${solicitudId}`,
+        `✅ Email trimis către gestoria (${gestoriaEmail}) pentru despido improcedente ${solicitudId}`,
       );
 
       // Salvează email-ul în BD
@@ -2337,7 +2630,7 @@ export class SolicitudesService {
         await this.sentEmailsService.saveSentEmail({
           senderId: data.codigo,
           recipientType: 'gestoria',
-          recipientEmail: GESTORIA_EMAIL,
+          recipientEmail: gestoriaEmail,
           recipientName: 'Gestoria',
           subject,
           message: html,

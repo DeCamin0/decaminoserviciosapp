@@ -19,9 +19,8 @@ export class N8nProxyService {
   private refillTimer: NodeJS.Timeout | null = null;
 
   constructor(private configService: ConfigService) {
-    this.n8nBaseUrl =
-      this.configService.get<string>('n8n.baseUrl') ||
-      'https://n8n.decaminoservicios.com';
+    // URL doar din config (n8n.config.ts); fără fallback hardcodat aici
+    this.n8nBaseUrl = this.configService.get<string>('n8n.baseUrl') ?? '';
 
     this.axiosInstance = axios.create({
       baseURL: this.n8nBaseUrl,

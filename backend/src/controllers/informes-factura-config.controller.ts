@@ -11,6 +11,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -28,6 +29,7 @@ export class InformesFacturaConfigController {
     private readonly prisma: PrismaService,
     private readonly informePdfService: InformePdfService,
     private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   /** Lista todos los informes guardados (con última firma si existe). Excluye id=CONFIG_ID que es solo la plantilla del formulario Factura. */
@@ -272,8 +274,8 @@ export class InformesFacturaConfigController {
     <p>Quedamos a su disposición para cualquier aclaración.</p>
     <p>Saludos cordiales,</p>
     <div class="signature">
-      <p style="margin: 5px 0;"><strong>De Camino Servicios Auxiliares S.L.</strong></p>
-      <p style="margin: 5px 0; color: #888; font-size: 14px;">info@decaminoservicios.com · Tfno. 645 111 999</p>
+      <p style="margin: 5px 0;"><strong>${(this.configService.get('company') as any)?.emailFromName ?? 'De Camino Servicios Auxiliares S.L.'}</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">${(this.configService.get('company') as any)?.email ?? ''} · Tfno. ${(this.configService.get('company') as any)?.phone ?? ''}</p>
     </div>
     <div class="footer">
       <p>Este correo ha sido enviado desde la aplicación de gestión De Camino.</p>

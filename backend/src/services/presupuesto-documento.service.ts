@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
+import sizeOf from 'image-size';
 import PDFDocument from 'pdfkit';
 import { PresupuestosGuardadosService } from './presupuestos-guardados.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,22 +16,11 @@ export interface OfertaEconomicaRow {
 }
 
 const MARGIN = 50;
-const BRAND_RED = '#CC0000';
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const FOOTER_Y = 808;
 /** Y pentru numerotare „Pag. x de y” – deasupra liniei De Camino (FOOTER_Y 808) ca să rămână pe pagină. */
 const PAGE_NUM_Y = 778;
-const FOOTER_LINE =
-  'De Camino Servicios Auxiliares S.L. CIF: B-85524536 Inscrita en el registro Mercantil – T26005- L Folio 180 Secc. 8 HOJA M-468812';
-
-/** Dirección de la empresa para chenar EMPRESA (página Aceptación). Actualizar aquí si cambia. */
-const EMPRESA_DIRECCION =
-  'DE CAMINO SERVICIOS AUXILIARES, S.L.\nAvda. Euzkadi 14, Local 5\n28702 San Sebastián de los Reyes (Madrid)\nB-85524536';
-
-/** Nombre de la empresa que se muestra en el campo Empresa: (página Aceptación) cuando no hay firma del cliente. */
-const EMPRESA_NOMBRE = 'DE CAMINO SERVICIOS AUXILIARES, S.L.';
-
 /** Nombres de meses en español para formatear fechas. */
 const MESES_ES = [
   'enero',
@@ -46,21 +37,497 @@ const MESES_ES = [
   'diciembre',
 ];
 
-/** Ruta logo: același sursă ca în dev (frontend/public) sau backend/assets. Caută PNG/JPG sau SVG. */
-function getLogoPath(): string | null {
-  const names = ['logo.png', 'logo.jpg', 'logo.jpeg', 'logo.svg'];
+/** Texto de la página 1.1 PRESENTACIÓN para Decamino. */
+const PRESENTACION_DECAMINO: string[] = [
+  'Estimado/a Sr./Sra.:',
+  'Desde De Camino Servicios Auxiliares S.L. le agradecemos la oportunidad de presentar nuestra propuesta de servicios para su comunidad.',
+  'Contamos con más de 15 años de experiencia prestando servicios en comunidades de propietarios, empresas y establecimientos, gestionando actualmente más de 250 centros. Nuestro trabajo se basa en un principio claro: que la comunidad funcione correctamente sin generar preocupaciones al administrador ni a los vecinos.',
+  'Nuestro objetivo no es únicamente realizar tareas, sino garantizar el buen funcionamiento diario de la finca mediante control, seguimiento y resolución rápida de incidencias. Para ello, cada servicio se implanta de forma organizada y supervisada por nuestro equipo técnico, asegurando continuidad y estabilidad desde el primer día.',
+  'Disponemos de personal especializado en cada área y protocolos de actuación que permiten mantener un nivel constante de calidad, reduciendo avisos, quejas y problemas operativos.',
+  'La empresa permanece operativa las 24 horas del día, los 365 días del año, permitiendo atender cualquier incidencia con rapidez y eficacia.',
+  'Quedamos a su disposición para cualquier aclaración adicional.',
+  'Atentamente,',
+  'A. Elsayed',
+  'De Camino Servicios Auxiliares S.L.',
+];
+
+/** Texto de la página 1.1 PRESENTACIÓN para HERA. Puedes editar este array para ajustar el texto. */
+const PRESENTACION_HERA: string[] = [
+  'Estimado/a Sr./Sra.:',
+  'Desde HERA Facility le agradecemos la oportunidad de presentar nuestra propuesta de servicios para su comunidad.',
+  'Nuestra empresa está especializada en la gestión integral de servicios auxiliares para comunidades de propietarios y empresas. Trabajamos con un compromiso constante de calidad y cercanía con el cliente.',
+  'Nuestro objetivo es ofrecer soluciones adaptadas a sus necesidades, con un equipo cualificado y protocolos de actuación que garantizan el correcto funcionamiento de las instalaciones y la resolución ágil de incidencias.',
+  'Ponemos a su disposición nuestra experiencia y medios para que la comunidad funcione con normalidad y sin preocupaciones añadidas para el administrador o los vecinos.',
+  'Quedamos a su disposición para cualquier aclaración adicional.',
+  'Atentamente,',
+  'HERA Facility',
+];
+
+/** 2.1 SERVICIO DE AUXILIARES DE SERVICIOS – texto Decamino. */
+const AUXILIARES_DECAMINO = {
+  intro1:
+    'Nuestro servicio de Auxiliares de Servicios está orientado a garantizar la tranquilidad, el control diario y la correcta convivencia dentro de la comunidad, actuando como punto de apoyo permanente para vecinos, administración y proveedores.',
+  intro2:
+    'El auxiliar se convierte en la figura visible de la comunidad, previniendo incidencias antes de que se conviertan en problemas y ofreciendo una atención cercana y profesional.',
+  funciones: [
+    'Control de accesos y supervisión de personas ajenas a la finca.',
+    'Supervisión y seguimiento de trabajos realizados por proveedores.',
+    'Atención y asistencia a residentes que requieran su presencia.',
+    'Realización de rondas preventivas en diferentes horarios.',
+    'Comunicación inmediata de desperfectos o averías a la administración.',
+    'Aviso a servicios técnicos o de emergencia cuando sea necesario.',
+    'Apoyo en situaciones de molestias o incidencias vecinales.',
+    'Supervisión básica de instalaciones comunes (garajes, zonas comunes, sistemas comunitarios).',
+  ],
+  apoyo: [
+    'Sustitución de bombillas y luminarias (material a cargo de la comunidad).',
+    'Revisión y limpieza básica de rejillas de desagüe obstruidas.',
+    'Conocimiento de la ubicación de llaves de corte de agua, luz y gas para casos de emergencia.',
+    'Información periódica a la Junta de Gobierno sobre incidencias y estado general de la finca.',
+  ],
+  beneficios: [
+    'Mayor tranquilidad y control diario',
+    'Prevención de conflictos y actos vandálicos',
+    'Mejora de la convivencia vecinal',
+    'Supervisión constante del estado del edificio',
+    'Imagen cuidada y profesional de la comunidad',
+  ],
+  marco:
+    'El servicio se presta conforme a la normativa vigente, sin realizar funciones reservadas al personal de seguridad privada según lo establecido en la legislación aplicable, incluyendo el Real Decreto 2364/1994 y normativa complementaria.',
+};
+
+/** 2.1 SERVICIO DE AUXILIARES DE SERVICIOS – texto HERA. */
+const AUXILIARES_HERA = {
+  intro1:
+    'El servicio de Auxiliares de Servicios está diseñado para ofrecer apoyo continuo en la gestión diaria de la comunidad, contribuyendo al orden, la seguridad básica y el bienestar de los residentes.',
+  intro2:
+    'El auxiliar actúa como enlace directo entre vecinos, administración y proveedores, garantizando una atención eficiente y una supervisión constante de las instalaciones, con un enfoque preventivo y resolutivo.',
+  funciones: [
+    'Control y registro de accesos a la comunidad.',
+    'Supervisión de entradas y salidas de personal externo.',
+    'Apoyo y atención a vecinos ante incidencias cotidianas.',
+    'Realización de rondas periódicas para detectar posibles anomalías.',
+    'Seguimiento de trabajos realizados por empresas externas.',
+    'Comunicación de incidencias, averías o desperfectos a la administración.',
+    'Gestión de avisos a servicios técnicos cuando sea necesario.',
+    'Intervención básica ante conflictos o molestias entre residentes.',
+    'Vigilancia general del estado de zonas comunes e instalaciones.',
+  ],
+  apoyo: [
+    'Sustitución de elementos básicos de iluminación en zonas comunes.',
+    'Limpieza y revisión de puntos críticos como desagües o accesos.',
+    'Conocimiento operativo de instalaciones para actuar en emergencias.',
+    'Colaboración en el control del correcto funcionamiento de servicios comunitarios.',
+    'Reporte periódico del estado general del edificio a la administración.',
+  ],
+  beneficios: [
+    'Mayor control operativo del día a día',
+    'Reducción de incidencias y respuesta rápida ante problemas',
+    'Mejora del ambiente y la convivencia vecinal',
+    'Supervisión constante del estado de las instalaciones',
+    'Refuerzo de la imagen y organización de la comunidad',
+  ],
+  marco:
+    'El servicio se desarrolla conforme a la legislación vigente, sin asumir funciones propias del personal de seguridad privada, respetando lo dispuesto en la normativa aplicable, incluyendo el Real Decreto 2364/1994 y disposiciones complementarias.',
+};
+
+/** 2.2 SERVICIO DE LIMPIEZA DE COMUNIDADES – texto Decamino. */
+const LIMPIEZA_DECAMINO = {
+  intro1:
+    'El servicio de limpieza está diseñado para mantener la finca en condiciones óptimas de higiene, imagen y salubridad, garantizando un mantenimiento continuo de las zonas comunes y evitando la acumulación de suciedad o deterioro prematuro de las instalaciones.',
+  intro2:
+    'Nuestro objetivo es que la comunidad permanezca siempre en buen estado, sin depender de avisos constantes por parte de vecinos o administradores.',
+  seccionFunc: 'Funcionamiento del servicio',
+  func1:
+    'El personal asignado realiza un mantenimiento periódico siguiendo un plan de trabajo establecido, adaptado a las características del edificio y supervisado regularmente para asegurar la calidad del servicio.',
+  func2:
+    'Las tareas pueden ajustarse según necesidades de la comunidad.',
+  freqDiaria: 'Frecuencia diaria',
+  diaria: [
+    'Barrido y fregado de suelos',
+    'Limpieza de escaleras interiores',
+    'Limpieza de ascensor',
+    'Limpieza de huellas en barandillas, buzones e interruptores',
+    'Limpieza de cristales de acceso',
+    'Vaciado de publicidad',
+  ],
+  freqAlterna: 'Frecuencia alterna',
+  alterna: [
+    'Limpieza de puerta de acceso',
+    'Desempolvado de puntos de luz',
+    'Limpieza de elementos decorativos',
+    'Limpieza de patios',
+  ],
+  beneficios: [
+    'Mejora de la imagen del edificio',
+    'Prevención de malos olores y suciedad acumulada',
+    'Reducción de quejas vecinales',
+    'Mayor conservación de las instalaciones',
+    'Servicio estable sin depender de una sola persona',
+  ],
+  cierre:
+    'El plan de trabajo puede adaptarse a las necesidades específicas de cada comunidad.',
+};
+
+/** 2.2 SERVICIO DE LIMPIEZA DE COMUNIDADES – texto HERA. */
+const LIMPIEZA_HERA = {
+  intro1:
+    'El servicio de limpieza de comunidades tiene como finalidad asegurar el correcto estado de higiene, orden y conservación de las zonas comunes, aportando una imagen cuidada y un entorno agradable para todos los residentes.',
+  intro2:
+    'Se trata de un servicio continuo y organizado, que evita la acumulación de suciedad y garantiza el mantenimiento regular del edificio sin necesidad de intervenciones puntuales o avisos constantes.',
+  seccionFunc: 'Organización del servicio',
+  func1:
+    'El personal de limpieza actúa conforme a un plan de trabajo previamente definido, adaptado a las características de cada comunidad y revisado periódicamente para garantizar un alto nivel de calidad.',
+  func2:
+    'Las tareas y frecuencias pueden ajustarse en función de las necesidades específicas del inmueble.',
+  freqDiaria: 'Frecuencia diaria',
+  diaria: [
+    'Limpieza y fregado de suelos en zonas comunes',
+    'Limpieza de escaleras y rellanos',
+    'Mantenimiento de limpieza en ascensores',
+    'Eliminación de huellas en superficies de contacto (barandillas, interruptores, buzones)',
+    'Limpieza de accesos y zonas de entrada',
+    'Retirada de publicidad y residuos en buzones',
+  ],
+  freqAlterna: 'Frecuencia periódica',
+  alterna: [
+    'Limpieza de puertas de acceso y elementos exteriores',
+    'Desempolvado de luminarias y puntos de luz',
+    'Limpieza de elementos decorativos y mobiliario común',
+    'Mantenimiento de patios interiores o zonas abiertas',
+  ],
+  beneficios: [
+    'Mejora continua de la imagen y presentación del edificio',
+    'Mayor nivel de higiene y salubridad',
+    'Disminución de incidencias relacionadas con la suciedad',
+    'Conservación a largo plazo de las instalaciones',
+    'Servicio profesional, constante y organizado',
+  ],
+  cierre:
+    'El plan de limpieza se adapta en todo momento a las características y exigencias de cada comunidad, garantizando flexibilidad y eficacia en el servicio.',
+};
+
+/** 2.3 SERVICIO DE JARDINERÍA – texto Decamino. */
+const JARDINERIA_DECAMINO = {
+  intro1:
+    'El servicio de jardinería está orientado a la conservación estética y sanitaria de las zonas verdes, garantizando durante todo el año un correcto estado del jardín y evitando su deterioro progresivo.',
+  intro2:
+    'El mantenimiento se realiza de forma periódica, adaptándose a las estaciones y necesidades de cada zona ajardinada.',
+  trabajos: [
+    'Eliminación de malas hierbas mediante medios manuales o mecánicos según superficie',
+    'Recorte y perfilado de zonas verdes',
+    'Limpieza de hojas y restos vegetales',
+    'Retirada de brotes no deseados (chupones)',
+    'Control y revisión del sistema de riego',
+    'Aviso de averías y posibilidad de reparación (materiales no incluidos)',
+  ],
+  tratamientos: [
+    'Dos tratamientos fitosanitarios preventivos anuales con productos homologados (incluidos)',
+    'Abonado orgánico anual incluido',
+    'Poda anual de arbolado hasta 3 metros de altura',
+  ],
+  beneficios: [
+    'Jardín cuidado durante todo el año',
+    'Prevención de plagas y deterioro',
+    'Mejora estética de la finca',
+    'Mayor durabilidad de plantas y césped',
+    'Reducción de incidencias por riego o suciedad',
+  ],
+  condiciones: [
+    'El consumo de agua será por cuenta de la comunidad',
+    'La retirada de restos de poda mediante camión no está incluida',
+  ],
+};
+
+/** 2.3 SERVICIO DE JARDINERÍA – texto HERA. */
+const JARDINERIA_HERA = {
+  intro1:
+    'El servicio de jardinería está enfocado al mantenimiento integral de las zonas verdes, asegurando su buen estado tanto a nivel estético como funcional durante todo el año.',
+  intro2:
+    'A través de un mantenimiento planificado y adaptado a cada temporada, se garantiza la conservación del jardín, evitando el deterioro de las plantas y manteniendo un entorno cuidado y agradable.',
+  trabajos: [
+    'Eliminación de malas hierbas mediante técnicas manuales o mecánicas según las necesidades',
+    'Recorte y perfilado de césped y zonas ajardinadas',
+    'Limpieza general de hojas, ramas y residuos vegetales',
+    'Eliminación de brotes no deseados en árboles y arbustos',
+    'Revisión periódica del sistema de riego',
+    'Detección y comunicación de averías, con opción de reparación (materiales no incluidos)',
+  ],
+  tratamientos: [
+    'Aplicación de tratamientos fitosanitarios preventivos anuales con productos autorizados',
+    'Abonado orgánico para mejorar la salud del suelo y las plantas',
+    'Poda anual de árboles y arbustos hasta una altura máxima de 3 metros',
+    'Seguimiento del estado general de la vegetación',
+  ],
+  beneficios: [
+    'Espacios verdes cuidados de forma continua',
+    'Prevención de plagas, enfermedades y deterioro del jardín',
+    'Mejora visual y valor añadido a la comunidad',
+    'Mayor durabilidad de plantas, arbustos y césped',
+    'Control del sistema de riego y reducción de incidencias',
+  ],
+  condiciones: [
+    'El consumo de agua necesario para el riego será asumido por la comunidad',
+    'La retirada de restos de poda mediante transporte especializado no está incluida en el servicio',
+  ],
+};
+
+/** 2.4 GESTIÓN DE CUBOS DE BASURA – texto Decamino. */
+const CUBOS_DECAMINO = {
+  intro1:
+    'El servicio de gestión de cubos está orientado a mantener la zona de residuos organizada, limpia y sin molestias para los vecinos, evitando acumulaciones, malos olores y sanciones por incumplimiento de horarios municipales.',
+  intro2:
+    'Nos encargamos de la correcta retirada y colocación de los contenedores según la normativa local, garantizando comodidad para la comunidad y una buena imagen del edificio.',
+  seccionFunc: 'Funcionamiento del servicio',
+  func1:
+    'El personal asignado realiza la retirada y reposición de cubos en los horarios establecidos por la ordenanza municipal, asegurando que los vecinos siempre dispongan de acceso a los contenedores sin tener que manipularlos.',
+  func2: '',
+  tareas: [
+    'Salida de cubos en horario permitido',
+    'Entrada de cubos tras la recogida municipal',
+    'Colocación correcta en la zona asignada',
+    'Cierre de tapas y ordenación del área de residuos',
+    'Limpieza básica del entorno inmediato',
+    'Aviso de incidencias (roturas, suciedad excesiva, vandalismo)',
+  ],
+  beneficios: [
+    'Evita sanciones municipales',
+    'Elimina molestias para los vecinos',
+    'Mejora la higiene del acceso a la finca',
+    'Previene malos olores y suciedad',
+    'Mayor comodidad diaria',
+  ],
+  condiciones:
+    'El servicio se realizará conforme a la normativa municipal vigente de recogida de residuos.',
+};
+
+/** 2.4 GESTIÓN DE CUBOS DE BASURA – texto HERA. */
+const CUBOS_HERA = {
+  intro1:
+    'El servicio de gestión de residuos tiene como objetivo garantizar el correcto uso y mantenimiento de los contenedores comunitarios, manteniendo la zona limpia, ordenada y conforme a la normativa municipal.',
+  intro2:
+    'Este servicio permite a la comunidad despreocuparse de la manipulación diaria de los cubos, asegurando su correcta colocación y evitando problemas derivados de una gestión inadecuada.',
+  seccionFunc: 'Organización del servicio',
+  func1:
+    'El personal asignado se encarga de la retirada y reposición de los contenedores en los horarios establecidos por el ayuntamiento, cumpliendo en todo momento con la normativa vigente.',
+  func2:
+    'Se asegura que los cubos estén disponibles cuando sea necesario y correctamente recogidos tras el servicio municipal.',
+  tareas: [
+    'Colocación de los contenedores en la vía pública dentro del horario autorizado',
+    'Retirada de los cubos una vez realizada la recogida municipal',
+    'Ubicación correcta en la zona designada por la comunidad',
+    'Verificación del cierre de tapas y orden general del área',
+    'Mantenimiento básico de limpieza en la zona de residuos',
+    'Comunicación de incidencias como daños, suciedad o uso indebido',
+  ],
+  beneficios: [
+    'Cumplimiento de la normativa municipal y prevención de sanciones',
+    'Mayor limpieza y orden en la zona de contenedores',
+    'Eliminación de molestias para los vecinos',
+    'Reducción de olores y acumulación de residuos',
+    'Mayor comodidad y mejor imagen del edificio',
+  ],
+  condiciones:
+    'El servicio se prestará de acuerdo con los horarios y requisitos establecidos por la ordenanza municipal correspondiente.',
+};
+
+/** 5. CONDICIONES CONTRACTUALES – texto Decamino. */
+const CONDICIONES_CONTRACTUALES_DECAMINO = {
+  intro:
+    'La aprobación del presente presupuesto por parte de la Comunidad de Propietarios tendrá la consideración de acuerdo vinculante entre las partes, adquiriendo carácter contractual desde el inicio efectivo del servicio.',
+  secciones: [
+    {
+      titulo: '1. Inicio y duración',
+      parrafos: [
+        'El servicio comenzará en la fecha acordada tras la aprobación del presupuesto.',
+        'La duración inicial será de 12 meses, prorrogándose automáticamente por periodos anuales salvo comunicación escrita en contrario con un preaviso mínimo de 30 días.',
+      ],
+    },
+    {
+      titulo: '2. Condiciones económicas y facturación',
+      parrafos: [
+        'Los precios indicados no incluyen IVA, aplicándose el tipo vigente en cada momento.',
+        'La facturación será mensual mediante recibo domiciliado, realizándose el pago dentro de los últimos 5 días hábiles del mes en curso.',
+        'El impago total o parcial de cualquier factura devengará un recargo del 1% sobre la cantidad adeudada, así como los gastos bancarios derivados de su devolución. La empresa podrá suspender temporalmente el servicio hasta su regularización.',
+      ],
+    },
+    {
+      titulo: '3. Revisión de precios',
+      parrafos: [
+        'Los precios están calculados conforme al convenio colectivo aplicable y podrán actualizarse cuando exista:',
+        '• modificación legal obligatoria (SMI, convenio, normativa laboral o fiscal)',
+        '• cambios en horarios, frecuencia o condiciones del servicio',
+        '• variaciones en costes laborales derivados de subrogación',
+      ],
+    },
+    {
+      titulo: '4. Subrogación de personal',
+      parrafos: [
+        'En caso de subrogación, las condiciones económicas podrán adaptarse a las obligaciones legales derivadas del convenio colectivo.',
+        'Si la relación laboral del trabajador subrogado finalizara por cualquier causa, el precio del servicio será actualizado conforme a las nuevas condiciones laborales.',
+        'En caso de resoluciones judiciales que obliguen al abono de indemnizaciones vinculadas al servicio contratado, la Comunidad asumirá el coste correspondiente al tratarse de obligaciones derivadas de su contratación.',
+      ],
+    },
+    {
+      titulo: '5. Obligaciones de la Comunidad',
+      parrafos: [
+        'La Comunidad facilitará acceso a las instalaciones, suministros necesarios y condiciones adecuadas para la correcta prestación del servicio.',
+      ],
+    },
+    {
+      titulo: '6. Responsabilidad',
+      parrafos: [
+        'La empresa no será responsable de daños derivados del estado previo de las instalaciones, uso indebido por terceros o incidencias ajenas al servicio contratado.',
+      ],
+    },
+    {
+      titulo: '7. Normativa aplicable',
+      parrafos: [
+        'El servicio se prestará conforme a la normativa laboral, prevención de riesgos laborales y demás legislación vigente.',
+      ],
+    },
+    {
+      titulo: '8. Servicios no incluidos',
+      parrafos: [
+        'No se incluyen gestiones documentales CAE o PRL en plataformas externas.',
+        'En caso de requerirse, podrán contratarse adicionalmente por 250,00 € + IVA anuales.',
+      ],
+    },
+    {
+      titulo: '9. Formalización contractual',
+      parrafos: [
+        'La aceptación del presupuesto mediante firma manuscrita o electrónica, así como el inicio efectivo del servicio, implicará la plena aceptación de estas condiciones contractuales, considerándose formalizado el contrato de prestación de servicios.',
+      ],
+    },
+  ],
+};
+
+/** 5. CONDICIONES CONTRACTUALES – texto HERA. */
+const CONDICIONES_CONTRACTUALES_HERA = {
+  intro:
+    'La aceptación del presente presupuesto por parte de la Comunidad de Propietarios supondrá la formalización de un acuerdo vinculante entre ambas partes, adquiriendo carácter contractual desde el inicio de la prestación del servicio.',
+  secciones: [
+    {
+      titulo: '1. Inicio y duración',
+      parrafos: [
+        'El servicio dará comienzo en la fecha acordada tras la aprobación del presupuesto.',
+        'El contrato tendrá una duración inicial de 12 meses, renovándose automáticamente por periodos anuales, salvo notificación por escrito con un preaviso mínimo de 30 días.',
+      ],
+    },
+    {
+      titulo: '2. Condiciones económicas y facturación',
+      parrafos: [
+        'Los importes indicados no incluyen IVA, aplicándose el tipo impositivo vigente en el momento de la facturación.',
+        'La facturación se realizará con carácter mensual mediante domiciliación bancaria, efectuándose el cobro dentro de los últimos días hábiles del mes correspondiente.',
+        'El retraso o impago de cualquier factura podrá generar un recargo del 1% sobre el importe pendiente, así como los costes derivados de su devolución. La empresa se reserva el derecho de suspender temporalmente el servicio hasta la regularización de la deuda.',
+      ],
+    },
+    {
+      titulo: '3. Actualización de precios',
+      parrafos: [
+        'Los precios establecidos están sujetos a revisión en los siguientes supuestos:',
+        '• Cambios en la normativa laboral o fiscal aplicable (SMI, convenios colectivos, etc.)',
+        '• Modificación de las condiciones del servicio (horarios, frecuencia, alcance)',
+        '• Incrementos en los costes laborales derivados de procesos de subrogación',
+      ],
+    },
+    {
+      titulo: '4. Subrogación de personal',
+      parrafos: [
+        'En caso de subrogación de trabajadores, las condiciones económicas del servicio podrán ajustarse conforme a las obligaciones establecidas en el convenio colectivo correspondiente.',
+        'Si la relación laboral del personal subrogado finalizara por cualquier motivo, el precio del servicio será revisado en función de las nuevas condiciones laborales aplicables.',
+        'Asimismo, cualquier obligación económica derivada de resoluciones judiciales relacionadas con dicho personal será asumida por la Comunidad, al estar vinculada directamente al servicio contratado.',
+      ],
+    },
+    {
+      titulo: '5. Obligaciones de la Comunidad',
+      parrafos: [
+        'La Comunidad se compromete a facilitar el acceso a las instalaciones, así como los medios y suministros necesarios para el correcto desarrollo del servicio.',
+      ],
+    },
+    {
+      titulo: '6. Responsabilidad',
+      parrafos: [
+        'La empresa no asumirá responsabilidad por daños ocasionados por el estado previo de las instalaciones, el uso indebido por terceros o situaciones ajenas al servicio contratado.',
+      ],
+    },
+    {
+      titulo: '7. Normativa aplicable',
+      parrafos: [
+        'El servicio se prestará en cumplimiento de la legislación vigente en materia laboral, prevención de riesgos laborales y demás normativa aplicable.',
+      ],
+    },
+    {
+      titulo: '8. Servicios no incluidos',
+      parrafos: [
+        'No están incluidos los servicios de gestión documental CAE o PRL en plataformas externas.',
+        'En caso de requerirse, podrán contratarse adicionalmente por un importe de 250,00 € + IVA anuales.',
+      ],
+    },
+    {
+      titulo: '9. Formalización del contrato',
+      parrafos: [
+        'La firma del presupuesto, ya sea de forma manuscrita o electrónica, así como el inicio del servicio, implicará la aceptación íntegra de las presentes condiciones, considerándose formalizado el contrato de prestación de servicios.',
+      ],
+    },
+  ],
+};
+
+/** Ruta logo: opțional companyLogoPath din env (COMPANY_LOGO_PATH), apoi căutare logo.png/jpg în assets/public. Pentru PDF folosește doar PNG sau JPEG (nu SVG). Multi-client: pune logo-ul în backend/assets și set COMPANY_LOGO_PATH în .env. */
+function getLogoPath(companyLogoPath?: string | null): string | null {
+  const name = companyLogoPath && String(companyLogoPath).trim();
   const dirs = [
     path.join(process.cwd(), 'assets'),
-    path.join(__dirname, '..', '..', '..', 'assets'),
     path.join(process.cwd(), '..', 'frontend', 'public'),
+    path.join(__dirname, '..', '..', '..', 'assets'),
+    path.join(__dirname, '..', '..', '..', '..', 'frontend', 'public'),
   ];
-  for (const dir of dirs) {
-    for (const name of names) {
+  if (name) {
+    for (const dir of dirs) {
       const p = path.join(dir, name);
       if (fs.existsSync(p)) return p;
     }
   }
+  const names = ['logo.png', 'logo.jpg', 'logo.jpeg'];
+  for (const dir of dirs) {
+    for (const n of names) {
+      const p = path.join(dir, n);
+      if (fs.existsSync(p)) return p;
+    }
+  }
   return null;
+}
+
+/** Dimensiuni imagine logo (PNG/JPEG) sau null. Folosit pentru chenar adaptat la raportul de aspect. */
+function getLogoDimensions(
+  logoPath: string,
+): { width: number; height: number } | null {
+  try {
+    const buf = fs.readFileSync(logoPath);
+    const dims = sizeOf(buf);
+    if (dims?.width && dims?.height)
+      return { width: dims.width, height: dims.height };
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/** Calculează width/height logo pentru portadă: încadrare în maxW x maxH păstrând raportul de aspect (dreptunghi, nu pătrat fix). */
+function getLogoSizeForPortada(
+  logoPath: string,
+  maxW: number = 280,
+  maxH: number = 160,
+): { w: number; h: number } {
+  const dims = getLogoDimensions(logoPath);
+  if (dims && dims.width > 0 && dims.height > 0) {
+    const scale = Math.min(maxW / dims.width, maxH / dims.height, 1);
+    return {
+      w: Math.round(dims.width * scale),
+      h: Math.round(dims.height * scale),
+    };
+  }
+  return { w: 260, h: 260 };
 }
 
 /** Ruta banda servicios (backend/assets/servicios.png) */
@@ -91,14 +558,9 @@ function getPiscinaStripPaths(): [string | null, string | null, string | null] {
   return [find('PISCINA1.png'), find('PISCINA2.png'), find('PISCINA3.png')];
 }
 
-/** Ruta ștampilă pentru chenarul DE CAMINO (Aceptación) */
+/** Ruta ștampilă pentru chenarul EMPRESA (Aceptación). COMPANY_STAMP_PATH din env sau fallback la stampila*. */
 function getStampPath(): string | null {
-  const names = [
-    'stampila-2-image2.jpeg',
-    'stampila-2-image2.jpg',
-    'stampila.jpeg',
-    'stampila.jpg',
-  ];
+  const envStamp = (process.env.COMPANY_STAMP_PATH || '').trim();
   const candidates = [
     path.join(process.cwd(), 'assets'),
     path.join(__dirname, '..', '..', 'assets'),
@@ -106,6 +568,18 @@ function getStampPath(): string | null {
     process.cwd(),
     path.join(process.cwd(), '..'),
     path.join(__dirname, '..', '..', '..'),
+  ];
+  if (envStamp) {
+    for (const dir of candidates) {
+      const p = path.join(dir, envStamp);
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  const names = [
+    'stampila-2-image2.jpeg',
+    'stampila-2-image2.jpg',
+    'stampila.jpeg',
+    'stampila.jpg',
   ];
   for (const dir of candidates) {
     for (const name of names) {
@@ -116,7 +590,40 @@ function getStampPath(): string | null {
   return null;
 }
 
-/** Deriva el tipo de servicio desde el nombre (usado por generarDocx) */
+/** Ruta stamp pentru company. forceKey permite cerere cu ?company=hera când backend rulează cu .env Decamino. */
+function getStampPathForCompany(
+  company: {
+    presupuestoPresentacionKey?: string;
+    stampPath?: string;
+    stampPathHera?: string;
+  } | null,
+  forceKey?: 'decamino' | 'hera',
+): string | null {
+  const candidates = [
+    path.join(process.cwd(), 'assets'),
+    path.join(__dirname, '..', '..', 'assets'),
+    path.join(process.cwd(), '..', 'frontend', 'public'),
+    process.cwd(),
+    path.join(process.cwd(), '..'),
+    path.join(__dirname, '..', '..', '..'),
+  ];
+  const key = forceKey ?? (company as any)?.presupuestoPresentacionKey;
+  const name =
+    key === 'hera'
+      ? ((company as any)?.stampPathHera || (company as any)?.stampPath || 'stampila_hera-removebg-preview.png')
+      : (company as any)?.stampPath;
+  if (name && String(name).trim()) {
+    for (const dir of candidates) {
+      const p = path.join(dir, String(name).trim());
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  // Când e HERA nu cădem niciodată pe stampila Decamino (getStampPath găsește stampila.jpeg)
+  if (key === 'hera') return null;
+  return getStampPath();
+}
+
+/** Deriva el tipo de servicio desde el nombre */
 function derivarTipoDesdeServicio(
   nombre: string,
 ): 'auxiliares' | 'limpieza' | 'jardineria' | 'cubos' | 'piscina' {
@@ -163,7 +670,28 @@ export class PresupuestoDocumentoService {
   constructor(
     private readonly presupuestosGuardadosService: PresupuestosGuardadosService,
     private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getCompany() {
+    return this.configService.get('company') ?? {};
+  }
+
+  /** Key efectiv pentru acest PDF: din opciones.companyKey (cerere ?company=hera) sau din env. */
+  private _pdfCompanyKey: 'decamino' | 'hera' | null = null;
+  private getPresupuestoKey(): 'decamino' | 'hera' {
+    return (
+      this._pdfCompanyKey ??
+      ((this.getCompany() as any)?.presupuestoPresentacionKey as 'decamino' | 'hera') ??
+      'decamino'
+    );
+  }
+
+  /** Párrafos de la página 1.1 PRESENTACIÓN según cliente (Decamino o HERA). */
+  private getPresentacionParas(): string[] {
+    const key = this.getPresupuestoKey();
+    return key === 'hera' ? [...PRESENTACION_HERA] : [...PRESENTACION_DECAMINO];
+  }
 
   /** Număr de presupuesto asociat la ID: dacă e deja salvat îl folosim, altfel îl generăm (MAD+an+ID) și îl salvăm. */
   private async getOrAssignNumeroPresupuesto(id: number): Promise<string> {
@@ -181,6 +709,8 @@ export class PresupuestoDocumentoService {
   async generarPdf(
     id: number,
     opciones?: {
+      /** Forțează company pentru logo/stamp/text (ex. ?company=hera când backend e Decamino). */
+      companyKey?: 'decamino' | 'hera';
       datosFirma?: DatosFirmaAceptacion;
       /** Când e setat, se adaugă bloc Evidencias (huellas SHA-256, fecha Madrid, ID). Dacă incluzi signed_pdf_sha256, se afișează acel hash (nu placeholder). */
       evidencias?: {
@@ -191,6 +721,12 @@ export class PresupuestoDocumentoService {
       };
     },
   ): Promise<{ buffer: Buffer; filename: string }> {
+    const company = this.getCompany() as any;
+    this._pdfCompanyKey =
+      (opciones?.companyKey ?? company?.presupuestoPresentacionKey ?? 'decamino') === 'hera'
+        ? 'hera'
+        : 'decamino';
+    try {
     const presupuesto = await this.presupuestosGuardadosService.findOne(id);
     const datosFirma = opciones?.datosFirma;
     const evidencias = opciones?.evidencias;
@@ -613,16 +1149,24 @@ export class PresupuestoDocumentoService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      // ——— PÁGINA 1: toată roșie; titlu + UN singur logo centrat sub titlu; stânga: client, nº, strip, contact ———
-      doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill(BRAND_RED);
+      // ——— PÁGINA 1: fundal portadă (brandRed sau COMPANY_PORTADA_BG – ex. albastru deschis HERA); titlu, logo, client, strip, contact ———
+      const company = this.getCompany();
+      const portadaBg = company.portadaBg ?? company.brandRed;
+      const portadaTextColor = company.portadaTextColor ?? '#FFFFFF';
+      doc.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill(portadaBg);
 
-      const logoPath = getLogoPath();
+      // Logo: HERA când getPresupuestoKey()=hera. Nu folosim company.logoPath (Decamino); folosim logoPathHera sau nume standard HERA.
+      const isHeraKey = this.getPresupuestoKey() === 'hera';
+      const logoPathRaw = isHeraKey
+        ? ((company as any)?.logoPathHera || 'LOGO_hera.png')
+        : company?.logoPath;
+      const logoPath = getLogoPath(logoPathRaw);
 
       // Titlu centrat pe pagină, mai sus (y=40) — anul din anul curent
       const anioPresupuesto = new Date().getFullYear();
       const tituloPortada = `PRESUPUESTO ${anioPresupuesto}`;
       const titleY = 40;
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(34);
+      doc.fillColor(portadaTextColor).font('Helvetica-Bold').fontSize(34);
       doc.text(tituloPortada, 0, titleY, {
         width: PAGE_WIDTH,
         align: 'center',
@@ -632,7 +1176,7 @@ export class PresupuestoDocumentoService {
       const titleH = doc.heightOfString(tituloPortada, { width: PAGE_WIDTH });
       const lineY = titleY + titleH + 10;
       const lineW = Math.min(280, PAGE_WIDTH - 80);
-      doc.strokeColor('#FFFFFF').lineWidth(2);
+      doc.strokeColor(portadaTextColor).lineWidth(2);
       doc
         .moveTo((PAGE_WIDTH - lineW) / 2, lineY)
         .lineTo((PAGE_WIDTH + lineW) / 2, lineY)
@@ -675,10 +1219,10 @@ export class PresupuestoDocumentoService {
         logoY = lineY + 14 + 44 + subtitleGap;
       }
 
-      // UN singur logo, centrat sub titlu (pătrat, mărit)
-      const logoSize = 260;
-      const logoW = logoSize;
-      const logoH = logoSize;
+      // Logo centrat sub titlu: chenar adaptat la raportul de aspect (dreptunghi, nu pătrat fix)
+      const { w: logoW, h: logoH } = logoPath
+        ? getLogoSizeForPortada(logoPath)
+        : { w: 260, h: 260 };
       if (logoPath) {
         try {
           doc.image(logoPath, (PAGE_WIDTH - logoW) / 2, logoY, {
@@ -699,7 +1243,7 @@ export class PresupuestoDocumentoService {
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      doc.fillColor('#FFFFFF').font('Helvetica').fontSize(20);
+      doc.fillColor(portadaTextColor).font('Helvetica').fontSize(20);
       let clientBlockHeight = 0;
       if (clientLines.length >= 2) {
         doc.text(clientLines[0], blockCenterX, belowLogoY, {
@@ -824,23 +1368,28 @@ export class PresupuestoDocumentoService {
 
       // Contact sub banda
       doc.font('Helvetica').fontSize(14);
-      doc.text('www.decaminoservicios.com', blockCenterX, belowLogoY, {
+      doc.text(this.getCompany().website ?? '', blockCenterX, belowLogoY, {
         align: 'center',
         width: blockCenterW,
       });
-      doc.text('Tfno: 645 111 999', blockCenterX, belowLogoY + 20, {
-        align: 'center',
-        width: blockCenterW,
-      });
-      doc.text('info@decaminoservicios.com', blockCenterX, belowLogoY + 40, {
+      doc.text(
+        `Tfno: ${this.getCompany().phone ?? ''}`,
+        blockCenterX,
+        belowLogoY + 20,
+        {
+          align: 'center',
+          width: blockCenterW,
+        },
+      );
+      doc.text(this.getCompany().email ?? '', blockCenterX, belowLogoY + 40, {
         align: 'center',
         width: blockCenterW,
       });
 
-      // Footer pe toată lățimea, text alb (limităm înălțimea ca să nu se creeze pagină goală)
-      doc.fontSize(7).fillColor('#FFFFFF').font('Helvetica');
+      // Footer pe toată lățimea, text portadă (limităm înălțimea ca să nu se creeze pagină goală)
+      doc.fontSize(7).fillColor(portadaTextColor).font('Helvetica');
       const footerHeight = PAGE_HEIGHT - FOOTER_Y - 12;
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: footerHeight,
@@ -889,7 +1438,7 @@ export class PresupuestoDocumentoService {
 
       const lineWidth = indiceFullWidth * 0.72;
       const lineX = (PAGE_WIDTH - lineWidth) / 2;
-      doc.strokeColor(BRAND_RED).lineWidth(3);
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
       doc
         .moveTo(lineX, indiceY)
         .lineTo(lineX + lineWidth, indiceY)
@@ -980,10 +1529,12 @@ export class PresupuestoDocumentoService {
         { width: contentWidth - subIndent },
       );
       indiceY += lineH;
-      doc.text('4.5  Plan de Igualdad', contentX + subIndent, indiceY, {
-        width: contentWidth - subIndent,
-      });
-      indiceY += lineH;
+      if (this.getPresupuestoKey() !== 'hera') {
+        doc.text('4.5  Plan de Igualdad', contentX + subIndent, indiceY, {
+          width: contentWidth - subIndent,
+        });
+        indiceY += lineH;
+      }
       doc.text(
         '4.6  Cláusulas de Confidencialidad',
         contentX + subIndent,
@@ -1017,7 +1568,7 @@ export class PresupuestoDocumentoService {
 
       // Footer pe pagina 2
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1060,80 +1611,68 @@ export class PresupuestoDocumentoService {
 
       const presLineWidth = presentacionFullWidth * 0.72;
       const presLineX = (PAGE_WIDTH - presLineWidth) / 2;
-      doc.strokeColor(BRAND_RED).lineWidth(3);
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
       doc
         .moveTo(presLineX, presentacionY)
         .lineTo(presLineX + presLineWidth, presentacionY)
         .stroke();
       presentacionY += 36;
 
-      const presentacionParas = [
-        'Estimado/a Sr./Sra.:',
-        'Desde De Camino Servicios Auxiliares S.L. le agradecemos la oportunidad de presentar nuestra propuesta de servicios para su comunidad.',
-        'Contamos con más de 15 años de experiencia prestando servicios en comunidades de propietarios, empresas y establecimientos, gestionando actualmente más de 250 centros. Nuestro trabajo se basa en un principio claro: que la comunidad funcione correctamente sin generar preocupaciones al administrador ni a los vecinos.',
-        'Nuestro objetivo no es únicamente realizar tareas, sino garantizar el buen funcionamiento diario de la finca mediante control, seguimiento y resolución rápida de incidencias. Para ello, cada servicio se implanta de forma organizada y supervisada por nuestro equipo técnico, asegurando continuidad y estabilidad desde el primer día.',
-        'Disponemos de personal especializado en cada área y protocolos de actuación que permiten mantener un nivel constante de calidad, reduciendo avisos, quejas y problemas operativos.',
-        'La empresa permanece operativa las 24 horas del día, los 365 días del año, permitiendo atender cualquier incidencia con rapidez y eficacia.',
-        'Quedamos a su disposición para cualquier aclaración adicional.',
-        'Atentamente,',
-        'A. Elsayed',
-        'De Camino Servicios Auxiliares S.L.',
-      ];
+      const presentacionParas = this.getPresentacionParas();
+      const companyShortName = this.getCompany().legalNameShort ?? 'De Camino';
 
       doc.font('Helvetica-Bold').fontSize(11);
       doc.fillColor('#1a1a1a');
       const paraSpacing = 22;
 
-      const drawParagraphWithDeCaminoRed = (
-        para: string,
-        align: 'left' | 'justify' = 'justify',
-      ) => {
-        const parts = para.split(/(De Camino)/gi);
-        let firstSegment = true;
-        for (let i = 0; i < parts.length; i++) {
-          if (parts[i].length === 0) continue;
-          const isLast = i === parts.length - 1;
-          const opts = {
-            width: presentacionContentWidth,
-            align,
-            continued: !isLast,
-          };
-          if (/^De Camino$/i.test(parts[i])) {
-            doc.fillColor(BRAND_RED);
-            const redText = parts[i] + ' ';
-            if (firstSegment)
-              doc.text(redText, presentacionContentX, presentacionY, opts);
-            else doc.text(redText, opts);
-            doc.fillColor('#1a1a1a');
-          } else {
-            const text =
-              i > 0 &&
-              /^De Camino$/i.test(parts[i - 1]) &&
-              parts[i].startsWith(' ')
-                ? parts[i].slice(1)
-                : parts[i];
-            if (firstSegment)
-              doc.text(text, presentacionContentX, presentacionY, opts);
-            else doc.text(text, opts);
+      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const companyRegex = new RegExp(`(${esc(companyShortName)})`, 'gi');
+        const drawParagraphWithCompanyRed = (
+          para: string,
+          align: 'left' | 'justify' = 'justify',
+        ) => {
+          const parts = para.split(companyRegex);
+          let firstSegment = true;
+          for (let i = 0; i < parts.length; i++) {
+            if (parts[i].length === 0) continue;
+            const isLast = i === parts.length - 1;
+            const opts = {
+              width: presentacionContentWidth,
+              align,
+              continued: !isLast,
+            };
+            if (parts[i].toLowerCase() === companyShortName.toLowerCase()) {
+              doc.fillColor(this.getCompany().brandRed);
+              const redText = parts[i] + ' ';
+              if (firstSegment)
+                doc.text(redText, presentacionContentX, presentacionY, opts);
+              else doc.text(redText, opts);
+              doc.fillColor('#1a1a1a');
+            } else {
+              const text =
+                i > 0 &&
+                parts[i - 1].toLowerCase() === companyShortName.toLowerCase() &&
+                parts[i].startsWith(' ')
+                  ? parts[i].slice(1)
+                  : parts[i];
+              if (firstSegment)
+                doc.text(text, presentacionContentX, presentacionY, opts);
+              else doc.text(text, opts);
+            }
+            firstSegment = false;
           }
-          firstSegment = false;
-        }
-        presentacionY +=
-          doc.heightOfString(para, { width: presentacionContentWidth }) +
-          paraSpacing;
-      };
-
-      for (const para of presentacionParas) {
-        if (para === 'Estimado/a Sr./Sra.:') {
-          doc.fillColor('#1a1a1a');
-          doc.text(para, presentacionContentX, presentacionY, {
-            width: presentacionContentWidth,
-            align: 'left',
-          });
           presentacionY +=
             doc.heightOfString(para, { width: presentacionContentWidth }) +
             paraSpacing;
-        } else if (para === 'Atentamente,' || para === 'A. Elsayed') {
+        };
+
+      for (const para of presentacionParas) {
+        const isLeftAlign =
+          para === 'Estimado/a Sr./Sra.:' ||
+          para === 'Atentamente,' ||
+          para === 'A. Elsayed' ||
+          para === companyShortName;
+        if (isLeftAlign) {
           doc.fillColor('#1a1a1a');
           doc.text(para, presentacionContentX, presentacionY, {
             width: presentacionContentWidth,
@@ -1143,12 +1682,12 @@ export class PresupuestoDocumentoService {
             doc.heightOfString(para, { width: presentacionContentWidth }) +
             paraSpacing;
         } else {
-          drawParagraphWithDeCaminoRed(para, 'justify');
+          drawParagraphWithCompanyRed(para, 'justify');
         }
       }
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1183,7 +1722,7 @@ export class PresupuestoDocumentoService {
       });
       servOfertaY += 36;
       const servLineW = servOfertaFullWidth * 0.72;
-      doc.strokeColor(BRAND_RED).lineWidth(3);
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
       doc
         .moveTo((PAGE_WIDTH - servLineW) / 2, servOfertaY)
         .lineTo((PAGE_WIDTH - servLineW) / 2 + servLineW, servOfertaY)
@@ -1238,12 +1777,16 @@ export class PresupuestoDocumentoService {
 
       // Firma și data la sfârșitul paginii (deasupra footer) — puțin mai sus ca data să nu treacă pe pagina următoare
       const servFirmaY = FOOTER_Y - 100;
+      const servFirmaNombre =
+        this.getPresupuestoKey() === 'hera'
+          ? 'HERA Facility'
+          : 'A. ELSAYED';
       doc.font('Helvetica-Bold').fontSize(11).fillColor('#1a1a1a');
       doc.text('Atentamente,', servOfertaContentX, servFirmaY, {
         width: servOfertaContentWidth,
         align: 'left',
       });
-      doc.text('A. ELSAYED', servOfertaContentX, servFirmaY + 24, {
+      doc.text(servFirmaNombre, servOfertaContentX, servFirmaY + 24, {
         width: servOfertaContentWidth,
         align: 'left',
       });
@@ -1255,7 +1798,7 @@ export class PresupuestoDocumentoService {
       });
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1292,7 +1835,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         tramY += 36;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const tramLineW = tramFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - tramLineW) / 2, tramY)
@@ -1337,7 +1880,7 @@ export class PresupuestoDocumentoService {
         }
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: tramFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1376,7 +1919,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         puestaY += puestaTitleH + 14;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const puestaLineW = puestaFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - puestaLineW) / 2, puestaY)
@@ -1424,7 +1967,7 @@ export class PresupuestoDocumentoService {
         }
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: puestaFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1506,7 +2049,7 @@ export class PresupuestoDocumentoService {
 
         const addCondPiscinaPage = () => {
           doc.fontSize(7).fillColor('#333333').font('Helvetica');
-          doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+          doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
             width: condPiscinaFullWidth,
             align: 'center',
             height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1556,7 +2099,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         condPiscinaY += 36;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const condPiscinaLineW = condPiscinaFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - condPiscinaLineW) / 2, condPiscinaY)
@@ -1592,7 +2135,7 @@ export class PresupuestoDocumentoService {
 
         if (condPiscinaY >= FOOTER_Y - 25) addCondPiscinaPage();
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: condPiscinaFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1627,7 +2170,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         persY += 36;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const persLineW = persFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - persLineW) / 2, persY)
@@ -1729,12 +2272,17 @@ export class PresupuestoDocumentoService {
               });
               if (persY + bh > FOOTER_Y - 25) {
                 doc.fontSize(7).fillColor('#333333').font('Helvetica');
-                doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
-                  width: persFullWidth,
-                  align: 'center',
-                  height: PAGE_HEIGHT - FOOTER_Y - 12,
-                  ellipsis: true,
-                });
+                doc.text(
+                  this.getCompany().legalRegistryText,
+                  MARGIN,
+                  FOOTER_Y,
+                  {
+                    width: persFullWidth,
+                    align: 'center',
+                    height: PAGE_HEIGHT - FOOTER_Y - 12,
+                    ellipsis: true,
+                  },
+                );
                 doc.addPage({ size: 'A4', margin: MARGIN });
                 if (logoPath) {
                   try {
@@ -1766,7 +2314,7 @@ export class PresupuestoDocumentoService {
         }
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: persFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1801,7 +2349,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         veranoY += 36;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const veranoLineW = veranoFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - veranoLineW) / 2, veranoY)
@@ -1861,7 +2409,7 @@ export class PresupuestoDocumentoService {
         }
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: veranoFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1896,7 +2444,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         invY += 36;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const invLineW = invFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - invLineW) / 2, invY)
@@ -1945,7 +2493,7 @@ export class PresupuestoDocumentoService {
         }
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: invFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -1980,7 +2528,7 @@ export class PresupuestoDocumentoService {
           align: 'center',
         });
         horarioY += 36;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const horarioLineW = horarioFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - horarioLineW) / 2, horarioY)
@@ -2091,7 +2639,7 @@ export class PresupuestoDocumentoService {
         });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: horarioFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -2132,7 +2680,7 @@ export class PresupuestoDocumentoService {
         });
         auxY += auxTitleHeight + 14;
         const auxLineW = auxFullWidth * 0.72;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         doc
           .moveTo((PAGE_WIDTH - auxLineW) / 2, auxY)
           .lineTo((PAGE_WIDTH - auxLineW) / 2 + auxLineW, auxY)
@@ -2142,25 +2690,25 @@ export class PresupuestoDocumentoService {
         const auxLineH = 14;
         const auxParaSpacing = 10;
         const auxSectionSpacing = 16;
+        const auxBlock =
+          this.getPresupuestoKey() === 'hera'
+            ? AUXILIARES_HERA
+            : AUXILIARES_DECAMINO;
 
         doc.font('Helvetica').fontSize(10);
-        const auxIntro1 =
-          'Nuestro servicio de Auxiliares de Servicios está orientado a garantizar la tranquilidad, el control diario y la correcta convivencia dentro de la comunidad, actuando como punto de apoyo permanente para vecinos, administración y proveedores.';
-        doc.text(auxIntro1, auxContentX, auxY, {
+        doc.text(auxBlock.intro1, auxContentX, auxY, {
           width: auxContentWidth,
           align: 'justify',
         });
         auxY +=
-          doc.heightOfString(auxIntro1, { width: auxContentWidth }) +
+          doc.heightOfString(auxBlock.intro1, { width: auxContentWidth }) +
           auxParaSpacing;
-        const auxIntro2 =
-          'El auxiliar se convierte en la figura visible de la comunidad, previniendo incidencias antes de que se conviertan en problemas y ofreciendo una atención cercana y profesional.';
-        doc.text(auxIntro2, auxContentX, auxY, {
+        doc.text(auxBlock.intro2, auxContentX, auxY, {
           width: auxContentWidth,
           align: 'justify',
         });
         auxY +=
-          doc.heightOfString(auxIntro2, { width: auxContentWidth }) +
+          doc.heightOfString(auxBlock.intro2, { width: auxContentWidth }) +
           auxSectionSpacing;
 
         doc.font('Helvetica-Bold').fontSize(11);
@@ -2170,18 +2718,11 @@ export class PresupuestoDocumentoService {
         });
         auxY += auxLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const auxFunciones = [
-          'Control de accesos y supervisión de personas ajenas a la finca.',
-          'Supervisión y seguimiento de trabajos realizados por proveedores.',
-          'Atención y asistencia a residentes que requieran su presencia.',
-          'Realización de rondas preventivas en diferentes horarios.',
-          'Comunicación inmediata de desperfectos o averías a la administración.',
-          'Aviso a servicios técnicos o de emergencia cuando sea necesario.',
-          'Apoyo en situaciones de molestias o incidencias vecinales.',
-          'Supervisión básica de instalaciones comunes (garajes, zonas comunes, sistemas comunitarios).',
-        ];
-        auxFunciones.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        auxBlock.funciones.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', auxContentX + 8, auxY, {
             continued: true,
             width: auxContentWidth - 8,
@@ -2201,14 +2742,11 @@ export class PresupuestoDocumentoService {
         });
         auxY += auxLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const auxApoyo = [
-          'Sustitución de bombillas y luminarias (material a cargo de la comunidad).',
-          'Revisión y limpieza básica de rejillas de desagüe obstruidas.',
-          'Conocimiento de la ubicación de llaves de corte de agua, luz y gas para casos de emergencia.',
-          'Información periódica a la Junta de Gobierno sobre incidencias y estado general de la finca.',
-        ];
-        auxApoyo.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        auxBlock.apoyo.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', auxContentX + 8, auxY, {
             continued: true,
             width: auxContentWidth - 8,
@@ -2228,15 +2766,11 @@ export class PresupuestoDocumentoService {
         });
         auxY += auxLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const auxBeneficios = [
-          'Mayor tranquilidad y control diario',
-          'Prevención de conflictos y actos vandálicos',
-          'Mejora de la convivencia vecinal',
-          'Supervisión constante del estado del edificio',
-          'Imagen cuidada y profesional de la comunidad',
-        ];
-        auxBeneficios.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        auxBlock.beneficios.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', auxContentX + 8, auxY, {
             continued: true,
             width: auxContentWidth - 8,
@@ -2256,15 +2790,13 @@ export class PresupuestoDocumentoService {
         });
         auxY += auxLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const auxMarco =
-          'El servicio se presta conforme a la normativa vigente, sin realizar funciones reservadas al personal de seguridad privada según lo establecido en la legislación aplicable, incluyendo el Real Decreto 2364/1994 y normativa complementaria.';
-        doc.text(auxMarco, auxContentX, auxY, {
+        doc.text(auxBlock.marco, auxContentX, auxY, {
           width: auxContentWidth,
           align: 'justify',
         });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -2305,7 +2837,7 @@ export class PresupuestoDocumentoService {
         });
         limpY += limpTitleHeight + 14;
         const limpLineW = limpFullWidth * 0.72;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         doc
           .moveTo((PAGE_WIDTH - limpLineW) / 2, limpY)
           .lineTo((PAGE_WIDTH - limpLineW) / 2 + limpLineW, limpY)
@@ -2315,51 +2847,47 @@ export class PresupuestoDocumentoService {
         const limpLineH = 14;
         const limpParaSpacing = 10;
         const limpSectionSpacing = 16;
+        const limpBlock =
+          this.getPresupuestoKey() === 'hera'
+            ? LIMPIEZA_HERA
+            : LIMPIEZA_DECAMINO;
 
         doc.font('Helvetica').fontSize(10);
-        const limpIntro1 =
-          'El servicio de limpieza está diseñado para mantener la finca en condiciones óptimas de higiene, imagen y salubridad, garantizando un mantenimiento continuo de las zonas comunes y evitando la acumulación de suciedad o deterioro prematuro de las instalaciones.';
-        doc.text(limpIntro1, limpContentX, limpY, {
+        doc.text(limpBlock.intro1, limpContentX, limpY, {
           width: limpContentWidth,
           align: 'justify',
         });
         limpY +=
-          doc.heightOfString(limpIntro1, { width: limpContentWidth }) +
+          doc.heightOfString(limpBlock.intro1, { width: limpContentWidth }) +
           limpParaSpacing;
-        const limpIntro2 =
-          'Nuestro objetivo es que la comunidad permanezca siempre en buen estado, sin depender de avisos constantes por parte de vecinos o administradores.';
-        doc.text(limpIntro2, limpContentX, limpY, {
+        doc.text(limpBlock.intro2, limpContentX, limpY, {
           width: limpContentWidth,
           align: 'justify',
         });
         limpY +=
-          doc.heightOfString(limpIntro2, { width: limpContentWidth }) +
+          doc.heightOfString(limpBlock.intro2, { width: limpContentWidth }) +
           limpSectionSpacing;
 
         doc.font('Helvetica-Bold').fontSize(11);
-        doc.text('Funcionamiento del servicio', limpContentX, limpY, {
+        doc.text(limpBlock.seccionFunc, limpContentX, limpY, {
           width: limpContentWidth,
           align: 'left',
         });
         limpY += limpLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const limpFunc1 =
-          'El personal asignado realiza un mantenimiento periódico siguiendo un plan de trabajo establecido, adaptado a las características del edificio y supervisado regularmente para asegurar la calidad del servicio.';
-        doc.text(limpFunc1, limpContentX, limpY, {
+        doc.text(limpBlock.func1, limpContentX, limpY, {
           width: limpContentWidth,
           align: 'justify',
         });
         limpY +=
-          doc.heightOfString(limpFunc1, { width: limpContentWidth }) +
+          doc.heightOfString(limpBlock.func1, { width: limpContentWidth }) +
           limpParaSpacing;
-        const limpFunc2 =
-          'Las tareas pueden ajustarse según necesidades de la comunidad.';
-        doc.text(limpFunc2, limpContentX, limpY, {
+        doc.text(limpBlock.func2, limpContentX, limpY, {
           width: limpContentWidth,
           align: 'justify',
         });
         limpY +=
-          doc.heightOfString(limpFunc2, { width: limpContentWidth }) +
+          doc.heightOfString(limpBlock.func2, { width: limpContentWidth }) +
           limpSectionSpacing;
 
         doc.font('Helvetica-Bold').fontSize(11);
@@ -2369,22 +2897,17 @@ export class PresupuestoDocumentoService {
         });
         limpY += limpLineH + 4;
         doc.font('Helvetica-Bold').fontSize(10);
-        doc.text('Frecuencia diaria', limpContentX + 8, limpY, {
+        doc.text(limpBlock.freqDiaria, limpContentX + 8, limpY, {
           width: limpContentWidth - 8,
           align: 'left',
         });
         limpY += limpLineH + 2;
         doc.font('Helvetica').fontSize(10);
-        const limpDiaria = [
-          'Barrido y fregado de suelos',
-          'Limpieza de escaleras interiores',
-          'Limpieza de ascensor',
-          'Limpieza de huellas en barandillas, buzones e interruptores',
-          'Limpieza de cristales de acceso',
-          'Vaciado de publicidad',
-        ];
-        limpDiaria.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        limpBlock.diaria.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', limpContentX + 8, limpY, {
             continued: true,
             width: limpContentWidth - 8,
@@ -2398,20 +2921,17 @@ export class PresupuestoDocumentoService {
         });
         limpY += 8;
         doc.font('Helvetica-Bold').fontSize(10);
-        doc.text('Frecuencia alterna', limpContentX + 8, limpY, {
+        doc.text(limpBlock.freqAlterna, limpContentX + 8, limpY, {
           width: limpContentWidth - 8,
           align: 'left',
         });
         limpY += limpLineH + 2;
         doc.font('Helvetica').fontSize(10);
-        const limpAlterna = [
-          'Limpieza de puerta de acceso',
-          'Desempolvado de puntos de luz',
-          'Limpieza de elementos decorativos',
-          'Limpieza de patios',
-        ];
-        limpAlterna.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        limpBlock.alterna.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', limpContentX + 8, limpY, {
             continued: true,
             width: limpContentWidth - 8,
@@ -2432,15 +2952,11 @@ export class PresupuestoDocumentoService {
         });
         limpY += limpLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const limpBeneficios = [
-          'Mejora de la imagen del edificio',
-          'Prevención de malos olores y suciedad acumulada',
-          'Reducción de quejas vecinales',
-          'Mayor conservación de las instalaciones',
-          'Servicio estable sin depender de una sola persona',
-        ];
-        limpBeneficios.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        limpBlock.beneficios.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', limpContentX + 8, limpY, {
             continued: true,
             width: limpContentWidth - 8,
@@ -2454,16 +2970,15 @@ export class PresupuestoDocumentoService {
         });
         limpY += limpSectionSpacing;
 
-        doc.font('Helvetica').fontSize(10);
-        const limpCierre =
-          'El plan de trabajo puede adaptarse a las necesidades específicas de cada comunidad.';
-        doc.text(limpCierre, limpContentX, limpY, {
+        // Cierre en 9pt para evitar que la última línea salte a una página nueva (sobre todo HERA)
+        doc.font('Helvetica').fontSize(9);
+        doc.text(limpBlock.cierre, limpContentX, limpY, {
           width: limpContentWidth,
           align: 'justify',
         });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -2504,7 +3019,7 @@ export class PresupuestoDocumentoService {
         });
         descY += titleHeight + 14;
         const descLineW = descFullWidth * 0.72;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         doc
           .moveTo((PAGE_WIDTH - descLineW) / 2, descY)
           .lineTo((PAGE_WIDTH - descLineW) / 2 + descLineW, descY)
@@ -2514,25 +3029,28 @@ export class PresupuestoDocumentoService {
         const lineHeight = 14;
         const paraSpacing = 10;
         const sectionSpacing = 16;
+        const jardinBlock =
+          this.getPresupuestoKey() === 'hera'
+            ? JARDINERIA_HERA
+            : JARDINERIA_DECAMINO;
 
         doc.font('Helvetica').fontSize(10);
-        const intro1 =
-          'El servicio de jardinería está orientado a la conservación estética y sanitaria de las zonas verdes, garantizando durante todo el año un correcto estado del jardín y evitando su deterioro progresivo.';
-        doc.text(intro1, descContentX, descY, {
+        doc.text(jardinBlock.intro1, descContentX, descY, {
           width: descContentWidth,
           align: 'justify',
         });
         descY +=
-          doc.heightOfString(intro1, { width: descContentWidth }) + paraSpacing;
-        const intro2 =
-          'El mantenimiento se realiza de forma periódica, adaptándose a las estaciones y necesidades de cada zona ajardinada.';
-        doc.text(intro2, descContentX, descY, {
+          doc.heightOfString(jardinBlock.intro1, {
+            width: descContentWidth,
+          }) + paraSpacing;
+        doc.text(jardinBlock.intro2, descContentX, descY, {
           width: descContentWidth,
           align: 'justify',
         });
         descY +=
-          doc.heightOfString(intro2, { width: descContentWidth }) +
-          sectionSpacing;
+          doc.heightOfString(jardinBlock.intro2, {
+            width: descContentWidth,
+          }) + sectionSpacing;
 
         doc.font('Helvetica-Bold').fontSize(11);
         doc.text('Trabajos de mantenimiento', descContentX, descY, {
@@ -2541,16 +3059,11 @@ export class PresupuestoDocumentoService {
         });
         descY += lineHeight + 4;
         doc.font('Helvetica').fontSize(10);
-        const trabajos = [
-          'Eliminación de malas hierbas mediante medios manuales o mecánicos según superficie',
-          'Recorte y perfilado de zonas verdes',
-          'Limpieza de hojas y restos vegetales',
-          'Retirada de brotes no deseados (chupones)',
-          'Control y revisión del sistema de riego',
-          'Aviso de averías y posibilidad de reparación (materiales no incluidos)',
-        ];
-        trabajos.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        jardinBlock.trabajos.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', descContentX + 8, descY, {
             continued: true,
             width: descContentWidth - 8,
@@ -2571,13 +3084,11 @@ export class PresupuestoDocumentoService {
         });
         descY += lineHeight + 4;
         doc.font('Helvetica').fontSize(10);
-        const tratamientos = [
-          'Dos tratamientos fitosanitarios preventivos anuales con productos homologados (incluidos)',
-          'Abonado orgánico anual incluido',
-          'Poda anual de arbolado hasta 3 metros de altura',
-        ];
-        tratamientos.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        jardinBlock.tratamientos.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', descContentX + 8, descY, {
             continued: true,
             width: descContentWidth - 8,
@@ -2598,15 +3109,11 @@ export class PresupuestoDocumentoService {
         });
         descY += lineHeight + 4;
         doc.font('Helvetica').fontSize(10);
-        const beneficios = [
-          'Jardín cuidado durante todo el año',
-          'Prevención de plagas y deterioro',
-          'Mejora estética de la finca',
-          'Mayor durabilidad de plantas y césped',
-          'Reducción de incidencias por riego o suciedad',
-        ];
-        beneficios.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        jardinBlock.beneficios.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', descContentX + 8, descY, {
             continued: true,
             width: descContentWidth - 8,
@@ -2627,12 +3134,11 @@ export class PresupuestoDocumentoService {
         });
         descY += lineHeight + 4;
         doc.font('Helvetica').fontSize(10);
-        const condiciones = [
-          'El consumo de agua será por cuenta de la comunidad',
-          'La retirada de restos de poda mediante camión no está incluida',
-        ];
-        condiciones.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        jardinBlock.condiciones.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', descContentX + 8, descY, {
             continued: true,
             width: descContentWidth - 8,
@@ -2646,7 +3152,7 @@ export class PresupuestoDocumentoService {
         });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -2687,7 +3193,7 @@ export class PresupuestoDocumentoService {
         });
         cubosY += cubosTitleHeight + 14;
         const cubosLineW = cubosFullWidth * 0.72;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         doc
           .moveTo((PAGE_WIDTH - cubosLineW) / 2, cubosY)
           .lineTo((PAGE_WIDTH - cubosLineW) / 2 + cubosLineW, cubosY)
@@ -2697,43 +3203,56 @@ export class PresupuestoDocumentoService {
         const cubosLineH = 14;
         const cubosParaSpacing = 10;
         const cubosSectionSpacing = 16;
+        const cubosBlock =
+          this.getPresupuestoKey() === 'hera'
+            ? CUBOS_HERA
+            : CUBOS_DECAMINO;
 
         doc.font('Helvetica').fontSize(10);
-        const cubosIntro1 =
-          'El servicio de gestión de cubos está orientado a mantener la zona de residuos organizada, limpia y sin molestias para los vecinos, evitando acumulaciones, malos olores y sanciones por incumplimiento de horarios municipales.';
-        doc.text(cubosIntro1, cubosContentX, cubosY, {
+        doc.text(cubosBlock.intro1, cubosContentX, cubosY, {
           width: cubosContentWidth,
           align: 'justify',
         });
         cubosY +=
-          doc.heightOfString(cubosIntro1, { width: cubosContentWidth }) +
-          cubosParaSpacing;
-        const cubosIntro2 =
-          'Nos encargamos de la correcta retirada y colocación de los contenedores según la normativa local, garantizando comodidad para la comunidad y una buena imagen del edificio.';
-        doc.text(cubosIntro2, cubosContentX, cubosY, {
+          doc.heightOfString(cubosBlock.intro1, {
+            width: cubosContentWidth,
+          }) + cubosParaSpacing;
+        doc.text(cubosBlock.intro2, cubosContentX, cubosY, {
           width: cubosContentWidth,
           align: 'justify',
         });
         cubosY +=
-          doc.heightOfString(cubosIntro2, { width: cubosContentWidth }) +
-          cubosSectionSpacing;
+          doc.heightOfString(cubosBlock.intro2, {
+            width: cubosContentWidth,
+          }) + cubosSectionSpacing;
 
         doc.font('Helvetica-Bold').fontSize(11);
-        doc.text('Funcionamiento del servicio', cubosContentX, cubosY, {
+        doc.text(cubosBlock.seccionFunc, cubosContentX, cubosY, {
           width: cubosContentWidth,
           align: 'left',
         });
         cubosY += cubosLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const cubosFunc =
-          'El personal asignado realiza la retirada y reposición de cubos en los horarios establecidos por la ordenanza municipal, asegurando que los vecinos siempre dispongan de acceso a los contenedores sin tener que manipularlos.';
-        doc.text(cubosFunc, cubosContentX, cubosY, {
+        doc.text(cubosBlock.func1, cubosContentX, cubosY, {
           width: cubosContentWidth,
           align: 'justify',
         });
         cubosY +=
-          doc.heightOfString(cubosFunc, { width: cubosContentWidth }) +
-          cubosSectionSpacing;
+          doc.heightOfString(cubosBlock.func1, {
+            width: cubosContentWidth,
+          }) + (cubosBlock.func2 ? cubosParaSpacing : 0);
+        if (cubosBlock.func2) {
+          doc.text(cubosBlock.func2, cubosContentX, cubosY, {
+            width: cubosContentWidth,
+            align: 'justify',
+          });
+          cubosY +=
+            doc.heightOfString(cubosBlock.func2, {
+              width: cubosContentWidth,
+            }) + cubosSectionSpacing;
+        } else {
+          cubosY += cubosSectionSpacing;
+        }
 
         doc.font('Helvetica-Bold').fontSize(11);
         doc.text('Tareas incluidas', cubosContentX, cubosY, {
@@ -2742,16 +3261,11 @@ export class PresupuestoDocumentoService {
         });
         cubosY += cubosLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const cubosTareas = [
-          'Salida de cubos en horario permitido',
-          'Entrada de cubos tras la recogida municipal',
-          'Colocación correcta en la zona asignada',
-          'Cierre de tapas y ordenación del área de residuos',
-          'Limpieza básica del entorno inmediato',
-          'Aviso de incidencias (roturas, suciedad excesiva, vandalismo)',
-        ];
-        cubosTareas.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        cubosBlock.tareas.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', cubosContentX + 8, cubosY, {
             continued: true,
             width: cubosContentWidth - 8,
@@ -2772,15 +3286,11 @@ export class PresupuestoDocumentoService {
         });
         cubosY += cubosLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const cubosBeneficios = [
-          'Evita sanciones municipales',
-          'Elimina molestias para los vecinos',
-          'Mejora la higiene del acceso a la finca',
-          'Previene malos olores y suciedad',
-          'Mayor comodidad diaria',
-        ];
-        cubosBeneficios.forEach((line) => {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        cubosBlock.beneficios.forEach((line) => {
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(10);
           doc.text('• ', cubosContentX + 8, cubosY, {
             continued: true,
             width: cubosContentWidth - 8,
@@ -2801,15 +3311,13 @@ export class PresupuestoDocumentoService {
         });
         cubosY += cubosLineH + 4;
         doc.font('Helvetica').fontSize(10);
-        const cubosCond =
-          'El servicio se realizará conforme a la normativa municipal vigente de recogida de residuos.';
-        doc.text(cubosCond, cubosContentX, cubosY, {
+        doc.text(cubosBlock.condiciones, cubosContentX, cubosY, {
           width: cubosContentWidth,
           align: 'justify',
         });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -2890,7 +3398,7 @@ export class PresupuestoDocumentoService {
       });
       ofertaY +=
         doc.heightOfString(tituloOferta, { width: ofertaFullWidth }) + 14;
-      doc.strokeColor(BRAND_RED).lineWidth(3);
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
       const ofertaLineW = ofertaFullWidth * 0.72;
       doc
         .moveTo((PAGE_WIDTH - ofertaLineW) / 2, ofertaY)
@@ -3013,7 +3521,10 @@ export class PresupuestoDocumentoService {
         const bulletChar = '\u2022';
         const lineGapPagos = 12;
         for (const p of pagosPiscina) {
-          doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(11);
+          doc
+            .fillColor(this.getCompany().brandRed)
+            .font('Helvetica-Bold')
+            .fontSize(11);
           doc.text(bulletChar + ' ', MARGIN, ofertaY, {
             continued: true,
             width: ofertaFullWidth,
@@ -3146,7 +3657,10 @@ export class PresupuestoDocumentoService {
           const bulletChar2 = '\u2022';
           const lineGapPagos2 = 12;
           for (const p of pagosPiscina2) {
-            doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(11);
+            doc
+              .fillColor(this.getCompany().brandRed)
+              .font('Helvetica-Bold')
+              .fontSize(11);
             doc.text(bulletChar2 + ' ', MARGIN, ofertaY, {
               continued: true,
               width: ofertaFullWidth,
@@ -3252,7 +3766,7 @@ export class PresupuestoDocumentoService {
       }
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -3286,7 +3800,7 @@ export class PresupuestoDocumentoService {
       });
       garantiaY +=
         doc.heightOfString(tituloGarantia, { width: garantiaFullWidth }) + 14;
-      doc.strokeColor(BRAND_RED).lineWidth(3);
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
       const garantiaLineW = garantiaFullWidth * 0.72;
       doc
         .moveTo((PAGE_WIDTH - garantiaLineW) / 2, garantiaY)
@@ -3298,8 +3812,8 @@ export class PresupuestoDocumentoService {
       const introResto =
         ' garantiza el cumplimiento de las siguientes obligaciones y certificaciones profesionales, como base de confianza en nuestra relación con los clientes.';
       doc.font('Helvetica-Bold').fontSize(10).fillColor('#333333');
-      const wBold = doc.widthOfString(EMPRESA_NOMBRE);
-      doc.text(EMPRESA_NOMBRE, MARGIN, garantiaY);
+      const wBold = doc.widthOfString(this.getCompany().legalName);
+      doc.text(this.getCompany().legalName, MARGIN, garantiaY);
       doc.font('Helvetica').fontSize(10).fillColor('#333333');
       const firstLineWidth = garantiaFullWidth - wBold;
       const words = introResto.split(/(\s+)/);
@@ -3418,6 +3932,11 @@ export class PresupuestoDocumentoService {
           h: row4H,
         },
       ];
+      // HERA: no mostrar 4.5 Plan de Igualdad (no aplica)
+      const cajasFiltradas =
+        this.getPresupuestoKey() === 'hera'
+          ? cajas.filter((c) => c.titulo !== '4.5  Plan de Igualdad')
+          : cajas;
       const drawGarantiaTextoWithBoldEmpresa = (
         texto: string,
         x: number,
@@ -3439,13 +3958,16 @@ export class PresupuestoDocumentoService {
               .font('Helvetica-Bold')
               .fontSize(8)
               .fillColor('#333333')
-              .text(EMPRESA_NOMBRE, { ...opts, continued: true });
+              .text(this.getCompany().legalName, { ...opts, continued: true });
           } else if (i === 0 && parts[0] === '') {
             doc
               .font('Helvetica-Bold')
               .fontSize(8)
               .fillColor('#333333')
-              .text(EMPRESA_NOMBRE, x, y, { ...opts, continued: true });
+              .text(this.getCompany().legalName, x, y, {
+                ...opts,
+                continued: true,
+              });
           }
           if (parts[i] !== '') {
             doc.font('Helvetica').fontSize(8).fillColor('#333333');
@@ -3458,8 +3980,8 @@ export class PresupuestoDocumentoService {
         }
       };
 
-      for (let i = 0; i < cajas.length; i++) {
-        const c = cajas[i];
+      for (let i = 0; i < cajasFiltradas.length; i++) {
+        const c = cajasFiltradas[i];
         const x = c.x;
         const y = c.y;
         const w = c.w;
@@ -3467,11 +3989,14 @@ export class PresupuestoDocumentoService {
         const innerW = w - boxPad * 2 - redBarW;
         doc.fillColor('#fafafa').strokeColor('#cccccc').lineWidth(1);
         doc.roundedRect(x, y, w, h, cornerR).fillAndStroke();
-        doc.fillColor(BRAND_RED);
+        doc.fillColor(this.getCompany().brandRed);
         doc
           .roundedRect(x, y + cornerR * 0.3, redBarW, h - cornerR * 0.6, 2)
           .fill();
-        doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(9);
+        doc
+          .fillColor(this.getCompany().brandRed)
+          .font('Helvetica-Bold')
+          .fontSize(9);
         doc.text(c.titulo, x + boxPad + redBarW, y + boxPad, { width: innerW });
         const titleH = doc.heightOfString(c.titulo, { width: innerW });
         const textY = y + boxPad + titleH + 4;
@@ -3484,7 +4009,7 @@ export class PresupuestoDocumentoService {
       }
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -3522,7 +4047,7 @@ export class PresupuestoDocumentoService {
         });
         condGenY +=
           doc.heightOfString(tituloCond, { width: condFullWidth }) + 14;
-        doc.strokeColor(BRAND_RED).lineWidth(2);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(2);
         const condLineW = condFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - condLineW) / 2, condGenY)
@@ -3530,87 +4055,23 @@ export class PresupuestoDocumentoService {
           .stroke();
         condGenY += 14;
 
+        const condBlock =
+          this.getPresupuestoKey() === 'hera'
+            ? CONDICIONES_CONTRACTUALES_HERA
+            : CONDICIONES_CONTRACTUALES_DECAMINO;
         doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
-        const introCond =
-          'La aprobación del presente presupuesto por parte de la Comunidad de Propietarios tendrá la consideración de acuerdo vinculante entre las partes, adquiriendo carácter contractual desde el inicio efectivo del servicio.';
-        doc.text(introCond, MARGIN, condGenY, {
+        doc.text(condBlock.intro, MARGIN, condGenY, {
           width: condFullWidth,
           align: 'justify',
         });
         condGenY +=
-          doc.heightOfString(introCond, { width: condFullWidth }) + 14;
-
-        const seccionesCond: { titulo: string; parrafos: string[] }[] = [
-          {
-            titulo: '1. Inicio y duración',
-            parrafos: [
-              'El servicio comenzará en la fecha acordada tras la aprobación del presupuesto.',
-              'La duración inicial será de 12 meses, prorrogándose automáticamente por periodos anuales salvo comunicación escrita en contrario con un preaviso mínimo de 30 días.',
-            ],
-          },
-          {
-            titulo: '2. Condiciones económicas y facturación',
-            parrafos: [
-              'Los precios indicados no incluyen IVA, aplicándose el tipo vigente en cada momento.',
-              'La facturación será mensual mediante recibo domiciliado, realizándose el pago dentro de los últimos 5 días hábiles del mes en curso.',
-              'El impago total o parcial de cualquier factura devengará un recargo del 1% sobre la cantidad adeudada, así como los gastos bancarios derivados de su devolución. La empresa podrá suspender temporalmente el servicio hasta su regularización.',
-            ],
-          },
-          {
-            titulo: '3. Revisión de precios',
-            parrafos: [
-              'Los precios están calculados conforme al convenio colectivo aplicable y podrán actualizarse cuando exista:',
-              '• modificación legal obligatoria (SMI, convenio, normativa laboral o fiscal)',
-              '• cambios en horarios, frecuencia o condiciones del servicio',
-              '• variaciones en costes laborales derivados de subrogación',
-            ],
-          },
-          {
-            titulo: '4. Subrogación de personal',
-            parrafos: [
-              'En caso de subrogación, las condiciones económicas podrán adaptarse a las obligaciones legales derivadas del convenio colectivo.',
-              'Si la relación laboral del trabajador subrogado finalizara por cualquier causa, el precio del servicio será actualizado conforme a las nuevas condiciones laborales.',
-              'En caso de resoluciones judiciales que obliguen al abono de indemnizaciones vinculadas al servicio contratado, la Comunidad asumirá el coste correspondiente al tratarse de obligaciones derivadas de su contratación.',
-            ],
-          },
-          {
-            titulo: '5. Obligaciones de la Comunidad',
-            parrafos: [
-              'La Comunidad facilitará acceso a las instalaciones, suministros necesarios y condiciones adecuadas para la correcta prestación del servicio.',
-            ],
-          },
-          {
-            titulo: '6. Responsabilidad',
-            parrafos: [
-              'La empresa no será responsable de daños derivados del estado previo de las instalaciones, uso indebido por terceros o incidencias ajenas al servicio contratado.',
-            ],
-          },
-          {
-            titulo: '7. Normativa aplicable',
-            parrafos: [
-              'El servicio se prestará conforme a la normativa laboral, prevención de riesgos laborales y demás legislación vigente.',
-            ],
-          },
-          {
-            titulo: '8. Servicios no incluidos',
-            parrafos: [
-              'No se incluyen gestiones documentales CAE o PRL en plataformas externas.',
-              'En caso de requerirse, podrán contratarse adicionalmente por 250,00 € + IVA anuales.',
-            ],
-          },
-          {
-            titulo: '9. Formalización contractual',
-            parrafos: [
-              'La aceptación del presupuesto mediante firma manuscrita o electrónica, así como el inicio efectivo del servicio, implicará la plena aceptación de estas condiciones contractuales, considerándose formalizado el contrato de prestación de servicios.',
-            ],
-          },
-        ];
+          doc.heightOfString(condBlock.intro, { width: condFullWidth }) + 14;
 
         const condTitleGap = 6;
         const condParaGap = 8;
         const addCondPage = () => {
           doc.fontSize(7).fillColor('#333333').font('Helvetica');
-          doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+          doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
             width: condFullWidth,
             align: 'center',
             height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -3637,7 +4098,7 @@ export class PresupuestoDocumentoService {
           doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
         };
 
-        for (const sec of seccionesCond) {
+        for (const sec of condBlock.secciones) {
           // Forzar salto de página antes de 6. Responsabilidad: todo desde ahí va a la segunda página
           if (sec.titulo === '6. Responsabilidad') addCondPage();
           doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
@@ -3663,7 +4124,7 @@ export class PresupuestoDocumentoService {
         // Evitar que el footer se dibuje encima del contenido: si el último texto quedó cerca o por debajo de FOOTER_Y, pasar a nueva página (addCondPage dibuja footer abajo y añade página)
         if (condGenY >= FOOTER_Y - 25) addCondPage();
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: condFullWidth,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -3674,7 +4135,7 @@ export class PresupuestoDocumentoService {
       // ——— PÁGINA: ACEPTACIÓN ———
       doc.addPage({ size: 'A4', margin: MARGIN });
       doc.opacity(1).fillColor('#1a1a1a');
-      const stampPath = getStampPath();
+      const stampPath = getStampPathForCompany(this.getCompany(), this.getPresupuestoKey());
       if (logoPath) {
         try {
           doc.opacity(0.1);
@@ -3701,7 +4162,7 @@ export class PresupuestoDocumentoService {
         align: 'center',
       });
       aceptY += doc.heightOfString(tituloAcept, { width: aceptFullWidth }) + 10;
-      doc.strokeColor(BRAND_RED).lineWidth(3);
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
       const aceptLineW = aceptFullWidth * 0.72;
       doc
         .moveTo((PAGE_WIDTH - aceptLineW) / 2, aceptY)
@@ -3854,7 +4315,7 @@ export class PresupuestoDocumentoService {
       doc.rect(aceptContentX, aceptY, caminoBoxW, caminoBoxH).fillAndStroke();
       doc.font('Helvetica').fontSize(7).fillColor('#333333');
       const textoCaminoW = stampPath ? caminoBoxW - 58 : caminoBoxW - 16;
-      doc.text(EMPRESA_DIRECCION, aceptContentX + 8, aceptY + 8, {
+      doc.text(this.getCompany().empresaBlock, aceptContentX + 8, aceptY + 8, {
         width: textoCaminoW,
       });
       if (stampPath) {
@@ -3917,10 +4378,7 @@ export class PresupuestoDocumentoService {
         aceptY += 18;
       } else {
         const firmarBaseUrl =
-          process.env.FIRMAR_BASE_URL ||
-          (process.env.NODE_ENV === 'production'
-            ? 'https://app.decaminoservicios.com'
-            : 'http://localhost:5173');
+          process.env.FIRMAR_BASE_URL || this.getCompany().frontendAppUrl || '';
         const firmarUrl = `${firmarBaseUrl}/firmar.html?id=${id}`;
         const btnW = 200;
         const btnH = 32;
@@ -3991,7 +4449,7 @@ export class PresupuestoDocumentoService {
       }
 
       doc.fontSize(7).fillColor('#333333').font('Helvetica');
-      doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+      doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
         width: PAGE_WIDTH - MARGIN * 2,
         align: 'center',
         height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -4028,7 +4486,7 @@ export class PresupuestoDocumentoService {
         });
         fiestaY +=
           doc.heightOfString(tituloFiesta, { width: fiestaFullWidth }) + 14;
-        doc.strokeColor(BRAND_RED).lineWidth(3);
+        doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
         const fiestaLineW = fiestaFullWidth * 0.72;
         doc
           .moveTo((PAGE_WIDTH - fiestaLineW) / 2, fiestaY)
@@ -4037,7 +4495,7 @@ export class PresupuestoDocumentoService {
         fiestaY += 28;
 
         doc.font('Helvetica').fontSize(10).fillColor('#333333');
-        const fiestaIntro = `El último día, ${EMPRESA_NOMBRE} participará en la fiesta de final de temporada:`;
+        const fiestaIntro = `El último día, ${this.getCompany().legalName} participará en la fiesta de final de temporada:`;
         doc.text(fiestaIntro, fiestaContentX, fiestaY, {
           width: fiestaContentWidth,
           align: 'justify',
@@ -4045,7 +4503,10 @@ export class PresupuestoDocumentoService {
         fiestaY +=
           doc.heightOfString(fiestaIntro, { width: fiestaContentWidth }) + 14;
 
-        doc.fillColor(BRAND_RED).font('Helvetica-Bold').fontSize(10);
+        doc
+          .fillColor(this.getCompany().brandRed)
+          .font('Helvetica-Bold')
+          .fontSize(10);
         doc.text('\u2022 ', fiestaContentX, fiestaY, {
           continued: true,
           width: fiestaContentWidth,
@@ -4059,14 +4520,17 @@ export class PresupuestoDocumentoService {
             width: fiestaContentWidth,
           }) + 18;
 
-        doc.font('Helvetica-Bold').fontSize(11).fillColor(BRAND_RED);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(11)
+          .fillColor(this.getCompany().brandRed);
         doc.text('SIN COSTE PARA LA COMUNIDAD', fiestaContentX, fiestaY, {
           width: fiestaContentWidth,
           align: 'center',
         });
 
         doc.fontSize(7).fillColor('#333333').font('Helvetica');
-        doc.text(FOOTER_LINE, MARGIN, FOOTER_Y, {
+        doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'center',
           height: PAGE_HEIGHT - FOOTER_Y - 12,
@@ -4079,7 +4543,10 @@ export class PresupuestoDocumentoService {
       const totalPages = pageRange.count;
       for (let i = 1; i < totalPages; i++) {
         doc.switchToPage(i);
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(BRAND_RED);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .fillColor(this.getCompany().brandRed);
         doc.text(`Pag. ${i + 1} de ${totalPages}`, MARGIN, PAGE_NUM_Y, {
           width: PAGE_WIDTH - MARGIN * 2,
           align: 'right',
@@ -4089,243 +4556,34 @@ export class PresupuestoDocumentoService {
       doc.end();
     });
 
-    const filename = `${nombre.substring(0, 200).trim() || 'Presupuesto'}.pdf`;
+    // HERA: numele fișierului cu marca HERA, nu "DE CAMINO" din BD
+    let filename: string;
+    if (this.getPresupuestoKey() === 'hera') {
+      const year = new Date().getFullYear();
+      const servicios =
+        (payload?.selectedServiciosPresupuesto as Array<{ nombre?: unknown }>) ||
+        [];
+      const servPart =
+        servicios.length > 0
+          ? servicios
+              .map((s) => {
+                const n = s?.nombre;
+                const t = (n != null ? String(n).trim() : '');
+                return t.startsWith('<') ? t.replace(/<[^>]*>/g, '').trim() : t;
+              })
+              .join(', ')
+          : 'Servicios';
+      const safeCliente = (clienteNombre || 'Cliente').replace(
+        /[/\\?%*:|"<>]/g,
+        '-',
+      );
+      filename = `${this.getCompany().legalNameShort} - PRESUPUESTO ${year} - ${safeCliente} - ${servPart}.pdf`;
+    } else {
+      filename = `${nombre.substring(0, 200).trim() || 'Presupuesto'}.pdf`;
+    }
     return { buffer, filename };
-  }
-
-  /** Ruta al .docx plantilla (copia del documento de referencia con placeholders {cliente_nombre}, {numero_presupuesto}, {#filas_oferta}...) */
-  private getTemplatePath(): string {
-    const candidates = [
-      path.join(process.cwd(), 'assets', 'presupuesto-template.docx'),
-      path.join(process.cwd(), '..', 'presupuesto-template.docx'),
-      path.join(__dirname, '..', '..', 'assets', 'presupuesto-template.docx'),
-    ];
-    for (const p of candidates) {
-      if (fs.existsSync(p)) return p;
+    } finally {
+      this._pdfCompanyKey = null;
     }
-    return candidates[0];
-  }
-
-  async generarDocx(id: number): Promise<{ buffer: Buffer; filename: string }> {
-    const presupuesto = await this.presupuestosGuardadosService.findOne(id);
-    const payload = (presupuesto.payload || {}) as Record<string, unknown>;
-    const ofertaEconomica = (payload.ofertaEconomica ||
-      []) as OfertaEconomicaRow[];
-    const clienteNombre =
-      (presupuesto.cliente_nombre || '').trim() || 'Cliente';
-    const nombre = (presupuesto.nombre || 'Presupuesto').replace(
-      /[/\\?%*:|"<>]/g,
-      '-',
-    );
-    const numeroPresupuesto = await this.getOrAssignNumeroPresupuesto(id);
-    const fmt = (n: number) =>
-      (n ?? 0).toLocaleString('es-ES', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-
-    const templatePath = this.getTemplatePath();
-    if (!fs.existsSync(templatePath)) {
-      throw new NotFoundException(
-        'No existe la plantilla presupuesto-template.docx. Copia tu documento de referencia en backend/assets/presupuesto-template.docx y sustituye los textos variables por: {cliente_nombre}, {numero_presupuesto}, {indice_descripcion_operativa}, {servicios_ofertados} (solo servicios ofertados), y en la tabla de oferta {#filas_oferta} {descripcion} {mensualidad_sin_iva} {mensualidad_con_iva} {anualidad_sin_iva} {anualidad_con_iva} {/filas_oferta}.',
-      );
-    }
-
-    const PizZip = require('pizzip');
-    const Docxtemplater = require('docxtemplater');
-
-    const content = fs.readFileSync(templatePath, 'binary');
-    const zip = new PizZip(content);
-
-    const doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true,
-    });
-
-    // Servicii incluse în ofertă (pentru filtrare INDICE, tabla oferta, blocuri)
-    let tiposIncluidosDocx = new Set(
-      (
-        (payload.selectedServiciosPresupuesto || []) as Array<{
-          nombre?: string;
-        }>
-      ).map((s) => derivarTipoDesdeServicio(s.nombre || '')),
-    );
-    if (tiposIncluidosDocx.size === 0 && ofertaEconomica.length > 0) {
-      tiposIncluidosDocx = new Set(
-        ofertaEconomica.map((r) =>
-          derivarTipoDesdeServicio(r.descripcion || ''),
-        ),
-      );
-    }
-
-    // Tabla OFERTA ECONOMICA: doar rândurile pentru serviciile din ofertă (când avem selectedServiciosPresupuesto filtrăm; altfel tot ce e în ofertaEconomica)
-    const ofertaParaTabla =
-      tiposIncluidosDocx.size > 0
-        ? ofertaEconomica.filter((row) =>
-            tiposIncluidosDocx.has(
-              derivarTipoDesdeServicio(row.descripcion || ''),
-            ),
-          )
-        : ofertaEconomica;
-    const filas_oferta = (
-      ofertaParaTabla.length ? ofertaParaTabla : ofertaEconomica
-    ).map((row) => ({
-      descripcion: row.descripcion || '',
-      mensualidad_sin_iva: `${fmt(row.mensualidadSinIva)} €+IVA`,
-      mensualidad_con_iva: `${fmt(row.mensualidadConIva)} € IVA incluido`,
-      anualidad_sin_iva: `${fmt(row.anualidadSinIva)} €+IVA`,
-      anualidad_con_iva: `${fmt(row.anualidadConIva)} € IVA incluido`,
-    }));
-    const seccionesOperativa: string[] = [];
-    let subDocx = 1;
-    if (tiposIncluidosDocx.has('auxiliares'))
-      seccionesOperativa.push(`2.${subDocx++} Auxiliar de Servicios`);
-    if (tiposIncluidosDocx.has('limpieza'))
-      seccionesOperativa.push(`2.${subDocx++} Servicio de Limpieza`);
-    if (tiposIncluidosDocx.has('jardineria'))
-      seccionesOperativa.push(`2.${subDocx++} Jardineria`);
-    if (tiposIncluidosDocx.has('cubos'))
-      seccionesOperativa.push(`2.${subDocx++} Gestión Cubos de Basura`);
-    const indice_descripcion_operativa =
-      seccionesOperativa.length > 0
-        ? seccionesOperativa.join('\n')
-        : '2.1 (según servicios contratados)';
-    const indice_lineas =
-      seccionesOperativa.length > 0
-        ? seccionesOperativa
-        : ['2.1 (según servicios contratados)'];
-
-    // SERVICIOS OFERTADOS: solo los contratados, numerados 1., 2., 3.
-    const serviciosOfertadosLineas: string[] = [];
-    let numServ = 1;
-    if (tiposIncluidosDocx.has('auxiliares'))
-      serviciosOfertadosLineas.push(
-        `${numServ++}. Auxiliar de Servicios: Servicio 24 horas al día, 365 días al año.`,
-      );
-    if (tiposIncluidosDocx.has('limpieza'))
-      serviciosOfertadosLineas.push(
-        `${numServ++}. Servicio de Limpieza: 4 horas diarias, de lunes a viernes. Festivos no incluidos.`,
-      );
-    if (tiposIncluidosDocx.has('jardineria'))
-      serviciosOfertadosLineas.push(
-        `${numServ++}. Jardinería: 1 visita semanal. Festivos no incluidos.`,
-      );
-    if (tiposIncluidosDocx.has('cubos'))
-      serviciosOfertadosLineas.push(
-        `${numServ++}. Gestión cubos de basura: Precio según oferta económica.`,
-      );
-    const servicios_ofertados =
-      serviciosOfertadosLineas.length > 0
-        ? serviciosOfertadosLineas.join('\n')
-        : '1. (según servicios ofertados)';
-    const servicios_ofertados_lista =
-      serviciosOfertadosLineas.length > 0
-        ? serviciosOfertadosLineas
-        : ['1. (según servicios ofertados)'];
-
-    // Fecha emisión = data creării presupuesto (informe), nu data de azi
-    const fechaEmision = presupuesto.created_at
-      ? new Date(presupuesto.created_at)
-      : new Date();
-    const fechaFormatted = fechaEmision.toLocaleDateString('es-ES', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-
-    doc.render({
-      cliente_nombre: clienteNombre,
-      numero_presupuesto: numeroPresupuesto,
-      NoPresupuesto: numeroPresupuesto,
-      nombre_presupuesto: nombre,
-      fecha: fechaFormatted,
-      fecha_emision: fechaFormatted,
-      filas_oferta: filas_oferta.length
-        ? filas_oferta
-        : [
-            {
-              descripcion: '-',
-              mensualidad_sin_iva: '-',
-              mensualidad_con_iva: '-',
-              anualidad_sin_iva: '-',
-              anualidad_con_iva: '-',
-            },
-          ],
-      indice_descripcion_operativa,
-      indice_lineas,
-      servicios_ofertados,
-      servicios_ofertados_lista,
-      mostrar_auxiliares: tiposIncluidosDocx.has('auxiliares'),
-      mostrar_limpieza: tiposIncluidosDocx.has('limpieza'),
-      mostrar_jardineria: tiposIncluidosDocx.has('jardineria'),
-      mostrar_cubos: tiposIncluidosDocx.has('cubos'),
-    });
-
-    // Post-procesare: înlocuim în toate XML-urile DOCX textele fixe cu numele clientului și numărul presupuesto
-    const zipOut = doc.getZip();
-    const safeNombre = String(clienteNombre).replace(/[<>]/g, '');
-    const safeNumero = String(numeroPresupuesto).replace(/[<>]/g, '');
-
-    const applyReplacements = (xml: string): string => {
-      // Doar înlocuiri de TEXT (fără a șterge/modifica tag-uri) ca Word să deschidă fișierul
-      // 1) Rând template "Officina - DE CAMINO SERVICIOS AUXILIARES SL, Madrid" → gol
-      xml = xml.replace(
-        /Officina\s*-\s*DE\s+CAMINO\s+SERVICIOS\s+AUXILIARES\s+SL\s*,?\s*Madrid/gi,
-        '',
-      );
-      xml = xml.replace(
-        /Officina\s*-\s*DE CAMINO SERVICIOS AUXILIARES SL\s*,?\s*Madrid/gi,
-        '',
-      );
-      // 2) Nume client
-      xml = xml
-        .split('COMUNIDAD DE PROPRIETARIOS LOS JUNCOS I, Madrid')
-        .join(safeNombre)
-        .split('COMUNIDAD DE PROPRIETARIOS LOS JUNCOS I , Madrid')
-        .join(safeNombre);
-      xml = xml
-        .replace(/LOS JUNCOS I\s*,?\s*Madrid/g, safeNombre)
-        .replace(/LOS JUNCOS I(?=[<\s])/g, safeNombre);
-      xml = xml.replace(/\s*LOS JUNCOS I\s*,?\s*Madrid/g, '');
-      xml = xml.split('COMUNIDAD DE PROPRIETARIOS').join(safeNombre);
-      // 3) Număr: doar când e într-un singur bloc de text (nu modificăm structura run-uri = nu mai corupem fișierul)
-      xml = xml.replace(/Nº\s*MAD\s*260216C/gi, `Nº ${safeNumero}`);
-      xml = xml.replace(/Nº\s*MAD260216C/gi, `Nº ${safeNumero}`);
-      xml = xml.replace(/MAD\s*260216C/g, safeNumero);
-      xml = xml.replace(/MAD260216C/g, safeNumero);
-      xml = xml.replace(/MAD[0-9A-Z]{5,12}/g, safeNumero);
-      // 4) Placeholder din template: NoPresupuesto (dacă e scris ca text într-un run, docxtemplater nu îl înlocuie; îl înlocuim aici)
-      xml = xml.replace(/NoPresupuesto/g, safeNumero);
-      return xml;
-    };
-
-    // NU ștergem paragrafe din XML — orice eliminare de <w:p> corupe DOCX-ul și Word nu îl deschide. Pentru doar serviciile contractate în INDICE: editează template-ul în Word — șterge cele 3 rânduri (Auxiliar, Limpieza, Jardineria) și pune un singur paragraf cu {indice_descripcion_operativa}.
-
-    const zipFiles = (zipOut as any).files as Record<
-      string,
-      { asText: () => string }
-    >;
-    if (zipFiles && typeof zipFiles === 'object') {
-      for (const name of Object.keys(zipFiles)) {
-        if (name.startsWith('word/') && name.endsWith('.xml')) {
-          const file = zipOut.file(name);
-          if (file) {
-            let text = file.asText();
-            if (typeof text === 'string') {
-              text = applyReplacements(text);
-              zipOut.file(name, text);
-            }
-          }
-        }
-      }
-    }
-
-    const buffer = zipOut.generate({
-      type: 'nodebuffer',
-      compression: 'DEFLATE',
-    });
-
-    const filename = `${nombre.substring(0, 200).trim() || 'Presupuesto'}.docx`;
-    return { buffer: buffer as Buffer, filename };
   }
 }

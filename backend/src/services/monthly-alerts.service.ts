@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as mysql from 'mysql2/promise';
 
@@ -6,7 +7,10 @@ import * as mysql from 'mysql2/promise';
 export class MonthlyAlertsService {
   private readonly logger = new Logger(MonthlyAlertsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async getMonthlyRecords(empleadoId: string, mes: string) {
     if (!empleadoId || !mes) {
@@ -562,32 +566,29 @@ export class MonthlyAlertsService {
     const queryWithParams = query.replace(/\?/g, `'${mes}'`);
 
     try {
-      // Get database connection info from Prisma
-      const dbUrl =
-        process.env.DATABASE_URL ||
-        (() => {
-          const host = process.env.DB_HOST || 'localhost';
-          const port = parseInt(process.env.DB_PORT || '3306');
-          const user = process.env.DB_USERNAME || 'root';
-          const password = process.env.DB_PASSWORD || '';
-          const database = process.env.DB_NAME || 'decaminoservicios';
-          return { host, port, user, password, database };
-        })();
-
-      // Parse DATABASE_URL if it exists
-      let connectionConfig: any;
-      if (typeof dbUrl === 'string') {
-        const url = new URL(dbUrl);
-        connectionConfig = {
-          host: url.hostname,
-          port: parseInt(url.port || '3306'),
-          user: url.username,
-          password: decodeURIComponent(url.password),
-          database: url.pathname.slice(1),
-        };
-      } else {
-        connectionConfig = dbUrl;
-      }
+      // Folosim ConfigService (baza clientului curent: DeCamino sau HERA), nu process.env.DATABASE_URL care poate fi greșit
+      const dbConfig = this.configService.get<{
+        host: string;
+        port: number;
+        username: string;
+        password: string;
+        database: string;
+      }>('database');
+      const connectionConfig = dbConfig
+        ? {
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.username,
+            password: dbConfig.password,
+            database: dbConfig.database,
+          }
+        : {
+            host: process.env.DB_HOST || 'localhost',
+            port: parseInt(process.env.DB_PORT || '3306'),
+            user: process.env.DB_USERNAME || 'root',
+            password: process.env.DB_PASSWORD || '',
+            database: process.env.DB_NAME || 'decaminoservicios',
+          };
 
       this.logger.debug('🔍 [MonthlyAlerts] Creating MySQL connection...');
       this.logger.debug(

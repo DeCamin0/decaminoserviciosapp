@@ -135,6 +135,7 @@ export class PedidosController {
       codigo_postal_envio?: string;
       localidad_envio?: string;
       provincia_envio?: string;
+      telefono_entrega?: string;
     },
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
@@ -147,6 +148,7 @@ export class PedidosController {
       body.codigo_postal_envio,
       body.localidad_envio,
       body.provincia_envio,
+      body.telefono_entrega,
     );
   }
 

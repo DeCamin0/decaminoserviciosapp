@@ -1,4 +1,5 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as mysql from 'mysql2/promise';
 
@@ -6,26 +7,39 @@ import * as mysql from 'mysql2/promise';
 export class HorasTrabajadasService {
   private readonly logger = new Logger(HorasTrabajadasService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
-   * Helper pentru a obține configurația de conexiune MySQL
+   * Helper pentru a obține configurația de conexiune MySQL (baza clientului curent: DeCamino sau HERA)
    */
-  private async getDbConnectionConfig(): Promise<any> {
-    const dbUrl = process.env.DATABASE_URL;
-
-    if (typeof dbUrl === 'string') {
-      const url = new URL(dbUrl);
+  private getDbConnectionConfig(): {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    database: string;
+    multipleStatements: boolean;
+  } {
+    const dbConfig = this.configService.get<{
+      host: string;
+      port: number;
+      username: string;
+      password: string;
+      database: string;
+    }>('database');
+    if (dbConfig) {
       return {
-        host: url.hostname,
-        port: parseInt(url.port || '3306'),
-        user: url.username,
-        password: decodeURIComponent(url.password),
-        database: url.pathname.slice(1),
+        host: dbConfig.host,
+        port: dbConfig.port,
+        user: dbConfig.username,
+        password: dbConfig.password,
+        database: dbConfig.database,
         multipleStatements: true,
       };
     }
-
     return {
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '3306'),
@@ -700,7 +714,7 @@ export class HorasTrabajadasService {
         ORDER BY de.CODIGO;
       `;
 
-      const connectionConfig = await this.getDbConnectionConfig();
+      const connectionConfig = this.getDbConnectionConfig();
       const connection = await mysql.createConnection(connectionConfig);
 
       try {
@@ -1381,7 +1395,7 @@ export class HorasTrabajadasService {
         ORDER BY de.CODIGO;
       `;
 
-      const connectionConfig = await this.getDbConnectionConfig();
+      const connectionConfig = this.getDbConnectionConfig();
       const connection = await mysql.createConnection(connectionConfig);
 
       try {

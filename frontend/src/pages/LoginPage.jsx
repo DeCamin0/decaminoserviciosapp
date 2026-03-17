@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Footer from '../components/Footer';
 import { isDemoMode } from '../utils/demo';
 import DemoModal from '../components/DemoModal';
+import { config } from '../config/env.js';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -59,8 +60,21 @@ export default function LoginPage() {
     setShowDemoModal(true);
   };
 
+  // Fundal: folosește DOAR variabila CSS (setată de script în index.html la load) – fallback teal pentru Client 2
+  const primaryFallback = config.PRIMARY_COLOR && config.PRIMARY_COLOR.trim() ? (config.PRIMARY_COLOR.startsWith('#') ? config.PRIMARY_COLOR : '#' + config.PRIMARY_COLOR) : '#2563A8';
+  const isClient2 = (config.LOGO_PATH || '').toLowerCase().includes('hera');
+  const logoContainerClass = isClient2
+    ? 'w-40 h-28 bg-white/30 backdrop-blur-md rounded-xl flex items-center justify-center shadow-2xl border border-white/40 group-hover:border-[var(--primary-color)]/70 transition-all duration-500'
+    : 'w-28 h-28 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl border border-white/40 group-hover:border-[var(--primary-color)]/70 transition-all duration-500';
+  const logoGlowClass = isClient2
+    ? 'absolute inset-0 w-40 h-28 bg-gradient-to-r from-[var(--primary-color)]/40 to-[var(--primary-color-darkest)]/40 rounded-xl blur-xl animate-glow group-hover:from-[var(--primary-color)]/60 group-hover:to-[var(--primary-color)]/60 transition-all duration-500'
+    : 'absolute inset-0 w-28 h-28 bg-gradient-to-r from-[var(--primary-color)]/40 to-[var(--primary-color-darkest)]/40 rounded-full blur-xl animate-glow group-hover:from-[var(--primary-color)]/60 group-hover:to-[var(--primary-color)]/60 transition-all duration-500';
+  // La HERA: fundal login mai deschis decât logo-ul (albastru proaspăt) ca logo-ul să se vadă bine
+  const loginBgStyle = isClient2
+    ? { background: 'linear-gradient(160deg, #C5DCF0 0%, #A8CDE8 50%, #7EB8DD 100%)' }
+    : { backgroundColor: 'var(--primary-color, ' + primaryFallback + ')' };
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-500 to-primary-600">
+    <div className="min-h-screen relative overflow-hidden" style={loginBgStyle}>
       {/* Custom CSS pentru animații avansate */}
       <style>{`
         @keyframes float {
@@ -93,12 +107,12 @@ export default function LoginPage() {
         
         @keyframes textGlow {
           0%, 100% { 
-            textShadow: '0 0 20px rgba(255, 255, 255, 0.8), 0 0 40px rgba(255, 107, 107, 0.6), 0 0 60px rgba(229, 62, 62, 0.4), 0 0 80px rgba(197, 48, 48, 0.2)';
-            filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.5)) drop-shadow(0 0 20px rgba(255, 107, 107, 0.3))';
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.8), 0 0 40px var(--primary-color-rgba-06), 0 0 60px var(--primary-color-rgba-04), 0 0 80px var(--primary-color-rgba-02);
+            filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.5)) drop-shadow(0 0 20px var(--primary-color-rgba-04));
           }
           50% { 
-            textShadow: '0 0 30px rgba(255, 255, 255, 1), 0 0 60px rgba(255, 107, 107, 0.8), 0 0 90px rgba(229, 62, 62, 0.6), 0 0 120px rgba(197, 48, 48, 0.4)';
-            filter: 'drop-shadow(0 0 15px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 30px rgba(255, 107, 107, 0.5))';
+            text-shadow: 0 0 30px rgba(255, 255, 255, 1), 0 0 60px var(--primary-color-rgba-06), 0 0 90px var(--primary-color-rgba-04), 0 0 120px var(--primary-color-rgba-02);
+            filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 30px var(--primary-color-rgba-05));
           }
         }
         
@@ -139,7 +153,7 @@ export default function LoginPage() {
         }
         
         .gradient-text {
-          background: linear-gradient(45deg, #fef2f2, #fecaca, #ef4444, #dc2626, #b91c1c);
+          background: linear-gradient(45deg, var(--primary-color-rgba-01, rgba(0,0,0,0.1)), var(--primary-color-rgba-02, rgba(0,0,0,0.2)), var(--primary-color), var(--primary-color-darker, #b91c1c), var(--primary-color-darkest, #7f1d1d));
           background-size: 300% 300%;
           animation: gradient 4s ease infinite;
           -webkit-background-clip: text;
@@ -173,20 +187,18 @@ export default function LoginPage() {
           100% { transform: translateY(110vh) translateX(26px) rotate(360deg); opacity: 0; }
         }
       `}</style>
-      {/* Fundal animat cu particule și gradient - TEMA ROȘU */}
+      {/* Fundal animat cu particule și gradient - culori din --primary-color (config per client) */}
       <div className="absolute inset-0">
-        {/* Gradient overlay - Paleta completă de roșu */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary-600/30 via-primary-500/20 to-primary-700/30"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--primary-color)]/30 via-[var(--primary-color)]/20 to-[var(--primary-color-darkest)]/30"></div>
         
-        {/* Gradient overlay simplu fără pattern */}
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-0 left-0 w-full h-full">
             <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
               <defs>
                 <radialGradient id="gradient" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="rgba(239, 68, 68, 0.2)" />
-                  <stop offset="50%" stopColor="rgba(220, 38, 38, 0.15)" />
-                  <stop offset="100%" stopColor="rgba(185, 28, 28, 0.2)" />
+                  <stop offset="0%" stopColor="var(--primary-color-rgba-02, rgba(0,0,0,0.2))" />
+                  <stop offset="50%" stopColor="var(--primary-color-rgba-02, rgba(0,0,0,0.15))" />
+                  <stop offset="100%" stopColor="var(--primary-color-rgba-02, rgba(0,0,0,0.2))" />
                 </radialGradient>
               </defs>
               <rect width="100%" height="100%" fill="url(#gradient)" />
@@ -194,10 +206,9 @@ export default function LoginPage() {
           </div>
         </div>
         
-        {/* Floating elements cu animații customizate - PALETA ROȘU */}
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-gradient-to-r from-primary-400/25 to-primary-600/25 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-primary-500/20 to-primary-700/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
-        <div className="absolute top-3/4 left-1/2 w-48 h-48 bg-gradient-to-r from-primary-300/30 to-primary-500/25 rounded-full blur-3xl animate-float" style={{animationDelay: '4s'}}></div>
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-gradient-to-r from-[var(--primary-color)]/25 to-[var(--primary-color-darkest)]/25 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-[var(--primary-color)]/20 to-[var(--primary-color-darkest)]/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
+        <div className="absolute top-3/4 left-1/2 w-48 h-48 bg-gradient-to-r from-[var(--primary-color)]/30 to-[var(--primary-color)]/25 rounded-full blur-3xl animate-float" style={{animationDelay: '4s'}}></div>
       </div>
 
       {/* Decor sezonier de Crăciun/Reyes (activ până pe 6 ianuarie) */}
@@ -231,105 +242,131 @@ export default function LoginPage() {
       {/* Conținut principal */}
       <div className="relative z-10 min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-md">
-          {/* Header cu logo și titlu - Redesignat complet */}
+          {/* Header: Client 2 = elegant minimal; Client 1 = cu efecte */}
           <div className="text-center mb-8">
-            <div className="flex justify-center mb-8">
-              <a 
-                href="https://decaminoservicios.com/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="relative group transition-all duration-500 transform hover:scale-110 hover:rotate-3"
-                title={`Visita el sitio web de ${import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}`}
-              >
-                {/* Logo cu design glassmorphism */}
-              <div className="relative">
-                  <div className="w-28 h-28 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center shadow-2xl border border-white/40 group-hover:border-primary-400/70 transition-all duration-500">
-                  <img 
-                    src={window.location.hostname.includes('ngrok') 
-                      ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
-                      : (() => {
-                          const basePath = import.meta.env.VITE_BASE_PATH || '/';
-                          const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
-                          return `${basePath}${logoPath}`.replace(/\/+/g, '/');
-                        })()
-                    }
-                    alt="De Camino Logo" 
-                    className="h-20 w-20 object-contain group-hover:scale-110 transition-transform duration-500"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextSibling.style.display = 'block';
-                    }}
-                  />
-                    <div className="hidden text-white font-bold text-2xl group-hover:text-primary-400 transition-colors duration-500">DC</div>
-                  </div>
-                  {/* Căciulă de Moș Crăciun pe logo (doar sezon) */}
-                  {isHolidaySeason && (
-                    <div className="absolute -top-2 -right-4 w-12 h-8 transform rotate-12">
-                      <div className="absolute inset-0 bg-primary-500 rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow-lg border border-primary-600"></div>
-                      <div className="absolute -bottom-1 left-0 right-0 h-2 bg-white rounded-full shadow-md"></div>
-                      <div className="absolute -bottom-3 -right-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+            {isClient2 ? (
+              /* HERA – fundal deschis, text închis ca să se vadă */
+              <>
+                <div className="flex justify-center mb-8">
+                  <a href={config.EXTERNAL_SITE_URL} target="_blank" rel="noopener noreferrer" className="inline-block focus:outline-none transition transform hover:scale-[1.02]" title={`Visita ${config.COMPANY_NAME}`}>
+                    <img
+                      src={`${(config.BASE_PATH || '/')}${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')}
+                      alt={`${config.COMPANY_NAME} Logo`}
+                      className="h-24 w-auto max-w-[340px] object-contain drop-shadow-[0_2px_12px_rgba(0,0,0,0.15)]"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </a>
+                </div>
+                <div className="space-y-4">
+                  <h1 className="text-6xl font-black mb-2 relative group">
+                    <span className="inline-block transform group-hover:scale-110 transition-all duration-700" style={{
+                      background: 'linear-gradient(45deg, var(--primary-color-darkest), var(--primary-color), var(--primary-color-darker), #1e3a5f, var(--primary-color), var(--primary-color-darkest))',
+                      backgroundSize: '400% 400%',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.08))',
+                      animation: 'gradientShift 2s ease-in-out infinite, textFloat 4s ease-in-out infinite',
+                      transform: 'perspective(1000px) rotateX(15deg)',
+                      transformStyle: 'preserve-3d'
+                    }}>
+                      {config.COMPANY_NAME.split(' ').slice(0, 2).join(' ')}
+                    </span>
+                    <span className="absolute inset-0 text-6xl font-black opacity-30 blur-md" style={{
+                      background: 'linear-gradient(45deg, var(--primary-color), var(--primary-color-darker), var(--primary-color-darkest))',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                      transform: 'translate(4px, 4px) perspective(1000px) rotateX(15deg)',
+                      zIndex: -1,
+                      animation: 'shadowFloat 4s ease-in-out infinite'
+                    }}>
+                      {config.COMPANY_NAME.split(' ').slice(0, 2).join(' ')}
+                    </span>
+                    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                      <div className="absolute top-0 left-0 w-full h-full" style={{
+                        background: 'radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.3) 0%, transparent 50%), radial-gradient(circle at 80% 80%, var(--primary-color-rgba-04) 0%, transparent 50%)',
+                        animation: 'particleMove 6s ease-in-out infinite'
+                      }}></div>
                     </div>
-                  )}
-                  {/* Glow effect cu animație customizată - PALETA ROȘU */}
-                  <div className="absolute inset-0 w-28 h-28 bg-gradient-to-r from-primary-400/40 to-primary-600/40 rounded-full blur-xl animate-glow group-hover:from-primary-300/60 group-hover:to-primary-500/60 transition-all duration-500"></div>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-0 h-0 border-4 border-white/20 rounded-full animate-ping" style={{ animation: 'ripple 2s ease-out infinite' }}></div>
+                    </div>
+                  </h1>
+                  <div className="w-24 h-1 bg-gradient-to-r from-[var(--primary-color)]/60 via-[var(--primary-color)] to-[var(--primary-color)]/60 mx-auto rounded-full"></div>
+                  <h2 className="text-xl font-semibold text-gray-700 mb-2">Portal Empresarial</h2>
+                  <p className="text-sm text-gray-600 font-medium">{config.COMPANY_NAME || config.COMPANY_NAME_LEGAL || ''}</p>
                 </div>
-              </a>
-            </div>
-            
-            <div className="space-y-4">
-              <h1 className="text-6xl font-black mb-2 relative group">
-                {/* Text principal cu efecte spectaculoase */}
-                <span className="inline-block transform group-hover:scale-110 transition-all duration-700" style={{
-                  background: 'linear-gradient(45deg, #ffffff, #ff6b6b, #e53e3e, #c53030, #ff6b6b, #ffffff)',
-                  backgroundSize: '400% 400%',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                  textShadow: '0 0 20px rgba(255, 255, 255, 0.8), 0 0 40px rgba(255, 107, 107, 0.6), 0 0 60px rgba(229, 62, 62, 0.4), 0 0 80px rgba(197, 48, 48, 0.2)',
-                  filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.5)) drop-shadow(0 0 20px rgba(255, 107, 107, 0.3))',
-                  animation: 'gradientShift 2s ease-in-out infinite, textFloat 4s ease-in-out infinite, textGlow 3s ease-in-out infinite',
-                  transform: 'perspective(1000px) rotateX(15deg)',
-                  transformStyle: 'preserve-3d'
-                }}>
-                  DE CAMINO
-                </span>
-                
-                {/* Efect 3D cu umbră dinamică */}
-                <span className="absolute inset-0 text-6xl font-black opacity-40 blur-md" style={{
-                  background: 'linear-gradient(45deg, #ffffff, #ff6b6b, #e53e3e, #c53030)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                  transform: 'translate(4px, 4px) perspective(1000px) rotateX(15deg)',
-                  zIndex: -1,
-                  animation: 'shadowFloat 4s ease-in-out infinite'
-                }}>
-              DE CAMINO
-                </span>
-                
-                {/* Efect de particule/strălucire */}
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  <div className="absolute top-0 left-0 w-full h-full" style={{
-                    background: 'radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.3) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(255, 107, 107, 0.3) 0%, transparent 50%)',
-                    animation: 'particleMove 6s ease-in-out infinite'
-                  }}></div>
+              </>
+            ) : (
+              /* DeCamino – logo rotund + titlu cu efecte */
+              <>
+                <div className="flex justify-center mb-8">
+                  <a href={config.EXTERNAL_SITE_URL} target="_blank" rel="noopener noreferrer" className="relative group transition-all duration-500 transform hover:scale-110 hover:rotate-3" title={`Visita el sitio web de ${config.COMPANY_NAME}`}>
+                    <div className="relative">
+                      <div className={logoContainerClass}>
+                        <img
+                          src={window.location.hostname.includes('ngrok') ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo=' : `${(config.BASE_PATH || '/')}${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')}
+                          alt={`${config.COMPANY_NAME || 'App'} Logo`}
+                          className="h-20 w-20 object-contain group-hover:scale-110 transition-transform duration-500"
+                          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }}
+                        />
+                        <div className="hidden text-white font-bold text-2xl group-hover:text-[var(--primary-color)] transition-colors duration-500">DC</div>
+                      </div>
+                      {isHolidaySeason && (
+                        <div className="absolute -top-2 -right-4 w-12 h-8 transform rotate-12">
+                          <div className="absolute inset-0 bg-[var(--primary-color)] rounded-tl-2xl rounded-tr-2xl rounded-bl-sm rounded-br-md shadow-lg border border-[var(--primary-color-darkest)]"></div>
+                          <div className="absolute -bottom-1 left-0 right-0 h-2 bg-white rounded-full shadow-md"></div>
+                          <div className="absolute -bottom-3 -right-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                        </div>
+                      )}
+                      <div className={logoGlowClass}></div>
+                    </div>
+                  </a>
                 </div>
-                
-                {/* Efect de undă/ripple */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-0 h-0 border-4 border-white/20 rounded-full animate-ping" style={{
-                    animation: 'ripple 2s ease-out infinite'
-                  }}></div>
+                <div className="space-y-4">
+                  <h1 className="text-6xl font-black mb-2 relative group">
+                    <span className="inline-block transform group-hover:scale-110 transition-all duration-700" style={{
+                      background: 'linear-gradient(45deg, #ffffff, var(--primary-color), var(--primary-color-darker), var(--primary-color-darkest), var(--primary-color), #ffffff)',
+                      backgroundSize: '400% 400%',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                      textShadow: '0 0 20px rgba(255, 255, 255, 0.8), 0 0 40px var(--primary-color-rgba-06), 0 0 60px var(--primary-color-rgba-04), 0 0 80px var(--primary-color-rgba-02)',
+                      filter: 'drop-shadow(0 0 10px rgba(255, 255, 255, 0.5)) drop-shadow(0 0 20px var(--primary-color-rgba-04))',
+                      animation: 'gradientShift 2s ease-in-out infinite, textFloat 4s ease-in-out infinite, textGlow 3s ease-in-out infinite',
+                      transform: 'perspective(1000px) rotateX(15deg)',
+                      transformStyle: 'preserve-3d'
+                    }}>
+                      {config.COMPANY_NAME.split(' ').slice(0, 2).join(' ')}
+                    </span>
+                    <span className="absolute inset-0 text-6xl font-black opacity-40 blur-md" style={{
+                      background: 'linear-gradient(45deg, #ffffff, var(--primary-color), var(--primary-color-darker), var(--primary-color-darkest))',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                      transform: 'translate(4px, 4px) perspective(1000px) rotateX(15deg)',
+                      zIndex: -1,
+                      animation: 'shadowFloat 4s ease-in-out infinite'
+                    }}>
+                      {config.COMPANY_NAME.split(' ').slice(0, 2).join(' ')}
+                    </span>
+                    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                      <div className="absolute top-0 left-0 w-full h-full" style={{
+                        background: 'radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.3) 0%, transparent 50%), radial-gradient(circle at 80% 80%, var(--primary-color-rgba-04) 0%, transparent 50%)',
+                        animation: 'particleMove 6s ease-in-out infinite'
+                      }}></div>
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-0 h-0 border-4 border-white/20 rounded-full animate-ping" style={{ animation: 'ripple 2s ease-out infinite' }}></div>
+                    </div>
+                  </h1>
+                  <div className="w-24 h-1 bg-gradient-to-r from-white via-[var(--primary-color)] to-white mx-auto rounded-full"></div>
+                  <h2 className="text-xl font-semibold text-white/90 mb-2">Portal Empresarial</h2>
+                  <p className="text-sm text-white/70 font-medium">{config.COMPANY_NAME || config.COMPANY_NAME_LEGAL || ''}</p>
                 </div>
-            </h1>
-              <div className="w-24 h-1 bg-gradient-to-r from-white via-primary-200 to-white mx-auto rounded-full"></div>
-              <h2 className="text-xl font-semibold text-white/90 mb-2">
-                Portal Empresarial
-            </h2>
-              <p className="text-sm text-white/70 font-medium">
-              De Camino Servicios Auxiliares SL
-            </p>
-            </div>
+              </>
+            )}
           </div>
           
           {/* Card de login cu design glassmorphism ultra-modern */}
@@ -359,11 +396,11 @@ export default function LoginPage() {
                 <div className="space-y-5">
                   {/* Email Input - Redesignat */}
                   <div className="relative group">
-                    <label htmlFor="login-email" className="block text-sm font-medium text-gray-300 mb-2">
+                    <label htmlFor="login-email" className={`block text-sm font-medium mb-2 ${isClient2 ? 'text-gray-800 font-semibold' : 'text-gray-300'}`}>
                       Correo Electrónico
                     </label>
                     <div className="relative">
-                      <div className="absolute inset-0 bg-gradient-to-r from-primary-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-primary-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-[var(--primary-color)]/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-[var(--primary-color)]/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
                       <input
                   id="login-email"
                   name="email"
@@ -372,7 +409,7 @@ export default function LoginPage() {
                   onChange={(e) => handleInputChange('email', e.target.value)}
                   required
                   autoComplete="email"
-                        className="relative w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400/50 transition-all duration-300"
+                        className="relative w-full px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--primary-color)]/50 focus:border-[var(--primary-color)]/50 transition-all duration-300"
                         placeholder="tu@email.com"
                       />
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
@@ -385,11 +422,11 @@ export default function LoginPage() {
                   
                   {/* Password Input - Redesignat */}
                   <div className="relative group">
-                    <label htmlFor="login-password" className="block text-sm font-medium text-gray-300 mb-2">
+                    <label htmlFor="login-password" className={`block text-sm font-medium mb-2 ${isClient2 ? 'text-gray-800 font-semibold' : 'text-gray-300'}`}>
                       Contraseña
                     </label>
                     <div className="relative">
-                      <div className="absolute inset-0 bg-gradient-to-r from-primary-500/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-primary-400/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-[var(--primary-color)]/20 to-purple-500/20 rounded-xl blur-sm group-focus-within:from-[var(--primary-color)]/30 group-focus-within:to-purple-400/30 transition-all duration-300"></div>
                       <input
                   id="login-password"
                   name="password"
@@ -398,7 +435,7 @@ export default function LoginPage() {
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   required
                   autoComplete="current-password"
-                        className="relative w-full px-4 py-3 pr-12 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400/50 transition-all duration-300"
+                        className="relative w-full px-4 py-3 pr-12 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--primary-color)]/50 focus:border-[var(--primary-color)]/50 transition-all duration-300"
                         placeholder="••••••••"
                       />
                       <button
@@ -423,8 +460,8 @@ export default function LoginPage() {
               
                 {/* Terms text - Redesignat */}
                 <div className="text-center">
-                  <p className="text-sm text-gray-300 leading-relaxed">
-                    Al iniciar sesión, estás de acuerdo con los <a href="https://decaminoservicios.com/es/terminos/" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300 font-medium underline transition-colors duration-300">Términos y Condiciones</a>
+                  <p className={`text-sm leading-relaxed ${isClient2 ? 'text-gray-800 font-medium' : 'text-gray-300'}`}>
+                    Al iniciar sesión, estás de acuerdo con los <a href={`${config.EXTERNAL_SITE_URL}/es/terminos/`} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:opacity-80 font-medium underline transition-colors duration-300">Términos y Condiciones</a>
                   </p>
                 </div>
               
@@ -432,9 +469,9 @@ export default function LoginPage() {
                 <button
                 type="submit"
                 disabled={loading}
-                  className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-primary-500 to-purple-600 p-[2px] transition-all duration-300 hover:from-primary-400 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-[var(--primary-color)] to-[var(--primary-color-darkest)] p-[2px] transition-all duration-300 hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                  <div className="relative flex items-center justify-center px-6 py-4 bg-gradient-to-r from-primary-500 to-purple-600 rounded-xl text-white font-semibold transition-all duration-300 group-hover:from-primary-400 group-hover:to-purple-500">
+                  <div className="relative flex items-center justify-center px-6 py-4 bg-gradient-to-r from-[var(--primary-color)] to-[var(--primary-color-darkest)] rounded-xl text-white font-semibold transition-all duration-300 group-hover:opacity-95">
                 {loading ? (
                       <div className="flex items-center">
                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
@@ -452,7 +489,7 @@ export default function LoginPage() {
                 </button>
 
                 {/* Mini-texto sobre ubicación */}
-                <p className="mt-3 text-xs text-white/60 text-center">
+                <p className={`mt-3 text-xs text-center ${isClient2 ? 'text-gray-700 font-medium' : 'text-white/60'}`}>
                   📍 La ubicación se solicita al iniciar sesión y solo se utiliza al fichar.
                 </p>
 
@@ -497,15 +534,15 @@ export default function LoginPage() {
           <Footer />
           </div>
           
-          {/* Copyright redesignat */}
+          {/* Copyright redesignat – HERA: negru bold pe fundal deschis; DeCamino: gri */}
           <div className="text-center mt-6">
-            <div className="inline-flex items-center space-x-2 text-xs text-gray-400">
+            <div className={`inline-flex items-center flex-wrap justify-center gap-x-2 gap-y-1 text-xs ${isClient2 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
               <span>© {new Date().getFullYear()}</span>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-              <span>De Camino Servicios Auxiliares SL</span>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className={`w-1 h-1 rounded-full ${isClient2 ? 'bg-gray-700' : 'bg-gray-400'}`}></div>
+              <span>{config.COMPANY_NAME || config.COMPANY_NAME_LEGAL || ''}</span>
+              <div className={`w-1 h-1 rounded-full ${isClient2 ? 'bg-gray-700' : 'bg-gray-400'}`}></div>
               <span>Sistema de gestión empresarial</span>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className={`w-1 h-1 rounded-full ${isClient2 ? 'bg-gray-700' : 'bg-gray-400'}`}></div>
               <span className="font-mono">v{document.documentElement.getAttribute('data-version') || '—'}</span>
             </div>
           </div>

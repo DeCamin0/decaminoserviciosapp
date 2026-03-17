@@ -737,13 +737,17 @@ export class DiplomasService {
   }
 
   /**
-   * Descarcă o diplomă
+   * Descarcă o diplomă. Dacă empleadoId e null/undefined (admin), se returnează orice diplomă cu acel id.
    */
   async descargarDiploma(
     diplomaId: number,
-    empleadoId: string,
+    empleadoId: string | null | undefined,
   ): Promise<{ archivo: Buffer; nombre_archivo: string }> {
     try {
+      const andEmpleado =
+        empleadoId != null && String(empleadoId).trim() !== ''
+          ? ` AND empleado_id = ${this.escapeSql(String(empleadoId).trim())}`
+          : '';
       const diploma = await this.prisma.$queryRawUnsafe<
         Array<{
           archivo: Buffer;
@@ -754,15 +758,16 @@ export class DiplomasService {
         `
         SELECT archivo, nombre_archivo, empleado_id
         FROM diplomas
-        WHERE id = ${diplomaId}
-          AND empleado_id = ${this.escapeSql(empleadoId)}
+        WHERE id = ${diplomaId}${andEmpleado}
         LIMIT 1
         `,
       );
 
       if (!diploma || diploma.length === 0) {
         throw new BadRequestException(
-          `Diploma ${diplomaId} no encontrada o no tienes acceso`,
+          empleadoId != null
+            ? `Diploma ${diplomaId} no encontrada o no tienes acceso`
+            : `Diploma ${diplomaId} no encontrada`,
         );
       }
 

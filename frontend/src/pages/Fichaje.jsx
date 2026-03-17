@@ -22,14 +22,15 @@ import HorasPermitidas from '../components/HorasPermitidas';
 import { calculateCuadranteHours, calculateHorarioHours } from '../utils/cuadrante-hours-helper';
 import { debug as loggerDebug, warn, error as logError, success, demo, info } from '../utils/logger';
 import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
+import { config } from '../config/env.js';
+import { getPdfMake } from '../utils/getPdfMake';
 
 // Cache global pentru checkConfirmation - previne apeluri duplicate pentru aceeași combinație codigo + data
 const checkConfirmationCache = new Map(); // key: "codigo_data", value: { promise, timestamp, result }
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minute cache pentru a preveni apeluri duplicate
 
-// Branding colors - Backward compatible: dacă env vars lipsesc, folosește valorile vechi
-// Adaugă # dacă lipsește (pentru compatibilitate cu formate fără #)
-const rawColor = import.meta.env.VITE_PRIMARY_COLOR || '#CC0000';
+// Branding din config (multi-client)
+const rawColor = config.PRIMARY_COLOR || '#CC0000';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
 // Flag global pentru a preveni apelurile simultane de checkConfirmation
@@ -2131,7 +2132,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       // Folosim backend-ul nou
       const url = routes.getTargetOreGrupo 
         ? `${routes.getTargetOreGrupo}?grupo=${encodeURIComponent(grupo)}`
-        : `${import.meta.env.DEV ? 'http://localhost:3000' : 'https://api.decaminoservicios.com'}/api/horas-asignadas?grupo=${encodeURIComponent(grupo)}`;
+        : `${config.BACKEND_BASE || config.API_URL || ''}/api/horas-asignadas?grupo=${encodeURIComponent(grupo)}`;
       
       info('[Fichaje] Folosind backend-ul nou (getHorasAsignadas):', url);
       
@@ -5672,23 +5673,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     if (!filtered || filtered.length === 0) return;
     
     try {
-      // Încarcă pdfMake dinamic
-      const ensurePdfMake = () => new Promise((resolve, reject) => {
-        if (window.pdfMake) return resolve(window.pdfMake);
-        const s1 = document.createElement('script');
-        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-        s1.onload = () => {
-          const s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-          s2.onload = () => resolve(window.pdfMake);
-          s2.onerror = () => reject(new Error('Nu s-au putut încărca fonturile pdfMake'));
-          document.head.appendChild(s2);
-        };
-        s1.onerror = () => reject(new Error('Nu s-a putut încărca pdfMake'));
-        document.head.appendChild(s1);
-      });
-
-      await ensurePdfMake();
+      const pdfMake = await getPdfMake();
 
       const formatSelectedMonth = (monthStr) => {
         if (!monthStr) return new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long' });
@@ -5725,11 +5710,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             table: {
               widths: ['*'],
               body: [
-                [{ text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL', style: 'companyName' }],
-                [{ text: `NIF: ${import.meta.env.VITE_COMPANY_CIF || 'B85524536'}`, style: 'companyDetails' }],
-                [{ text: import.meta.env.VITE_COMPANY_ADDRESS || 'Avda. Euzkadi 14, Local 5, 28702 San Sebastian de los Reyes, Madrid, España', style: 'companyDetails' }],
-                [{ text: `Teléfono: ${import.meta.env.VITE_COMPANY_PHONE || '910 440 275'}`, style: 'companyDetails' }],
-                [{ text: `Email: ${import.meta.env.VITE_COMPANY_EMAIL || 'info@decaminoservicios.com'}`, style: 'companyDetails' }]
+                [{ text: config.COMPANY_NAME, style: 'companyName' }],
+                [{ text: `NIF: ${config.COMPANY_CIF}`, style: 'companyDetails' }],
+                [{ text: config.COMPANY_ADDRESS, style: 'companyDetails' }],
+                [{ text: `Teléfono: ${config.COMPANY_PHONE}`, style: 'companyDetails' }],
+                [{ text: `Email: ${config.COMPANY_EMAIL}`, style: 'companyDetails' }]
               ]
             },
             layout: 'noBorders',
@@ -5810,7 +5795,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       const safeEmpleado = selectedEmpleado ? selectedEmpleado.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
       const filename = selectedEmpleado ? `registros_${safeEmpleado}.pdf` : `registros_empleados.pdf`;
 
-      window.pdfMake.createPdf(docDefinition).download(filename);
+      pdfMake.createPdf(docDefinition).download(filename);
 
       await activityLogger.logDataExport('fichajes_pdf', { count: dataToExport.length, empleado: selectedEmpleado || undefined }, authUser);
       
@@ -7966,7 +7951,7 @@ export default function FichajePage() {
       const res = await fetch(routes.getEmpleados, {
         headers: {
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
           'X-Client-Type': 'web-browser',
           'User-Agent': 'DeCamino-Web-Client/1.0'
         }
@@ -9573,15 +9558,13 @@ export default function FichajePage() {
       <div className="flex justify-end mb-4">
         <button 
           onClick={async () => {
-            const phone = "34635289087"; // Número de soporte
+            const phone = config.WHATSAPP_PHONE || "34635289087"; // Per client (HERA: 600 52 27 37)
             const message = buildErrorReportMessage();
             const text = encodeURIComponent(message);
             const whatsappUrl = `https://wa.me/${phone}?text=${text}`;
             
             // Trimite o copie pe Telegram (bot general) - non-blocking
-            const baseUrl = import.meta.env.DEV 
-              ? 'http://localhost:3000' 
-              : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+            const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
             
             const token = localStorage.getItem('auth_token');
             if (token) {

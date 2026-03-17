@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuth } from './AuthContextBase';
-import { 
-  requestNotificationPermission, 
+import { config } from '../config/env';
+import {
+  requestNotificationPermission,
   isNotificationPermissionGranted,
   showPushNotification,
   subscribeToPushNotifications
@@ -54,9 +55,7 @@ export const NotificationsProvider = ({ children }) => {
         const token = localStorage.getItem('auth_token');
         if (!token) return;
 
-        const baseUrl = import.meta.env.DEV 
-          ? 'http://localhost:3000' 
-          : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+        const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
         const response = await fetch(`${baseUrl}/api/notifications`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -166,9 +165,7 @@ export const NotificationsProvider = ({ children }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       await fetch(`${baseUrl}/api/notifications/${notificationId}/read`, {
         method: 'PUT',
         headers: {
@@ -203,9 +200,7 @@ export const NotificationsProvider = ({ children }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       await fetch(`${baseUrl}/api/notifications/read-all`, {
         method: 'PUT',
         headers: {
@@ -240,9 +235,7 @@ export const NotificationsProvider = ({ children }) => {
       const token = localStorage.getItem('auth_token');
       if (!token) return;
 
-      const baseUrl = import.meta.env.DEV 
-        ? 'http://localhost:3000' 
-        : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       await fetch(`${baseUrl}/api/notifications/${notificationId}`, {
         method: 'DELETE',
         headers: {

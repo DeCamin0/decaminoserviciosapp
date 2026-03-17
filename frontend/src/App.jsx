@@ -22,6 +22,13 @@ import { usePWAMigration } from './hooks/usePWAMigration';
 import { useErrorHandler } from './hooks/useErrorHandler';
 import { setSessionExpiredCallback } from './utils/tokenRefresh';
 import { useTokenMonitor } from './hooks/useTokenMonitor';
+import { config } from './config/env';
+
+// Tab title mereu din setări (.env: VITE_APP_NAME sau VITE_COMPANY_NAME)
+if (typeof document !== 'undefined') {
+  const title = config.APP_NAME || config.COMPANY_NAME;
+  if (title) document.title = title;
+}
 
 // Import doar paginile mici (non-lazy)
 import LoginPage from './pages/LoginPage';
@@ -92,9 +99,9 @@ function App() {
   // Pornește migrarea PWA
   usePWAMigration();
 
-  // Setează CSS variables globale pentru culori branding
+  // Setează CSS variables globale pentru culori branding (din config = env per client)
   useEffect(() => {
-    const primaryColor = COLORS.PRIMARY;
+    const primaryColor = config.PRIMARY_COLOR || COLORS.PRIMARY;
     document.documentElement.style.setProperty('--primary-color', primaryColor);
     
     // Helper pentru conversie hex to RGB

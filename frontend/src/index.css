@@ -3,6 +3,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Full-width layout: edge-to-edge on desktop and mobile */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 /* PWA Update Animation */
 /* Global text-size-adjust compatibility fix (ensures scanners see the standard prop) */
 html, :host {
@@ -21,10 +29,9 @@ html, :host {
   -webkit-box-orient: initial !important;
 }
 
-/* Cross-browser custom scrollbar (Safari fallback for `scrollbar-color`) */
+/* Cross-browser custom scrollbar – folosește culoarea brand (per client) */
 .custom-scrollbar {
-  /* Firefox */
-  scrollbar-color: #e53e3e #f7fafc;
+  scrollbar-color: var(--primary-color, #e53e3e) #f7fafc;
   scrollbar-width: thin;
 }
 .custom-scrollbar::-webkit-scrollbar {
@@ -35,12 +42,12 @@ html, :host {
   background: #f7fafc;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #e53e3e;
+  background-color: var(--primary-color, #e53e3e);
   border-radius: 9999px;
   border: 2px solid #f7fafc;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: #c53030;
+  background-color: var(--primary-color-darker, #c53030);
 }
 
 @keyframes fadeIn {

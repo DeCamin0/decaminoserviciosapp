@@ -7,14 +7,9 @@ import { useErrorHandler } from '../hooks/useErrorHandler';
 import { routes } from '../utils/routes';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContextBase';
+import { config } from '../config/env.js';
 import ExcelJS from 'exceljs';
-
-// Declarație de tip pentru pdfMake
-declare global {
-  interface Window {
-    pdfMake?: unknown;
-  }
-}
+import { getPdfMake } from '../utils/getPdfMake';
 
 // Tipuri de date
 export type ResumenEmpleado = {
@@ -1619,9 +1614,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
           headers['Authorization'] = `Bearer ${token}`;
         }
         
-        const logsUrl = import.meta.env.DEV
-          ? 'http://localhost:3000/api/activity-logs'
-          : 'https://api.decaminoservicios.com/api/activity-logs';
+        const logsUrl = `${config.BACKEND_BASE || config.API_URL || ''}/api/activity-logs`;
         
         const logsResponse = await fetch(`${logsUrl}?limit=10000`, {
           method: 'GET',
@@ -1751,22 +1744,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
     }
 
     try {
-      const ensurePdfMake = () => new Promise((resolve, reject) => {
-        if (window.pdfMake) return resolve(window.pdfMake);
-        const s1 = document.createElement('script');
-        s1.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/pdfmake.min.js';
-        s1.onload = () => {
-          const s2 = document.createElement('script');
-          s2.src = 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.5/build/vfs_fonts.js';
-          s2.onload = () => resolve(window.pdfMake);
-          s2.onerror = () => reject(new Error('No se pudieron cargar las fuentes pdfMake'));
-          document.head.appendChild(s2);
-        };
-        s1.onerror = () => reject(new Error('No se pudo cargar pdfMake'));
-        document.head.appendChild(s1);
-      });
-
-      await ensurePdfMake();
+      const pdfMake = await getPdfMake();
 
       const today = new Date();
       const formattedDate = today.toLocaleDateString('es-ES');
@@ -1787,7 +1765,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
 
       const docDefinition = {
         content: [
-          { text: import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES', style: 'companyName' },
+          { text: config.COMPANY_NAME, style: 'companyName' },
           { text: 'Reporte de Empleados Sin Registros', style: 'reportTitle' },
           { text: `Período: ${formattedMonth} hasta ${formattedDate}`, style: 'period' },
           { text: `Total de empleados sin registros: ${empleadosSinRegistros.length}`, style: 'totalCount', margin: [0, 10, 0, 10] },
@@ -1818,7 +1796,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
       };
 
       const filename = `empleados_sin_registros_${selectedMes.replace('-', '_')}.pdf`;
-      window.pdfMake.createPdf(docDefinition).download(filename);
+      pdfMake.createPdf(docDefinition).download(filename);
 
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -1838,7 +1816,7 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
 
       // Header
       worksheet.mergeCells('A1:D1');
-      worksheet.getCell('A1').value = import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES';
+      worksheet.getCell('A1').value = config.COMPANY_NAME;
       worksheet.getCell('A1').font = { bold: true, size: 16 };
       worksheet.getCell('A1').alignment = { horizontal: 'center' };
 

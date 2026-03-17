@@ -15,6 +15,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -32,6 +33,7 @@ export class PresupuestosGuardadosController {
     private readonly presupuestosGuardadosService: PresupuestosGuardadosService,
     private readonly presupuestoDocumentoService: PresupuestoDocumentoService,
     private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Get(':id/pdf-firmado')
@@ -68,18 +70,17 @@ export class PresupuestosGuardadosController {
   @Get(':id/generar-documento')
   async generarDocumento(
     @Param('id', ParseIntPipe) id: number,
-    @Query('format') format: string | undefined,
+    @Query('company') company: string | undefined,
     @Res() res: Response,
   ) {
-    const wantDocx = (format || 'docx').toLowerCase() !== 'pdf';
-    const { buffer, filename } = wantDocx
-      ? await this.presupuestoDocumentoService.generarDocx(id)
-      : await this.presupuestoDocumentoService.generarPdf(id);
+    const companyKey =
+      company?.toLowerCase() === 'hera' ? ('hera' as const) : undefined;
+    const { buffer, filename } =
+      await this.presupuestoDocumentoService.generarPdf(id, {
+        ...(companyKey && { companyKey }),
+      });
     const safeName = encodeURIComponent(filename);
-    const mime = wantDocx
-      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      : 'application/pdf';
-    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${filename}"; filename*=UTF-8''${safeName}`,
@@ -205,8 +206,8 @@ export class PresupuestosGuardadosController {
     <p>Quedamos a su disposición para cualquier aclaración.</p>
     <p>Saludos cordiales,</p>
     <div class="signature">
-      <p style="margin: 5px 0;"><strong>De Camino Servicios Auxiliares S.L.</strong></p>
-      <p style="margin: 5px 0; color: #888; font-size: 14px;">info@decaminoservicios.com · Tfno. 645 111 999</p>
+      <p style="margin: 5px 0;"><strong>${(this.configService.get('company') as any)?.emailFromName ?? 'De Camino Servicios Auxiliares S.L.'}</strong></p>
+      <p style="margin: 5px 0; color: #888; font-size: 14px;">${(this.configService.get('company') as any)?.email ?? ''} · Tfno. ${(this.configService.get('company') as any)?.phone ?? ''}</p>
     </div>
     <div class="footer">
       <p>Este correo ha sido enviado desde la aplicación de gestión De Camino.</p>

@@ -25,6 +25,14 @@ export class PedidosService {
     private readonly configService: ConfigService,
   ) {}
 
+  private getCompanyName(): string {
+    const c = this.configService.get<{
+      legalNameShort?: string;
+      legalName?: string;
+    }>('company');
+    return (c?.legalNameShort ?? c?.legalName ?? '').trim();
+  }
+
   /**
    * Escape SQL string pentru prevenirea SQL injection
    */
@@ -87,6 +95,8 @@ export class PedidosService {
       limite_excedido: boolean;
       exceso_limite: number;
       estado?: string;
+      horario_entrega: string;
+      telefono_entrega?: string;
       direccion_envio?: string;
       codigo_postal_envio?: string;
       localidad_envio?: string;
@@ -127,6 +137,13 @@ export class PedidosService {
       if (!pedidoData.pedido.items || pedidoData.pedido.items.length === 0) {
         throw new BadRequestException(
           'pedido trebuie să aibă cel puțin un item',
+        );
+      }
+
+      const horarioEntrega = (pedidoData.pedido as any).horario_entrega;
+      if (!horarioEntrega || String(horarioEntrega).trim() === '') {
+        throw new BadRequestException(
+          'horario_entrega es obligatorio',
         );
       }
 
@@ -207,7 +224,9 @@ export class PedidosService {
             direccion_envio,
             codigo_postal_envio,
             localidad_envio,
-            provincia_envio
+            provincia_envio,
+            horario_entrega,
+            telefono_entrega
           ) VALUES (
             ${this.escapeSql(pedidoUid)},
             ${this.escapeSql(pedidoData.empleado.id)},
@@ -247,7 +266,9 @@ export class PedidosService {
             ${this.escapeSql((pedidoData.pedido as any).direccion_envio || '')},
             ${this.escapeSql((pedidoData.pedido as any).codigo_postal_envio || '')},
             ${this.escapeSql((pedidoData.pedido as any).localidad_envio || '')},
-            ${this.escapeSql((pedidoData.pedido as any).provincia_envio || '')}
+            ${this.escapeSql((pedidoData.pedido as any).provincia_envio || '')},
+            ${this.escapeSql(String(horarioEntrega).trim())},
+            ${this.escapeSql((pedidoData.pedido as any).telefono_entrega != null ? String((pedidoData.pedido as any).telefono_entrega).trim() : '')}
           )
         `;
         insertQueries.push(insertQuery);
@@ -329,6 +350,8 @@ export class PedidosService {
           MAX(codigo_postal_envio) as codigo_postal_envio,
           MAX(localidad_envio) as localidad_envio,
           MAX(provincia_envio) as provincia_envio,
+          MAX(horario_entrega) as horario_entrega,
+          MAX(telefono_entrega) as telefono_entrega,
           MAX(aprobado_por) as aprobado_por,
           MAX(aprobado_en) as aprobado_en,
           MAX(rechazado_por) as rechazado_por,
@@ -437,6 +460,8 @@ export class PedidosService {
           codigo_postal_envio: row.codigo_postal_envio || null,
           localidad_envio: row.localidad_envio || null,
           provincia_envio: row.provincia_envio || null,
+          horario_entrega: row.horario_entrega || null,
+          telefono_entrega: row.telefono_entrega || null,
           aprobado_por: row.aprobado_por || null,
           aprobado_en: row.aprobado_en || null,
           rechazado_por: row.rechazado_por || null,
@@ -488,6 +513,12 @@ export class PedidosService {
           exceso_limite,
           MAX(notas) as notas,
           estado,
+          MAX(direccion_envio) as direccion_envio,
+          MAX(codigo_postal_envio) as codigo_postal_envio,
+          MAX(localidad_envio) as localidad_envio,
+          MAX(provincia_envio) as provincia_envio,
+          MAX(horario_entrega) as horario_entrega,
+          MAX(telefono_entrega) as telefono_entrega,
           creado_en,
           COUNT(*) as num_items,
           GROUP_CONCAT(
@@ -591,6 +622,8 @@ export class PedidosService {
         codigo_postal_envio: row.codigo_postal_envio || null,
         localidad_envio: row.localidad_envio || null,
         provincia_envio: row.provincia_envio || null,
+        horario_entrega: row.horario_entrega || null,
+        telefono_entrega: row.telefono_entrega || null,
         aprobado_por: row.aprobado_por || null,
         aprobado_en: row.aprobado_en || null,
         rechazado_por: row.rechazado_por || null,
@@ -616,6 +649,7 @@ export class PedidosService {
     codigo_postal_envio?: string,
     localidad_envio?: string,
     provincia_envio?: string,
+    telefono_entrega?: string,
   ): Promise<any> {
     try {
       const updates: string[] = [];
@@ -634,10 +668,13 @@ export class PedidosService {
       if (provincia_envio !== undefined) {
         updates.push(`provincia_envio = ${this.escapeSql(provincia_envio)}`);
       }
+      if (telefono_entrega !== undefined) {
+        updates.push(`telefono_entrega = ${this.escapeSql(telefono_entrega)}`);
+      }
 
       if (updates.length === 0) {
         throw new BadRequestException(
-          'Al menos un campo de dirección de envío debe ser proporcionado',
+          'Al menos un campo de dirección de envío o teléfono de envío debe ser proporcionado',
         );
       }
 
@@ -1027,36 +1064,50 @@ export class PedidosService {
   ): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
 
-    // Încearcă să încarce logo-urile companiei
-    let logoDecaminoBuffer: Buffer | null = null;
+    // Încearcă să încarce logo-urile companiei (multi-client: COMPANY_LOGO_PATH = logo HERA/Decamino)
+    let logoCompanyBuffer: Buffer | null = null;
+    let logoCompanyExt: 'png' | 'jpeg' = 'png';
     let logoVymaBuffer: Buffer | null = null;
 
-    try {
-      // Logo "de camino" este în frontend/public/logo.png
-      // __dirname în dist este: backend/dist/src/services/
-      // Trebuie să urcăm 4 nivele pentru a ajunge la root: ../../../../frontend/public/logo.png
-      const logoDecaminoPath = path.join(
+    const companyLogoPath = this.configService.get<{ logoPath?: string }>('company')?.logoPath;
+    const logoDirs = [
+      path.join(process.cwd(), 'assets'),
+      path.join(__dirname, '..', '..', '..', 'assets'),
+      path.join(__dirname, '..', '..', '..', 'frontend', 'public'),
+    ];
+    let companyLogoResolved: string | null = null;
+    if (companyLogoPath && String(companyLogoPath).trim()) {
+      const name = String(companyLogoPath).trim();
+      for (const dir of logoDirs) {
+        const p = path.join(dir, name);
+        if (fs.existsSync(p)) {
+          companyLogoResolved = p;
+          break;
+        }
+      }
+    }
+    if (!companyLogoResolved) {
+      companyLogoResolved = path.join(
         __dirname,
         '../../../../',
         'frontend',
         'public',
         'logo.png',
       );
-      this.logger.log(
-        `🔍 [Excel] Looking for logo de camino at: ${logoDecaminoPath}`,
-      );
-      if (fs.existsSync(logoDecaminoPath)) {
-        const fileBuffer = fs.readFileSync(logoDecaminoPath);
-        logoDecaminoBuffer = Buffer.from(fileBuffer) as any;
-        this.logger.log('✅ Logo de camino cargado para Excel');
+    }
+    try {
+      this.logger.log(`🔍 [Excel] Looking for company logo at: ${companyLogoResolved}`);
+      if (fs.existsSync(companyLogoResolved)) {
+        const fileBuffer = fs.readFileSync(companyLogoResolved);
+        logoCompanyBuffer = Buffer.from(fileBuffer) as any;
+        const ext = path.extname(companyLogoResolved).toLowerCase();
+        logoCompanyExt = ext === '.jpg' || ext === '.jpeg' ? 'jpeg' : 'png';
+        this.logger.log(`✅ Logo compañía cargado para Excel (${path.basename(companyLogoResolved)})`);
       } else {
-        this.logger.warn(
-          '⚠️ Logo de camino no encontrado en:',
-          logoDecaminoPath,
-        );
+        this.logger.warn('⚠️ Logo compañía no encontrado en:', companyLogoResolved);
       }
     } catch (error) {
-      this.logger.warn('⚠️ Error cargando logo de camino:', error);
+      this.logger.warn('⚠️ Error cargando logo compañía:', error);
     }
 
     try {
@@ -1150,53 +1201,47 @@ export class PedidosService {
         }
       }
 
-      // Logo "de camino" în B1 - mărit și echilibrat
-      if (logoDecaminoBuffer) {
+      // Logo compañía (Decamino / HERA din COMPANY_LOGO_PATH) în B1
+      if (logoCompanyBuffer) {
         try {
-          const imageIdDecamino = workbook.addImage({
-            buffer: logoDecaminoBuffer as any,
-            extension: 'png',
+          const imageIdCompany = workbook.addImage({
+            buffer: logoCompanyBuffer as any,
+            extension: logoCompanyExt,
           });
 
-          // Obține lățimea coloanei B (default este 15, dar poate fi ajustată)
           const colBWidth = worksheet.getColumn(2).width || 15;
-          // Convertește lățimea coloanei (în unități Excel) la pixeli aproximativ
-          // 1 unitate Excel ≈ 7 pixeli pentru font 11pt
           const colBWidthPixels = colBWidth * 7;
+          const logoWidth = colBWidthPixels * 0.6;
+          const logoHeight = 105;
 
-          // Ajustare fină pentru echilibru perfect: lățime puțin mai mică, înălțime optimă
-          const logoWidth = colBWidthPixels * 0.6; // Redus la 60% pentru aspect mai elegant
-          const logoHeight = 105; // Ajustat la 105px pentru proporții perfect echilibrate
-
-          // Poziționează logo-ul "de camino" în coloana B, rândul 1 - mărime mărită și echilibrată
-          worksheet.addImage(imageIdDecamino, {
-            tl: { col: 1, row: 0 }, // B1 (zero-based: col=1, row=0)
-            ext: { width: logoWidth, height: logoHeight }, // Dimensiuni mărite și echilibrate
+          worksheet.addImage(imageIdCompany, {
+            tl: { col: 1, row: 0 },
+            ext: { width: logoWidth, height: logoHeight },
           });
 
           this.logger.log(
-            `✅ Logo de camino añadido al Excel en B1, width: ${logoWidth}px, height: ${logoHeight}px`,
+            `✅ Logo compañía añadido al Excel en B1, width: ${logoWidth}px, height: ${logoHeight}px`,
           );
         } catch (error) {
-          this.logger.warn(
-            '⚠️ Error añadiendo logo de camino al Excel:',
-            error,
-          );
+          this.logger.warn('⚠️ Error añadiendo logo compañía al Excel:', error);
         }
       }
 
       // Ajustează înălțimea rândului 1 pentru a face loc logo-urilor mai mari
-      if (logoVymaBuffer || logoDecaminoBuffer) {
+      if (logoVymaBuffer || logoCompanyBuffer) {
         worksheet.getRow(1).height = 90;
       }
 
       // Row 3: INSPECTOR
       worksheet.getCell('A3').value = 'INSPECTOR';
-      // Folosește numele și codigo-ul celui care a aprobat pedido-ul, sau "AURA" ca fallback
-      worksheet.getCell('B3').value = pedido.aprobado_por || 'AURA';
+      worksheet.getCell('B3').value = pedido.empleado?.nombre || pedido.aprobado_por || 'AURA';
 
-      // Row 4: FECHA ENTREGA PEDIDO CLIENTE
-      worksheet.getCell('A4').value = 'FECHA ENTREGA PEDIDO CLIENTE:';
+      // Row 4: APROBADO POR (sub Inspector)
+      worksheet.getCell('A4').value = 'APROBADO POR:';
+      worksheet.getCell('B4').value = pedido.aprobado_por || '';
+
+      // Row 5: FECHA ENTREGA PEDIDO CLIENTE
+      worksheet.getCell('A5').value = 'FECHA ENTREGA PEDIDO CLIENTE:';
       if (pedido.fecha_envio) {
         // Afișează exact cum este salvată în baza de date (format DATETIME: YYYY-MM-DD HH:MM:SS)
         const fechaEnvio = new Date(pedido.fecha_envio);
@@ -1209,11 +1254,11 @@ export class PedidosService {
         const seconds = String(fechaEnvio.getSeconds()).padStart(2, '0');
         const fechaFormateada = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
         // Setează ca text (nu ca dată formatată)
-        worksheet.getCell('B4').value = fechaFormateada;
+        worksheet.getCell('B5').value = fechaFormateada;
       }
 
-      // Row 5: OPERARIO
-      worksheet.getCell('A5').value = 'OPERARIO:';
+      // Row 6: OPERARIO
+      worksheet.getCell('A6').value = 'OPERARIO:';
       const operarioText = pedido.empleado?.nombre || '';
 
       // Obține TELEFON ENTREGA din Clientes în loc de telefonul comunității
@@ -1312,11 +1357,11 @@ export class PedidosService {
       this.logger.log(
         `📞 [Excel] OPERARIO phone: "${operarioPhone}" (telefonEntrega: "${telefonEntrega}", comunidad.telefono: "${pedido.comunidad?.telefono}")`,
       );
-      worksheet.getCell('B5').value =
+      worksheet.getCell('B6').value =
         operarioText + (operarioPhone ? ` (${operarioPhone})` : '');
 
-      // Row 6: DIRECCIÓN ENTREGA
-      worksheet.getCell('A6').value = 'DIRECCIÓN ENTREGA:';
+      // Row 7: DIRECCIÓN ENTREGA
+      worksheet.getCell('A7').value = 'DIRECCIÓN ENTREGA:';
 
       // Adresa completă a comunității sau adresa de expediere (stradă, cod poștal, oraș, provincie)
       const direccionParts = [];
@@ -1384,10 +1429,18 @@ export class PedidosService {
       }
 
       const direccionCompleta = direccionParts.join(', ');
-      worksheet.getCell('B6').value = direccionCompleta || '';
+      worksheet.getCell('B7').value = direccionCompleta || '';
 
-      // Row 7: SERVICIO
-      worksheet.getCell('A7').value = 'SERVICIO:';
+      // Row 8: TELÉFONO ENTREGA (din pedido sau din Clientes)
+      worksheet.getCell('A8').value = 'TELÉFONO ENTREGA:';
+      const telefonoEntregaPedido = (pedido as { telefono_entrega?: string }).telefono_entrega;
+      const telefonoEntregaExcel = (telefonoEntregaPedido && String(telefonoEntregaPedido).trim() !== '')
+        ? String(telefonoEntregaPedido).trim()
+        : telefonEntrega;
+      worksheet.getCell('B8').value = telefonoEntregaExcel || '';
+
+      // Row 9: SERVICIO
+      worksheet.getCell('A9').value = 'SERVICIO:';
 
       // Obține serviciul din Clientes folosind comunidad_id (folosim variabila deja declarată mai sus)
       let servicioEntrega = '';
@@ -1483,7 +1536,7 @@ export class PedidosService {
 
       // Folosește serviciul din Clientes, sau fallback la logica veche
       if (servicioEntrega && servicioEntrega.trim() !== '') {
-        worksheet.getCell('B7').value = servicioEntrega.trim();
+        worksheet.getCell('B9').value = servicioEntrega.trim();
         this.logger.log(
           `✅ [Excel] SERVICIO set to: ${servicioEntrega.trim()}`,
         );
@@ -1491,30 +1544,30 @@ export class PedidosService {
         pedido.comunidad?.nombre &&
         pedido.comunidad.nombre.toUpperCase().includes('LIMPIEZA')
       ) {
-        worksheet.getCell('B7').value = 'PEDIDO LIMPIEZA';
+        worksheet.getCell('B9').value = 'PEDIDO LIMPIEZA';
         this.logger.log(
           `✅ [Excel] SERVICIO set to: PEDIDO LIMPIEZA (fallback LIMPIEZA)`,
         );
       } else {
         // Lasă gol dacă nu există valoare în baza de date
-        worksheet.getCell('B7').value = '';
+        worksheet.getCell('B9').value = '';
         this.logger.warn(
           `⚠️ [Excel] SERVICIO not set - no value in database for client ${comunidadId}`,
         );
       }
 
-      // Row 8: NOTAS (doar dacă există)
+      // Row 10: NOTAS (doar dacă există)
       if (pedido.notas && pedido.notas.trim() !== '') {
-        worksheet.getCell('A8').value = 'NOTAS:';
-        worksheet.getCell('B8').value = pedido.notas.trim();
+        worksheet.getCell('A10').value = 'NOTAS:';
+        worksheet.getCell('B10').value = pedido.notas.trim();
         this.logger.log(
           `✅ [Excel] NOTAS added: ${pedido.notas.trim().substring(0, 50)}...`,
         );
       }
 
-      // Row 11: Header pentru tabel (doar A, B, D - eliminăm C și E-H)
+      // Row 13: Header pentru tabel (doar A, B, D - eliminăm C și E-H)
       // Folosim splice pentru a seta doar primele 4 valori (A, B, C, D), apoi ștergem restul
-      worksheet.getRow(11).values = [
+      worksheet.getRow(13).values = [
         'Nº de artículo',
         'Descripción de artículo',
         '', // C: Goală (va fi ascunsă)
@@ -1523,21 +1576,19 @@ export class PedidosService {
 
       // Șterge complet valorile din coloanele E-H și orice alte coloane
       for (let col = 5; col <= 26; col++) {
-        const cell = worksheet.getRow(11).getCell(col);
+        const cell = worksheet.getRow(13).getCell(col);
         cell.value = null;
         cell.style = {}; // Șterge stilurile
       }
-      worksheet.getRow(11).font = { bold: true };
-      worksheet.getRow(11).fill = {
+      worksheet.getRow(13).font = { bold: true };
+      worksheet.getRow(13).fill = {
         type: 'pattern',
         pattern: 'solid',
         fgColor: { argb: 'FFE0E0E0' },
       };
 
-      // Row 12: Subheader eliminat (nu mai este necesar)
-
       // Rânduri pentru items (doar A, B, D)
-      let currentRow = 12; // Începe de la row 12 (fără subheader)
+      let currentRow = 14; // Începe de la row 14 (sub header tabel)
       if (pedido.items && pedido.items.length > 0) {
         for (const item of pedido.items) {
           const row = worksheet.getRow(currentRow);
@@ -1560,7 +1611,7 @@ export class PedidosService {
       }
 
       // Adaugă border-uri pentru tabel (doar coloanele A, B, D)
-      for (let rowNum = 11; rowNum < currentRow; rowNum++) {
+      for (let rowNum = 13; rowNum < currentRow; rowNum++) {
         const row = worksheet.getRow(rowNum);
         // Doar coloanele A (1), B (2), D (4)
         const columnsToBorder = [1, 2, 4];
@@ -1611,7 +1662,7 @@ export class PedidosService {
       colB.width = calculateColumnWidth(worksheet, 2, 3); // Începe de la row 3
 
       const colD = worksheet.getColumn(4);
-      colD.width = calculateColumnWidth(worksheet, 4, 11); // Începe de la row 11 (header tabel)
+      colD.width = calculateColumnWidth(worksheet, 4, 13); // Începe de la row 13 (header tabel)
     }
 
     // Generează buffer-ul Excel
@@ -1714,18 +1765,26 @@ export class PedidosService {
           const horaActual = new Date().getHours();
           const saludo = horaActual < 14 ? 'Buenos días' : 'Buenas tardes';
 
+          // Culori temă companie (HERA = #2563A8, Decamino = #CC0000) pentru email
+          const companyTheme = this.configService.get<{
+            brandRed?: string;
+            portadaTextColor?: string;
+          }>('company');
+          const accentColor = (companyTheme?.brandRed && companyTheme.brandRed.trim()) ? companyTheme.brandRed.trim() : '#d32f2f';
+          const textColor = (companyTheme?.portadaTextColor && companyTheme.portadaTextColor.trim()) ? companyTheme.portadaTextColor.trim() : '#333';
+
           let htmlContent = `
             <html>
-              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: ${textColor};">
                 <p style="margin-bottom: 15px;">${saludo},</p>
-                <h2 style="color: #d32f2f;">Pedidos aprobados</h2>
+                <h2 style="color: ${accentColor};">Pedidos aprobados</h2>
                 <p>Se adjunta el archivo Excel con ${pedidosValidos.length} pedido(s) aprobados.</p>
           `;
 
           if (mensaje && mensaje.trim()) {
             htmlContent += `
-                <div style="background-color: #f5f5f5; padding: 15px; border-left: 4px solid #d32f2f; margin: 20px 0;">
-                  <h3 style="margin-top: 0; color: #d32f2f;">Mensaje:</h3>
+                <div style="background-color: #f5f5f5; padding: 15px; border-left: 4px solid ${accentColor}; margin: 20px 0;">
+                  <h3 style="margin-top: 0; color: ${accentColor};">Mensaje:</h3>
                   <p style="white-space: pre-wrap;">${mensaje.trim()}</p>
                 </div>
             `;
@@ -1734,17 +1793,21 @@ export class PedidosService {
           htmlContent += `
                 <p style="margin-top: 20px;">Gracias por su atención.</p>
                 <p style="margin-top: 10px; color: #666; font-size: 12px;">
-                  Este es un correo electrónico automático generado por el sistema de De Camino Servicios Auxiliares.
+                  Este es un correo electrónico automático generado por el sistema${this.getCompanyName() ? ` de ${this.getCompanyName()}` : ''}.
                 </p>
               </body>
             </html>
           `;
 
-          // Trimite email cu Excel-ul atașat
+          // Trimite email cu Excel-ul atașat (proveedor) + copie la company și email de pedidos (BCC)
           const providerEmail = 'pedidos@vyma.es';
           const excelFileName = `PEDIDOS ${fecha}.xlsx`;
           const ccEmails = ['sergio.jurado@vyma.es'];
-          const bccEmails = ['info@decaminoservicios.com'];
+          const companyEmail = this.configService.get<{ email?: string; emailBcc?: string }>('company')?.email ?? '';
+          const pedidosEmail = this.configService.get<string>('SMTP_PEDIDOS_USER') ?? '';
+          const emailBccRaw = this.configService.get<{ emailBcc?: string }>('company')?.emailBcc ?? '';
+          const bccFromConfig = emailBccRaw ? emailBccRaw.split(',').map((e: string) => e.trim()).filter(Boolean) : [];
+          const bccEmails = [...new Set([companyEmail, pedidosEmail, ...bccFromConfig].filter(Boolean))];
 
           this.logger.log(
             `📧 Enviando email a ${providerEmail} con Excel adjunto (CC: ${ccEmails.join(', ')}, BCC: ${bccEmails.join(', ')})...`,

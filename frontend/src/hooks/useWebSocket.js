@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useSessionExpired } from '../contexts/SessionExpiredContext';
 import { isTokenFullyExpired } from '../utils/tokenRefresh';
+import { config } from '../config/env';
 
 /**
  * Hook pentru gestionarea conexiunii WebSocket
@@ -13,18 +14,14 @@ export const useWebSocket = (namespace = '/notifications') => {
   const { isSessionExpired } = useSessionExpired();
   const [isConnected, setIsConnected] = useState(false);
   const [socket, setSocket] = useState(null);
-  const socketRef = useRef(null); // Ref pentru a evita dependențe circulare
-  const connectRef = useRef(null); // Ref pentru apelul recursiv
+  const socketRef = useRef(null);
+  const connectRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
 
-  // URL-ul backend-ului pentru WebSocket
   const getSocketUrl = () => {
-    if (import.meta.env.DEV) {
-      return 'http://localhost:3000';
-    }
-    return import.meta.env.VITE_BACKEND_URL || 'https://api.decaminoservicios.com';
+    return (import.meta.env.VITE_BACKEND_URL && String(import.meta.env.VITE_BACKEND_URL).trim()) || config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
   };
 
   // Conectare la WebSocket

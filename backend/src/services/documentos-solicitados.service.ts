@@ -5,6 +5,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
@@ -20,6 +21,7 @@ export class DocumentosSolicitadosService {
     private readonly notificationsService: NotificationsService,
     private readonly emailService: EmailService,
     private readonly sentEmailsService: SentEmailsService,
+    private readonly configService: ConfigService,
     @Inject(forwardRef(() => EmpleadosService))
     private readonly empleadosService: EmpleadosService,
   ) {}
@@ -547,7 +549,7 @@ export class DocumentosSolicitadosService {
 <body>
   <div class="container">
     <div class="header">
-      <h1>DE CAMINO SERVICIOS AUXILIARES</h1>
+      <h1>${(this.configService.get('company') as any)?.legalNameShort ?? 'DE CAMINO SERVICIOS AUXILIARES'}</h1>
       <h2>Solicitud de Documento</h2>
     </div>
     <div class="content">
@@ -571,7 +573,7 @@ export class DocumentosSolicitadosService {
     </div>
     <div class="footer">
       <p>Este es un mensaje automático. Por favor, no responda a este correo.</p>
-      <p>DE CAMINO SERVICIOS AUXILIARES SL</p>
+      <p>${(this.configService.get('company') as any)?.legalName ?? 'DE CAMINO SERVICIOS AUXILIARES SL'}</p>
     </div>
   </div>
 </body>

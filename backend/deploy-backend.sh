@@ -319,6 +319,11 @@ if systemctl list-unit-files | grep -q "decamino-backend.service"; then
         echo ""
         echo "To view logs: journalctl -u decamino-backend -f"
         echo "To check status: systemctl status decamino-backend"
+        # Dacă există HERA (client 2), repornește și pe el ca să folosească codul nou
+        if systemctl list-unit-files 2>/dev/null | grep -q "hera-backend.service"; then
+            echo -e "${YELLOW}📋 Restarting HERA backend (client 2)...${NC}"
+            systemctl restart hera-backend 2>/dev/null && echo -e "${GREEN}✅ HERA backend restarted (port 3002)${NC}" || echo -e "${YELLOW}⚠️  hera-backend restart skipped (service not active?)${NC}"
+        fi
     else
         echo -e "${RED}❌ Backend failed to start!${NC}"
         journalctl -u decamino-backend -n 30 --no-pager

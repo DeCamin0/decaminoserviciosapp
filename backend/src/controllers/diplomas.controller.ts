@@ -354,12 +354,16 @@ export class DiplomasController {
         throw new BadRequestException('diplomaId debe ser un número');
       }
 
-      // Pentru angajați, folosește CODIGO-ul lor
-      // Pentru admini, pot descărca orice diplomă (verificare simplă)
-      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      // Angajații pot descărca doar propriile diplome; Admin/Developer pot descărca orice diplomă
+      const grupo = user.grupo || user.GRUPO || '';
+      const isAdminOrDeveloper =
+        grupo === 'Admin' || grupo === 'Developer';
+      const empleadoId = isAdminOrDeveloper
+        ? null
+        : (user.CODIGO || user.codigo || user.userId);
 
       this.logger.log(
-        `📥 Descargando diploma ${diplomaIdNum} para empleado ${empleadoId}`,
+        `📥 Descargando diploma ${diplomaIdNum} para empleado ${empleadoId ?? '(admin)'}`,
       );
 
       const diploma = await this.diplomasService.descargarDiploma(

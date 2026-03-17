@@ -1,11 +1,8 @@
 // Serviciu API pentru gestionarea orarelor prin callApi (consistent cu restul aplicației)
 import { ScheduleData } from '../types/schedule';
+import { config } from '../config/env';
 
-// URL-ul pentru backend-ul NestJS pentru horarios (MIGRAT de la n8n)
-const HORARIOS_BACKEND_URL = import.meta.env.DEV
-  ? 'http://localhost:3000/api/horarios'
-  : 'https://api.decaminoservicios.com/api/horarios';
-// Old n8n endpoint: 'https://n8n.decaminoservicios.com/webhook/orar/36c95b72-cc22-4783-a749-521bdb666a58';
+const HORARIOS_BACKEND_URL = `${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/horarios`;
 
 // Interface pentru callApi function
 interface CallApiFunction {

@@ -8,10 +8,11 @@ build/
 */dist/
 */build/
 
-# Environment variables
+# Environment variables (secrete – nu urmări în git)
 .env
 .env.local
 .env.*.local
+.env*.local
 */.env
 */.env.local
 

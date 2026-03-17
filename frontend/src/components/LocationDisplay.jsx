@@ -7,7 +7,7 @@ const LocationDisplay = () => {
     return (
       <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 max-w-xs">
         <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
-          <div className="animate-spin rounded-full h-5 w-5 border-2 border-red-600 border-t-transparent"></div>
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary-600 border-t-transparent"></div>
         </div>
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Obteniendo ubicación...</span>
       </div>
@@ -16,13 +16,13 @@ const LocationDisplay = () => {
 
   if (error) {
     return (
-      <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-red-200 dark:border-red-800 max-w-xs">
-        <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-          <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-primary-200 dark:border-primary-800 max-w-xs">
+        <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
+          <svg className="w-5 h-5 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
         </div>
-        <span className="text-sm font-medium text-red-600 dark:text-red-400">Error de ubicación</span>
+        <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Error de ubicación</span>
       </div>
     );
   }

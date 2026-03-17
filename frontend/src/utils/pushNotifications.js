@@ -2,6 +2,7 @@
  * Utilități pentru notificări push native
  * Suportă notificări native ale browser-ului (ca la Facebook)
  */
+import { config } from '../config/env.js';
 
 /**
  * Cere permisiunea pentru notificări push
@@ -13,12 +14,13 @@ export const requestNotificationPermission = async () => {
   }
 
   if (Notification.permission === 'granted') {
-    console.log('✅ Permisiune pentru notificări deja acordată');
+    if (import.meta.env.DEV) console.debug('Notificări: permisiune deja acordată');
     return true;
   }
 
   if (Notification.permission === 'denied') {
-    console.warn('❌ Permisiune pentru notificări refuzată');
+    // Normal: utilizatorul a refuzat anterior; nu e eroare (același mesaj la orice client)
+    if (import.meta.env.DEV) console.debug('Notificări: permisiune refuzată de utilizator');
     return false;
   }
 
@@ -26,10 +28,10 @@ export const requestNotificationPermission = async () => {
   const permission = await Notification.requestPermission();
   
   if (permission === 'granted') {
-    console.log('✅ Permisiune pentru notificări acordată');
+    if (import.meta.env.DEV) console.log('✅ Permisiune pentru notificări acordată');
     return true;
   } else {
-    console.warn('❌ Permisiune pentru notificări refuzată');
+    if (import.meta.env.DEV) console.debug('Notificări: permisiune refuzată sau anulată');
     return false;
   }
 };
@@ -50,10 +52,8 @@ export const showPushNotification = (notification) => {
     return null;
   }
 
-  // Folosește base path-ul din environment pentru path-uri relative
-  // Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.svg
-  const basePath = import.meta.env.VITE_BASE_PATH || '/';
-  const logoPath = import.meta.env.VITE_LOGO_PATH || 'logo.svg';
+  const basePath = config.BASE_PATH || '/';
+  const logoPath = config.LOGO_PATH || 'logo.svg';
   
   const options = {
     body: notification.message || notification.content,
@@ -131,9 +131,7 @@ export const subscribeToPushNotifications = async (userId) => {
 
   try {
     const registration = await navigator.serviceWorker.ready;
-    const baseUrl = import.meta.env.DEV 
-      ? 'http://localhost:3000' 
-      : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
     
     const migrationKey = `push_migration_done_v1_${userId}`;
     const token = localStorage.getItem('auth_token');
@@ -301,9 +299,7 @@ function urlBase64ToUint8Array(base64String) {
  */
 async function savePushSubscription(userId, subscription) {
   try {
-    const baseUrl = import.meta.env.DEV 
-      ? 'http://localhost:3000' 
-      : (import.meta.env.VITE_API_BASE_URL || 'https://api.decaminoservicios.com');
+    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
     
     const token = localStorage.getItem('auth_token');
     

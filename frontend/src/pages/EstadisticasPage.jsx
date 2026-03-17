@@ -8,6 +8,7 @@ import ChartsSection from '../components/analytics/ChartsSection';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import { config } from '../config/env.js';
 
 export default function EstadisticasPage() {
   const { user: authUser } = useAuth();
@@ -74,7 +75,7 @@ export default function EstadisticasPage() {
       const empleadosRes = await fetch(routes.getEmpleados, {
         headers: {
           'X-App-Source': 'DeCamino-Web-App',
-          'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+          'X-App-Version': config.APP_VERSION,
           'X-Client-Type': 'web-browser',
           'User-Agent': 'DeCamino-Web-Client/1.0'
         }
@@ -377,13 +378,9 @@ export default function EstadisticasPage() {
       try {
         const logoImg = new Image();
         logoImg.crossOrigin = 'anonymous';
-        // Folosește base path-ul din environment pentru path-uri relative
-        // Backward compatible: dacă VITE_LOGO_PATH lipsește, folosește logo.png
-        const basePath = import.meta.env.VITE_BASE_PATH || '/';
-        // Pentru EstadisticasPage folosim logo.png (nu logo.svg) pentru compatibilitate jsPDF
-        // Dacă VITE_LOGO_PATH este setat, înlocuim extensia cu .png
-        const logoPath = import.meta.env.VITE_LOGO_PATH 
-          ? import.meta.env.VITE_LOGO_PATH.replace(/\.(svg|jpg|jpeg)$/i, '.png')
+        const basePath = config.BASE_PATH || '/';
+        const logoPath = config.LOGO_PATH
+          ? config.LOGO_PATH.replace(/\.(svg|jpg|jpeg)$/i, '.png')
           : 'logo.png';
         logoImg.src = `${basePath}${logoPath}`.replace(/\/+/g, '/'); // Folosesc PNG pentru jsPDF
         
@@ -428,7 +425,7 @@ export default function EstadisticasPage() {
       pdf.setFontSize(16);
       pdf.setTextColor(220, 38, 38); // Culoare roșie (#DC2626)
       pdf.setFont('helvetica', 'bold');
-      pdf.text(import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES', margin + (logoData ? 20 : 0), yPosition + 6);
+      pdf.text(config.COMPANY_NAME, margin + (logoData ? 20 : 0), yPosition + 6);
       
       pdf.setFontSize(12);
       pdf.setTextColor(31, 41, 55); // Gri închis
@@ -472,7 +469,7 @@ export default function EstadisticasPage() {
         pdf.setFontSize(12);
         pdf.setTextColor(220, 38, 38);
         pdf.setFont('helvetica', 'bold');
-        pdf.text(import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES', margin + (logoData ? 20 : 0), yPosition + 6);
+        pdf.text(config.COMPANY_NAME, margin + (logoData ? 20 : 0), yPosition + 6);
         pdf.setFontSize(9);
         pdf.setTextColor(107, 114, 128);
         pdf.setFont('helvetica', 'normal');

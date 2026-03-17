@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aceptación de Presupuesto - De Camino Servicios</title>
+  <link rel="icon" href="./%VITE_LOGO_PATH%" />
+  <title>Aceptación de Presupuesto - %VITE_APP_NAME%</title>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
@@ -12,7 +13,7 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
       margin: 0;
       min-height: 100vh;
-      background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 35%, #dc2626 70%, #e53935 100%);
+      background: linear-gradient(135deg, %VITE_PRIMARY_DARK% 0%, %VITE_PRIMARY_COLOR% 50%, %VITE_PRIMARY_COLOR% 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -69,7 +70,7 @@
     #id-info {
       text-align: center;
       font-size: 0.9rem;
-      color: #dc2626;
+      color: %VITE_PRIMARY_COLOR%;
       font-weight: 600;
       margin-bottom: 20px;
     }
@@ -92,7 +93,7 @@
     }
     input:focus, select:focus {
       outline: none;
-      border-color: #dc2626;
+      border-color: %VITE_PRIMARY_COLOR%;
       box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
     }
     select { cursor: pointer; }
@@ -128,7 +129,7 @@
     .btn-clear:hover { background: #e5e7eb; }
     .btn-submit {
       width: 100%;
-      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      background: linear-gradient(135deg, %VITE_PRIMARY_COLOR% 0%, %VITE_PRIMARY_COLOR% 100%);
       color: white;
       margin-top: 24px;
       padding: 14px;
@@ -137,7 +138,7 @@
       box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
     }
     .btn-submit:hover:not(:disabled) {
-      background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+      background: linear-gradient(135deg, %VITE_PRIMARY_COLOR% 0%, %VITE_PRIMARY_DARK% 100%);
       box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45);
     }
     .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -147,14 +148,14 @@
       align-items: flex-start;
       gap: 12px;
     }
-    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: #dc2626; }
+    .checkbox-wrap input { width: auto; margin-top: 4px; accent-color: %VITE_PRIMARY_COLOR%; }
     .checkbox-wrap label { margin: 0; font-weight: 500; color: #374151; }
     .formalizacion-block {
       margin: 16px 0 20px;
       padding: 12px 14px;
       background: #f8fafc;
       border-radius: 10px;
-      border-left: 3px solid #dc2626;
+      border-left: 3px solid %VITE_PRIMARY_COLOR%;
       font-size: 0.75rem;
       line-height: 1.45;
       color: #374151;
@@ -167,14 +168,14 @@
     }
     .formalizacion-block p { margin: 0 0 6px; }
     .formalizacion-block p:last-child { margin-bottom: 0; }
-    .error { color: #b91c1c; font-size: 0.9rem; margin-top: 10px; }
+    .error { color: %VITE_PRIMARY_COLOR%; font-size: 0.9rem; margin-top: 10px; }
     .success { color: #15803d; font-size: 0.95rem; margin-top: 16px; font-weight: 500; }
-    .req { color: #dc2626; }
+    .req { color: %VITE_PRIMARY_COLOR%; }
     .verify-note {
       font-size: 0.8rem;
       color: #525252;
       background: #f8fafc;
-      border-left: 3px solid #dc2626;
+      border-left: 3px solid %VITE_PRIMARY_COLOR%;
       padding: 8px 12px;
       margin-bottom: 16px;
       border-radius: 0 8px 8px 0;
@@ -206,7 +207,7 @@
     .servicios-table th { font-weight: 600; color: #374151; background: #f3f4f6; }
     .servicios-table tr.radio-row td { vertical-align: middle; }
     .servicios-table .col-radio { width: 28px; text-align: center; }
-    .servicios-table .col-radio input { width: auto; margin: 0; accent-color: #dc2626; }
+    .servicios-table .col-radio input { width: auto; margin: 0; accent-color: %VITE_PRIMARY_COLOR%; }
     .servicios-table .precio-block { line-height: 1.3; }
     .servicios-variante-note {
       font-size: 0.75rem;
@@ -302,11 +303,11 @@
   <div class="main">
   <div class="page-wrap">
     <div class="logo-wrap">
-      <img src="./logo.svg" alt="De Camino" onerror="this.style.display='none'" />
+      <img src="./%VITE_LOGO_PATH%" alt="%VITE_APP_NAME%" onerror="this.style.display='none'" />
     </div>
     <div class="card">
       <h1 class="card-title">Aceptación de Presupuesto</h1>
-      <p class="card-subtitle">Ha accedido al portal seguro de firma de De Camino Servicios.</p>
+      <p class="card-subtitle">Ha accedido al portal seguro de firma de %VITE_APP_NAME%.</p>
       <p class="card-subtitle" style="margin-bottom: 8px; font-size: 0.8rem;">Todos los campos son obligatorios.</p>
       <p class="verify-note">Por favor, compruebe que todos los datos (nombre de cliente, dirección, CIF, representante, etc.) son correctos antes de firmar.</p>
       <p id="id-info"></p>
@@ -397,14 +398,14 @@
 
   <footer class="firmar-footer">
     <p class="footer-credits">Este sistema ha sido diseñado y desarrollado por DeCamino</p>
-    <a href="https://decamino.es" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
+    <a href="%VITE_EXTERNAL_SITE_URL%" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
       <div class="footer-logo-circle">
         <img src="/DeCamino-04.svg" alt="DeCamino Logo" />
       </div>
     </a>
     <div class="footer-copy">
       <span>© <span id="footer-year"></span></span>
-      <a href="https://decamino.es" target="_blank" rel="noopener noreferrer" title="DeCamino">
+      <a href="%VITE_EXTERNAL_SITE_URL%" target="_blank" rel="noopener noreferrer" title="DeCamino">
         <div class="mini-logo">
           <img src="/DeCamino-04.svg" alt="DeCamino" />
         </div>
@@ -419,9 +420,9 @@
       var params = new URLSearchParams(window.location.search);
       var quotationId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var numeroPresupuesto = null;
-      var API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      var API_BASE = ('%VITE_API_URL%' && '%VITE_API_URL%'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
-        : 'https://api.decaminoservicios.com';
+        : '');
 
       var ofertaEconomicaRows = null;
       var esSoloPiscina = false;

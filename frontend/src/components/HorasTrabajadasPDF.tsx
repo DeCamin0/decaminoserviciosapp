@@ -8,6 +8,7 @@ import {
   Image
 } from '@react-pdf/renderer';
 import type { DetalleEmpleado } from './HorasTrabajadas';
+import { config } from '../config/env.js';
 import logoImg from '@/assets/logo.svg';
 
 // Stiluri pentru PDF - optimizate pentru detaliile de ore
@@ -301,7 +302,7 @@ const HorasTrabajadasPDF = ({
         />
         
         <View style={styles.headerText}>
-          <Text style={styles.companyName}>{import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}</Text>
+          <Text style={styles.companyName}>{config.COMPANY_NAME}</Text>
           <Text style={styles.companySubtitle}>
             {esDetallesTab ? 'DETALLE DE HORAS - PLAN VS FICHADO' : 'DETALLE DE HORAS TRABAJADAS'}
           </Text>
@@ -523,8 +524,8 @@ const HorasTrabajadasPDF = ({
       {/* Footer */}
       <View style={styles.footer}>
         <View style={styles.footerLeft}>
-          <Text>{import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES SL'}</Text>
-          <Text>CIF {import.meta.env.VITE_COMPANY_CIF || 'B-85524536'} - Inscrita en R.M. Madrid</Text>
+          <Text>{config.COMPANY_NAME}</Text>
+          <Text>CIF {config.COMPANY_CIF} - Inscrita en R.M. Madrid</Text>
         </View>
         <View style={styles.footerRight}>
           <Text>Generado el {new Date().toLocaleDateString('es-ES')}</Text>

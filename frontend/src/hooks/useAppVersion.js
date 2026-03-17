@@ -89,7 +89,7 @@ export const useAppVersion = () => {
               if (serverVersion) {
                 const storedVersion = localStorage.getItem('app-version');
                 if (serverVersion !== storedVersion) {
-                  console.log('🔄 Chrome Mobile XHR: New version detected:', serverVersion);
+                  console.info('Nouă versiune disponibilă:', serverVersion);
                   setNeedsRefresh(true);
                   return;
                 }
@@ -126,7 +126,7 @@ export const useAppVersion = () => {
         const storedVersion = localStorage.getItem('app-version');
 
         if (serverVersion && serverVersion !== storedVersion) {
-          console.log('🔄 New version detected:', serverVersion);
+          console.info('Nouă versiune disponibilă:', serverVersion);
           setNeedsRefresh(true);
           // Nu actualiza localStorage până când utilizatorul confirmă
         } else if (serverVersion && !storedVersion) {

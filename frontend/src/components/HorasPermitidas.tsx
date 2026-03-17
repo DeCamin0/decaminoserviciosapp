@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { routes } from '../utils/routes';
+import { config } from '../config/env.js';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
 // Interfaces pentru componente UI
@@ -41,9 +42,7 @@ async function fetchHorasPermitidas(): Promise<HorasPermitidasItem[]> {
   try {
     console.log('✅ [HorasPermitidas] Folosind backend-ul nou (getHorasPermitidas)');
     
-    const endpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
-      ? 'http://localhost:3000/api/horas-permitidas'
-      : 'https://api.decaminoservicios.com/api/horas-permitidas');
+    const endpoint = routes.getHorasPermitidas || `${config.BACKEND_BASE || config.API_URL || ''}/api/horas-permitidas`;
     
     const token = localStorage.getItem('auth_token');
     const headers: Record<string, string> = {
@@ -234,9 +233,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
     if (newItem.grupo.trim()) {
       try {
         // Folosim backend-ul nou
-        const endpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
-          ? 'http://localhost:3000/api/horas-permitidas'
-          : 'https://api.decaminoservicios.com/api/horas-permitidas');
+        const endpoint = routes.getHorasPermitidas || `${config.BACKEND_BASE || config.API_URL || ''}/api/horas-permitidas`;
         
         console.log('✅ [HorasPermitidas] Folosind backend-ul nou (createHorasPermitidas):', endpoint);
         
@@ -314,9 +311,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
     if (editingItem && editingItem.id) {
       try {
         // Folosim backend-ul nou
-        const baseEndpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
-          ? 'http://localhost:3000/api/horas-permitidas'
-          : 'https://api.decaminoservicios.com/api/horas-permitidas');
+        const baseEndpoint = routes.getHorasPermitidas || `${config.BACKEND_BASE || config.API_URL || ''}/api/horas-permitidas`;
         const endpoint = `${baseEndpoint}/${editingItem.id}`;
         
         console.log('✅ [HorasPermitidas] Folosind backend-ul nou (updateHorasPermitidas):', endpoint);
@@ -392,9 +387,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
         }
         
         // Folosim backend-ul nou
-        const baseEndpoint = routes.getHorasPermitidas || (import.meta.env.DEV 
-          ? 'http://localhost:3000/api/horas-permitidas'
-          : 'https://api.decaminoservicios.com/api/horas-permitidas');
+        const baseEndpoint = routes.getHorasPermitidas || `${config.BACKEND_BASE || config.API_URL || ''}/api/horas-permitidas`;
         const endpoint = `${baseEndpoint}/${itemToDeleteObj.id}`;
         
         console.log('✅ [HorasPermitidas] Folosind backend-ul nou (deleteHorasPermitidas):', endpoint);

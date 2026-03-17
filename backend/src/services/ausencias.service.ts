@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
 import { EmailService } from './email.service';
@@ -8,7 +9,6 @@ import { EmpleadosService } from './empleados.service';
 @Injectable()
 export class AusenciasService {
   private readonly logger = new Logger(AusenciasService.name);
-  private readonly EMAIL_RECIPIENT = 'solicitudes@decaminoservicios.com';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -16,7 +16,23 @@ export class AusenciasService {
     private readonly emailService: EmailService,
     private readonly sentEmailsService: SentEmailsService,
     private readonly empleadosService: EmpleadosService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getSolicitudesEmail(): string {
+    return (
+      this.configService.get<{ solicitudesEmail?: string }>('company')
+        ?.solicitudesEmail ?? ''
+    );
+  }
+
+  private getCompanyName(): string {
+    const c = this.configService.get<{
+      legalNameShort?: string;
+      legalName?: string;
+    }>('company');
+    return (c?.legalNameShort ?? c?.legalName ?? '').trim();
+  }
 
   /**
    * Formatează mesajul pentru email de reamintire justificante (HTML)
@@ -103,7 +119,7 @@ export class AusenciasService {
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
-    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+    Este es un mensaje automático del sistema${this.getCompanyName() ? ` ${this.getCompanyName()}` : ''}.
   </p>
 </body>
 </html>
@@ -191,7 +207,7 @@ export class AusenciasService {
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
-    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+    Este es un mensaje automático del sistema${this.getCompanyName() ? ` ${this.getCompanyName()}` : ''}.
   </p>
 </body>
 </html>
@@ -334,11 +350,16 @@ export class AusenciasService {
       subject = emailData.subject;
       html = emailData.html;
 
-      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
-        bcc: this.emailService.getDefaultBcc(),
-      });
+      await this.emailService.sendEmail(
+        this.getSolicitudesEmail(),
+        subject,
+        html,
+        {
+          bcc: this.emailService.getDefaultBcc(),
+        },
+      );
       this.logger.log(
-        `✅ Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia ${ausenciaData.codigo}`,
+        `✅ Email notification sent to ${this.getSolicitudesEmail()} for ausencia ${ausenciaData.codigo}`,
       );
 
       // Salvează email-ul în BD
@@ -346,7 +367,7 @@ export class AusenciasService {
         await this.sentEmailsService.saveSentEmail({
           senderId: ausenciaData.codigo || 'system',
           recipientType: 'gestoria',
-          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientEmail: this.getSolicitudesEmail(),
           recipientName: 'Solicitudes',
           subject,
           message: html,
@@ -367,7 +388,7 @@ export class AusenciasService {
         await this.sentEmailsService.saveSentEmail({
           senderId: ausenciaData.codigo || 'system',
           recipientType: 'gestoria',
-          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientEmail: this.getSolicitudesEmail(),
           recipientName: 'Solicitudes',
           subject: subject || `Ausencia ${ausenciaData.codigo}`,
           message: html || '',
@@ -445,7 +466,7 @@ export class AusenciasService {
   
   <hr style="margin-top: 20px; border: none; border-top: 1px solid #ddd;">
   <p style="color: #888; font-size: 12px; margin-top: 20px;">
-    Este es un mensaje automático del sistema De Camino Servicios Auxiliares SL.
+    Este es un mensaje automático del sistema${this.getCompanyName() ? ` ${this.getCompanyName()}` : ''}.
   </p>
 </body>
 </html>
@@ -595,11 +616,16 @@ export class AusenciasService {
       this.logger.log(
         `📧 [sendAusenciaDeletedEmail] Sending email for ausencia delete - subject: ${subject}`,
       );
-      await this.emailService.sendEmail(this.EMAIL_RECIPIENT, subject, html, {
-        bcc: this.emailService.getDefaultBcc(),
-      });
+      await this.emailService.sendEmail(
+        this.getSolicitudesEmail(),
+        subject,
+        html,
+        {
+          bcc: this.emailService.getDefaultBcc(),
+        },
+      );
       this.logger.log(
-        `✅ [sendAusenciaDeletedEmail] Email notification sent to ${this.EMAIL_RECIPIENT} for ausencia delete ${ausenciaData.codigo}`,
+        `✅ [sendAusenciaDeletedEmail] Email notification sent to ${this.getSolicitudesEmail()} for ausencia delete ${ausenciaData.codigo}`,
       );
 
       // Salvează email-ul în BD
@@ -607,7 +633,7 @@ export class AusenciasService {
         await this.sentEmailsService.saveSentEmail({
           senderId: ausenciaData.codigo || 'system',
           recipientType: 'gestoria',
-          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientEmail: this.getSolicitudesEmail(),
           recipientName: 'Solicitudes',
           subject,
           message: html,
@@ -628,7 +654,7 @@ export class AusenciasService {
         await this.sentEmailsService.saveSentEmail({
           senderId: ausenciaData.codigo || 'system',
           recipientType: 'gestoria',
-          recipientEmail: this.EMAIL_RECIPIENT,
+          recipientEmail: this.getSolicitudesEmail(),
           recipientName: 'Solicitudes',
           subject: subject || `Ausencia eliminada ${ausenciaData.codigo}`,
           message: html || '',
@@ -2666,7 +2692,7 @@ export class AusenciasService {
                 <p style="margin-top: 30px;">
                   <strong>Atentamente,</strong><br>
                   <strong>RRHH</strong><br>
-                  <strong>DE CAMINO SERVICIOS AUXILIARES SL</strong>
+                  <strong>${this.getCompanyName()}</strong>
                 </p>
               </div>
               <div class="footer">
@@ -3636,7 +3662,7 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
       html += `
               <p>Si tiene alguna pregunta o necesita más información, no dude en contactarnos.</p>
               
-              <p>Saludos cordiales,<br>Equipo de De Camino Servicios Auxiliares S.L.</p>
+              <p>Saludos cordiales,<br>${this.getCompanyName() ? `Equipo de ${this.getCompanyName()}` : 'Equipo'}</p>
             </div>
             <div class="footer">
               <p>Este es un mensaje automático. Por favor, no responda a este correo.</p>

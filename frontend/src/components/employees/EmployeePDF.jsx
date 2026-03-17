@@ -226,7 +226,7 @@ const EmployeePDF = ({ employeeData, createdBy }) => {
           />
           
           <View style={styles.headerText}>
-            <Text style={styles.companyName}>{import.meta.env.VITE_COMPANY_NAME || 'DE CAMINO SERVICIOS AUXILIARES'}</Text>
+            <Text style={styles.companyName}>{import.meta.env.VITE_COMPANY_NAME || import.meta.env.VITE_APP_NAME || ''}</Text>
             <Text style={styles.documentTitle}>FICHA DE EMPLEADO</Text>
             <Text style={styles.documentDate}>
               Generado el {new Date().toLocaleDateString('es-ES')} por {createdBy || 'Sistema'}
@@ -377,7 +377,7 @@ const EmployeePDF = ({ employeeData, createdBy }) => {
         {/* Footer compact */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            © {new Date().getFullYear()} DeCamino Servicios Auxiliares - Generado automáticamente
+            © {new Date().getFullYear()} {import.meta.env.VITE_APP_NAME || import.meta.env.VITE_COMPANY_NAME || 'App'} - Generado automáticamente
           </Text>
         </View>
       </Page>

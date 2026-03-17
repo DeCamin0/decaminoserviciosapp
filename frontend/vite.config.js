@@ -1,17 +1,28 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-import { copyFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 // DISABLED: vite-plugin-imagemin has 31 vulnerabilities
 // import viteImagemin from 'vite-plugin-imagemin'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Încarcă .env ca titlul și logo-ul să fie corecte și la dev
+  const env = loadEnv(mode, process.cwd(), '');
+  // HERA (client2 sau mode hera): culoarea brand – albastru
+  if (mode === 'client2' || mode === 'hera') {
+    env.VITE_PRIMARY_COLOR = env.VITE_PRIMARY_COLOR || '#2563A8';
+  }
+  const getEnv = (key) => (env[key] != null && String(env[key]).trim() !== '' ? String(env[key]).trim() : '');
+  // HERA build → dist-client2 ca să nu suprascrie dist/ (Decamino)
+  const buildOutDir = (mode === 'client2' || mode === 'hera') ? 'dist-client2' : 'dist';
+
+  return {
   // Deploy pe subdomeniu la rădăcină → servește din root
   // Pentru test environment pe /html/app-test, setează VITE_BASE_PATH=/html/app-test/
-  base: process.env.VITE_BASE_PATH || '/',
+  base: env.VITE_BASE_PATH || '/',
   plugins: [
     nodePolyfills({
       include: ['process', 'buffer', 'util', 'stream', 'crypto', 'path'],
@@ -33,7 +44,7 @@ export default defineConfig({
         const pkgVersion = process.env.npm_package_version || '1.0.0';
         const buildVersion = `${pkgVersion}-${stamp}`;
         console.log(`\n==============================`);
-        console.log(`🚀 Building De Camino version: ${buildVersion}`);
+        console.log(`🚀 Building app version: ${buildVersion}`);
         console.log(`==============================\n`);
       },
       closeBundle() {
@@ -43,26 +54,107 @@ export default defineConfig({
         const pkgVersion = process.env.npm_package_version || '1.0.0';
         const buildVersion = `${pkgVersion}-${stamp}`;
         console.log(`\n==============================`);
-        console.log(`✅ De Camino build completed. Version: ${buildVersion}`);
+        console.log(`✅ Build completed. Version: ${buildVersion}`);
         console.log(`==============================\n`);
       }
     },
-    // Injectează versiunea aplicației în index.html la build
+    // Injectează versiunea, titlul, logo, app name și culori brand din .env în index.html (dev + build, multi-client)
     {
       name: 'inject-html-version',
       transformIndexHtml(html) {
         const now = new Date();
         const pad = (n) => String(n).padStart(2, '0');
         const buildVersion = `${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())}.${pad(now.getHours())}${pad(now.getMinutes())}`;
-        return html.replace(/<html([^>]*)data-version="[^"]*"([^>]*)>/,
+        const appName = getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || '';
+        const logoPath = (getEnv('VITE_LOGO_PATH') || 'logo.svg').trim();
+        const logoPng = logoPath.replace(/\.(svg|jpg|jpeg|gif|webp)$/i, '.png');
+        let out = html.replace(/<html([^>]*)data-version="[^"]*"([^>]*)>/,
                             `<html$1 data-version="${buildVersion}"$2>`)
                    .replace(/<html(?![^>]*data-version)([^>]*)>/,
                             `<html$1 data-version="${buildVersion}">`);
+        out = out.replace(/__VITE_APP_NAME__/g, appName);
+        out = out.replace(/__VITE_LOGO_PATH__/g, logoPath);
+        out = out.replace(/__VITE_LOGO_PNG__/g, logoPng);
+        out = out.replace(/<title>.*?<\/title>/, `<title>${appName}</title>`);
+        out = out.replace(/(<meta\s+property="og:site_name"\s+content=")[^"]*(")/, `$1${appName}$2`);
+        out = out.replace(/(<meta\s+property="og:title"\s+content=")[^"]*(")/, `$1${appName}$2`);
+        out = out.replace(/(<meta\s+name="twitter:title"\s+content=")[^"]*(")/, `$1${appName}$2`);
+
+        // Culori brand din env – injectate în :root ca să fie disponibile din primul frame (login Client 2 = teal)
+        const rawPrimary = (getEnv('VITE_PRIMARY_COLOR') || '#CC0000').trim();
+        const primaryHex = rawPrimary.startsWith('#') ? rawPrimary : `#${rawPrimary}`;
+        console.log('[vite inject] VITE_PRIMARY_COLOR:', rawPrimary || '(empty)', '→', primaryHex);
+        const hexToRgb = (hex) => {
+          const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+          return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
+        };
+        const rgbToHex = (r, g, b) => '#' + [r, g, b].map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0')).join('');
+        const rgb = hexToRgb(primaryHex);
+        let primaryVars = '';
+        if (rgb) {
+          const darker = rgbToHex(rgb.r - 20, rgb.g - 20, rgb.b - 20);
+          const darkest = rgbToHex(rgb.r - 40, rgb.g - 40, rgb.b - 40);
+          primaryVars = `:root{--primary-color:${primaryHex};--primary-color-darker:${darker};--primary-color-darkest:${darkest};--primary-color-rgb:${rgb.r}, ${rgb.g}, ${rgb.b};--primary-color-rgba-01:rgba(${rgb.r},${rgb.g},${rgb.b},0.1);--primary-color-rgba-02:rgba(${rgb.r},${rgb.g},${rgb.b},0.2);--primary-color-rgba-04:rgba(${rgb.r},${rgb.g},${rgb.b},0.4);--primary-color-rgba-05:rgba(${rgb.r},${rgb.g},${rgb.b},0.5);--primary-color-rgba-06:rgba(${rgb.r},${rgb.g},${rgb.b},0.6);}`;
+        } else {
+          primaryVars = `:root{--primary-color:${primaryHex};--primary-color-darker:${primaryHex};--primary-color-darkest:${primaryHex};}`;
+        }
+        const styleTag = `<style id="vite-primary-vars">${primaryVars}</style>`;
+        if (out.includes('VITE_PRIMARY_CSS_VARS')) {
+          out = out.replace('<!-- VITE_PRIMARY_CSS_VARS injectat de vite.config.js (culori brand per client) -->', styleTag);
+        } else if (!out.includes('id="vite-primary-vars"')) {
+          out = out.replace('</head>', `${styleTag}\n  </head>`);
+        }
+        // Setare --primary-color din prima milisecundă (evită cache: scriptul rulează mereu cu valoarea corectă)
+        const setVarsScript = rgb
+          ? `(function(){var d=document.documentElement;d.style.setProperty('--primary-color','${primaryHex}');d.style.setProperty('--primary-color-darker','${rgbToHex(rgb.r - 20, rgb.g - 20, rgb.b - 20)}');d.style.setProperty('--primary-color-darkest','${rgbToHex(rgb.r - 40, rgb.g - 40, rgb.b - 40)}');d.style.setProperty('--primary-color-rgb','${rgb.r}, ${rgb.g}, ${rgb.b}');d.style.setProperty('--primary-color-rgba-01','rgba(${rgb.r},${rgb.g},${rgb.b},0.1)');d.style.setProperty('--primary-color-rgba-02','rgba(${rgb.r},${rgb.g},${rgb.b},0.2)');d.style.setProperty('--primary-color-rgba-04','rgba(${rgb.r},${rgb.g},${rgb.b},0.4)');d.style.setProperty('--primary-color-rgba-05','rgba(${rgb.r},${rgb.g},${rgb.b},0.5)');d.style.setProperty('--primary-color-rgba-06','rgba(${rgb.r},${rgb.g},${rgb.b},0.6)');})();`
+          : `(function(){document.documentElement.style.setProperty('--primary-color','${primaryHex}');})();`;
+        const scriptTag = `<script id="vite-primary-set">${setVarsScript}</script>`;
+        if (!out.includes('id="vite-primary-set"')) {
+          out = out.replace('<head>', '<head>\n    ' + scriptTag);
+        }
+        // data-primary-color pe <html> ca backup (doar dacă lipsește)
+        if (!out.includes('data-primary-color=')) {
+          out = out.replace(/<html(\s)/i, '<html data-primary-color="' + primaryHex + '"$1');
+        }
+        return out;
+      }
+    },
+    // La build: înlocuiește placeholders în firmar*.html (URL-uri + culori/logo per client)
+    {
+      name: 'inject-firmar-env',
+      closeBundle() {
+        const outDir = join(process.cwd(), buildOutDir);
+        const apiUrl = getEnv('VITE_API_URL') || '';
+        const externalUrl = getEnv('VITE_EXTERNAL_SITE_URL') || '';
+        const appName = getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || 'De Camino Servicios';
+        const logoPath = getEnv('VITE_LOGO_PATH') || 'logo.svg';
+        let primaryHex = (getEnv('VITE_PRIMARY_COLOR') || '#CC0000').trim();
+        if (!primaryHex.startsWith('#')) primaryHex = '#' + primaryHex;
+        const hexToRgb = (hex) => {
+          const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+          return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
+        };
+        const rgbToHex = (r, g, b) => '#' + [r, g, b].map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0')).join('');
+        const rgb = hexToRgb(primaryHex);
+        const primaryDark = rgb ? rgbToHex(rgb.r - 40, rgb.g - 40, rgb.b - 40) : primaryHex;
+        for (const name of ['firmar.html', 'firmar-informe.html']) {
+          const p = join(outDir, name);
+          if (existsSync(p)) {
+            let html = readFileSync(p, 'utf8');
+            html = html.replace(/%VITE_API_URL%/g, apiUrl);
+            html = html.replace(/%VITE_EXTERNAL_SITE_URL%/g, externalUrl);
+            html = html.replace(/%VITE_APP_NAME%/g, appName);
+            html = html.replace(/%VITE_LOGO_PATH%/g, logoPath);
+            html = html.replace(/%VITE_PRIMARY_COLOR%/g, primaryHex);
+            html = html.replace(/%VITE_PRIMARY_DARK%/g, primaryDark);
+            writeFileSync(p, html);
+          }
+        }
       }
     },
     // Plugin PWA cu configurație optimizată pentru a preveni conflicts
     VitePWA({
-      registerType: 'prompt', // Schimbă de la 'autoUpdate' la 'prompt' pentru a afișa notificarea
+      registerType: 'autoUpdate', // Actualizare automată: la următoarea deschidere userii primesc noua versiune fără prompt
       includeAssets: ['favicon.ico', 'logo.svg'],
       strategies: 'injectManifest',
       srcDir: 'src',
@@ -79,34 +171,39 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // Adaugă versioning explicit pentru a forța actualizările
         // Workbox generează automat hash-uri pentru fișiere, dar adăugăm și un cache ID cu versiune
-        cacheId: `decamino-v2-${process.env.npm_package_version || '1.0.0'}`,
+        cacheId: `app-v2-${process.env.npm_package_version || '1.0.0'}`,
         // Configurație pentru a preveni conflicts
         navigateFallback: (process.env.VITE_BASE_PATH || '/') + 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/webhook\//, /\/firmar\.html($|\?)/],
         // Cache strategy pentru a preveni conflicts
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/n8n\.decaminoservicios\.com\/webhook\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 10,
-              cacheableResponse: {
-                statuses: [0, 200]
+        runtimeCaching: (() => {
+          const n8nBase = (process.env.VITE_N8N_BASE_URL && String(process.env.VITE_N8N_BASE_URL).trim()) || '';
+          if (!n8nBase) return [];
+          try {
+            const origin = n8nBase.replace(/\/$/, '');
+            return [{
+              urlPattern: new RegExp(`^${origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/webhook\\/`),
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'api-cache',
+                networkTimeoutSeconds: 10,
+                cacheableResponse: { statuses: [0, 200] }
               }
-            }
+            }];
+          } catch {
+            return [];
           }
-        ]
+        })()
       },
       manifest: {
-        name: 'DE CAMINO SERVICIOS AUXILIARES',
-        short_name: 'De Camino',
+        name: getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || 'App',
+        short_name: getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || 'App',
         description: 'Aplicación web para gestión de empleados y servicios auxiliares',
-        theme_color: '#E53935',
+        theme_color: getEnv('VITE_PRIMARY_COLOR') || '#CC0000',
         background_color: '#ffffff',
         display: 'standalone',
-        scope: process.env.VITE_BASE_PATH || '/',
-        start_url: `${process.env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}`, // Adaugă versiunea în start_url pentru a forța actualizarea
+        scope: env.VITE_BASE_PATH || '/',
+        start_url: `${env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}`, // Adaugă versiunea în start_url pentru a forța actualizarea
         lang: 'es',
         categories: ['business', 'productivity'],
         version: process.env.npm_package_version || '1.0.0', // Adaugă versiunea în manifest
@@ -117,13 +214,13 @@ export default defineConfig({
             type: 'image/x-icon'
           },
           {
-            src: 'logo.png',
+            src: getEnv('VITE_PWA_ICON') || getEnv('VITE_LOGO_PATH') || 'logo.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: 'logo.png',
+            src: getEnv('VITE_PWA_ICON') || getEnv('VITE_LOGO_PATH') || 'logo.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
@@ -209,6 +306,39 @@ export default defineConfig({
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
           }
           next();
+        });
+
+        // La dev: injectează culori/logo în firmar*.html per client (ca la build)
+        // Match și cu query (?id=1) ca /firmar.html?id=1 să primească HTML-ul cu placeholders înlocuite
+        server.middlewares.use((req, res, next) => {
+          const pathname = req.url && req.url.split('?')[0];
+          const name = pathname === '/firmar.html' ? 'firmar.html' : pathname === '/firmar-informe.html' ? 'firmar-informe.html' : null;
+          if (!name) return next();
+          try {
+            const p = join(process.cwd(), 'public', name);
+            if (!existsSync(p)) return next();
+            let html = readFileSync(p, 'utf8');
+            const appName = getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || 'De Camino Servicios';
+            const logoPath = getEnv('VITE_LOGO_PATH') || 'logo.svg';
+            let primaryHex = (getEnv('VITE_PRIMARY_COLOR') || '#CC0000').trim();
+            if (!primaryHex.startsWith('#')) primaryHex = '#' + primaryHex;
+            const hexToRgb = (hex) => {
+              const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+              return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
+            };
+            const rgbToHex = (r, g, b) => '#' + [r, g, b].map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0')).join('');
+            const rgb = hexToRgb(primaryHex);
+            const primaryDark = rgb ? rgbToHex(rgb.r - 40, rgb.g - 40, rgb.b - 40) : primaryHex;
+            const apiUrl = getEnv('VITE_API_URL') || '';
+            const externalUrl = getEnv('VITE_EXTERNAL_SITE_URL') || '';
+            html = html.replace(/%VITE_API_URL%/g, apiUrl).replace(/%VITE_EXTERNAL_SITE_URL%/g, externalUrl);
+            html = html.replace(/%VITE_APP_NAME%/g, appName).replace(/%VITE_LOGO_PATH%/g, logoPath);
+            html = html.replace(/%VITE_PRIMARY_COLOR%/g, primaryHex).replace(/%VITE_PRIMARY_DARK%/g, primaryDark);
+            res.setHeader('Content-Type', 'text/html');
+            res.end(html);
+          } catch (e) {
+            next();
+          }
         });
 
         // Pentru development mode
@@ -315,7 +445,9 @@ export default defineConfig({
     // Include react-quill pentru pre-bundling
     include: [
       'react-quill',
-      'quill'
+      'quill',
+      'pdfmake/build/pdfmake',
+      'pdfmake/build/vfs_fonts'
     ],
     // Exclude path-urile virtuale create de vite-plugin-node-polyfills
     // Folosim pattern matching pentru a exclude toate path-urile virtuale
@@ -328,6 +460,8 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '1.0.0'),
+    // Culori brand – forțat din env (Client 2 = teal când mode === 'client2')
+    'import.meta.env.VITE_PRIMARY_COLOR': JSON.stringify(env.VITE_PRIMARY_COLOR || '#CC0000'),
     // Variabile de mediu pentru AutoFirma
     'import.meta.env.VITE_SIGNING_MOCK': JSON.stringify('0'), // 0 = AutoFirma reală, 1 = Mock mode
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_N8N_BASE_URL || ''), // Folosește VITE_N8N_BASE_URL din .env.local
@@ -337,6 +471,7 @@ export default defineConfig({
     'process.env': JSON.stringify({}),
   },
   build: {
+    outDir: buildOutDir,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -464,7 +599,7 @@ export default defineConfig({
   preview: {
     proxy: {
       '/webhook': {
-        target: 'https://n8n.decaminoservicios.com',
+        target: (process.env.VITE_N8N_BASE_URL && String(process.env.VITE_N8N_BASE_URL).trim()) || 'http://localhost',
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path,
@@ -521,7 +656,7 @@ export default defineConfig({
     proxy: {
       // Generic proxy pentru toate endpoint-urile /webhook/* (folosit pentru multe endpoint-uri nemigrate)
       '/webhook': {
-        target: 'https://n8n.decaminoservicios.com',
+        target: (process.env.VITE_N8N_BASE_URL && String(process.env.VITE_N8N_BASE_URL).trim()) || 'http://localhost',
         changeOrigin: true,
         secure: true,
         rewrite: (path) => path,
@@ -651,7 +786,7 @@ export default defineConfig({
       //   },
       // },
       '/api/n8n': {
-        target: 'https://n8n.decaminoservicios.com',
+        target: (process.env.VITE_N8N_BASE_URL && String(process.env.VITE_N8N_BASE_URL).trim()) || 'http://localhost',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/n8n/, ''),
         secure: true,
@@ -1024,5 +1159,6 @@ export default defineConfig({
 
 
     }
-  }
-})
+    }
+  };
+});

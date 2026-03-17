@@ -19,6 +19,9 @@ export class ScheduledMessagesService {
     startDate: Date;
     endDate: Date;
     sendTime: string; // Format: "HH:mm"
+    recurrence?: string; // 'daily' | 'weekly' | 'monthly'
+    recurrenceDayOfWeek?: number; // 0=Dom..6=Sáb (weekly)
+    recurrenceDayOfMonth?: number; // 1-31 (monthly)
     createdBy: string;
   }): Promise<ScheduledMessage> {
     const scheduledMessage = await this.prisma.scheduledMessage.create({
@@ -34,6 +37,9 @@ export class ScheduledMessagesService {
         start_date: data.startDate,
         end_date: data.endDate,
         send_time: data.sendTime,
+        recurrence: data.recurrence || null,
+        recurrence_day_of_week: data.recurrenceDayOfWeek ?? null,
+        recurrence_day_of_month: data.recurrenceDayOfMonth ?? null,
         created_by: data.createdBy,
       },
     });
@@ -83,6 +89,9 @@ export class ScheduledMessagesService {
       startDate: Date;
       endDate: Date;
       sendTime: string;
+      recurrence: string;
+      recurrenceDayOfWeek: number;
+      recurrenceDayOfMonth: number;
     }>,
   ): Promise<ScheduledMessage> {
     const updateData: any = {};
@@ -101,6 +110,11 @@ export class ScheduledMessagesService {
     if (data.startDate !== undefined) updateData.start_date = data.startDate;
     if (data.endDate !== undefined) updateData.end_date = data.endDate;
     if (data.sendTime !== undefined) updateData.send_time = data.sendTime;
+    if (data.recurrence !== undefined) updateData.recurrence = data.recurrence;
+    if (data.recurrenceDayOfWeek !== undefined)
+      updateData.recurrence_day_of_week = data.recurrenceDayOfWeek;
+    if (data.recurrenceDayOfMonth !== undefined)
+      updateData.recurrence_day_of_month = data.recurrenceDayOfMonth;
     updateData.updated_at = new Date();
 
     const updated = await this.prisma.scheduledMessage.update({
@@ -170,7 +184,8 @@ export class ScheduledMessagesService {
       },
     });
 
-    // Filtrează manual mesajele care sunt în perioada corectă
+    // Filtrează manual mesajele care sunt în perioada corectă și respectă recurența
+    const recurrence = (r: string | null) => (r && r.trim()) || 'daily';
     const messages = allMessages.filter((msg) => {
       const startDate = new Date(msg.start_date);
       const endDate = new Date(msg.end_date);
@@ -190,24 +205,55 @@ export class ScheduledMessagesService {
         today.getDate(),
       );
 
-      // Verifică dacă data de astăzi este între start_date și end_date
       const isInPeriod =
         startDateOnly <= todayDateOnlyCompare &&
         endDateOnly >= todayDateOnlyCompare;
+      if (!isInPeriod) return false;
 
-      // Verifică dacă nu a fost trimis astăzi
-      let notSentToday = true;
-      if (msg.last_sent_at) {
-        const lastSentDate = new Date(msg.last_sent_at);
-        const lastSentDateOnly = new Date(
-          lastSentDate.getFullYear(),
-          lastSentDate.getMonth(),
-          lastSentDate.getDate(),
-        );
-        notSentToday = lastSentDateOnly < todayDateOnlyCompare;
+      const rec = recurrence((msg as any).recurrence);
+
+      // Recurență: daily = zilnic, weekly = o zi din săptămână, monthly = o zi din lună
+      if (rec === 'weekly') {
+        const dayOfWeek = (msg as any).recurrence_day_of_week;
+        if (dayOfWeek == null) return false;
+        const todayDay = today.getDay();
+        if (todayDay !== dayOfWeek) return false;
+        const lastSent = (msg as any).last_sent_at;
+        if (lastSent) {
+          const last = new Date(lastSent);
+          const sameWeek =
+            this.getWeekNumber(last) === this.getWeekNumber(today) &&
+            last.getFullYear() === today.getFullYear();
+          if (sameWeek) return false;
+        }
+      } else if (rec === 'monthly') {
+        const dayOfMonth = (msg as any).recurrence_day_of_month;
+        if (dayOfMonth == null) return false;
+        const todayDay = today.getDate();
+        if (todayDay !== dayOfMonth) return false;
+        const lastSent = (msg as any).last_sent_at;
+        if (lastSent) {
+          const last = new Date(lastSent);
+          if (
+            last.getFullYear() === today.getFullYear() &&
+            last.getMonth() === today.getMonth()
+          )
+            return false;
+        }
+      } else {
+        // daily: nu trimite dacă a fost trimis astăzi
+        if (msg.last_sent_at) {
+          const lastSentDate = new Date(msg.last_sent_at);
+          const lastSentDateOnly = new Date(
+            lastSentDate.getFullYear(),
+            lastSentDate.getMonth(),
+            lastSentDate.getDate(),
+          );
+          if (lastSentDateOnly >= todayDateOnlyCompare) return false;
+        }
       }
 
-      return isInPeriod && notSentToday;
+      return true;
     });
 
     this.logger.log(
@@ -256,6 +302,14 @@ export class ScheduledMessagesService {
       `📋 Găsite ${messages.length} mesaje automate, ${filtered.length} eligibile pentru trimitere la ora ${currentTimeString}`,
     );
     return filtered;
+  }
+
+  private getWeekNumber(d: Date): number {
+    const oneJan = new Date(d.getFullYear(), 0, 1);
+    const dayOfYear = Math.floor(
+      (d.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    return Math.ceil((dayOfYear + oneJan.getDay() + 1) / 7);
   }
 
   /**

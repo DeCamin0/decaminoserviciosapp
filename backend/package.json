@@ -9,9 +9,18 @@
     "build": "npx nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "npx nest start",
-    "start:dev": "npx nest start --watch",
+    "start:dev": "node scripts/run-decamino-dev.js --watch",
     "start:debug": "npx nest start --debug --watch",
     "start:prod": "node dist/src/main",
+    "dev:backend:decamino": "node scripts/run-decamino-dev.js --watch",
+    "dev:backend:hera": "node scripts/launch-nest-client2.js --watch",
+    "client2": "node scripts/launch-nest-client2.js --watch",
+    "dev:hera": "node scripts/launch-nest-client2.js --watch",
+    "start:client2": "node scripts/launch-nest-client2.js",
+    "start:dev:client2": "node scripts/launch-nest-client2.js --watch",
+    "start:client2-nest": "node scripts/launch-nest-client2.js",
+    "dev:both": "concurrently -n decamino,hera -c blue,green \"npm run start:dev\" \"node scripts/delay-then-client2.js\"",
+    "check:ports": "node scripts/check-ports.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -30,7 +39,8 @@
     "pdf:manual-empleados-pandoc-simple": "node scripts/generate-manual-empleados-pdf-pandoc-simple.js",
     "pdf:manual-empleados-pdfmake": "node scripts/generate-manual-empleados-pdf-pdfmake.js",
     "presupuesto:build-template": "node scripts/build-presupuesto-template.js",
-    "presupuesto:create-from-original": "node scripts/create-template-from-original.js"
+    "presupuesto:create-from-original": "node scripts/create-template-from-original.js",
+    "import:developer-to-hera": "node scripts/import-developer-user-to-hera.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.11",
@@ -56,8 +66,9 @@
     "docxtemplater": "^3.68.2",
     "exceljs": "^4.4.0",
     "iconv-lite": "^0.7.2",
+    "image-size": "^2.0.2",
     "imapflow": "^1.2.6",
-    "multer": "^2.0.2",
+    "multer": "^2.1.0",
     "mysql2": "^3.15.3",
     "nodemailer": "^7.0.11",
     "openai": "^6.15.0",
@@ -72,7 +83,8 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "socket.io": "^4.7.2",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
@@ -89,6 +101,8 @@
     "@types/web-push": "^3.6.4",
     "@typescript-eslint/eslint-plugin": "^8.50.1",
     "@typescript-eslint/parser": "^8.50.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.0",
@@ -109,10 +123,12 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
+    "multer": "^2.1.0",
     "glob": "^11.0.0",
     "tmp": "^0.2.4",
     "inquirer": "^10.2.2",
     "tar": "^7.5.8",
+    "serialize-javascript": "^7.0.3",
     "diff": "^8.0.3",
     "lodash": "^4.17.23",
     "fast-xml-parser": "^5.3.6",

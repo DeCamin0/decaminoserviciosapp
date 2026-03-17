@@ -1,3 +1,74 @@
+import { config as loadEnv } from 'dotenv';
+import { resolve } from 'path';
+import { existsSync } from 'fs';
+
+// Încarcă .env înainte de orice. HERA doar dacă ENV_FILE=.env.client2.local sau există sentinel (nu după PORT, ca să nu pornească ambele pe 3002).
+const cwd = process.cwd();
+const client2Sentinel = resolve(
+  cwd,
+  'node_modules',
+  '.decamino-client2-active',
+);
+const sentinelExists = existsSync(client2Sentinel);
+const wantClient2 =
+  sentinelExists ||
+  process.env.ENV_FILE === '.env.client2.local' ||
+  process.env.ENV_FILE === '.env.hera.local';
+const envFilePreferred = wantClient2
+  ? (process.env.ENV_FILE || '.env.hera.local')
+  : process.env.ENV_FILE || '.env.decamino.local';
+const envFileFallback = wantClient2 ? '.env.client2.local' : '.env';
+const envPathPreferred = resolve(cwd, envFilePreferred);
+const envPathFallback = resolve(cwd, envFileFallback);
+const envPathResolved = existsSync(envPathPreferred)
+  ? envPathPreferred
+  : envPathFallback;
+const envFileResolved = existsSync(envPathPreferred)
+  ? envFilePreferred
+  : envFileFallback;
+if (wantClient2 && !existsSync(envPathResolved)) {
+  console.error(
+    '[Main] HERA (client2) requested but missing file:',
+    envPathPreferred,
+    'or',
+    envPathFallback,
+  );
+  process.exit(1);
+}
+// Obligatoriu: setăm ENV_FILE ca ConfigModule să încarce ACELAȘI fișier
+if (wantClient2) {
+  process.env.ENV_FILE = envFileResolved;
+  process.env.PORT = '3002';
+} else {
+  process.env.PORT = process.env.PORT || '3000';
+}
+process.env.ENV_FILE = envFileResolved;
+loadEnv({ path: envPathResolved });
+import { validateEnv } from './env.validation';
+validateEnv();
+const dbName = process.env.DB_NAME || '(not set)';
+const clientLabel = wantClient2
+  ? 'HERA (client 2)'
+  : 'DeCamino (client 1 – principal)';
+const port = process.env.PORT || '3000';
+console.log(
+  '[Main]',
+  clientLabel,
+  '| Env:',
+  envPathResolved,
+  '| DB_NAME:',
+  dbName,
+  '| Port:',
+  port,
+);
+if (wantClient2 && dbName !== 'hera_facility_db') {
+  console.error(
+    '[Main] EROARE: HERA trebuie să folosească hera_facility_db, nu',
+    dbName,
+  );
+  process.exit(1);
+}
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { json, urlencoded } from 'express';
@@ -24,22 +95,17 @@ async function bootstrap() {
       const origin = req.headers.origin;
       console.log(`[Main] OPTIONS preflight request from origin: ${origin}`);
 
-      // Backward compatible: dacă CORS_ORIGINS lipsește, folosește valorile vechi
-      const defaultProductionOrigins = [
-        'https://app.decaminoservicios.com',
-        'https://decaminoservicios.com',
-      ];
-      const defaultOrigins = [
-        'http://localhost:5173',
-        ...defaultProductionOrigins,
-      ];
-
-      // Suport pentru CORS_ORIGINS (nou) sau CORS_ORIGIN (vechi) pentru backward compatibility
+      // Multi-client: doar din env. În producție CORS_ORIGINS obligatoriu.
       const corsOriginsEnv =
         process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
-      const corsOrigins = corsOriginsEnv
-        ? corsOriginsEnv.split(',').map((o) => o.trim())
-        : defaultOrigins;
+      const corsOrigins = corsOriginsEnv?.trim()
+        ? corsOriginsEnv
+            .split(',')
+            .map((o) => o.trim())
+            .filter(Boolean)
+        : process.env.NODE_ENV === 'production'
+          ? []
+          : ['http://localhost:5173'];
 
       const uniqueCorsOrigins = [...new Set(corsOrigins)];
       const isAllowed =
@@ -125,20 +191,16 @@ async function bootstrap() {
   // Parse URL-encoded bodies
   app.use(urlencoded({ extended: true, limit: '500mb' }));
 
-  // Enable CORS for frontend communication
-  // Suport pentru multiple origins (development și producție)
-  // Backward compatible: dacă CORS_ORIGINS lipsește, folosește valorile vechi
-  const defaultOrigins = [
-    'http://localhost:5173',
-    'https://app.decaminoservicios.com',
-    'https://decaminoservicios.com',
-  ];
-
-  // Suport pentru CORS_ORIGINS (nou) sau CORS_ORIGIN (vechi) pentru backward compatibility
+  // Enable CORS – multi-client: doar din env. În producție setați CORS_ORIGINS.
   const corsOriginsEnv = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
-  const corsOrigins = corsOriginsEnv
-    ? corsOriginsEnv.split(',').map((origin) => origin.trim())
-    : defaultOrigins;
+  const corsOrigins = corsOriginsEnv?.trim()
+    ? corsOriginsEnv
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : process.env.NODE_ENV === 'production'
+      ? []
+      : ['http://localhost:5173'];
 
   // Elimină duplicate-urile
   const uniqueCorsOrigins = [...new Set(corsOrigins)];
@@ -247,14 +309,10 @@ async function bootstrap() {
     (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
   await app.listen(port, host);
 
-  // URL-ul public pentru mesaje de log
-  // În producție, folosește subdomeniul real (api.decaminoservicios.com)
-  // În development, folosește localhost
+  // URL public pentru log – multi-client: doar din env. În producție setați API_URL.
   const publicUrl =
-    process.env.API_URL ||
-    (process.env.NODE_ENV === 'production'
-      ? 'https://api.decaminoservicios.com'
-      : `http://${host}:${port}`);
+    (process.env.API_URL || '').trim() ||
+    (process.env.NODE_ENV === 'production' ? '' : `http://${host}:${port}`);
 
   console.log(`🚀 NestJS Backend is running on: ${publicUrl}`);
   console.log(`📡 n8n Proxy available at: ${publicUrl}/api/n8n/*`);

@@ -20,6 +20,7 @@ import {
 import logoImg from '@/assets/logo.svg';
 import { useTranslation } from 'react-i18next';
 import i18nInstance from '../../i18n';
+import { config } from '../../config/env';
 
 // Polyfill pentru Buffer în browser
 if (typeof window !== 'undefined' && !window.Buffer) {
@@ -591,10 +592,10 @@ const InspectionForm = ({ type, solicitudData }) => {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Source': (config.APP_NAME || config.COMPANY_NAME || 'Web-App').replace(/\s+/g, '-'),
             'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
             'X-Client-Type': 'web-browser',
-            'User-Agent': 'DeCamino-Web-Client/1.0'
+            'User-Agent': (config.APP_NAME || config.COMPANY_NAME || 'Web-Client') + '/1.0'
           }
         });
         const empleadosData = await responseEmpleados.json();
@@ -606,10 +607,10 @@ const InspectionForm = ({ type, solicitudData }) => {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'X-App-Source': 'DeCamino-Web-App',
+            'X-App-Source': (config.APP_NAME || config.COMPANY_NAME || 'Web-App').replace(/\s+/g, '-'),
             'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
             'X-Client-Type': 'web-browser',
-            'User-Agent': 'DeCamino-Web-Client/1.0'
+            'User-Agent': (config.APP_NAME || config.COMPANY_NAME || 'Web-Client') + '/1.0'
           }
         });
         const clientesData = await responseClientes.json();
@@ -1206,7 +1207,7 @@ const InspectionForm = ({ type, solicitudData }) => {
                   </View>
                   {/* Nota final pentru personalizata pe prima pagină */}
                   <View style={styles.finalNote} fixed>
-                    <Text>Este PDF ha sido generado automáticamente por el sistema DeCamino.</Text>
+                    <Text>Este PDF ha sido generado automáticamente por el sistema {config.APP_NAME || config.COMPANY_NAME || ''}.</Text>
                   </View>
                 </>
               )}
@@ -1245,7 +1246,7 @@ const InspectionForm = ({ type, solicitudData }) => {
 
                   {/* Nota final */}
                   <View style={styles.finalNote} fixed>
-                    <Text>Este PDF ha sido generado automáticamente por el sistema DeCamino.</Text>
+                    <Text>Este PDF ha sido generado automáticamente por el sistema {config.APP_NAME || config.COMPANY_NAME || ''}.</Text>
                   </View>
                 </>
               )}
@@ -1313,7 +1314,7 @@ const InspectionForm = ({ type, solicitudData }) => {
 
                 {/* Nota final */}
                 <View style={styles.finalNote} fixed>
-                  <Text>Este PDF ha sido generado automáticamente por el sistema DeCamino.</Text>
+                  <Text>Este PDF ha sido generado automáticamente por el sistema {config.APP_NAME || config.COMPANY_NAME || ''}.</Text>
                 </View>
               </Page>
             )}
@@ -1359,7 +1360,7 @@ const InspectionForm = ({ type, solicitudData }) => {
 
                 {/* Nota final */}
                 <View style={styles.finalNote} fixed>
-                  <Text>Este PDF ha sido generado automáticamente por el sistema DeCamino.</Text>
+                  <Text>Este PDF ha sido generado automáticamente por el sistema {config.APP_NAME || config.COMPANY_NAME || ''}.</Text>
                 </View>
               </Page>
             )}
@@ -1578,10 +1579,10 @@ const InspectionForm = ({ type, solicitudData }) => {
       const fetchHeaders = {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'X-App-Source': 'DeCamino-Web-App',
+          'X-App-Source': (config.APP_NAME || config.COMPANY_NAME || 'Web-App').replace(/\s+/g, '-'),
           'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
           'X-Client-Type': 'web-browser',
-          'User-Agent': 'DeCamino-Web-Client/1.0'
+          'User-Agent': (config.APP_NAME || config.COMPANY_NAME || 'Web-Client') + '/1.0'
       };
       if (token) {
         fetchHeaders['Authorization'] = `Bearer ${token}`;

@@ -37,9 +37,14 @@ lerna-debug.log*
 # Uploads (PDFs de aceptación, etc.)
 /uploads
 
-# Environment variables
+# Environment variables (secrete – nu urmări în git)
 .env
 .env.local
 .env.*.local
+.env*.local
+.env.decamino.local
+.env.hera.local
+.env.client2.local
+.env.client2.active
 .env.production
 !.env.production.example
