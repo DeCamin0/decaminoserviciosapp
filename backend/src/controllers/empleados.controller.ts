@@ -612,11 +612,11 @@ export class EmpleadosController {
       const archivosGestoria = files?.archivosGestoria || [];
 
       if (!pdfFile || !pdfFile.buffer) {
-        throw new BadRequestException('PDF-ul este obligatoriu');
+        throw new BadRequestException('El PDF es obligatorio');
       }
 
       if (!body.CODIGO) {
-        throw new BadRequestException('CODIGO este obligatoriu');
+        throw new BadRequestException('El CODIGO es obligatorio');
       }
 
       // Verifică dacă angajatul există
@@ -1693,10 +1693,10 @@ export class EmpleadosController {
 
       // Validăm datele
       if (!body.id && !body.ID) {
-        throw new BadRequestException('ID-ul cambio-ului este obligatoriu');
+        throw new BadRequestException('El ID del cambio es obligatorio');
       }
       if (!body.codigo && !body.CODIGO) {
-        throw new BadRequestException('CODIGO-ul empleado este obligatoriu');
+        throw new BadRequestException('El CODIGO del empleado es obligatorio');
       }
 
       // Obține cambio-ul pentru a extrage datele necesare
@@ -1707,7 +1707,7 @@ export class EmpleadosController {
         );
         if (!cambioData) {
           throw new BadRequestException(
-            `Cambio cu ID ${body.id || body.ID} nu a fost găsit`,
+            `No se encontró el cambio con ID ${body.id || body.ID}`,
           );
         }
       } catch (error: any) {
@@ -2006,7 +2006,7 @@ export class EmpleadosController {
 
       // Validăm datele
       if (!body.id && !body.ID) {
-        throw new BadRequestException('ID-ul cambio-ului este obligatoriu');
+        throw new BadRequestException('El ID del cambio es obligatorio');
       }
 
       // Respinge cambio-ul
@@ -2186,7 +2186,9 @@ export class EmpleadosController {
       const { mesaj, subiect, destinatar, grup, codigo } = body;
 
       if (!mesaj || !subiect) {
-        throw new BadRequestException('mesaj și subiect sunt obligatorii');
+        throw new BadRequestException(
+          'El mensaje y el asunto son obligatorios',
+        );
       }
 
       // Verifică dacă SMTP este configurat
@@ -2236,7 +2238,7 @@ export class EmpleadosController {
 
         if (emailRecipients.length === 0) {
           throw new BadRequestException(
-            'Nu s-au găsit angajați activi care au email configurat',
+            'No se encontraron empleados activos con email configurado',
           );
         }
 
@@ -2262,7 +2264,7 @@ export class EmpleadosController {
 
         if (emailRecipients.length === 0) {
           throw new BadRequestException(
-            `Nu s-au găsit angajați activi cu grupul ${grup} care au email configurat`,
+            `No se encontraron empleados activos del grupo ${grup} con email configurado`,
           );
         }
       } else {

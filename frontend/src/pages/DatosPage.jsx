@@ -10,6 +10,7 @@ import { useApi } from '../hooks/useApi';
 import { API_ENDPOINTS } from '../utils/constants';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
 import { config } from '../config/env';
+import AssistantPreferencesCard from '../components/AssistantPreferencesCard.jsx';
 
 // Función para calcular la antigüedad
 const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
@@ -1182,6 +1183,8 @@ const [editLoading, setEditLoading] = useState(false);
           </div>
         )}
       </div>
+
+      <AssistantPreferencesCard />
 
       {user ? (
         <div>

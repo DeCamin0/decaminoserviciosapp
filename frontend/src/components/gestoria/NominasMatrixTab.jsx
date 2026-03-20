@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { routes } from '../../utils/routes';
+import { config } from '../../config/env';
 import ConfirmModal from '../ui/ConfirmModal';
+
+const N = config.NOMINAS_LABEL;           // "Nóminas" | "Hojas de salario"
+const N1 = config.NOMINAS_LABEL_SINGULAR; // "nómina" | "hoja de salario"
 
 const MESES = [
   'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -23,7 +27,7 @@ const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
   } else if (error.startsWith('fecha_baja_establecida:')) {
     // Eroare specială pentru FECHA BAJA - extragem data
     const fechaBaja = error.replace('fecha_baja_establecida:', '');
-    return `Empleado tiene FECHA BAJA establecida (${fechaBaja}). No se puede subir nómina.`;
+    return `Empleado tiene FECHA BAJA establecida (${fechaBaja}). No se puede subir ${config.NOMINAS_LABEL_SINGULAR}.`;
   } else if (error.startsWith('error_procesamiento:')) {
     // Eroare de procesare - afișăm mesajul complet (truncat dacă e prea lung)
     const errorMsg = error.replace('error_procesamiento: ', '');
@@ -274,15 +278,15 @@ export default function NominasMatrixTab() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Error al procesar nómina' }));
-        throw new Error(errorData.message || 'Error al procesar nómina');
+        const errorData = await response.json().catch(() => ({ message: `Error al procesar ${N1}` }));
+        throw new Error(errorData.message || `Error al procesar ${N1}`);
       }
 
       const data = await response.json();
       setUploadPreviewData(data);
       setShowUploadVerificationModal(true);
     } catch (err) {
-      setUploadError(err.message || 'Error al procesar nómina');
+      setUploadError(err.message || `Error al procesar ${N1}`);
       console.error('Error in preview:', err);
     } finally {
       setUploading(false);
@@ -317,8 +321,8 @@ export default function NominasMatrixTab() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Error al subir nómina' }));
-        throw new Error(errorData.message || 'Error al subir nómina');
+        const errorData = await response.json().catch(() => ({ message: `Error al subir ${N1}` }));
+        throw new Error(errorData.message || `Error al subir ${N1}`);
       }
 
       setUploadSuccess(true);
@@ -333,7 +337,7 @@ export default function NominasMatrixTab() {
         fetchData(); // Recargar datos
       }, 1500);
     } catch (err) {
-      setUploadError(err.message || 'Error al subir nómina');
+      setUploadError(err.message || `Error al subir ${N1}`);
     } finally {
       setUploading(false);
     }
@@ -367,7 +371,7 @@ export default function NominasMatrixTab() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Error response:', errorText);
-        throw new Error('Error al obtener nóminas');
+        throw new Error(`Error al obtener ${N}`);
       }
       
       const data = await response.json();
@@ -429,7 +433,7 @@ export default function NominasMatrixTab() {
         if (response.status === 401) {
           throw new Error('No autorizado. Por favor, inicia sesión nuevamente.');
         }
-        throw new Error('Error al descargar nómina');
+        throw new Error(`Error al descargar ${N1}`);
       }
 
       // Get blob from response
@@ -446,7 +450,7 @@ export default function NominasMatrixTab() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Error downloading nomina:', err);
-      alert('Error al descargar nómina: ' + err.message);
+      alert(`Error al descargar ${N1}: ` + err.message);
     }
   };
 
@@ -468,7 +472,7 @@ export default function NominasMatrixTab() {
         if (response.status === 401) {
           throw new Error('No autorizado. Por favor, inicia sesión nuevamente.');
         }
-        throw new Error('Error al cargar nómina');
+        throw new Error(`Error al cargar ${N1}`);
       }
 
       // Get blob from response
@@ -480,7 +484,7 @@ export default function NominasMatrixTab() {
       setShowPreviewModal(true);
     } catch (err) {
       console.error('Error previewing nomina:', err);
-      alert('Error al cargar nómina: ' + err.message);
+      alert(`Error al cargar ${N1}: ` + err.message);
     }
   };
 
@@ -503,7 +507,7 @@ export default function NominasMatrixTab() {
         },
       });
 
-      if (!response.ok) throw new Error('Error al eliminar nómina');
+      if (!response.ok) throw new Error(`Error al eliminar ${N1}`);
 
       // Recargar datos
       await handleViewNominas(viewEmpleado, viewMes);
@@ -513,7 +517,7 @@ export default function NominasMatrixTab() {
       setNominaToDelete(null);
     } catch (err) {
       console.error('Error deleting nomina:', err);
-      alert('Error al eliminar nómina: ' + err.message);
+      alert(`Error al eliminar ${N1}: ` + err.message);
       setShowDeleteConfirmModal(false);
       setNominaToDelete(null);
     }
@@ -695,7 +699,7 @@ export default function NominasMatrixTab() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(`Error subiendo ${file.name}: ${errorData.message || 'Error al subir nóminas'}`);
+          throw new Error(`Error subiendo ${file.name}: ${errorData.message || `Error al subir ${N}`}`);
         }
 
         const data = await response.json();
@@ -738,7 +742,7 @@ export default function NominasMatrixTab() {
         await fetchData();
       }, 2000);
     } catch (err) {
-      setBulkUploadError(err.message || 'Error al subir nóminas');
+      setBulkUploadError(err.message || `Error al subir ${N}`);
       console.error('Error in bulk upload:', err);
     } finally {
       setBulkUploading(false);
@@ -751,7 +755,7 @@ export default function NominasMatrixTab() {
       <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <h2 className="text-xl font-bold text-gray-900">💰 Gestión de Nóminas</h2>
+            <h2 className="text-xl font-bold text-gray-900">💰 Gestión de {N}</h2>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
@@ -806,7 +810,7 @@ export default function NominasMatrixTab() {
               : 'border-green-200 hover:border-green-300'
           }`}
         >
-          <div className="text-sm text-green-600">Con Nómina</div>
+          <div className="text-sm text-green-600">Con {N}</div>
           <div className="text-2xl font-bold text-green-700">{stats.con_nomina}</div>
           {filterByNomina === 'con' && (
             <div className="text-xs text-green-600 mt-1">✓ Filtro activo</div>
@@ -823,7 +827,7 @@ export default function NominasMatrixTab() {
               : 'border-red-200 hover:border-red-300'
           }`}
         >
-          <div className="text-sm text-red-600">Sin Nómina</div>
+          <div className="text-sm text-red-600">Sin {N}</div>
           <div className="text-2xl font-bold text-red-700">{stats.sin_nomina}</div>
           {filterByNomina === 'sin' && (
             <div className="text-xs text-red-600 mt-1">✓ Filtro activo</div>
@@ -837,7 +841,7 @@ export default function NominasMatrixTab() {
           onClick={() => setShowBulkUploadModal(true)}
           className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2"
         >
-          📦 Subir Múltiples Nóminas
+          📦 Subir Múltiples {N}
         </button>
       </div>
 
@@ -916,7 +920,7 @@ export default function NominasMatrixTab() {
                             <button
                               onClick={() => handleViewNominas(emp, idx)}
                               className="text-green-600 hover:text-green-700 font-bold text-lg"
-                              title="Ver nóminas"
+                              title={`Ver ${N}`}
                             >
                               ✅
                             </button>
@@ -931,7 +935,7 @@ export default function NominasMatrixTab() {
                                 setUploadSuccess(false);
                               }}
                               className="text-red-600 hover:text-red-700 font-bold text-lg"
-                              title="Subir nómina"
+                              title={`Subir ${N1}`}
                             >
                               ❌
                             </button>
@@ -976,7 +980,7 @@ export default function NominasMatrixTab() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">Subir Nómina</h3>
+              <h3 className="text-xl font-bold text-gray-900">Subir {N1.charAt(0).toUpperCase() + N1.slice(1)}</h3>
               <button
                 onClick={() => {
                   setShowUploadModal(false);
@@ -1025,7 +1029,7 @@ export default function NominasMatrixTab() {
 
               {uploadSuccess && (
                 <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-                  ✅ Nómina subida correctamente
+                  ✅ {N1.charAt(0).toUpperCase() + N1.slice(1)} subida correctamente
                 </div>
               )}
 
@@ -1086,7 +1090,7 @@ export default function NominasMatrixTab() {
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-900">
-                  Nóminas de {viewEmpleado.nombre_completo} - {MESES[viewMes]} {selectedYear}
+                  {N} de {viewEmpleado.nombre_completo} - {MESES[viewMes]} {selectedYear}
                 </h3>
                 <button
                   onClick={() => {
@@ -1105,7 +1109,7 @@ export default function NominasMatrixTab() {
             <div className="p-6 overflow-y-auto flex-1">
               {viewNominas.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
-                  No hay nóminas para este mes
+                  No hay {N.toLowerCase()} para este mes
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1173,7 +1177,7 @@ export default function NominasMatrixTab() {
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-900">
-                  📦 Subir Múltiples Nóminas
+                  📦 Subir Múltiples {N}
                 </h3>
                 <button
                   onClick={() => {
@@ -1194,7 +1198,7 @@ export default function NominasMatrixTab() {
               {bulkUploadResult ? (
                 <div className="space-y-4">
                   <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-                    ✅ Proceso completado: {bulkUploadResult.procesadas}/{bulkUploadResult.total_paginas} nóminas procesadas
+                    ✅ Proceso completado: {bulkUploadResult.procesadas}/{bulkUploadResult.total_paginas} {N.toLowerCase()} procesadas
                   </div>
                   
                   {bulkUploadResult.erori > 0 && (
@@ -1315,7 +1319,7 @@ export default function NominasMatrixTab() {
                   )}
 
                   <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm">
-                    ℹ️ Puedes seleccionar múltiples archivos PDF. Cada PDF puede tener una o múltiples páginas (una nómina por página). El sistema intentará detectar automáticamente el nombre del empleado, mes y año en cada página. Si no se especifican mes y año, se detectarán automáticamente del PDF.
+                    ℹ️ Puedes seleccionar múltiples archivos PDF. Cada PDF puede tener una o múltiples páginas (una {N1} por página). El sistema intentará detectar automáticamente el nombre del empleado, mes y año en cada página. Si no se especifican mes y año, se detectarán automáticamente del PDF.
                   </div>
                 </div>
               )}
@@ -1370,7 +1374,7 @@ export default function NominasMatrixTab() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold text-gray-900">
-                    📋 Verificación de Nóminas
+                    📋 Verificación de {N}
                   </h3>
                   <p className="text-sm text-gray-600 mt-1">
                     Revisa los detalles antes de confirmar la subida
@@ -1488,7 +1492,7 @@ export default function NominasMatrixTab() {
                               </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
-                                📄 NÓMINA
+                                📄 {N1.charAt(0).toUpperCase() + N1.slice(1).toUpperCase()}
                               </span>
                             )}
                           </td>
@@ -1675,7 +1679,7 @@ export default function NominasMatrixTab() {
                   {bulkUploading ? 'Subiendo...' : `Confirmar y Subir (${bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
                     (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
                     (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
-                  ).length || 0)} nóminas)`}
+                  ).length || 0)} {N})`}
                 </button>
               </div>
             </div>
@@ -1689,7 +1693,7 @@ export default function NominasMatrixTab() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 to-green-100">
-              <h3 className="text-xl font-bold text-gray-900">Verificar Nómina antes de Subir</h3>
+              <h3 className="text-xl font-bold text-gray-900">Verificar {N1.charAt(0).toUpperCase() + N1.slice(1)} antes de Subir</h3>
               <p className="text-sm text-gray-600 mt-1">Revisa los detalles antes de confirmar</p>
             </div>
 
@@ -1719,7 +1723,7 @@ export default function NominasMatrixTab() {
                     Tipo de Documento
                   </div>
                   <div className={`text-2xl font-bold ${uploadPreviewData.esFiniquito ? 'text-orange-900' : 'text-green-900'}`}>
-                    {uploadPreviewData.esFiniquito ? '⚠️ FINIQUITO' : '📄 NÓMINA'}
+                    {uploadPreviewData.esFiniquito ? '⚠️ FINIQUITO' : `📄 ${N1.charAt(0).toUpperCase() + N1.slice(1).toUpperCase()}`}
                   </div>
                   {uploadPreviewData.esFiniquito && (
                     <div className="text-sm text-orange-800 mt-2">
@@ -1742,7 +1746,7 @@ export default function NominasMatrixTab() {
                     )}
                     {uploadPreviewData.segSocialExtraido && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-blue-700">Extraído de Nómina:</span>
+                        <span className="font-medium text-blue-700">Extraído de {N1.charAt(0).toUpperCase() + N1.slice(1)}:</span>
                         <span className="text-blue-900 font-semibold">{uploadPreviewData.segSocialExtraido}</span>
                       </div>
                     )}
@@ -1779,7 +1783,7 @@ export default function NominasMatrixTab() {
                     )}
                     {uploadPreviewData.fechaAltaExtraida && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-purple-700">Fecha Alta (Nómina):</span>
+                        <span className="font-medium text-purple-700">Fecha Alta ({N1.charAt(0).toUpperCase() + N1.slice(1)}):</span>
                         <span className="text-purple-900 font-semibold">{uploadPreviewData.fechaAltaExtraida}</span>
                       </div>
                     )}
@@ -1791,7 +1795,7 @@ export default function NominasMatrixTab() {
                     )}
                     {uploadPreviewData.fechaAntiguedadExtraida && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-purple-700">Fecha Antigüedad (Nómina):</span>
+                        <span className="font-medium text-purple-700">Fecha Antigüedad ({N1.charAt(0).toUpperCase() + N1.slice(1)}):</span>
                         <span className="text-purple-900 font-semibold">{uploadPreviewData.fechaAntiguedadExtraida}</span>
                       </div>
                     )}
@@ -1803,7 +1807,7 @@ export default function NominasMatrixTab() {
                     )}
                     {uploadPreviewData.fechaBajaExtraida && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-purple-700">Fecha Baja (Nómina):</span>
+                        <span className="font-medium text-purple-700">Fecha Baja ({N1.charAt(0).toUpperCase() + N1.slice(1)}):</span>
                         <span className="text-purple-900 font-semibold">{uploadPreviewData.fechaBajaExtraida}</span>
                       </div>
                     )}
@@ -1877,8 +1881,8 @@ export default function NominasMatrixTab() {
           setNominaToDelete(null);
         }}
         onConfirm={handleDeleteConfirm}
-        title="Eliminar Nómina"
-        message="¿Estás seguro de que quieres eliminar esta nómina? Esta acción no se puede deshacer."
+        title={`Eliminar ${N1.charAt(0).toUpperCase() + N1.slice(1)}`}
+        message={`¿Estás seguro de que quieres eliminar esta ${N1}? Esta acción no se puede deshacer.`}
         confirmText="Eliminar"
         cancelText="Cancelar"
         type="danger"
@@ -1890,7 +1894,7 @@ export default function NominasMatrixTab() {
           <div className="bg-white rounded-2xl w-full h-full max-w-7xl max-h-[95vh] overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-xl font-bold text-gray-900">
-                Vista Previa - Nómina #{previewNominaId}
+                Vista Previa - {N1.charAt(0).toUpperCase() + N1.slice(1)} #{previewNominaId}
               </h3>
               <button
                 onClick={() => {
@@ -1910,7 +1914,7 @@ export default function NominasMatrixTab() {
               <iframe
                 src={previewUrl}
                 className="w-full h-full border-0"
-                title="Preview Nómina"
+                title={`Preview ${N1.charAt(0).toUpperCase() + N1.slice(1)}`}
               />
             </div>
           </div>
@@ -1947,7 +1951,7 @@ export default function NominasMatrixTab() {
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-gray-900">
-                  📊 Accesos a Nómina #{selectedNominaId}
+                  📊 Accesos a {N1.charAt(0).toUpperCase() + N1.slice(1)} #{selectedNominaId}
                 </h3>
                 <button
                   onClick={() => {
@@ -1970,7 +1974,7 @@ export default function NominasMatrixTab() {
                 </div>
               ) : accesosData.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
-                  No hay accesos registrados para esta nómina
+                  No hay accesos registrados para esta {N1}
                 </div>
               ) : (
                 <div className="space-y-3">

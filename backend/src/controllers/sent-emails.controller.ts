@@ -158,7 +158,7 @@ export class SentEmailsController {
       }
 
       if (!this.emailService.isConfigured()) {
-        throw new BadRequestException('SMTP nu este configurat');
+        throw new BadRequestException('SMTP no está configurado');
       }
 
       const senderId = String(user?.CODIGO || user?.codigo || user?.userId);
@@ -232,7 +232,7 @@ export class SentEmailsController {
       }
 
       if (recipients.length === 0) {
-        throw new BadRequestException('Nu s-au găsit destinatari');
+        throw new BadRequestException('No se encontraron destinatarios');
       }
 
       // Pregătește attachments

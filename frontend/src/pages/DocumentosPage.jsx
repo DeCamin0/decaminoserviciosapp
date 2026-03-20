@@ -6,6 +6,7 @@ import ContractSigner from '../components/ContractSigner';
 import PRLDocumentSigner from '../components/PRLDocumentSigner';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 import { routes } from '../utils/routes.js';
+import { config } from '../config/env';
 import activityLogger from '../utils/activityLogger';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
@@ -369,7 +370,7 @@ export default function DocumentosPage() {
     } catch (e) {
       console.error('❌ Error obteniendo nóminas:', e);
       setNominas([]);
-      setError('¡Error al cargar las nóminas!');
+      setError(`¡Error al cargar las ${config.NOMINAS_LABEL.toLowerCase()}!`);
     } finally {
       setNominasLoading(false);
     }
@@ -946,7 +947,7 @@ export default function DocumentosPage() {
           }
         } catch (error) {
           console.error('❌ Error obteniendo blob de nómina:', error);
-          setPreviewError(`Error al cargar la nómina: ${error.message}`);
+          setPreviewError(`Error al cargar la ${config.NOMINAS_LABEL_SINGULAR}: ${error.message}`);
           setPreviewLoading(false);
           return;
         }
@@ -1944,7 +1945,7 @@ export default function DocumentosPage() {
           console.log('🎭 DEMO mode: Skipping AutoFirma webhook call');
           setNotification({
             type: 'success',
-            title: 'Document Semnat (DEMO)',
+            title: 'Documento firmado (DEMO)',
             message: 'El documento ha sido firmado con éxito, descargado y enviado al servidor! (Simulación DEMO)'
           });
           setLoading(false);
@@ -1988,7 +1989,7 @@ export default function DocumentosPage() {
           console.log('✅ Document trimis cu succes la backend:', data);
         setNotification({
           type: 'success',
-            title: 'Document Semnat și Trimis',
+            title: 'Documento firmado y enviado',
             message: 'El documento ha sido firmado con éxito, descargado y enviado al servidor!'
           });
         })
@@ -2460,7 +2461,7 @@ export default function DocumentosPage() {
               Gestión de Documentos
             </h1>
             <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              Administra nóminas, contratos y documentos personales
+              Administra {config.NOMINAS_LABEL.toLowerCase()}, contratos y documentos personales
             </p>
           </div>
         </div>
@@ -2473,7 +2474,7 @@ export default function DocumentosPage() {
           onClick={() => {
             // Date relevante pentru pagina de documentos
             const tabNames = {
-              'nominas': 'Nóminas',
+              'nominas': config.NOMINAS_LABEL,
               'mis-documentos': 'Mis Documentos',
               'contrato-documentos': 'Documentos Oficiales',
               'prl-documentos': 'Documentos PRL'
@@ -2482,7 +2483,7 @@ export default function DocumentosPage() {
             const pageData = {
               additionalInfo: [
                 `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
-                nominas?.length > 0 ? `[NÓMINAS] ${nominas.length} disponibles` : null,
+                nominas?.length > 0 ? `[${config.NOMINAS_LABEL.toUpperCase()}] ${nominas.length} disponibles` : null,
                 documentos?.length > 0 ? `[DOCUMENTOS] ${documentos.length} disponibles` : null,
               ].filter(Boolean),
             };
@@ -2521,7 +2522,7 @@ export default function DocumentosPage() {
             }`}></div>
             <div className="relative flex items-center gap-2">
               <span className="text-xl">💰</span>
-              <span>Nóminas</span>
+              <span>{config.NOMINAS_LABEL}</span>
             </div>
           </button>
           <button
@@ -2641,7 +2642,7 @@ export default function DocumentosPage() {
                     <span className="text-white text-xl sm:text-2xl">💰</span>
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Nóminas Disponibles</h2>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{config.NOMINAS_LABEL} Disponibles</h2>
                     <p className="text-gray-600 text-xs sm:text-sm">Recibos de sueldo y documentos salariales</p>
                   </div>
                 </div>
@@ -2650,7 +2651,7 @@ export default function DocumentosPage() {
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded-lg">
                   <p className="text-sm text-blue-800">
                     <strong>📋 Información Legal:</strong> Esta aplicación es el canal oficial 
-                    de entrega de nóminas. Al acceder a tu cuenta, aceptas que las nóminas 
+de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, aceptas que {config.NOMINAS_LABEL.toLowerCase()}
                     están disponibles y puestas a tu disposición. Todas las acciones de acceso 
                     y descarga son registradas para cumplimiento legal.
                   </p>
@@ -2676,14 +2677,14 @@ export default function DocumentosPage() {
               
               {nominasLoading ? (
                 <div className="flex justify-center py-8">
-                  <LoadingSpinner size="lg" text="Cargando nóminas..." />
+                  <LoadingSpinner size="lg" text={`Cargando ${config.NOMINAS_LABEL.toLowerCase()}...`} />
                 </div>
               ) : nominas.length === 0 ? (
                 <div className="text-center py-12">
                   <div className="text-gray-300 text-8xl mb-6">💰</div>
-                  <h3 className="text-2xl font-bold text-gray-600 mb-3">No se encontraron nóminas</h3>
-                  <p className="text-gray-500 text-lg mb-2">No hay nóminas disponibles para tu usuario</p>
-                  <p className="text-gray-400 text-sm">Las nóminas aparecerán aquí cuando estén disponibles</p>
+                  <h3 className="text-2xl font-bold text-gray-600 mb-3">No se encontraron {config.NOMINAS_LABEL.toLowerCase()}</h3>
+                  <p className="text-gray-500 text-lg mb-2">No hay {config.NOMINAS_LABEL.toLowerCase()} disponibles para tu usuario</p>
+                  <p className="text-gray-400 text-sm">Las {config.NOMINAS_LABEL.toLowerCase()} aparecerán aquí cuando estén disponibles</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
@@ -2703,7 +2704,7 @@ export default function DocumentosPage() {
                             </h3>
                             ) : (
                               <h3 className="text-lg font-bold text-gray-700 group-hover:text-green-800 transition-colors duration-300">
-                                Nómina Disponible
+                                {config.NOMINAS_LABEL_SINGULAR.charAt(0).toUpperCase() + config.NOMINAS_LABEL_SINGULAR.slice(1)} Disponible
                               </h3>
                             )}
                             <p className="text-sm text-green-600 font-medium">Recibo de sueldo</p>
@@ -2753,7 +2754,7 @@ export default function DocumentosPage() {
                                   setNotification({
                                     type: 'info',
                                     title: 'Enviando...',
-                                    message: 'Enviando nómina por correo electrónico...'
+                                    message: `Enviando ${config.NOMINAS_LABEL_SINGULAR} por correo electrónico...`
                                   });
 
                                   const response = await fetch(routes.sendNominaByEmail(item.id), {
@@ -2777,14 +2778,14 @@ export default function DocumentosPage() {
                                   setNotification({
                                     type: 'success',
                                     title: '✅ Email Enviado',
-                                    message: `Tu nómina ha sido enviada a ${userEmail}`
+                                    message: `Tu ${config.NOMINAS_LABEL_SINGULAR} ha sido enviada a ${userEmail}`
                                   });
                                 } catch (error) {
                                   console.error('❌ Error enviando nómina por email:', error);
                                   setNotification({
                                     type: 'error',
                                     title: 'Error',
-                                    message: error.message || 'Error al enviar la nómina por email'
+                                    message: error.message || `Error al enviar la ${config.NOMINAS_LABEL_SINGULAR} por email`
                                   });
                                 }
                               }}
@@ -2841,7 +2842,7 @@ export default function DocumentosPage() {
                                 setNotification({
                                   type: 'error',
                                   title: 'Error de Descarga',
-                                  message: 'No se pudo descargar la nómina'
+                                  message: `No se pudo descargar la ${config.NOMINAS_LABEL_SINGULAR}`
                                 });
                               }
                             } catch (error) {
@@ -2849,7 +2850,7 @@ export default function DocumentosPage() {
                               setNotification({
                                 type: 'error',
                                 title: 'Error de Descarga',
-                                message: 'Error al descargar la nómina'
+                                message: `Error al descargar la ${config.NOMINAS_LABEL_SINGULAR}`
                               });
                             }
                           }}
@@ -4378,13 +4379,13 @@ export default function DocumentosPage() {
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(autoFirmaUrl).then(() => {
-                    alert('URL-ul AutoFirma a fost copiat în clipboard! Poți să-l deschizi manual în browser.');
+                    alert('La URL de AutoFirma se ha copiado al portapapeles. Puedes abrirla manualmente en el navegador.');
                   }).catch(() => {
-                    alert('URL-ul AutoFirma: ' + autoFirmaUrl);
+                    alert('URL de AutoFirma: ' + autoFirmaUrl);
                   });
                 }}
                 className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm transition-colors"
-                title="Copiază URL-ul"
+                title="Copiar URL"
               >
                 📋
               </button>

@@ -38,9 +38,9 @@ const GeocodingAddress = ({ lat, lng, className = "" }) => {
           const fullAddress = data.results[0].formatted_address;
           setAddress(fullAddress);
         } else if (data.status === 'ZERO_RESULTS') {
-          setError('Nu s-a găsit nicio adresă pentru aceste coordonate');
+          setError('No se encontró ninguna dirección para estas coordenadas');
         } else {
-          setError(`Eroare API: ${data.status} - ${data.error_message || 'Eroare necunoscută'}`);
+          setError(`Error API: ${data.status} - ${data.error_message || 'Error desconocido'}`);
         }
       } catch (error) {
         console.error('Eroare la obținerea adresei:', error);
@@ -57,7 +57,7 @@ const GeocodingAddress = ({ lat, lng, className = "" }) => {
     return (
       <div className={`${className} flex items-center space-x-2 text-gray-600`}>
         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-        <span>Se încarcă adresa...</span>
+        <span>Cargando dirección...</span>
       </div>
     );
   }

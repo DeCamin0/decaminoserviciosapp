@@ -573,7 +573,7 @@ export default function ActivityLog() {
     return (
       <div className="text-center py-8">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-        <div className="text-gray-600">Se încarcă log-ul de activitate...</div>
+        <div className="text-gray-600">Cargando registro de actividad...</div>
       </div>
     );
   }

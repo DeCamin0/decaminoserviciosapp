@@ -106,27 +106,28 @@ import { DiplomasController } from './controllers/diplomas.controller';
 import { DiplomasService } from './services/diplomas.service';
 import { PedidosNotasController } from './controllers/pedidos-notas.controller';
 import { PedidosNotasService } from './services/pedidos-notas.service';
+import { SuperAdminTenantsModule } from './super-admin-tenants/super-admin-tenants.module';
 
 @Module({
   imports: [
     ConfigModule,
     ScheduleModule.forRoot(), // Pentru cron jobs
-    // Rate limiting: mărit pentru a evita 429 la documentos-solicitados
+    // Rate limiting: generos pentru app internă (Todas/Aprobación fac multe request-uri per empleado → 429)
     ThrottlerModule.forRoot([
       {
         name: 'short',
         ttl: 10000, // 10 secunde
-        limit: 100, // 100 request-uri pe 10 secunde (mărit pentru a evita 429)
+        limit: 300, // 300 req/10s (batch documentos/ausencias justificadas)
       },
       {
         name: 'medium',
         ttl: 60000, // 1 minut
-        limit: 500, // 500 request-uri pe minut (mărit pentru a evita 429)
+        limit: 1500, // 1500 req/min
       },
       {
         name: 'long',
         ttl: 3600000, // 1 oră
-        limit: 1000, // 1000 request-uri pe oră (protecție împotriva atacurilor prelungite)
+        limit: 5000, // 5000 req/oră
       },
     ]),
     AuthModule,
@@ -137,6 +138,7 @@ import { PedidosNotasService } from './services/pedidos-notas.service';
     VacacionesModule,
     AssistantModule,
     EmailIngestionModule,
+    SuperAdminTenantsModule,
   ],
   controllers: [
     AppController,

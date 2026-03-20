@@ -7,13 +7,13 @@ const PDFGenerator = lazy(() => import('../PDFGenerator'));
 
 // Lazy PDF components with loading states
 export const LazyPDFViewer = (props) => (
-  <Suspense fallback={<SectionLoading title="Se încarcă vizualizatorul PDF..." />}>
+  <Suspense fallback={<SectionLoading title="Cargando visor PDF..." />}>
     <PDFViewer {...props} />
   </Suspense>
 );
 
 export const LazyPDFGenerator = (props) => (
-  <Suspense fallback={<SectionLoading title="Se încarcă generatorul PDF..." />}>
+  <Suspense fallback={<SectionLoading title="Cargando generador PDF..." />}>
     <PDFGenerator {...props} />
   </Suspense>
 );

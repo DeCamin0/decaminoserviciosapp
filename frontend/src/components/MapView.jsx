@@ -148,7 +148,7 @@ const MapView = ({ lat, lng, clientName, className = "h-64 w-full", clients = nu
           <p>Nu sunt coordonate disponibile</p>
           <p className="text-xs mt-2">Coordonate: {lat}, {lng}</p>
           {clients && (
-            <p className="text-xs mt-1">Clienți cu coordonate: {clients.filter(c => c.LATITUD && c.LONGITUD).length}</p>
+            <p className="text-xs mt-1">Clientes con coordenadas: {clients.filter(c => c.LATITUD && c.LONGITUD).length}</p>
           )}
         </div>
       </div>
@@ -172,7 +172,7 @@ const MapView = ({ lat, lng, clientName, className = "h-64 w-full", clients = nu
       <div className={`${className} bg-gray-100 rounded-lg flex items-center justify-center min-h-[800px]`}>
         <div className="text-center text-gray-500">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-          <p>Se încarcă harta...</p>
+          <p>Cargando mapa...</p>
         </div>
       </div>
     );
@@ -181,11 +181,11 @@ const MapView = ({ lat, lng, clientName, className = "h-64 w-full", clients = nu
   return (
     <div className={`${className} rounded-xl overflow-hidden border-2 border-gray-200 bg-white shadow-lg`}>
       <div className="p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-800 mb-1">📍 Locație pe hartă</h3>
+        <h3 className="text-lg font-semibold text-gray-800 mb-1">📍 Ubicación en el mapa</h3>
         <p className="text-sm text-gray-600">
           {clients ? 
-            `Zoom și navighează pentru a explora zona cu ${markers.length} clienți` :
-            'Zoom și navighează pentru a explora zona în detaliu'
+            `Usa zoom y navega para explorar la zona con ${markers.length} clientes` :
+            'Usa zoom y navega para explorar la zona en detalle'
           }
         </p>
       </div>

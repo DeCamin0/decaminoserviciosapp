@@ -26,6 +26,14 @@ export const routes = {
   refresh: `${BACKEND_BASE}/api/auth/refresh`,
   me: `${BACKEND_BASE}/api/me`,
   permissions: `${BACKEND_BASE}/api/permissions`,
+
+  /** Super-admin (Developer): tenant registry + DB provisioning */
+  superAdminTenants: `${BACKEND_BASE}/api/super-admin/tenants`,
+  superAdminTenant: (id) => `${BACKEND_BASE}/api/super-admin/tenants/${id}`,
+  superAdminTenantLogs: (id) =>
+    `${BACKEND_BASE}/api/super-admin/tenants/${id}/logs`,
+  superAdminTenantRetry: (id) =>
+    `${BACKEND_BASE}/api/super-admin/tenants/${id}/retry`,
   getEmpleados: `${BACKEND_BASE}/api/empleados`,
   getEmpleadoMe: `${BACKEND_BASE}/api/empleados/me`,
   confirmarCertificadoHandicap: `${BACKEND_BASE}/api/empleados/confirmar-certificado-handicap`,
@@ -153,6 +161,8 @@ export const routes = {
   getVacationBlockedPeriods: `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods`,
   createVacationBlockedPeriod: `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods`,
   deleteVacationBlockedPeriod: (id) => `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods/${id}`,
+  getVacacionesDisponibilidadPorcentaje: `${BACKEND_BASE}/api/solicitudes/vacaciones-disponibilidad-porcentaje`,
+  putVacacionesDisponibilidadPorcentaje: `${BACKEND_BASE}/api/solicitudes/vacaciones-disponibilidad-porcentaje`,
   
   // Vacaciones (Vacations & Asuntos Propios)
   getVacacionesSaldo: `${BACKEND_BASE}/api/vacaciones/saldo`,
@@ -290,6 +300,7 @@ export const routes = {
 
   // Ausencias
   getAusencias: `${BACKEND_BASE}/api/ausencias`,
+  getAusenciaJustificantes: (id) => `${BACKEND_BASE}/api/ausencias/${id}/justificantes`,
   deleteAusencia: (id) => `${BACKEND_BASE}/api/ausencias/${id}`,
   updateNoNecesitaJustificante: (id) => `${BACKEND_BASE}/api/ausencias/${id}/no-necesita-justificante`,
   updateAusenciaTipo: (id) => `${BACKEND_BASE}/api/ausencias/${id}/tipo`,
@@ -319,6 +330,10 @@ export const routes = {
   
   // Chat AI - Backend NestJS (nou endpoint)
   chatAI: `${BACKEND_BASE}/api/assistant/message`,
+  assistantPreferences: `${BACKEND_BASE}/api/assistant/preferences`,
+  assistantConversations: `${BACKEND_BASE}/api/assistant/conversations`,
+  assistantConversationMessages: (id) =>
+    `${BACKEND_BASE}/api/assistant/conversations/${encodeURIComponent(id)}`,
   
   // Chat (REST API - backend NestJS)
   chatRooms: `${BACKEND_BASE}/chat/rooms`,

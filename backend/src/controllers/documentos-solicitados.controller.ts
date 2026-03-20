@@ -82,6 +82,7 @@ export class DocumentosSolicitadosController {
       tipo_documento: string;
       notas?: string;
       aplicar_a_nuevos?: boolean;
+      ausencia_id?: number;
     },
     @CurrentUser() currentUser?: any,
   ) {
@@ -123,6 +124,7 @@ export class DocumentosSolicitadosController {
         solicitado_por: solicitadoPor,
         notas: body.notas,
         aplicar_a_nuevos: body.aplicar_a_nuevos || false,
+        ausencia_id: body.ausencia_id,
       });
 
       return result;

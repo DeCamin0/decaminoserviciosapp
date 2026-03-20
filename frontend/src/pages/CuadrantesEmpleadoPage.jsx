@@ -2920,7 +2920,7 @@ const getFirstValue = (record, keys) => {
 
         TIPO: fichajeType,
 
-        DIRECCION: fichajeAddress || 'Locație automată',
+        DIRECCION: fichajeAddress || 'Ubicación automática',
 
         CORREO_ELECTRONICO: emailLogat,
 
@@ -4554,7 +4554,7 @@ const getFirstValue = (record, keys) => {
 
                         }`}>
 
-                          {r["ESTADO"] === 'PENDIENTE' ? 'În așteptare' : 'Aprobat'}
+                          {r["ESTADO"] === 'PENDIENTE' ? 'Pendiente' : 'Aprobado'}
 
                         </span>
 
@@ -4666,7 +4666,7 @@ const getFirstValue = (record, keys) => {
 
                       <span className="px-3 py-1 rounded-full text-xs font-bold bg-white bg-opacity-20 text-white">
 
-                        În așteptare
+                        Pendiente
 
                       </span>
 

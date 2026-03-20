@@ -1697,6 +1697,8 @@ function extractEmpleadoNombre(filename: string, text: string): string | null {
   // Look for words after common document prefixes
   // Use greedy match to get full name (not just first word)
   const filenamePatterns = [
+    // Finiquito model: "Finiquito.H.S._APELLIDOS, NOMBRE_01-2026.PDF" (Decamino/HERA)
+    /^finiquito[.\s\w]*_([^_]+)_\d{1,2}-\d{2,4}(?:\.pdf)?$/i,
     // Special pattern for "FINIQUITO - [NUME]" format (from gestoria/nominas): "FINIQUITO - IGNACIO LABRADOR ARRIBAS.pdf"
     /^finiquito\s*-\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]+?)(?:\.pdf|\.|$)/i,
     /^finiquito\s*-\s*([a-záéíóúñ][a-záéíóúñ\s]+?)(?:\.pdf|\.|$)/i,

@@ -81,10 +81,11 @@
 ```json
 {
   "lucide-react": "^0.294.0",           // Iconuri moderne
-  "react-chatbot-kit": "^2.2.2",         // Chat bot AI
   "signature_pad": "^4.2.0"               // Semnături digitale
 }
 ```
+
+*(Asistente: UI custom în `ChatBot.jsx`; fără pachet `react-chatbot-kit`.)*
 
 #### PDF & Documents
 ```json

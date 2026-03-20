@@ -762,12 +762,12 @@ export class CuadrantesService {
         )?.name || workbook.worksheets[0]?.name;
 
       if (!sheetName) {
-        throw new BadRequestException('Excel-ul nu conține sheet-uri');
+        throw new BadRequestException('El Excel no contiene hojas');
       }
 
       const worksheet = workbook.getWorksheet(sheetName);
       if (!worksheet) {
-        throw new BadRequestException(`Sheet "${sheetName}" nu a fost găsit`);
+        throw new BadRequestException(`No se encontró la hoja "${sheetName}"`);
       }
 
       this.logger.log(`📄 Procesez sheet: "${sheetName}"`);

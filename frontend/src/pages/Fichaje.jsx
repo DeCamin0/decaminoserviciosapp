@@ -6908,14 +6908,14 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                           <button
                             onClick={() => openEdit(index)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Editează"
+                            title="Editar"
                           >
                             ✏️
                           </button>
                           <button
                             onClick={() => handleDelete(index)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Șterge"
+                            title="Eliminar"
                           >
                             🗑️
                           </button>
@@ -7671,7 +7671,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
         <Modal
           isOpen={!!filterModal}
           onClose={() => setFilterModal(null)}
-          title="Filtreaza Registre"
+          title="Filtrar registros"
         >
           <div className="space-y-4">
             <div>

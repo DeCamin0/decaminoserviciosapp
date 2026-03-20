@@ -1091,9 +1091,9 @@ export class AusenciasService {
         throw new BadRequestException('id is required');
       }
 
-      // Verifică dacă ausencia există
+      // Verifică dacă ausencia există (inclusiv solicitud_id pentru curățare ulterioară)
       const ausencia = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT id, CODIGO, NOMBRE, TIPO, FECHA, MOTIVO
+        SELECT id, solicitud_id, CODIGO, NOMBRE, TIPO, FECHA, MOTIVO
         FROM Ausencias
         WHERE id = ${Number(id)}
         LIMIT 1
@@ -1109,6 +1109,7 @@ export class AusenciasService {
       const tipo = ausenciaData.TIPO;
       const fecha = ausenciaData.FECHA;
       const motivo = ausenciaData.MOTIVO || '';
+      const solicitudId = ausenciaData.solicitud_id;
 
       // Verifică dacă este un premiu (Permiso Retribuido cu MOTIVO care conține "Premio - Salón de la Fama")
       const esPremio =
@@ -1122,6 +1123,26 @@ export class AusenciasService {
       `);
 
       this.logger.log(`✅ Ausencia ${id} eliminada exitosamente`);
+
+      // Dacă nu mai există nici o ausencia pentru această solicitare, șterge și solicitarea (consistență)
+      if (solicitudId && String(solicitudId).trim() !== '') {
+        const remaining = await this.prisma.$queryRawUnsafe<
+          Array<{ n: number }>
+        >(
+          `SELECT COUNT(*) as n FROM Ausencias WHERE solicitud_id = ${this.escapeSql(String(solicitudId))}`,
+        );
+        const count = remaining?.[0]?.n ?? 0;
+        if (count === 0) {
+          await this.prisma.$executeRawUnsafe(`
+            DELETE FROM solicitudes
+            WHERE id = ${this.escapeSql(String(solicitudId))}
+              AND codigo = ${this.escapeSql(String(codigo))}
+          `);
+          this.logger.log(
+            `✅ Solicitud ${solicitudId} eliminada (nu mai avea ausencias).`,
+          );
+        }
+      }
 
       // Trimite notificări pentru toate ausencias (async, non-blocking)
       setImmediate(() => {
@@ -2854,6 +2875,32 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
       throw new BadRequestException(
         `Error al obtener ausencias: ${error.message}`,
       );
+    }
+  }
+
+  /**
+   * Obține justificantele (cerere + presencia) pentru o ausencia din tabela ausencia_justificantes.
+   * Returnează [] dacă tabela nu există sau nu există înregistrări.
+   */
+  async getJustificantesByAusenciaId(ausenciaId: number): Promise<any[]> {
+    try {
+      if (!Number.isFinite(ausenciaId)) return [];
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT aj.id, aj.ausencia_id, aj.tipo, aj.doc_id, aj.documento_solicitado_id, aj.created_at,
+         cd.nombre_archivo AS doc_nombre_archivo, cd.tipo_documento AS doc_tipo_documento,
+         ds.estado AS doc_solicitado_estado, ds.tipo_documento AS doc_solicitado_tipo, ds.notas AS doc_solicitado_notas
+         FROM ausencia_justificantes aj
+         LEFT JOIN CarpetasDocumentos cd ON cd.doc_id = aj.doc_id
+         LEFT JOIN documentos_solicitados ds ON ds.id = aj.documento_solicitado_id
+         WHERE aj.ausencia_id = ${Number(ausenciaId)}
+         ORDER BY aj.tipo, aj.created_at`,
+      );
+      return rows || [];
+    } catch (err: any) {
+      this.logger.warn(
+        `getJustificantesByAusenciaId(${ausenciaId}): ${err.message} (table may not exist yet)`,
+      );
+      return [];
     }
   }
 

@@ -1,11 +1,57 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** Metadatos compactos en columna `datos_consultados` (JSON, sin migración). */
+export type AssistantAuditMetrics = {
+  durationMs: number;
+  resultCount?: number;
+  tools?: string[];
+  responseStatus?: string;
+  responseType?: string;
+  queryError?: boolean;
+};
+
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private buildDatosConsultadosJson(data: {
+    datos_consultados?: number;
+    auditMetrics?: AssistantAuditMetrics;
+  }): string | null {
+    const payload: Record<string, unknown> = { v: 2 };
+    const m = data.auditMetrics;
+    if (m?.durationMs !== undefined) {
+      payload.durationMs = m.durationMs;
+    }
+    if (m?.tools?.length) {
+      payload.tools = m.tools.slice(0, 20);
+    }
+    if (m?.responseStatus) {
+      payload.responseStatus = String(m.responseStatus).slice(0, 40);
+    }
+    if (m?.responseType) {
+      payload.responseType = String(m.responseType).slice(0, 40);
+    }
+    if (m?.queryError === true) {
+      payload.queryError = true;
+    }
+    const rc =
+      m?.resultCount !== undefined
+        ? m.resultCount
+        : data.datos_consultados !== undefined
+          ? data.datos_consultados
+          : undefined;
+    if (rc !== undefined) {
+      payload.resultCount = rc;
+    }
+    if (Object.keys(payload).length <= 1 && payload.v === 2) {
+      return null;
+    }
+    return JSON.stringify(payload).slice(0, 3500);
+  }
 
   /**
    * Registrează o interacțiune în audit log
@@ -20,10 +66,17 @@ export class AuditService {
     respuesta?: string;
     escalado?: boolean;
     ticket_id?: string;
-    datos_consultados?: any;
+    /** @deprecated preferir auditMetrics.resultCount */
+    datos_consultados?: number;
+    auditMetrics?: AssistantAuditMetrics;
     error?: string;
   }): Promise<void> {
     try {
+      const datosJson = this.buildDatosConsultadosJson({
+        datos_consultados: data.datos_consultados,
+        auditMetrics: data.auditMetrics,
+      });
+
       const query = `
         INSERT INTO assistant_audit_log (
           usuario_id,
@@ -48,8 +101,8 @@ export class AuditService {
           ${data.respuesta ? this.escapeSql(data.respuesta.substring(0, 5000)) : 'NULL'},
           ${data.escalado ? 'TRUE' : 'FALSE'},
           ${data.ticket_id ? this.escapeSql(data.ticket_id) : 'NULL'},
-          ${data.datos_consultados ? this.escapeSql(JSON.stringify(data.datos_consultados)) : 'NULL'},
-          ${data.error ? this.escapeSql(data.error) : 'NULL'},
+          ${datosJson ? this.escapeSql(datosJson) : 'NULL'},
+          ${data.error ? this.escapeSql(data.error.substring(0, 2000)) : 'NULL'},
           NOW()
         )
       `;

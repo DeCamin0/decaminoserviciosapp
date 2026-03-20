@@ -1775,43 +1775,60 @@ export class PedidosService {
           const horaActual = new Date().getHours();
           const saludo = horaActual < 14 ? 'Buenos días' : 'Buenas tardes';
 
-          // Culori temă companie (HERA = #2563A8, Decamino = #CC0000) pentru email
+          // Accent din temă (titluri); NU folosim portadaTextColor pe body — e deschis pentru fundal închis
+          // și devine invizibil în webmail (alb pe alb) sau ilegibil în dark mode pe telefon.
           const companyTheme = this.configService.get<{
             brandRed?: string;
-            portadaTextColor?: string;
           }>('company');
           const accentColor =
             companyTheme?.brandRed && companyTheme.brandRed.trim()
               ? companyTheme.brandRed.trim()
               : '#d32f2f';
-          const textColor =
-            companyTheme?.portadaTextColor &&
-            companyTheme.portadaTextColor.trim()
-              ? companyTheme.portadaTextColor.trim()
-              : '#333';
+          // Contrast fix: text întunecat pe fundal deschis (legibil peste tot, inclusiv Gmail dark)
+          const bodyBg = '#ffffff';
+          const bodyText = '#1a1a1a';
+          const mutedText = '#444444';
+          const boxBg = '#f4f4f4';
+          const boxBorder = '#cccccc';
+          const boxText = '#111111';
 
           let htmlContent = `
-            <html>
-              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: ${textColor};">
-                <p style="margin-bottom: 15px;">${saludo},</p>
-                <h2 style="color: ${accentColor};">Pedidos aprobados</h2>
-                <p>Se adjunta el archivo Excel con ${pedidosValidos.length} pedido(s) aprobados.</p>
+            <!DOCTYPE html>
+            <html lang="es">
+              <head>
+                <meta charset="utf-8" />
+                <meta name="color-scheme" content="light only" />
+                <meta name="supported-color-schemes" content="light" />
+              </head>
+              <body style="margin:0;padding:20px;background-color:${bodyBg};color:${bodyText};font-family:Arial,Helvetica,sans-serif;line-height:1.6;-webkit-text-size-adjust:100%;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px;background-color:${bodyBg};">
+                  <tr><td style="padding:8px 0;color:${bodyText};">
+                <p style="margin:0 0 15px 0;color:${bodyText};">${saludo},</p>
+                <h2 style="margin:0 0 12px 0;color:${accentColor};font-size:22px;">Pedidos aprobados</h2>
+                <p style="margin:0 0 16px 0;color:${bodyText};">Se adjunta el archivo Excel con ${pedidosValidos.length} pedido(s) aprobados.</p>
           `;
 
           if (mensaje && mensaje.trim()) {
+            const mensajeEsc = mensaje
+              .trim()
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
             htmlContent += `
-                <div style="background-color: #f5f5f5; padding: 15px; border-left: 4px solid ${accentColor}; margin: 20px 0;">
-                  <h3 style="margin-top: 0; color: ${accentColor};">Mensaje:</h3>
-                  <p style="white-space: pre-wrap;">${mensaje.trim()}</p>
+                <div style="background-color:${boxBg};border:1px solid ${boxBorder};border-left:4px solid ${accentColor};padding:16px;margin:20px 0;border-radius:4px;">
+                  <h3 style="margin:0 0 10px 0;color:${accentColor};font-size:16px;">Mensaje:</h3>
+                  <p style="margin:0;color:${boxText};white-space:pre-wrap;font-size:15px;line-height:1.5;">${mensajeEsc}</p>
                 </div>
             `;
           }
 
           htmlContent += `
-                <p style="margin-top: 20px;">Gracias por su atención.</p>
-                <p style="margin-top: 10px; color: #666; font-size: 12px;">
+                <p style="margin:20px 0 0 0;color:${bodyText};">Gracias por su atención.</p>
+                <p style="margin:12px 0 0 0;color:${mutedText};font-size:12px;line-height:1.4;">
                   Este es un correo electrónico automático generado por el sistema${this.getCompanyName() ? ` de ${this.getCompanyName()}` : ''}.
                 </p>
+                  </td></tr>
+                </table>
               </body>
             </html>
           `;
@@ -2002,18 +2019,17 @@ export class PedidosService {
     file: Express.Multer.File,
     userInfo: string,
   ): Promise<any> {
+    const uid = (pedidoUid || '').replace(/^=+/, '');
     try {
-      this.logger.log(
-        `📦 Uploading albarán for pedido ${pedidoUid} by ${userInfo}`,
-      );
+      this.logger.log(`📦 Uploading albarán for pedido ${uid} by ${userInfo}`);
 
       // Verifică dacă comanda există
       const pedidoExists = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(pedidoUid)} LIMIT 1`,
+        `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(uid)} LIMIT 1`,
       );
 
       if (!pedidoExists || pedidoExists.length === 0) {
-        throw new NotFoundException(`Pedido ${pedidoUid} no encontrado`);
+        throw new NotFoundException(`Pedido ${uid} no encontrado`);
       }
 
       // Convertește fișierul la Buffer
@@ -2026,7 +2042,7 @@ export class PedidosService {
 
       // Verifică dacă există deja un albarán pentru această comandă
       const existingAlbaran = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT id FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(pedidoUid)} LIMIT 1`,
+        `SELECT id FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(uid)} LIMIT 1`,
       );
 
       if (existingAlbaran && existingAlbaran.length > 0) {
@@ -2040,7 +2056,7 @@ export class PedidosService {
             subido_por = ${this.escapeSql(userInfo)},
             subido_en = ${this.escapeSql(now)},
             actualizado_en = ${this.escapeSql(now)}
-          WHERE pedido_uid = ${this.escapeSql(pedidoUid)}`,
+          WHERE pedido_uid = ${this.escapeSql(uid)}`,
         );
       } else {
         // Creează un albarán nou
@@ -2055,7 +2071,7 @@ export class PedidosService {
             subido_en,
             actualizado_en
           ) VALUES (
-            ${this.escapeSql(pedidoUid)},
+            ${this.escapeSql(uid)},
             0x${fileBuffer.toString('hex')},
             ${this.escapeSql(file.originalname || 'albaran.pdf')},
             ${this.escapeSql(file.mimetype || 'application/pdf')},
@@ -2068,21 +2084,16 @@ export class PedidosService {
       }
 
       // Actualizează statusul comenzii la "entregado"
-      await this.updatePedidoEstado(
-        pedidoUid,
-        'entregado',
-        undefined,
-        userInfo,
-      );
+      await this.updatePedidoEstado(uid, 'entregado', undefined, userInfo);
 
       this.logger.log(
-        `✅ Albarán uploaded successfully for pedido ${pedidoUid} and status updated to entregado`,
+        `✅ Albarán uploaded successfully for pedido ${uid} and status updated to entregado`,
       );
 
       return {
         success: true,
         message: 'Albarán subido correctamente y pedido marcado como entregado',
-        pedido_uid: pedidoUid,
+        pedido_uid: uid,
         estado: 'entregado',
         albaran: {
           nombre_archivo: file.originalname || 'albaran.pdf',
@@ -2093,10 +2104,7 @@ export class PedidosService {
         },
       };
     } catch (error: any) {
-      this.logger.error(
-        `❌ Error uploading albarán for pedido ${pedidoUid}:`,
-        error,
-      );
+      this.logger.error(`❌ Error uploading albarán for pedido ${uid}:`, error);
       if (
         error instanceof BadRequestException ||
         error instanceof NotFoundException
@@ -2105,5 +2113,36 @@ export class PedidosService {
       }
       throw new BadRequestException(`Error al subir albarán: ${error.message}`);
     }
+  }
+
+  /**
+   * Returnează albarán-ul existent pentru un pedido (pentru vizualizare/descărcare).
+   * Acceptă UID cu sau fără '=' în față (ex. =20260312072800-9 → 20260312072800-9).
+   */
+  async getAlbaran(pedidoUid: string): Promise<{
+    archivo: Buffer;
+    nombre_archivo: string;
+    tipo_mime: string;
+  }> {
+    const uid = (pedidoUid || '').replace(/^=+/, '');
+    let rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(uid)} LIMIT 1`,
+    );
+    if ((!rows?.length || !rows[0].archivo) && uid) {
+      rows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql('=' + uid)} LIMIT 1`,
+      );
+    }
+    if (!rows?.length || !rows[0].archivo) {
+      throw new NotFoundException('No existe albarán para este pedido');
+    }
+    const row = rows[0];
+    const archivo =
+      row.archivo instanceof Buffer ? row.archivo : Buffer.from(row.archivo);
+    return {
+      archivo,
+      nombre_archivo: row.nombre_archivo || 'albaran.pdf',
+      tipo_mime: row.tipo_mime || 'application/pdf',
+    };
   }
 }

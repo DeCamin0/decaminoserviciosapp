@@ -520,7 +520,7 @@ function MobileBajaMedicaItem({ item, formatDate, formatDateTime, getSituacionCo
 }
 
 // Component pentru item-ul de ausencia pe mobile în "Todas las Solicitudes" (compact, similar cu MobileSolicitudItem)
-function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatFechaFlexible, getTipoColor, formatHora }) {
+function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatFechaFlexible, getTipoColor, formatHora, getStatusColor }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const durationDisplay = getAusenciaDurationDisplay(item);
   
@@ -603,6 +603,23 @@ function MobileAusenciaItemTodas({ item, getAusenciaDurationDisplay, formatFecha
               {item.TIPO || item.tipo || 'N/A'}
             </span>
           </div>
+          
+          {/* Estado (Pendiente / Aprobada / Rechazada) pentru Ausencias justificada și Permiso Retribuido */}
+          {(() => {
+            const t = (item.TIPO || item.tipo || '').toLowerCase();
+            const isJustificada = t.includes('ausencia') && t.includes('justificada');
+            const isPermiso = t.includes('permiso') && t.includes('retribuido');
+            if (!isJustificada && !isPermiso || !getStatusColor) return null;
+            const estado = (item.estado || item.ESTADO || 'Aprobada').trim();
+            return (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Estado:</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusColor(estado)}`}>
+                  {estado === 'Aprobada' ? '✅ Aprobada' : estado === 'Pendiente' ? '⏳ Pendiente' : '❌ Rechazada'}
+                </span>
+              </div>
+            );
+          })()}
           
           {/* Fecha */}
           <div className="flex items-center gap-2">
@@ -1157,11 +1174,17 @@ export default function SolicitudesPage() {
   const [fechaUltimoDiaTrabajo, setFechaUltimoDiaTrabajo] = useState('');
   const [bajaVoluntariaDocumento, setBajaVoluntariaDocumento] = useState(null); // Fișier pentru BAJA_VOLUNTARIA
   const [motivo, setMotivo] = useState('');
+  // Ausencia justificada: tipo justificante + câmpuri condiționale
+  const [tipoJustificante, setTipoJustificante] = useState('');
+  const [horaCita, setHoraCita] = useState('');
+  const [centroMedico, setCentroMedico] = useState('');
+  const [descripcionOtro, setDescripcionOtro] = useState('');
+  const [archivoJustificante, setArchivoJustificante] = useState(null);
   const [editingSolicitud, setEditingSolicitud] = useState(null); // ID-ul solicitării în curs de editare
   const [originalSolicitudData, setOriginalSolicitudData] = useState(null); // Datele originale ale solicitării în curs de editare
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, solicitudId: null, mensaje: '' }); // Modal de confirmare ștergere cu mesaj personalizat
   const [deleteBajaMedicaModal, setDeleteBajaMedicaModal] = useState({ isOpen: false, baja: null, mensaje: '' }); // Modal pentru ștergere baja médica cu mesaj
-  const [rejectPermisoModal, setRejectPermisoModal] = useState({ isOpen: false, solicitud: null, mensaje: '' }); // Modal pentru respingere Permiso Retribuido cu mesaj personalizat
+  const [rejectPermisoModal, setRejectPermisoModal] = useState({ isOpen: false, solicitud: null, mensaje: '', tipoSolicitud: 'Permiso Retribuido' }); // Modal respingere (Permiso Retribuido / Ausencias justificada)
   const [convertirConfirm, setConvertirConfirm] = useState({ isOpen: false, ausencia: null }); // Modal de confirmare conversie ausencia
   const [convertirTipoModal, setConvertirTipoModal] = useState({ 
     isOpen: false, 
@@ -1175,6 +1198,10 @@ export default function SolicitudesPage() {
   const [editarDuracionModal, setEditarDuracionModal] = useState({ isOpen: false, ausencia: null, duracion: '', unidad: 'dias' }); // Modal pentru editare manuală durată
   const [selectedAusenciaIdForAsociar, setSelectedAusenciaIdForAsociar] = useState(null); // Ausencia selectată pentru asociere
   const [bajaVoluntariaPreview, setBajaVoluntariaPreview] = useState({ isOpen: false, solicitud: null, pdfUrl: null }); // Modal preview PDF Baja Voluntaria
+  const [justificantePreview, setJustificantePreview] = useState({ isOpen: false, blobUrl: null, fileName: '' }); // Modal preview justificante (Ausencias justificada)
+  const [justificanteDocumentosMap, setJustificanteDocumentosMap] = useState(new Map()); // Map<solicitudId, documento> pentru Ausencias justificada
+  // Map<ausenciaId, justificantes[]> pentru Todas: cerere + presencia (status y doc para "Justificante de presencia a la cita")
+  const [justificantesByAusenciaIdMap, setJustificantesByAusenciaIdMap] = useState(new Map());
   // Loading states centralizate
   const { setOperationLoading, isOperationLoading } = useLoadingState();
   const [serverResp, setServerResp] = useState('');
@@ -1253,6 +1280,10 @@ export default function SolicitudesPage() {
   const [newBlockedPeriodInicio, setNewBlockedPeriodInicio] = useState('');
   const [newBlockedPeriodFin, setNewBlockedPeriodFin] = useState('');
   const [blockedPeriodsYear, setBlockedPeriodsYear] = useState(() => new Date().getFullYear());
+  // % del grupo en vacaciones simultáneas (misma regla que backend; por defecto 10)
+  const [vacacionesDisponibilidadPct, setVacacionesDisponibilidadPct] = useState(10);
+  const [vacacionPctDraft, setVacacionPctDraft] = useState('10');
+  const [savingVacacionPct, setSavingVacacionPct] = useState(false);
 
   // Conflicte MANUAL vs MUTUA (după upload Excel)
   const [showBajaConflictsModal, setShowBajaConflictsModal] = useState(false);
@@ -1336,6 +1367,8 @@ export default function SolicitudesPage() {
   const [justificantesPorAusencia, setJustificantesPorAusencia] = useState(new Map());
   // Ref pentru a păstra map-ul între render-uri (evită resetarea în React Strict Mode)
   const justificantesPorAusenciaRef = useRef(new Map());
+  // Justificante pentru cerere (încărcate la trimitere sau din "Cargar Justificante") – din GET /api/documentos, key = fecha YYYY-MM-DD
+  const [initialJustificantesPorFecha, setInitialJustificantesPorFecha] = useState(new Map());
   
   // Wrapper pentru setJustificantesPorAusencia care actualizează și ref-ul imediat
   const setJustificantesPorAusenciaWithRef = useCallback((newMap) => {
@@ -1518,16 +1551,16 @@ export default function SolicitudesPage() {
   };
 
   // Calculate availability limits based on month and group
-  const getAvailabilityLimit = (month, groupSize, tipo) => {
+  const getAvailabilityLimit = useCallback((month, groupSize, tipo) => {
     if (tipo === 'Vacaciones') {
-      const percentage = 0.10; // 10% all year
+      const percentage = vacacionesDisponibilidadPct / 100;
       return Math.max(1, Math.ceil(groupSize * percentage)); // At least 1 person
     } else if (tipo === 'Asunto Propio') {
       // For Asuntos Propios: max 4 people per day globally
       return 4; // Absolute limit of 4 people per day
     }
     return 1; // Default fallback
-  };
+  }, [vacacionesDisponibilidadPct]);
 
   // Calculate date availability for each group and center
   const calculateDateAvailability = useCallback((solicitudes, users, year, month) => {
@@ -1894,7 +1927,7 @@ export default function SolicitudesPage() {
     }
 
     return availability;
-  }, [authUser, tipo, editingSolicitud]);
+  }, [authUser, tipo, editingSolicitud, getAvailabilityLimit]);
 
   const toggleDate = (date) => {
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
@@ -2539,7 +2572,19 @@ export default function SolicitudesPage() {
     setTotalVacacionesDays(8); // 8 days from demo data
   }, []);
 
-  // Funcție pentru a încărca documentele asociate cu solicitările BAJA_VOLUNTARIA
+  // Funcție pentru a încărca documentele asociate cu solicitările BAJA_VOLUNTARIA / Ausencias justificada
+  // Rulează promise-uri în batch (max `concurrency` simultan) + pauză între batch-uri pentru a evita 429
+  const runInBatches = async (items, concurrency, fn) => {
+    const results = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+      if (i > 0) await new Promise(r => setTimeout(r, 800)); // delay mai mare ca să evităm 429 pe listări mari
+      const batch = items.slice(i, i + concurrency);
+      const batchResults = await Promise.all(batch.map(fn));
+      results.push(...batchResults);
+    }
+    return results;
+  };
+
   const fetchBajaVoluntariaDocumentos = useCallback(async (solicitudes) => {
     const bajasVoluntarias = solicitudes.filter(s => s.tipo === 'BAJA_VOLUNTARIA');
     if (bajasVoluntarias.length === 0) {
@@ -2550,56 +2595,127 @@ export default function SolicitudesPage() {
     const token = localStorage.getItem('auth_token');
     const documentosMap = new Map();
 
-    await Promise.all(
-      bajasVoluntarias.map(async (solicitud) => {
-        try {
-          const codigo = solicitud.codigo || solicitud.CODIGO || '';
-          const email = solicitud.email || solicitud['CORREO ELECTRONICO'] || '';
-          
-          if (!codigo && !email) return;
-
-          // Caută documente cu tipo_documento = 'Baja Voluntaria' pentru acest angajat
-          const documentosUrl = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${codigo}` : email ? `?email=${encodeURIComponent(email)}` : ''}`;
-          
-          const response = await fetch(documentosUrl, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token && { Authorization: `Bearer ${token}` }),
-            },
+    await runInBatches(bajasVoluntarias, 2, async (solicitud) => {
+      try {
+        const codigo = solicitud.codigo || solicitud.CODIGO || '';
+        const email = solicitud.email || solicitud['CORREO ELECTRONICO'] || '';
+        if (!codigo && !email) return null;
+        const documentosUrl = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${codigo}` : email ? `?email=${encodeURIComponent(email)}` : ''}`;
+        const response = await fetch(documentosUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        const documentos = Array.isArray(data) ? data : (data.data || []);
+        const bajaVoluntariaDocs = documentos.filter(doc =>
+          (doc.tipo_documento || '').toLowerCase() === 'baja voluntaria'
+        );
+        if (bajaVoluntariaDocs.length > 0) {
+          const sortedDocs = bajaVoluntariaDocs.sort((a, b) => {
+            if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+            if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+            return 0;
           });
-
-          if (response.ok) {
-            const data = await response.json();
-            const documentos = Array.isArray(data) ? data : (data.data || []);
-            
-            // Filtrează doar documentele cu tipo_documento = 'Baja Voluntaria'
-            // Caută cel mai recent document (sortat după fecha_creacion sau doc_id)
-            const bajaVoluntariaDocs = documentos.filter(doc => 
-              (doc.tipo_documento || '').toLowerCase() === 'baja voluntaria'
-            );
-            
-            if (bajaVoluntariaDocs.length > 0) {
-              // Sortează după doc_id (cel mai mare = cel mai recent) sau fecha_creacion
-              const sortedDocs = bajaVoluntariaDocs.sort((a, b) => {
-                if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
-                if (b.fecha_creacion && a.fecha_creacion) {
-                  return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
-                }
-                return 0;
-              });
-              // Folosește cel mai recent document
-              documentosMap.set(solicitud.id, sortedDocs[0]);
-            }
-          }
-        } catch (error) {
-          console.warn(`Error fetching documento for BAJA_VOLUNTARIA ${solicitud.id}:`, error);
+          documentosMap.set(solicitud.id, sortedDocs[0]);
         }
-      })
-    );
+        return null;
+      } catch (error) {
+        console.warn(`Error fetching documento for BAJA_VOLUNTARIA ${solicitud.id}:`, error);
+        return null;
+      }
+    });
 
     setBajaVoluntariaDocumentos(documentosMap);
   }, []);
+
+  // Documente justificante pentru Ausencias justificada (Ver / Descargar în tab Aprobación) – cu batch pentru a evita 429
+  const fetchJustificanteDocumentos = useCallback(async (solicitudes) => {
+    const ausenciasJustificadas = solicitudes.filter(s => {
+      const t = (s.tipo || s.TIPO || '').toLowerCase();
+      return t.includes('ausencias') && t.includes('justificada');
+    });
+    if (ausenciasJustificadas.length === 0) {
+      setJustificanteDocumentosMap(new Map());
+      return;
+    }
+    const token = localStorage.getItem('auth_token');
+    const map = new Map();
+    await runInBatches(ausenciasJustificadas, 1, async (solicitud) => {
+      try {
+        const codigo = solicitud.codigo || solicitud.CODIGO || '';
+        const email = solicitud.email || solicitud['CORREO ELECTRONICO'] || '';
+        if (!codigo && !email) return null;
+        const url = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${codigo}` : ''}${email && !codigo ? `?email=${encodeURIComponent(email)}` : ''}`;
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        const documentos = Array.isArray(data) ? data : (data.data || []);
+        const justificantes = documentos.filter(d => (d.tipo_documento || '').toLowerCase() === 'justificante');
+        if (justificantes.length === 0) return null;
+        const fechaInicio = solicitud.fecha_inicio || (solicitud.FECHA || '').split(' - ')[0]?.trim() || '';
+        const fechaInicioDay = fechaInicio ? fechaInicio.substring(0, 10) : '';
+        const sorted = justificantes.sort((a, b) => {
+          if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+          if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+          return 0;
+        });
+        const doc = fechaInicioDay
+          ? sorted.find(d => {
+              const fc = d.fecha_creacion;
+              if (!fc) return false;
+              const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
+              return docDay === fechaInicioDay;
+            }) || sorted[0]
+          : sorted[0];
+        if (doc) map.set(solicitud.id || solicitud.ID, doc);
+        return doc;
+      } catch (e) {
+        console.warn('Error fetching justificante for Ausencias justificada', solicitud.id, e);
+        return null;
+      }
+    });
+    setJustificanteDocumentosMap(map);
+  }, []);
+
+  // Justificantes por ausencia_id (cerere + presencia) para Todas > Ausencias: mostrar estado real de "Justificante de presencia a la cita"
+  const fetchJustificantesByAusenciaForTodas = useCallback(async () => {
+    if (!allAusencias || allAusencias.length === 0) {
+      setJustificantesByAusenciaIdMap(new Map());
+      return;
+    }
+    const ausenciasJustificadas = allAusencias.filter(a => {
+      const t = (a.TIPO || a.tipo || '').toLowerCase();
+      return t.includes('ausencias') && t.includes('justificada');
+    });
+    if (ausenciasJustificadas.length === 0) {
+      setJustificantesByAusenciaIdMap(new Map());
+      return;
+    }
+    const token = localStorage.getItem('auth_token');
+    const map = new Map();
+    await runInBatches(ausenciasJustificadas, 2, async (ausencia) => {
+      const aid = ausencia.id ?? ausencia.ID;
+      if (aid == null) return null;
+      try {
+        const res = await fetch(routes.getAusenciaJustificantes(Number(aid)), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data?.data ?? []);
+        if (list.length > 0) map.set(Number(aid), list);
+        return list;
+      } catch (e) {
+        console.warn('Error fetching justificantes for ausencia', aid, e);
+        return null;
+      }
+    });
+    setJustificantesByAusenciaIdMap(map);
+  }, [allAusencias]);
 
   const fetchSolicitudes = useCallback(async () => {
     setOperationLoading('solicitudes', true);
@@ -2622,74 +2738,109 @@ export default function SolicitudesPage() {
     try {
       const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
       
-      // Pentru "Mis Solicitudes" (activeTab === 'lista'): încărcăm din ausencias
-      // Astfel vedem toate absențele (vacaciones, asuntos propios, ausencias injustificadas, etc.)
-      // Indiferent dacă e manager sau angajat, în "Mis Solicitudes" vedem toate ausencias-urile lui
+      // Pentru "Mis Solicitudes" (activeTab === 'lista'): ausencias + solicitudes (Pendiente/Rechazada) ca să apară și cele în așteptare
       if (activeTab === 'lista') {
         const ausenciasUrl = `${routes.getAusencias}?codigo=${encodeURIComponent(userCode)}`;
-        const result = await callApi(ausenciasUrl);
+        const [ausenciasResult, solicitudesResult] = await Promise.all([
+          callApi(ausenciasUrl),
+          callApi(`${ENDPOINT}?email=${encodeURIComponent(email)}&codigo=${encodeURIComponent(userCode)}&limit=500`),
+        ]);
         
-        if (result.success) {
-          const ausenciasData = Array.isArray(result.data) ? result.data : [result.data];
-          
-          // Transformăm ausencias în format compatibil cu solicitudes pentru UI
-          const transformedData = ausenciasData.map(ausencia => ({
-            id: ausencia.id || ausencia.ID || `ausencia_${Math.random().toString(36).slice(2, 9)}`,
-            tipo: ausencia.TIPO || ausencia.tipo || 'Ausencia',
-            fecha_inicio: ausencia.FECHA_INICIO || ausencia.fecha_inicio || ausencia.FECHA || ausencia.fecha,
-            fecha_fin: ausencia.FECHA_FIN || ausencia.fecha_fin || ausencia.FECHA || ausencia.fecha,
-            FECHA: ausencia.FECHA || ausencia.fecha,
-            FECHA_INICIO: ausencia.FECHA_INICIO || ausencia.fecha_inicio,
-            FECHA_FIN: ausencia.FECHA_FIN || ausencia.fecha_fin,
-            // fecha_solicitud folosește created_at din ausencias
-            fecha_solicitud: ausencia.created_at || ausencia.CREATED_AT || ausencia.createdAt || ausencia.fecha_solicitud || ausencia.FECHA || ausencia.fecha,
-            created_at: ausencia.created_at || ausencia.CREATED_AT || ausencia.createdAt,
-            MOTIVO: ausencia.MOTIVO || ausencia.motivo || '',
-            motivo: ausencia.MOTIVO || ausencia.motivo || '',
-            ESTADO: ausencia.ESTADO || ausencia.estado || 'Aprobada',
-            estado: ausencia.ESTADO || ausencia.estado || 'Aprobada',
-            CODIGO: ausencia.CODIGO || ausencia.codigo || userCode,
-            NOMBRE: ausencia.NOMBRE || ausencia.nombre || '',
-            duracion: ausencia.duracion || ausencia.DURACION || '',
-            no_necesita_justificante: ausencia.no_necesita_justificante || ausencia.NO_NECESITA_JUSTIFICANTE || false,
-            ausencia_asociada_id: ausencia.ausencia_asociada_id || null, // Adăugăm câmpul de asociere
-            fuente: 'ausencias', // Marchează că vine din ausencias
-            raw: ausencia
-          }));
-          
-          // Sortare după fecha_solicitud (data solicitării) - cea mai nouă primul
-          transformedData.sort((a, b) => {
-            // Prioritizăm fecha_solicitud (data solicitării) pentru sortare
-            const fechaA = a.fecha_solicitud || a.created_at || a.FECHA || a.fecha_inicio || a.FECHA_INICIO || '';
-            const fechaB = b.fecha_solicitud || b.created_at || b.FECHA || b.fecha_inicio || b.FECHA_INICIO || '';
-            
-            // Compară ca string (YYYY-MM-DD) sau ca Date
-            if (fechaA && fechaB) {
-              // Încearcă să compare ca date
-              const dateA = new Date(fechaA);
-              const dateB = new Date(fechaB);
-              if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-                return dateB.getTime() - dateA.getTime(); // Descendent - cea mai nouă primul
-              }
-              // Fallback: compară ca string
-              return fechaB.localeCompare(fechaA);
-            }
-            // Dacă una lipsește, o punem la sfârșit
-            if (fechaA && !fechaB) return -1;
-            if (!fechaA && fechaB) return 1;
-            return 0;
-          });
-          
-          setSolicitudes(transformedData);
-          
-          // Încarcă documentele asociate cu BAJA_VOLUNTARIA
-          await fetchBajaVoluntariaDocumentos(transformedData);
-          
-          // Calculează totalul de zile pentru Asunto Propio și Vacaciones
-          let totalAsuntoDays = 0;
-          let totalVacacionesDays = 0;
-          
-          transformedData.forEach(item => {
+        const ausenciasData = ausenciasResult.success ? (Array.isArray(ausenciasResult.data) ? ausenciasResult.data : [ausenciasResult.data]) : [];
+        const solicitudesUser = solicitudesResult.success ? (Array.isArray(solicitudesResult.data) ? solicitudesResult.data : [solicitudesResult.data]) : [];
+        
+        // Transformăm ausencias în format compatibil cu solicitudes pentru UI
+        let transformedData = ausenciasData.map(ausencia => ({
+          id: ausencia.id || ausencia.ID || `ausencia_${Math.random().toString(36).slice(2, 9)}`,
+          tipo: ausencia.TIPO || ausencia.tipo || 'Ausencia',
+          fecha_inicio: ausencia.FECHA_INICIO || ausencia.fecha_inicio || ausencia.FECHA || ausencia.fecha,
+          fecha_fin: ausencia.FECHA_FIN || ausencia.fecha_fin || ausencia.FECHA || ausencia.fecha,
+          FECHA: ausencia.FECHA || ausencia.fecha,
+          FECHA_INICIO: ausencia.FECHA_INICIO || ausencia.fecha_inicio,
+          FECHA_FIN: ausencia.FECHA_FIN || ausencia.fecha_fin,
+          fecha_solicitud: ausencia.created_at || ausencia.CREATED_AT || ausencia.createdAt || ausencia.fecha_solicitud || ausencia.FECHA || ausencia.fecha,
+          created_at: ausencia.created_at || ausencia.CREATED_AT || ausencia.createdAt,
+          MOTIVO: ausencia.MOTIVO || ausencia.motivo || '',
+          motivo: ausencia.MOTIVO || ausencia.motivo || '',
+          ESTADO: ausencia.ESTADO || ausencia.estado || 'Aprobada',
+          estado: ausencia.ESTADO || ausencia.estado || 'Aprobada',
+          CODIGO: ausencia.CODIGO || ausencia.codigo || userCode,
+          codigo: ausencia.CODIGO || ausencia.codigo || userCode,
+          NOMBRE: ausencia.NOMBRE || ausencia.nombre || '',
+          nombre: ausencia.NOMBRE || ausencia.nombre || '',
+          duracion: ausencia.duracion || ausencia.DURACION || '',
+          no_necesita_justificante: ausencia.no_necesita_justificante || ausencia.NO_NECESITA_JUSTIFICANTE || false,
+          ausencia_asociada_id: ausencia.ausencia_asociada_id || null,
+          fuente: 'ausencias',
+          raw: ausencia
+        }));
+        
+        // Adăugăm solicitările Pendiente și Rechazada (nu sunt în ausencias) și eventual Aprobada care nu e încă în ausencias
+        const normalizeSolicitud = (s) => ({
+          id: s.id || s.ID,
+          tipo: s.tipo || s.TIPO,
+          fecha_inicio: s.fecha_inicio || s.FECHA_INICIO,
+          fecha_fin: s.fecha_fin || s.FECHA_FIN,
+          FECHA: s.FECHA || (s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} - ${s.fecha_fin}` : s.fecha_inicio || s.fecha_fin),
+          FECHA_INICIO: s.fecha_inicio,
+          FECHA_FIN: s.fecha_fin,
+          fecha_solicitud: s.fecha_solicitud || s.created_at,
+          created_at: s.fecha_solicitud || s.created_at,
+          MOTIVO: s.motivo || s.MOTIVO || '',
+          motivo: s.motivo || s.MOTIVO || '',
+          ESTADO: s.estado || s.ESTADO,
+          estado: s.estado || s.ESTADO,
+          CODIGO: s.codigo || s.CODIGO || userCode,
+          codigo: s.codigo || s.CODIGO || userCode,
+          NOMBRE: s.nombre || s.NOMBRE || '',
+          nombre: s.nombre || s.NOMBRE || '',
+          email: s.email || s.EMAIL,
+          duracion: s.duracion || s.DURACION || '',
+          no_necesita_justificante: s.no_necesita_justificante ?? false,
+          ausencia_asociada_id: s.ausencia_asociada_id || null,
+          tipo_justificante: s.tipo_justificante,
+          hora_cita: s.hora_cita,
+          centro_medico: s.centro_medico,
+          descripcion_otro: s.descripcion_otro,
+          fecha_ultimo_dia_trabajo: s.fecha_ultimo_dia_trabajo,
+          dias_preaviso: s.dias_preaviso,
+          cumple_preaviso_15: s.cumple_preaviso_15,
+          fuente: 'solicitudes',
+          raw: s
+        });
+        
+        for (const s of solicitudesUser) {
+          const already = transformedData.some(
+            a => String(a.id) === String(s.id) || 
+              ((a.tipo || a.TIPO) === (s.tipo || s.TIPO) && (a.fecha_inicio || a.FECHA_INICIO) === (s.fecha_inicio || s.FECHA_INICIO) && (a.codigo || a.CODIGO) === (s.codigo || s.CODIGO))
+          );
+          if (!already) transformedData.push(normalizeSolicitud(s));
+        }
+        
+        // Sortare după fecha_solicitud - cea mai nouă primul
+        transformedData.sort((a, b) => {
+          const fechaA = a.fecha_solicitud || a.created_at || a.FECHA || a.fecha_inicio || a.FECHA_INICIO || '';
+          const fechaB = b.fecha_solicitud || b.created_at || b.FECHA || b.fecha_inicio || b.FECHA_INICIO || '';
+          if (fechaA && fechaB) {
+            const dateA = new Date(fechaA);
+            const dateB = new Date(fechaB);
+            if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) return dateB.getTime() - dateA.getTime();
+            return (fechaB || '').localeCompare(fechaA || '');
+          }
+          if (fechaA && !fechaB) return -1;
+          if (!fechaA && fechaB) return 1;
+          return 0;
+        });
+        
+        setSolicitudes(transformedData);
+        
+        await fetchBajaVoluntariaDocumentos(transformedData);
+        await fetchJustificanteDocumentos(transformedData);
+
+        let totalAsuntoDays = 0;
+        let totalVacacionesDays = 0;
+        
+        transformedData.forEach(item => {
             const tipo = (item.tipo || item.TIPO || '').toLowerCase();
             const fechaInicio = item.fecha_inicio || item.FECHA_INICIO || item.FECHA || item.fecha;
             const fechaFin = item.fecha_fin || item.FECHA_FIN || item.FECHA || item.fecha;
@@ -2717,7 +2868,6 @@ export default function SolicitudesPage() {
           
           setTotalAsuntoPropioDays(totalAsuntoDays);
           setTotalVacacionesDays(totalVacacionesDays);
-        }
       } else {
         // Pentru alte taburi (ex: "Todas las Solicitudes"): păstrăm comportamentul vechi (din solicitudes)
         const url = `${ENDPOINT}?email=${encodeURIComponent(email)}&codigo=${encodeURIComponent(userCode)}`;
@@ -2726,9 +2876,10 @@ export default function SolicitudesPage() {
           const data = Array.isArray(result.data) ? result.data : [result.data];
           setSolicitudes(data);
           
-          // Încarcă documentele asociate cu BAJA_VOLUNTARIA
+          // Încarcă documentele asociate cu BAJA_VOLUNTARIA și Ausencias justificada
           await fetchBajaVoluntariaDocumentos(data);
-          
+          await fetchJustificanteDocumentos(data);
+
           // Calculează totalul de zile pentru Asunto Propio și Vacaciones
           let totalAsuntoDays = 0;
           let totalVacacionesDays = 0;
@@ -2759,7 +2910,7 @@ export default function SolicitudesPage() {
       console.error('Error fetching solicitudes/ausencias:', error);
     }
     setOperationLoading('solicitudes', false);
-  }, [authUser, email, callApi, setOperationLoading, activeTab, fetchBajaVoluntariaDocumentos]);
+  }, [authUser, email, callApi, setOperationLoading, activeTab, fetchBajaVoluntariaDocumentos, fetchJustificanteDocumentos]);
 
   const fetchAllSolicitudes = useCallback(async () => {
     setOperationLoading('allSolicitudes', true);
@@ -2780,19 +2931,18 @@ export default function SolicitudesPage() {
     }
     
     try {
-      // Para managers - todas las solicitudes del sistema (sin email)
+      // Para managers - todas las solicitudes del sistema (sin email). Lista primero; documentos se cargan solo en el tab que los necesita.
       const result = await callApi(ENDPOINT);
       if (result.success) {
         const data = Array.isArray(result.data) ? result.data : [result.data];
         setAllSolicitudes(data);
-        // Încarcă documentele asociate cu BAJA_VOLUNTARIA
-        await fetchBajaVoluntariaDocumentos(data);
+        // No bloquear: documentos se cargan en useEffect cuando el usuario abre Aprobación / Ausencias / Baja voluntaria
       }
     } catch (error) {
       console.error('Error fetching all solicitudes:', error);
     }
     setOperationLoading('allSolicitudes', false);
-  }, [authUser, callApi, setOperationLoading, fetchBajaVoluntariaDocumentos]);
+  }, [authUser, callApi, setOperationLoading]);
 
   const fetchAllUsers = useCallback(async () => {
     // Skip real data fetch in DEMO mode
@@ -3055,6 +3205,35 @@ export default function SolicitudesPage() {
       setVacationBlockedPeriods([]);
     }
   }, [authUser?.isDemo, canAccessAllTabs, callApi]);
+
+  const fetchVacacionesDisponibilidadPct = useCallback(async () => {
+    if (authUser?.isDemo) return;
+    try {
+      const res = await callApi(routes.getVacacionesDisponibilidadPorcentaje, { method: 'GET' });
+      if (!res?.success) return;
+      const data = res.data;
+      const p = Number(data?.porcentaje);
+      if (Number.isFinite(p) && p >= 1 && p <= 100) {
+        setVacacionesDisponibilidadPct(p);
+      }
+    } catch (e) {
+      console.warn('getVacacionesDisponibilidadPorcentaje:', e);
+    }
+  }, [authUser?.isDemo, callApi]);
+
+  useEffect(() => {
+    if (authUser && !authUser.isDemo) {
+      fetchVacacionesDisponibilidadPct();
+    }
+  }, [authUser, fetchVacacionesDisponibilidadPct]);
+
+  useEffect(() => {
+    if (showVacationBlockedPeriodsModal) {
+      setVacacionPctDraft(String(vacacionesDisponibilidadPct));
+    }
+    // Solo al abrir el modal (no reemplazar el borrador si cambia % con el modal abierto)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showVacationBlockedPeriodsModal]);
 
   useEffect(() => {
     if (canAccessAllTabs) fetchVacationBlockedPeriods();
@@ -3809,6 +3988,10 @@ export default function SolicitudesPage() {
       formData.append('archivo_0_nombre', uploadJustificanteFile.name);
       formData.append('archivo_0_tamaño', uploadJustificanteFile.size.toString());
       formData.append('archivo_0_tipo', uploadJustificanteFile.type);
+      const ausenciaId = selectedAusenciaForUpload?.ausencia_id ?? selectedAusenciaForUpload?.id;
+      if (ausenciaId != null && Number.isFinite(Number(ausenciaId))) {
+        formData.append('ausencia_id', String(ausenciaId));
+      }
 
       const uploadResponse = await fetch(routes.uploadDocumento, {
         method: 'POST',
@@ -3957,6 +4140,7 @@ export default function SolicitudesPage() {
             }
           };
           fetchJustificantes();
+          fetchInitialJustificantes();
         }
       }, 500);
 
@@ -4187,11 +4371,74 @@ export default function SolicitudesPage() {
     }
   }, [activeTab, selectedTab, selectedUser, allAusencias.length, canAccessAllTabs, fetchDocumentosSolicitadosForAusencias]);
 
+  // Justificantes por ausencia_id para mostrar estado "Justificante de presencia" (Pendiente de cargar / Cargado) en Todas > Ausencias
+  useEffect(() => {
+    if (selectedTab === 'ausencias' && canAccessAllTabs && allAusencias.length > 0) {
+      fetchJustificantesByAusenciaForTodas();
+    }
+  }, [selectedTab, allAusencias.length, canAccessAllTabs, fetchJustificantesByAusenciaForTodas]);
+
+  // Sub-tab Ausencias: por defecto filtrar por mes actual (no "Todas las meses")
+  useEffect(() => {
+    if (selectedTab === 'ausencias' && selectedMonth === 0) {
+      const currentMonth = new Date().getMonth() + 1; // 1-12 (MONTHS[0]=Todas, MONTHS[1]=Enero, ...)
+      setSelectedMonth(currentMonth);
+    }
+  }, [selectedTab, selectedMonth]);
+
+  // Todas: cargar documentos solo cuando el sub-tab que los necesita está activo (no al abrir Todas)
+  useEffect(() => {
+    if (activeTab !== 'todas' || !canAccessAllTabs || !allSolicitudes.length) return;
+    if (selectedTab === 'aprobacion' || selectedTab === 'ausencias') {
+      fetchJustificanteDocumentos(allSolicitudes);
+    } else if (selectedTab === 'baja_voluntaria') {
+      fetchBajaVoluntariaDocumentos(allSolicitudes);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when tab/length change, not on every allSolicitudes reference
+  }, [activeTab, canAccessAllTabs, selectedTab, allSolicitudes.length, fetchJustificanteDocumentos, fetchBajaVoluntariaDocumentos]);
+
   // Sincronizăm ref-ul cu state-ul pentru a păstra map-ul între render-uri
-  // Folosim useLayoutEffect pentru sincronizare sincronă (înainte de paint)
   useLayoutEffect(() => {
     justificantesPorAusenciaRef.current = justificantesPorAusencia;
   }, [justificantesPorAusencia]);
+
+  // Justificante pentru cerere (CarpetasDocumentos) – reutilizabil după upload
+  const fetchInitialJustificantes = useCallback(async () => {
+    const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
+    if (!userCode || authUser?.isDemo) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      const url = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}?empleadoId=${encodeURIComponent(userCode)}`;
+      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) return;
+      const data = await res.json();
+      const docs = Array.isArray(data) ? data : (data?.data || []);
+      const justificantes = docs.filter(d => {
+        const t = (d.tipo_documento || '').toLowerCase();
+        return t.includes('justificante') && !t.includes('presencia');
+      });
+      const map = new Map();
+      justificantes.forEach(doc => {
+        const fechaCreacion = doc.fecha_creacion;
+        let fecha = '';
+        if (fechaCreacion) {
+          try {
+            const d = new Date(fechaCreacion);
+            if (!isNaN(d.getTime())) fecha = d.toISOString().split('T')[0];
+          } catch {
+            /* ignore invalid date */
+          }
+        }
+        if (fecha) {
+          if (!map.has(fecha)) map.set(fecha, []);
+          map.get(fecha).push(doc);
+        }
+      });
+      setInitialJustificantesPorFecha(map);
+    } catch (e) {
+      console.warn('Error fetching initial justificantes:', e);
+    }
+  }, [authUser]);
 
   // Fetch justificantele pentru utilizatorul curent (angajat sau manager) - pentru "Mis Solicitudes"
   // Se declanșează imediat după ce solicitudes este încărcat (fără delay)
@@ -4228,6 +4475,66 @@ export default function SolicitudesPage() {
       try {
         const token = localStorage.getItem('auth_token');
         const empleadoId = userCode;
+        // Prefer new API (ausencia_justificantes): fetch by ausencia id. Para empleados (Mis Solicitudes) allAusencias puede estar vacío → obtener ausencias del usuario.
+        const justificantesMapFromApi = new Map();
+        let ausenciasList = (typeof allAusencias !== 'undefined' && Array.isArray(allAusencias))
+          ? allAusencias.filter(a => (a.CODIGO || a.codigo) === userCode)
+          : [];
+        if (ausenciasList.length === 0) {
+          try {
+            const ausenciasRes = await fetch(`${routes.getAusencias || ''}?codigo=${encodeURIComponent(userCode)}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            if (ausenciasRes.ok) {
+              const ausenciasData = await ausenciasRes.json();
+              ausenciasList = Array.isArray(ausenciasData) ? ausenciasData : (ausenciasData?.data || []);
+            }
+          } catch {
+            /* ignore: ausencias fetch optional */
+          }
+        }
+        for (const ausencia of ausenciasList) {
+          const aid = ausencia.ausencia_id ?? ausencia.id;
+          if (aid == null || !Number.isFinite(Number(aid))) continue;
+          try {
+            const jRes = await fetch(routes.getAusenciaJustificantes(Number(aid)), {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+            });
+            if (!jRes.ok) continue;
+            const rows = await jRes.json();
+            if (!Array.isArray(rows) || rows.length === 0) continue;
+            const tipoAusencia = ausencia.TIPO || ausencia.tipo || 'Ausencia';
+            let fecha = (ausencia.FECHA || ausencia.fecha || ausencia.fecha_inicio || '').toString().trim();
+            if (fecha.includes(' - ')) fecha = fecha.split(' - ')[0].trim();
+            if (!fecha || fecha.length < 10) continue;
+            const fechaNorm = fecha.substring(0, 10);
+            rows.forEach(row => {
+              const tipo = (row.tipo || '').toLowerCase();
+              const keySuffix = tipo === 'presencia' ? '_presencia' : '';
+              const key = `${tipoAusencia}_${fechaNorm}${keySuffix}`;
+              const keySinEspacios = `${(tipoAusencia || '').replace(/\s+/g, '')}_${fechaNorm}${keySuffix}`;
+              const estado = row.doc_solicitado_estado || (row.doc_id ? 'completado' : 'pendiente');
+              const justificanteData = {
+                estado,
+                fecha_solicitud: row.created_at,
+                fecha_completado: estado === 'completado' ? row.created_at : null,
+                tipo_documento: row.doc_tipo_documento || row.doc_solicitado_tipo || (tipo === 'presencia' ? 'Justificante de presencia a la cita' : 'Justificante'),
+                notas: row.doc_solicitado_notas,
+                id: row.documento_solicitado_id ?? row.doc_id,
+                tipoAusencia,
+                fechaAusencia: fechaNorm,
+                doc_id: row.doc_id ?? row.doc_ID,
+                doc_nombre_archivo: row.doc_nombre_archivo ?? row.doc_NOMBRE_ARCHIVO ?? (tipo === 'presencia' ? 'Justificante presencia' : 'Justificante'),
+              };
+              justificantesMapFromApi.set(key, justificanteData);
+              if (keySinEspacios !== key) justificantesMapFromApi.set(keySinEspacios, justificanteData);
+            });
+          } catch {
+            /* ignore: justificantes API optional */
+          }
+        }
+
         const url = routes.getDocumentosSolicitados(empleadoId);
         
         const response = await fetch(url, {
@@ -4311,17 +4618,33 @@ export default function SolicitudesPage() {
           
           justificantes.forEach(doc => {
             const notas = doc.notas || '';
+            const tipoDoc = (doc.tipo_documento || '').toLowerCase();
+            const esPresencia = tipoDoc.includes('presencia');
             
-            // Extrage tipul și data din notas: "Justificante para ausencia: Salida Sin Regreso - 2026-01-05"
-            // Pattern mai flexibil: permite și alte formate de dată
-            let match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
-            
-            // Dacă nu găsește cu pattern-ul exact, încearcă pattern-uri alternative
+            // "Justificante de presencia a la cita (ausencia justificada aprobada) - 21/03/2026" sau " - 2026-03-21"
+            let match = null;
+            if (esPresencia) {
+              match = notas.match(/Justificante de presencia[^)]*\)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
+              if (match) match = [match[0], 'Ausencias justificada', match[1]];
+              if (!match) {
+                match = notas.match(/Justificante de presencia[^)]*\)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+                if (match) {
+                  const fechaParts = match[1].trim().split('/');
+                  if (fechaParts.length === 3) {
+                    const fechaNorm = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
+                    match = [match[0], 'Ausencias justificada', fechaNorm];
+                  }
+                }
+              }
+            }
+            if (!match) {
+              // Extrage tipul și data din notas: "Justificante para ausencia: Salida Sin Regreso - 2026-01-05"
+              match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{4}-\d{2}-\d{2})/i);
+            }
             if (!match) {
               // Pattern alternativ: "Justificante para ausencia: TIPO - DD/MM/YYYY"
               match = notas.match(/Justificante para ausencia:\s*(.+?)\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
               if (match) {
-                // Convertim data din DD/MM/YYYY în YYYY-MM-DD
                 const fechaParts = match[2].trim().split('/');
                 if (fechaParts.length === 3) {
                   const fechaNormalizada = `${fechaParts[2]}-${fechaParts[1].padStart(2, '0')}-${fechaParts[0].padStart(2, '0')}`;
@@ -4358,29 +4681,31 @@ export default function SolicitudesPage() {
               };
               justificantesMapPorFecha.get(fechaAusencia).push(justificanteData);
               
-              // Adăugăm și în map-ul exact (tipo_fecha) pentru matching precis
-              const key = `${tipoAusencia}_${fechaAusencia}`;
+              // Key pentru matching: dacă e "Justificante de presencia" folosim sufix _presencia ca să nu suprascriem justificantele pentru cerere
+              const keySuffix = esPresencia ? '_presencia' : '';
+              const key = `${tipoAusencia}_${fechaAusencia}${keySuffix}`;
               justificantesMapPorTipoYFecha.set(key, justificanteData);
               
-              // Key fără spații (pentru matching mai flexibil)
-              const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}`;
+              const keySinEspacios = `${tipoAusencia.replace(/\s+/g, '')}_${fechaAusencia}${keySuffix}`;
               if (keySinEspacios !== key) {
                 justificantesMapPorTipoYFecha.set(keySinEspacios, justificanteData);
               }
             }
           });
           
-          // Combinăm ambele map-uri într-un singur obiect pentru a păstra compatibilitatea
+          // Combinăm: prefer date din noul API (ausencia_justificantes), apoi map-ul din documentos solicitados
           const justificantesMap = new Map();
-          // Adăugăm toate key-urile din map-ul exact (tipo_fecha)
-          justificantesMapPorTipoYFecha.forEach((value, key) => {
+          // 1) Date din noul API (by ausencia_id) au prioritate
+          justificantesMapFromApi.forEach((value, key) => {
             justificantesMap.set(key, value);
           });
-          // IMPORTANT: Adăugăm și key-uri pe dată (fără tip) pentru matching flexibil
-          // Astfel, justificantele se pot asocia cu orice absență din aceeași dată
+          // 2) Adăugăm key-uri din map-ul exact (tipo_fecha) doar dacă nu există deja
+          justificantesMapPorTipoYFecha.forEach((value, key) => {
+            if (!justificantesMap.has(key)) justificantesMap.set(key, value);
+          });
+          // 3) Key-uri pe dată (fără tip) pentru matching flexibil
           justificantesMapPorFecha.forEach((justificantesArray, fecha) => {
-            if (justificantesArray && justificantesArray.length > 0) {
-              // Folosim primul justificante din array pentru key-ul pe dată
+            if (justificantesArray && justificantesArray.length > 0 && !justificantesMap.has(fecha)) {
               justificantesMap.set(fecha, justificantesArray[0]);
             }
           });
@@ -4427,6 +4752,7 @@ export default function SolicitudesPage() {
         // Fără delay - se declanșează imediat după ce lista este încărcată
         fetchJustificantesPendientes();
       }
+      fetchInitialJustificantes();
     }
     
     // Return cleanup
@@ -4436,7 +4762,7 @@ export default function SolicitudesPage() {
         clearInterval(interval);
       }
     };
-  }, [authUser, activeTab, solicitudes.length]);
+  }, [authUser, activeTab, solicitudes.length, fetchInitialJustificantes, allAusencias]);
 
   // Funcția handleSolicitarJustificante a fost eliminată - folosim handleRecordarJustificante direct
 
@@ -4851,11 +5177,61 @@ export default function SolicitudesPage() {
     }
   };
 
-  const handleRejectPermisoRetribuidoClick = (solicitud) => {
-    setRejectPermisoModal({ isOpen: true, solicitud, mensaje: '' });
+  const handleApproveAusenciaJustificada = async (solicitud) => {
+    try {
+      setOperationLoading('approve-ausencia', true);
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
+      const data = { accion: 'update', id: solicitud.id || solicitud.ID, estado: 'Aprobada' };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Error al aprobar la ausencia justificada');
+      const result = await response.json();
+      const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
+      if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
+        setSuccessMsg('Ausencia justificada aprobada correctamente.');
+        // Crear "Solicitud de Documento" para que el empleado suba justificante de presencia a la cita (diferente del justificante de la cita subido al solicitar)
+        try {
+          const codigoEmpleado = solicitud.codigo || solicitud.CODIGO || '';
+          const token = localStorage.getItem('auth_token');
+          const fechaNorm = (solicitud.fecha_inicio || solicitud.FECHA || '').split('-').reverse().join('/') || new Date().toLocaleDateString('es-ES');
+          const notas = `Justificante de presencia a la cita (ausencia justificada aprobada) - ${fechaNorm}`;
+          const ausenciaId = solicitud.ausencia_id ?? solicitud.ausencias?.[0]?.id ?? solicitud.firstAusenciaId;
+          await fetch(routes.createDocumentoSolicitado, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+            body: JSON.stringify({
+              empleado_id: codigoEmpleado,
+              tipo_documento: 'Justificante de presencia a la cita',
+              notas,
+              ...(ausenciaId != null && Number.isFinite(Number(ausenciaId)) && { ausencia_id: Number(ausenciaId) }),
+            }),
+          });
+        } catch (e) {
+          console.warn('No se pudo crear solicitud de documento tras aprobar ausencia:', e);
+        }
+        setTimeout(() => { fetchSolicitudes(); if (isManager) fetchAllSolicitudes(); }, 1000);
+      } else {
+        setErrorMsg('No se pudo aprobar la ausencia justificada.');
+      }
+    } catch (error) {
+      console.error('Error al aprobar ausencia justificada:', error);
+      setErrorMsg('Error al aprobar la ausencia justificada');
+    } finally {
+      setOperationLoading('approve-ausencia', false);
+    }
   };
 
-  const handleRejectPermisoRetribuido = async () => {
+  const handleRejectPermisoRetribuidoClick = (solicitud) => {
+    const tipo = (solicitud.tipo || solicitud.TIPO || '').toLowerCase();
+    const tipoSolicitud = (tipo.includes('ausencias') && tipo.includes('justificada')) ? 'Ausencias justificada' : 'Permiso Retribuido';
+    setRejectPermisoModal({ isOpen: true, solicitud, mensaje: '', tipoSolicitud });
+  };
+
+  const handleRejectSolicitudPendiente = async () => {
     if (!rejectPermisoModal.solicitud) return;
     
     try {
@@ -4887,8 +5263,8 @@ export default function SolicitudesPage() {
       const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
 
       if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
-        setSuccessMsg('Permiso retribuido rechazado correctamente.');
-        setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '' });
+        setSuccessMsg('Solicitud rechazada correctamente.');
+        setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '', tipoSolicitud: 'Permiso Retribuido' });
         // Reîncarcă listele
         setTimeout(() => {
           fetchSolicitudes();
@@ -4928,6 +5304,28 @@ export default function SolicitudesPage() {
       return;
     }
 
+    // Validare Ausencia justificada: toate câmpurile obligatorii (mai puțin Motivo general)
+    if (tipo === 'Ausencias justificada') {
+      if (!tipoJustificante || !tipoJustificante.trim()) {
+        setErrorMsg('El tipo de justificante es obligatorio.');
+        return;
+      }
+      if (!fechaInicio || !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio)) {
+        setErrorMsg('La fecha de la ausencia es obligatoria.');
+        return;
+      }
+      if (tipoJustificante === 'otro') {
+        if (!descripcionOtro.trim()) {
+          setErrorMsg('Describe el motivo es obligatorio cuando el tipo es "Otro".');
+          return;
+        }
+      }
+      if (!archivoJustificante) {
+        setErrorMsg('Adjuntar justificante es obligatorio.');
+        return;
+      }
+    }
+
     setOperationLoading('submit', true);
     
     const tipoPayload = tipo === 'Asuntos Propios' ? 'Asunto Propio' : tipo;
@@ -4955,8 +5353,8 @@ export default function SolicitudesPage() {
       codigo: solicitudCodigo,
       nombre: solicitudNombre,
       tipo: tipoPayload,
-      // BAJA_VOLUNTARIA și Permiso Retribuido cerute de angajați trebuie aprobate de manager
-      estado: tipoPayload === 'BAJA_VOLUNTARIA' || tipoPayload === 'Permiso Retribuido' ? 'Pendiente' : 'Aprobada',
+      // BAJA_VOLUNTARIA, Permiso Retribuido și Ausencias justificada cerute de angajați trebuie aprobate de manager
+      estado: (tipoPayload === 'BAJA_VOLUNTARIA' || tipoPayload === 'Permiso Retribuido' || tipoPayload === 'Ausencias justificada') ? 'Pendiente' : 'Aprobada',
       motivo,
       // Pentru BAJA_VOLUNTARIA, nu trimitem fecha_inicio și fecha_fin
       ...(tipoPayload !== 'BAJA_VOLUNTARIA' ? {
@@ -4968,6 +5366,13 @@ export default function SolicitudesPage() {
       }),
       ...(tipoPayload === 'BAJA_VOLUNTARIA' && fechaUltimoDiaTrabajo ? {
         fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo
+      } : {}),
+      ...(tipoPayload === 'Ausencias justificada' ? {
+        tipo_justificante: tipoJustificante,
+        hora_cita: horaCita || null,
+        centro_medico: centroMedico || null,
+        descripcion_otro: tipoJustificante === 'otro' ? descripcionOtro : null,
+        archivo_justificante_nombre: archivoJustificante ? archivoJustificante.name : null,
       } : {}),
     };
 
@@ -5060,6 +5465,41 @@ export default function SolicitudesPage() {
               console.error('❌ Error al subir documento de Baja Voluntaria:', uploadError);
               // Nu aruncăm eroarea pentru a nu opri flow-ul principal
             }
+          } else if (tipoPayload === 'Ausencias justificada' && archivoJustificante) {
+            // Subir el archivo a CarpetasDocumentos y, si hay ausencia_id (solicitud creada Aprobada), vincular en ausencia_justificantes
+            try {
+              const codigoEmpleado = authUser?.['CODIGO'] || authUser?.codigo || '';
+              const token = localStorage.getItem('auth_token');
+              const tipoDocumento = 'Justificante';
+              const formData = new FormData();
+              formData.append('archivo_0', archivoJustificante);
+              formData.append('empleado_id', codigoEmpleado);
+              formData.append('empleado_nombre', authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || 'Sin nombre');
+              formData.append('empleado_email', authUser?.['CORREO ELECTRONICO'] || authUser?.email || '');
+              formData.append('tipo_documento', tipoDocumento);
+              formData.append('fecha_upload', new Date().toLocaleString('es-ES', {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Madrid'
+              }));
+              formData.append('archivo_0_nombre', archivoJustificante.name);
+              formData.append('archivo_0_tamaño', archivoJustificante.size.toString());
+              formData.append('archivo_0_tipo', archivoJustificante.type);
+              const ausenciaIdFromCreate = responseData?.ausencia_id ?? responseData?.ausenciaId;
+              if (ausenciaIdFromCreate != null && Number.isFinite(Number(ausenciaIdFromCreate))) {
+                formData.append('ausencia_id', String(ausenciaIdFromCreate));
+              }
+              const uploadResp = await fetch(routes.uploadDocumento, {
+                method: 'POST',
+                headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+                body: formData,
+              });
+              if (!uploadResp.ok) {
+                const err = await uploadResp.json().catch(() => ({}));
+                console.warn('⚠️ No se pudo subir el justificante:', err.error || uploadResp.statusText);
+              }
+            } catch (uploadError) {
+              console.error('❌ Error al subir justificante ausencia:', uploadError);
+            }
           }
         }
         setServerResp(`Status: ${responseData?.status || 'ok'} - Solicitud ${isEditing ? 'actualizada' : 'guardada'} exitosamente`);
@@ -5071,6 +5511,11 @@ export default function SolicitudesPage() {
         setFechaUltimoDiaTrabajo('');
         setBajaVoluntariaDocumento(null);
         setMotivo('');
+        setTipoJustificante('');
+        setHoraCita('');
+        setCentroMedico('');
+        setDescripcionOtro('');
+        setArchivoJustificante(null);
         setEditingSolicitud(null);
         setOriginalSolicitudData(null);
         
@@ -5149,6 +5594,13 @@ export default function SolicitudesPage() {
       ...(tipoPayload === 'BAJA_VOLUNTARIA' && fechaUltimoDiaTrabajo ? {
         fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo
       } : {}),
+      ...(tipoPayload === 'Ausencias justificada' ? {
+        tipo_justificante: tipoJustificante,
+        hora_cita: horaCita || null,
+        centro_medico: centroMedico || null,
+        descripcion_otro: tipoJustificante === 'otro' ? descripcionOtro : null,
+        archivo_justificante_nombre: archivoJustificante ? archivoJustificante.name : null,
+      } : {}),
     };
 
     console.log('📤 [Manager] Creando solicitud para empleado:', data);
@@ -5173,6 +5625,34 @@ export default function SolicitudesPage() {
         await activityLogger.logSolicitudCreated(data, authUser);
         setSuccessMsg(`Solicitud creada correctamente para ${solicitudNombre}.`);
         setServerResp(`Status: ${responseData?.status || 'ok'} - Solicitud guardada exitosamente`);
+
+        if (tipoPayload === 'Ausencias justificada' && archivoJustificante) {
+          try {
+            const token = localStorage.getItem('auth_token');
+            const tipoDocumento = 'Justificante';
+            const formData = new FormData();
+            formData.append('archivo_0', archivoJustificante);
+            formData.append('empleado_id', solicitudCodigo);
+            formData.append('empleado_nombre', solicitudNombre || 'Sin nombre');
+            formData.append('empleado_email', solicitudEmail || '');
+            formData.append('tipo_documento', tipoDocumento);
+            formData.append('fecha_upload', new Date().toLocaleString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Madrid' }));
+            formData.append('archivo_0_nombre', archivoJustificante.name);
+            formData.append('archivo_0_tamaño', archivoJustificante.size.toString());
+            formData.append('archivo_0_tipo', archivoJustificante.type);
+            await fetch(routes.uploadDocumento, { method: 'POST', headers: { ...(token && { Authorization: `Bearer ${token}` }) }, body: formData });
+            // Si el manager crea ya Aprobada, crear la solicitud de documento para que el empleado reciba el email
+            if (managerAutoApprove) {
+              const fechaNorm = (fechaInicio || '').split('-').reverse().join('/') || new Date().toLocaleDateString('es-ES');
+              const notas = `Justificante de presencia a la cita (ausencia justificada aprobada) - ${fechaNorm}`;
+              await fetch(routes.createDocumentoSolicitado, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+                body: JSON.stringify({ empleado_id: solicitudCodigo, tipo_documento: 'Justificante de presencia a la cita', notas }),
+              }).catch(() => {});
+            }
+          } catch (e) { console.error('Error al subir justificante (manager):', e); }
+        }
         
         // Reset form și închide modalul
         setTipo('Asuntos Propios');
@@ -5181,6 +5661,11 @@ export default function SolicitudesPage() {
         setFechaUltimoDiaTrabajo('');
         setBajaVoluntariaDocumento(null);
         setMotivo('');
+        setTipoJustificante('');
+        setHoraCita('');
+        setCentroMedico('');
+        setDescripcionOtro('');
+        setArchivoJustificante(null);
         setManagerSelectedEmpleado(null);
         setManagerEmpleadoSearch('');
         setManagerAutoApprove(true);
@@ -6059,7 +6544,7 @@ export default function SolicitudesPage() {
       // Găsește solicitarea pentru a obține codigo-ul angajatului
       // Caută în toate locurile: solicitudes, allSolicitudes și allAusencias
       let solicitudToDelete = [...solicitudes, ...allSolicitudes].find(s => s.id === solicitudId);
-      let esAusencia = solicitudToDelete?.fuente === 'ausencias';
+      let esAusencia = solicitudToDelete?.fuente === 'ausencias' || !!(solicitudToDelete?.solicitud_id || solicitudToDelete?.SOLICITUD_ID);
       
       // Dacă nu s-a găsit în solicitudes, caută în allAusencias
       if (!solicitudToDelete && allAusencias) {
@@ -6535,7 +7020,38 @@ export default function SolicitudesPage() {
     
     // Selectează sursa de date în funcție de tab-ul selectat
     if (selectedTab === 'ausencias') {
-      filtered = allAusencias;
+      // Combină allAusencias cu solicitările Pendiente/Rechazada din allSolicitudes (tip ausencia) ca să apară și cele rechazade
+      const ausenciaTipos = (t) => {
+        const lower = (t || '').toLowerCase();
+        return !lower.includes('vacacion') && !lower.includes('asunto propio') && !lower.includes('baja_voluntaria') && (lower.includes('ausencia') || lower.includes('permiso') || lower.includes('retribuido') || lower.includes('salida') || lower.includes('justificada'));
+      };
+      const pendienteOrRechazada = allSolicitudes.filter(s => {
+        const estado = (s.estado || s.ESTADO || '').toLowerCase();
+        return (estado === 'pendiente' || estado === 'rechazada') && ausenciaTipos(s.tipo || s.TIPO);
+      });
+      const toAusenciaShape = (s) => ({
+        ...s,
+        id: s.id || s.ID,
+        TIPO: s.tipo || s.TIPO,
+        tipo: s.tipo || s.TIPO,
+        FECHA: s.FECHA || (s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} - ${s.fecha_fin}` : s.fecha_inicio || s.fecha_fin),
+        fecha: s.fecha_inicio || s.fecha_fin || s.FECHA,
+        CODIGO: s.codigo || s.CODIGO,
+        codigo: s.codigo || s.CODIGO,
+        NOMBRE: s.nombre || s.NOMBRE,
+        nombre: s.nombre || s.NOMBRE,
+        ESTADO: s.estado || s.ESTADO,
+        estado: s.estado || s.ESTADO,
+        fecha_solicitud: s.fecha_solicitud || s.created_at,
+        created_at: s.fecha_solicitud || s.created_at,
+      });
+      const existingKeys = new Set(
+        allAusencias.map(a => `${(a.TIPO || a.tipo || '').trim()}_${(a.CODIGO || a.codigo || '')}_${(a.FECHA || a.fecha_inicio || a.fecha || '').toString().substring(0, 10)}`)
+      );
+      const extra = pendienteOrRechazada
+        .map(toAusenciaShape)
+        .filter(s => !existingKeys.has(`${(s.TIPO || s.tipo || '').trim()}_${(s.CODIGO || s.codigo || '')}_${(s.fecha_inicio || (s.FECHA || '').split(' - ')[0] || '').toString().substring(0, 10)}`));
+      filtered = [...allAusencias, ...extra];
     } else if (selectedTab === 'baja') {
       // Formatează și deduplică bazându-ne pe cheia unică (Id.Caso + Id.Posición)
       const formatted = allBajasMedicas.map(formatBajaRecord);
@@ -6594,13 +7110,14 @@ export default function SolicitudesPage() {
     } else if (selectedTab === 'baja_voluntaria') {
       filtered = filtered.filter(s => s.tipo === 'BAJA_VOLUNTARIA');
     } else if (selectedTab === 'aprobacion') {
-      // Tab pentru cererile pendiente de aprobare (doar Permiso Retribuido și BAJA_VOLUNTARIA)
+      // Tab pentru cererile pendiente de aprobare (Permiso Retribuido, BAJA_VOLUNTARIA, Ausencias justificada)
       filtered = filtered.filter(s => {
         const tipo = (s.tipo || s.TIPO || '').toLowerCase();
         const estado = (s.estado || s.ESTADO || '').toLowerCase();
         const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
         const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
-        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria);
+        const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
+        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada);
       });
     }
     if (selectedMonth > 0) {
@@ -7350,7 +7867,11 @@ export default function SolicitudesPage() {
                           }
                         }
                         
-                        if (justificante) {
+                        // Para "Ausencias justificada" mostramos siempre las dos secciones (cerere + presencia), no el box único
+                        const tipoNorm = (solicitud.tipo || solicitud.TIPO || solicitud.tipo_solicitud || solicitud.TIPO_SOLICITUD || '').toLowerCase();
+                        const esAusenciaJustificadaParaDosBloques = tipoNorm.includes('ausencia') && tipoNorm.includes('justificada');
+                        
+                        if (justificante && !esAusenciaJustificadaParaDosBloques) {
                           const esPendiente = justificante.estado === 'pendiente';
                           const esCompletado = justificante.estado === 'completado';
                           
@@ -7462,17 +7983,227 @@ export default function SolicitudesPage() {
                             );
                           }
                           
+                          let fechaSolicitudNorm = '';
+                          try {
+                            const fs = solicitud.fecha_solicitud || solicitud.created_at || solicitud.FECHA_SOLICITUD;
+                            if (fs) {
+                              const d = new Date(fs);
+                              if (!isNaN(d.getTime())) fechaSolicitudNorm = d.toISOString().split('T')[0];
+                            }
+                          } catch {
+                            /* ignore invalid date */
+                          }
+                          const docsIniciales = initialJustificantesPorFecha.get(fechaNormalizada) || initialJustificantesPorFecha.get(fechaSolicitudNorm) || [];
+                          const tipoNormMis = (solicitud.tipo || solicitud.TIPO || solicitud.tipo_solicitud || solicitud.TIPO_SOLICITUD || '').toLowerCase();
+                          const esAusenciaJustificada = tipoNormMis.includes('ausencia') && tipoNormMis.includes('justificada');
+                          const keyCerere = `Ausencias justificada_${fechaNormalizada}`;
+                          const keyCerereSinEspacios = `Ausenciasjustificada_${fechaNormalizada}`;
+                          const justificanteCerereFromMap = esAusenciaJustificada ? (currentMap.get(keyCerere) || currentMap.get(keyCerereSinEspacios)) : null;
+                          const docCerereFromMap = justificanteCerereFromMap?.doc_id ? { doc_id: justificanteCerereFromMap.doc_id, nombre_archivo: justificanteCerereFromMap.doc_nombre_archivo || 'Justificante' } : null;
+                          const docCerere = docsIniciales[0] || docCerereFromMap;
+                          const tieneJustificanteCerere = docsIniciales.length > 0 || !!docCerereFromMap;
+                          const keyPresencia = `Ausencias justificada_${fechaNormalizada}_presencia`;
+                          const keyPresenciaSinEspacios = `Ausenciasjustificada_${fechaNormalizada}_presencia`;
+                          const justificantePresencia = esAusenciaJustificada ? (currentMap.get(keyPresencia) || currentMap.get(keyPresenciaSinEspacios)) : null;
                           return (
-                            <div className="mt-4 p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
-                              <div className="flex items-center justify-between gap-4">
-                                <div className="flex-1">
-                                  <p className="text-sm text-gray-600 mb-2">
-                                    No hay justificante cargado para esta ausencia.
-                                  </p>
+                            <div className="mt-4 p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 space-y-3">
+                              <div className="flex items-center justify-between gap-4 flex-wrap">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-700 mb-1">Justificante para la solicitud:</p>
+                                  {tieneJustificanteCerere ? (
+                                    <p className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
+                                      ✅ Cargado
+                                      {docCerere && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              const token = localStorage.getItem('auth_token');
+                                              const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${docCerere.doc_id}&id=${solicitud.codigo || solicitud.CODIGO || ''}&email=${encodeURIComponent(solicitud.email || '')}&fileName=${encodeURIComponent(docCerere.nombre_archivo || '')}`;
+                                              fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                                                .then((res) => {
+                                                  if (!res.ok) throw new Error(res.status === 401 ? 'No autorizado' : 'Error al cargar');
+                                                  return res.blob();
+                                                })
+                                                .then((blob) => {
+                                                  const blobUrl = window.URL.createObjectURL(blob);
+                                                  const a = document.createElement('a');
+                                                  a.href = blobUrl;
+                                                  a.download = docCerere.nombre_archivo || 'justificante';
+                                                  document.body.appendChild(a);
+                                                  a.click();
+                                                  window.URL.revokeObjectURL(blobUrl);
+                                                  document.body.removeChild(a);
+                                                })
+                                                .catch(() => setErrorMsg('Error al descargar el justificante. Inicia sesión si es necesario.'));
+                                            }}
+                                            className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                                          >
+                                            📥 Descargar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              const token = localStorage.getItem('auth_token');
+                                              const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${docCerere.doc_id}&id=${solicitud.codigo || solicitud.CODIGO || ''}&email=${encodeURIComponent(solicitud.email || '')}&fileName=${encodeURIComponent(docCerere.nombre_archivo || '')}`;
+                                              fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                                                .then((res) => {
+                                                  if (!res.ok) throw new Error(res.status === 401 ? 'No autorizado' : 'Error al cargar');
+                                                  return res.blob();
+                                                })
+                                                .then((blob) => {
+                                                  const blobUrl = window.URL.createObjectURL(blob);
+                                                  setJustificantePreview({ isOpen: true, blobUrl, fileName: docCerere.nombre_archivo || 'Justificante' });
+                                                })
+                                                .catch(() => setErrorMsg('Error al abrir el justificante. Inicia sesión si es necesario.'));
+                                            }}
+                                            className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                                          >
+                                            👁️ Ver
+                                          </button>
+                                        </>
+                                      )}
+                                    </p>
+                                  ) : (
+                                    <p className="text-sm text-gray-600">No cargado.</p>
+                                  )}
+                                  {esAusenciaJustificada && (
+                                    <>
+                                      <p className="text-sm font-medium text-gray-700 mt-2 mb-1">Justificante de presencia a la cita:</p>
+                                      {justificantePresencia ? (
+                                        <p className="text-sm">
+                                          {justificantePresencia.estado === 'completado' ? (
+                                            <span className="text-green-700 flex items-center gap-2 flex-wrap">
+                                              ✅ Completado
+                                              {/* Siempre mostrar botones si está completado; si no hay doc_id, resolver por GET documentos (presencia + fecha) */}
+                                              {(justificantePresencia.doc_id || justificantePresencia.doc_ID) ? (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      const docId = justificantePresencia.doc_id || justificantePresencia.doc_ID;
+                                                      const token = localStorage.getItem('auth_token');
+                                                      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${docId}&id=${solicitud.codigo || solicitud.CODIGO || ''}&email=${encodeURIComponent(solicitud.email || '')}&fileName=${encodeURIComponent(justificantePresencia.doc_nombre_archivo || justificantePresencia.doc_NOMBRE_ARCHIVO || 'justificante-presencia')}`;
+                                                      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                                                        .then((res) => { if (!res.ok) throw new Error(); return res.blob(); })
+                                                        .then((blob) => {
+                                                          const blobUrl = window.URL.createObjectURL(blob);
+                                                          const a = document.createElement('a');
+                                                          a.href = blobUrl;
+                                                          a.download = justificantePresencia.doc_nombre_archivo || justificantePresencia.doc_NOMBRE_ARCHIVO || 'justificante-presencia';
+                                                          document.body.appendChild(a);
+                                                          a.click();
+                                                          window.URL.revokeObjectURL(blobUrl);
+                                                          document.body.removeChild(a);
+                                                        })
+                                                        .catch(() => setErrorMsg('Error al descargar. Inicia sesión si es necesario.'));
+                                                    }}
+                                                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                                                  >
+                                                    📥 Descargar
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      const docId = justificantePresencia.doc_id || justificantePresencia.doc_ID;
+                                                      const token = localStorage.getItem('auth_token');
+                                                      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${docId}&id=${solicitud.codigo || solicitud.CODIGO || ''}&email=${encodeURIComponent(solicitud.email || '')}&fileName=${encodeURIComponent(justificantePresencia.doc_nombre_archivo || justificantePresencia.doc_NOMBRE_ARCHIVO || 'justificante-presencia')}`;
+                                                      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                                                        .then((res) => { if (!res.ok) throw new Error(); return res.blob(); })
+                                                        .then((blob) => {
+                                                          const blobUrl = window.URL.createObjectURL(blob);
+                                                          setJustificantePreview({ isOpen: true, blobUrl, fileName: justificantePresencia.doc_nombre_archivo || justificantePresencia.doc_NOMBRE_ARCHIVO || 'Justificante presencia' });
+                                                        })
+                                                        .catch(() => setErrorMsg('Error al abrir. Inicia sesión si es necesario.'));
+                                                    }}
+                                                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                                                  >
+                                                    👁️ Ver
+                                                  </button>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={async (e) => {
+                                                      e.preventDefault();
+                                                      const token = localStorage.getItem('auth_token');
+                                                      const codigo = solicitud.codigo || solicitud.CODIGO || '';
+                                                      try {
+                                                        const r = await fetch(`${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}?empleadoId=${encodeURIComponent(codigo)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                                        if (!r.ok) throw new Error();
+                                                        const data = await r.json();
+                                                        const docs = Array.isArray(data) ? data : (data?.data || []);
+                                                        const presencia = docs.find(d => (d.tipo_documento || '').toLowerCase().includes('presencia'));
+                                                        const doc = presencia || docs.find(d => (d.tipo_documento || '').toLowerCase().includes('justificante'));
+                                                        if (!doc?.doc_id) { setErrorMsg('No se encontró el documento.'); return; }
+                                                        const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${doc.doc_id}&id=${codigo}&email=${encodeURIComponent(solicitud.email || '')}&fileName=${encodeURIComponent(doc.nombre_archivo || 'justificante-presencia')}`;
+                                                        const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                                        if (!res.ok) throw new Error();
+                                                        const blob = await res.blob();
+                                                        const blobUrl = window.URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = blobUrl;
+                                                        a.download = doc.nombre_archivo || 'justificante-presencia';
+                                                        document.body.appendChild(a);
+                                                        a.click();
+                                                        window.URL.revokeObjectURL(blobUrl);
+                                                        document.body.removeChild(a);
+                                                      } catch {
+                                                        setErrorMsg('Error al descargar. Inicia sesión si es necesario.');
+                                                      }
+                                                    }}
+                                                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                                                  >
+                                                    📥 Descargar
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={async (e) => {
+                                                      e.preventDefault();
+                                                      const token = localStorage.getItem('auth_token');
+                                                      const codigo = solicitud.codigo || solicitud.CODIGO || '';
+                                                      try {
+                                                        const r = await fetch(`${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}?empleadoId=${encodeURIComponent(codigo)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                                        if (!r.ok) throw new Error();
+                                                        const data = await r.json();
+                                                        const docs = Array.isArray(data) ? data : (data?.data || []);
+                                                        const presencia = docs.find(d => (d.tipo_documento || '').toLowerCase().includes('presencia'));
+                                                        const doc = presencia || docs.find(d => (d.tipo_documento || '').toLowerCase().includes('justificante'));
+                                                        if (!doc?.doc_id) { setErrorMsg('No se encontró el documento.'); return; }
+                                                        const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${doc.doc_id}&id=${codigo}&email=${encodeURIComponent(solicitud.email || '')}&fileName=${encodeURIComponent(doc.nombre_archivo || 'justificante-presencia')}`;
+                                                        const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                                        if (!res.ok) throw new Error();
+                                                        const blob = await res.blob();
+                                                        const blobUrl = window.URL.createObjectURL(blob);
+                                                        setJustificantePreview({ isOpen: true, blobUrl, fileName: doc.nombre_archivo || 'Justificante presencia' });
+                                                      } catch {
+                                                        setErrorMsg('Error al abrir. Inicia sesión si es necesario.');
+                                                      }
+                                                    }}
+                                                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                                                  >
+                                                    👁️ Ver
+                                                  </button>
+                                                </>
+                                              )}
+                                            </span>
+                                          ) : (
+                                            <span className="text-amber-700">⏳ Pendiente de subir</span>
+                                          )}
+                                        </p>
+                                      ) : (
+                                        <p className="text-sm text-gray-500">Se solicitará tras la aprobación.</p>
+                                      )}
+                                    </>
+                                  )}
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-shrink-0">
                                   {/* Butonul "Recordar Justificante" apare DOAR în tab-urile unde managerii pot gestiona solicitările altora */}
-                                  {/* În "Mis Solicitudes" nu apare pentru că toate solicitările sunt ale utilizatorului curent */}
                                   {isManager && !isMisSolicitudesTab && (
                                     <button
                                       onClick={() => handleRecordarJustificante(solicitud)}
@@ -7489,12 +8220,14 @@ export default function SolicitudesPage() {
                                       )}
                                     </button>
                                   )}
-                                  <button
-                                    onClick={() => openUploadJustificanteModal(solicitud)}
-                                    className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm"
-                                  >
-                                    📤 Cargar Justificante
-                                  </button>
+                                  {!tieneJustificanteCerere && (
+                                    <button
+                                      onClick={() => openUploadJustificanteModal(solicitud)}
+                                      className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm"
+                                    >
+                                      📤 Cargar Justificante
+                                    </button>
+                                  )}
                                   {/* Buton "No Necesita Justificante" doar pentru Permiso Retribuido și manageri */}
                                   {esPermisoRetribuido && isManager && (() => {
                                     const noNecesitaJustificante = solicitud.no_necesita_justificante === true || 
@@ -7844,13 +8577,14 @@ export default function SolicitudesPage() {
                     <span className="text-lg">⏳</span>
                     <span>Aprobación</span>
                     {(() => {
-                      // Numără cererile pendiente
+                      // Numără cererile pendiente (Permiso Retribuido, BAJA_VOLUNTARIA, Ausencias justificada)
                       const pendientes = allSolicitudes.filter(s => {
                         const tipo = (s.tipo || s.TIPO || '').toLowerCase();
                         const estado = (s.estado || s.ESTADO || '').toLowerCase();
                         const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
                         const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
-                        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria);
+                        const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
+                        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada);
                       }).length;
                       return pendientes > 0 ? (
                         <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -8168,6 +8902,7 @@ export default function SolicitudesPage() {
                             formatFechaFlexible={formatFechaFlexible}
                             getTipoColor={getTipoColor}
                             formatHora={formatHora}
+                            getStatusColor={getStatusColor}
                           />
                         );
                       }
@@ -8330,10 +9065,23 @@ export default function SolicitudesPage() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-2 mt-2">
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
                                   <span className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${getTipoColor(item.TIPO || item.tipo)}`}>
                                     {item.TIPO || item.tipo}
                                   </span>
+                                  {/* Status (Pendiente / Aprobada / Rechazada) pentru Ausencias justificada și Permiso Retribuido */}
+                                  {(tipo => {
+                                    const t = (tipo || '').toLowerCase();
+                                    const isJustificada = t.includes('ausencia') && t.includes('justificada');
+                                    const isPermiso = t.includes('permiso') && t.includes('retribuido');
+                                    if (!isJustificada && !isPermiso) return null;
+                                    const estado = (item.estado || item.ESTADO || 'Aprobada').trim();
+                                    return (
+                                      <span className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${getStatusColor(estado)}`} title={`Estado: ${estado}`}>
+                                        {estado === 'Aprobada' ? '✅ Aprobada' : estado === 'Pendiente' ? '⏳ Pendiente' : '❌ Rechazada'}
+                                      </span>
+                                    );
+                                  })(item.TIPO || item.tipo)}
                                 </div>
                               </>
                             ) : selectedTab === 'baja' ? (
@@ -8456,12 +9204,13 @@ export default function SolicitudesPage() {
                               const esPendiente = estado === 'pendiente';
                               const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
                               const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
+                              const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
                               
                               // Butoane pentru cererile pendiente în tab-ul "aprobacion" sau în tab-urile specifice
                               const showApprovalButtons = canAccessAllTabs && esPendiente && 
-                                ((selectedTab === 'aprobacion' && (esBajaVoluntaria || esPermisoRetribuido)) ||
+                                ((selectedTab === 'aprobacion' && (esBajaVoluntaria || esPermisoRetribuido || esAusenciaJustificada)) ||
                                  (selectedTab === 'baja_voluntaria' && esBajaVoluntaria) ||
-                                 (selectedTab !== 'baja_voluntaria' && selectedTab !== 'aprobacion' && esPermisoRetribuido));
+                                 (selectedTab !== 'baja_voluntaria' && selectedTab !== 'aprobacion' && (esPermisoRetribuido || esAusenciaJustificada)));
                               
                               if (showApprovalButtons) {
                                 // Butoane pentru BAJA_VOLUNTARIA (cu preview)
@@ -8512,6 +9261,29 @@ export default function SolicitudesPage() {
                                         disabled={isOperationLoading('reject-permiso')}
                                         className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                         title="Rechazar permiso retribuido"
+                                      >
+                                        <span className="text-2xl">❌</span>
+                                      </button>
+                                    </>
+                                  );
+                                }
+                                // Butoane pentru Ausencias justificada
+                                if (esAusenciaJustificada) {
+                                  return (
+                                    <>
+                                      <button
+                                        onClick={() => handleApproveAusenciaJustificada(item)}
+                                        disabled={isOperationLoading('approve-ausencia')}
+                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Aprobar ausencia justificada"
+                                      >
+                                        <span className="text-2xl">✅</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectPermisoRetribuidoClick(item)}
+                                        disabled={isOperationLoading('reject-permiso')}
+                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Rechazar ausencia justificada"
                                       >
                                         <span className="text-2xl">❌</span>
                                       </button>
@@ -8874,7 +9646,179 @@ export default function SolicitudesPage() {
                         )}
                       </div>
                       
-                      {selectedTab === 'ausencias' && (item.MOTIVO || item.motivo) && (
+                      {/* Detalii Ausencias justificada (tab Aprobación / Todas): tipo, hora cita, centro, descripción + Ver/Descargar justificante. Siempre mostrar "Justificante para la solicitud: No cargado." cuando está pendiente y no hay doc. */}
+                      {(() => {
+                        const t = (item.tipo || item.TIPO || item.tipo_solicitud || item.TIPO_SOLICITUD || '').toLowerCase();
+                        const esAusenciaJustificada = t.includes('ausencias') && t.includes('justificada');
+                        if (!esAusenciaJustificada) return null;
+                        const labels = {
+                          cita_medica: 'Cita médica',
+                          cita_especialista: 'Cita con especialista',
+                          justificante_medico_sin_baja: 'Justificante médico (sin baja)',
+                          deber_inexcusable: 'Deber inexcusable',
+                          incidencia_puntual: 'Incidencia puntual/urgencia',
+                          otro: 'Otro',
+                        };
+                        const tipoLabel = labels[item.tipo_justificante] || item.tipo_justificante || '—';
+                        // En "Todas" los ítems aprobados vienen de allAusencias (item.id = ausencia id). El mapa está keyed por solicitud_id.
+                        const solicitudIdForMap = item.solicitud_id ?? item.SOLICITUD_ID ?? item.id ?? item.ID;
+                        const documento = justificanteDocumentosMap.get(solicitudIdForMap);
+                        return (
+                          <div className="mb-4 space-y-3">
+                            <div className="p-4 rounded-lg border-2 border-cyan-200 bg-cyan-50/80">
+                              <span className="block text-xs font-bold text-cyan-800 mb-2">📋 Detalles ausencia justificada</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div><span className="text-gray-600">Tipo justificante:</span> <span className="font-medium text-gray-900">{tipoLabel}</span></div>
+                                {(item.hora_cita || item.HORA_CITA) && <div><span className="text-gray-600">Hora cita:</span> <span className="font-medium text-gray-900">{item.hora_cita || item.HORA_CITA}</span></div>}
+                                {(item.centro_medico || item.CENTRO_MEDICO) && <div className="sm:col-span-2"><span className="text-gray-600">Centro médico:</span> <span className="font-medium text-gray-900">{item.centro_medico || item.CENTRO_MEDICO}</span></div>}
+                                {(item.descripcion_otro || item.DESCRIPCION_OTRO) && <div className="sm:col-span-2"><span className="text-gray-600">Descripción (otro):</span> <span className="font-medium text-gray-900">{item.descripcion_otro || item.DESCRIPCION_OTRO}</span></div>}
+                              </div>
+                            </div>
+                            {(item.motivo || item.MOTIVO) && (
+                              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                <span className="block text-xs font-medium text-blue-700 mb-1">Motivo</span>
+                                <p className="text-sm text-blue-800">{item.motivo || item.MOTIVO}</p>
+                              </div>
+                            )}
+                            {/* Justificante para la solicitud (cerere) - igual que en Mis Solicitudes */}
+                            <div className="mt-4 p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 space-y-3">
+                              <p className="text-sm font-medium text-gray-700 mb-1">Justificante para la solicitud:</p>
+                              {documento ? (
+                                <p className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
+                                  ✅ Cargado
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const token = localStorage.getItem('auth_token');
+                                      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
+                                      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                                        .then((res) => {
+                                          if (!res.ok) throw new Error('No autorizado');
+                                          return res.blob();
+                                        })
+                                        .then((blob) => {
+                                          const blobUrl = window.URL.createObjectURL(blob);
+                                          const a = document.createElement('a');
+                                          a.href = blobUrl;
+                                          a.download = documento.nombre_archivo || 'justificante';
+                                          document.body.appendChild(a);
+                                          a.click();
+                                          window.URL.revokeObjectURL(blobUrl);
+                                          document.body.removeChild(a);
+                                        })
+                                        .catch(() => setErrorMsg('Error al descargar el justificante. Inicia sesión si es necesario.'));
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                                  >
+                                    📥 Descargar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const token = localStorage.getItem('auth_token');
+                                      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
+                                      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+                                        .then((res) => {
+                                          if (!res.ok) throw new Error('No autorizado');
+                                          return res.blob();
+                                        })
+                                        .then((blob) => {
+                                          const blobUrl = window.URL.createObjectURL(blob);
+                                          setJustificantePreview({ isOpen: true, blobUrl, fileName: documento.nombre_archivo || 'Justificante' });
+                                        })
+                                        .catch(() => setErrorMsg('Error al abrir el justificante. Inicia sesión si es necesario.'));
+                                    }}
+                                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                                  >
+                                    👁️ Ver
+                                  </button>
+                                </p>
+                              ) : (
+                                <p className="text-sm text-gray-600">No cargado.</p>
+                              )}
+                              <p className="text-sm font-medium text-gray-700 mt-2 mb-1">Justificante de presencia a la cita:</p>
+                              {(item.estado || item.ESTADO || '').toLowerCase() === 'pendiente' ? (
+                                <p className="text-sm text-gray-500">Se solicitará tras la aprobación.</p>
+                              ) : (() => {
+                                const ausenciaId = item.id ?? item.ID;
+                                const justificantesList = ausenciaId != null ? justificantesByAusenciaIdMap.get(Number(ausenciaId)) : null;
+                                const presencia = justificantesList?.find(j => {
+                                  const t = (j.tipo || j.TIPO || j.tipo_documento || j.doc_tipo_documento || '').toLowerCase();
+                                  return t === 'presencia' || t.includes('presencia');
+                                });
+                                const estadoPresencia = (presencia?.doc_solicitado_estado || '').toLowerCase();
+                                const tieneDocId = presencia?.doc_id != null && presencia?.doc_id !== '';
+                                const tienePresenciaCargada = presencia && (tieneDocId || estadoPresencia === 'completado');
+                                const nombrePresencia = presencia?.doc_nombre_archivo ?? presencia?.doc_NOMBRE_ARCHIVO ?? 'Justificante presencia';
+                                const descargarPresencia = async (e, forPreview = false) => {
+                                  e.stopPropagation();
+                                  const token = localStorage.getItem('auth_token');
+                                  const codigo = item.codigo || item.CODIGO || '';
+                                  const emailEnc = encodeURIComponent(item.email || item['CORREO ELECTRONICO'] || '');
+                                  if (tieneDocId) {
+                                    const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${presencia.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(nombrePresencia)}`;
+                                    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                    if (!res.ok) throw new Error();
+                                    const blob = await res.blob();
+                                    if (forPreview) {
+                                      setJustificantePreview({ isOpen: true, blobUrl: window.URL.createObjectURL(blob), fileName: nombrePresencia });
+                                    } else {
+                                      const a = document.createElement('a');
+                                      a.href = window.URL.createObjectURL(blob);
+                                      a.download = nombrePresencia;
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      window.URL.revokeObjectURL(a.href);
+                                      document.body.removeChild(a);
+                                    }
+                                    return;
+                                  }
+                                  try {
+                                    const r = await fetch(`${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}?empleadoId=${encodeURIComponent(codigo)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                    if (!r.ok) throw new Error();
+                                    const data = await r.json();
+                                    const docs = Array.isArray(data) ? data : (data?.data || []);
+                                    const docPresencia = docs.find(d => (d.tipo_documento || '').toLowerCase().includes('presencia'));
+                                    const doc = docPresencia || docs.find(d => (d.tipo_documento || '').toLowerCase().includes('justificante'));
+                                    if (!doc?.doc_id) { setErrorMsg('No se encontró el documento.'); return; }
+                                    const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${doc.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(doc.nombre_archivo || 'justificante-presencia')}`;
+                                    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+                                    if (!res.ok) throw new Error();
+                                    const blob = await res.blob();
+                                    if (forPreview) {
+                                      setJustificantePreview({ isOpen: true, blobUrl: window.URL.createObjectURL(blob), fileName: doc.nombre_archivo || 'Justificante presencia' });
+                                    } else {
+                                      const a = document.createElement('a');
+                                      a.href = window.URL.createObjectURL(blob);
+                                      a.download = doc.nombre_archivo || 'justificante-presencia';
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      window.URL.revokeObjectURL(a.href);
+                                      document.body.removeChild(a);
+                                    }
+                                  } catch {
+                                    setErrorMsg('Error al descargar. Inicia sesión si es necesario.');
+                                  }
+                                };
+                                if (tienePresenciaCargada) {
+                                  return (
+                                    <p className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
+                                      ✅ Completado
+                                      <button type="button" onClick={(e) => descargarPresencia(e, false)} className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700">📥 Descargar</button>
+                                      <button type="button" onClick={(e) => descargarPresencia(e, true)} className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700">👁️ Ver</button>
+                                    </p>
+                                  );
+                                }
+                                return <p className="text-sm text-amber-700">Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.</p>;
+                              })()}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      
+                      {selectedTab === 'ausencias' && !((item.tipo || item.TIPO || '').toLowerCase().includes('ausencias') && (item.tipo || item.TIPO || '').toLowerCase().includes('justificada')) && (item.MOTIVO || item.motivo) && (
                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-4">
                           <span className="block text-xs font-medium text-blue-700 mb-1">Motivo</span>
                           <p className="text-sm text-blue-800">{item.MOTIVO || item.motivo}</p>
@@ -9112,7 +10056,7 @@ export default function SolicitudesPage() {
                                     onClick={() => handleMarcarSinAusencia(item.id || item.ID)}
                                     disabled={isOperationLoading('marcar-sin-ausencia')}
                                     className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Marcar como sin ausencia (no ha faltado de la muncă)"
+                                    title="Marcar como sin ausencia (no ha faltado al trabajo)"
                                   >
                                     {isOperationLoading('marcar-sin-ausencia') ? (
                                       <span className="flex items-center gap-2">
@@ -9876,6 +10820,11 @@ export default function SolicitudesPage() {
                       setFechaInicio('');
                       setFechaFin('');
                       setMotivo('');
+                      setTipoJustificante('');
+                      setHoraCita('');
+                      setCentroMedico('');
+                      setDescripcionOtro('');
+                      setArchivoJustificante(null);
                       // Revine la tab-ul corespunzător
                       if (isManager) {
                         setActiveTab('todas');
@@ -9993,6 +10942,13 @@ export default function SolicitudesPage() {
                       setTipo(e.target.value);
                       setFechaInicio('');
                       setFechaFin('');
+                      if (e.target.value !== 'Ausencias justificada') {
+                        setTipoJustificante('');
+                        setHoraCita('');
+                        setCentroMedico('');
+                        setDescripcionOtro('');
+                        setArchivoJustificante(null);
+                      }
                     }}
                     disabled={editingSolicitud !== null}
                     className="relative w-full px-4 py-4 text-base font-semibold rounded-xl border-2 transition-all duration-300 shadow-md hover:shadow-xl focus:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
@@ -10408,7 +11364,7 @@ export default function SolicitudesPage() {
                                 // Fallback: use maxAllowed to estimate group size if allUsers is not loaded
                                 // maxAllowed is calculated as percentage of groupSize, so we can reverse it
                                 // For Vacaciones: maxAllowed = Math.ceil(groupSize * percentage), so groupSize ≈ maxAllowed / percentage
-                                const percentage = 0.10; // 10% all year
+                                const percentage = vacacionesDisponibilidadPct / 100;
                                 const estimatedGroupSize = Math.ceil(firstAvailability.maxAllowed / percentage);
                                 totalInGroup = estimatedGroupSize;
                                 totalInCenter = 'N/A'; // Can't calculate without allUsers
@@ -10485,7 +11441,7 @@ export default function SolicitudesPage() {
                           📊 Reglas de Disponibilidad:
                         </p>
                         <p className="text-xs text-blue-600 mt-1">
-                            • {tipo === 'Vacaciones' ? '10%' : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
+                            • {tipo === 'Vacaciones' ? `${vacacionesDisponibilidadPct}%` : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
                         </p>
                       </div>
                       )}
@@ -10846,10 +11802,10 @@ export default function SolicitudesPage() {
                   </div>
                 )}
 
-                {/* Input date pentru Ausencias justificada */}
+                {/* Ausencias justificada: Tipo de justificante + Fecha + condiționale + adjunto */}
                 {tipo === 'Ausencias justificada' && (
-                  <div 
-                    className="relative group p-4 sm:p-6"
+                  <div
+                    className="relative group p-4 sm:p-6 space-y-6"
                     style={{
                       background: 'linear-gradient(135deg, rgba(8, 145, 178, 0.05) 0%, rgba(6, 122, 154, 0.05) 100%)',
                       backdropFilter: 'blur(10px)',
@@ -10858,23 +11814,111 @@ export default function SolicitudesPage() {
                       boxShadow: '0 10px 30px rgba(8, 145, 178, 0.15)'
                     }}
                   >
-                    <div className="relative flex items-center mb-4">
-                      <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg"
-                        style={{
-                          background: 'linear-gradient(135deg, #0891b2 0%, #0679a2 100%)',
-                          boxShadow: '0 8px 20px rgba(8, 145, 178, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                        }}
-                      >
-                        <span className="text-2xl">📅</span>
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900">
-                        Fecha de la ausencia
-                      </h3>
-                    </div>
+                    {/* Tipo de justificante (obligatoriu) */}
                     <div>
+                      <div className="relative flex items-center mb-4">
+                        <div
+                          className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg"
+                          style={{
+                            background: 'linear-gradient(135deg, #0891b2 0%, #0679a2 100%)',
+                            boxShadow: '0 8px 20px rgba(8, 145, 178, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+                          }}
+                        >
+                          <span className="text-2xl">📋</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900">
+                          Tipo de justificante <span className="text-red-500">*</span>
+                        </h3>
+                      </div>
+                      <select
+                        id="ausencia-tipo-justificante"
+                        value={tipoJustificante}
+                        onChange={(e) => {
+                          setTipoJustificante(e.target.value);
+                          setDescripcionOtro('');
+                          setHoraCita('');
+                          setCentroMedico('');
+                        }}
+                        required
+                        className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg border-cyan-200 focus:ring-cyan-300/50 focus:border-cyan-400"
+                      >
+                        <option value="">Selecciona el tipo de justificante</option>
+                        <option value="cita_medica">Cita médica (médico de cabecera)</option>
+                        <option value="cita_especialista">Cita con especialista</option>
+                        <option value="justificante_medico_sin_baja">Justificante médico (sin baja)</option>
+                        <option value="deber_inexcusable">Deber inexcusable (cita oficial)</option>
+                        <option value="incidencia_urgencia">Incidencia puntual / urgencia</option>
+                        <option value="otro">Otro</option>
+                      </select>
+                    </div>
+
+                    {/* Si "Otro" → Describe el motivo (obligatoriu) */}
+                    {tipoJustificante === 'otro' && (
+                      <div>
+                        <label htmlFor="ausencia-descripcion-otro" className="block text-sm font-bold text-gray-700 mb-2">
+                          Describe el motivo <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          id="ausencia-descripcion-otro"
+                          value={descripcionOtro}
+                          onChange={(e) => setDescripcionOtro(e.target.value)}
+                          placeholder="Describe el motivo de la ausencia..."
+                          rows={3}
+                          required
+                          className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg border-cyan-200 focus:ring-cyan-300/50 focus:border-cyan-400"
+                        />
+                      </div>
+                    )}
+
+                    {/* Si "Cita médica" o "Cita con especialista" → Hora + Centro médico (opcionales) */}
+                    {(tipoJustificante === 'cita_medica' || tipoJustificante === 'cita_especialista') && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="ausencia-hora-cita" className="block text-sm font-bold text-gray-700 mb-2">
+                            Hora de la cita <span className="text-gray-500 font-normal">(opcional)</span>
+                          </label>
+                          <input
+                            id="ausencia-hora-cita"
+                            type="time"
+                            value={horaCita}
+                            onChange={(e) => setHoraCita(e.target.value)}
+                            className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg border-cyan-200 focus:ring-cyan-300/50 focus:border-cyan-400"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="ausencia-centro-medico" className="block text-sm font-bold text-gray-700 mb-2">
+                            Centro médico <span className="text-gray-500 font-normal">(opcional)</span>
+                          </label>
+                          <input
+                            id="ausencia-centro-medico"
+                            type="text"
+                            value={centroMedico}
+                            onChange={(e) => setCentroMedico(e.target.value)}
+                            placeholder="Ej: Centro Salud Madrid"
+                            className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg border-cyan-200 focus:ring-cyan-300/50 focus:border-cyan-400"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fecha de la ausencia */}
+                    <div>
+                      <div className="relative flex items-center mb-4">
+                        <div
+                          className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg"
+                          style={{
+                            background: 'linear-gradient(135deg, #0891b2 0%, #0679a2 100%)',
+                            boxShadow: '0 8px 20px rgba(8, 145, 178, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+                          }}
+                        >
+                          <span className="text-2xl">📅</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900">
+                          Fecha de la ausencia <span className="text-red-500">*</span>
+                        </h3>
+                      </div>
                       <label htmlFor="ausencia-justificada-fecha" className="block text-sm font-bold text-gray-700 mb-2">
-                        Fecha
+                        Fecha <span className="text-red-500">*</span>
                       </label>
                       <input
                         id="ausencia-justificada-fecha"
@@ -10882,13 +11926,33 @@ export default function SolicitudesPage() {
                         value={fechaInicio}
                         onChange={(e) => {
                           setFechaInicio(e.target.value);
-                          setFechaFin(e.target.value); // Setează și fecha fin la aceeași valoare
+                          setFechaFin(e.target.value);
                         }}
                         className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg border-cyan-200 focus:ring-cyan-300/50 focus:border-cyan-400"
                       />
                     </div>
-                    {/* Mesaj de avertizare pentru Ausencias justificada */}
-                    <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+
+                    {/* Adjuntar justificante (opcional) */}
+                    <div>
+                      <label htmlFor="ausencia-archivo-justificante" className="block text-sm font-bold text-gray-700 mb-2">
+                        Adjuntar justificante <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="ausencia-archivo-justificante"
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                        onChange={(e) => setArchivoJustificante(e.target.files?.[0] || null)}
+                        className="w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-4 bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg border-cyan-200 focus:ring-cyan-300/50 focus:border-cyan-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-medium file:bg-cyan-100 file:text-cyan-800"
+                      />
+                      {archivoJustificante && (
+                        <p className="text-sm text-gray-600 mt-2">
+                          📎 {archivoJustificante.name}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Mesaj de avertizare */}
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
                       <div className="flex items-start">
                         <div className="flex-shrink-0">
                           <span className="text-2xl">⚠️</span>
@@ -11384,10 +12448,10 @@ export default function SolicitudesPage() {
         </div>
       </Modal>
 
-      {/* Modal pentru respingere Permiso Retribuido cu mesaj personalizat */}
+      {/* Modal pentru respingere solicitud pendiente (Permiso Retribuido / Ausencias justificada) */}
       <Modal
         isOpen={rejectPermisoModal.isOpen}
-        onClose={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '' })}
+        onClose={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '', tipoSolicitud: 'Permiso Retribuido' })}
         title=""
         size="md"
         className="max-w-lg"
@@ -11400,12 +12464,12 @@ export default function SolicitudesPage() {
           
           {/* Titlu */}
           <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
-            ¿Rechazar permiso retribuido?
+            ¿Rechazar {rejectPermisoModal.tipoSolicitud === 'Ausencias justificada' ? 'ausencia justificada' : 'permiso retribuido'}?
           </h3>
           
           {/* Mesaj de confirmare */}
           <p className="text-gray-600 mb-4 text-center">
-            ¿Estás seguro de que deseas rechazar este permiso retribuido? Esta acción notificará al empleado.
+            ¿Estás seguro de que deseas rechazar esta solicitud? Esta acción notificará al empleado.
           </p>
 
           {/* Câmp pentru mesaj personalizat */}
@@ -11421,7 +12485,7 @@ export default function SolicitudesPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Este mensaje se enviará por email al empleado junto con la notificación de que se ha rechazado su permiso retribuido.
+              Este mensaje se enviará por email al empleado junto con la notificación de rechazo.
             </p>
           </div>
           
@@ -11434,7 +12498,7 @@ export default function SolicitudesPage() {
               Cancelar
             </button>
             <button
-              onClick={handleRejectPermisoRetribuido}
+              onClick={handleRejectSolicitudPendiente}
               disabled={isOperationLoading('reject-permiso')}
               className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
@@ -12203,6 +13267,44 @@ export default function SolicitudesPage() {
         )}
       </Modal>
 
+      {/* Modal Preview Justificante (Ausencias justificada) */}
+      <Modal
+        isOpen={justificantePreview.isOpen}
+        onClose={() => {
+          if (justificantePreview.blobUrl) {
+            URL.revokeObjectURL(justificantePreview.blobUrl);
+          }
+          setJustificantePreview({ isOpen: false, blobUrl: null, fileName: '' });
+        }}
+        title={`Vista previa - ${justificantePreview.fileName || 'Justificante'}`}
+        size="lg"
+        className="max-w-4xl"
+      >
+        {justificantePreview.blobUrl && (
+          <div className="space-y-4">
+            <div className="border-2 border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ height: '70vh', minHeight: '400px' }}>
+              <iframe
+                src={justificantePreview.blobUrl}
+                className="w-full h-full"
+                title="Preview justificante"
+              />
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (justificantePreview.blobUrl) URL.revokeObjectURL(justificantePreview.blobUrl);
+                  setJustificantePreview({ isOpen: false, blobUrl: null, fileName: '' });
+                }}
+                className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Modal Preview PDF Baja Voluntaria */}
       <Modal
         isOpen={bajaVoluntariaPreview.isOpen}
@@ -12643,6 +13745,57 @@ export default function SolicitudesPage() {
           <p className="text-sm text-gray-600">
             Las fechas dentro de estos periodos no se podrán solicitar como vacaciones. Puedes bloquear meses enteros con los checkboxes o intervalos concretos abajo.
           </p>
+          {canAccessAllTabs && (
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+              <h4 className="text-sm font-semibold text-gray-800 mb-1">Disponibilidad de vacaciones (mismo grupo, mismo día)</h4>
+              <p className="text-xs text-gray-600 mb-2">
+                Cuántas personas del mismo grupo pueden estar de vacaciones a la vez: porcentaje del tamaño del grupo (mínimo 1). Se aplica en el calendario y al aprobar solicitudes.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Porcentaje (%)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    step={0.5}
+                    value={vacacionPctDraft}
+                    onChange={(e) => setVacacionPctDraft(e.target.value)}
+                    className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={savingVacacionPct}
+                  onClick={async () => {
+                    const n = Number(vacacionPctDraft);
+                    if (!Number.isFinite(n) || n < 1 || n > 100) {
+                      setErrorMsg('Indica un porcentaje entre 1 y 100.');
+                      return;
+                    }
+                    setSavingVacacionPct(true);
+                    setErrorMsg('');
+                    try {
+                      await callApi(routes.putVacacionesDisponibilidadPorcentaje, {
+                        method: 'PUT',
+                        body: JSON.stringify({ porcentaje: n }),
+                        headers: { 'Content-Type': 'application/json' },
+                      });
+                      await fetchVacacionesDisponibilidadPct();
+                      setVacacionPctDraft(String(n));
+                    } catch (e) {
+                      setErrorMsg(e?.message || 'Error al guardar el porcentaje.');
+                    } finally {
+                      setSavingVacacionPct(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
+                >
+                  {savingVacacionPct ? 'Guardando…' : 'Guardar porcentaje'}
+                </button>
+              </div>
+            </div>
+          )}
           {/* Bloquear por mes entero: año + 12 checkboxes */}
           <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
             <h4 className="text-sm font-semibold text-gray-800 mb-2">Bloquear mes entero</h4>
@@ -12812,6 +13965,11 @@ export default function SolicitudesPage() {
           setFechaFin('');
           setFechaUltimoDiaTrabajo('');
           setMotivo('');
+          setTipoJustificante('');
+          setHoraCita('');
+          setCentroMedico('');
+          setDescripcionOtro('');
+          setArchivoJustificante(null);
           setManagerAutoApprove(true);
         }}
         title="Crear Solicitud para Empleado"
@@ -12996,6 +14154,11 @@ export default function SolicitudesPage() {
                 setFechaFin('');
                 setFechaUltimoDiaTrabajo('');
                 setMotivo('');
+                setTipoJustificante('');
+                setHoraCita('');
+                setCentroMedico('');
+                setDescripcionOtro('');
+                setArchivoJustificante(null);
                 setManagerAutoApprove(true);
                 setErrorMsg('');
                 setSuccessMsg('');

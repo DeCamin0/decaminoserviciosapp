@@ -208,6 +208,7 @@
     .servicios-table tr.radio-row td { vertical-align: middle; }
     .servicios-table .col-radio { width: 28px; text-align: center; }
     .servicios-table .col-radio input { width: auto; margin: 0; accent-color: #2563A8; }
+    .servicios-table .recuperacion-incl { font-size: 0.75rem; color: #666; font-weight: 600; }
     .servicios-table .precio-block { line-height: 1.3; }
     .servicios-variante-note {
       font-size: 0.75rem;
@@ -425,7 +426,25 @@
         : '');
 
       var ofertaEconomicaRows = null;
+      var ofertaOriginal = null;
       var esSoloPiscina = false;
+      function buildRecuperacionAguaRow(precioSinIva) {
+        var p = (precioSinIva != null && !isNaN(Number(precioSinIva))) ? Number(precioSinIva) : 650;
+        var conIva = Math.round(p * 1.21 * 100) / 100;
+        return {
+          descripcion: 'Recuperación de Agua',
+          mensualidadSinIva: p,
+          mensualidadConIva: conIva,
+          anualidadSinIva: p,
+          anualidadConIva: conIva
+        };
+      }
+      var RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(650);
+
+      function isMantenimientoInvernalRow(desc) {
+        if (!desc || typeof desc !== 'string') return false;
+        return desc.indexOf('Mantenimiento invernal') !== -1;
+      }
 
       function fmtNum(n) {
         if (n == null || isNaN(n)) return '-';
@@ -459,8 +478,16 @@
         oferta.forEach(function(row, idx) {
           var mens = fmtNum(row.mensualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.mensualidadConIva) + '€ IVA incl.</small>';
           var anu = esSoloPiscina ? '' : (fmtNum(row.anualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.anualidadConIva) + '€ IVA incl.</small>');
-          var input = hasVariantes ? '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check">' : '';
-          rowsHtml += '<tr class="radio-row"><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
+          var isInvernal = isMantenimientoInvernalRow(row.descripcion);
+          var isRecuperacion = row.descripcion === 'Recuperación de Agua';
+          var dataAttr = isInvernal ? ' data-invernal="1"' : '';
+          var input = '';
+          if (hasVariantes && !isRecuperacion) {
+            input = '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check"' + dataAttr + '>';
+          } else if (isRecuperacion) {
+            input = '<span class="recuperacion-incl" title="Incluido al renunciar al mantenimiento invernal">Incl.</span>';
+          }
+          rowsHtml += '<tr class="radio-row' + (isRecuperacion ? ' recuperacion-row' : '') + '"><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
           if (!esSoloPiscina) rowsHtml += '<td class="precio-block">' + anu + '</td>';
           rowsHtml += '</tr>';
         });
@@ -468,6 +495,22 @@
         if (hasVariantes) {
           tbody.querySelectorAll('input[name="selected_oferta"]').forEach(function(cb) {
             cb.addEventListener('change', updateSubmitState);
+          });
+          var conRecuperacion = ofertaOriginal && oferta.length === ofertaOriginal.length + 1 && oferta[oferta.length - 1].descripcion === 'Recuperación de Agua';
+          if (!conRecuperacion) {
+            tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) { cb.checked = true; });
+          }
+          tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) {
+            cb.addEventListener('change', function onInvernalChange() {
+              if (this.checked) {
+                ofertaEconomicaRows = ofertaOriginal.slice();
+                renderServiciosContractados(ofertaEconomicaRows, esSoloPiscina);
+              } else {
+                ofertaEconomicaRows = ofertaOriginal.slice();
+                ofertaEconomicaRows.push(buildRecuperacionAguaRow(window.recuperacionAguaPrecio));
+                renderServiciosContractados(ofertaEconomicaRows, esSoloPiscina);
+              }
+            });
           });
         }
         var datosPiscinaSection = document.getElementById('datos-piscina-section');
@@ -508,8 +551,17 @@
               if (data.cif) document.getElementById('cif').value = data.cif;
               if (data.direccion) document.getElementById('direccion').value = data.direccion;
               if (data.iban) document.getElementById('iban').value = data.iban;
+              if (data.recuperacion_agua_precio != null && !isNaN(Number(data.recuperacion_agua_precio))) {
+                window.recuperacionAguaPrecio = Number(data.recuperacion_agua_precio);
+                RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(window.recuperacionAguaPrecio);
+              } else {
+                window.recuperacionAguaPrecio = 650;
+              }
               if (data.oferta_economica && data.oferta_economica.length > 0) {
-                renderServiciosContractados(data.oferta_economica, data.es_solo_piscina);
+                ofertaOriginal = data.oferta_economica;
+                ofertaEconomicaRows = data.oferta_economica.slice();
+                esSoloPiscina = !!data.es_solo_piscina;
+                renderServiciosContractados(ofertaEconomicaRows, data.es_solo_piscina);
               }
             }
             if (typeof updateSubmitState === 'function') updateSubmitState();
@@ -632,6 +684,7 @@
         }
 
         var selectedOfertaIndices = [];
+        var recuperacionAgua = false;
         if (ofertaEconomicaRows && ofertaEconomicaRows.length > 0) {
           var checked = document.querySelectorAll('input[name="selected_oferta"]:checked');
           if (checked.length > 0) {
@@ -639,8 +692,13 @@
           } else if (ofertaEconomicaRows.length === 1) {
             selectedOfertaIndices = [0];
           }
+          var tieneRecuperacionRow = ofertaOriginal && ofertaEconomicaRows.length === ofertaOriginal.length + 1 && ofertaEconomicaRows[ofertaEconomicaRows.length - 1].descripcion === 'Recuperación de Agua';
+          if (tieneRecuperacionRow) {
+            recuperacionAgua = true;
+            selectedOfertaIndices = selectedOfertaIndices.filter(function(i) { return i < ofertaOriginal.length; });
+          }
         }
-        if (selectedOfertaIndices.length === 0 && ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
+        if (selectedOfertaIndices.length === 0 && !recuperacionAgua && ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
           showMessage('Seleccione al menos un servicio de la lista.', true);
           return;
         }
@@ -662,8 +720,9 @@
           fecha_inicio_servicio: document.getElementById('fecha_inicio_servicio').value.trim(),
           firma_base64: signaturePad.toDataURL('image/png'),
           selected_oferta_indices: selectedOfertaIndices,
-          selected_oferta_index: selectedOfertaIndices.length > 0 ? selectedOfertaIndices[0] : 0
+          selected_oferta_index: selectedOfertaIndices.length > 0 ? selectedOfertaIndices[0] : (recuperacionAgua ? -1 : 0)
         };
+        if (recuperacionAgua) payload.recuperacion_agua = true;
         if (esSoloPiscina) {
           payload.nombre_presidente = document.getElementById('nombre_presidente').value.trim();
           payload.dni_presidente = document.getElementById('dni_presidente').value.trim();

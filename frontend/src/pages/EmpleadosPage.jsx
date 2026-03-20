@@ -62,37 +62,65 @@ const stripHtml = (str) => {
 const getWelcomeEmailDefault = () => {
   const company = config.COMPANY_NAME || 'la empresa';
   const companyLegal = config.COMPANY_NAME_LEGAL || config.COMPANY_NAME || company;
-  const appName = config.APP_NAME || config.COMPANY_NAME || 'De Camino';
   const appUrl = config.APP_URL || 'https://app.decaminoservicios.com';
   return {
-    subiect: `Bienvenido/a a ${company} - Acceso a la aplicación interna`,
+    subiect: 'Bienvenido/a – Información sobre la aplicación interna',
     mensaje: `Hola,
 
-Bienvenido/a a ${company}. Estamos encantados de tenerte en el equipo.
+Bienvenido/a a **${company}**. Estamos encantados de tenerte en el equipo.
 
-Deberás utilizar la aplicación interna ${appName} para todas las gestiones laborales.
+Una vez recibas tus datos de acceso, deberás utilizar la **aplicación interna de la empresa** para todas tus gestiones laborales.
 
-El uso de la aplicación es obligatorio y sustituye completamente el uso de documentos en papel.
+El uso de la aplicación es **obligatorio** y sustituye completamente el uso de documentos en papel, así como cualquier otro sistema o aplicación de fichaje o gestión laboral utilizado anteriormente.
 
-La aplicación ${appName} se utiliza para:
-- fichaje y registro de horas trabajadas
-- consulta de horarios y cuadrantes
-- solicitud de vacaciones, días libres y asunto propio
-- acceso a documentación e información interna
+---
 
-📲 Cómo acceder a la aplicación
+📲 ¿Para qué se utiliza la aplicación?
 
-La aplicación no se descarga desde Google Play ni App Store. Se utiliza desde el navegador del móvil o del ordenador.
+La aplicación es la herramienta oficial para:
 
-Accede al siguiente enlace: ${appUrl}
+* Fichaje y registro de horas trabajadas
+* Consulta de horarios y cuadrantes
+* Solicitud de vacaciones, días libres y asuntos propios
+* Acceso a documentación e información interna
 
-Si tienes cualquier problema técnico o duda sobre el uso de la aplicación, puedes contactar con Recursos Humanos.
+---
 
-Un cordial saludo.
+🔐 Datos de acceso
 
-Atentamente:
-RRHH
-${companyLegal}`,
+Tus datos de acceso (usuario y contraseña) **te serán enviados en un correo electrónico separado** por motivos de seguridad.
+
+---
+
+📱 Cómo acceder a la aplicación
+
+La aplicación **no se descarga desde Google Play ni App Store**.
+
+Se utiliza directamente desde el navegador de tu móvil o ordenador:
+
+1. Abre el navegador de tu teléfono (Chrome, Safari, etc.)
+2. Accede al siguiente enlace:
+   👉 ${appUrl}
+3. Introduce tus datos de acceso (cuando los recibas)
+4. Sigue las instrucciones para añadir la aplicación a la pantalla de inicio
+5. Confirma para tener acceso rápido como si fuera una app
+
+---
+
+⚠️ Importante
+
+Te recomendamos cambiar tu contraseña después del primer acceso desde la sección **"Datos Personales"**.
+
+---
+
+Si tienes cualquier problema técnico o duda sobre el uso de la aplicación, puedes contactar con el departamento de Recursos Humanos.
+
+---
+
+Un cordial saludo,
+
+**RRHH**
+**${companyLegal}**`,
   };
 };
 
@@ -7641,7 +7669,7 @@ export default function EmpleadosPage() {
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-semibold text-blue-900">
-                    {emailProgress.status === 'starting' && '⏳ Pregătire...'}
+                    {emailProgress.status === 'starting' && '⏳ Preparando...'}
                     {emailProgress.status === 'sending' && '📧 Se trimit email-uri...'}
                     {emailProgress.status === 'completed' && '✅ Finalizat!'}
                   </span>
@@ -7662,9 +7690,9 @@ export default function EmpleadosPage() {
                 
                 {/* Statistici */}
                 <div className="mt-3 flex items-center justify-between text-xs text-blue-700">
-                  <span>✅ Reușite: {emailProgress.success}</span>
+                  <span>✅ Correctos: {emailProgress.success}</span>
                   {emailProgress.failed > 0 && (
-                    <span className="text-red-600">❌ Eșuate: {emailProgress.failed}</span>
+                    <span className="text-red-600">❌ Fallidos: {emailProgress.failed}</span>
                   )}
                   <span className="font-semibold">
                     {Math.round((emailProgress.current / emailProgress.total) * 100)}%
@@ -8057,9 +8085,9 @@ export default function EmpleadosPage() {
                 
                 {/* Statistici */}
                 <div className="mt-3 flex items-center justify-between text-xs text-orange-700">
-                  <span>✅ Reușite: {documentoTodosProgress.success}</span>
+                  <span>✅ Correctos: {documentoTodosProgress.success}</span>
                   {documentoTodosProgress.failed > 0 && (
-                    <span className="text-red-600">❌ Eșuate: {documentoTodosProgress.failed}</span>
+                    <span className="text-red-600">❌ Fallidos: {documentoTodosProgress.failed}</span>
                   )}
                   <span className="font-semibold">
                     {Math.round((documentoTodosProgress.current / documentoTodosProgress.total) * 100)}%

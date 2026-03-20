@@ -34,7 +34,7 @@ const ServerMonitor = ({ netdataCloudConfig }) => {
       // Testează direct primul server pentru a verifica conectivitatea
       const testServerId = config.spaces[0]?.servers[0]?.id;
       if (!testServerId) {
-        return { success: false, error: 'Nu sunt servere configurate' };
+        return { success: false, error: 'No hay servidores configurados' };
       }
 
       console.log('🔍 Testing connectivity with server:', testServerId);
@@ -55,11 +55,11 @@ const ServerMonitor = ({ netdataCloudConfig }) => {
         return { success: true };
       } else {
         console.log('❌ Connectivity test failed:', response.status);
-        return { success: false, error: `Conectivitate eșuată: ${response.status}` };
+        return { success: false, error: `Conexión fallida: ${response.status}` };
       }
     } catch (error) {
       console.error('❌ Connectivity test error:', error);
-      return { success: false, error: `Eroare de rețea: ${error.message}` };
+      return { success: false, error: `Error de red: ${error.message}` };
     }
   }, [config.apiKey, config.cloudUrl, config.spaces]);
 
@@ -435,21 +435,21 @@ const ServerMonitor = ({ netdataCloudConfig }) => {
             onClick={() => setShowConfig(!showConfig)}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
           >
-            {showConfig ? 'Ascunde Configurare' : 'Configurează Cloud'}
+            {showConfig ? 'Ocultar configuración' : 'Configurar Cloud'}
           </button>
         </div>
       </div>
 
-      {/* Afișare eroare API */}
+      {/* Mostrar error API */}
       {apiError && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center">
             <span className="text-red-600 mr-2">⚠️</span>
             <div>
-              <h4 className="font-semibold text-red-800">Eroare API Netdata Cloud</h4>
+              <h4 className="font-semibold text-red-800">Error API Netdata Cloud</h4>
               <p className="text-sm text-red-700 mt-1">{apiError}</p>
               <p className="text-xs text-red-600 mt-2">
-                Verifică API key-ul și asigură-te că serverele sunt active în Netdata Cloud.
+                Comprueba la API key y que los servidores estén activos en Netdata Cloud.
               </p>
             </div>
           </div>
@@ -459,7 +459,7 @@ const ServerMonitor = ({ netdataCloudConfig }) => {
       {/* Panou de configurare */}
       {showConfig && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-          <h4 className="font-semibold mb-3">Configurare Netdata Cloud:</h4>
+          <h4 className="font-semibold mb-3">Configuración Netdata Cloud:</h4>
           <div className="space-y-3">
             <div className="bg-blue-50 p-3 rounded border-l-4 border-blue-400">
               <p className="text-sm text-blue-800">
@@ -469,18 +469,18 @@ const ServerMonitor = ({ netdataCloudConfig }) => {
                 Space ID: {config.spaces[0].id}
               </p>
               <p className="text-xs text-blue-600">
-                Servere configurate: {config.spaces[0].servers.length}
+                Servidores configurados: {config.spaces[0].servers.length}
               </p>
             </div>
             
             <div className="bg-yellow-50 p-3 rounded border-l-4 border-yellow-400">
               <p className="text-sm text-yellow-800">
-                <strong>Notă:</strong> Dacă serverele apar ca offline, verifică:
+                <strong>Nota:</strong> Si los servidores aparecen como offline, comprueba:
               </p>
               <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
-                <li>API key-ul este valid și nu a expirat</li>
-                <li>Serverele sunt active în Netdata Cloud</li>
-                <li>Endpoint-urile API sunt corecte</li>
+                <li>La API key es válida y no ha expirado</li>
+                <li>Los servidores están activos en Netdata Cloud</li>
+                <li>Los endpoints de la API son correctos</li>
               </ul>
             </div>
           </div>

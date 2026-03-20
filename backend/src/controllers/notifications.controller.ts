@@ -75,8 +75,8 @@ export class NotificationsController {
     return {
       success,
       message: success
-        ? 'Notificare marcată ca citită'
-        : 'Notificare nu a fost găsită',
+        ? 'Notificación marcada como leída'
+        : 'No se encontró la notificación',
     };
   }
 
@@ -88,7 +88,7 @@ export class NotificationsController {
     const count = await this.notificationsService.markAllAsRead(user.userId);
     return {
       success: true,
-      message: `${count} notificări marcate ca citite`,
+      message: `${count} notificaciones marcadas como leídas`,
       count,
     };
   }
@@ -107,7 +107,9 @@ export class NotificationsController {
     );
     return {
       success,
-      message: success ? 'Notificare ștearsă' : 'Notificare nu a fost găsită',
+      message: success
+        ? 'Notificación eliminada'
+        : 'No se encontró la notificación',
     };
   }
 

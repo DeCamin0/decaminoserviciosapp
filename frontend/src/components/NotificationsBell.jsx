@@ -47,7 +47,7 @@ const NotificationsBell = () => {
       const timer = setTimeout(() => {
         setShowNotification({
           type: latestNotification.type || 'info',
-          title: latestNotification.title || 'Nouă notificare',
+          title: latestNotification.title || 'Nueva notificación',
           message: latestNotification.message || latestNotification.content,
           onClose: () => {
             setShowNotification(null);
@@ -84,7 +84,7 @@ const NotificationsBell = () => {
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
-          aria-label="Notificări"
+          aria-label="Notificaciones"
         >
           <Bell className="w-6 h-6" />
           {unreadCount > 0 && (
@@ -102,7 +102,7 @@ const NotificationsBell = () => {
           >
             <div className="p-4 border-b border-gray-200">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-gray-900">Notificări</h3>
+                <h3 className="font-semibold text-gray-900">Notificaciones</h3>
                 {unreadCount > 0 && (
                   <button
                     onClick={() => {
@@ -110,7 +110,7 @@ const NotificationsBell = () => {
                     }}
                     className="text-sm text-blue-600 hover:text-blue-800"
                   >
-                    Marchează toate ca citite
+                    Marcar todas como leídas
                   </button>
                 )}
               </div>
@@ -122,12 +122,12 @@ const NotificationsBell = () => {
                     const granted = await requestNotificationPermission();
                     setHasPermission(granted);
                     if (granted) {
-                      alert('✅ Notificările push sunt acum activate! Vei primi notificări chiar și când aplicația este închisă.');
+                      alert('✅ Las notificaciones push están activadas. Recibirás notificaciones incluso cuando la aplicación esté cerrada.');
                     }
                   }}
                   className="w-full mt-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
                 >
-                  🔔 Activează notificări push
+                  🔔 Activar notificaciones push
                 </button>
               )}
             </div>

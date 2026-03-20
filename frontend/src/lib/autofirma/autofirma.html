@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ro">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Semnează cu AutoFirma</title>
+    <title>Firmar con AutoFirma</title>
     <script type="text/javascript" src="/vendor/autoscript.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -94,33 +94,33 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔐 Semnare Document cu AutoFirma</h1>
+        <h1>🔐 Firmar documento con AutoFirma</h1>
         
         <div class="info">
-            <strong>Document:</strong> <span id="fileName">Se încarcă...</span><br>
-            <strong>Status:</strong> <span id="status">Pregătire...</span>
+            <strong>Documento:</strong> <span id="fileName">Cargando...</span><br>
+            <strong>Estado:</strong> <span id="status">Preparando...</span>
         </div>
 
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <p>Se încarcă MiniApplet...</p>
+            <p>Cargando MiniApplet...</p>
         </div>
 
         <button id="signButton" onclick="semneaza()" disabled>
-            📝 Semnează Document PDF
+            📝 Firmar documento PDF
         </button>
 
         <button id="downloadButton" onclick="descarcaDocument()" style="background-color: #28a745;">
-            📥 Descarcă Document pentru Semnare Manuală
+            📥 Descargar documento para firma manual
         </button>
 
         <button id="uploadButton" onclick="uploadSignedDocument()" style="background-color: #17a2b8; display: none;">
-            ☁️ Trimite Document Semnat la Server
+            ☁️ Enviar documento firmado al servidor
         </button>
 
         <input type="file" id="fileInput" accept=".pdf" style="display: none;" onchange="handleFileSelect(event)">
         <button id="selectFileButton" onclick="document.getElementById('fileInput').click()" style="background-color: #6c757d; display: none;">
-            📁 Selectează Document Semnat
+            📁 Seleccionar documento firmado
         </button>
 
         <div id="statusMessage" class="status" style="display: none;"></div>
@@ -167,7 +167,7 @@
                 // Verifică dacă este valid Base64
                 if (!receivedBase64 || receivedBase64.length < 100) {
                     console.error('❌ pdfBase64 invalid sau prea scurt:', receivedBase64);
-                    updateStatus('Eroare: PDF invalid primit', 'error');
+                    updateStatus('Error: PDF inválido recibido', 'error');
                     return;
                 }
                 
@@ -182,7 +182,7 @@
                 
                 // Actualizează informațiile despre document
                 document.getElementById('fileName').textContent = fileName;
-                updateStatus('Document primit, se verifică AutoScript...', 'info');
+                updateStatus('Documento recibido, comprobando AutoScript...', 'info');
                 
                 // Verifică AutoScript și activează butonul
                 checkAutoScript();
@@ -216,14 +216,14 @@
                     
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('signButton').disabled = false;
-                    updateStatus('AutoScript inițializat cu succes', 'success');
+                    updateStatus('AutoScript inicializado correctamente', 'success');
                 } catch (error) {
                     console.error('❌ Eroare la inițializarea AutoScript:', error);
-                    updateStatus('Eroare la inițializarea AutoScript: ' + error.message, 'error');
+                    updateStatus('Error al inicializar AutoScript: ' + error.message, 'error');
                 }
             } else {
                 console.log('❌ AutoScript nu este disponibil');
-                updateStatus('AutoScript nu este disponibil. Te rog să reîmprospătezi pagina.', 'error');
+                updateStatus('AutoScript no está disponible. Por favor, actualiza la página.', 'error');
             }
         }
 
@@ -241,12 +241,12 @@
         // 🟩 2. Funcția care lansează AutoFirma cu GUI complet
         function semneaza() {
             if (!pdfBase64) {
-                updateStatus('Eroare: Nu s-a primit documentul PDF!', 'error');
+                updateStatus('Error: No se ha recibido el documento PDF.', 'error');
                 return;
             }
 
             try {
-                updateStatus('Se lansează AutoFirma cu GUI complet...', 'info');
+                updateStatus('Iniciando AutoFirma con interfaz gráfica...', 'info');
                 document.getElementById('signButton').disabled = true;
 
                 // Salvează PDF-ul temporar pentru AutoFirma
@@ -261,7 +261,7 @@
 
             } catch (error) {
                 console.error('❌ Eroare la lansarea AutoFirma:', error);
-                updateStatus('Eroare la lansarea AutoFirma: ' + error.message, 'error');
+                updateStatus('Error al iniciar AutoFirma: ' + error.message, 'error');
                 document.getElementById('signButton').disabled = false;
             }
         }
@@ -289,7 +289,7 @@
                 console.log('🐧 Linux detectat - AutoFirma path:', autoFirmaPath);
             } else {
                 console.error('❌ Sistem de operare necunoscut:', userAgent);
-                updateStatus('Sistem de operare necunoscut. Te rog să deschizi AutoFirma manual.', 'error');
+                updateStatus('Sistema operativo no reconocido. Por favor, abre AutoFirma manualmente.', 'error');
                 document.getElementById('signButton').disabled = false;
                 return;
             }
@@ -317,31 +317,31 @@
                     pdfBase64: pdfBase64
                 }, "*");
                 
-                updateStatus('PDF-ul a fost descărcat. Se încearcă să se deschidă AutoFirma...', 'info');
+                updateStatus('PDF descargado. Intentando abrir AutoFirma...', 'info');
                 
                 // Așteaptă 3 secunde și verifică dacă AutoFirma s-a deschis
                 setTimeout(() => {
                     const userChoice = confirm(
-                        'AutoFirma s-a deschis cu PDF-ul?\n\n' +
-                        '• OK: Da, AutoFirma este deschis cu PDF-ul\n' +
-                        '• Cancel: Nu, AutoFirma nu s-a deschis'
+                        '¿Se ha abierto AutoFirma con el PDF?\n\n' +
+                        '• Aceptar: Sí, AutoFirma está abierto con el PDF\n' +
+                        '• Cancelar: No, AutoFirma no se ha abierto'
                     );
                     
                     if (userChoice) {
-                        updateStatus('AutoFirma este deschis. Configurează semnătura și salvează PDF-ul semnat.', 'success');
+                        updateStatus('AutoFirma está abierto. Configura la firma y guarda el PDF firmado.', 'success');
                         document.getElementById('uploadButton').style.display = 'block';
                         
                         // Adaugă event listener pentru fișierele dropate
                         setupFileDropHandler();
                     } else {
                         updateStatus(
-                            'AutoFirma nu s-a deschis automat.\n\n' +
-                            'PDF-ul a fost descărcat. Te rog să:\n' +
-                            '1. Deschizi AutoFirma manual din Start Menu\n' +
-                            '2. Deschizi PDF-ul descărcat în AutoFirma\n' +
-                            '3. Configurezi semnătura vizibilă\n' +
-                            '4. Salvezi PDF-ul semnat\n' +
-                            '5. Încarcă PDF-ul semnat înapoi aici',
+                            'AutoFirma no se ha abierto automáticamente.\n\n' +
+                            'El PDF se ha descargado. Por favor:\n' +
+                            '1. Abre AutoFirma manualmente desde el menú Inicio\n' +
+                            '2. Abre el PDF descargado en AutoFirma\n' +
+                            '3. Configura la firma visible\n' +
+                            '4. Guarda el PDF firmado\n' +
+                            '5. Sube el PDF firmado aquí',
                             'warning'
                         );
                         document.getElementById('uploadButton').style.display = 'block';
@@ -354,7 +354,7 @@
 
             } catch (error) {
                 console.error('❌ Eroare la lansarea AutoFirma:', error);
-                updateStatus('Eroare la lansarea AutoFirma. Te rog să deschizi AutoFirma manual.', 'error');
+                updateStatus('Error al iniciar AutoFirma. Por favor, abre AutoFirma manualmente.', 'error');
                 document.getElementById('signButton').disabled = false;
             }
         }
@@ -396,7 +396,7 @@
                     window.signedDocument = signature;
                     
                     saveAs(blob, downloadName);
-                    updateStatus('Document semnat descărcat cu succes!', 'success');
+                    updateStatus('¡Documento firmado descargado correctamente!', 'success');
                     
                     // 🚀 TRIMITE AUTOMAT LA SERVER
                     console.log('🚀 Document semnat, trimite automat la server...');
@@ -424,11 +424,11 @@
                 // Folosește window.open pentru a evita blocarea
                 const newWindow = window.open(url, '_blank');
                 if (newWindow) {
-                    updateStatus('Document semnat deschis în tab nou!', 'success');
+                    updateStatus('¡Documento firmado abierto en nueva pestaña!', 'success');
                 } else {
                     // Fallback: încearcă click-ul direct
                     link.click();
-                    updateStatus('Document semnat descărcat cu succes!', 'success');
+                    updateStatus('¡Documento firmado descargado correctamente!', 'success');
                 }
                 
                 // Cleanup
@@ -445,19 +445,19 @@
                 
             } catch (error) {
                 console.error('❌ Eroare la descărcarea documentului semnat:', error);
-                updateStatus('Document semnat, dar eroare la descărcare', 'error');
+                updateStatus('Documento firmado, pero error al descargar', 'error');
             }
         }
 
         // Trimite documentul semnat la server
         function uploadSignedDocument() {
             if (!window.signedDocument) {
-                updateStatus('Eroare: Nu există document semnat', 'error');
+                updateStatus('Error: No hay documento firmado', 'error');
                 return;
             }
 
             try {
-                updateStatus('Se trimite documentul semnat la server...', 'info');
+                updateStatus('Enviando documento firmado al servidor...', 'info');
                 
                 // Convertește documentul semnat la Base64
                 let signedBase64;
@@ -478,7 +478,7 @@
                 
             } catch (error) {
                 console.error('❌ Eroare la pregătirea upload-ului:', error);
-                updateStatus('Eroare la pregătirea upload-ului', 'error');
+                updateStatus('Error al preparar la subida', 'error');
             }
         }
 
@@ -530,7 +530,7 @@
             })
             .then(data => {
                 console.log('✅ Document semnat trimis cu succes:', data);
-                updateStatus('Document semnat trimis la server cu succes!', 'success');
+                updateStatus('¡Documento firmado enviado al servidor correctamente!', 'success');
                 
                 // Trimite mesaj către parent pentru a închide modalul
                 window.parent.postMessage({
@@ -542,7 +542,7 @@
             })
             .catch(error => {
                 console.error('❌ Eroare la upload:', error);
-                updateStatus('Eroare la trimiterea documentului la server: ' + error.message, 'error');
+                updateStatus('Error al enviar el documento al servidor: ' + error.message, 'error');
                 
                 // Trimite mesaj de eroare către parent
                 window.parent.postMessage({
@@ -556,7 +556,7 @@
         // Descarcă documentul original pentru semnare manuală
         function descarcaDocument() {
             if (!documentData) {
-                updateStatus('Eroare: Nu există date pentru document', 'error');
+                updateStatus('Error: No hay datos para el documento', 'error');
                 return;
             }
 
@@ -580,10 +580,10 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                updateStatus('Document descărcat pentru semnare manuală', 'success');
+                updateStatus('Documento descargado para firma manual', 'success');
             } catch (error) {
                 console.error('❌ Eroare la descărcarea documentului:', error);
-                updateStatus('Eroare la descărcarea documentului', 'error');
+                updateStatus('Error al descargar el documento', 'error');
             }
         }
 
@@ -598,7 +598,7 @@
                     const base64 = e.target.result.split(',')[1]; // Elimină data:application/pdf;base64,
                     window.signedDocument = base64;
                     
-                    updateStatus(`Document semnat încărcat: ${file.name}`, 'success');
+                    updateStatus(`Documento firmado cargado: ${file.name}`, 'success');
                     document.getElementById('uploadButton').style.display = 'block';
                     
                     // 🚀 TRIMITE AUTOMAT LA SERVER
@@ -609,7 +609,7 @@
                 };
                 reader.readAsDataURL(file);
             } else {
-                updateStatus('Te rog să selectezi un fișier PDF valid', 'error');
+                updateStatus('Por favor, selecciona un archivo PDF válido', 'error');
             }
         }
 
@@ -636,12 +636,12 @@
                             const base64 = e.target.result.split(',')[1];
                             window.signedDocument = base64;
                             
-                            updateStatus(`Document semnat încărcat prin drag & drop: ${file.name}`, 'success');
+                            updateStatus(`Documento firmado cargado por arrastre: ${file.name}`, 'success');
                             document.getElementById('uploadButton').style.display = 'block';
                         };
                         reader.readAsDataURL(file);
                     } else {
-                        updateStatus('Te rog să dropi un fișier PDF valid', 'error');
+                        updateStatus('Por favor, suelta un archivo PDF válido', 'error');
                     }
                 }
             });
@@ -653,7 +653,7 @@
         // Inițializare când se încarcă pagina
         window.addEventListener('load', function() {
             console.log('🔍 Pagina AutoFirma încărcată');
-            updateStatus('Aștept document pentru semnare...', 'info');
+            updateStatus('Esperando documento para firmar...', 'info');
             
             // Verifică AutoScript după un scurt delay
             setTimeout(checkAutoScript, 1000);

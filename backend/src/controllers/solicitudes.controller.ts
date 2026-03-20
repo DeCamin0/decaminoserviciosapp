@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Put,
   Post,
   Body,
   Query,
@@ -79,7 +80,7 @@ export class SolicitudesController {
       const { accion } = body;
 
       if (!accion) {
-        throw new BadRequestException('accion este obligatoriu');
+        throw new BadRequestException('La acción es obligatoria');
       }
 
       // Extrage IP-ul din headers (pentru LOCACION în Ausencias)
@@ -115,6 +116,10 @@ export class SolicitudesController {
           fecha_fin: body.fecha_fin,
           ip: ip,
           fecha_ultimo_dia_trabajo: body.fecha_ultimo_dia_trabajo,
+          tipo_justificante: body.tipo_justificante,
+          hora_cita: body.hora_cita,
+          centro_medico: body.centro_medico,
+          descripcion_otro: body.descripcion_otro,
         });
 
         return result;
@@ -356,6 +361,33 @@ export class SolicitudesController {
       this.logger.error('❌ Error generating preview PDF:', error);
       throw error;
     }
+  }
+
+  /** % del grupo que puede estar de vacaciones a la vez (1–100). Cualquier usuario autenticado (calendario). */
+  @Get('vacaciones-disponibilidad-porcentaje')
+  async getVacacionesDisponibilidadPorcentaje() {
+    return this.solicitudesService.getVacacionesDisponibilidadPorcentaje();
+  }
+
+  /** Actualizar % — solo managers. Body: { porcentaje: number } */
+  @Put('vacaciones-disponibilidad-porcentaje')
+  async putVacacionesDisponibilidadPorcentaje(
+    @CurrentUser() user: any,
+    @Body() body: { porcentaje?: number },
+  ) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden cambiar el porcentaje de disponibilidad de vacaciones.',
+      );
+    }
+    if (body?.porcentaje === undefined || body?.porcentaje === null) {
+      throw new BadRequestException('porcentaje es obligatorio');
+    }
+    return this.solicitudesService.setVacacionesDisponibilidadPorcentaje(
+      Number(body.porcentaje),
+    );
   }
 
   /** Lista perioadelor blocate pentru vacanțe (luni/intervale) – doar manageri. */

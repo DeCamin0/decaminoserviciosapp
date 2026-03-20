@@ -138,7 +138,9 @@ export class ScheduledMessagesCronService {
     }
 
     if (recipients.length === 0) {
-      throw new Error('Nu s-au găsit destinatari pentru mesajul automat');
+      throw new Error(
+        'No se encontraron destinatarios para el mensaje automático',
+      );
     }
 
     // Construiește HTML-ul mesajului

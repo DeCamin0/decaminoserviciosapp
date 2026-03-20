@@ -752,7 +752,7 @@ export default function AprobacionesPage() {
         setNotification({
           type: 'success',
           title: '¡Éxito!',
-          message: 'Modificare aprobată cu succes!'
+          message: '¡Modificación aprobada correctamente!'
         });
         
         // Log aprobarea cambio
@@ -871,7 +871,7 @@ export default function AprobacionesPage() {
         setNotification({
           type: 'success',
           title: '¡Éxito!',
-          message: 'Modificare respinsă cu succes!'
+          message: '¡Modificación rechazada correctamente!'
         });
         
         // Log respingerea cambio

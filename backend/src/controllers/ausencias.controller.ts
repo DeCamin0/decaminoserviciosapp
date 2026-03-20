@@ -10,7 +10,7 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AusenciasService } from '../services/ausencias.service';
@@ -20,6 +20,21 @@ export class AusenciasController {
   private readonly logger = new Logger(AusenciasController.name);
 
   constructor(private readonly ausenciasService: AusenciasService) {}
+
+  /** Fără rate limit: apelat în batch pentru fiecare ausencia (Mis Solicitudes + Todas > Ausencias) */
+  @SkipThrottle()
+  @Get(':id/justificantes')
+  @UseGuards(JwtAuthGuard)
+  async getJustificantesByAusenciaId(@Param('id') id: string) {
+    try {
+      const justificantes =
+        await this.ausenciasService.getJustificantesByAusenciaId(Number(id));
+      return justificantes;
+    } catch (error: any) {
+      this.logger.error('❌ Error getting justificantes:', error);
+      throw error;
+    }
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard)

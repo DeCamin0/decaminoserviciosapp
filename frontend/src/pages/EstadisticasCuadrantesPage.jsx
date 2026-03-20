@@ -132,7 +132,7 @@ export default function EstadisticasCuadrantesPage() {
         } else {
           return {
             mes,
-            estado: 'Fără generare',
+            estado: 'Sin generación',
             empleados: 0,
             horasTotales: 0,
             fechaGeneracion: null
@@ -145,7 +145,7 @@ export default function EstadisticasCuadrantesPage() {
       // Calculate stats
       const mesesGenerados = cuadrantesSimulados.filter(m => m.estado === 'Generat').length;
       const enGeneracion = cuadrantesSimulados.filter(m => m.estado === 'En generación').length;
-      const sinGenerar = cuadrantesSimulados.filter(m => m.estado === 'Fără generare').length;
+      const sinGenerar = cuadrantesSimulados.filter(m => m.estado === 'Sin generación').length;
 
       setStats({
         mesesGenerados,
@@ -155,8 +155,8 @@ export default function EstadisticasCuadrantesPage() {
       });
 
       const cuadrantesGenerados = cuadrantesSimulados.filter(c => c.estado === 'Generat');
-      const cuadrantesEnGeneracion = cuadrantesSimulados.filter(c => c.estado === 'În generare');
-      const cuadrantesSinGenerar = cuadrantesSimulados.filter(c => c.estado === 'Fără generare');
+      const cuadrantesEnGeneracion = cuadrantesSimulados.filter(c => c.estado === 'En generación');
+      const cuadrantesSinGenerar = cuadrantesSimulados.filter(c => c.estado === 'Sin generación');
 
       const empleadosUnicos = new Set();
       Object.values(cuadrantesPorMes).forEach(mesData => {
@@ -214,7 +214,7 @@ export default function EstadisticasCuadrantesPage() {
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <div className="text-red-600 font-bold text-xl">Se încarcă statisticile cuadrantelor...</div>
+          <div className="text-red-600 font-bold text-xl">Cargando estadísticas de cuadrantes...</div>
         </div>
       </div>
     );
@@ -259,7 +259,7 @@ export default function EstadisticasCuadrantesPage() {
               className="flex items-center gap-2"
             >
               <span>{showDetails ? '📊' : '📈'}</span>
-              {showDetails ? 'Vizualizare simplă' : 'Detalii avansate'}
+              {showDetails ? 'Vista simple' : 'Detalles avanzados'}
             </Button>
           </div>
           
@@ -334,7 +334,7 @@ export default function EstadisticasCuadrantesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.total}</div>
-                <div className="text-sm text-gray-500">Total luni</div>
+                <div className="text-sm text-gray-500">Total meses</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
@@ -369,7 +369,7 @@ export default function EstadisticasCuadrantesPage() {
                   className={`p-4 rounded-xl border-2 transition-all duration-200 hover:shadow-lg ${
                     mes.estado === 'Generat' 
                       ? 'border-green-200 bg-green-50' 
-                      : mes.estado === 'În generare'
+                      : mes.estado === 'En generación'
                         ? 'border-orange-200 bg-orange-50'
                         : 'border-red-200 bg-red-50'
                   }`}
@@ -379,7 +379,7 @@ export default function EstadisticasCuadrantesPage() {
                     <span className={`px-2 py-1 rounded-full text-xs font-bold ${
                       mes.estado === 'Generat'
                         ? 'bg-green-100 text-green-800'
-                        : mes.estado === 'În generare'
+                        : mes.estado === 'En generación'
                           ? 'bg-orange-100 text-orange-800'
                           : 'bg-red-100 text-red-800'
                     }`}>
@@ -407,22 +407,22 @@ export default function EstadisticasCuadrantesPage() {
                 <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
                   <span className="text-white text-lg">👥</span>
                 </div>
-                <h3 className="text-xl font-bold text-gray-800">Statistici angajați</h3>
+                <h3 className="text-xl font-bold text-gray-800">Estadísticas empleados</h3>
               </div>
               
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                  <span className="font-medium text-gray-700">Total angajați</span>
+                  <span className="font-medium text-gray-700">Total empleados</span>
                   <span className="text-2xl font-bold text-blue-600">{detailedStats.totalEmpleados || 0}</span>
                 </div>
                 
                 <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                  <span className="font-medium text-gray-700">Media angajați/lună</span>
+                  <span className="font-medium text-gray-700">Media empleados/mes</span>
                   <span className="text-2xl font-bold text-green-600">{Math.round(detailedStats.promedioEmpleados || 0)}</span>
                 </div>
                 
                 <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg">
-                  <span className="font-medium text-gray-700">Total ore programate</span>
+                  <span className="font-medium text-gray-700">Total horas programadas</span>
                   <span className="text-2xl font-bold text-orange-600">{Math.round(detailedStats.totalHoras || 0)}h</span>
                 </div>
               </div>

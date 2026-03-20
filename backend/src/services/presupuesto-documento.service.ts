@@ -3432,7 +3432,11 @@ export class PresupuestoDocumentoService {
             const precioRecuperacion =
               typeof payload.recuperacionAguaPrecio === 'number'
                 ? payload.recuperacionAguaPrecio
-                : Number(String((payload as any).recuperacionAguaPrecio ?? '').trim()) || 650;
+                : Number(
+                    String(
+                      (payload as any).recuperacionAguaPrecio ?? '',
+                    ).trim(),
+                  ) || 650;
             const conIva = Math.round(precioRecuperacion * 1.21 * 100) / 100;
             const recuperacionRow = {
               descripcion: 'Recuperación de Agua',

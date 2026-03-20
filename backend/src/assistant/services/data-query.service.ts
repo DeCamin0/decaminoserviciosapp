@@ -1,10 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RbacService, AccessLevel } from './rbac.service';
+import { AssistantDataScope } from '../constants/assistant-data-scope.const';
+import { RbacService } from './rbac.service';
 import { calculateCuadranteHours } from '../../utils/cuadrante-hours-helper';
+import {
+  ASSISTANT_KB_MAX_SEARCH_TERMS,
+  ASSISTANT_KB_QUERY_LIMIT,
+} from '../constants/assistant-session.constants';
+import type { KbQueryMeta } from '../types/kb-query.types';
+import { normalizeKbSearchTerms } from '../utils/kb-search-normalize.util';
 
 import * as mysql from 'mysql2/promise';
+import { buildDailyPlanMysqlCore } from './daily-plan-mysql-core.util';
 
 @Injectable()
 export class DataQueryService {
@@ -22,17 +30,24 @@ export class DataQueryService {
   async queryFichajes(
     userId: string,
     rol: string | null,
-    entidades?: { codigo?: string; fecha?: string; mes?: string },
+    entidades?: {
+      codigo?: string;
+      fecha?: string;
+      mes?: string;
+      year?: string;
+    },
+    dataScope?: AssistantDataScope,
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
       'CODIGO',
+      dataScope,
     );
 
     let fechaCondition = '';
 
-    // Verifică dacă e cerut "tot mesul"
+    // VerificÄƒ dacÄƒ e cerut "tot mesul"
     if (entidades?.mes && entidades.mes.startsWith('completo_')) {
       const mesNombre = entidades.mes.replace('completo_', '');
       const meses = [
@@ -53,32 +68,43 @@ export class DataQueryService {
 
       if (mesIndex !== -1) {
         const ahora = new Date();
-        const año = ahora.getFullYear();
+        const anio = ahora.getFullYear();
         const mes = mesIndex + 1; // JavaScript months are 0-indexed, SQL months are 1-indexed
 
         // Prima zi a lunii
-        const fechaInicio = `${año}-${String(mes).padStart(2, '0')}-01`;
+        const fechaInicio = `${anio}-${String(mes).padStart(2, '0')}-01`;
         // Ultima zi a lunii
-        const ultimoDia = new Date(año, mes, 0).getDate();
-        const fechaFin = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+        const ultimoDia = new Date(anio, mes, 0).getDate();
+        const fechaFin = `${anio}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
 
         fechaCondition = `AND DATE(FECHA) >= ${this.escapeSql(fechaInicio)} AND DATE(FECHA) <= ${this.escapeSql(fechaFin)}`;
         this.logger.log(
-          `📅 Query fichajes para mes completo: ${fechaInicio} a ${fechaFin}`,
+          `ðŸ“… Query fichajes para mes completo: ${fechaInicio} a ${fechaFin}`,
         );
       } else {
-        // Fallback la luna curentă
+        // Fallback la luna curentÄƒ
         const ahora = new Date();
-        const año = ahora.getFullYear();
+        const anio = ahora.getFullYear();
         const mes = ahora.getMonth() + 1;
-        const fechaInicio = `${año}-${String(mes).padStart(2, '0')}-01`;
-        const ultimoDia = new Date(año, mes, 0).getDate();
-        const fechaFin = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+        const fechaInicio = `${anio}-${String(mes).padStart(2, '0')}-01`;
+        const ultimoDia = new Date(anio, mes, 0).getDate();
+        const fechaFin = `${anio}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
         fechaCondition = `AND DATE(FECHA) >= ${this.escapeSql(fechaInicio)} AND DATE(FECHA) <= ${this.escapeSql(fechaFin)}`;
         this.logger.log(
-          `📅 Query fichajes para mes actual completo: ${fechaInicio} a ${fechaFin}`,
+          `ðŸ“… Query fichajes para mes actual completo: ${fechaInicio} a ${fechaFin}`,
         );
       }
+    } else if (
+      entidades?.year &&
+      /^\d{4}$/.test(String(entidades.year).trim())
+    ) {
+      const y = String(entidades.year).trim();
+      const fechaInicio = `${y}-01-01`;
+      const fechaFin = `${y}-12-31`;
+      fechaCondition = `AND DATE(FECHA) >= ${this.escapeSql(fechaInicio)} AND DATE(FECHA) <= ${this.escapeSql(fechaFin)}`;
+      this.logger.log(
+        `ðŸ“… Query fichajes para anio completo: ${fechaInicio} a ${fechaFin}`,
+      );
     } else if (entidades?.fecha) {
       fechaCondition = `AND DATE(FECHA) = '${this.escapeSql(entidades.fecha)}'`;
     } else {
@@ -90,10 +116,8 @@ export class DataQueryService {
         fichaje_pk,
         CODIGO,
         \`NOMBRE / APELLIDOS\` as nombre_apellidos,
-        \`CORREO ELECTRONICO\` as email,
         TIPO,
         HORA,
-        DIRECCION,
         FECHA,
         DURACION,
         Estado
@@ -104,28 +128,30 @@ export class DataQueryService {
       LIMIT 500
     `;
 
-    this.logger.log(`🔍 Query fichajes: ${query.substring(0, 150)}...`);
+    this.logger.log(`ðŸ” Query fichajes: ${query.substring(0, 150)}...`);
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
 
   /**
-   * Query pentru angajați care ar trebui să lucreze (conform cuadrantelor/horario) dar nu au fichat
-   * Folosește aceeași logică ca MonthlyAlertsService pentru a fi consistent
+   * Query pentru angajaÈ›i care ar trebui sÄƒ lucreze (conform cuadrantelor/horario) dar nu au fichat
+   * FoloseÈ™te aceeaÈ™i logicÄƒ ca MonthlyAlertsService pentru a fi consistent
    */
   async queryFichajesFaltantes(
     userId: string,
     rol: string | null,
     fecha?: string,
+    dataScope?: AssistantDataScope,
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
       'CODIGO',
+      dataScope,
     );
 
-    // Parsează data sau folosește data curentă
+    // ParseazÄƒ data sau foloseÈ™te data curentÄƒ
     let fechaDate: Date;
     if (fecha) {
       fechaDate = new Date(fecha);
@@ -133,302 +159,20 @@ export class DataQueryService {
       fechaDate = new Date();
     }
 
-    const año = fechaDate.getFullYear();
+    const anio = fechaDate.getFullYear();
     const mes = fechaDate.getMonth() + 1;
     const dia = fechaDate.getDate();
-    const fechaFormatted = `${año}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-    const mesFormatted = `${año}-${String(mes).padStart(2, '0')}`;
+    const fechaFormatted = `${anio}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const mesFormatted = `${anio}-${String(mes).padStart(2, '0')}`;
 
-    // Folosește aceeași logică ca MonthlyAlertsService.getResumenMensual
-    // Query simplificat bazat pe daily_plan și fichaje_dia pentru ziua specificată
-    const query = `
-      SET @lunaselectata = ${this.escapeSql(mesFormatted)};
-      SET @ccaa_default  = 'ES-MD';
-      SET @d_first := STR_TO_DATE(CONCAT(@lunaselectata,'-01'), '%Y-%m-%d');
-      SET @d_last  := LAST_DAY(@d_first);
-      SET @fecha_buscar := ${this.escapeSql(fechaFormatted)};
-
-      WITH RECURSIVE fechas AS (
-        SELECT @d_first AS d
-        UNION ALL
-        SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM fechas WHERE d < @d_last
-      ),
-      cuadrante_unpivot AS (
-        SELECT CAST(cq.CODIGO AS CHAR) AS empleadoId, 1  AS dia, cq.CENTRO AS centro_cuadrante, cq.ZI_1  AS val FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 2 , cq.CENTRO, cq.ZI_2  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 3 , cq.CENTRO, cq.ZI_3  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 4 , cq.CENTRO, cq.ZI_4  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 5 , cq.CENTRO, cq.ZI_5  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 6 , cq.CENTRO, cq.ZI_6  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 7 , cq.CENTRO, cq.ZI_7  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 8 , cq.CENTRO, cq.ZI_8  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR), 9 , cq.CENTRO, cq.ZI_9  FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),10 , cq.CENTRO, cq.ZI_10 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),11 , cq.CENTRO, cq.ZI_11 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),12 , cq.CENTRO, cq.ZI_12 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),13 , cq.CENTRO, cq.ZI_13 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),14 , cq.CENTRO, cq.ZI_14 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),15 , cq.CENTRO, cq.ZI_15 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),16 , cq.CENTRO, cq.ZI_16 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),17 , cq.CENTRO, cq.ZI_17 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),18 , cq.CENTRO, cq.ZI_18 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),19 , cq.CENTRO, cq.ZI_19 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),20 , cq.CENTRO, cq.ZI_20 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),21 , cq.CENTRO, cq.ZI_21 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),22 , cq.CENTRO, cq.ZI_22 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),23 , cq.CENTRO, cq.ZI_23 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),24 , cq.CENTRO, cq.ZI_24 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),25 , cq.CENTRO, cq.ZI_25 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),26 , cq.CENTRO, cq.ZI_26 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),27 , cq.CENTRO, cq.ZI_27 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),28 , cq.CENTRO, cq.ZI_28 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),29 , cq.CENTRO, cq.ZI_29 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),30 , cq.CENTRO, cq.ZI_30 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-        UNION ALL SELECT CAST(cq.CODIGO AS CHAR),31 , cq.CENTRO, cq.ZI_31 FROM cuadrante cq WHERE cq.LUNA=@lunaselectata
-      ),
-      cuadrante_dia AS (
-        SELECT
-          cu.empleadoId,
-          DATE_ADD(@d_first, INTERVAL (cu.dia - 1) DAY) AS fecha,
-          cu.dia,
-          CASE WHEN cu.val IS NOT NULL AND TRIM(cu.val) <> '' THEN 1 ELSE 0 END AS tiene_cuadrante,
-          ROUND(
-            CASE 
-              WHEN UPPER(TRIM(cu.val)) IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X') THEN 0
-              WHEN TRIM(cu.val) LIKE '%:%-%:%' THEN 
-                -- Format "08:00-17:00" sau "09:00-15:00 / 16:00-20:00"
-                -- Pentru moment, calculăm doar prima tură (pentru compatibilitate)
-                -- Logica completă pentru ture multiple va fi implementată în frontend
-                (((TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val),' ',-1),'-',-1),' ',1), '%H:%i'))
-                  - TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val),' ',-1),'-', 1),' ',1), '%H:%i'))
-                  + 86400) % 86400) / 3600)
-              WHEN TRIM(cu.val) REGEXP '^[0-9]+h[[:space:]]*\\([0-9]+×[0-9]+h\\)' THEN 
-                -- Format "24h (3×8h)" - extrage orele per tură din paranteză (8h)
-                CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(cu.val), '×', -1), 'h', 1) AS DECIMAL(10,2))
-              WHEN TRIM(cu.val) REGEXP '^24h$' THEN 
-                -- Format simplu "24h" - probabil e 3 ture de 8h → returnăm 8h per tură
-                8
-              WHEN TRIM(cu.val) REGEXP '^[0-9]+h' THEN 
-                CAST(SUBSTRING_INDEX(TRIM(cu.val), 'h', 1) AS DECIMAL(10,2))
-              ELSE 0
-            END
-          ,2) AS horas_cuadrante_dia
-        FROM cuadrante_unpivot cu
-      ),
-      horario_dia_m AS (
-        SELECT
-          CAST(de.CODIGO AS CHAR) AS empleadoId,
-          f.d       AS fecha,
-          DAY(f.d)  AS dia,
-          CASE DAYOFWEEK(f.d)
-            WHEN 2 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.lun_in1), CONCAT(f.d,' ',h.lun_out1)) + 1440) % 1440, 0)
-            WHEN 3 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.mar_in1), CONCAT(f.d,' ',h.mar_out1)) + 1440) % 1440, 0)
-            WHEN 4 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.mie_in1), CONCAT(f.d,' ',h.mie_out1)) + 1440) % 1440, 0)
-            WHEN 5 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.joi_in1), CONCAT(f.d,' ',h.joi_out1)) + 1440) % 1440, 0)
-            WHEN 6 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.vin_in1), CONCAT(f.d,' ',h.vin_out1)) + 1440) % 1440, 0)
-            WHEN 7 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.sam_in1), CONCAT(f.d,' ',h.sam_out1)) + 1440) % 1440, 0)
-            WHEN 1 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.dum_in1), CONCAT(f.d,' ',h.dum_out1)) + 1440) % 1440, 0)
-          END AS m1,
-          CASE DAYOFWEEK(f.d)
-            WHEN 2 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.lun_in2), CONCAT(f.d,' ',h.lun_out2)) + 1440) % 1440, 0)
-            WHEN 3 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.mar_in2), CONCAT(f.d,' ',h.mar_out2)) + 1440) % 1440, 0)
-            WHEN 4 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.mie_in2), CONCAT(f.d,' ',h.mie_out2)) + 1440) % 1440, 0)
-            WHEN 5 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.joi_in2), CONCAT(f.d,' ',h.joi_out2)) + 1440) % 1440, 0)
-            WHEN 6 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.vin_in2), CONCAT(f.d,' ',h.vin_out2)) + 1440) % 1440, 0)
-            WHEN 7 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.sam_in2), CONCAT(f.d,' ',h.sam_out2)) + 1440) % 1440, 0)
-            WHEN 1 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.dum_in2), CONCAT(f.d,' ',h.dum_out2)) + 1440) % 1440, 0)
-          END AS m2,
-          CASE DAYOFWEEK(f.d)
-            WHEN 2 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.lun_in3), CONCAT(f.d,' ',h.lun_out3)) + 1440) % 1440, 0)
-            WHEN 3 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.mar_in3), CONCAT(f.d,' ',h.mar_out3)) + 1440) % 1440, 0)
-            WHEN 4 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.mie_in3), CONCAT(f.d,' ',h.mie_out3)) + 1440) % 1440, 0)
-            WHEN 5 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.joi_in3), CONCAT(f.d,' ',h.joi_out3)) + 1440) % 1440, 0)
-            WHEN 6 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.vin_in3), CONCAT(f.d,' ',h.vin_out3)) + 1440) % 1440, 0)
-            WHEN 7 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.sam_in3), CONCAT(f.d,' ',h.sam_out3)) + 1440) % 1440, 0)
-            WHEN 1 THEN COALESCE((TIMESTAMPDIFF(MINUTE, CONCAT(f.d,' ',h.dum_in3), CONCAT(f.d,' ',h.dum_out3)) + 1440) % 1440, 0)
-          END AS m3
-        FROM DatosEmpleados de
-        JOIN fechas f ON f.d = @fecha_buscar
-        LEFT JOIN horarios h
-          ON h.centro_nombre = de.\`CENTRO TRABAJO\`
-         AND h.grupo_nombre  = de.\`GRUPO\`
-        WHERE de.ESTADO='ACTIVO'
-          AND ${rbacCondition.replace('CODIGO', 'de.CODIGO')}
-      ),
-      horario_dia AS (
-        SELECT
-          empleadoId,
-          fecha,
-          ROUND((COALESCE(m1,0) + COALESCE(m2,0) + COALESCE(m3,0))/60, 2) AS horas_horario_dia
-        FROM horario_dia_m
-      ),
-      bajas_intervalos AS (
-        SELECT
-          TRIM(CAST(mc.Codigo_Empleado AS CHAR)) AS empleadoId,
-          COALESCE(
-            CASE 
-              WHEN NULLIF(mc.\`Fecha baja\`, '') IS NULL THEN NULL
-              WHEN mc.\`Fecha baja\` REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN DATE(mc.\`Fecha baja\`)
-              WHEN mc.\`Fecha baja\` LIKE '__/__/____' THEN STR_TO_DATE(mc.\`Fecha baja\`, '%d/%m/%Y')
-              ELSE NULL
-            END
-          ) AS d_ini,
-          COALESCE(
-            CASE 
-              WHEN NULLIF(mc.\`Fecha de alta\`, '') IS NULL THEN NULL
-              WHEN mc.\`Fecha de alta\` REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN DATE(mc.\`Fecha de alta\`)
-              WHEN mc.\`Fecha de alta\` LIKE '__/__/____' THEN STR_TO_DATE(mc.\`Fecha de alta\`, '%d/%m/%Y')
-              ELSE NULL
-            END,
-            @d_last
-          ) AS d_fin
-        FROM MutuaCasos mc
-      ),
-      bajas_dia AS (
-        SELECT 
-          bi.empleadoId,
-          @fecha_buscar AS fecha,
-          CASE WHEN @fecha_buscar BETWEEN bi.d_ini AND bi.d_fin THEN 1 ELSE 0 END AS es_baja
-        FROM bajas_intervalos bi
-        WHERE bi.d_ini IS NOT NULL
-          AND bi.d_ini <= @fecha_buscar
-          AND (bi.d_fin IS NULL OR bi.d_fin >= @fecha_buscar)
-      ),
-      aus_raw AS (
-        SELECT
-          CAST(a.CODIGO AS CHAR) AS empleadoId,
-          UPPER(TRIM(a.\`TIPO\`)) AS tipo,
-          a.DURACION AS duracion,
-          TRIM(REPLACE(REPLACE(a.\`FECHA\`,'–','-'),'—','-')) AS fecha_txt
-        FROM Ausencias a
-      ),
-      aus_parts AS (
-        SELECT
-          empleadoId,
-          tipo,
-          duracion,
-          CASE 
-            WHEN fecha_txt LIKE '% %' 
-              THEN TRIM(TRAILING '-' FROM SUBSTRING_INDEX(fecha_txt,' ',1))
-            ELSE fecha_txt
-          END AS start_raw,
-          CASE 
-            WHEN fecha_txt LIKE '% %' 
-              THEN TRIM(LEADING '-' FROM SUBSTRING_INDEX(fecha_txt,' ',-1))
-            ELSE fecha_txt
-          END AS end_raw
-        FROM aus_raw
-      ),
-      aus_norm AS (
-        SELECT
-          empleadoId,
-          tipo,
-          duracion,
-          COALESCE(STR_TO_DATE(start_raw, '%Y-%m-%d'), STR_TO_DATE(start_raw, '%Y-%m-%e')) AS d_start,
-          COALESCE(STR_TO_DATE(end_raw,   '%Y-%m-%d'), STR_TO_DATE(end_raw,   '%Y-%m-%e')) AS d_end,
-          -- Determină dacă ausencia este pe ore sau pe zile
-          -- Tipuri pe ore: Salida Sin Regreso, Salida Centro, Entrada Centro (au DURACION în format TIME)
-          -- Tipuri pe zile: Vacaciones, Asunto Propio, Permiso, Baja, Ausencia Injustificada
-          CASE
-            WHEN tipo = 'VACACIONES' THEN 0
-            WHEN tipo LIKE '%ASUNTO PROPIO%' THEN 0
-            WHEN tipo LIKE '%PERMISO%' THEN 0
-            WHEN tipo LIKE '%BAJA%' THEN 0
-            WHEN tipo LIKE '%AUSENCIA INJUSTIFICADA%' THEN 0
-            WHEN tipo LIKE '%SALIDA SIN REGRESO%' THEN 1
-            WHEN tipo LIKE '%SALIDA CENTRO%' THEN 1
-            WHEN tipo LIKE '%ENTRADA CENTRO%' THEN 1
-            WHEN duracion IS NOT NULL AND TRIM(duracion) != '' AND duracion != '00:00:00' THEN 1
-            ELSE 0
-          END AS es_pe_ore
-        FROM aus_parts
-      ),
-      aus_dia AS (
-        SELECT 
-          @fecha_buscar AS fecha,
-          n.empleadoId,
-          MAX(CASE WHEN n.tipo='VACACIONES' THEN 1 ELSE 0 END) AS es_vacaciones,
-          -- es_ausencia = 1 doar pentru ausencias pe zile (nu pe ore)
-          MAX(CASE WHEN n.tipo<> 'VACACIONES' AND n.es_pe_ore = 0 THEN 1 ELSE 0 END) AS es_ausencia,
-          -- Sumă orele din ausencias pe ore pentru ziua respectivă
-          -- DURACION este TEXT în MySQL (format "HH:MM:SS"), deci trebuie convertit la TIME
-          SUM(CASE WHEN n.es_pe_ore = 1 THEN 
-            COALESCE(TIME_TO_SEC(STR_TO_DATE(n.duracion, '%H:%i:%s')) / 3600.0, 0)
-            ELSE 0 
-          END) AS horas_ausencia_ore
-        FROM aus_norm n
-        WHERE n.d_start IS NOT NULL 
-          AND n.d_end   IS NOT NULL
-          AND @fecha_buscar BETWEEN n.d_start AND n.d_end
-        GROUP BY n.empleadoId
-      ),
-      empleado_flags AS (
-        SELECT 
-          CAST(de.CODIGO AS CHAR) AS empleadoId,
-          CASE 
-            WHEN LOWER(TRIM(de.TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
-            ELSE 0
-          END AS trabaja_festivos
-        FROM DatosEmpleados de
-        WHERE de.ESTADO='ACTIVO'
-          AND ${rbacCondition.replace('CODIGO', 'de.CODIGO')}
-      ),
-      fiestas_dia AS (
-        SELECT
-          @fecha_buscar AS fecha,
-          CAST(de.CODIGO AS CHAR) AS empleadoId,
-          CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END AS es_fiesta
-        FROM DatosEmpleados de
-        LEFT JOIN fiestas f
-          ON f.date = @fecha_buscar
-         AND f.active = TRUE
-         AND (f.scope = 'national' OR (f.scope = 'regional' AND f.ccaa_code = @ccaa_default))
-        WHERE de.ESTADO='ACTIVO'
-          AND ${rbacCondition.replace('CODIGO', 'de.CODIGO')}
-      ),
-      daily_plan AS (
-        SELECT
-          CAST(de.CODIGO AS CHAR) AS empleadoId,
-          @fecha_buscar AS fecha,
-          CASE
-            WHEN bj.es_baja = 1 THEN 0
-            WHEN COALESCE(au.es_vacaciones,0) = 1 THEN 0
-            WHEN fd2.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos,0) = 0 THEN 0
-            WHEN COALESCE(au.es_ausencia,0) = 1 THEN 0
-            ELSE GREATEST(
-              COALESCE(
-                CASE WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia ELSE NULL END,
-                CASE WHEN hd.horas_horario_dia IS NOT NULL THEN hd.horas_horario_dia ELSE NULL END,
-                0
-              ) - COALESCE(au.horas_ausencia_ore, 0),
-              0
-            )
-          END AS horas_plan,
-          CASE
-            WHEN bj.es_baja = 1 THEN 'baja_medica'
-            WHEN COALESCE(au.es_vacaciones,0) = 1 THEN 'vacaciones'
-            WHEN fd2.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos,0) = 0 THEN 'fiesta'
-            WHEN COALESCE(au.es_ausencia,0) = 1 THEN 'ausencia'
-            WHEN cd.tiene_cuadrante = 1 THEN 'cuadrante'
-            WHEN hd.horas_horario_dia IS NOT NULL AND hd.horas_horario_dia > 0 THEN 'horario'
-            ELSE 'none'
-          END AS fuente
-        FROM DatosEmpleados de
-        LEFT JOIN cuadrante_dia cd
-          ON cd.empleadoId = CAST(de.CODIGO AS CHAR) AND cd.fecha = @fecha_buscar
-        LEFT JOIN horario_dia hd
-          ON hd.empleadoId = CAST(de.CODIGO AS CHAR) AND hd.fecha = @fecha_buscar
-        LEFT JOIN bajas_dia bj
-          ON bj.empleadoId = CAST(de.CODIGO AS CHAR) AND bj.fecha = @fecha_buscar
-        LEFT JOIN fiestas_dia fd2
-          ON fd2.empleadoId = CAST(de.CODIGO AS CHAR) AND fd2.fecha = @fecha_buscar
-        LEFT JOIN aus_dia au
-          ON au.empleadoId = CAST(de.CODIGO AS CHAR) AND au.fecha = @fecha_buscar
-        LEFT JOIN empleado_flags tf
-          ON tf.empleadoId = CAST(de.CODIGO AS CHAR)
-        WHERE de.ESTADO='ACTIVO'
-          AND ${rbacCondition.replace('CODIGO', 'de.CODIGO')}
-      ),
+    // FoloseÈ™te aceeaÈ™i logicÄƒ ca MonthlyAlertsService.getResumenMensual
+    const dailyPlanMysqlCore = buildDailyPlanMysqlCore(
+      (v) => this.escapeSql(v),
+      rbacCondition,
+      fechaFormatted,
+      mesFormatted,
+    );
+    const query = `${dailyPlanMysqlCore},
       fichaje_base AS (
         SELECT
           CAST(f.CODIGO AS CHAR) AS empleadoId,
@@ -461,7 +205,6 @@ export class DataQueryService {
       SELECT
         dp.empleadoId AS CODIGO,
         de.\`NOMBRE / APELLIDOS\` AS nombre,
-        de.\`CORREO ELECTRONICO\` AS email,
         de.\`CENTRO TRABAJO\` AS centro,
         dp.fecha AS fecha_esperada,
         dp.horas_plan,
@@ -499,10 +242,10 @@ export class DataQueryService {
       LEFT JOIN horario_dia hd
         ON hd.empleadoId = dp.empleadoId AND hd.fecha = dp.fecha
       WHERE (
-        -- Angajați cu cuadrante/horario care nu au fichat
+        -- AngajaÈ›i cu cuadrante/horario care nu au fichat
         (dp.horas_plan > 0 AND (COALESCE(fd.horas_fichadas, 0) = 0 OR COALESCE(fd.fichaje_incompleto, 0) = 1))
         OR
-        -- Angajați fără cuadrante/horario/centro asignado
+        -- AngajaÈ›i fÄƒrÄƒ cuadrante/horario/centro asignado
         (dp.fuente = 'none' AND (
           cd.tiene_cuadrante = 0 OR cd.tiene_cuadrante IS NULL OR
           hd.horas_horario_dia IS NULL OR hd.horas_horario_dia = 0 OR
@@ -515,97 +258,17 @@ export class DataQueryService {
       LIMIT 100
     `;
 
-    this.logger.log(
-      `🔍 Query fichajes faltantes (folosind logica MonthlyAlerts): ${query.substring(0, 300)}...`,
-    );
+    this.logger.log(`[queryFichajesFaltantes] ${query.substring(0, 300)}...`);
 
-    // Prisma nu suportă multiple statements, trebuie să folosim mysql2 direct
     try {
-      // Folosim ConfigService (baza clientului curent: DeCamino sau HERA), nu process.env.DATABASE_URL
-      const dbConfig = this.configService.get<{
-        host: string;
-        port: number;
-        username: string;
-        password: string;
-        database: string;
-      }>('database');
-      const connectionConfig = dbConfig
-        ? {
-            host: dbConfig.host,
-            port: dbConfig.port,
-            user: dbConfig.username,
-            password: dbConfig.password,
-            database: dbConfig.database,
-          }
-        : {
-            host: process.env.DB_HOST || 'localhost',
-            port: parseInt(process.env.DB_PORT || '3306'),
-            user: process.env.DB_USERNAME || 'root',
-            password: process.env.DB_PASSWORD || '',
-            database: process.env.DB_NAME || 'decaminoservicios',
-          };
-
-      // Create connection with multipleStatements enabled
-      const connection = await mysql.createConnection({
-        ...connectionConfig,
-        multipleStatements: true,
-      });
-
-      try {
-        // Execute query with multiple statements enabled
-        const queryResult = await connection.query(query);
-
-        // mysql2 with multipleStatements returns: [ [rows, fields] ]
-        // But with multiple SET statements, the structure is:
-        // [ [OkPacket1, OkPacket2, OkPacket3, OkPacket4, [actualRows]], [fields] ]
-        let rows: any[] = [];
-
-        if (Array.isArray(queryResult) && queryResult.length >= 1) {
-          const firstResult = queryResult[0];
-
-          if (Array.isArray(firstResult)) {
-            // Look for the array of actual data rows (should be the last item in firstResult)
-            // The first items are OkPackets from SET statements
-            for (let i = firstResult.length - 1; i >= 0; i--) {
-              const item = firstResult[i];
-
-              // Check if this is an array of data rows (not an OkPacket)
-              if (Array.isArray(item) && item.length > 0) {
-                const firstRow = item[0];
-                // Check if it looks like a data row (has CODIGO or nombre and not fieldCount)
-                if (
-                  firstRow &&
-                  typeof firstRow === 'object' &&
-                  ('CODIGO' in firstRow || 'nombre' in firstRow) &&
-                  !('fieldCount' in firstRow)
-                ) {
-                  rows = item;
-                  this.logger.log(
-                    `✅ Query fichajes faltantes: Found data rows at index ${i}, rows: ${rows.length}`,
-                  );
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        this.logger.log(
-          `✅ Query fichajes faltantes retornó ${rows?.length || 0} resultados`,
-        );
-
-        // Procesează datele pentru a calcula corect orele pentru ture multiple
-        const processedResults = await this.processFichajesFaltantesResults(
-          rows || [],
-        );
-
-        return processedResults;
-      } finally {
-        await connection.end();
-      }
+      const rows = await this.runMysqlMultiStatementQuery(
+        query,
+        'fichajes_faltantes',
+      );
+      return await this.processFichajesFaltantesResults(rows || []);
     } catch (error: any) {
       this.logger.error(
-        `❌ Error en queryFichajesFaltantes: ${error.message}`,
+        `Error en queryFichajesFaltantes: ${error.message}`,
         error.stack,
       );
       return [];
@@ -613,21 +276,187 @@ export class DataQueryService {
   }
 
   /**
-   * Query pentru LISTADO DE EMPLEADOS cu estado, cuadrante, horario, centro
-   * @param filtro - Opțional: 'sin_cuadrante', 'sin_horario', 'sin_centro', 'sin_cuadrante_ni_horario', 'sin_centro_ni_cuadrante_ni_horario'
+   * Plan zilnic (cuadrante vs horario, 3 segmente horario) pentru asistent — fără filtru fichajes.
    */
-  async queryListadoEmpleados(
+  async queryDailyPlanDiaForAssistant(
     userId: string,
     rol: string | null,
-    filtro?: string,
+    fecha?: string,
+    dataScope?: AssistantDataScope,
+    empleado?: { codigo?: string; nombre?: string },
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
       'CODIGO',
+      dataScope,
+    );
+    let fechaDate: Date;
+    if (fecha) {
+      fechaDate = new Date(fecha);
+    } else {
+      fechaDate = new Date();
+    }
+    const anio = fechaDate.getFullYear();
+    const mes = fechaDate.getMonth() + 1;
+    const dia = fechaDate.getDate();
+    const fechaFormatted = `${anio}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const mesFormatted = `${anio}-${String(mes).padStart(2, '0')}`;
+
+    const core = buildDailyPlanMysqlCore(
+      (v) => this.escapeSql(v),
+      rbacCondition,
+      fechaFormatted,
+      mesFormatted,
+    );
+    const rbacDe = rbacCondition.replace('CODIGO', 'de.CODIGO');
+    let empleadoFilterSql = '';
+    const cod = empleado?.codigo?.trim();
+    const nomRaw = empleado?.nombre?.trim();
+    if (cod) {
+      empleadoFilterSql = `AND CAST(de.CODIGO AS CHAR) = ${this.escapeSql(cod)}`;
+    } else if (nomRaw) {
+      const safe = nomRaw
+        .replace(/[^\p{L}\p{N}\s'-]/gu, '')
+        .trim()
+        .slice(0, 80);
+      if (safe.length >= 2) {
+        empleadoFilterSql = `AND LOWER(TRIM(de.\`NOMBRE / APELLIDOS\`)) LIKE LOWER(${this.escapeSql(`%${safe}%`)})`;
+      }
+    }
+    const rowLimit = empleadoFilterSql ? 25 : 200;
+    const assistantSelect = `
+      SELECT
+        CAST(de.CODIGO AS CHAR) AS CODIGO,
+        de.\`NOMBRE / APELLIDOS\` AS nombre,
+        de.\`CENTRO TRABAJO\` AS centro,
+        dp.fecha AS fecha,
+        dp.horas_plan,
+        dp.fuente,
+        cd.valor_celula_cuadrante,
+        ROUND(COALESCE(cd.horas_cuadrante_dia, 0), 2) AS horas_cuadrante_dia,
+        ROUND(COALESCE(hd.horas_horario_dia, 0), 2) AS horas_horario_dia,
+        ROUND(COALESCE(hdm.m1, 0) / 60, 2) AS horario_segmento_1_horas,
+        ROUND(COALESCE(hdm.m2, 0) / 60, 2) AS horario_segmento_2_horas,
+        ROUND(COALESCE(hdm.m3, 0) / 60, 2) AS horario_segmento_3_horas,
+        CASE WHEN dp.horas_plan > 0 THEN 1 ELSE 0 END AS trabaja_este_dia
+      FROM daily_plan dp
+      JOIN DatosEmpleados de ON CAST(de.CODIGO AS CHAR) = dp.empleadoId
+      LEFT JOIN cuadrante_dia cd
+        ON cd.empleadoId = dp.empleadoId AND cd.fecha = dp.fecha
+      LEFT JOIN horario_dia hd
+        ON hd.empleadoId = dp.empleadoId AND hd.fecha = dp.fecha
+      LEFT JOIN horario_dia_m hdm
+        ON hdm.empleadoId = dp.empleadoId AND hdm.fecha = dp.fecha
+      WHERE de.ESTADO='ACTIVO'
+        AND ${rbacDe}
+        ${empleadoFilterSql}
+      ORDER BY de.\`NOMBRE / APELLIDOS\`
+      LIMIT ${rowLimit}
+    `;
+    const fullQuery = `${core}
+${assistantSelect}`;
+
+    try {
+      return await this.runMysqlMultiStatementQuery(
+        fullQuery,
+        'plan_trabajo_dia',
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `Error en queryDailyPlanDiaForAssistant: ${error.message}`,
+        error.stack,
+      );
+      return [];
+    }
+  }
+
+  /** mysql2 multi-statement; extrage rândurile tabulare (CODIGO / nombre). */
+  private async runMysqlMultiStatementQuery(
+    query: string,
+    logLabel: string,
+  ): Promise<any[]> {
+    const dbConfig = this.configService.get<{
+      host: string;
+      port: number;
+      username: string;
+      password: string;
+      database: string;
+    }>('database');
+    const connectionConfig = dbConfig
+      ? {
+          host: dbConfig.host,
+          port: dbConfig.port,
+          user: dbConfig.username,
+          password: dbConfig.password,
+          database: dbConfig.database,
+        }
+      : {
+          host: process.env.DB_HOST || 'localhost',
+          port: parseInt(process.env.DB_PORT || '3306', 10),
+          user: process.env.DB_USERNAME || 'root',
+          password: process.env.DB_PASSWORD || '',
+          database: process.env.DB_NAME || 'decaminoservicios',
+        };
+
+    const connection = await mysql.createConnection({
+      ...connectionConfig,
+      multipleStatements: true,
+    });
+
+    try {
+      const queryResult = await connection.query(query);
+      let rows: any[] = [];
+
+      if (Array.isArray(queryResult) && queryResult.length >= 1) {
+        const firstResult = queryResult[0];
+        if (Array.isArray(firstResult)) {
+          for (let i = firstResult.length - 1; i >= 0; i--) {
+            const item = firstResult[i];
+            if (Array.isArray(item) && item.length > 0) {
+              const firstRow = item[0];
+              if (
+                firstRow &&
+                typeof firstRow === 'object' &&
+                ('CODIGO' in firstRow || 'nombre' in firstRow) &&
+                !('fieldCount' in firstRow)
+              ) {
+                rows = item;
+                this.logger.log(
+                  `[${logLabel}] data rows at index ${i}, count=${rows.length}`,
+                );
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      this.logger.log(`[${logLabel}] returned ${rows?.length || 0} rows`);
+      return rows || [];
+    } finally {
+      await connection.end();
+    }
+  }
+
+  /**
+   * Query pentru LISTADO DE EMPLEADOS cu estado, cuadrante, horario, centro
+   * @param filtro - OpÈ›ional: 'sin_cuadrante', 'sin_horario', 'sin_centro', 'sin_cuadrante_ni_horario', 'sin_centro_ni_cuadrante_ni_horario'
+   */
+  async queryListadoEmpleados(
+    userId: string,
+    rol: string | null,
+    filtro?: string,
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'CODIGO',
+      dataScope,
     );
 
-    // Construiește condițiile WHERE pentru filtrare
+    // ConstruieÈ™te condiÈ›iile WHERE pentru filtrare
     let filtroWhere = '';
     if (filtro === 'sin_cuadrante') {
       filtroWhere = `AND NOT EXISTS (
@@ -644,7 +473,7 @@ export class DataQueryService {
     } else if (filtro === 'sin_centro') {
       filtroWhere = `AND (de.\`CENTRO TRABAJO\` IS NULL OR TRIM(de.\`CENTRO TRABAJO\`) = '')`;
     } else if (filtro === 'sin_cuadrante_ni_horario') {
-      // AND logic: nu are cuadrante ȘI nu are horario
+      // AND logic: nu are cuadrante È˜I nu are horario
       filtroWhere = `AND NOT EXISTS (
         SELECT 1 FROM cuadrante c 
         WHERE CAST(c.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
@@ -684,7 +513,6 @@ export class DataQueryService {
       SELECT
         CAST(de.CODIGO AS CHAR) AS CODIGO,
         de.\`NOMBRE / APELLIDOS\` AS nombre,
-        de.\`CORREO ELECTRONICO\` AS email,
         de.ESTADO AS estado,
         de.\`CENTRO TRABAJO\` AS centro,
         de.\`GRUPO\` AS grupo,
@@ -693,7 +521,7 @@ export class DataQueryService {
             SELECT 1 FROM cuadrante c 
             WHERE CAST(c.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
               AND c.LUNA = DATE_FORMAT(NOW(), '%Y-%m')
-          ) THEN 'Sí'
+          ) THEN 'SÃ­'
           ELSE 'No'
         END AS tiene_cuadrante,
         CASE 
@@ -701,13 +529,13 @@ export class DataQueryService {
             SELECT 1 FROM horarios h
             WHERE h.centro_nombre = de.\`CENTRO TRABAJO\`
               AND h.grupo_nombre = de.\`GRUPO\`
-          ) THEN 'Sí'
+          ) THEN 'SÃ­'
           ELSE 'No'
         END AS tiene_horario,
         CASE 
           WHEN de.\`CENTRO TRABAJO\` IS NOT NULL 
             AND TRIM(de.\`CENTRO TRABAJO\`) <> '' 
-          THEN 'Sí'
+          THEN 'SÃ­'
           ELSE 'No'
         END AS tiene_centro,
         CONCAT(
@@ -760,12 +588,12 @@ export class DataQueryService {
     try {
       const results = await this.prisma.$queryRawUnsafe<any[]>(query);
       this.logger.log(
-        `✅ Query listado empleados retornó ${results?.length || 0} resultados (filtro: ${filtro || 'ninguno'})`,
+        `âœ… Query listado empleados retornÃ³ ${results?.length || 0} resultados (filtro: ${filtro || 'ninguno'})`,
       );
       return results || [];
     } catch (error: any) {
       this.logger.error(
-        `❌ Error en queryListadoEmpleados: ${error.message}`,
+        `âŒ Error en queryListadoEmpleados: ${error.message}`,
         error.stack,
       );
       return [];
@@ -773,7 +601,7 @@ export class DataQueryService {
   }
 
   /**
-   * Procesează rezultatele queryFichajesFaltantes pentru a calcula corect orele pentru ture multiple
+   * ProceseazÄƒ rezultatele queryFichajesFaltantes pentru a calcula corect orele pentru ture multiple
    */
   private async processFichajesFaltantesResults(
     results: any[],
@@ -783,28 +611,28 @@ export class DataQueryService {
     }
 
     this.logger.log(
-      `🔄 Processing ${results.length} results for horas recalculation...`,
+      `ðŸ”„ Processing ${results.length} results for horas recalculation...`,
     );
 
-    // Trebuie să obținem valorile originale din cuadrante pentru a calcula corect orele
-    // Pentru fiecare rezultat, trebuie să verificăm dacă are cuadrante sau horario
+    // Trebuie sÄƒ obÈ›inem valorile originale din cuadrante pentru a calcula corect orele
+    // Pentru fiecare rezultat, trebuie sÄƒ verificÄƒm dacÄƒ are cuadrante sau horario
     const processedResults = await Promise.all(
       results.map(async (result) => {
-        // Log pentru debugging - verifică dacă există angajați cu 24h
+        // Log pentru debugging - verificÄƒ dacÄƒ existÄƒ angajaÈ›i cu 24h
         if (result.horas_plan && parseFloat(result.horas_plan) >= 24) {
           this.logger.warn(
-            `🔍 Found employee with horas_plan >= 24: CODIGO ${result.CODIGO}, horas_plan: ${result.horas_plan}, fuente: ${result.fuente}`,
+            `ðŸ” Found employee with horas_plan >= 24: CODIGO ${result.CODIGO}, horas_plan: ${result.horas_plan}, fuente: ${result.fuente}`,
           );
         }
 
         if (result.fuente === 'cuadrante' && result.fecha_esperada) {
-          // Obține valoarea originală din cuadrante
+          // ObÈ›ine valoarea originalÄƒ din cuadrante
           const fecha = new Date(result.fecha_esperada);
           const dia = fecha.getDate();
           const mesFormatted = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
 
           try {
-            // Folosește backticks pentru coloana ZI_X (poate conține spații sau caractere speciale)
+            // FoloseÈ™te backticks pentru coloana ZI_X (poate conÈ›ine spaÈ›ii sau caractere speciale)
             const cuadrante = await this.prisma.$queryRawUnsafe<any[]>(`
               SELECT \`ZI_${dia}\` AS val
               FROM cuadrante
@@ -816,22 +644,22 @@ export class DataQueryService {
             if (cuadrante && cuadrante.length > 0 && cuadrante[0].val) {
               const valOriginal = cuadrante[0].val;
               const horasAnterioare = result.horas_plan;
-              // Folosește helper-ul JavaScript pentru a calcula corect orele
+              // FoloseÈ™te helper-ul JavaScript pentru a calcula corect orele
               const horasCorrectas = calculateCuadranteHours(valOriginal);
               if (horasCorrectas > 0) {
                 result.horas_plan = parseFloat(horasCorrectas.toFixed(2));
                 this.logger.log(
-                  `✅ Recalculated horas_plan for CODIGO ${result.CODIGO}: ${horasAnterioare} → ${result.horas_plan} (original: ${valOriginal})`,
+                  `âœ… Recalculated horas_plan for CODIGO ${result.CODIGO}: ${horasAnterioare} â†’ ${result.horas_plan} (original: ${valOriginal})`,
                 );
               }
             } else {
               this.logger.warn(
-                `⚠️ No cuadrante found for CODIGO ${result.CODIGO}, dia ${dia}, mes ${mesFormatted}`,
+                `No cuadrante found for CODIGO ${result.CODIGO}, dia ${dia}, mes ${mesFormatted}`,
               );
             }
           } catch (error: any) {
             this.logger.warn(
-              `⚠️ Error processing horas for CODIGO ${result.CODIGO}: ${error.message}`,
+              `Error processing horas for CODIGO ${result.CODIGO}: ${error.message}`,
             );
           }
         } else if (
@@ -839,12 +667,12 @@ export class DataQueryService {
           result.horas_plan &&
           parseFloat(result.horas_plan) >= 24
         ) {
-          // Pentru horario, dacă e 24h, probabil e 3 ture de 8h → returnăm 8h per tură
+          // Pentru horario, dacÄƒ e 24h, probabil e 3 ture de 8h â†’ returnÄƒm 8h per turÄƒ
           const horasAnterioare = result.horas_plan;
           if (parseFloat(horasAnterioare) === 24) {
             result.horas_plan = 8;
             this.logger.log(
-              `✅ Recalculated horas_plan for CODIGO ${result.CODIGO} (horario): ${horasAnterioare} → ${result.horas_plan} (24h = 3×8h)`,
+              `âœ… Recalculated horas_plan for CODIGO ${result.CODIGO} (horario): ${horasAnterioare} â†’ ${result.horas_plan} (24h = 3Ã—8h)`,
             );
           }
         }
@@ -853,42 +681,187 @@ export class DataQueryService {
       }),
     );
 
-    this.logger.log(`✅ Processed ${processedResults.length} results`);
+    this.logger.log(`âœ… Processed ${processedResults.length} results`);
     return processedResults;
   }
 
   /**
    * Query pentru CUADRANTE
    */
+  /**
+   * Pedidos de material (PedidosTodos), RBAC: empleado solo los suyos.
+   */
+  async queryPedidosForAssistant(
+    userId: string,
+    rol: string | null,
+    entidades?: { mes?: string; year?: string },
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const scope = this.rbacService.effectiveDataScope(rol, dataScope);
+    let empleadoCondition = '';
+    if (scope === AssistantDataScope.OWN) {
+      const uid = String(userId).trim();
+      empleadoCondition = `AND CAST(empleado_id AS CHAR) = ${this.escapeSql(uid)}`;
+    }
+
+    const { y, m } = this.resolveAssistantPedidosMonthYear(entidades);
+    const dateCondition = `AND YEAR(COALESCE(creado_en, fecha)) = ${y} AND MONTH(COALESCE(creado_en, fecha)) = ${m}`;
+
+    const query = `
+      SELECT
+        pedido_uid,
+        MAX(empleado_id) AS empleado_id,
+        MAX(comunidad_nombre) AS comunidad_nombre,
+        MAX(fecha) AS fecha,
+        MAX(creado_en) AS creado_en,
+        MAX(estado) AS estado,
+        MAX(moneda) AS moneda,
+        MAX(total) AS total,
+        COUNT(*) AS num_items
+      FROM PedidosTodos
+      WHERE 1=1
+        ${empleadoCondition}
+        ${dateCondition}
+      GROUP BY pedido_uid
+      ORDER BY MAX(creado_en) DESC, pedido_uid DESC
+      LIMIT 40
+    `;
+
+    this.logger.log(
+      `🔍 queryPedidosForAssistant: ${query.substring(0, 120)}...`,
+    );
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+      return rows || [];
+    } catch (e: any) {
+      this.logger.error(`queryPedidosForAssistant: ${e?.message ?? e}`);
+      return [];
+    }
+  }
+
+  private resolveAssistantPedidosMonthYear(entidades?: {
+    mes?: string;
+    year?: string;
+  }): { y: number; m: number } {
+    const meses = [
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
+    ];
+    const now = new Date();
+    let y = now.getFullYear();
+    let mo = now.getMonth() + 1;
+    if (entidades?.year && /^\d{4}$/.test(String(entidades.year).trim())) {
+      y = parseInt(String(entidades.year).trim(), 10);
+    }
+    if (entidades?.mes) {
+      const raw = String(entidades.mes)
+        .replace(/^completo_/i, '')
+        .toLowerCase();
+      const idx = meses.indexOf(raw);
+      if (idx >= 0) {
+        mo = idx + 1;
+      }
+    }
+    return { y, m: mo };
+  }
+
+  /**
+   * Coloana `cuadrante.LUNA` în produs este de obicei `YYYY-MM`, nu text „marzo”.
+   * Filtrul vechi `LIKE '%marzo%'` nu găsea rânduri → „sin datos” la „horario este mes”.
+   */
+  private buildCuadranteMesSqlCondition(
+    entidadesMes: string | undefined,
+    ref: Date = new Date(),
+  ): string {
+    const meses = [
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
+    ];
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+
+    if (!entidadesMes) {
+      const y = ref.getFullYear();
+      const m = ref.getMonth() + 1;
+      const ym = `${y}-${pad2(m)}`;
+      const nombre = meses[ref.getMonth()];
+      return `AND (
+        LUNA = ${this.escapeSql(ym)}
+        OR LUNA LIKE ${this.escapeSql(`${ym}-%`)}
+        OR LUNA LIKE ${this.escapeSql(`${ym}/%`)}
+        OR LOWER(CAST(LUNA AS CHAR)) LIKE ${this.escapeSql(`%${nombre}%`)}
+      )`;
+    }
+
+    const mesToken = String(entidadesMes)
+      .replace(/^completo_/i, '')
+      .toLowerCase();
+    const mesIndex = meses.indexOf(mesToken);
+    if (mesIndex < 0) {
+      return `AND LOWER(CAST(LUNA AS CHAR)) LIKE ${this.escapeSql(`%${mesToken}%`)}`;
+    }
+
+    let y = ref.getFullYear();
+    if (ref.getMonth() === 11 && mesIndex === 0) {
+      y += 1;
+    }
+    const ym = `${y}-${pad2(mesIndex + 1)}`;
+    return `AND (
+      LUNA = ${this.escapeSql(ym)}
+      OR LUNA LIKE ${this.escapeSql(`${ym}-%`)}
+      OR LUNA LIKE ${this.escapeSql(`${ym}/%`)}
+      OR LOWER(CAST(LUNA AS CHAR)) LIKE ${this.escapeSql(`%${mesToken}%`)}
+    )`;
+  }
+
   async queryCuadrante(
     userId: string,
     rol: string | null,
     entidades?: { codigo?: string; mes?: string },
+    dataScope?: AssistantDataScope,
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
       'CODIGO',
+      dataScope,
     );
 
-    let mesCondition = '';
-    if (entidades?.mes) {
-      mesCondition = `AND LUNA LIKE ${this.escapeSql(`%${entidades.mes}%`)}`;
-    } else {
-      // Mes actual
-      const mesActual = new Date().toLocaleString('es-ES', { month: 'long' });
-      mesCondition = `AND LUNA LIKE ${this.escapeSql(`%${mesActual}%`)}`;
-    }
+    const mesCondition = this.buildCuadranteMesSqlCondition(entidades?.mes);
+
+    const ziCols = Array.from({ length: 31 }, (_, i) => `ZI_${i + 1}`).join(
+      ',\n        ',
+    );
 
     const query = `
       SELECT 
         id,
         CODIGO,
-        EMAIL,
         NOMBRE,
         LUNA,
         CENTRO,
-        TotalHoras
+        TotalHoras,
+        ${ziCols}
       FROM cuadrante
       WHERE ${rbacCondition}
         ${mesCondition}
@@ -896,34 +869,44 @@ export class DataQueryService {
       LIMIT 10
     `;
 
-    this.logger.log(`🔍 Query cuadrante: ${query.substring(0, 100)}...`);
+    this.logger.log(`ðŸ” Query cuadrante: ${query.substring(0, 100)}...`);
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
 
   /**
-   * Query pentru VACACIONES (folosește VacacionesService pentru saldo + query solicitudes)
+   * Query pentru VACACIONES (foloseÈ™te VacacionesService pentru saldo + query solicitudes)
    */
   async queryVacaciones(
     userId: string,
     rol: string | null,
-    entidades?: { mes?: string; tipo?: string },
+    entidades?: {
+      mes?: string;
+      year?: string;
+      tipo?: string;
+      soloPendientes?: boolean;
+    },
+    dataScope?: AssistantDataScope,
   ): Promise<any> {
-    // Verifică RBAC
+    // VerificÄƒ RBAC
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
       'codigo',
+      dataScope,
     );
 
-    // Construiește condiții pentru query
+    // ConstruieÈ™te condiÈ›ii pentru query
     let tipoCondition = '';
     if (entidades?.tipo) {
-      tipoCondition = `AND tipo = ${this.escapeSql(entidades.tipo)}`;
+      tipoCondition = this.buildAssistantSolicitudTipoFilter(
+        'tipo',
+        entidades.tipo,
+      );
     } else {
-      // Dacă nu e specificat, caută vacaciones (nu asuntos propios)
-      tipoCondition = `AND tipo = 'vacaciones'`;
+      // DacÄƒ nu e specificat, cautÄƒ vacaciones (nu asuntos propios)
+      tipoCondition = `AND (tipo = ${this.escapeSql('Vacaciones')} OR tipo = ${this.escapeSql('Vacación')})`;
     }
 
     let mesCondition = '';
@@ -947,23 +930,23 @@ export class DataQueryService {
 
       if (mesIndex !== -1) {
         const ahora = new Date();
-        // Verifică anul curent și anul viitor (dacă suntem în decembrie și întrebăm despre ianuarie)
-        let año = ahora.getFullYear();
+        // VerificÄƒ anul curent È™i anul viitor (dacÄƒ suntem Ã®n decembrie È™i Ã®ntrebÄƒm despre ianuarie)
+        let anio = ahora.getFullYear();
         if (ahora.getMonth() === 11 && mesIndex === 0) {
-          // Suntem în decembrie și întrebăm despre ianuarie → anul viitor
-          año = año + 1;
+          // Suntem Ã®n decembrie È™i Ã®ntrebÄƒm despre ianuarie â†’ anul viitor
+          anio = anio + 1;
         }
         const mes = mesIndex + 1;
 
         // Prima zi a lunii
-        const fechaInicio = `${año}-${String(mes).padStart(2, '0')}-01`;
+        const fechaInicio = `${anio}-${String(mes).padStart(2, '0')}-01`;
         // Ultima zi a lunii
-        const ultimoDia = new Date(año, mes, 0).getDate();
-        const fechaFin = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+        const ultimoDia = new Date(anio, mes, 0).getDate();
+        const fechaFin = `${anio}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
 
-        // fecha_fin este VARCHAR, deci trebuie să convertim la DATE
-        // Caută solicitudes care se suprapun cu luna specificată
-        // O solicitare se suprapune dacă: fecha_inicio <= ultima zi a lunii AND (fecha_fin >= prima zi SAU fecha_fin este NULL)
+        // fecha_fin este VARCHAR, deci trebuie sÄƒ convertim la DATE
+        // CautÄƒ solicitudes care se suprapun cu luna specificatÄƒ
+        // O solicitare se suprapune dacÄƒ: fecha_inicio <= ultima zi a lunii AND (fecha_fin >= prima zi SAU fecha_fin este NULL)
         mesCondition = `AND (
           fecha_inicio IS NOT NULL 
           AND DATE(fecha_inicio) <= ${this.escapeSql(fechaFin)}
@@ -975,34 +958,62 @@ export class DataQueryService {
           )
         )`;
         this.logger.log(
-          `📅 Query vacaciones para mes: ${fechaInicio} a ${fechaFin} (año: ${año})`,
+          `ðŸ“… Query vacaciones para mes: ${fechaInicio} a ${fechaFin} (anio: ${anio})`,
         );
       }
+    } else if (
+      entidades?.year &&
+      /^\d{4}$/.test(String(entidades.year).trim())
+    ) {
+      const y = String(entidades.year).trim();
+      const fechaInicio = `${y}-01-01`;
+      const fechaFin = `${y}-12-31`;
+      mesCondition = `AND (
+          fecha_inicio IS NOT NULL 
+          AND DATE(fecha_inicio) <= ${this.escapeSql(fechaFin)}
+          AND (
+            fecha_fin IS NULL 
+            OR fecha_fin = ''
+            OR STR_TO_DATE(fecha_fin, '%Y-%m-%d') >= ${this.escapeSql(fechaInicio)}
+            OR fecha_fin >= ${this.escapeSql(fechaInicio)}
+          )
+        )`;
+      this.logger.log(
+        `ðŸ“… Query vacaciones para anio: ${fechaInicio} a ${fechaFin}`,
+      );
     }
 
-    // Query pentru solicitudes de vacații
-    // Dacă nu e specificat mes, returnează toate solicitudes de vacații (pentru întrebări de follow-up)
+    let pendientesCondition = '';
+    if (entidades?.soloPendientes) {
+      pendientesCondition = `AND (
+        LOWER(COALESCE(estado,'')) LIKE '%pendiente%'
+        OR LOWER(COALESCE(estado,'')) LIKE '%pending%'
+        OR LOWER(COALESCE(estado,'')) LIKE '%espera%'
+      )`;
+    }
+
+    // Query pentru solicitudes de vacaÈ›ii
+    // DacÄƒ nu e specificat mes, returneazÄƒ toate solicitudes de vacaÈ›ii (pentru Ã®ntrebÄƒri de follow-up)
     const query = `
       SELECT 
         id,
         codigo,
         nombre,
-        email,
         tipo,
         estado,
         fecha_inicio,
         fecha_fin,
-        motivo,
         fecha_solicitud
       FROM solicitudes
       WHERE ${rbacCondition}
         ${tipoCondition}
         ${mesCondition}
+        ${pendientesCondition}
       ORDER BY fecha_solicitud DESC
       LIMIT 50
     `;
 
-    this.logger.log(`🔍 Query vacaciones complet:`);
+    this.logger.log(`ðŸ” Query vacaciones complet:`);
     this.logger.log(`  - RBAC: ${rbacCondition}`);
     this.logger.log(`  - Tipo: ${tipoCondition}`);
     this.logger.log(`  - Mes: ${mesCondition || 'NINGUNO'}`);
@@ -1010,12 +1021,12 @@ export class DataQueryService {
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     this.logger.log(
-      `✅ Query vacaciones retornó ${results?.length || 0} resultados`,
+      `âœ… Query vacaciones retornÃ³ ${results?.length || 0} resultados`,
     );
 
     if (results && results.length > 0) {
       this.logger.log(
-        `📋 Primeros resultados: ${JSON.stringify(results.slice(0, 3), null, 2)}`,
+        `ðŸ“‹ Primeros resultados: ${JSON.stringify(results.slice(0, 3), null, 2)}`,
       );
     }
 
@@ -1023,27 +1034,146 @@ export class DataQueryService {
   }
 
   /**
-   * Query pentru NOMINAS
+   * Diplomas subidas en la app (Prisma; sin columna `archivo`).
+   */
+  async queryDiplomasForAssistant(
+    userId: string,
+    rol: string | null,
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const scope = this.rbacService.effectiveDataScope(rol, dataScope);
+    const take = scope === AssistantDataScope.ALL ? 400 : 80;
+    const uid = String(userId ?? '').trim();
+    try {
+      const rows = await this.prisma.diploma.findMany({
+        where: scope === AssistantDataScope.ALL ? {} : { empleado_id: uid },
+        orderBy: { fecha_subida: 'desc' },
+        take,
+        select: {
+          id: true,
+          empleado_id: true,
+          nombre_empleado: true,
+          nombre_archivo: true,
+          fecha_subida: true,
+          subido_por: true,
+          notas: true,
+        },
+      });
+      return rows || [];
+    } catch (e: any) {
+      this.logger.warn(`queryDiplomasForAssistant: ${e?.message ?? e}`);
+      return [];
+    }
+  }
+
+  /**
+   * Empleados ACTIVO sin fila en `Nominas` que cubra el mes (nombre) y año indicados.
+   */
+  private async queryEmpleadosActivosSinNominaMes(
+    userId: string,
+    rol: string | null,
+    entidades: { mes?: string; year?: string },
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const rawMes = String(entidades?.mes ?? '')
+      .replace(/^completo_/i, '')
+      .toLowerCase()
+      .trim();
+    if (!rawMes) {
+      return [];
+    }
+    const yearStr =
+      entidades?.year && /^\d{4}$/.test(String(entidades.year).trim())
+        ? String(entidades.year).trim()
+        : String(new Date().getFullYear());
+
+    const rbacDe = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'de.CODIGO',
+      dataScope,
+    );
+    const scope = this.rbacService.effectiveDataScope(rol, dataScope);
+    const limit = scope === AssistantDataScope.ALL ? 500 : 50;
+
+    const likeMes = this.escapeSql(`%${rawMes}%`);
+    const likeYear = this.escapeSql(`%${yearStr}%`);
+    const escYearEq = this.escapeSql(yearStr);
+    const escMesLabel = this.escapeSql(rawMes);
+
+    const query = `
+      SELECT
+        CAST(de.CODIGO AS CHAR) AS codigo_empleado,
+        de.\`NOMBRE / APELLIDOS\` AS nombre,
+        de.ESTADO AS estado,
+        'sin_nomina_mes' AS row_kind,
+        ${escMesLabel} AS mes_referencia,
+        ${escYearEq} AS ano_referencia
+      FROM DatosEmpleados de
+      WHERE de.ESTADO = 'ACTIVO'
+        AND ${rbacDe}
+        AND NOT EXISTS (
+          SELECT 1 FROM Nominas n
+          WHERE CAST(n.codigo_empleado AS CHAR) = CAST(de.CODIGO AS CHAR)
+            AND LOWER(CONCAT(' ', COALESCE(n.Mes, ''), ' ', COALESCE(CAST(n.Ano AS CHAR), ''), ' '))
+                LIKE LOWER(${likeMes})
+            AND (
+              TRIM(COALESCE(CAST(n.Ano AS CHAR), '')) = ''
+              OR TRIM(COALESCE(CAST(n.Ano AS CHAR), '')) = ${escYearEq}
+              OR LOWER(CONCAT(' ', COALESCE(n.Mes, ''), ' ', COALESCE(CAST(n.Ano AS CHAR), ''), ' '))
+                  LIKE LOWER(${likeYear})
+            )
+        )
+      ORDER BY de.\`NOMBRE / APELLIDOS\`
+      LIMIT ${limit}
+    `;
+
+    this.logger.log(
+      `🔍 queryEmpleadosActivosSinNominaMes: mes=${rawMes} año=${yearStr}`,
+    );
+    const results = await this.prisma.$queryRawUnsafe<any[]>(query);
+    return results || [];
+  }
+
+  /**
+   * Query pentru NOMINAS (filas existente) o empleados sin nómina para mes/año.
    */
   async queryNominas(
     userId: string,
     rol: string | null,
-    entidades?: { mes?: string },
+    entidades?: {
+      mes?: string;
+      year?: string;
+      faltan_nominas?: boolean;
+    },
+    dataScope?: AssistantDataScope,
   ): Promise<any[]> {
-    // Nominas nu au CODIGO direct, trebuie să verificăm prin User
-    const accessLevel = this.rbacService.getAccessLevel(rol);
-
-    if (accessLevel === AccessLevel.OWN_DATA_ONLY) {
-      // Pentru empleado, trebuie să verificăm dacă există nomina asociată
-      // Deocamdată returnează toate nominas (va fi filtrat în frontend sau prin alt mecanism)
-      this.logger.warn(
-        '⚠️ Query nominas pentru empleado - necesită implementare specifică',
+    if (entidades?.faltan_nominas) {
+      return this.queryEmpleadosActivosSinNominaMes(
+        userId,
+        rol,
+        entidades,
+        dataScope,
       );
     }
 
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'codigo_empleado',
+      dataScope,
+    );
+
     let mesCondition = '';
     if (entidades?.mes) {
-      mesCondition = `AND Mes LIKE ${this.escapeSql(`%${entidades.mes}%`)}`;
+      const mesToken = String(entidades.mes)
+        .replace(/^completo_/i, '')
+        .toLowerCase();
+      mesCondition = `AND LOWER(COALESCE(Mes,'')) LIKE LOWER(${this.escapeSql(`%${mesToken}%`)})`;
+    }
+    let yearCondition = '';
+    if (entidades?.year && /^\d{4}$/.test(String(entidades.year).trim())) {
+      yearCondition = `AND TRIM(COALESCE(CAST(Ano AS CHAR), '')) = ${this.escapeSql(String(entidades.year).trim())}`;
     }
 
     const query = `
@@ -1052,60 +1182,392 @@ export class DataQueryService {
         nombre,
         Mes,
         Ano,
-        fecha_subida
+        fecha_subida,
+        codigo_empleado
       FROM Nominas
-      WHERE 1=1
+      WHERE ${rbacCondition}
         ${mesCondition}
+        ${yearCondition}
       ORDER BY fecha_subida DESC
-      LIMIT 20
+      LIMIT 40
     `;
 
-    this.logger.log(`🔍 Query nominas: ${query.substring(0, 100)}...`);
+    this.logger.log(`ðŸ” Query nominas: ${query.substring(0, 100)}...`);
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
 
   /**
-   * Query pentru SOLICITUDES (vacaciones, asuntos propios)
+   * Query pentru SOLICITUDES (toate tipurile: vacaciones, bajas, permisos, etc.)
+   * Filtre opționale: tipo, soloPendientes, fecha (zi), mes, year — suprapunere interval.
    */
   async querySolicitudes(
     userId: string,
     rol: string | null,
-    entidades?: { tipo?: string },
+    entidades?: {
+      tipo?: string;
+      soloPendientes?: boolean;
+      fecha?: string;
+      mes?: string;
+      year?: string;
+      proximos_dias?: number;
+    },
+    dataScope?: AssistantDataScope,
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
-      'codigo',
+      's.codigo',
+      dataScope,
     );
 
     let tipoCondition = '';
     if (entidades?.tipo) {
-      tipoCondition = `AND tipo = ${this.escapeSql(entidades.tipo)}`;
+      tipoCondition = this.buildAssistantSolicitudTipoFilter(
+        's.tipo',
+        entidades.tipo,
+      );
     }
+
+    let pendientesCondition = '';
+    if (entidades?.soloPendientes) {
+      pendientesCondition = `AND (
+        LOWER(COALESCE(s.estado,'')) LIKE '%pendiente%'
+        OR LOWER(COALESCE(s.estado,'')) LIKE '%pending%'
+        OR LOWER(COALESCE(s.estado,'')) LIKE '%espera%'
+      )`;
+    }
+
+    let periodCondition = '';
+    /** true = mes/año/día explícito (lista grande, orden reciente primero). */
+    let orderNewestFirst = false;
+    const ymd = String(entidades?.fecha ?? '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      periodCondition = `AND (
+        s.fecha_inicio IS NOT NULL
+        AND TRIM(COALESCE(s.fecha_inicio,'')) <> ''
+        AND (
+          DATE(STR_TO_DATE(s.fecha_inicio, '%Y-%m-%d')) <= ${this.escapeSql(ymd)}
+          OR s.fecha_inicio <= ${this.escapeSql(ymd)}
+        )
+        AND (
+          s.fecha_fin IS NULL
+          OR TRIM(COALESCE(s.fecha_fin,'')) = ''
+          OR STR_TO_DATE(s.fecha_fin, '%Y-%m-%d') >= ${this.escapeSql(ymd)}
+          OR s.fecha_fin >= ${this.escapeSql(ymd)}
+        )
+      )`;
+      orderNewestFirst = true;
+      this.logger.log(`📅 querySolicitudes: filtro día ${ymd}`);
+    } else if (entidades?.mes) {
+      const meses = [
+        'enero',
+        'febrero',
+        'marzo',
+        'abril',
+        'mayo',
+        'junio',
+        'julio',
+        'agosto',
+        'septiembre',
+        'octubre',
+        'noviembre',
+        'diciembre',
+      ];
+      const mesNombre = entidades.mes.replace('completo_', '');
+      const mesIndex = meses.indexOf(mesNombre);
+      if (mesIndex !== -1) {
+        const ahora = new Date();
+        let anio = ahora.getFullYear();
+        if (ahora.getMonth() === 11 && mesIndex === 0) {
+          anio = anio + 1;
+        }
+        const mesNum = mesIndex + 1;
+        const fechaInicio = `${anio}-${String(mesNum).padStart(2, '0')}-01`;
+        const ultimoDia = new Date(anio, mesNum, 0).getDate();
+        const fechaFin = `${anio}-${String(mesNum).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+        periodCondition = `AND (
+          s.fecha_inicio IS NOT NULL
+          AND DATE(s.fecha_inicio) <= ${this.escapeSql(fechaFin)}
+          AND (
+            s.fecha_fin IS NULL
+            OR s.fecha_fin = ''
+            OR STR_TO_DATE(s.fecha_fin, '%Y-%m-%d') >= ${this.escapeSql(fechaInicio)}
+            OR s.fecha_fin >= ${this.escapeSql(fechaInicio)}
+          )
+        )`;
+        orderNewestFirst = true;
+        this.logger.log(
+          `📅 querySolicitudes: filtro mes ${fechaInicio} .. ${fechaFin}`,
+        );
+      }
+    } else if (
+      entidades?.year &&
+      /^\d{4}$/.test(String(entidades.year).trim())
+    ) {
+      const y = String(entidades.year).trim();
+      const fechaInicio = `${y}-01-01`;
+      const fechaFin = `${y}-12-31`;
+      periodCondition = `AND (
+        s.fecha_inicio IS NOT NULL
+        AND DATE(s.fecha_inicio) <= ${this.escapeSql(fechaFin)}
+        AND (
+          s.fecha_fin IS NULL
+          OR s.fecha_fin = ''
+          OR STR_TO_DATE(s.fecha_fin, '%Y-%m-%d') >= ${this.escapeSql(fechaInicio)}
+          OR s.fecha_fin >= ${this.escapeSql(fechaInicio)}
+        )
+      )`;
+      orderNewestFirst = true;
+      this.logger.log(`📅 querySolicitudes: filtro año ${y}`);
+    } else if (
+      entidades?.proximos_dias != null &&
+      Number.isFinite(Number(entidades.proximos_dias)) &&
+      Number(entidades.proximos_dias) >= 1 &&
+      Number(entidades.proximos_dias) <= 365
+    ) {
+      const n = Math.floor(Number(entidades.proximos_dias));
+      periodCondition = `AND (
+        s.fecha_inicio IS NOT NULL
+        AND TRIM(COALESCE(s.fecha_inicio,'')) <> ''
+        AND (
+          DATE(STR_TO_DATE(s.fecha_inicio, '%Y-%m-%d')) <= DATE_ADD(CURDATE(), INTERVAL ${n - 1} DAY)
+          OR s.fecha_inicio <= DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL ${n - 1} DAY), '%Y-%m-%d')
+        )
+        AND (
+          s.fecha_fin IS NULL
+          OR TRIM(COALESCE(s.fecha_fin,'')) = ''
+          OR STR_TO_DATE(s.fecha_fin, '%Y-%m-%d') >= CURDATE()
+          OR s.fecha_fin >= DATE_FORMAT(CURDATE(), '%Y-%m-%d')
+        )
+      )`;
+      orderNewestFirst = false;
+      this.logger.log(`📅 querySolicitudes: ventana próximos ${n} días`);
+    }
+
+    let defaultNotPastEnded = '';
+    if (!periodCondition) {
+      defaultNotPastEnded = `AND (
+        s.fecha_fin IS NULL
+        OR TRIM(COALESCE(s.fecha_fin,'')) = ''
+        OR STR_TO_DATE(s.fecha_fin, '%Y-%m-%d') >= CURDATE()
+        OR s.fecha_fin >= DATE_FORMAT(CURDATE(), '%Y-%m-%d')
+      )`;
+    }
+
+    const scope = this.rbacService.effectiveDataScope(rol, dataScope);
+    const fullAccess = scope === AssistantDataScope.ALL;
+    let limit = 20;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      limit = fullAccess ? 200 : 50;
+    } else if (entidades?.mes && periodCondition) {
+      limit = fullAccess ? 150 : 40;
+    } else if (entidades?.year && periodCondition) {
+      limit = fullAccess ? 150 : 40;
+    } else if (
+      entidades?.proximos_dias != null &&
+      Number(entidades.proximos_dias) >= 1 &&
+      periodCondition
+    ) {
+      limit = fullAccess ? 300 : 80;
+    } else {
+      limit = fullAccess ? 80 : 20;
+    }
+
+    const orderBySql = orderNewestFirst
+      ? 's.fecha_inicio DESC, s.fecha_solicitud DESC'
+      : 's.fecha_inicio ASC, s.fecha_solicitud DESC';
 
     const query = `
       SELECT 
-        id,
-        codigo,
-        nombre,
-        email,
-        tipo,
-        estado,
-        fecha_inicio,
-        fecha_fin,
-        motivo,
-        fecha_solicitud
-      FROM solicitudes
+        s.id,
+        s.codigo,
+        COALESCE(
+          NULLIF(TRIM(s.nombre), ''),
+          NULLIF(TRIM(de.\`NOMBRE / APELLIDOS\`), ''),
+          NULLIF(TRIM(de.NOMBRE), ''),
+          s.codigo
+        ) AS nombre,
+        s.tipo,
+        s.estado,
+        s.fecha_inicio,
+        s.fecha_fin,
+        s.fecha_solicitud,
+        s.tipo_justificante
+      FROM solicitudes s
+      LEFT JOIN DatosEmpleados de
+        ON CAST(de.CODIGO AS CHAR) = CAST(s.codigo AS CHAR)
       WHERE ${rbacCondition}
         ${tipoCondition}
-      ORDER BY fecha_solicitud DESC
-      LIMIT 20
+        ${pendientesCondition}
+        ${periodCondition}
+        ${defaultNotPastEnded}
+      ORDER BY ${orderBySql}
+      LIMIT ${limit}
     `;
 
-    this.logger.log(`🔍 Query solicitudes: ${query.substring(0, 100)}...`);
+    this.logger.log(`🔍 Query solicitudes: ${query.substring(0, 120)}...`);
 
+    const results = await this.prisma.$queryRawUnsafe<any[]>(query);
+    return results || [];
+  }
+
+  /**
+   * Registros en tabla `Ausencias` (misma lógica SQL que n8n «Cron absente»):
+   * FECHA puede ser un día o rango "YYYY-MM-DD - YYYY-MM-DD".
+   * Ventana por defecto: hoy .. hoy+10 días (intersección), alineado al cron.
+   */
+  async queryAusenciasCalendarioForAssistant(
+    userId: string,
+    rol: string | null,
+    entidades?: {
+      fecha?: string;
+      mes?: string;
+      year?: string;
+      proximos_dias?: number;
+    },
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'a.CODIGO',
+      dataScope,
+    );
+
+    const ymd = String(entidades?.fecha ?? '').trim();
+    let overlapCondition: string;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      const d = this.escapeSql(ymd);
+      overlapCondition = `t.fecha_inicio IS NOT NULL AND t.fecha_fin IS NOT NULL
+        AND t.fecha_fin >= ${d} AND t.fecha_inicio <= ${d}`;
+      this.logger.log(`📅 queryAusenciasCalendario: día ${ymd}`);
+    } else if (entidades?.mes) {
+      const meses = [
+        'enero',
+        'febrero',
+        'marzo',
+        'abril',
+        'mayo',
+        'junio',
+        'julio',
+        'agosto',
+        'septiembre',
+        'octubre',
+        'noviembre',
+        'diciembre',
+      ];
+      const mesNombre = entidades.mes.replace('completo_', '');
+      const mesIndex = meses.indexOf(mesNombre);
+      if (mesIndex !== -1) {
+        const ahora = new Date();
+        let anio = ahora.getFullYear();
+        if (ahora.getMonth() === 11 && mesIndex === 0) {
+          anio = anio + 1;
+        }
+        const mesNum = mesIndex + 1;
+        const fechaInicio = `${anio}-${String(mesNum).padStart(2, '0')}-01`;
+        const ultimoDia = new Date(anio, mesNum, 0).getDate();
+        const fechaFin = `${anio}-${String(mesNum).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+        const fi = this.escapeSql(fechaInicio);
+        const ff = this.escapeSql(fechaFin);
+        overlapCondition = `t.fecha_inicio IS NOT NULL AND t.fecha_fin IS NOT NULL
+          AND t.fecha_fin >= ${fi} AND t.fecha_inicio <= ${ff}`;
+        this.logger.log(
+          `📅 queryAusenciasCalendario: mes ${fechaInicio} .. ${fechaFin}`,
+        );
+      } else {
+        overlapCondition = `t.fecha_fin >= CURDATE()
+          AND t.fecha_inicio <= DATE_ADD(CURDATE(), INTERVAL 10 DAY)`;
+      }
+    } else if (
+      entidades?.year &&
+      /^\d{4}$/.test(String(entidades.year).trim())
+    ) {
+      const y = String(entidades.year).trim();
+      const fechaInicio = `${y}-01-01`;
+      const fechaFin = `${y}-12-31`;
+      overlapCondition = `t.fecha_inicio IS NOT NULL AND t.fecha_fin IS NOT NULL
+        AND t.fecha_fin >= ${this.escapeSql(fechaInicio)}
+        AND t.fecha_inicio <= ${this.escapeSql(fechaFin)}`;
+      this.logger.log(`📅 queryAusenciasCalendario: año ${y}`);
+    } else if (
+      entidades?.proximos_dias != null &&
+      Number.isFinite(Number(entidades.proximos_dias)) &&
+      Number(entidades.proximos_dias) >= 1 &&
+      Number(entidades.proximos_dias) <= 365
+    ) {
+      const n = Math.floor(Number(entidades.proximos_dias));
+      overlapCondition = `t.fecha_inicio IS NOT NULL AND t.fecha_fin IS NOT NULL
+        AND t.fecha_fin >= CURDATE()
+        AND t.fecha_inicio <= DATE_ADD(CURDATE(), INTERVAL ${n - 1} DAY)`;
+      this.logger.log(
+        `📅 queryAusenciasCalendario: ventana próximos ${n} días`,
+      );
+    } else {
+      overlapCondition = `t.fecha_fin >= CURDATE()
+        AND t.fecha_inicio <= DATE_ADD(CURDATE(), INTERVAL 10 DAY)`;
+      this.logger.log(
+        `📅 queryAusenciasCalendario: ventana default cron (10 días)`,
+      );
+    }
+
+    const scopeAus = this.rbacService.effectiveDataScope(rol, dataScope);
+    const limit = scopeAus === AssistantDataScope.ALL ? 500 : 100;
+
+    const query = `
+SELECT
+  t.id,
+  t.solicitud_id,
+  t.CODIGO,
+  t.NOMBRE,
+  t.TIPO,
+  t.FECHA_RAW,
+  t.HORA,
+  t.LOCACION,
+  t.MOTIVO,
+  t.DURACION,
+  t.UNIDAD_DURACION,
+  t.created_at,
+  t.fecha_inicio,
+  t.fecha_fin
+FROM (
+  SELECT
+    a.id,
+    a.solicitud_id,
+    a.CODIGO,
+    a.NOMBRE,
+    a.TIPO,
+    a.FECHA AS FECHA_RAW,
+    a.HORA,
+    a.LOCACION,
+    a.MOTIVO,
+    a.DURACION,
+    a.UNIDAD_DURACION,
+    a.created_at,
+    CASE
+      WHEN REPLACE(a.FECHA, '- ', ' - ') LIKE '% - %'
+        THEN STR_TO_DATE(TRIM(SUBSTRING_INDEX(REPLACE(a.FECHA, '- ', ' - '), ' - ', 1)), '%Y-%m-%e')
+      ELSE STR_TO_DATE(a.FECHA, '%Y-%m-%e')
+    END AS fecha_inicio,
+    CASE
+      WHEN REPLACE(a.FECHA, '- ', ' - ') LIKE '% - %'
+        THEN STR_TO_DATE(TRIM(SUBSTRING_INDEX(REPLACE(a.FECHA, '- ', ' - '), ' - ', -1)), '%Y-%m-%e')
+      ELSE STR_TO_DATE(a.FECHA, '%Y-%m-%e')
+    END AS fecha_fin
+  FROM Ausencias a
+  WHERE ${rbacCondition}
+) AS t
+WHERE ${overlapCondition}
+ORDER BY t.fecha_inicio, t.NOMBRE
+LIMIT ${limit}
+`;
+
+    this.logger.log(
+      `🔍 queryAusenciasCalendario: ${query.substring(0, 100)}...`,
+    );
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
@@ -1113,11 +1575,16 @@ export class DataQueryService {
   /**
    * Query pentru DOCUMENTOS
    */
-  async queryDocumentos(userId: string, rol: string | null): Promise<any[]> {
+  async queryDocumentos(
+    userId: string,
+    rol: string | null,
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
       rol,
       'codigo',
+      dataScope,
     );
 
     const query = `
@@ -1134,28 +1601,141 @@ export class DataQueryService {
       LIMIT 20
     `;
 
-    this.logger.log(`🔍 Query documentos: ${query.substring(0, 100)}...`);
+    this.logger.log(`ðŸ” Query documentos: ${query.substring(0, 100)}...`);
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
   }
 
   /**
-   * Query pentru KB Articles (Knowledge Base)
+   * Comunicados publicados + si el usuario ya los marcó leídos (sin adjuntos binarios).
+   * Lista publicărilor este aceeași pentru toți (broadcast); `rol` / `dataScope` nu filtrează rânduri,
+   * dar se acceptă în semnătură pentru consistență cu tool-ul assistant.
+   */
+  async queryComunicadosForAssistant(
+    userId: string,
+    _rol?: string | null,
+    _dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const uid = String(userId ?? '').trim();
+    if (!uid) {
+      return [];
+    }
+    try {
+      const rows = await this.prisma.comunicado.findMany({
+        where: { publicado: true },
+        orderBy: { created_at: 'desc' },
+        take: 25,
+        select: {
+          id: true,
+          titulo: true,
+          contenido: true,
+          autor_id: true,
+          created_at: true,
+          leidos: {
+            where: { user_id: uid },
+            select: { read_at: true },
+            take: 1,
+          },
+        },
+      });
+      return rows.map((r) => {
+        const c = String(r.contenido ?? '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const max = 400;
+        const resumen_texto = c.length <= max ? c : `${c.slice(0, max - 1)}…`;
+        const leidosArr = r.leidos ?? [];
+        const leido_por_mi = leidosArr.length > 0;
+        return {
+          id: String(r.id),
+          titulo: r.titulo,
+          resumen_texto,
+          autor_id: r.autor_id,
+          created_at: r.created_at,
+          leido_por_mi,
+          leido_en: leido_por_mi ? leidosArr[0].read_at : null,
+        };
+      });
+    } catch (e: any) {
+      this.logger.warn(`queryComunicadosForAssistant: ${e?.message ?? e}`);
+      return [];
+    }
+  }
+
+  /**
+   * Documentación solicitada al empleado (tabla documentos_solicitados).
+   */
+  async queryDocumentosSolicitadosForAssistant(
+    userId: string,
+    rol: string | null,
+    entidades?: { soloPendientes?: boolean },
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'empleado_id',
+      dataScope,
+    );
+    let extra = '';
+    if (entidades?.soloPendientes) {
+      extra = `AND LOWER(COALESCE(estado,'')) LIKE '%pendiente%'`;
+    }
+    const query = `
+      SELECT
+        id,
+        empleado_id,
+        tipo_documento,
+        estado,
+        fecha_solicitud,
+        fecha_completado
+      FROM documentos_solicitados
+      WHERE ${rbacCondition}
+        ${extra}
+      ORDER BY fecha_solicitud DESC
+      LIMIT 30
+    `;
+    try {
+      const results = await this.prisma.$queryRawUnsafe<any[]>(query);
+      return results || [];
+    } catch (e: any) {
+      this.logger.error(
+        `queryDocumentosSolicitadosForAssistant: ${e?.message ?? e}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * KB: tÃ©rminos normalizados en AND; sin tÃ©rminos â†’ artÃ­culos recientes.
+   * Devuelve meta no sensible para contrato / telemetrÃ­a.
    */
   async queryKbArticles(
     categoria?: string,
     searchTerm?: string,
-  ): Promise<any[]> {
+  ): Promise<{ rows: any[]; meta: KbQueryMeta }> {
     let conditions = 'activo = TRUE';
 
     if (categoria) {
       conditions += ` AND categoria = ${this.escapeSql(categoria)}`;
     }
 
-    if (searchTerm) {
-      conditions += ` AND (titulo LIKE ${this.escapeSql(`%${searchTerm}%`)} OR contenido LIKE ${this.escapeSql(`%${searchTerm}%`)})`;
+    const fragments = normalizeKbSearchTerms(
+      searchTerm,
+      ASSISTANT_KB_MAX_SEARCH_TERMS,
+    );
+
+    for (const frag of fragments) {
+      const pat = `%${frag}%`;
+      conditions += ` AND (titulo LIKE ${this.escapeSql(pat)} OR contenido LIKE ${this.escapeSql(pat)})`;
     }
+
+    const lim = ASSISTANT_KB_QUERY_LIMIT;
+    const firstFrag = fragments[0];
+    const orderSql = firstFrag
+      ? `(CASE WHEN titulo LIKE ${this.escapeSql(`%${firstFrag}%`)} THEN 0 ELSE 1 END), updated_at DESC`
+      : 'updated_at DESC';
 
     const query = `
       SELECT 
@@ -1166,19 +1746,53 @@ export class DataQueryService {
         tags
       FROM kb_articles
       WHERE ${conditions}
-      ORDER BY updated_at DESC
-      LIMIT 5
+      ORDER BY ${orderSql}
+      LIMIT ${lim}
     `;
 
-    this.logger.log(`🔍 Query KB articles: ${query.substring(0, 100)}...`);
+    this.logger.log(`ðŸ” Query KB: tokens=${fragments.length}, limit=${lim}`);
 
-    const results = await this.prisma.$queryRawUnsafe<any[]>(query);
-    return results || [];
+    const results = (await this.prisma.$queryRawUnsafe<any[]>(query)) || [];
+    const meta: KbQueryMeta = {
+      searchActive: fragments.length > 0,
+      tokenCount: fragments.length,
+      resultLimit: lim,
+      articleCount: results.length,
+    };
+
+    return { rows: results, meta };
   }
 
   private escapeSql(value: string): string {
     if (!value) return "''";
     const escaped = value.replace(/'/g, "''");
     return `'${escaped}'`;
+  }
+
+  /**
+   * Chei canonice din assistant (intent-classifier) → valori `solicitudes.tipo` din app.
+   * Altfel: egalitate exactă cu stringul primit (compat înapoi).
+   */
+  private buildAssistantSolicitudTipoFilter(
+    columnRef: string,
+    tipo: string,
+  ): string {
+    const t = String(tipo ?? '').trim();
+    if (!t) return '';
+
+    if (t === 'ausencia_justificada') {
+      return `AND ${columnRef} = ${this.escapeSql('Ausencias justificada')}`;
+    }
+    if (t === 'baja') {
+      return `AND ${columnRef} = ${this.escapeSql('BAJA_VOLUNTARIA')}`;
+    }
+    if (t === 'vacaciones') {
+      return `AND (${columnRef} = ${this.escapeSql('Vacaciones')} OR ${columnRef} = ${this.escapeSql('Vacación')})`;
+    }
+    if (t === 'asunto_propio' || t === 'asuntos_propios') {
+      return `AND (${columnRef} = ${this.escapeSql('Asunto Propio')} OR ${columnRef} = ${this.escapeSql('Asuntos Propios')})`;
+    }
+
+    return `AND ${columnRef} = ${this.escapeSql(t)}`;
   }
 }

@@ -1,4 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AssistantDataScope } from '../constants/assistant-data-scope.const';
+
+export { AssistantDataScope } from '../constants/assistant-data-scope.const';
 
 export enum UserRole {
   EMPLEADO = 'empleado',
@@ -23,6 +26,33 @@ export class RbacService {
    * Fail-closed: rol necunoscut → mod Empleado
    */
   getAccessLevel(rol: string | null | undefined): AccessLevel {
+    return this.accessLevelFromRole(rol);
+  }
+
+  /**
+   * Scope canonic pentru assistant: ALL vs OWN (aceeași hartă ca AccessLevel).
+   */
+  resolveDataScope(rol: string | null | undefined): AssistantDataScope {
+    return this.accessLevelFromRole(rol) === AccessLevel.FULL_ACCESS
+      ? AssistantDataScope.ALL
+      : AssistantDataScope.OWN;
+  }
+
+  /**
+   * Scope efectiv: override explicit (ex. teste) sau derivat din rol.
+   */
+  effectiveDataScope(
+    rol: string | null | undefined,
+    explicitScope?: AssistantDataScope,
+  ): AssistantDataScope {
+    /** Empleado / rol necunoscut: mereu OWN, chiar dacă cineva trimite ALL explicit. */
+    if (this.resolveDataScope(rol) === AssistantDataScope.OWN) {
+      return AssistantDataScope.OWN;
+    }
+    return explicitScope ?? AssistantDataScope.ALL;
+  }
+
+  private accessLevelFromRole(rol: string | null | undefined): AccessLevel {
     if (!rol) {
       this.logger.warn(
         '⚠️ Rol necunoscut sau lipsă, aplicând mod Empleado (fail-closed)',
@@ -32,7 +62,6 @@ export class RbacService {
 
     const rolNormalized = rol.toLowerCase().trim();
 
-    // Supervisor, Admin, Manager, Jefe → acces total
     if (
       rolNormalized === 'supervisor' ||
       rolNormalized === 'admin' ||
@@ -43,7 +72,6 @@ export class RbacService {
       return AccessLevel.FULL_ACCESS;
     }
 
-    // Empleado sau orice alt rol necunoscut → doar propriile date (fail-closed)
     this.logger.log(`✅ Rol "${rol}" → Acces: OWN_DATA_ONLY`);
     return AccessLevel.OWN_DATA_ONLY;
   }
@@ -56,33 +84,28 @@ export class RbacService {
     targetUserId: string,
     currentUserRol: string | null | undefined,
   ): boolean {
-    const accessLevel = this.getAccessLevel(currentUserRol);
-
-    // Acces total → poate accesa orice
-    if (accessLevel === AccessLevel.FULL_ACCESS) {
+    if (this.resolveDataScope(currentUserRol) === AssistantDataScope.ALL) {
       return true;
     }
-
-    // Doar propriile date → doar dacă e același utilizator
     return currentUserId === targetUserId;
   }
 
   /**
-   * Construiește condiția SQL pentru filtrare bazată pe RBAC
+   * Construiește condiția SQL pentru filtrare bazată pe RBAC / scope assistant.
+   * @param explicitScope opțional — același scope pe care îl primesc tool-urile (override față de rol).
    */
   buildRbacCondition(
     userId: string,
     rol: string | null | undefined,
     codigoColumn: string = 'CODIGO',
+    explicitScope?: AssistantDataScope,
   ): string {
-    const accessLevel = this.getAccessLevel(rol);
+    const scope = this.effectiveDataScope(rol, explicitScope);
 
-    if (accessLevel === AccessLevel.FULL_ACCESS) {
-      // Acces total → fără restricții
+    if (scope === AssistantDataScope.ALL) {
       return '1=1';
     }
 
-    // Doar propriile date → filtrează după CODIGO
     return `${codigoColumn} = ${this.escapeSql(userId)}`;
   }
 

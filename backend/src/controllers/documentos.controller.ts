@@ -18,9 +18,12 @@ import {
 import { Request } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DocumentosService } from '../services/documentos.service';
 
+/** Rate limit dezactivat: listarea/descărcarea documentelor e apelată în batch per empleado (Todas/Aprobación) și provoca 429 Too Many Requests. */
+@SkipThrottle()
 @Controller('api/documentos')
 @UseGuards(JwtAuthGuard)
 export class DocumentosController {

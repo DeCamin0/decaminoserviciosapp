@@ -69,7 +69,7 @@ async function apiRequest<T>(
       try {
         errorData = await response.json();
       } catch {
-        errorData = { message: 'Eroare de rețea' };
+        errorData = { message: 'Error de red' };
       }
       
       throw new ApiError(

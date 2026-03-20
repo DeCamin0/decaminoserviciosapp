@@ -532,7 +532,7 @@ export class HorariosService {
     const data = normalized.data;
 
     if (!data.id) {
-      throw new BadRequestException("Editare: câmpul 'id' este obligatoriu.");
+      throw new BadRequestException("Edición: el campo 'id' es obligatorio.");
     }
 
     // Construiește query-ul SQL pentru UPDATE
@@ -704,12 +704,12 @@ export class HorariosService {
       // Găsește primul sheet
       const sheetName = workbook.worksheets[0]?.name;
       if (!sheetName) {
-        throw new BadRequestException('Excel-ul nu conține sheet-uri');
+        throw new BadRequestException('El Excel no contiene hojas');
       }
 
       const worksheet = workbook.getWorksheet(sheetName);
       if (!worksheet) {
-        throw new BadRequestException(`Sheet "${sheetName}" nu a fost găsit`);
+        throw new BadRequestException(`No se encontró la hoja "${sheetName}"`);
       }
 
       this.logger.log(`📄 Procesez sheet: "${sheetName}"`);
@@ -731,7 +731,7 @@ export class HorariosService {
         mesDetectat = `${year}-${month}`;
       } else if (!mesDetectat) {
         throw new BadRequestException(
-          'Luna nu poate fi detectată din Excel și nu este specificată',
+          'No se puede detectar el mes en el Excel y no se ha especificado',
         );
       }
 
@@ -1685,7 +1685,7 @@ export class HorariosService {
 
       if (!existing || existing.length === 0) {
         throw new BadRequestException(
-          `Horario_multicentro cu ID ${id} nu a fost găsit`,
+          `No se encontró Horario_multicentro con ID ${id}`,
         );
       }
 
@@ -1950,7 +1950,7 @@ export class HorariosService {
         );
         return {
           success: false,
-          message: `Nu s-a găsit cuadrante pentru angajatul ${codigoClean}, luna ${mesClean} și centrul ${centroClean}`,
+          message: `No se encontró cuadrante para el empleado ${codigoClean}, mes ${mesClean} y centro ${centroClean}`,
         };
       }
 

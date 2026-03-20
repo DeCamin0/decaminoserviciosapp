@@ -842,7 +842,7 @@ export default function EstadisticasPage() {
                     <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
                       <span className="text-white text-sm">⏰</span>
                     </div>
-                    <span className="font-medium text-gray-700">Salida întârziată</span>
+                    <span className="font-medium text-gray-700">Salida con retraso</span>
                     {detailedStats.salidaIntarziata > 0 && detailedStats.salidaIntarziataDetaliat?.length > 0 && (
                       <button
                         onClick={() => setShowSalidaIntarziataModal(true)}
@@ -1093,7 +1093,7 @@ export default function EstadisticasPage() {
                   <span className="text-white text-lg">⏰</span>
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-800">Salida întârziată</h2>
+                  <h2 className="text-2xl font-bold text-gray-800">Salida con retraso</h2>
                   <p className="text-sm text-gray-500">Detalles de registros con salida después de 2+ días</p>
                 </div>
               </div>
@@ -1130,7 +1130,7 @@ export default function EstadisticasPage() {
                               </div>
                             </div>
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                              {totalZile} día{totalZile !== 1 ? 's' : ''} con salida întârziată
+                              {totalZile} día{totalZile !== 1 ? 's' : ''} con salida con retraso
                             </span>
                           </div>
                         </div>
@@ -1210,7 +1210,7 @@ export default function EstadisticasPage() {
             <div className="border-t border-gray-200 p-4 bg-gray-50">
               <div className="flex justify-between items-center">
                 <div className="text-sm text-gray-600">
-                  <div>Total: {detailedStats.salidaIntarziataDetaliat?.length || 0} empleado(s) con salida întârziată</div>
+                  <div>Total: {detailedStats.salidaIntarziataDetaliat?.length || 0} empleado(s) con salida con retraso</div>
                   <div className="text-xs text-gray-500 mt-1">
                     {detailedStats.salidaIntarziataDetaliat?.reduce((sum, emp) => sum + (emp.ZILE_FARA_IESIRE?.length || 0), 0) || 0} registro(s) total(es)
                   </div>

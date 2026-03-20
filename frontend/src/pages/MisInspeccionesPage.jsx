@@ -503,7 +503,7 @@ export default function MisInspeccionesPage() {
       }
     } catch (error) {
       console.error('❌ Error downloading PDF:', error);
-      alert('Eroare la descărcarea PDF-ului');
+      alert('Error al descargar el PDF');
     }
   };
 

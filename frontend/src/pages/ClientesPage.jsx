@@ -571,7 +571,7 @@ export default function ClientesPage() {
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <div className="text-red-600 font-bold text-xl">Se încarcă clienții și furnizorii...</div>
+          <div className="text-red-600 font-bold text-xl">Cargando clientes y proveedores...</div>
         </div>
       </div>
     );
@@ -752,7 +752,7 @@ export default function ClientesPage() {
                         loading={isOperationLoading('clientes')}
                         disabled={isOperationLoading('clientes')}
                       >
-                        {isOperationLoading('clientes') ? 'Se încarcă...' : '🔄 Actualizar'}
+                        {isOperationLoading('clientes') ? 'Cargando...' : '🔄 Actualizar'}
                       </Button>
                     </div>
                   </div>
@@ -1238,7 +1238,7 @@ Acciones
                         loading={isOperationLoading('proveedores')}
                         disabled={isOperationLoading('proveedores')}
                       >
-                        {isOperationLoading('proveedores') ? 'Se încarcă...' : '🔄 Actualizar'}
+                        {isOperationLoading('proveedores') ? 'Cargando...' : '🔄 Actualizar'}
                       </Button>
                     </div>
                   </div>

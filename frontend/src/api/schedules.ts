@@ -134,7 +134,7 @@ export async function getSchedule(callApi: CallApiFunction, scheduleId: string |
     return {
       success: true,
       data: result,
-      message: 'Orar obținut cu succes'
+      message: 'Horario obtenido correctamente'
     };
 
   } catch (error) {

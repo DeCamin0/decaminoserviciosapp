@@ -53,6 +53,7 @@ import {
   LazyClienteDetallePage,
   LazyProveedorDetallePage,
   LazyAdminDashboard,
+  LazySuperAdminTenantsPage,
   LazyInspeccionesPage,
   LazyMisInspeccionesPage,
   // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (LazyTareasPage, LazyControlCorreoPage, LazyIncidenciasPage, LazyPaqueteriaCentroPage, LazyTareasCentroPage, LazyIncidenciasCentroPage)
@@ -439,6 +440,17 @@ function AppRoutes() {
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyAdminDashboard />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/tenants"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazySuperAdminTenantsPage />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

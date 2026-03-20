@@ -5,6 +5,7 @@ import LocationDisplay from '../components/LocationDisplay';
 import ThemeToggle from '../components/ThemeToggle';
 import NotificationsBell from '../components/NotificationsBell';
 import MobileBottomNav from '../components/navigation/MobileBottomNav';
+import ChatBot from '../components/ChatBot';
 import { config } from '../config/env.js';
 
 // Logo din config (multi-client). La ngrok folosim logo DC doar dacă nu e client 2 (HERA).
@@ -215,6 +216,9 @@ const MobileLayout = ({ children }) => {
       
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav />
+
+      {/* Asistent AI (FAB deasupra barei de jos — vezi ChatBot.css mobile) */}
+      <ChatBot />
     </div>
   );
 };

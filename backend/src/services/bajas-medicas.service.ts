@@ -578,14 +578,16 @@ ${diasBaja !== null ? `📊 *Días de baja:* ${diasBaja}` : ''}
         )?.name || workbook.worksheets[0]?.name;
 
       if (!sheetName) {
-        throw new BadRequestException('Nu s-a găsit niciun sheet în Excel');
+        throw new BadRequestException(
+          'No se encontró ninguna hoja en el Excel',
+        );
       }
 
       this.logger.log(`📄 Procesez sheet: "${sheetName}"`);
 
       const worksheet = workbook.getWorksheet(sheetName);
       if (!worksheet) {
-        throw new BadRequestException(`Sheet "${sheetName}" nu a fost găsit`);
+        throw new BadRequestException(`No se encontró la hoja "${sheetName}"`);
       }
 
       const rows = sheetToJson(worksheet, {
@@ -594,7 +596,7 @@ ${diasBaja !== null ? `📊 *Días de baja:* ${diasBaja}` : ''}
       });
 
       if (rows.length === 0) {
-        throw new BadRequestException('Excel-ul nu conține date');
+        throw new BadRequestException('El Excel no contiene datos');
       }
 
       this.logger.log(`📊 Rânduri găsite în Excel: ${rows.length}`);

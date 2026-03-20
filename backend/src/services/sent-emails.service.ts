@@ -170,7 +170,7 @@ export class SentEmailsService {
       });
 
       if (!email) {
-        throw new Error(`Email cu ID ${id} nu a fost găsit`);
+        throw new Error(`No se encontró el email con ID ${id}`);
       }
 
       return email;
@@ -192,7 +192,7 @@ export class SentEmailsService {
       });
 
       if (!attachment) {
-        throw new Error(`Attachment cu ID ${attachmentId} nu a fost găsit`);
+        throw new Error(`No se encontró el adjunto con ID ${attachmentId}`);
       }
 
       return attachment;

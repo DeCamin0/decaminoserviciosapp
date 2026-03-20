@@ -513,17 +513,17 @@ export default function MensajesEnviadosPage() {
   // Trimite email
   const handleSendEmail = async () => {
     if (!subject.trim() || !message.trim()) {
-      setSendError('Subiectul și mesajul sunt obligatorii');
+      setSendError('El asunto y el mensaje son obligatorios');
       return;
     }
 
     if (recipientType === 'empleado' && !selectedEmpleado) {
-      setSendError('Selectează un angajat');
+      setSendError('Selecciona un empleado');
       return;
     }
 
     if (recipientType === 'grupo' && !selectedGrupo) {
-      setSendError('Selectează un grup');
+      setSendError('Selecciona un grupo');
       return;
     }
 
@@ -666,7 +666,7 @@ export default function MensajesEnviadosPage() {
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
         <Card className="p-8 text-center">
           <h2 className="text-2xl font-bold text-red-600 mb-4">Acces Restriccionat</h2>
-          <p className="text-gray-600">Nu ai permisiunea de a accesa această pagină.</p>
+          <p className="text-gray-600">No tienes permiso para acceder a esta página.</p>
         </Card>
       </div>
     );
@@ -982,9 +982,9 @@ export default function MensajesEnviadosPage() {
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-semibold text-blue-900">
-                        {emailProgress.status === 'starting' && '⏳ Pregătire...'}
-                        {emailProgress.status === 'sending' && '📧 Se trimit email-uri...'}
-                        {emailProgress.status === 'completed' && '✅ Finalizat!'}
+                        {emailProgress.status === 'starting' && '⏳ Preparando...'}
+                        {emailProgress.status === 'sending' && '📧 Enviando correos...'}
+                        {emailProgress.status === 'completed' && '✅ ¡Finalizado!'}
                       </span>
                       <span className="text-sm font-bold text-blue-700">
                         {emailProgress.current} / {emailProgress.total}
@@ -1003,9 +1003,9 @@ export default function MensajesEnviadosPage() {
                     
                     {/* Statistici */}
                     <div className="mt-3 flex items-center justify-between text-xs text-blue-700">
-                      <span>✅ Reușite: {emailProgress.success}</span>
+                      <span>✅ Correctos: {emailProgress.success}</span>
                       {emailProgress.failed > 0 && (
-                        <span className="text-red-600">❌ Eșuate: {emailProgress.failed}</span>
+                        <span className="text-red-600">❌ Fallidos: {emailProgress.failed}</span>
                       )}
                       <span className="font-semibold">
                         {Math.round((emailProgress.current / emailProgress.total) * 100)}%
@@ -1260,9 +1260,9 @@ export default function MensajesEnviadosPage() {
                       }
                     }}
                     className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-medium hover:from-green-600 hover:to-green-700 shadow-md text-sm"
-                    title="Declanșează manual cron job-ul pentru a trimite mesajele automate acum"
+                    title="Ejecutar manualmente el cron para enviar los mensajes automáticos ahora"
                   >
-                    ⚡ Testează Acum
+                    ⚡ Probar ahora
                   </button>
                   <button
                     onClick={() => {
@@ -1293,22 +1293,22 @@ export default function MensajesEnviadosPage() {
                 <TableLoading />
               ) : scheduledMessages.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
-                  <p className="text-lg">Nu există mesaje automate</p>
-                  <p className="text-sm mt-2">Creează un mesaj automat pentru a începe</p>
+                  <p className="text-lg">No hay mensajes automáticos</p>
+                  <p className="text-sm mt-2">Crea un mensaje automático para comenzar</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse bg-white rounded-lg shadow">
                     <thead>
                       <tr className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                        <th className="p-4 text-left">Nume</th>
-                        <th className="p-4 text-left">Destinatari</th>
+                        <th className="p-4 text-left">Nombre</th>
+                        <th className="p-4 text-left">Destinatarios</th>
                         <th className="p-4 text-left">Asunto</th>
-                        <th className="p-4 text-left">Perioadă</th>
-                        <th className="p-4 text-left">Ora</th>
-                        <th className="p-4 text-left">Status</th>
-                        <th className="p-4 text-left">Ultima Trimis</th>
-                        <th className="p-4 text-left">Acțiuni</th>
+                        <th className="p-4 text-left">Período</th>
+                        <th className="p-4 text-left">Hora</th>
+                        <th className="p-4 text-left">Estado</th>
+                        <th className="p-4 text-left">Último envío</th>
+                        <th className="p-4 text-left">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1406,10 +1406,10 @@ export default function MensajesEnviadosPage() {
                                     }
                                   }}
                                   className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
-                                  title="Vezi destinatarii"
+                                  title="Ver destinatarios"
                                   disabled={loadingRecipients}
                                 >
-                                  {loadingRecipients ? '⏳' : '👁️'} Destinatari
+                                  {loadingRecipients ? '⏳' : '👁️'} Destinatarios
                                 </button>
                                 <button
                                   onClick={() => {
@@ -1509,7 +1509,7 @@ export default function MensajesEnviadosPage() {
           {scheduledForm.recipientType === 'empleado' && (
             <div>
               <label htmlFor="scheduled-empleado" className="block text-sm font-medium text-gray-700 mb-2">
-                Selectează Empleado
+                Selecciona empleado
               </label>
               <select
                 id="scheduled-empleado"
@@ -1518,7 +1518,7 @@ export default function MensajesEnviadosPage() {
                 onChange={(e) => setScheduledForm({ ...scheduledForm, recipientId: e.target.value })}
                 className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
-                <option value="">Selectează...</option>
+                <option value="">Selecciona...</option>
                 {activeEmpleados.map((emp) => (
                   <option key={emp.CODIGO} value={emp.CODIGO}>
                     {getFormattedNombre(emp)} ({emp.CODIGO})
@@ -1531,7 +1531,7 @@ export default function MensajesEnviadosPage() {
           {scheduledForm.recipientType === 'grupo' && (
             <div>
               <label htmlFor="scheduled-grupo" className="block text-sm font-medium text-gray-700 mb-2">
-                Selectează Grupo
+                Selecciona grupo
               </label>
               <select
                 id="scheduled-grupo"
@@ -1540,7 +1540,7 @@ export default function MensajesEnviadosPage() {
                 onChange={(e) => setScheduledForm({ ...scheduledForm, recipientId: e.target.value })}
                 className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
-                <option value="">Selectează...</option>
+                <option value="">Selecciona...</option>
                 {grupos.map((grupo) => (
                   <option key={grupo} value={grupo}>
                     {grupo}
@@ -1813,25 +1813,25 @@ export default function MensajesEnviadosPage() {
           setShowRecipientsModal(false);
           setRecipientsData(null);
         }}
-        title="Destinatarii Mesajului Automat"
+        title="Destinatarios del mensaje automático"
         size="xl"
       >
         {recipientsData && (
           <div className="space-y-4">
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-bold text-lg mb-2">{recipientsData.scheduledMessage?.name || 'Mesaj Automat'}</h3>
+              <h3 className="font-bold text-lg mb-2">{recipientsData.scheduledMessage?.name || 'Mensaje automático'}</h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <strong>Total Destinatari:</strong> {recipientsData.totalRecipients}
                 </div>
                 <div>
-                  <strong>✅ Trimise:</strong> <span className="text-green-600">{recipientsData.sentCount}</span>
+                  <strong>✅ Enviados:</strong> <span className="text-green-600">{recipientsData.sentCount}</span>
                 </div>
                 <div>
-                  <strong>❌ Eșuate:</strong> <span className="text-red-600">{recipientsData.failedCount}</span>
+                  <strong>❌ Fallidos:</strong> <span className="text-red-600">{recipientsData.failedCount}</span>
                 </div>
                 <div>
-                  <strong>⏳ Ne-trimise:</strong> <span className="text-gray-600">{recipientsData.notSentCount}</span>
+                  <strong>⏳ No enviados:</strong> <span className="text-gray-600">{recipientsData.notSentCount}</span>
                 </div>
               </div>
             </div>
@@ -1857,7 +1857,7 @@ export default function MensajesEnviadosPage() {
                             <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">✅ Trimis</span>
                           )}
                           {recipient.status === 'failed' && (
-                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-sm">❌ Eșuat</span>
+                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-sm">❌ Fallido</span>
                           )}
                           {recipient.status === 'not_sent' && (
                             <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-sm">⏳ Ne-trimis</span>

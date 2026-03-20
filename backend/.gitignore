@@ -44,6 +44,7 @@ lerna-debug.log*
 .env*.local
 .env.decamino.local
 .env.hera.local
+.env.client2
 .env.client2.local
 .env.client2.active
 .env.production

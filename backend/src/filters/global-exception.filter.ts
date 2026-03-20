@@ -39,14 +39,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? message
         : (message as any).message || JSON.stringify(message);
 
-    this.logger.error(
-      `❌ ${request.method} ${request.url} - Status: ${status} - Error: ${errorMessage}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    // 503 = adesea feature opțional neconfigurat (ex. tenant registry) — fără stack la ERROR
+    if (status === HttpStatus.SERVICE_UNAVAILABLE) {
+      this.logger.warn(
+        `⚠️ ${request.method} ${request.url} - 503: ${errorMessage}`,
+      );
+    } else {
+      this.logger.error(
+        `❌ ${request.method} ${request.url} - Status: ${status} - Error: ${errorMessage}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    }
 
-    // Trimite alertă pe Telegram pentru erori CRITICE
-    // Doar pentru erori 500 (server errors) sau erori neașteptate
-    if (status >= 500) {
+    // Alertă Telegram doar pentru erori server „hard”; exclude 503 (ex. feature neconfigurat, maintenance)
+    if (status >= 500 && status !== HttpStatus.SERVICE_UNAVAILABLE) {
       await this.sendCriticalErrorAlert({
         status,
         message: errorMessage,
@@ -91,25 +97,29 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       const stackPreview =
         errorInfo.stack?.substring(0, 500) || 'No stack trace available';
 
-      const message = `
-🚨 *Error crítico en backend*
-
-❌ *Status:* ${errorInfo.status}
-📋 *Método:* ${errorInfo.method}
-🔗 *Path:* \`${errorInfo.path}\`
-💬 *Mensaje:* ${errorInfo.message.substring(0, 200)}
-
-\`\`\`
-${stackPreview}
-\`\`\`
-
-⏰ *Timestamp:* ${new Date().toISOString()}
-      `.trim();
+      // Fără parse_mode Markdown: mesajele dinamice conțin adesea _ * ` care rupe entitățile Telegram
+      const message = [
+        '🚨 Error crítico en backend',
+        '',
+        `Status: ${errorInfo.status}`,
+        `Método: ${errorInfo.method}`,
+        `Path: ${errorInfo.path}`,
+        `Mensaje: ${errorInfo.message.substring(0, 500)}`,
+        '',
+        'Stack (preview):',
+        stackPreview,
+        '',
+        `Timestamp: ${new Date().toISOString()}`,
+      ].join('\n');
 
       if (useGeneralBot) {
-        await this.telegramService.sendGeneralMessage(message);
+        await this.telegramService.sendGeneralMessage(message, {
+          disableMarkdown: true,
+        });
       } else {
-        await this.telegramService.sendMessage(message);
+        await this.telegramService.sendMessage(message, {
+          disableMarkdown: true,
+        });
       }
       this.logger.log('✅ Critical error alert sent to Telegram');
     } catch (error: any) {

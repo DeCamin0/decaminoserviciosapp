@@ -92,7 +92,10 @@ export class TelegramService implements OnModuleInit {
   /**
    * Trimite un mesaj pe Telegram (bot gestoria)
    */
-  async sendMessage(message: string): Promise<void> {
+  async sendMessage(
+    message: string,
+    options?: { disableMarkdown?: boolean },
+  ): Promise<void> {
     if (!this.isConfigured()) {
       this.logger.warn(
         '⚠️ Telegram gestoria bot not configured. Message not sent.',
@@ -105,14 +108,19 @@ export class TelegramService implements OnModuleInit {
       this.chatId!,
       message,
       'gestoria',
+      { useMarkdown: !options?.disableMarkdown },
     );
   }
 
   /**
    * Trimite un mesaj pe Telegram (bot general)
    * Folosit pentru erori, notificări generale, etc.
+   * @param options.disableMarkdown — true pentru text dinamic (stack, env vars cu _) ca să eviți erori Telegram parse_mode.
    */
-  async sendGeneralMessage(message: string): Promise<void> {
+  async sendGeneralMessage(
+    message: string,
+    options?: { disableMarkdown?: boolean },
+  ): Promise<void> {
     if (!this.isGeneralConfigured()) {
       this.logger.warn(
         '⚠️ Telegram general bot not configured. Message not sent.',
@@ -125,6 +133,7 @@ export class TelegramService implements OnModuleInit {
       this.generalChatId!,
       message,
       'general',
+      { useMarkdown: !options?.disableMarkdown },
     );
   }
 
@@ -136,6 +145,7 @@ export class TelegramService implements OnModuleInit {
     chatId: string,
     message: string,
     botType: 'gestoria' | 'general',
+    opts: { useMarkdown: boolean } = { useMarkdown: true },
   ): Promise<void> {
     try {
       // Prefix pentru a distinge clientul (ex: [HERA], [DeCamino]) – același chat, mesaje separate
@@ -161,11 +171,17 @@ export class TelegramService implements OnModuleInit {
         `📡 Telegram API URL: ${url.replace(botToken, tokenPreview)}`,
       );
 
-      const requestBody = {
+      const requestBody: {
+        chat_id: string;
+        text: string;
+        parse_mode?: string;
+      } = {
         chat_id: chatId,
         text,
-        parse_mode: 'Markdown', // Folosim Markdown ca în n8n workflow (Cron absente.json)
       };
+      if (opts.useMarkdown) {
+        requestBody.parse_mode = 'Markdown'; // legacy Markdown (n8n / notificări formatate)
+      }
 
       // Adăugăm timeout și signal pentru a evita blocarea
       const controller = new AbortController();
@@ -301,6 +317,11 @@ ${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
     accion: 'create' | 'update' | 'delete';
     tipoAnterior?: string;
     tipoNuevo?: string;
+    // Ausencias justificada: detalle para gestoría
+    tipo_justificante?: string;
+    hora_cita?: string;
+    centro_medico?: string;
+    descripcion_otro?: string;
   }): Promise<void> {
     // Folosim Markdown format
     // IMPORTANT: Totul în spaniolă
@@ -340,6 +361,41 @@ ${ausenciaData.motivo ? `📝 *Motivo:* ${ausenciaData.motivo}` : ''}
       ? this.escapeMarkdown(solicitudData.motivo)
       : '';
 
+    // Ausencias justificada: tipo justificante, hora cita, centro, descripción y recordatorio de justificantes
+    const isAusenciaJustificada =
+      solicitudData.tipo.toLowerCase().includes('ausencia') &&
+      solicitudData.tipo.toLowerCase().includes('justificada');
+    const detalleJustificadaParts: string[] = [];
+    if (isAusenciaJustificada) {
+      if (solicitudData.tipo_justificante) {
+        detalleJustificadaParts.push(
+          `📌 *Tipo justificante:* ${this.escapeMarkdown(solicitudData.tipo_justificante)}`,
+        );
+      }
+      if (solicitudData.hora_cita) {
+        detalleJustificadaParts.push(
+          `🕐 *Hora cita:* ${this.escapeMarkdown(solicitudData.hora_cita)}`,
+        );
+      }
+      if (solicitudData.centro_medico) {
+        detalleJustificadaParts.push(
+          `🏥 *Centro médico:* ${this.escapeMarkdown(solicitudData.centro_medico)}`,
+        );
+      }
+      if (solicitudData.descripcion_otro) {
+        detalleJustificadaParts.push(
+          `📄 *Descripción:* ${this.escapeMarkdown(solicitudData.descripcion_otro)}`,
+        );
+      }
+      detalleJustificadaParts.push(
+        `\n📋 *Recordar:* El empleado debe subir el justificante de presencia a la cita (se solicitará tras aprobar).`,
+      );
+    }
+    const detalleJustificadaSection =
+      detalleJustificadaParts.length > 0
+        ? '\n' + detalleJustificadaParts.join('\n')
+        : '';
+
     const message = `
 ${actionEmoji} *${actionText}*
 
@@ -347,7 +403,7 @@ ${actionEmoji} *${actionText}*
 📋 *Tipo:* ${tipoEscaped}${cambioTipoSection}
 📆 *Fecha:* ${fechaEscaped}
 ✅ *Estado:* ${estadoEscaped}
-${motivoEscaped ? `📝 *Motivo:* ${motivoEscaped}` : ''}
+${motivoEscaped ? `📝 *Motivo:* ${motivoEscaped}` : ''}${detalleJustificadaSection}
     `.trim();
 
     await this.sendMessage(message);

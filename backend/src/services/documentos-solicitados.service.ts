@@ -35,6 +35,7 @@ export class DocumentosSolicitadosService {
     solicitado_por: string;
     notas?: string;
     aplicar_a_nuevos?: boolean;
+    ausencia_id?: number; // Optional: link Justificante de presencia to this ausencia (ausencia_justificantes)
   }): Promise<{ success: true; id: number }> {
     try {
       if (!data.empleado_id || !data.tipo_documento || !data.solicitado_por) {
@@ -112,6 +113,37 @@ export class DocumentosSolicitadosService {
       this.logger.log(
         `✅ Solicitud creada: ID ${newId}, empleado ${data.empleado_id}, tipo ${data.tipo_documento}`,
       );
+
+      // Link Justificante de presencia to ausencia (ausencia_justificantes)
+      let aid: number | null =
+        data.ausencia_id != null && Number.isFinite(Number(data.ausencia_id))
+          ? Number(data.ausencia_id)
+          : null;
+      if (
+        aid == null &&
+        data.tipo_documento?.includes('Justificante de presencia') &&
+        data.notas
+      ) {
+        aid = await this.parseAusenciaIdFromPresenciaNotas(
+          data.empleado_id,
+          data.notas,
+        );
+      }
+      if (aid != null) {
+        try {
+          await this.prisma.$executeRawUnsafe(`
+            INSERT INTO \`ausencia_justificantes\` (\`ausencia_id\`, \`tipo\`, \`doc_id\`, \`documento_solicitado_id\`)
+            VALUES (${aid}, 'presencia', NULL, ${newId})
+          `);
+          this.logger.log(
+            `✅ Ausencia justificante link: ausencia_id=${aid}, tipo=presencia, documento_solicitado_id=${newId}`,
+          );
+        } catch (linkErr: any) {
+          this.logger.warn(
+            `⚠️ No se pudo crear enlace ausencia_justificantes: ${linkErr.message}`,
+          );
+        }
+      }
 
       // Trimite notificări și email-uri (non-blocking)
       setImmediate(() => {
@@ -581,6 +613,36 @@ export class DocumentosSolicitadosService {
     `.trim();
 
     return { subject, html };
+  }
+
+  /**
+   * Resolve ausencia_id from "Justificante de presencia" notas (e.g. "... - 21/03/2026" or " - 2026-03-21").
+   * Returns first matching Ausencias.id by CODIGO and FECHA, or null.
+   */
+  private async parseAusenciaIdFromPresenciaNotas(
+    empleadoId: string,
+    notas: string,
+  ): Promise<number | null> {
+    const s = (notas || '').trim();
+    let dateStr: string | null = null;
+    const isoMatch = s.match(/-\s*(\d{4}-\d{2}-\d{2})\s*$/);
+    if (isoMatch) dateStr = isoMatch[1];
+    const ddmmyyMatch = s.match(/-\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/);
+    if (ddmmyyMatch)
+      dateStr = `${ddmmyyMatch[3]}-${ddmmyyMatch[2].padStart(2, '0')}-${ddmmyyMatch[1].padStart(2, '0')}`;
+    if (!dateStr || !empleadoId) return null;
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: number | bigint }>
+      >(
+        `SELECT id FROM \`Ausencias\` WHERE \`CODIGO\` = ${this.escapeSql(empleadoId)} AND (\`FECHA\` = ${this.escapeSql(dateStr)} OR \`FECHA\` LIKE ${this.escapeSql(dateStr + '%')} OR \`FECHA\` LIKE ${this.escapeSql('%' + dateStr + '%')}) ORDER BY id DESC LIMIT 1`,
+      );
+      const id = rows?.[0]?.id;
+      if (id == null) return null;
+      return typeof id === 'bigint' ? Number(id) : Number(id);
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -225,6 +225,20 @@ model Ausencias {
   @@index([ausencia_asociada_id], map: "idx_ausencias_asociada_id")
 }
 
+model AusenciaJustificantes {
+  id                    Int       @id @default(autoincrement())
+  ausencia_id           Int       @map("ausencia_id")
+  tipo                  String    @db.VarChar(50) // 'cerere' | 'presencia'
+  doc_id                Int?      @map("doc_id")   // CarpetasDocumentos.doc_id when file uploaded
+  documento_solicitado_id Int?     @map("documento_solicitado_id") // documentos_solicitados.id for presencia request
+  created_at            DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@index([ausencia_id], map: "idx_ausencia_justificantes_ausencia_id")
+  @@index([doc_id], map: "idx_ausencia_justificantes_doc_id")
+  @@index([documento_solicitado_id], map: "idx_ausencia_justificantes_doc_solicitado_id")
+  @@map("ausencia_justificantes")
+}
+
 model CarpetasDocumentos {
   doc_id             Int     @id @default(autoincrement())
   id                 String  @db.VarChar(50)
@@ -1163,6 +1177,10 @@ model solicitudes {
   fecha_ultimo_dia_trabajo DateTime? @db.Date
   dias_preaviso       Int?      @db.Int
   cumple_preaviso_15  Boolean?  @default(false)
+  tipo_justificante   String?   @db.VarChar(80)
+  hora_cita           String?   @db.VarChar(20)
+  centro_medico       String?   @db.VarChar(255)
+  descripcion_otro    String?   @db.Text
 }
 
 model VacationBlockedPeriod {
@@ -1172,6 +1190,15 @@ model VacationBlockedPeriod {
   created_at   DateTime @default(now()) @map("created_at") @db.DateTime(0)
 
   @@map("vacation_blocked_periods")
+}
+
+/// Fila única id=1: % del tamaño del grupo que puede estar de vacaciones el mismo día
+model VacacionesDisponibilidadConfig {
+  id               Int      @id
+  porcentaje_grupo Decimal  @default(10.00) @map("porcentaje_grupo") @db.Decimal(5, 2)
+  updated_at       DateTime @default(now()) @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@map("vacaciones_disponibilidad_config")
 }
 
 enum ChatRoomType {
@@ -1346,6 +1373,44 @@ model AssistantAuditLog {
   @@index([intent_detectado], map: "idx_audit_intent")
   @@index([created_at], map: "idx_audit_created")
   @@map("assistant_audit_log")
+}
+
+/// Preferencias explícitas del asistente (opt-in). Sin auto-learning.
+model AssistantUserPreferences {
+  usuario_id     String   @id @map("usuario_id") @db.VarChar(50)
+  opted_in       Boolean  @default(false) @map("opted_in")
+  locale         String?  @db.VarChar(10)
+  response_style String?  @map("response_style") @db.VarChar(20)
+  tone           String?  @db.VarChar(20)
+  created_at     DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at     DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@map("assistant_user_preferences")
+}
+
+/// Arhivă conversații chat assistant (doar text; fără payload-uri tool).
+model AssistantConversation {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  usuario_id String   @map("usuario_id") @db.VarChar(50)
+  title      String   @db.VarChar(120)
+  created_at DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  messages   AssistantMessage[]
+
+  @@index([usuario_id, updated_at], map: "idx_assistant_conv_user_updated")
+  @@map("assistant_conversations")
+}
+
+model AssistantMessage {
+  id               String                @id @default(uuid()) @db.VarChar(36)
+  conversation_id  String                @map("conversation_id") @db.VarChar(36)
+  role             String                @db.VarChar(20)
+  content          String                @db.MediumText
+  created_at       DateTime              @default(now()) @map("created_at") @db.Timestamp(0)
+  conversation     AssistantConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_assistant_msg_conversation")
+
+  @@index([conversation_id, created_at], map: "idx_assistant_msg_conv_created")
+  @@map("assistant_messages")
 }
 
 model KbArticle {

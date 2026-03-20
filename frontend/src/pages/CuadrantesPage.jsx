@@ -3165,10 +3165,10 @@ export default function CuadrantesPage() {
     
     if (lunaExistenta) {
       const confirmRescrie = confirm(
-        `Luna ${MONTHS[selectedMonth]} ${selectedYear} deja există în sistem!\n\n` +
-        `Vrei să rescrii cuadrantele existente?\n\n` +
-        `- Apasă "OK" pentru a rescrie\n` +
-        `- Apasă "Cancel" pentru a anula`
+        `El mes ${MONTHS[selectedMonth]} ${selectedYear} ya existe en el sistema.\n\n` +
+        `¿Quieres sobrescribir los cuadrantes existentes?\n\n` +
+        `- Pulsa "Aceptar" para sobrescribir\n` +
+        `- Pulsa "Cancelar" para anular`
       );
       
       if (!confirmRescrie) {
@@ -3849,10 +3849,10 @@ export default function CuadrantesPage() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
               <h4 className="font-bold text-blue-900 mb-2">📊 Debug Información:</h4>
               <div className="text-sm text-blue-800 space-y-1">
-                <p><strong>Total angajați cargados:</strong> {angajati.length}</p>
+                <p><strong>Total empleados cargados:</strong> {angajati.length}</p>
                 <p><strong>Centro seleccionado:</strong> {selectedCentro || 'Ninguno'}</p>
                 <p><strong>Grupo seleccionado:</strong> {selectedGrupo || 'Ninguno'} {selectedGrupo === '' ? '(Todos los grupos)' : ''}</p>
-                <p><strong>Angajați filtrados:</strong> {angajatiFiltrati.length}</p>
+                <p><strong>Empleados filtrados:</strong> {angajatiFiltrati.length}</p>
                 {angajatiFiltrati.length === 0 && selectedCentro && (
                   <p className="text-red-600 font-bold mt-2">
                     ⚠️ No hay empleados con CENTRO TRABAJO = &quot;{selectedCentro}&quot;
@@ -6293,7 +6293,7 @@ export default function CuadrantesPage() {
                                           }
                                         }}
                                         className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
-                                        title="Preia ture din cuadrante"
+                                        title="Tomar turnos del cuadrante"
                                       >
                                         📥
                                       </button>

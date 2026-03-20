@@ -96,7 +96,7 @@ export class ComunicadosService {
     });
 
     if (!comunicado) {
-      throw new NotFoundException(`Comunicado cu id ${id} nu a fost găsit`);
+      throw new NotFoundException(`No se encontró el comunicado con id ${id}`);
     }
 
     // Obține numele autorului
@@ -246,7 +246,7 @@ export class ComunicadosService {
     });
 
     if (!existing) {
-      throw new NotFoundException(`Comunicado cu id ${id} nu a fost găsit`);
+      throw new NotFoundException(`No se encontró el comunicado con id ${id}`);
     }
 
     const wasPublished = existing.publicado;
@@ -376,7 +376,7 @@ export class ComunicadosService {
       if (toAdd.length === 0) {
         return {
           success: true,
-          message: 'Toate coloanele există deja',
+          message: 'Todas las columnas ya existen',
           columns_added: [],
         };
       }
@@ -387,7 +387,7 @@ export class ComunicadosService {
 
       return {
         success: true,
-        message: 'Coloane adăugate cu succes',
+        message: 'Columnas añadidas correctamente',
         columns_added: toAdd,
       };
     } catch (error: any) {
@@ -405,14 +405,14 @@ export class ComunicadosService {
     });
 
     if (!comunicado) {
-      throw new NotFoundException(`Comunicado cu id ${id} nu a fost găsit`);
+      throw new NotFoundException(`No se encontró el comunicado con id ${id}`);
     }
 
     await this.prisma.comunicado.delete({
       where: { id },
     });
 
-    return { message: 'Comunicado șters cu succes' };
+    return { message: 'Comunicado eliminado correctamente' };
   }
 
   /**
@@ -426,7 +426,7 @@ export class ComunicadosService {
 
     if (!comunicado) {
       throw new NotFoundException(
-        `Comunicado cu id ${comunicadoId} nu a fost găsit`,
+        `No se encontró el comunicado con id ${comunicadoId}`,
       );
     }
 
@@ -518,7 +518,7 @@ export class ComunicadosService {
     });
 
     if (!comunicado) {
-      throw new NotFoundException(`Comunicado cu id ${id} nu a fost găsit`);
+      throw new NotFoundException(`No se encontró el comunicado con id ${id}`);
     }
 
     if (!comunicado.archivo) {
@@ -628,7 +628,7 @@ export class ComunicadosService {
 
     if (!comunicado) {
       throw new NotFoundException(
-        `Comunicado cu id ${id} nu a fost găsit pentru re-notificare`,
+        `No se encontró el comunicado con id ${id} para reenviar notificación`,
       );
     }
 

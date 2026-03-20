@@ -251,6 +251,7 @@ export class DocumentosService {
       empleado_email?: string;
       empleado_nombre?: string;
       fecha_upload?: string;
+      ausencia_id?: string | number; // Optional: link justificante cerere to this ausencia (ausencia_justificantes)
       [key: string]: any; // For indexed fields like tipo_documento_0, archivo_0_nombre, etc.
     },
   ): Promise<{ success: true; processed: number; inserted: number }> {
@@ -428,6 +429,37 @@ export class DocumentosService {
           await this.prisma.$executeRawUnsafe(query);
           inserted++;
           processed++;
+
+          const lastId = await this.prisma.$queryRawUnsafe<
+            Array<{ id: bigint | number }>
+          >(`SELECT LAST_INSERT_ID() as id`);
+          const docId = lastId?.[0]?.id != null ? Number(lastId[0].id) : null;
+
+          // Link justificante cerere to ausencia when ausencia_id is provided (ausencia_justificantes)
+          const rawAusenciaId = body.ausencia_id;
+          if (
+            rawAusenciaId != null &&
+            String(rawAusenciaId).trim() !== '' &&
+            docId != null
+          ) {
+            const ausenciaId = Number(rawAusenciaId);
+            if (Number.isFinite(ausenciaId)) {
+              try {
+                await this.prisma.$executeRawUnsafe(`
+                  INSERT INTO \`ausencia_justificantes\` (\`ausencia_id\`, \`tipo\`, \`doc_id\`, \`documento_solicitado_id\`)
+                  VALUES (${ausenciaId}, 'cerere', ${docId}, NULL)
+                `);
+                this.logger.log(
+                  `✅ Ausencia justificante link: ausencia_id=${ausenciaId}, tipo=cerere, doc_id=${docId}`,
+                );
+              } catch (linkErr: any) {
+                this.logger.warn(
+                  `⚠️ No se pudo crear enlace ausencia_justificantes: ${linkErr.message}`,
+                );
+              }
+            }
+          }
+
           this.logger.log(
             `✅ Documento ${index + 1}/${files.length} insertado: ${nombreArchivo} (${file.size} bytes, buffer: ${file.buffer.length} bytes, mimetype: ${file.mimetype || 'N/A'})`,
           );
@@ -455,33 +487,73 @@ export class DocumentosService {
                 `🔍 [Upload] Resultado marcarCompletado: updated=${result.updated}`,
               );
 
+              const wasMarked =
+                result.updated > 0 ||
+                (await (async () => {
+                  if (result.updated > 0) return true;
+                  const resultFlexible =
+                    await this.documentosSolicitadosService.marcarCompletadoFlexible(
+                      id,
+                      tipoDoc,
+                    );
+                  this.logger.log(
+                    `🔍 [Upload] Resultado marcarCompletadoFlexible: updated=${resultFlexible.updated}`,
+                  );
+                  if (resultFlexible.updated > 0) {
+                    this.logger.log(
+                      `✅ Solicitud marcada como completada automáticamente (matching flexibil): empleado ${id}, tipo ${tipoDoc}`,
+                    );
+                    return true;
+                  }
+                  this.logger.warn(
+                    `⚠️ No se encontró ninguna solicitud pendiente para empleado ${id}, tipo ${tipoDoc}`,
+                  );
+                  return false;
+                })());
+
               if (result.updated > 0) {
                 this.logger.log(
                   `✅ Solicitud marcada como completada automáticamente: empleado ${id}, tipo ${tipoDoc}`,
                 );
-              } else {
-                // Dacă nu s-a găsit cu tipul exact, încercăm matching flexibil
+              } else if (!wasMarked) {
                 this.logger.log(
                   `🔍 [Upload] No se encontró con tipo exacto, intentando matching flexibil...`,
                 );
+              }
 
-                const resultFlexible =
-                  await this.documentosSolicitadosService.marcarCompletadoFlexible(
-                    id,
-                    tipoDoc,
+              // Justificante de presencia: actualizar ausencia_justificantes con doc_id cuando el empleado sube el archivo
+              if (
+                wasMarked &&
+                docId != null &&
+                tipoDoc &&
+                String(tipoDoc).toLowerCase().includes('presencia')
+              ) {
+                try {
+                  const dsRows = await this.prisma.$queryRawUnsafe<
+                    Array<{ id: number | bigint }>
+                  >(
+                    `SELECT id FROM \`documentos_solicitados\`
+                     WHERE \`empleado_id\` = ${this.escapeSql(id)}
+                       AND \`estado\` = 'completado'
+                       AND (\`tipo_documento\` LIKE '%Justificante de presencia%' OR \`tipo_documento\` LIKE '%presencia%')
+                     ORDER BY \`fecha_completado\` DESC LIMIT 1`,
                   );
-
-                this.logger.log(
-                  `🔍 [Upload] Resultado marcarCompletadoFlexible: updated=${resultFlexible.updated}`,
-                );
-
-                if (resultFlexible.updated > 0) {
-                  this.logger.log(
-                    `✅ Solicitud marcada como completada automáticamente (matching flexibil): empleado ${id}, tipo ${tipoDoc}`,
-                  );
-                } else {
+                  const dsId = dsRows?.[0]?.id;
+                  if (dsId != null) {
+                    const dsIdNum =
+                      typeof dsId === 'bigint' ? Number(dsId) : Number(dsId);
+                    await this.prisma.$executeRawUnsafe(`
+                      UPDATE \`ausencia_justificantes\`
+                      SET \`doc_id\` = ${docId}
+                      WHERE \`documento_solicitado_id\` = ${dsIdNum} AND (\`doc_id\` IS NULL OR \`doc_id\` = 0)
+                    `);
+                    this.logger.log(
+                      `✅ Ausencia justificantes actualizado: doc_id=${docId}, documento_solicitado_id=${dsIdNum} (presencia)`,
+                    );
+                  }
+                } catch (upErr: any) {
                   this.logger.warn(
-                    `⚠️ No se encontró ninguna solicitud pendiente para empleado ${id}, tipo ${tipoDoc}`,
+                    `⚠️ No se pudo actualizar ausencia_justificantes con doc_id: ${upErr.message}`,
                   );
                 }
               }
@@ -554,6 +626,17 @@ export class DocumentosService {
         );
       }
 
+      // Obtener doc_id antes de borrar para limpiar ausencia_justificantes
+      const docIdRows = await this.prisma.$queryRawUnsafe<
+        Array<{ doc_id: number }>
+      >(
+        `SELECT doc_id FROM \`CarpetasDocumentos\`
+         WHERE id = ${this.escapeSql(idString.trim())}
+           AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivo.trim())})
+         LIMIT 1`,
+      );
+      const docIdToClear = docIdRows?.[0]?.doc_id;
+
       // Build DELETE query (matching n8n snapshot logic)
       // Note: id is String (VarChar(50)) in CarpetasDocumentos, not UNSIGNED INT
       const query = `
@@ -574,6 +657,27 @@ export class DocumentosService {
         throw new NotFoundException(
           `Documento no encontrado para id="${idString.trim()}" y nombre_archivo="${nombreArchivo.trim()}"`,
         );
+      }
+
+      // Limpiar referencias en ausencia_justificantes para que no queden doc_id huérfanos
+      if (docIdToClear != null && Number.isFinite(Number(docIdToClear))) {
+        try {
+          const updateResult = await this.prisma.$executeRawUnsafe(`
+            UPDATE \`ausencia_justificantes\`
+            SET \`doc_id\` = NULL
+            WHERE \`doc_id\` = ${Number(docIdToClear)}
+          `);
+          const updatedRefs = Number(updateResult) || 0;
+          if (updatedRefs > 0) {
+            this.logger.log(
+              `✅ ausencia_justificantes: ${updatedRefs} enlace(s) con doc_id=${docIdToClear} puestos a NULL`,
+            );
+          }
+        } catch (linkErr: any) {
+          this.logger.warn(
+            `⚠️ No se pudo limpiar ausencia_justificantes (doc_id=${docIdToClear}): ${linkErr.message}`,
+          );
+        }
       }
 
       this.logger.log(

@@ -2553,7 +2553,7 @@ export default function DocumentosEmpleadosPage() {
       console.log('🔍 AutoScript disponibil:', typeof window !== 'undefined' && !!window.AutoScript);
       
       if (typeof window === 'undefined' || !window.AutoScript) {
-        showNotification('error', 'AutoFirma', 'AutoScript nu este disponibil. Te rugăm să reîncărci pagina.');
+        showNotification('error', 'AutoFirma', 'AutoScript no está disponible. Por favor, recarga la página.');
         return;
       }
       
@@ -2635,7 +2635,7 @@ export default function DocumentosEmpleadosPage() {
           })
           .then(data => {
             console.log('✅ Document trimis cu succes la backend:', data);
-            showNotification('success', 'AutoFirma', 'Documentul a fost semnat, descărcat și trimis la server cu succes!');
+            showNotification('success', 'AutoFirma', 'El documento ha sido firmado, descargado y enviado al servidor correctamente.');
           })
           .catch(error => {
             console.error('❌ Error al enviar al backend:', error);

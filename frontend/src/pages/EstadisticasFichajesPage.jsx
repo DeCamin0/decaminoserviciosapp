@@ -187,7 +187,7 @@ export default function EstadisticasFichajesPage() {
 
         // Por centro
         const empleado = empleadosArray.find(emp => emp['CORREO ELECTRONICO'] === email);
-        const centro = empleado?.['CENTRO TRABAJO'] || 'Fără centru';
+        const centro = empleado?.['CENTRO TRABAJO'] || 'Sin centro';
         if (!fichajesPorCentro[centro]) {
           fichajesPorCentro[centro] = {
             centro,
@@ -244,9 +244,9 @@ export default function EstadisticasFichajesPage() {
   }
 
   const periods = [
-    { id: 'hoy', label: 'Astăzi', icon: '📅' },
-    { id: 'semana', label: 'Această săptămână', icon: '📊' },
-    { id: 'mes', label: 'Această lună', icon: '📈' }
+    { id: 'hoy', label: 'Hoy', icon: '📅' },
+    { id: 'semana', label: 'Esta semana', icon: '📊' },
+    { id: 'mes', label: 'Este mes', icon: '📈' }
   ];
 
   if (loading) {
@@ -254,7 +254,7 @@ export default function EstadisticasFichajesPage() {
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <div className="text-red-600 font-bold text-xl">Se încarcă statisticile pontajelor...</div>
+          <div className="text-red-600 font-bold text-xl">Cargando estadísticas de fichajes...</div>
         </div>
       </div>
     );
@@ -272,9 +272,9 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-600 to-orange-800 bg-clip-text text-transparent">
-                  Statistici Pontaje
+                  Estadísticas de Fichajes
                 </h1>
-                <p className="text-gray-500 text-sm">Analiză detaliată ore lucrate</p>
+                <p className="text-gray-500 text-sm">Análisis detallado de horas trabajadas</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -284,14 +284,14 @@ export default function EstadisticasFichajesPage() {
                 className="flex items-center gap-2"
               >
                 <span>🔍</span>
-                Filtre
+                Filtros
               </Button>
               <Link 
                 to="/estadisticas"
                 className="flex items-center px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 rounded-xl border border-gray-200 transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 <span className="mr-2">←</span>
-                Înapoi la Statistici
+                Volver a Estadísticas
               </Link>
             </div>
           </div>
@@ -299,13 +299,13 @@ export default function EstadisticasFichajesPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Filtre moderne */}
+        {/* Filtros */}
         {showFilters && (
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-8">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Filtre avansate</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Filtros avanzados</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Perioada</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Período</label>
                 <div className="flex gap-2">
                   {periods.map(period => (
                     <button
@@ -325,7 +325,7 @@ export default function EstadisticasFichajesPage() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Centru</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Centro</label>
                 <select
                   value={selectedCentro}
                   onChange={(e) => setSelectedCentro(e.target.value)}
@@ -333,7 +333,7 @@ export default function EstadisticasFichajesPage() {
                 >
                   {centros.map(centro => (
                     <option key={centro} value={centro}>
-                      {centro === 'todos' ? 'Toate centrele' : centro}
+                      {centro === 'todos' ? 'Todos los centros' : centro}
                     </option>
                   ))}
                 </select>
@@ -351,11 +351,11 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.totalFichajes}</div>
-                <div className="text-sm text-gray-500">Total pontaje</div>
+                <div className="text-sm text-gray-500">Total fichajes</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              {detailedStats?.empleadosUnicos || 0} angajați activi
+              {detailedStats?.empleadosUnicos || 0} empleados activos
             </div>
           </div>
 
@@ -366,11 +366,11 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.entradas}</div>
-                <div className="text-sm text-gray-500">Intrări</div>
+                <div className="text-sm text-gray-500">Entradas</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              {Math.round((stats.entradas / stats.totalFichajes) * 100)}% din total
+              {Math.round((stats.entradas / stats.totalFichajes) * 100)}% del total
             </div>
           </div>
 
@@ -381,11 +381,11 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.salidas}</div>
-                <div className="text-sm text-gray-500">Ieșiri</div>
+                <div className="text-sm text-gray-500">Salidas</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              {Math.round((stats.salidas / stats.totalFichajes) * 100)}% din total
+              {Math.round((stats.salidas / stats.totalFichajes) * 100)}% del total
             </div>
           </div>
 
@@ -396,11 +396,11 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.sinSalida}</div>
-                <div className="text-sm text-gray-500">Fără ieșire</div>
+                <div className="text-sm text-gray-500">Sin salida</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              Necesită atenție
+              Requiere atención
             </div>
           </div>
 
@@ -411,11 +411,11 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.totalHoras}h</div>
-                <div className="text-sm text-gray-500">Ore lucrate</div>
+                <div className="text-sm text-gray-500">Horas trabajadas</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              Total în perioada selectată
+              Total en el período seleccionado
             </div>
           </div>
 
@@ -426,11 +426,11 @@ export default function EstadisticasFichajesPage() {
               </div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-gray-800">{stats.promedioHoras}h</div>
-                <div className="text-sm text-gray-500">Media/pontaj</div>
+                <div className="text-sm text-gray-500">Media por fichaje</div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              Per pontaj
+              Por fichaje
             </div>
           </div>
         </div>
@@ -438,13 +438,13 @@ export default function EstadisticasFichajesPage() {
         {/* Statistici detaliate */}
         {detailedStats && detailedStats.fichajesPorEmpleado && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Top angajați */}
+            {/* Top empleados */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-lg flex items-center justify-center">
                   <span className="text-white text-lg">👥</span>
                 </div>
-                <h3 className="text-xl font-bold text-gray-800">Top angajați</h3>
+                <h3 className="text-xl font-bold text-gray-800">Top empleados</h3>
               </div>
               
               <div className="space-y-4">
@@ -466,7 +466,7 @@ export default function EstadisticasFichajesPage() {
                       </div>
                       <div className="text-right">
                         <div className="text-xl font-bold text-orange-600">{Math.round(empleado.horas)}h</div>
-                        <div className="text-sm text-gray-500">{empleado.total} pontaje</div>
+                        <div className="text-sm text-gray-500">{empleado.total} fichajes</div>
                       </div>
                     </div>
                   </div>
@@ -488,16 +488,16 @@ export default function EstadisticasFichajesPage() {
                   <div key={index} className="p-4 bg-gray-50 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-bold text-gray-800">{centro.centro}</h4>
-                      <span className="text-sm text-gray-500">{centro.total} pontaje</span>
+                      <span className="text-sm text-gray-500">{centro.total} fichajes</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-sm">
                       <div className="text-center">
                         <div className="font-bold text-green-600">{centro.entradas}</div>
-                        <div className="text-gray-500">Intrări</div>
+                        <div className="text-gray-500">Entradas</div>
                       </div>
                       <div className="text-center">
                         <div className="font-bold text-red-600">{centro.salidas}</div>
-                        <div className="text-gray-500">Ieșiri</div>
+                        <div className="text-gray-500">Salidas</div>
                       </div>
                       <div className="text-center">
                         <div className="font-bold text-orange-600">{Math.round(centro.horas)}h</div>

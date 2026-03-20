@@ -23,6 +23,109 @@ export class GestoriaService {
   ) {}
 
   /**
+   * Elimină accente din text pentru comparare (Á→A, É→E, etc.)
+   */
+  private quitarAcentos(s: string): string {
+    return s
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/Ñ/g, 'N')
+      .replace(/ñ/g, 'n');
+  }
+
+  /**
+   * Abrevieri frecvente în nóminas (nume spaniole) → forma completă
+   */
+  private static readonly ABREVIATURAS_NOMBRES: Record<string, string> = {
+    FCO: 'FRANCISCO',
+    JAV: 'JAVIER',
+    JOS: 'JOSE',
+    JOSE: 'JOSE',
+    MA: 'MARIA',
+    Mª: 'MARIA',
+    M: 'MARIA',
+    ANTON: 'ANTONIO',
+    ANTONIO: 'ANTONIO',
+    FRAN: 'FRANCISCO',
+    MIG: 'MIGUEL',
+    MIGUEL: 'MIGUEL',
+    JESUS: 'JESUS',
+    JESÚS: 'JESUS',
+    CARLOS: 'CARLOS',
+    LUIS: 'LUIS',
+    PEDRO: 'PEDRO',
+    DAVID: 'DAVID',
+    JUAN: 'JUAN',
+    FERNANDO: 'FERNANDO',
+    RAFAEL: 'RAFAEL',
+    MANUEL: 'MANUEL',
+  };
+
+  /**
+   * Normalizează numele detectat din PDF/nómina pentru potrivire cu baza de date:
+   * - Formato "APELLIDOS, NOMBRE" → "NOMBRE APELLIDOS"
+   * - Elimină accente (GONZÁLEZ → GONZALEZ, JESÚS → JESUS)
+   * - Expandă abrevieri (FCO → FRANCISCO, JAV → JAVIER)
+   * - Elimină punctuația și returnează UPPER
+   */
+  private normalizarNombreParaMatching(nombre: string): string {
+    if (!nombre || typeof nombre !== 'string') return '';
+    let t = nombre.trim();
+    if (!t) return '';
+
+    // Formato nómina: "APELLIDOS, NOMBRE" → reordenar a "NOMBRE APELLIDOS"
+    const idxComa = t.indexOf(',');
+    if (idxComa > 0) {
+      const apellidos = t.slice(0, idxComa).trim();
+      const nombreParte = t.slice(idxComa + 1).trim();
+      if (apellidos && nombreParte) {
+        t = `${nombreParte} ${apellidos}`;
+      }
+    }
+
+    // Eliminar acentos y pasar a mayúsculas para comparación
+    t = this.quitarAcentos(t).toUpperCase();
+
+    // Quitar puntuación sobrante (no dejar "VILELA," como palabra)
+    t = t.replace(/[,.]/g, ' ');
+
+    // Expandir abreviaturas en cada palabra
+    const palabras = t.split(/\s+/).filter((p) => p.length > 0);
+    const expandidas = palabras.map((p) => {
+      const key = p.replace(/[^A-Z]/g, '');
+      return (
+        (GestoriaService.ABREVIATURAS_NOMBRES[key] ||
+          GestoriaService.ABREVIATURAS_NOMBRES[p]) ??
+        p
+      );
+    });
+
+    return expandidas.join(' ').trim();
+  }
+
+  /**
+   * Construiește set de cuvinte normalizate (fără accente) din numele complet din DB
+   * pentru comparare cu numele detectat normalizat.
+   */
+  private palabrasNormalizadasDeNombre(nombreCompleto: string): Set<string> {
+    if (!nombreCompleto || typeof nombreCompleto !== 'string') return new Set();
+    const words = nombreCompleto
+      .toUpperCase()
+      .split(/\s+/)
+      .map((w) => this.quitarAcentos(w.replace(/[,.]/g, '')))
+      .filter((w) => w.length > 0);
+    return new Set(words);
+  }
+
+  /**
+   * Expresie SQL pentru comparare nume fără accente (MySQL).
+   * Permite potrivire "JESUS" cu "JESÚS", "GONZALEZ" cu "GONZÁLEZ".
+   */
+  private sqlNombreSinAcentos(col: string = '`NOMBRE / APELLIDOS`'): string {
+    return `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(UPPER(${col})), 'Á','A'), 'É','E'), 'Í','I'), 'Ó','O'), 'Ú','U'), 'Ñ','N')`;
+  }
+
+  /**
    * Escapă valori SQL pentru prevenirea SQL injection
    */
   private escapeSql(value: any): string {
@@ -721,6 +824,75 @@ export class GestoriaService {
   }
 
   /**
+   * Detectează dacă numele fișierului indică un finiquito (ex: "Finiquito.H.S._...", "Finiquito - ...").
+   * Folosit ca supliment la detectarFiniquito(textContent) când PDF-ul nu poate fi citit sau ca hint.
+   */
+  private esFiniquitoDesdeNombreArchivo(nombreArchivo: string): boolean {
+    if (!nombreArchivo || typeof nombreArchivo !== 'string') return false;
+    const n = nombreArchivo.trim().toLowerCase();
+    if (n.startsWith('finiquito')) return true;
+    if (n.includes('finiquito.h.s.') || n.includes('finiquito.h.s._'))
+      return true;
+    return false;
+  }
+
+  /**
+   * Extrage numele și opțional perioada (mes/an) din numele fișierului de tip finiquito.
+   * Ex: "Finiquito.H.S._DEL AGUILA PINEDA, MARIA ROSARIO_01-2026.PDF" → { nombre: "DEL AGUILA PINEDA, MARIA ROSARIO", mes: 1, ano: 2026 }
+   * Format așteptat: Finiquito[...]_APELLIDOS, NOMBRE_MM-YYYY.pdf (sau .PDF)
+   */
+  private extraerNombreYPeriodoDesdeNombreArchivoFiniquito(
+    nombreArchivo: string,
+  ): { nombre: string; mes?: number; ano?: number } | null {
+    if (!nombreArchivo || typeof nombreArchivo !== 'string') return null;
+    const base = nombreArchivo.replace(/\.pdf$/i, '').trim();
+    // Pattern: Finiquito.H.S._NOMBRE_01-2026  sau  Finiquito._NOMBRE_01-2026
+    const match = base.match(
+      /^Finiquito[.\s\w]*_([^_]+)_(\d{1,2})-(\d{2,4})$/i,
+    );
+    if (match) {
+      const nombre = match[1].trim().replace(/_/g, ' ');
+      let mes: number | undefined;
+      let ano: number | undefined;
+      const mesNum = parseInt(match[2], 10);
+      const anoNum = parseInt(match[3], 10);
+      if (mesNum >= 1 && mesNum <= 12) mes = mesNum;
+      if (anoNum >= 0 && anoNum <= 99) ano = 2000 + anoNum;
+      else if (anoNum >= 1000 && anoNum <= 2100) ano = anoNum;
+      if (nombre.length >= 5) {
+        this.logger.debug(
+          `🔍 Nume finiquito extras din filename: "${nombre}"${mes && ano ? ` (${mes}-${ano})` : ''}`,
+        );
+        return { nombre, mes, ano };
+      }
+    }
+    // Fallback: tot după primul prefix "Finiquito..._" până la _MM-YYYY sau sfârșit
+    const match2 = base.match(
+      /^Finiquito[.\s\w]*_([^_]+(?:_\d{1,2}-\d{2,4})?)$/i,
+    );
+    if (match2) {
+      const rest = match2[1];
+      const periodMatch = rest.match(/^(.+)_(\d{1,2})-(\d{2,4})$/);
+      const nombre = periodMatch
+        ? periodMatch[1].trim().replace(/_/g, ' ')
+        : rest.trim().replace(/_/g, ' ');
+      if (nombre.length >= 5) {
+        let mes: number | undefined;
+        let ano: number | undefined;
+        if (periodMatch) {
+          const mesNum = parseInt(periodMatch[2], 10);
+          const anoNum = parseInt(periodMatch[3], 10);
+          if (mesNum >= 1 && mesNum <= 12) mes = mesNum;
+          if (anoNum >= 0 && anoNum <= 99) ano = 2000 + anoNum;
+          else if (anoNum >= 1000 && anoNum <= 2100) ano = anoNum;
+        }
+        return { nombre, mes, ano };
+      }
+    }
+    return null;
+  }
+
+  /**
    * Obține CODIGO-ul unui angajat după nume
    * @param nombre - Numele complet al angajatului
    * @returns CODIGO-ul sau null dacă nu se găsește
@@ -759,13 +931,13 @@ export class GestoriaService {
     confianza: number;
     matchType: string;
   } | null> {
-    const nombreNormalized = nombreDetectado.trim().toUpperCase();
+    const nombreNormalized = this.normalizarNombreParaMatching(nombreDetectado);
 
-    // 1. Potrivire exactă după nume complet (toți angajații, inclusiv inactivi)
+    // 1. Potrivire exactă după nume complet (normalizat, fără accente)
     let empleadoQuery = `
       SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
       FROM \`DatosEmpleados\`
-      WHERE TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) = ${this.escapeSql(nombreNormalized)}
+      WHERE ${this.sqlNombreSinAcentos()} = ${this.escapeSql(nombreNormalized)}
       LIMIT 1
     `;
     let empleado =
@@ -790,8 +962,8 @@ export class GestoriaService {
         SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
         FROM \`DatosEmpleados\`
         WHERE (
-          TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`${primerosDosNombres}%`)}
-          OR TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${primerosDosNombres}%`)}
+          ${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`${primerosDosNombres}%`)}
+          OR ${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${primerosDosNombres}%`)}
         )
         LIMIT 5
       `;
@@ -809,11 +981,9 @@ export class GestoriaService {
         let bestConfianza = 0;
 
         for (const emp of empleado) {
-          const empWords = emp['NOMBRE / APELLIDOS']
-            .toUpperCase()
-            .split(/\s+/)
-            .filter((w) => w.length > 0);
-          const empWordsSet = new Set(empWords);
+          const empWordsSet = this.palabrasNormalizadasDeNombre(
+            emp['NOMBRE / APELLIDOS'],
+          );
 
           // Calculăm confidența: câte cuvinte din numele detectat sunt în numele din DB
           let matchedWords = 0;
@@ -915,7 +1085,7 @@ export class GestoriaService {
         .filter((p) => p.length >= 3) // Doar cuvinte de cel puțin 3 caractere
         .map(
           (word) =>
-            `TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${word}%`)}`,
+            `${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${word}%`)}`,
         )
         .join(' AND ');
 
@@ -941,11 +1111,9 @@ export class GestoriaService {
           const nombreDetectadoWords = new Set(nombreParts);
 
           for (const emp of empleado) {
-            const empWords = emp['NOMBRE / APELLIDOS']
-              .toUpperCase()
-              .split(/\s+/)
-              .filter((w) => w.length > 0);
-            const empWordsSet = new Set(empWords);
+            const empWordsSet = this.palabrasNormalizadasDeNombre(
+              emp['NOMBRE / APELLIDOS'],
+            );
 
             // Calculăm câte cuvinte din numele detectat sunt în numele din DB
             let matchedWords = 0;
@@ -1001,11 +1169,9 @@ export class GestoriaService {
           // ȘI dacă cel puțin 2 cuvinte se potrivesc (pentru a evita false positives cu doar 1 cuvânt comun)
           if (bestMatch && bestConfianza >= 70) {
             // Verificăm câte cuvinte se potrivesc efectiv
-            const empWords = bestMatch['NOMBRE / APELLIDOS']
-              .toUpperCase()
-              .split(/\s+/)
-              .filter((w) => w.length > 0);
-            const empWordsSet = new Set(empWords);
+            const empWordsSet = this.palabrasNormalizadasDeNombre(
+              bestMatch['NOMBRE / APELLIDOS'],
+            );
             let matchedCount = 0;
             for (const word of nombreDetectadoWords) {
               if (empWordsSet.has(word)) {
@@ -1051,14 +1217,14 @@ export class GestoriaService {
         for (let i = 0; i < nombreParts.length; i++) {
           for (let j = i + 1; j < nombreParts.length; j++) {
             conditions.push(
-              `(TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[i]}%${nombreParts[j]}%`)} OR TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[j]}%${nombreParts[i]}%`)})`,
+              `(${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${nombreParts[i]}%${nombreParts[j]}%`)} OR ${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${nombreParts[j]}%${nombreParts[i]}%`)})`,
             );
           }
         }
         likeConditions = conditions.join(' OR ');
       } else {
         // Pentru nume cu 2 cuvinte, căutăm după primele 2
-        likeConditions = `(TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[0]}%${nombreParts[1]}%`)} OR TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${nombreParts[1]}%${nombreParts[0]}%`)})`;
+        likeConditions = `(${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${nombreParts[0]}%${nombreParts[1]}%`)} OR ${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${nombreParts[1]}%${nombreParts[0]}%`)})`;
       }
 
       empleadoQuery = `
@@ -1080,11 +1246,9 @@ export class GestoriaService {
         const nombreDetectadoWords = new Set(nombreParts);
 
         for (const emp of empleado) {
-          const empWords = emp['NOMBRE / APELLIDOS']
-            .toUpperCase()
-            .split(/\s+/)
-            .filter((w) => w.length > 0);
-          const empWordsSet = new Set(empWords);
+          const empWordsSet = this.palabrasNormalizadasDeNombre(
+            emp['NOMBRE / APELLIDOS'],
+          );
 
           // Calculăm scorul: câte cuvinte din numele detectat sunt în numele din DB
           let score = 0;
@@ -1115,11 +1279,9 @@ export class GestoriaService {
 
         // Pentru nume cu 3+ cuvinte, cerem minim 2 cuvinte potrivite (nu doar confidență >= 70%)
         if (bestMatch) {
-          const empWords = bestMatch['NOMBRE / APELLIDOS']
-            .toUpperCase()
-            .split(/\s+/)
-            .filter((w) => w.length > 0);
-          const empWordsSet = new Set(empWords);
+          const empWordsSet = this.palabrasNormalizadasDeNombre(
+            bestMatch['NOMBRE / APELLIDOS'],
+          );
           let matchedCount = 0;
           for (const word of nombreDetectadoWords) {
             if (empWordsSet.has(word)) {
@@ -1173,7 +1335,7 @@ export class GestoriaService {
       empleadoQuery = `
         SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
         FROM \`DatosEmpleados\`
-        WHERE TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`${primerNombre}%`)}
+        WHERE ${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`${primerNombre}%`)}
         LIMIT 10
       `;
       empleado =
@@ -1210,9 +1372,9 @@ export class GestoriaService {
           let bestConfianza = 0;
 
           for (const emp of empleado) {
-            const empUpper = emp['NOMBRE / APELLIDOS'].toUpperCase();
-            const empWords = empUpper.split(/\s+/).filter((w) => w.length > 0);
-            const empWordsSet = new Set(empWords);
+            const empWordsSet = this.palabrasNormalizadasDeNombre(
+              emp['NOMBRE / APELLIDOS'],
+            );
 
             // Verificăm dacă al doilea nume se potrivește
             const tieneSegundoNombre = empWordsSet.has(segundoNombre);
@@ -1323,7 +1485,7 @@ export class GestoriaService {
         empleadoQuery = `
           SELECT \`CODIGO\`, \`NOMBRE / APELLIDOS\`
           FROM \`DatosEmpleados\`
-          WHERE TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) LIKE ${this.escapeSql(`%${ultimoNombre}%`)}
+          WHERE ${this.sqlNombreSinAcentos()} LIKE ${this.escapeSql(`%${ultimoNombre}%`)}
           LIMIT 10
         `;
         empleado =
@@ -1336,13 +1498,14 @@ export class GestoriaService {
           if (nombreParts.length > 0) {
             const primerNombre = nombreParts[0];
             for (const emp of empleado) {
-              const empUpper = emp['NOMBRE / APELLIDOS'].toUpperCase();
-              if (empUpper.includes(primerNombre)) {
+              const empNormStr = this.quitarAcentos(
+                emp['NOMBRE / APELLIDOS'].toUpperCase(),
+              );
+              if (empNormStr.includes(primerNombre)) {
                 // Calculăm confidența
-                const empWords = empUpper
-                  .split(/\s+/)
-                  .filter((w) => w.length > 0);
-                const empWordsSet = new Set(empWords);
+                const empWordsSet = this.palabrasNormalizadasDeNombre(
+                  emp['NOMBRE / APELLIDOS'],
+                );
                 let matchedWords = 0;
                 for (const word of nombreParts) {
                   if (empWordsSet.has(word)) {
@@ -1895,6 +2058,15 @@ export class GestoriaService {
           // Dacă nu putem extrage textul, continuăm fără detecție
           this.logger.warn(
             `⚠️ Nu s-a putut extrage textul din PDF pentru detecție finiquito: ${pdfError.message}`,
+          );
+        }
+      }
+      // Supliment: dacă numele fișierului indică finiquito (ex: Finiquito.H.S._NOMBRE_01-2026.PDF), marchem ca finiquito
+      if (!esFiniquito && file.originalname) {
+        if (this.esFiniquitoDesdeNombreArchivo(file.originalname)) {
+          esFiniquito = true;
+          this.logger.log(
+            `🔍 Finiquito detectat din nume fișier: ${file.originalname}`,
           );
         }
       }
@@ -2454,13 +2626,13 @@ export class GestoriaService {
             lines.slice(0, 15),
           );
 
-          // Pattern 1: Căutăm numele după "Periodo de liquidación.:" - numele este pe următoarea linie cu format "NUME\tDE CAMINO"
+          // Pattern 1: Căutăm numele după "Periodo/Período de liquidación" - numele este pe următoarea linie
           for (let idx = 0; idx < lines.length; idx++) {
-            if (lines[idx].match(/Periodo\s+de\s+liquidación/i)) {
+            if (lines[idx].match(/Period[oó]\s+de\s+liquidaci[oó]n/i)) {
               // Numele este pe următoarea linie (idx + 1)
               if (idx + 1 < lines.length) {
                 const nombreLine = lines[idx + 1];
-                // Format: "NUME\tDE CAMINO S. AUXILIARES SL" - extragem partea dinainte de tab
+                // Format: "NUME\tEMPRESA" - extragem partea dinainte de tab
                 if (nombreLine && nombreLine.includes('\t')) {
                   nombreDetectado = nombreLine.split('\t')[0].trim();
                   this.logger.debug(
@@ -2468,15 +2640,24 @@ export class GestoriaService {
                   );
                   break;
                 }
-                // Sau dacă nu are tab, luăm până la "DE CAMINO"
-                if (nombreLine && nombreLine.includes('DE CAMINO')) {
-                  nombreDetectado = nombreLine.split('DE CAMINO')[0].trim();
+                // Separator companie din env (ex. HERA FACILITY pentru HERA); fallback Decamino "DE CAMINO"
+                const companySeparator =
+                  (process.env.COMPANY_NOMINA_NAME_SEPARATOR || '').trim() ||
+                  'DE CAMINO';
+                if (
+                  nombreLine &&
+                  companySeparator &&
+                  nombreLine.includes(companySeparator)
+                ) {
+                  nombreDetectado = nombreLine
+                    .split(companySeparator)[0]
+                    .trim();
                   this.logger.debug(
-                    `✅ Page ${i + 1} - Nume detectat (Pattern 1 - DE CAMINO): ${nombreDetectado}`,
+                    `✅ Page ${i + 1} - Nume detectat (Pattern 1 - ${companySeparator}): ${nombreDetectado}`,
                   );
                   break;
                 }
-                // Sau dacă linia conține doar numele (fără "DE CAMINO"), o luăm direct
+                // Sau dacă linia conține doar numele (fără separator), o luăm direct
                 if (
                   nombreLine &&
                   nombreLine.trim().length > 5 &&
@@ -2529,6 +2710,76 @@ export class GestoriaService {
                 }
                 if (nombreDetectado) break;
               }
+            }
+          }
+
+          // Pattern 3: Orice linie care conține separatorul companiei (ex. HERA FACILITY) – nu depinde de "Periodo de liquidación"
+          const companySep = (
+            process.env.COMPANY_NOMINA_NAME_SEPARATOR || ''
+          ).trim();
+          if (!nombreDetectado && companySep) {
+            for (let idx = 0; idx < Math.min(lines.length, 25); idx++) {
+              const line = lines[idx];
+              if (line && line.includes(companySep)) {
+                const part = line.split(companySep)[0].trim();
+                if (
+                  part.length >= 4 &&
+                  /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(part) &&
+                  !line.match(/^(EMPRESA|N\.I\.F\.|Núm\.|Ocupación)/i)
+                ) {
+                  nombreDetectado = part;
+                  this.logger.debug(
+                    `✅ Page ${i + 1} - Nume detectat (Pattern 3 - linie cu ${companySep}): ${nombreDetectado}`,
+                  );
+                  break;
+                }
+              }
+              // Pattern 3b: linia curentă e doar firma (ex. HERA FACILITY...); numele e pe linia anterioară
+              if (
+                line &&
+                (line === companySep || line.startsWith(companySep)) &&
+                idx > 0
+              ) {
+                const prev = lines[idx - 1].trim();
+                if (
+                  prev.length >= 4 &&
+                  /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(prev) &&
+                  !prev.match(
+                    /^(EMPRESA|N\.I\.F\.|Núm\.|Ocupación|Period|del\s+\d+)/i,
+                  )
+                ) {
+                  nombreDetectado = prev;
+                  this.logger.debug(
+                    `✅ Page ${i + 1} - Nume detectat (Pattern 3b - linia înainte de ${companySep}): ${nombreDetectado}`,
+                  );
+                  break;
+                }
+              }
+            }
+          }
+
+          // Pattern 4 (HERA): format HERA = prima linie = nume ("APELLIDOS, NOMBRE"). Rulează dacă e setat separator SAU compania e HERA.
+          const isHeraFormat =
+            companySep ||
+            (process.env.COMPANY_LEGAL_NAME || '')
+              .toUpperCase()
+              .includes('HERA') ||
+            (process.env.COMPANY_LEGAL_NAME_SHORT || '')
+              .toUpperCase()
+              .includes('HERA');
+          if (!nombreDetectado && isHeraFormat && lines.length > 0) {
+            const firstLine = (lines[0] || '').trim();
+            const looksLikeName =
+              firstLine.length >= 5 &&
+              /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s,.'-]+$/.test(firstLine) &&
+              !firstLine.match(
+                /^(CL|AV|C\/|NIF\.|EMPRESA|MADRID|Nº|Seg\.|del\s+\d+|\d)/i,
+              );
+            if (looksLikeName) {
+              nombreDetectado = firstLine;
+              this.logger.debug(
+                `✅ Page ${i + 1} - Nume detectat (Pattern 4 - prima linie HERA): ${nombreDetectado}`,
+              );
             }
           }
 
@@ -6536,8 +6787,10 @@ export class GestoriaService {
                     ? pageTextResult
                     : '';
 
-              // Detectăm dacă este finiquito
-              const esFiniquito = this.detectarFiniquito(textContent);
+              // Detectăm dacă este finiquito (din conținut PDF sau din nume fișier, ex: Finiquito.H.S._NOMBRE_01-2026.PDF)
+              const esFiniquito =
+                this.detectarFiniquito(textContent) ||
+                this.esFiniquitoDesdeNombreArchivo(file.originalname || '');
 
               // Extragem datele necesare (înainte de a căuta numele, pentru cazul când nu găsim numele)
               let datos = this.extraerDatosNomina(textContent);
@@ -6647,17 +6900,21 @@ export class GestoriaService {
                 anoCounts[anoDetectado] = (anoCounts[anoDetectado] || 0) + 1;
               }
 
-              // Pattern 1: Căutăm numele după "Periodo de liquidación.:" - numele este pe următoarea linie
+              // Pattern 1: Căutăm numele după "Periodo/Período de liquidación" - numele este pe următoarea linie
               for (let idx = 0; idx < lines.length; idx++) {
-                if (lines[idx].match(/Periodo\s+de\s+liquidación/i)) {
+                if (lines[idx].match(/Period[oó]\s+de\s+liquidaci[oó]n/i)) {
                   if (idx + 1 < lines.length) {
                     const nombreLine = lines[idx + 1];
                     if (nombreLine && nombreLine.includes('\t')) {
                       nombreDetectado = nombreLine.split('\t')[0].trim();
                       break;
                     }
-                    if (nombreLine && nombreLine.includes('DE CAMINO')) {
-                      nombreDetectado = nombreLine.split('DE CAMINO')[0].trim();
+                    const sep =
+                      (
+                        process.env.COMPANY_NOMINA_NAME_SEPARATOR || ''
+                      ).trim() || 'DE CAMINO';
+                    if (nombreLine && sep && nombreLine.includes(sep)) {
+                      nombreDetectado = nombreLine.split(sep)[0].trim();
                       break;
                     }
                     if (
@@ -6703,6 +6960,58 @@ export class GestoriaService {
                     }
                     if (nombreDetectado) break;
                   }
+                }
+              }
+
+              // Pattern 3: Orice linie care conține separatorul companiei (ex. HERA FACILITY)
+              const sep2 = (
+                process.env.COMPANY_NOMINA_NAME_SEPARATOR || ''
+              ).trim();
+              if (!nombreDetectado && sep2) {
+                for (let idx = 0; idx < Math.min(lines.length, 25); idx++) {
+                  const line = lines[idx];
+                  if (line && line.includes(sep2)) {
+                    const part = line.split(sep2)[0].trim();
+                    if (
+                      part.length >= 4 &&
+                      /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(part) &&
+                      !line.match(/^(EMPRESA|N\.I\.F\.|Núm\.|Ocupación)/i)
+                    ) {
+                      nombreDetectado = part;
+                      break;
+                    }
+                  }
+                  if (
+                    line &&
+                    (line === sep2 || line.startsWith(sep2)) &&
+                    idx > 0
+                  ) {
+                    const prev = (lines[idx - 1] || '').trim();
+                    if (
+                      prev.length >= 4 &&
+                      /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(prev) &&
+                      !prev.match(
+                        /^(EMPRESA|N\.I\.F\.|Núm\.|Ocupación|Period|del\s+\d+)/i,
+                      )
+                    ) {
+                      nombreDetectado = prev;
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // Fallback: nume din filename pentru finiquitos (ex: Finiquito.H.S._DEL AGUILA PINEDA, MARIA ROSARIO_01-2026.PDF)
+              if (!nombreDetectado && file.originalname) {
+                const ext =
+                  this.extraerNombreYPeriodoDesdeNombreArchivoFiniquito(
+                    file.originalname,
+                  );
+                if (ext?.nombre) {
+                  nombreDetectado = ext.nombre;
+                  if (ext.mes != null && ext.ano != null && !mesDetectado)
+                    mesDetectado = ext.mes;
+                  if (ext.ano != null && !anoDetectado) anoDetectado = ext.ano;
                 }
               }
 

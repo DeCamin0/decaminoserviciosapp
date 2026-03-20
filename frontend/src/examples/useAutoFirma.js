@@ -27,7 +27,7 @@ export const useAutoFirma = () => {
 
   const signDocument = async (data, options = {}) => {
     if (!isAvailable) {
-      throw new Error('AutoFirma nu este disponibil');
+      throw new Error('AutoFirma no está disponible');
     }
 
     try {
@@ -40,7 +40,7 @@ export const useAutoFirma = () => {
 
   const getCertificates = async () => {
     if (!isAvailable) {
-      throw new Error('AutoFirma nu este disponibil');
+      throw new Error('AutoFirma no está disponible');
     }
 
     try {

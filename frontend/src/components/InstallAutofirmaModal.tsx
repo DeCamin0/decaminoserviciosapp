@@ -45,8 +45,8 @@ export default function InstallAutofirmaModal({
 
   const strings = {
     ro: {
-      title: 'Instalează AutoFirma',
-      message: 'Nu pare că AutoFirma s-a deschis. Te rugăm să o instalezi și să încerci din nou.',
+      title: 'Instalar AutoFirma',
+      message: 'Parece que AutoFirma no se ha abierto. Por favor, instálalo e inténtalo de nuevo.',
       download: 'Descarcă AutoFirma',
       close: 'Închide',
       steps: [

@@ -402,7 +402,7 @@ export default function AccessMatrix() {
   };
 
   const handleResetToDefaults = async () => {
-    const confirmMessage = '⚠️ ATENȚIE: Ești sigur că vrei să resetezi TOATE permisiunile la FALSE pentru TOATE grupurile?\n\nAceastă acțiune va:\n- Seta toate permisiunile la false în baza de date\n- Elimina accesul pentru toată lumea\n- Nu poate fi anulată ușor\n\nContinuă?';
+    const confirmMessage = '⚠️ ATENCIÓN: ¿Estás seguro de que quieres restablecer TODOS los permisos a FALSE para TODOS los grupos?\n\nEsta acción:\n- Pondrá todos los permisos a false en la base de datos\n- Eliminará el acceso para todos\n- No se puede deshacer fácilmente\n\n¿Continuar?';
     if (!confirm(confirmMessage)) {
       return;
     }
@@ -426,10 +426,10 @@ export default function AccessMatrix() {
       // Log salvarea permisiunilor
       await activityLogger.logPermissionsSaved(resetPermissions, authUser);
       
-      alert('✅ Toate permisiunile au fost resetate la FALSE și salvate în baza de date!\n\nToate grupurile au acum acces 0 la toate modulele.');
+      alert('✅ Todos los permisos se han restablecido a FALSE y guardado en la base de datos.\n\nTodos los grupos tienen ahora acceso 0 a todos los módulos.');
     } catch (error) {
       console.error('Error resetting permissions:', error);
-      alert('❌ Eroare la resetarea permisiunilor: ' + error.message);
+      alert('❌ Error al restablecer los permisos: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -438,7 +438,7 @@ export default function AccessMatrix() {
   const handleAddGroup = (newGroup) => {
     const groupExists = userGroups.find(g => g.id === newGroup.id);
     if (groupExists) {
-      alert('Grupul există deja!');
+      alert('¡El grupo ya existe!');
       return;
     }
     
@@ -454,7 +454,7 @@ export default function AccessMatrix() {
   };
 
   const handleRemoveGroup = (groupId) => {
-    if (confirm(`Ești sigur că vrei să ștergi grupul "${groupId}"?`)) {
+    if (confirm(`¿Estás seguro de que quieres eliminar el grupo "${groupId}"?`)) {
       setUserGroups(prev => prev.filter(g => g.id !== groupId));
       setCustomGroups(prev => prev.filter(g => g.id !== groupId));
       
@@ -468,7 +468,7 @@ export default function AccessMatrix() {
   };
 
   const handleDeleteUnusedGroups = async () => {
-    const confirmMessage = `⚠️ ATENȚIE: Ești sigur că vrei să ștergi TOATE permisiunile pentru grupurile NEFOLOSITE?\n\nGrupurile care SE PĂSTREAZĂ sunt cele care există în tabelul DatosEmpleados (câmpul GRUPO).\n\nToate celelalte grupuri din tabelul Permissions vor avea permisiunile șterse permanent.\n\nContinuă?`;
+    const confirmMessage = `⚠️ ATENCIÓN: ¿Estás seguro de que quieres eliminar TODOS los permisos de los grupos NO USADOS?\n\nLos grupos que SE MANTIENEN son los que existen en la tabla DatosEmpleados (campo GRUPO).\n\nEl resto de grupos en la tabla Permissions tendrán sus permisos eliminados permanentemente.\n\n¿Continuar?`;
     if (!confirm(confirmMessage)) {
       return;
     }
@@ -485,13 +485,13 @@ export default function AccessMatrix() {
       }
       
       const message = result.deleted > 0
-        ? `✅ Șterse ${result.deleted} permisiuni pentru ${result.unusedGroups.length} grupuri nefolosite:\n\n${result.unusedGroups.join(', ')}\n\nGrupuri păstrate (din DatosEmpleados):\n${result.usedGroups.join(', ')}`
-        : `ℹ️ Nu s-au găsit grupuri nefolosite. Toate grupurile din Permissions există în DatosEmpleados.\n\nGrupuri găsite în DatosEmpleados:\n${result.usedGroups.join(', ')}`;
+        ? `✅ Eliminados ${result.deleted} permisos de ${result.unusedGroups.length} grupos no usados:\n\n${result.unusedGroups.join(', ')}\n\nGrupos mantenidos (en DatosEmpleados):\n${result.usedGroups.join(', ')}`
+        : `ℹ️ No se encontraron grupos no usados. Todos los grupos en Permissions existen en DatosEmpleados.\n\nGrupos encontrados en DatosEmpleados:\n${result.usedGroups.join(', ')}`;
       
       alert(message);
     } catch (error) {
       console.error('Error deleting unused groups:', error);
-      alert('❌ Eroare la ștergerea grupurilor nefolosite: ' + error.message);
+      alert('❌ Error al eliminar los grupos no usados: ' + error.message);
     } finally {
       setSaving(false);
     }
@@ -514,12 +514,12 @@ export default function AccessMatrix() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-red-600">Control de Acces</h2>
-          <p className="text-gray-600">Gestionează permisiunile pentru diferitele grupuri de utilizatori</p>
+          <p className="text-gray-600">Gestiona los permisos para los diferentes grupos de usuarios</p>
         </div>
         <div className="flex items-center gap-3">
           <input
             type="text"
-            placeholder="Caută grup..."
+            placeholder="Buscar grupo..."
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
             value={groupSearch}
             onChange={(e) => setGroupSearch(e.target.value)}
@@ -529,7 +529,7 @@ export default function AccessMatrix() {
             variant="outline"
             size="sm"
           >
-            ➕ Adaugă Grup
+            ➕ Añadir grupo
           </Button>
           <Button
             onClick={handleResetToDefaults}
@@ -545,14 +545,14 @@ export default function AccessMatrix() {
             disabled={saving}
             className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
           >
-            🗑️ Șterge Grupuri Nefolosite
+            🗑️ Eliminar grupos no usados
           </Button>
           <Button
             onClick={handleSavePermissions}
             disabled={saving}
             size="sm"
           >
-            {saving ? '💾 Salvando...' : '💾 Salvează'}
+            {saving ? '💾 Guardando...' : '💾 Guardar'}
           </Button>
         </div>
       </div>
@@ -572,14 +572,14 @@ export default function AccessMatrix() {
                       <button
                         className="mt-1 text-xs text-red-600 hover:underline"
                         onClick={() => toggleAllForModule(module.id)}
-                        title="Comută toate pentru coloană"
+                        title="Alternar todos para esta columna"
                       >
                         Toggle col
                       </button>
                     </div>
                   </th>
                 ))}
-                <th className="text-center p-4 font-semibold text-gray-700">Acțiuni</th>
+                <th className="text-center p-4 font-semibold text-gray-700">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -616,7 +616,7 @@ export default function AccessMatrix() {
                     <button
                       onClick={() => toggleAllForGroup(group.id)}
                       className="text-red-600 hover:text-red-800 mr-2 text-xs underline"
-                      title="Comută toate modulele pentru grup"
+                      title="Alternar todos los módulos para este grupo"
                     >
                       Toggle row
                     </button>
@@ -624,7 +624,7 @@ export default function AccessMatrix() {
                       <button
                         onClick={() => handleRemoveGroup(group.id)}
                         className="text-red-600 hover:text-red-800 p-1"
-                        title="Șterge grupul"
+                        title="Eliminar grupo"
                       >
                         🗑️
                       </button>

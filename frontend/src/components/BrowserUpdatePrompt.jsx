@@ -46,8 +46,8 @@ const BrowserUpdatePrompt = () => {
             <button
               onClick={dismissUpdate}
               className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-              title="Închide notificarea"
-              aria-label="Închide notificarea de actualizare browser"
+              title="Cerrar notificación"
+              aria-label="Cerrar notificación de actualización del navegador"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

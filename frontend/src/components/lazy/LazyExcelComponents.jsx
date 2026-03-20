@@ -8,19 +8,19 @@ const ExcelViewer = lazy(() => import('../ExcelViewer'));
 
 // Lazy Excel components with loading states
 export const LazyExcelExporter = (props) => (
-  <Suspense fallback={<SectionLoading title="Se încarcă exportatorul Excel..." />}>
+  <Suspense fallback={<SectionLoading title="Cargando exportador Excel..." />}>
     <ExcelExporter {...props} />
   </Suspense>
 );
 
 export const LazyExcelImporter = (props) => (
-  <Suspense fallback={<SectionLoading title="Se încarcă importatorul Excel..." />}>
+  <Suspense fallback={<SectionLoading title="Cargando importador Excel..." />}>
     <ExcelImporter {...props} />
   </Suspense>
 );
 
 export const LazyExcelViewer = (props) => (
-  <Suspense fallback={<SectionLoading title="Se încarcă vizualizatorul Excel..." />}>
+  <Suspense fallback={<SectionLoading title="Cargando visor Excel..." />}>
     <ExcelViewer {...props} />
   </Suspense>
 );

@@ -19,6 +19,7 @@ const ClientesPage = lazy(() => import('../ClientesPage'));
 const ClienteDetallePage = lazy(() => import('../ClienteDetallePage'));
 const ProveedorDetallePage = lazy(() => import('../ProveedorDetallePage'));
 const AdminDashboard = lazy(() => import('../AdminDashboard'));
+const SuperAdminTenantsPage = lazy(() => import('../SuperAdminTenantsPage'));
 const InspeccionesPage = lazy(() => import('../InspeccionesPage'));
 const MisInspeccionesPage = lazy(() => import('../MisInspeccionesPage'));
 // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (TareasPage, ControlCorreoPage, IncidenciasPage, PaqueteriaCentroPage, TareasCentroPage)
@@ -182,6 +183,17 @@ export const LazyAdminDashboard = (props) => {
   );
 };
 
+export const LazySuperAdminTenantsPage = (props) => {
+  const { t } = useTranslation();
+  return (
+    <Suspense
+      fallback={<PageLoading title={t('adminDashboard.loading')} />}
+    >
+      <SuperAdminTenantsPage {...props} />
+    </Suspense>
+  );
+};
+
 export const LazyInspeccionesPage = (props) => {
   const { t } = useTranslation();
   return (
@@ -340,6 +352,7 @@ export default {
   LazyClienteDetallePage,
   LazyProveedorDetallePage,
   LazyAdminDashboard,
+  LazySuperAdminTenantsPage,
   LazyInspeccionesPage,
   LazyMisInspeccionesPage,
   // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (LazyTareasPage, LazyControlCorreoPage, LazyIncidenciasPage, LazyPaqueteriaCentroPage, LazyTareasCentroPage, LazyIncidenciasCentroPage)

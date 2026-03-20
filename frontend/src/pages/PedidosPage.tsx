@@ -7,6 +7,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env';
+import heic2any from 'heic2any';
 
 // ===== TIPURI TYPESCRIPT =====
 
@@ -2202,6 +2203,20 @@ const TabGestionarPedidos: React.FC<{
   const [enviandoProveedor, setEnviandoProveedor] = useState(false);
   const [serviciosEntrega, setServiciosEntrega] = useState<Record<number, string>>({});
   const [loadingServicios, setLoadingServicios] = useState(false);
+  const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
+  const [albaranFile, setAlbaranFile] = useState<File | null>(null);
+  const [albaranPreview, setAlbaranPreview] = useState<string | null>(null);
+  const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
+  const [pedidoViendoAlbaran, setPedidoViendoAlbaran] = useState<string | null>(null);
+  const [albaranViewBlobUrl, setAlbaranViewBlobUrl] = useState<string | null>(null);
+  /** Data URL pentru preview la imagini (mai fiabil decât blob URL în <img>) */
+  const [albaranViewPreviewUrl, setAlbaranViewPreviewUrl] = useState<string | null>(null);
+  const [albaranViewMime, setAlbaranViewMime] = useState<string>('');
+  const [albaranViewName, setAlbaranViewName] = useState<string>('');
+  const [albaranViewLoading, setAlbaranViewLoading] = useState(false);
+  const [albaranViewError, setAlbaranViewError] = useState<string | null>(null);
+  const albaranViewBlobUrlRef = React.useRef<string | null>(null);
+  const albaranViewPreviewUrlRef = React.useRef<string | null>(null);
 
   // Pedidos filtrate după estado, centro și an
   const pedidosFiltrados = useMemo(() => {
@@ -2232,6 +2247,94 @@ const TabGestionarPedidos: React.FC<{
 
     return filtered;
   }, [pedidos, filtroEstado, filtroCentro, filtroAn]);
+
+  // Când utilizatorul deschide "Ver Albarán", încarcă fișierul pentru vizualizare
+  useEffect(() => {
+    if (!pedidoViendoAlbaran) {
+      setAlbaranViewBlobUrl(null);
+      setAlbaranViewPreviewUrl(null);
+      setAlbaranViewMime('');
+      setAlbaranViewName('');
+      setAlbaranViewError(null);
+      return;
+    }
+    let revoked = false;
+    let heicHandlesLoading = false;
+    setAlbaranViewLoading(true);
+    setAlbaranViewError(null);
+    setAlbaranViewPreviewUrl(null);
+    const token = localStorage.getItem('auth_token');
+    const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+    const uid = (pedidoViendoAlbaran || '').replace(/^=+/, '');
+    const url = `${base}/api/pedidos/${encodeURIComponent(uid)}/albaran?preview=1`;
+    fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (revoked) return;
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Error ${res.status}`);
+        }
+        const blob = await res.blob();
+        const contentType = res.headers.get('Content-Type') || blob.type || 'application/pdf';
+        const disp = res.headers.get('Content-Disposition');
+        let name = 'albaran.pdf';
+        if (disp) {
+          const m = disp.match(/filename="?([^";]+)"?/);
+          if (m) name = m[1].trim();
+        }
+        const blobUrl = URL.createObjectURL(blob);
+        albaranViewBlobUrlRef.current = blobUrl;
+        setAlbaranViewBlobUrl(blobUrl);
+        setAlbaranViewMime(contentType);
+        setAlbaranViewName(name);
+        const mime = (contentType || '').toLowerCase();
+        const nameLower = (name || '').toLowerCase();
+        const isHeic = mime === 'image/heic' || mime === 'image/heif' || nameLower.endsWith('.heic') || nameLower.endsWith('.heif');
+        if (isHeic) {
+          heicHandlesLoading = true;
+          heic2any({ blob, toType: 'image/jpeg', quality: 0.9 })
+            .then((converted: Blob | Blob[]) => {
+              if (revoked) return;
+              const b = Array.isArray(converted) ? converted[0] : converted;
+              if (b) {
+                const url = URL.createObjectURL(b);
+                albaranViewPreviewUrlRef.current = url;
+                setAlbaranViewPreviewUrl(url);
+              }
+            })
+            .catch(() => { if (!revoked) setAlbaranViewPreviewUrl(null); })
+            .finally(() => { if (!revoked) setAlbaranViewLoading(false); });
+        }
+        if (contentType.startsWith('image/') && !isHeic) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            if (!revoked && e.target?.result) setAlbaranViewPreviewUrl(e.target.result as string);
+          };
+          reader.readAsDataURL(blob);
+        }
+        if (!heicHandlesLoading && !revoked) setAlbaranViewLoading(false);
+      })
+      .catch((err) => {
+        if (!revoked) setAlbaranViewError(err?.message || 'No se pudo cargar el albarán');
+      })
+      .finally(() => {
+        if (!revoked && !heicHandlesLoading) setAlbaranViewLoading(false);
+      });
+    return () => {
+      revoked = true;
+      if (albaranViewBlobUrlRef.current) {
+        URL.revokeObjectURL(albaranViewBlobUrlRef.current);
+        albaranViewBlobUrlRef.current = null;
+      }
+      if (albaranViewPreviewUrlRef.current) {
+        URL.revokeObjectURL(albaranViewPreviewUrlRef.current);
+        albaranViewPreviewUrlRef.current = null;
+      }
+    };
+  }, [pedidoViendoAlbaran]);
 
   // Produse disponibile filtrate și sortate
   const productosDisponiblesFiltrados = useMemo(() => {
@@ -2799,6 +2902,61 @@ const TabGestionarPedidos: React.FC<{
     } catch (error) {
       console.error('Error guardando notas:', error);
       addToast('error', 'Error', 'No se pudo guardar la nota. Inténtalo de nuevo.');
+    }
+  };
+
+  const handleAlbaranFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setAlbaranFile(file);
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setAlbaranPreview(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setAlbaranPreview(null);
+      }
+    }
+  };
+
+  const handleUploadAlbaran = async () => {
+    if (!pedidoCargandoAlbaran || !albaranFile) {
+      addToast('error', 'Error', 'Por favor selecciona un archivo');
+      return;
+    }
+    setUploadingAlbaran(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const formData = new FormData();
+      formData.append('albaran', albaranFile);
+      const uidForUpload = (pedidoCargandoAlbaran || '').replace(/^=+/, '');
+      const encodedUid = encodeURIComponent(uidForUpload);
+      const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+      const url = `${base}/api/pedidos/${encodedUid}/albaran`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      await response.json();
+      setPedidos(prev => prev.map(p =>
+        p.pedido_uid === pedidoCargandoAlbaran ? { ...p, estado: 'entregado' } : p
+      ));
+      addToast('success', 'Albarán subido', 'El albarán ha sido subido correctamente y el pedido ha sido marcado como entregado');
+      setPedidoCargandoAlbaran(null);
+      setAlbaranFile(null);
+      setAlbaranPreview(null);
+    } catch (error: unknown) {
+      console.error('Error uploading albarán:', error);
+      addToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo subir el albarán');
+    } finally {
+      setUploadingAlbaran(false);
     }
   };
 
@@ -3471,19 +3629,26 @@ const TabGestionarPedidos: React.FC<{
                   
                   {/* Butoane de acțiune */}
                   <div className="flex flex-col gap-2">
-                    <Button
-                      onClick={() => {
-                        setPedidoEditando(pedidoEditando === pedido.pedido_uid ? null : pedido.pedido_uid);
-                        // Deschide și detaliile dacă nu sunt deja deschise
-                        if (pedidoSeleccionado !== pedido.pedido_uid) {
-                          setPedidoSeleccionado(pedido.pedido_uid);
-                        }
-                      }}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                      size="sm"
-                    >
-                      {pedidoEditando === pedido.pedido_uid ? '❌ Cancelar Edición' : '✏️ Editar'}
-                    </Button>
+                    {(() => {
+                      const noEditable = pedido.estado === 'enviado' || pedido.estado === 'entregado';
+                      return (
+                        <Button
+                          onClick={() => {
+                            if (noEditable) return;
+                            setPedidoEditando(pedidoEditando === pedido.pedido_uid ? null : pedido.pedido_uid);
+                            if (pedidoSeleccionado !== pedido.pedido_uid) {
+                              setPedidoSeleccionado(pedido.pedido_uid);
+                            }
+                          }}
+                          disabled={noEditable}
+                          title={noEditable ? 'No se puede editar un pedido ya enviado al proveedor' : undefined}
+                          className={noEditable ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}
+                          size="sm"
+                        >
+                          {pedidoEditando === pedido.pedido_uid ? '❌ Cancelar Edición' : '✏️ Editar'}
+                        </Button>
+                      );
+                    })()}
                     {pedido.estado === 'pendiente' && (
                       <>
                         <div className="mb-2">
@@ -3776,6 +3941,21 @@ const TabGestionarPedidos: React.FC<{
                           ❌ Rechazar
                         </Button>
                       </>
+                    )}
+                    {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'enviado' || pedido.estado?.toLowerCase() === 'entregado') && (
+                      <Button
+                        onClick={() => {
+                          if (pedido.estado?.toLowerCase() === 'entregado') {
+                            setPedidoViendoAlbaran(pedido.pedido_uid);
+                          } else {
+                            setPedidoCargandoAlbaran(pedido.pedido_uid);
+                          }
+                        }}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        size="sm"
+                      >
+                        📄 {pedido.estado?.toLowerCase() === 'entregado' ? 'Ver Albarán' : 'Cargar Albarán'}
+                      </Button>
                     )}
                     <Button
                       onClick={() => setPedidoSeleccionado(
@@ -4378,6 +4558,232 @@ const TabGestionarPedidos: React.FC<{
               >
                 {enviandoProveedor ? '⏳ Enviando...' : '📤 Enviar a Proveedor y Marcar como Enviado'}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ver Albarán (vizualizare când pedido ya entregado) */}
+      {pedidoViendoAlbaran && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h2 className="text-xl font-bold text-gray-800">📄 Ver Albarán</h2>
+              <button
+                onClick={() => {
+                  if (albaranViewBlobUrlRef.current) {
+                    URL.revokeObjectURL(albaranViewBlobUrlRef.current);
+                    albaranViewBlobUrlRef.current = null;
+                  }
+                  if (albaranViewPreviewUrlRef.current) {
+                    URL.revokeObjectURL(albaranViewPreviewUrlRef.current);
+                    albaranViewPreviewUrlRef.current = null;
+                  }
+                  setPedidoViendoAlbaran(null);
+                  setAlbaranViewBlobUrl(null);
+                  setAlbaranViewPreviewUrl(null);
+                  setAlbaranViewMime('');
+                  setAlbaranViewName('');
+                  setAlbaranViewError(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-auto">
+              <p className="text-sm text-gray-600 mb-3">
+                Pedido: <strong>{pedidoViendoAlbaran}</strong>
+              </p>
+              {albaranViewLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <span className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 inline-block"></span>
+                  <span className="ml-3">Cargando albarán...</span>
+                </div>
+              )}
+              {albaranViewError && !albaranViewLoading && (
+                <div className="py-6 text-center">
+                  <p className="text-red-600 mb-4">{albaranViewError}</p>
+                  <Button
+                    onClick={() => {
+                      setPedidoViendoAlbaran(null);
+                      setAlbaranViewError(null);
+                    }}
+                    variant="outline"
+                  >
+                    Cerrar
+                  </Button>
+                </div>
+              )}
+              {albaranViewBlobUrl && !albaranViewLoading && !albaranViewError && (
+                <>
+                  <div className="mb-4 rounded-lg border border-gray-300 overflow-hidden bg-gray-100">
+                    {(() => {
+                      const mime = (albaranViewMime || '').toLowerCase();
+                      const name = (albaranViewName || '').toLowerCase();
+                      const isHeic = mime === 'image/heic' || mime === 'image/heif' || name.endsWith('.heic') || name.endsWith('.heif');
+                      const isPreviewableImage = mime.startsWith('image/') && !isHeic;
+                      if (isHeic && albaranViewPreviewUrl) {
+                        return (
+                          <img
+                            src={albaranViewPreviewUrl}
+                            alt="Albarán"
+                            className="max-w-full h-auto max-h-[70vh] mx-auto block"
+                          />
+                        );
+                      }
+                      if (isHeic && !albaranViewPreviewUrl) {
+                        return (
+                          <div className="p-8 text-center">
+                            <p className="text-gray-600 mb-2">📄 <strong>{albaranViewName}</strong></p>
+                            <p className="text-sm text-gray-500 mb-4">
+                              Vista previa no disponible para este formato (p. ej. HEIC). Use el botón <strong>Descargar</strong> para ver el archivo en su dispositivo.
+                            </p>
+                            <a
+                              href={albaranViewBlobUrl}
+                              download={albaranViewName}
+                              className="inline-flex items-center px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
+                            >
+                              📥 Descargar albarán
+                            </a>
+                          </div>
+                        );
+                      }
+                      if (isPreviewableImage) {
+                        return (
+                          <img
+                            src={albaranViewPreviewUrl || albaranViewBlobUrl}
+                            alt="Albarán"
+                            className="max-w-full h-auto max-h-[70vh] mx-auto block"
+                          />
+                        );
+                      }
+                      return (
+                        <iframe
+                          title="Albarán"
+                          src={albaranViewBlobUrl}
+                          className="w-full h-[70vh] min-h-[400px] border-0"
+                        />
+                      );
+                    })()}
+                  </div>
+                  <div className="flex gap-3 justify-end">
+                    <a
+                      href={albaranViewBlobUrl}
+                      download={albaranViewName}
+                      className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      📥 Descargar
+                    </a>
+                    <Button
+                      onClick={() => {
+                        if (albaranViewBlobUrlRef.current) {
+                          URL.revokeObjectURL(albaranViewBlobUrlRef.current);
+                          albaranViewBlobUrlRef.current = null;
+                        }
+                        if (albaranViewPreviewUrlRef.current) {
+                          URL.revokeObjectURL(albaranViewPreviewUrlRef.current);
+                          albaranViewPreviewUrlRef.current = null;
+                        }
+                        setPedidoViendoAlbaran(null);
+                        setAlbaranViewBlobUrl(null);
+                        setAlbaranViewPreviewUrl(null);
+                      }}
+                      variant="outline"
+                    >
+                      Cerrar
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal upload albarán (firma) */}
+      {pedidoCargandoAlbaran && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">📄 Cargar Albarán</h2>
+                <button
+                  onClick={() => {
+                    setPedidoCargandoAlbaran(null);
+                    setAlbaranFile(null);
+                    setAlbaranPreview(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Pedido: <strong>{pedidoCargandoAlbaran}</strong>
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Sube una foto o PDF del albarán de entrega. El pedido será marcado como &quot;Entregado&quot; automáticamente.
+                </p>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Seleccionar archivo (PDF, JPG, PNG)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf"
+                  onChange={handleAlbaranFileChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+              {albaranPreview && (
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Vista previa:</p>
+                  <div className="border border-gray-300 rounded-lg p-2">
+                    <img
+                      src={albaranPreview}
+                      alt="Preview albarán"
+                      className="max-w-full h-auto max-h-64 mx-auto"
+                    />
+                  </div>
+                </div>
+              )}
+              {albaranFile && !albaranPreview && (
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Archivo seleccionado: <strong>{albaranFile.name}</strong> ({(albaranFile.size / 1024).toFixed(2)} KB)
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-3 justify-end">
+                <Button
+                  onClick={() => {
+                    setPedidoCargandoAlbaran(null);
+                    setAlbaranFile(null);
+                    setAlbaranPreview(null);
+                  }}
+                  variant="outline"
+                  disabled={uploadingAlbaran}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleUploadAlbaran}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={!albaranFile || uploadingAlbaran}
+                >
+                  {uploadingAlbaran ? (
+                    <>
+                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                      Subiendo...
+                    </>
+                  ) : (
+                    '📤 Subir Albarán'
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -15,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { PedidosService } from '../services/pedidos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -73,6 +74,31 @@ export class PedidosController {
       this.logger.error(`❌ [PedidosController] Error deleting pedido:`, error);
       throw error;
     }
+  }
+
+  /**
+   * GET /api/pedidos/:pedidoUid/albaran
+   * Descarcă sau vizualizează albarán-ul existent. ?preview=1 pentru inline (ver), altfel attachment.
+   */
+  @Get(':pedidoUid/albaran')
+  async getAlbaran(
+    @Param('pedidoUid') pedidoUid: string,
+    @Query('preview') preview: string | undefined,
+    @Res() res: Response,
+  ) {
+    const decodedUid = decodeURIComponent(pedidoUid);
+    const { archivo, nombre_archivo, tipo_mime } =
+      await this.pedidosService.getAlbaran(decodedUid);
+    const isPreview = preview === '1' || preview === 'true';
+    const safeName = nombre_archivo.replace(/[^\w.-]/g, '_');
+    res.setHeader('Content-Type', tipo_mime);
+    res.setHeader(
+      'Content-Disposition',
+      isPreview
+        ? `inline; filename="${safeName}"`
+        : `attachment; filename="${safeName}"`,
+    );
+    res.send(archivo);
   }
 
   @Get(':pedidoUid')

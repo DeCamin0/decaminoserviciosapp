@@ -10,6 +10,8 @@ const ConfirmModal = ({
   cancelText = 'Cancelar',
   type = 'danger', // 'danger' | 'warning' | 'info'
   icon: CustomIcon,
+  /** Por encima de overlays con z-index alto (ej. chat asistente a 100000). */
+  overlayZIndex = 9999,
 }) => {
   if (!isOpen) return null;
 
@@ -42,7 +44,10 @@ const ConfirmModal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-300">
+    <div
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300"
+      style={{ zIndex: overlayZIndex }}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full transform scale-100 transition-all duration-300 border border-gray-200 dark:border-gray-700">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">

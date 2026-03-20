@@ -1,10 +1,54 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
-import Chatbot from 'react-chatbot-kit';
-import 'react-chatbot-kit/build/main.css';
+import ConfirmModal from './ui/ConfirmModal';
 import './ChatBot.css';
 import { config } from '../config/env.js';
+import { buildAssistantPremiumFooter } from '../utils/assistantPremiumMeta.js';
+import {
+  pickCuadranteResumenRow,
+  buildCuadranteDetallePorDiaRows,
+} from '../utils/cuadranteExportHelpers.js';
+
+/**
+ * El asistente a veces devuelve tablas como array y a veces como objeto compuesto
+ * (p. ej. SOLICITUDES: solicitudes + ausencias_calendario).
+ * @returns {{ sections: { title: string | null, rows: Record<string, unknown>[] }[] }}
+ */
+function parseAssistantExportPayload(datos) {
+  if (datos == null) {
+    return { sections: [] };
+  }
+  if (Array.isArray(datos)) {
+    const rows = datos.filter((r) => r && typeof r === 'object' && !Array.isArray(r));
+    return rows.length ? { sections: [{ title: null, rows }] } : { sections: [] };
+  }
+  if (typeof datos === 'object') {
+    const ordered = [
+      ['solicitudes', 'Solicitudes'],
+      ['ausencias_calendario', 'Ausencias (calendario)'],
+      ['ausencias', 'Ausencias'],
+    ];
+    const sections = [];
+    const used = new Set();
+    for (const [key, label] of ordered) {
+      const arr = datos[key];
+      if (Array.isArray(arr) && arr.length && arr[0] && typeof arr[0] === 'object') {
+        sections.push({ title: label, rows: arr });
+        used.add(key);
+      }
+    }
+    for (const [key, val] of Object.entries(datos)) {
+      if (used.has(key)) continue;
+      if (Array.isArray(val) && val.length && val[0] && typeof val[0] === 'object') {
+        sections.push({ title: key, rows: val });
+      }
+    }
+    return { sections };
+  }
+  return { sections: [] };
+}
 
 const rawColor = config.PRIMARY_COLOR || '#E53935';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
@@ -26,10 +70,53 @@ const rgbToHex = (r, g, b) => {
   }).join('');
 };
 
+/** Sugestii pentru empty / welcome (doar UI; umplu inputul, utilizatorul poate enviar). */
+const ASSISTANT_SUGGESTION_CHIPS = [
+  '¿Cuál es mi horario este mes?',
+  '¿Cómo registro la jornada?',
+  '¿Cómo solicito vacaciones?',
+  'Resumen de mi cuadrante',
+];
+
+/** API archive → mensajes UI (sin react-chatbot-kit). */
+function mapArchiveToUiMessages(apiMessages) {
+  if (!apiMessages?.length) return [];
+  let n = 0;
+  return apiMessages.map((m) => {
+    const role = m.role === 'user' ? 'user' : 'assistant';
+    const text = typeof m.content === 'string' ? m.content : '';
+    return { id: `arch-${++n}`, role, text };
+  });
+}
+
+function formatAssistantMsgTime(ts) {
+  if (ts == null) return '';
+  try {
+    return new Date(ts).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
 const ChatBot = () => {
   const { user } = useAuth();
   const [isVisible, setIsVisible] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const conversationIdRef = useRef(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [activeHistoryId, setActiveHistoryId] = useState(null);
+  const [threadKey, setThreadKey] = useState(0);
+  /** @type {[Array<{id: string, role: 'user'|'assistant', text: string, pending?: boolean, acciones?: unknown[], createdAt?: number}>|null, Function]} */
+  const [threadBootstrap, setThreadBootstrap] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [sending, setSending] = useState(false);
+  const messagesContainerRef = useRef(null);
 
   // Setează CSS variables pentru culori branding
   useEffect(() => {
@@ -58,42 +145,155 @@ const ChatBot = () => {
       document.documentElement.style.setProperty('--primary-color-rgba-01', `rgba(${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}, 0.1)`);
     }
   }, []);
-  // Store actions per message ID using ref (nu trigger re-render)
-  const messageActionsRef = useRef(new Map());
-  // State pentru a forța re-render când se adaugă acțiuni
-  const [lastMessageWithActions, setLastMessageWithActions] = useState(null);
 
   // Extrage numele utilizatorului
   const userName = user?.['NOMBRE / APELLIDOS'] || user?.name || 'Utilizator';
 
-  // Verifică dacă utilizatorul este manager, supervisor sau developer
-  const isManagerOrSupervisor = user?.GRUPO === 'Manager' || 
-                               user?.GRUPO === 'Supervisor' || 
-                               user?.GRUPO === 'Developer' ||
-                               user?.isManager;
+  const refreshConversations = useCallback(async () => {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+    try {
+      const res = await fetch(routes.assistantConversations, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setConversations(Array.isArray(data.conversations) ? data.conversations : []);
+    } catch (e) {
+      console.warn('Istoric conversații:', e);
+    }
+  }, []);
+
+  const toggleHistorySidebar = useCallback(() => {
+    setHistoryOpen((o) => {
+      const next = !o;
+      if (next) {
+        refreshConversations();
+      }
+      return next;
+    });
+  }, [refreshConversations]);
+
+  const loadArchivedConversation = useCallback(async (conversationId) => {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+    setHistoryLoading(true);
+    setMessages([]);
+    try {
+      const res = await fetch(routes.assistantConversationMessages(conversationId), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const initial = mapArchiveToUiMessages(data.messages);
+      if (initial.length) {
+        conversationIdRef.current = conversationId;
+        setActiveHistoryId(conversationId);
+        setThreadBootstrap(initial);
+        setThreadKey((k) => k + 1);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const startNewChat = useCallback(() => {
+    conversationIdRef.current = null;
+    setActiveHistoryId(null);
+    setThreadBootstrap(null);
+    setInputValue('');
+    setThreadKey((k) => k + 1);
+  }, []);
+
+  const [deletingAllHistory, setDeletingAllHistory] = useState(false);
+  const [showPurgeHistoryModal, setShowPurgeHistoryModal] = useState(false);
+  const [purgeErrorToast, setPurgeErrorToast] = useState(null);
 
   useEffect(() => {
-    console.log('🔍 ChatBot Debug:', { 
-      user, 
-      isManagerOrSupervisor, 
-      userName, 
-      isVisible,
-      userGroup: user?.GRUPO 
-    });
+    if (!purgeErrorToast) return;
+    const t = window.setTimeout(() => setPurgeErrorToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [purgeErrorToast]);
 
-    if (isManagerOrSupervisor) {
-      console.log('✅ Setez chatbot-ul ca vizibil');
+  const performPurgeAllAssistantHistory = useCallback(async () => {
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+    setDeletingAllHistory(true);
+    try {
+      const res = await fetch(routes.assistantConversations, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+      conversationIdRef.current = null;
+      setActiveHistoryId(null);
+      setThreadBootstrap(null);
+      setInputValue('');
+      setConversations([]);
+      setThreadKey((k) => k + 1);
+    } catch (e) {
+      console.error(e);
+      setPurgeErrorToast(
+        'No se pudo borrar el historial. Inténtalo de nuevo o contacta con administración.',
+      );
+    } finally {
+      setDeletingAllHistory(false);
+    }
+  }, []);
+
+  const isManagerOrSupervisor =
+    user?.GRUPO === 'Manager' ||
+    user?.GRUPO === 'Supervisor' ||
+    user?.GRUPO === 'Developer' ||
+    user?.GRUPO === 'Admin' ||
+    user?.GRUPO === 'Jefe' ||
+    user?.isManager;
+
+  const estadoUpper = String(user?.ESTADO || '').toUpperCase();
+  const isActiveUser =
+    !user?.ESTADO || estadoUpper === 'ACTIVO' || estadoUpper === 'ACTIVE';
+
+  const canUseAssistantAsEmployee =
+    Boolean(config.ASSISTANT_FOR_EMPLOYEES) && isActiveUser;
+
+  const shouldShowAssistant =
+    Boolean(user) && (isManagerOrSupervisor || canUseAssistantAsEmployee);
+
+  useEffect(() => {
+    if (shouldShowAssistant) {
       setIsVisible(true);
     } else {
-      console.log('❌ Utilizatorul nu are permisiuni pentru chat');
+      setIsVisible(false);
     }
-  }, [isManagerOrSupervisor, userName, setIsVisible, isVisible, user]);
+  }, [shouldShowAssistant]);
+
+  useEffect(() => {
+    if (Array.isArray(threadBootstrap) && threadBootstrap.length > 0) {
+      setMessages(threadBootstrap);
+    } else {
+      setMessages([]);
+    }
+  }, [threadKey, threadBootstrap]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [isOpen, messages, threadKey]);
 
   // Funcție pentru procesarea mesajelor
   const handleUserMessage = async (message) => {
     try {
       const requestData = {
         mensaje: message,
+        ...(conversationIdRef.current
+          ? { conversationId: conversationIdRef.current }
+          : {}),
         usuario: {
           id: user?.CODIGO || user?.id || 'N/A',
           nombre: user?.['NOMBRE / APELLIDOS'] || user?.name || 'Utilizator',
@@ -137,6 +337,10 @@ const ChatBot = () => {
       }
 
       console.log('📥 Răspuns AI complet:', data);
+
+      if (data && typeof data === 'object' && !Array.isArray(data) && data.conversationId) {
+        conversationIdRef.current = data.conversationId;
+      }
 
       // Procesare flexibilă a răspunsului
       let aiResponse = '';
@@ -190,10 +394,18 @@ const ChatBot = () => {
           .trim();
       }
 
-      // Returnează răspunsul și acțiunile
+      const mainText =
+        aiResponse ||
+        '❌ No he podido procesar la respuesta del AI. Por favor, intenta de nuevo.';
+
+      const premiumFooter =
+        data && typeof data === 'object' && !Array.isArray(data)
+          ? buildAssistantPremiumFooter(data)
+          : '';
+
       return {
-        respuesta: aiResponse || '❌ No he podido procesar la respuesta del AI. Por favor, intenta de nuevo.',
-        acciones: acciones,
+        respuesta: mainText + premiumFooter,
+        acciones,
       };
 
     } catch (error) {
@@ -216,18 +428,52 @@ const ChatBot = () => {
     // Import dinamic pentru exceljs (dacă nu e deja importat)
     const ExcelJS = (await import('exceljs')).default;
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Datos');
 
-    // Headers
-    if (datos && datos.length > 0) {
-      const headers = Object.keys(datos[0]);
-      worksheet.addRow(headers);
-      
-      // Date
-      datos.forEach(item => {
-        const row = headers.map(header => item[header] || '');
-        worksheet.addRow(row);
-      });
+    if (intent === 'cuadrante' && datos?.length) {
+      const resumen = datos.map((r) => pickCuadranteResumenRow(r));
+      const detalle = buildCuadranteDetallePorDiaRows(datos);
+      const wsR = workbook.addWorksheet('Resumen');
+      if (resumen.length) {
+        const h = Object.keys(resumen[0]);
+        wsR.addRow(h);
+        resumen.forEach((item) => wsR.addRow(h.map((k) => item[k] ?? '')));
+      }
+      const wsD = workbook.addWorksheet('Por día');
+      if (detalle.length) {
+        const hd = Object.keys(detalle[0]);
+        wsD.addRow(hd);
+        detalle.forEach((item) => wsD.addRow(hd.map((k) => item[k] ?? '')));
+      }
+    } else {
+      const { sections } = parseAssistantExportPayload(datos);
+      const nonEmpty = sections.filter((s) => s.rows?.length);
+      if (nonEmpty.length === 0) {
+        workbook.addWorksheet(intent === 'pedidos' ? 'Pedidos' : 'Datos');
+      } else if (nonEmpty.length === 1) {
+        const { title, rows } = nonEmpty[0];
+        const sheetName = (title || (intent === 'pedidos' ? 'Pedidos' : 'Datos')).slice(
+          0,
+          31,
+        );
+        const worksheet = workbook.addWorksheet(sheetName);
+        const headers = Object.keys(rows[0]);
+        worksheet.addRow(headers);
+        rows.forEach((item) => {
+          worksheet.addRow(headers.map((header) => item[header] ?? ''));
+        });
+      } else {
+        for (const { title, rows } of nonEmpty) {
+          const safe = String(title || 'Datos')
+            .replace(/[:\\/?*[\]]/g, '_')
+            .slice(0, 31);
+          const ws = workbook.addWorksheet(safe);
+          const headers = Object.keys(rows[0]);
+          ws.addRow(headers);
+          rows.forEach((item) => {
+            ws.addRow(headers.map((header) => item[header] ?? ''));
+          });
+        }
+      }
     }
 
     // Generează buffer și descarcă
@@ -236,121 +482,394 @@ const ChatBot = () => {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `registros_${intent}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const day = new Date().toISOString().split('T')[0];
+    link.download =
+      intent === 'cuadrante'
+        ? `mi_horario_cuadrante_${day}.xlsx`
+        : `registros_${intent}_${day}.xlsx`;
     link.click();
     window.URL.revokeObjectURL(url);
   }, []);
 
   // Funcție pentru descărcare TXT
   const downloadAsTxt = useCallback((datos, intent) => {
-    if (!datos || datos.length === 0) return;
-
-    const headers = Object.keys(datos[0]);
-    let content = headers.join('\t') + '\n';
-    
-    datos.forEach(item => {
-      const row = headers.map(header => item[header] || '').join('\t');
-      content += row + '\n';
-    });
+    let content = '';
+    if (intent === 'cuadrante') {
+      if (!Array.isArray(datos) || datos.length === 0) return;
+      const resumen = datos.map((r) => pickCuadranteResumenRow(r));
+      const detalle = buildCuadranteDetallePorDiaRows(datos);
+      content += 'Resumen (mes / total)\n';
+      if (resumen.length) {
+        const h = Object.keys(resumen[0]);
+        content += h.join('\t') + '\n';
+        resumen.forEach((item) => {
+          content += h.map((k) => item[k] ?? '').join('\t') + '\n';
+        });
+      }
+      content += '\nDetalle por día\n';
+      if (detalle.length) {
+        const hd = Object.keys(detalle[0]);
+        content += hd.join('\t') + '\n';
+        detalle.forEach((item) => {
+          content += hd.map((k) => item[k] ?? '').join('\t') + '\n';
+        });
+      }
+    } else {
+      const { sections } = parseAssistantExportPayload(datos);
+      const nonEmpty = sections.filter((s) => s.rows?.length);
+      if (!nonEmpty.length) return;
+      for (const { title, rows } of nonEmpty) {
+        if (title) content += `${title}\n`;
+        const headers = Object.keys(rows[0]);
+        content += headers.join('\t') + '\n';
+        rows.forEach((item) => {
+          content += headers.map((header) => item[header] ?? '').join('\t') + '\n';
+        });
+        content += '\n';
+      }
+    }
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `registros_${intent}_${new Date().toISOString().split('T')[0]}.txt`;
+    const day = new Date().toISOString().split('T')[0];
+    link.download =
+      intent === 'cuadrante'
+        ? `mi_horario_cuadrante_${day}.txt`
+        : `registros_${intent}_${day}.txt`;
     link.click();
     window.URL.revokeObjectURL(url);
   }, []);
 
-  // Funcție pentru descărcare PDF
+  // Funcție pentru descărcare PDF (tabele late: landscape + coloane proporționale + wrap)
   const downloadAsPdf = useCallback(async (datos, intent) => {
     try {
       const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF();
-      
-      // Título
-      doc.setFontSize(16);
-      doc.text(`Registros de ${intent}`, 14, 20);
-      
-      // Headers și date
-      if (datos && datos.length > 0) {
-        const headers = Object.keys(datos[0]);
-        let yPos = 30;
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const margin = 14;
-        const colWidth = (pageWidth - 2 * margin) / headers.length;
-        
-        // Headers
+      const isCuadrante = intent === 'cuadrante';
+      const isPedidos = intent === 'pedidos';
+      const sectionsNonCuadrante = isCuadrante
+        ? []
+        : parseAssistantExportPayload(datos).sections.filter((s) => s.rows?.length);
+      const cuadranteRows = isCuadrante && Array.isArray(datos) ? datos : [];
+      const sampleForHeaders = isCuadrante
+        ? cuadranteRows
+        : sectionsNonCuadrante[0]?.rows || [];
+      const headers =
+        sampleForHeaders.length > 0 ? Object.keys(sampleForHeaders[0]) : [];
+      const manyCols = headers.length > 6;
+      const doc = new jsPDF({
+        orientation: manyCols || isCuadrante || isPedidos ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      const usableW = pageW - 2 * margin;
+      const title =
+        intent === 'cuadrante'
+          ? 'Plan de trabajo / cuadrante (asistente)'
+          : intent === 'pedidos'
+            ? 'Pedidos de material / catálogo'
+            : `Registros de ${intent}`;
+      const lineH = 3.8;
+      const fontTitle = 13;
+      const fontTable = manyCols || isCuadrante || isPedidos ? 7 : 8;
+
+      doc.setFontSize(fontTitle);
+      doc.setFont(undefined, 'bold');
+      doc.text(title, margin, margin + 4);
+
+      const hasCuadranteData = isCuadrante && cuadranteRows.length > 0;
+      const hasGenericData = !isCuadrante && sectionsNonCuadrante.length > 0;
+      if (!hasCuadranteData && !hasGenericData) {
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        doc.text('Sin datos.', margin, margin + 14);
+        const day = new Date().toISOString().split('T')[0];
+        doc.save(
+          intent === 'cuadrante'
+            ? `mi_horario_cuadrante_${day}.pdf`
+            : intent === 'pedidos'
+              ? `mis_pedidos_${day}.pdf`
+              : `registros_${intent}_${day}.pdf`,
+        );
+        return;
+      }
+
+      const bottomSafe = pageH - margin - 8;
+
+      /** @param {Record<string, unknown>[]} tableDatos @param {number} y0 */
+      const renderPdfTable = (tableDatos, y0, rowLimit = 200) => {
+        if (!tableDatos?.length) return y0;
+        const hdrs = Object.keys(tableDatos[0]);
+        const maxRows = Math.min(rowLimit, tableDatos.length);
+        const tableRows = tableDatos.slice(0, maxRows);
+
+        const charUnit = 0.42;
+        const weights = hdrs.map((h) => {
+          let n = String(h).length;
+          for (const item of tableRows) {
+            n = Math.max(n, String(item[h] ?? '').length);
+          }
+          return Math.min(n * charUnit + 3, 55);
+        });
+        const sumW = weights.reduce((a, b) => a + b, 0) || 1;
+        let colWidths = weights.map((w) => (w / sumW) * usableW);
+        const minColMm = 9;
+        colWidths = colWidths.map((w) => Math.max(w, minColMm));
+        let widthSum = colWidths.reduce((a, b) => a + b, 0);
+        if (widthSum > usableW) {
+          colWidths = colWidths.map((w) => (w / widthSum) * usableW);
+          widthSum = usableW;
+        }
+
+        doc.setFontSize(fontTable);
+        doc.setFont(undefined, 'bold');
+        const headerLineCounts = hdrs.map((h, i) =>
+          doc.splitTextToSize(String(h), colWidths[i] - 1.5).length,
+        );
+        const headerBlockH = Math.max(...headerLineCounts, 1) * lineH + 2;
+
+        doc.setDrawColor(180);
+        doc.setLineWidth(0.1);
+
+        const drawHeaderRow = (yy0) => {
+          let x = margin;
+          doc.setFontSize(fontTable);
+          doc.setFont(undefined, 'bold');
+          hdrs.forEach((header, i) => {
+            const w = colWidths[i];
+            const lines = doc.splitTextToSize(String(header), w - 1.5);
+            doc.rect(x, yy0 - lineH + 1, w, headerBlockH);
+            let yy = yy0;
+            lines.forEach((ln) => {
+              doc.text(ln, x + 0.8, yy);
+              yy += lineH;
+            });
+            x += w;
+          });
+          return yy0 + headerBlockH;
+        };
+
+        let yPos = drawHeaderRow(y0);
+        doc.setFont(undefined, 'normal');
+
+        tableRows.forEach((item) => {
+          const cellBlocks = hdrs.map((h, i) => {
+            const w = colWidths[i];
+            return doc.splitTextToSize(String(item[h] ?? ''), w - 1.5);
+          });
+          const rowH =
+            Math.max(...cellBlocks.map((lines) => lines.length), 1) * lineH + 2;
+
+          if (yPos + rowH > bottomSafe) {
+            doc.addPage();
+            yPos = drawHeaderRow(margin + 10);
+          }
+
+          let x = margin;
+          hdrs.forEach((h, i) => {
+            const w = colWidths[i];
+            doc.rect(x, yPos - lineH + 1, w, rowH);
+            const lines = cellBlocks[i];
+            let yy = yPos;
+            lines.forEach((ln) => {
+              doc.text(ln, x + 0.8, yy);
+              yy += lineH;
+            });
+            x += w;
+          });
+          yPos += rowH;
+        });
+
+        if (tableDatos.length > maxRows) {
+          doc.setFontSize(8);
+          doc.text(
+            `… y ${tableDatos.length - maxRows} registros más`,
+            margin,
+            Math.min(yPos + 6, bottomSafe),
+          );
+          yPos += 8;
+        }
+        return yPos;
+      };
+
+      if (isCuadrante) {
+        const resumenRows = cuadranteRows.map((r) => pickCuadranteResumenRow(r));
+        const detalleRows = buildCuadranteDetallePorDiaRows(cuadranteRows);
+        const yAfterResumen = renderPdfTable(resumenRows, margin + 14, 80);
+        let yNext = yAfterResumen + 8;
+        if (yNext > bottomSafe - 16) {
+          doc.addPage();
+          yNext = margin + 10;
+        }
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
-        headers.forEach((header, idx) => {
-          doc.text(header.substring(0, 15), margin + idx * colWidth, yPos);
-        });
-        yPos += 7;
-        
-        // Date (limitează la 50 de rânduri pentru a evita probleme)
+        doc.text('Detalle por día', margin, yNext);
         doc.setFont(undefined, 'normal');
-        const maxRows = Math.min(50, datos.length);
-        datos.slice(0, maxRows).forEach((item) => {
-          if (yPos > 280) {
+        renderPdfTable(detalleRows, yNext + 6, 500);
+      } else if (sectionsNonCuadrante.length === 1) {
+        renderPdfTable(sectionsNonCuadrante[0].rows, margin + 14, 80);
+      } else {
+        let yPos = margin + 14;
+        for (const { title, rows } of sectionsNonCuadrante) {
+          if (!rows?.length) continue;
+          if (yPos > bottomSafe - 28) {
             doc.addPage();
-            yPos = 20;
+            yPos = margin + 10;
           }
-          headers.forEach((header, colIdx) => {
-            const value = String(item[header] || '').substring(0, 15);
-            doc.text(value, margin + colIdx * colWidth, yPos);
-          });
-          yPos += 7;
-        });
-        
-        if (datos.length > maxRows) {
-          doc.text(`... y ${datos.length - maxRows} registros más`, margin, yPos + 5);
+          if (title) {
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'bold');
+            doc.text(String(title), margin, yPos);
+            doc.setFont(undefined, 'normal');
+            yPos += 6;
+          }
+          yPos = renderPdfTable(rows, yPos, 80);
+          yPos += 6;
         }
       }
 
-      doc.save(`registros_${intent}_${new Date().toISOString().split('T')[0]}.pdf`);
+      const day = new Date().toISOString().split('T')[0];
+      doc.save(
+        intent === 'cuadrante'
+          ? `mi_horario_cuadrante_${day}.pdf`
+          : intent === 'pedidos'
+            ? `mis_pedidos_${day}.pdf`
+            : `registros_${intent}_${day}.pdf`,
+      );
     } catch (error) {
       console.error('❌ Error generando PDF:', error);
-      // Fallback: descarcă ca TXT dacă PDF nu e disponibil
       downloadAsTxt(datos, intent);
     }
   }, [downloadAsTxt]);
 
+  // Descărcare nómina: GET /api/nominas/download?id=&nombre= cu JWT
+  const downloadNominasFromAssistant = useCallback(async (items) => {
+    const token = localStorage.getItem('auth_token');
+    if (!items?.length) {
+      window.location.href = '/documentos-empleados';
+      return;
+    }
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const id = it?.id;
+      if (id == null || id === '') continue;
+      const nombre = String(it?.nombre ?? '');
+      const q = new URLSearchParams({
+        id: String(id),
+        nombre,
+      });
+      const url = `${routes.downloadNomina}?${q.toString()}`;
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        throw new Error(`Descarga nómina ${id}: HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const dispo = res.headers.get('Content-Disposition');
+      let filename = `nomina_${id}.pdf`;
+      const m = dispo && /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(dispo);
+      if (m) {
+        try {
+          filename = decodeURIComponent(m[1].trim());
+        } catch {
+          filename = m[1].trim();
+        }
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      if (items.length > 1 && i < items.length - 1) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+  }, []);
+
   // Funcție pentru descărcare Excel/TXT/PDF
   const handleDownload = useCallback(async (accion) => {
-    const { payload } = accion;
-    const { datos, formato, intent } = payload;
+    const { payload } = accion || {};
+    if (accion?.tipo === 'ver_cuadrante' || payload?.tipo === 'cuadrante') {
+      window.location.href = '/cuadrantes-empleado';
+      return;
+    }
+    if (accion?.tipo === 'ver_pedidos' || payload?.tipo === 'pedidos') {
+      window.location.href = payload?.href || '/empleado-pedidos';
+      return;
+    }
+    if (accion?.tipo === 'descargar_nomina') {
+      try {
+        await downloadNominasFromAssistant(payload?.items);
+      } catch (error) {
+        console.error('❌ Error al descargar nómina(s):', error);
+        alert(
+          error?.message ||
+            'No se pudo descargar la nómina. Prueba desde Documentos del empleado.',
+        );
+      }
+      return;
+    }
+
+    const { exportData, datos, formato, intent } = payload || {};
+    /** Backend envía `exportData` (dataset completo); `datos` es alias legacy. */
+    const datasetCompleto = exportData ?? datos;
+
+    if (
+      (formato === 'excel' || formato === 'txt' || formato === 'pdf') &&
+      datasetCompleto === undefined
+    ) {
+      alert('No hay datos para exportar.');
+      return;
+    }
 
     try {
       if (formato === 'excel') {
-        await downloadAsExcel(datos, intent);
+        await downloadAsExcel(datasetCompleto, intent);
       } else if (formato === 'txt') {
-        await downloadAsTxt(datos, intent);
+        await downloadAsTxt(datasetCompleto, intent);
       } else if (formato === 'pdf') {
-        await downloadAsPdf(datos, intent);
+        await downloadAsPdf(datasetCompleto, intent);
       }
     } catch (error) {
       console.error('❌ Error al descargar:', error);
       alert('Error al generar el archivo. Por favor, intenta de nuevo.');
     }
-  }, [downloadAsExcel, downloadAsTxt, downloadAsPdf]);
+  }, [downloadAsExcel, downloadAsTxt, downloadAsPdf, downloadNominasFromAssistant]);
 
-  // Action Provider pentru chatbot
-  const ActionProvider = ({ createChatBotMessage, setState, children }) => {
-    const handleMessage = async (message) => {
-      const botMessage = createChatBotMessage('⏳ Procesando mensaje...');
-      
-      setState((prev) => ({
-        ...prev,
-        messages: [...prev.messages, botMessage],
-      }));
+  /** @param {string} [presetText] - desde chip sugerencia: envía ese texto sin depender del estado del input (evita batching). */
+  const sendAssistantMessage = async (presetText) => {
+    const text = (typeof presetText === 'string' ? presetText : inputValue).trim();
+    if (!text || sending) return;
+    const now = Date.now();
+    const uid = `u-${now}`;
+    const bid = `b-${now}`;
+    setSending(true);
+    setInputValue('');
+    setMessages((prev) => [
+      ...prev,
+      { id: uid, role: 'user', text, createdAt: now },
+      {
+        id: bid,
+        role: 'assistant',
+        text: '⏳ Procesando mensaje...',
+        pending: true,
+        createdAt: now,
+      },
+    ]);
 
-      const response = await handleUserMessage(message);
-      
-      // Procesează răspunsul (poate fi string sau obiect cu respuesta și acciones)
+    try {
+      const response = await handleUserMessage(text);
       let respuestaText = '';
       let acciones = [];
-      
       if (typeof response === 'string') {
         respuestaText = response;
       } else if (response && response.respuesta) {
@@ -359,465 +878,338 @@ const ChatBot = () => {
       } else {
         respuestaText = 'Error procesando respuesta';
       }
-
-      // Creează mesajul cu acțiuni dacă există
-      let botResponse;
-      if (acciones && acciones.length > 0) {
-        console.log('🔘 Creând mesaj cu acțiuni:', acciones.length);
-        // Adaugă un marker special în text pentru a identifica mesajul cu acțiuni
-        const marker = `__ACCIONES_${Date.now()}__`;
-        const messageWithMarker = `${respuestaText}\n\n${marker}`;
-        botResponse = createChatBotMessage(messageWithMarker);
-        // Store actions in ref using message ID
-        const messageId = botResponse.id || Date.now().toString();
-        messageActionsRef.current.set(messageId, acciones);
-        messageActionsRef.current.set(marker, acciones); // Store by marker too
-        // Force re-render by updating state
-        setLastMessageWithActions({ messageId, marker, acciones, timestamp: Date.now() });
-        console.log('💾 Stocat acțiuni pentru mesaj:', messageId, marker, acciones);
-        // Adaugă acțiunile ca proprietate custom (backup)
-        botResponse.acciones = acciones;
-        botResponse.messageId = messageId;
-        botResponse.marker = marker;
-        console.log('✅ Mesaj creat cu acțiuni:', botResponse);
-      } else {
-        console.log('⚠️ Nu sunt acțiuni, creând mesaj simplu');
-        botResponse = createChatBotMessage(respuestaText);
-      }
-      
-      setState((prev) => ({
-        ...prev,
-        messages: [...prev.messages.slice(0, -1), botResponse],
-      }));
-      
-      // Force re-render pentru a adăuga butoanele după ce mesajul este renderizat
-      if (acciones && acciones.length > 0) {
-        const currentMarker = botResponse.marker;
-        const actionsToAdd = acciones; // Salvează acțiunile pentru a le folosi mai târziu
-        
-        // Funcție helper pentru a adăuga butoanele
-        const addButtonsToMessage = (element) => {
-          if (element.querySelector('.download-buttons-container')) {
-            console.log('⚠️ Butoanele sunt deja adăugate pentru acest element');
-            return; // Butoanele sunt deja adăugate
-          }
-          
-          console.log('✅ Adăugare butoane pentru mesaj:', currentMarker);
-          const buttonsContainer = document.createElement('div');
-          buttonsContainer.className = 'download-buttons-container';
-          
-          actionsToAdd.forEach((accion) => {
-            const button = document.createElement('button');
-            button.textContent = accion.label;
-            button.onclick = () => {
-              console.log('🔘 Click pe buton:', accion);
-              handleDownload(accion);
-            };
-            buttonsContainer.appendChild(button);
-          });
-          
-          // Elimină marker-ul din text (caută în toate formatele posibile)
-          const markerVariants = [
-            currentMarker, // __ACCIONES_...__
-            currentMarker.replace(/__/g, '_'), // _ACCIONES_..._
-            currentMarker.replace(/^__/, '_').replace(/__$/, '_'), // _ACCIONES_...__
-            currentMarker.replace(/^_/, '').replace(/_$/, ''), // ACCIONES_...
-          ];
-          
-          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
-          let node;
-          while ((node = walker.nextNode())) {
-            let textChanged = false;
-            markerVariants.forEach(marker => {
-              if (node.textContent.includes(marker)) {
-                node.textContent = node.textContent.replace(marker, '').trim();
-                textChanged = true;
-                console.log('✅ Marker eliminat din text:', marker);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === bid
+            ? {
+                ...m,
+                text: respuestaText,
+                pending: false,
+                acciones,
+                createdAt: Date.now(),
               }
-            });
-            if (textChanged) break;
-          }
-          
-          // Adaugă butoanele după elementul de mesaj
-          element.appendChild(buttonsContainer);
-          console.log('✅ Butoane adăugate cu succes la element:', element.className || element.tagName);
-        };
-        
-        // Funcție pentru căutarea marker-ului în DOM
-        const findAndInjectButtons = () => {
-          const chatContainer = document.querySelector('.react-chatbot-kit-chat-container') ||
-                               document.querySelector('[class*="chat-container"]') ||
-                               document.querySelector('.react-chatbot-kit-chat-message-container') ||
-                               document.querySelector('.react-chatbot-kit-chat-inner-container');
-          
-          if (!chatContainer) {
-            console.warn('⚠️ Container chat nu găsit');
-            return false;
-          }
-          
-          // Caută marker-ul în toate formatele posibile
-          const markerVariants = [
-            currentMarker, // __ACCIONES_...__
-            currentMarker.replace(/__/g, '_'), // _ACCIONES_..._
-            currentMarker.replace(/^__/, '_').replace(/__$/, '_'), // _ACCIONES_...__
-          ];
-          
-          // Caută în toate elementele din container
-          const allElements = chatContainer.querySelectorAll('*');
-          console.log(`🔍 Căutare marker în ${allElements.length} elemente`);
-          
-          // Caută mai întâi în text nodes pentru a găsi marker-ul exact
-          const walker = document.createTreeWalker(
-            chatContainer,
-            NodeFilter.SHOW_TEXT,
-            null,
-            false
-          );
-          
-          let textNode;
-          while ((textNode = walker.nextNode())) {
-            const textContent = textNode.textContent || '';
-            const hasMarker = markerVariants.some(marker => textContent.includes(marker));
-            
-            if (hasMarker) {
-              console.log('✅ Marker găsit în text node');
-              // Găsește container-ul de mesaj bot (caută în sus în DOM)
-              let messageContainer = textNode.parentElement;
-              let found = false;
-              
-              // Caută până la 10 niveluri în sus pentru a găsi container-ul de mesaj
-              for (let i = 0; i < 10 && messageContainer && messageContainer !== chatContainer; i++) {
-                const classList = messageContainer.classList || [];
-                const className = messageContainer.className || '';
-                
-                // Verifică dacă este un container de mesaj bot
-                if (
-                  classList.contains('react-chatbot-kit-chat-bot-message-container') ||
-                  classList.contains('react-chatbot-kit-chat-bot-message') ||
-                  classList.contains('custom-bot-message') ||
-                  (className.includes('bot-message') && !className.includes('inner-container')) ||
-                  (className.includes('message-container') && className.includes('bot'))
-                ) {
-                  // Verifică dacă nu are deja butoane
-                  if (!messageContainer.querySelector('.download-buttons-container')) {
-                    console.log('✅ Container de mesaj bot găsit:', className);
-                    addButtonsToMessage(messageContainer);
-                    found = true;
-                    break;
-                  } else {
-                    console.log('⚠️ Container-ul are deja butoane, continuăm căutarea...');
-                  }
-                }
-                messageContainer = messageContainer.parentElement;
+            : m,
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === bid
+            ? {
+                ...m,
+                text: '❌ Error inesperado. Intenta de nuevo.',
+                pending: false,
               }
-              
-              if (found) return true;
-            }
-          }
-          
-          // Fallback: caută în toate elementele (metoda veche)
-          for (const element of allElements) {
-            const messageText = element.textContent || element.innerText || '';
-            
-            // Verifică dacă elementul conține oricare dintre variantele marker-ului
-            const hasMarker = markerVariants.some(marker => messageText.includes(marker));
-            
-            if (hasMarker && !element.querySelector('.download-buttons-container')) {
-              // Skip container-ul general
-              const className = element.className || '';
-              if (className.includes('inner-container') || className.includes('chat-container')) {
-                continue;
-              }
-              
-              // Găsește container-ul de mesaj bot (caută în sus în DOM)
-              let messageContainer = element;
-              let found = false;
-              
-              // Caută până la 10 niveluri în sus pentru a găsi container-ul de mesaj
-              for (let i = 0; i < 10 && messageContainer && messageContainer !== chatContainer; i++) {
-                const classList = messageContainer.classList || [];
-                const containerClassName = messageContainer.className || '';
-                
-                // Skip container-ul general
-                if (containerClassName.includes('inner-container') || containerClassName.includes('chat-container')) {
-                  messageContainer = messageContainer.parentElement;
-                  continue;
-                }
-                
-                if (
-                  classList.contains('react-chatbot-kit-chat-bot-message-container') ||
-                  classList.contains('react-chatbot-kit-chat-bot-message') ||
-                  classList.contains('custom-bot-message') ||
-                  (containerClassName.includes('bot-message') && !containerClassName.includes('inner-container')) ||
-                  (containerClassName.includes('message-container') && containerClassName.includes('bot'))
-                ) {
-                  console.log('✅ Container de mesaj bot găsit (fallback):', containerClassName);
-                  addButtonsToMessage(messageContainer);
-                  found = true;
-                  break;
-                }
-                messageContainer = messageContainer.parentElement;
-              }
-              
-              if (found) return true;
-            }
-          }
-          
-          return false;
-        };
-        
-        // Folosește multiple timeout-uri pentru a asigura injectarea butoanelor
-        // RequestAnimationFrame pentru a aștepta ca DOM-ul să fie complet renderizat
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            if (findAndInjectButtons()) {
-              console.log('✅ Butoane injectate cu succes (attempt 1)');
-            } else {
-              console.log('⚠️ Butoanele nu au fost găsite (attempt 1), încercare din nou...');
-              // Încercare 2 după 500ms
-              setTimeout(() => {
-                if (findAndInjectButtons()) {
-                  console.log('✅ Butoane injectate cu succes (attempt 2)');
-                } else {
-                  console.log('⚠️ Butoanele nu au fost găsite (attempt 2), încercare finală...');
-                  // Încercare 3 după încă 1 secundă
-                  setTimeout(() => {
-                    if (findAndInjectButtons()) {
-                      console.log('✅ Butoane injectate cu succes (attempt 3)');
-                    } else {
-                      console.error('❌ Nu s-au putut injecta butoanele după 3 încercări');
-                    }
-                  }, 1000);
-                }
-              }, 500);
-            }
-          }, 100);
-        });
-      }
-    };
-
-    return (
-      <div>
-        {React.Children.map(children, (child) => {
-          return React.cloneElement(child, {
-            actions: {
-              handleMessage,
-            },
-          });
-        })}
-      </div>
-    );
-  };
-
-  // Message Parser pentru chatbot
-  const MessageParser = ({ children, actions }) => {
-    const parse = (message) => {
-      actions.handleMessage(message);
-    };
-
-    return (
-      <div>
-        {React.Children.map(children, (child) => {
-          return React.cloneElement(child, {
-            parse: parse,
-            actions,
-          });
-        })}
-      </div>
-    );
-  };
-
-  // Configurare pentru chatbot (mutat după definirea funcțiilor pentru a avea acces la handleDownload și messageActions)
-  const chatbotConfig = React.useMemo(() => ({
-    initialMessages: [
-      {
-        id: 1,
-        message: `¡Hola ${userName}! Soy el asistente AI de ${config.APP_NAME || config.COMPANY_NAME || 'la empresa'}. Estoy aquí para ayudarte con cualquier duda sobre la empresa, el equipo, los horarios o las estadísticas. Pregunta lo que necesites, pero por favor evita enviar spam o mensajes repetidos.`,
-        trigger: 'user_input'
-      }
-    ],
-    botName: config.APP_NAME ? `${config.APP_NAME} Asistente` : (config.COMPANY_NAME ? `${config.COMPANY_NAME} Asistente` : 'Asistente AI'),
-    customStyles: {
-      botMessageBox: {
-        backgroundColor: PRIMARY_COLOR,
-        color: '#FFFFFF'
-      },
-      chatButton: {
-        backgroundColor: PRIMARY_COLOR,
-        color: '#FFFFFF'
-      }
-    },
-    customComponents: {
-      botMessageBox: (props) => {
-        // Extrage acțiunile din mesaj dacă există
-        // react-chatbot-kit pasează mesajul în props.message ca obiect cu proprietatea 'message'
-        const messageObj = props.message;
-        const messageText = typeof messageObj === 'string' 
-          ? messageObj 
-          : messageObj?.message || messageObj?.text || JSON.stringify(messageObj);
-        
-        // Încearcă să extragă acțiunile din diferite locații
-        let acciones = messageObj?.acciones || props.acciones || [];
-        
-        // Dacă nu găsim acțiunile direct, încercăm din ref
-        if (acciones.length === 0 && messageObj?.messageId) {
-          const storedActions = messageActionsRef.current.get(messageObj.messageId);
-          if (storedActions) {
-            acciones = storedActions;
-          }
-        }
-        
-        // Fallback: încercăm să găsim acțiunile din toate mesajele (ultimul mesaj cu acțiuni)
-        // Dar doar dacă mesajul curent este de tip 'bot' și este ultimul mesaj cu acțiuni
-        if (acciones.length === 0) {
-          // Verifică dacă mesajul curent este ultimul mesaj cu acțiuni (compară ID-ul)
-          const currentMessageId = messageObj?.id || messageObj?.messageId;
-          if (lastMessageWithActions && 
-              lastMessageWithActions.messageId && 
-              currentMessageId && 
-              String(currentMessageId) === String(lastMessageWithActions.messageId)) {
-            acciones = lastMessageWithActions.acciones;
-            console.log('✅ Găsit acțiuni pentru mesajul curent din lastMessageWithActions:', acciones.length);
-          } else if (lastMessageWithActions && lastMessageWithActions.acciones) {
-            // Dacă mesajul curent nu are ID sau nu se potrivește, verifică dacă este ultimul mesaj bot
-            // (doar pentru ultimul mesaj bot afișăm acțiunile)
-            const isLastBotMessage = messageObj?.type === 'bot' || messageObj?.message?.type === 'bot';
-            if (isLastBotMessage) {
-              // Verifică dacă există un mesaj mai recent cu acțiuni
-              const timeDiff = Date.now() - (lastMessageWithActions.timestamp || 0);
-              // Dacă mesajul cu acțiuni a fost creat în ultimele 5 secunde, probabil este pentru acest mesaj
-              if (timeDiff < 5000) {
-                acciones = lastMessageWithActions.acciones;
-                console.log('✅ Găsit acțiuni din lastMessageWithActions (recent):', acciones.length);
-              }
-            }
-          }
-          
-          // Ultimul fallback: căutăm în ref
-          if (acciones.length === 0) {
-            const allActions = Array.from(messageActionsRef.current.values());
-            if (allActions.length > 0) {
-              acciones = allActions[allActions.length - 1];
-              console.log('✅ Găsit acțiuni din ref (ultimul):', acciones.length);
-            }
-          }
-        }
-        
-        console.log('🎨 botMessageBox render:', {
-          messageObj,
-          messageText: messageText.substring(0, 50),
-          acciones: acciones.length,
-          hasAcciones: acciones.length > 0,
-          messageActionsSize: messageActionsRef.current.size,
-          lastMessageWithActions: lastMessageWithActions?.acciones?.length || 0,
-        });
-        
-        // Debug: verifică toate props-urile
-        console.log('🔍 botMessageBox props complete:', {
-          props,
-          messageObj,
-          messageObjKeys: messageObj ? Object.keys(messageObj) : [],
-          allPropsKeys: Object.keys(props),
-        });
-        
-        return (
-        <div className="custom-bot-message">
-            <div>{messageText}</div>
-            {acciones && acciones.length > 0 ? (
-              <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {acciones.map((accion, idx) => {
-                  console.log('🎨 Rendering button:', idx, accion);
-                  return (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        console.log('🔘 Click pe buton:', accion);
-                        handleDownload(accion);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        backgroundColor: PRIMARY_COLOR,
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        marginTop: '5px',
-                      }}
-                    >
-                      {accion.label || `Button ${idx + 1}`}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={{ fontSize: '10px', color: '#999', marginTop: '5px' }}>
-                ⚠️ Debug: No acciones found (length: {acciones.length})
-              </div>
-            )}
-        </div>
-        );
-      }
+            : m,
+        ),
+      );
+    } finally {
+      setSending(false);
     }
-  }), [userName, handleDownload, lastMessageWithActions]);
+  };
 
-  console.log('🎯 ChatBot Render:', { isVisible, isManagerOrSupervisor, isOpen });
+  const onComposerKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAssistantMessage(undefined);
+    }
+  };
+
+  const logoSrc = useMemo(() => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('ngrok')) {
+      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo=';
+    }
+    const basePath = config.BASE_PATH || '/';
+    const logoPath = config.LOGO_PATH || 'logo.svg';
+    return `${basePath}${logoPath}`.replace(/\/+/g, '/');
+  }, []);
+
+  if (config.DEBUG_MODE) {
+    console.log('🎯 ChatBot Render:', { isVisible, shouldShowAssistant, isOpen });
+  }
 
   if (!isVisible) {
-    console.log('❌ ChatBot nu este vizibil');
+    if (config.DEBUG_MODE) {
+      console.log('❌ ChatBot nu este vizibil');
+    }
     return null;
   }
 
-  console.log('✅ ChatBot se randează');
+  if (config.DEBUG_MODE) {
+    console.log('✅ ChatBot se randează');
+  }
 
   return (
-    <div className="chatbot-container">
-      {/* Buton mare pentru deschiderea chat-ului */}
+    <div className={`ast-root${isOpen ? ' ast-root--open' : ''}`}>
       <button
+        type="button"
+        className="ast-fab"
         onClick={() => setIsOpen(!isOpen)}
-        className="chatbot-toggle-button"
+        aria-expanded={isOpen}
+        aria-label={isOpen ? 'Cerrar asistente' : 'Abrir asistente'}
       >
-        {isOpen ? '✕' : '💬'}
+        <span className="ast-fab__icon" aria-hidden>
+          {isOpen ? '✕' : '💬'}
+        </span>
       </button>
 
-      {/* Fereastra chat */}
       {isOpen && (
-        <div className="chatbot-window">
-          <div className="chatbot-header">
-            <div>
-              <div className="chatbot-title">
-                {chatbotConfig.botName}
+        <>
+          <button
+            type="button"
+            className="ast-scrim"
+            aria-label="Cerrar asistente"
+            onClick={() => setIsOpen(false)}
+          />
+          <div
+            className={`ast-panel${historyOpen ? ' ast-panel--with-history' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Asistente del portal"
+          >
+            <header className="ast-header">
+              <div className="ast-header__text">
+                <div className="ast-header__row">
+                  <h2 className="ast-header__title">Asistente</h2>
+                  <span className="ast-header__badge">
+                    {config.APP_NAME || config.COMPANY_NAME || 'Portal'}
+                  </span>
+                </div>
+                <p className="ast-header__subtitle">
+                  Horarios, fichajes, vacaciones y trámites. Las respuestas dependen de tu rol.
+                </p>
               </div>
-              <div className="chatbot-subtitle">
-                Estoy aquí para ayudarte. Pregunta sobre horarios, fichajes o cualquier otro tema.
+              <div className="ast-header__right">
+                <div className="ast-header__actions">
+                  <button
+                    type="button"
+                    className={`ast-btn ast-btn--ghost${historyOpen ? ' is-active' : ''}`}
+                    onClick={toggleHistorySidebar}
+                  >
+                    {historyOpen ? 'Cerrar' : 'Historial'}
+                  </button>
+                  <button type="button" className="ast-btn ast-btn--solid" onClick={startNewChat}>
+                    Chat nuevo
+                  </button>
+                </div>
+                <img
+                  src={logoSrc}
+                  alt=""
+                  className="ast-header__logo"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              </div>
+            </header>
+
+            <div className="ast-body">
+              {historyOpen && (
+                <button
+                  type="button"
+                  className="ast-history-scrim"
+                  aria-label="Cerrar historial"
+                  onClick={() => setHistoryOpen(false)}
+                />
+              )}
+              {historyOpen && (
+                <aside className="ast-history" aria-label="Conversaciones guardadas">
+                  <div className="ast-history__head">
+                    <h3 className="ast-history__title">Conversaciones</h3>
+                    <p className="ast-history__hint">Elige una para continuar</p>
+                    <button
+                      type="button"
+                      className="ast-history__purge"
+                      disabled={deletingAllHistory || conversations.length === 0}
+                      onClick={() => setShowPurgeHistoryModal(true)}
+                    >
+                      {deletingAllHistory
+                        ? 'Borrando…'
+                        : 'Borrar todo el historial'}
+                    </button>
+                  </div>
+                  {historyLoading && <div className="ast-history__status">Cargando…</div>}
+                  {!historyLoading && conversations.length === 0 && (
+                    <div className="ast-history__empty">Aún no hay conversaciones guardadas.</div>
+                  )}
+                  <div className="ast-history__list">
+                    {conversations.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className={`ast-history__item${
+                          activeHistoryId === c.id ? ' ast-history__item--active' : ''
+                        }`}
+                        onClick={() => loadArchivedConversation(c.id)}
+                      >
+                        <span className="ast-history__item-title">
+                          {c.title || 'Conversación'}
+                        </span>
+                        <span className="ast-history__item-meta">
+                          {c.updatedAt
+                            ? new Date(c.updatedAt).toLocaleString(undefined, {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })
+                            : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+              )}
+
+              <div className="ast-main">
+                <div
+                  ref={messagesContainerRef}
+                  className="ast-messages"
+                  aria-live="polite"
+                >
+                  {historyLoading ? (
+                    <div className="ast-messages__loading" role="status">
+                      Cargando conversación…
+                    </div>
+                  ) : null}
+
+                  {!historyLoading && messages.length === 0 ? (
+                    <div className="ast-empty">
+                      <div className="ast-empty__card">
+                        <p className="ast-empty__greeting">
+                          ¡Hola, <strong>{userName}</strong>!
+                        </p>
+                        <p className="ast-empty__lead">
+                          Pregunta con lenguaje natural: horarios, fichajes, vacaciones o documentos.
+                          Las respuestas respetan tu rol en el portal.
+                        </p>
+                        <p className="ast-empty__hint">Prueba con:</p>
+                        <div className="ast-chips" role="group" aria-label="Sugerencias">
+                          {ASSISTANT_SUGGESTION_CHIPS.map((label) => (
+                            <button
+                              key={label}
+                              type="button"
+                              className="ast-chip"
+                              onClick={() => setInputValue(label)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <ul className="ast-msg-list">
+                      {messages.map((m) => (
+                        <li key={m.id} className={`ast-msg ast-msg--${m.role}`}>
+                          <div className="ast-msg__bubble">
+                            <div className="ast-msg__body ast-msg__body--pre">{m.text}</div>
+                            {m.role === 'assistant' &&
+                            Array.isArray(m.acciones) &&
+                            m.acciones.length > 0 ? (
+                              <div className="ast-msg__actions">
+                                {m.acciones.map((accion, idx) => (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    className="ast-action-btn"
+                                    onClick={() => handleDownload(accion)}
+                                  >
+                                    {accion.label || `Acción ${idx + 1}`}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <span className="ast-msg__meta">
+                            {m.role === 'user' ? 'Tú' : 'Asistente'}
+                            {m.createdAt ? ` · ${formatAssistantMsgTime(m.createdAt)}` : ''}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="ast-composer">
+                  <textarea
+                    className="ast-composer__input"
+                    rows={1}
+                    placeholder="Escribe tu consulta…"
+                    value={inputValue}
+                    disabled={sending}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={onComposerKeyDown}
+                    aria-label="Mensaje para el asistente"
+                  />
+                  <button
+                    type="button"
+                    className="ast-composer__send"
+                    disabled={sending || !inputValue.trim()}
+                    onClick={() => sendAssistantMessage(undefined)}
+                    aria-label="Enviar mensaje"
+                  >
+                    {sending ? (
+                      <span className="ast-composer__spinner" aria-hidden />
+                    ) : (
+                      <span className="ast-composer__send-icon" aria-hidden>
+                        ➤
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
-            <img 
-              src={window.location.hostname.includes('ngrok') 
-                ? 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iNDAiIGZpbGw9IiNFRTM5MzUiLz4KPHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyOCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+REM8L3RleHQ+Cjwvc3ZnPgo='
-                : (() => {
-                    const basePath = config.BASE_PATH || '/';
-                    const logoPath = config.LOGO_PATH || 'logo.svg';
-                    return `${basePath}${logoPath}`.replace(/\/+/g, '/');
-                  })()
-              }
-              alt="Logo" 
-              className="chatbot-logo"
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
-            />
           </div>
-          
-          <div className="chatbot-content">
-            <Chatbot
-              config={chatbotConfig}
-              actionProvider={ActionProvider}
-              messageParser={MessageParser}
-            />
-          </div>
-        </div>
+        </>
       )}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            <ConfirmModal
+              isOpen={showPurgeHistoryModal}
+              onClose={() => setShowPurgeHistoryModal(false)}
+              onConfirm={() => {
+                void performPurgeAllAssistantHistory();
+              }}
+              title="Borrar historial del asistente"
+              message="¿Borrar todo el historial guardado en el servidor? Esta acción no se puede deshacer."
+              confirmText="Sí, borrar todo"
+              cancelText="Cancelar"
+              type="danger"
+              overlayZIndex={200000}
+            />
+            {purgeErrorToast && (
+              <div
+                className="fixed top-4 left-4 max-w-sm animate-slide-in"
+                style={{ zIndex: 200001 }}
+                role="alert"
+              >
+                <div className="bg-white/95 backdrop-blur-sm border border-red-200 rounded-xl shadow-2xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0">
+                      <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                        !
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-semibold text-gray-900">No se pudo borrar</h3>
+                      <p className="mt-1 text-sm text-gray-600">{purgeErrorToast}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPurgeErrorToast(null)}
+                      className="text-gray-400 hover:text-gray-600 shrink-0"
+                      aria-label="Cerrar"
+                    >
+                      <span className="text-lg leading-none">×</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>,
+          document.body,
+        )}
     </div>
   );
 };

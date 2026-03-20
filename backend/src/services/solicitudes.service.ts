@@ -197,6 +197,50 @@ export class SolicitudesService {
     await this.prisma.vacationBlockedPeriod.delete({ where: { id } });
   }
 
+  /** % del grupo en vacaciones el mismo día (1–100), para API y UI. */
+  async getVacacionesDisponibilidadPorcentaje(): Promise<{
+    porcentaje: number;
+  }> {
+    try {
+      const row = await this.prisma.vacacionesDisponibilidadConfig.findUnique({
+        where: { id: 1 },
+      });
+      const raw = row ? Number(row.porcentaje_grupo) : 10;
+      const p = Math.min(100, Math.max(1, raw));
+      return { porcentaje: Math.round(p * 100) / 100 };
+    } catch (e: any) {
+      this.logger.warn(
+        `getVacacionesDisponibilidadPorcentaje fallback 10: ${e?.message}`,
+      );
+      return { porcentaje: 10 };
+    }
+  }
+
+  /** Solo managers: actualizar % (misma regla que periodos bloqueados). */
+  async setVacacionesDisponibilidadPorcentaje(
+    porcentaje: number,
+  ): Promise<{ porcentaje: number }> {
+    if (!Number.isFinite(porcentaje)) {
+      throw new BadRequestException('porcentaje no es un número válido');
+    }
+    const p = Math.round(Number(porcentaje) * 100) / 100;
+    if (p < 1 || p > 100) {
+      throw new BadRequestException('porcentaje debe estar entre 1 y 100');
+    }
+    await this.prisma.vacacionesDisponibilidadConfig.upsert({
+      where: { id: 1 },
+      create: { id: 1, porcentaje_grupo: p },
+      update: { porcentaje_grupo: p },
+    });
+    return { porcentaje: p };
+  }
+
+  /** Ratio 0.01–1.0 para ceil(groupSize * ratio). */
+  private async getVacacionDisponibilidadRatio(): Promise<number> {
+    const { porcentaje } = await this.getVacacionesDisponibilidadPorcentaje();
+    return porcentaje / 100;
+  }
+
   /** Verifică dacă intervalul [fechaInicio, fechaFin] se suprapune cu vreo perioadă blocată. */
   private async checkVacacionesBlockedPeriods(
     fechaInicio: string,
@@ -268,7 +312,8 @@ export class SolicitudesService {
       const sizeResult =
         await this.prisma.$queryRawUnsafe<any[]>(groupSizeQuery);
       const groupSize = Number(sizeResult?.[0]?.cnt) || 1;
-      const maxAllowed = Math.max(1, Math.ceil(groupSize * 0.1));
+      const ratio = await this.getVacacionDisponibilidadRatio();
+      const maxAllowed = Math.max(1, Math.ceil(groupSize * ratio));
 
       const excludeClause = excludeSolicitudId
         ? `AND s.id != ${this.escapeSql(excludeSolicitudId)}`
@@ -423,6 +468,10 @@ export class SolicitudesService {
     tipoAnterior?: string;
     tipoNuevo?: string;
     mensajePersonalizado?: string;
+    tipo_justificante?: string;
+    hora_cita?: string;
+    centro_medico?: string;
+    descripcion_otro?: string;
   }): { subject: string; html: string } {
     const actionEmoji =
       solicitudData.accion === 'create'
@@ -505,6 +554,26 @@ export class SolicitudesService {
   <div class="info-row">
     <span class="label">📝 Motivo:</span>
     <span class="value">${solicitudData.motivo}</span>
+  </div>
+  `
+      : ''
+  }
+  
+  ${
+    solicitudData.tipo === 'Ausencias justificada' &&
+    (solicitudData.tipo_justificante ||
+      solicitudData.hora_cita ||
+      solicitudData.centro_medico ||
+      solicitudData.descripcion_otro)
+      ? `
+  <hr style="margin-top: 15px; border: none; border-top: 1px solid #ddd;">
+  <div style="margin-top: 15px; padding: 12px; background-color: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 4px;">
+    <h3 style="margin-top: 0; color: #2e7d32; font-size: 13px; font-weight: bold;">📌 Detalles ausencia justificada</h3>
+    ${solicitudData.tipo_justificante ? `<div class="info-row"><span class="label">Tipo justificante:</span> <span class="value">${solicitudData.tipo_justificante}</span></div>` : ''}
+    ${solicitudData.hora_cita ? `<div class="info-row"><span class="label">Hora cita:</span> <span class="value">${solicitudData.hora_cita}</span></div>` : ''}
+    ${solicitudData.centro_medico ? `<div class="info-row"><span class="label">Centro médico:</span> <span class="value">${solicitudData.centro_medico}</span></div>` : ''}
+    ${solicitudData.descripcion_otro ? `<div class="info-row"><span class="label">Descripción:</span> <span class="value">${solicitudData.descripcion_otro}</span></div>` : ''}
+    <p style="margin: 10px 0 0; font-size: 12px; color: #2e7d32;"><strong>📋 Recordar:</strong> El empleado debe subir el justificante de presencia a la cita (se solicitará tras aprobar).</p>
   </div>
   `
       : ''
@@ -893,6 +962,11 @@ export class SolicitudesService {
           row.cumple_preaviso_15 === true ||
           row.cumple_preaviso_15 === 1 ||
           row.cumple_preaviso_15 === '1',
+        // Ausencias justificada
+        tipo_justificante: row.tipo_justificante ?? null,
+        hora_cita: row.hora_cita ?? null,
+        centro_medico: row.centro_medico ?? null,
+        descripcion_otro: row.descripcion_otro ?? null,
       }));
     } catch (error: any) {
       this.logger.error('❌ Error retrieving solicitudes:', error);
@@ -924,6 +998,10 @@ export class SolicitudesService {
     origen?: string; // 'EMPLEADO' sau 'MANAGER'
     creado_por?: string; // Numele managerului care a creat solicitarea
     creado_por_email?: string; // Email-ul managerului care a creat solicitarea
+    tipo_justificante?: string; // Ausencia justificada
+    hora_cita?: string;
+    centro_medico?: string;
+    descripcion_otro?: string;
   }): Promise<any> {
     try {
       // Validează câmpurile obligatorii
@@ -988,11 +1066,25 @@ export class SolicitudesService {
         }
       }
 
+      const tipoJustificanteSQL = data.tipo_justificante
+        ? this.escapeSql(data.tipo_justificante)
+        : 'NULL';
+      const horaCitaSQL = data.hora_cita
+        ? this.escapeSql(data.hora_cita)
+        : 'NULL';
+      const centroMedicoSQL = data.centro_medico
+        ? this.escapeSql(data.centro_medico)
+        : 'NULL';
+      const descripcionOtroSQL = data.descripcion_otro
+        ? this.escapeSql(data.descripcion_otro)
+        : 'NULL';
+
       // Query 1: INSERT în solicitudes
       const insertSolicitudQuery = `
         INSERT INTO solicitudes (
           id, codigo, nombre, email, tipo, estado, fecha_inicio, fecha_fin, motivo, fecha_solicitud,
-          origen, fecha_ultimo_dia_trabajo, dias_preaviso, cumple_preaviso_15
+          origen, fecha_ultimo_dia_trabajo, dias_preaviso, cumple_preaviso_15,
+          tipo_justificante, hora_cita, centro_medico, descripcion_otro
         ) VALUES (
           ${this.escapeSql(data.id)},
           ${this.escapeSql(data.codigo)},
@@ -1007,7 +1099,11 @@ export class SolicitudesService {
           ${origenSQL},
           ${fechaUltimoDiaTrabajoSQL},
           ${diasPreavisoSQL},
-          ${cumplePreaviso15SQL}
+          ${cumplePreaviso15SQL},
+          ${tipoJustificanteSQL},
+          ${horaCitaSQL},
+          ${centroMedicoSQL},
+          ${descripcionOtroSQL}
         )
       `;
 
@@ -1252,6 +1348,23 @@ export class SolicitudesService {
         limit: 1,
       });
 
+      // Dacă am creat Ausencias (estado Aprobada), obține ausencia_id pentru legare justificante (ausencia_justificantes)
+      let ausenciaId: number | null = null;
+      if (estado === 'Aprobada' && data.tipo !== 'BAJA_VOLUNTARIA') {
+        try {
+          const ausenciaRow = await this.prisma.$queryRawUnsafe<
+            Array<{ id: number | bigint }>
+          >(
+            `SELECT id FROM Ausencias WHERE solicitud_id = ${this.escapeSql(data.id)} AND CODIGO = ${this.escapeSql(data.codigo)} ORDER BY id DESC LIMIT 1`,
+          );
+          const raw = ausenciaRow?.[0]?.id;
+          if (raw != null)
+            ausenciaId = typeof raw === 'bigint' ? Number(raw) : Number(raw);
+        } catch {
+          /* ignore: optional Ausencias table may not exist */
+        }
+      }
+
       // Trimite notificare pe Telegram și Email (complet async, nu așteptăm răspunsul)
       // Pentru BAJA_VOLUNTARIA, folosim fecha_ultimo_dia_trabajo
       let fechaDisplay = 'N/A';
@@ -1272,6 +1385,13 @@ export class SolicitudesService {
         motivo: data.motivo,
         accion: 'create' as const,
         email: data.email,
+        // Ausencias justificada: para Telegram/email a gestoría
+        ...(data.tipo === 'Ausencias justificada' && {
+          tipo_justificante: data.tipo_justificante,
+          hora_cita: data.hora_cita,
+          centro_medico: data.centro_medico,
+          descripcion_otro: data.descripcion_otro,
+        }),
       };
 
       setImmediate(() => {
@@ -1360,6 +1480,7 @@ export class SolicitudesService {
         status: 'ok',
         solicitud_ok: 1,
         solicitud_id: data.id,
+        ausencia_id: ausenciaId ?? undefined,
         ip_used: ip,
         solicitud: created[0] || null,
       };
@@ -1433,7 +1554,7 @@ export class SolicitudesService {
   ): Promise<any> {
     try {
       if (!id) {
-        throw new BadRequestException('id este obligatoriu pentru update');
+        throw new BadRequestException('El id es obligatorio para actualizar');
       }
 
       // Obține solicitarea înainte de update pentru a verifica estado vechi
@@ -1719,6 +1840,52 @@ export class SolicitudesService {
       this.logger.log(
         `🔍 [UPDATE] Solicitud after update - found: ${!!solicitud}, id: ${id}, tipo: ${solicitud?.tipo || 'N/A'}`,
       );
+
+      // Când aprobăm Ausencias justificada: leagă justificantele existente (CarpetasDocumentos) de noua ausencia în ausencia_justificantes
+      if (
+        estado === 'Aprobada' &&
+        (tipo === 'Ausencias justificada' ||
+          (solicitud?.tipo &&
+            String(solicitud.tipo).toLowerCase().includes('ausencia') &&
+            String(solicitud.tipo).toLowerCase().includes('justificada')))
+      ) {
+        try {
+          const ausenciaRows = await this.prisma.$queryRawUnsafe<
+            Array<{ id: number | bigint }>
+          >(
+            `SELECT id FROM Ausencias WHERE solicitud_id = ${this.escapeSql(id)} AND CODIGO = ${this.escapeSql(codigo)} ORDER BY id DESC LIMIT 1`,
+          );
+          const aid = ausenciaRows?.[0]?.id;
+          if (aid != null) {
+            const ausenciaId =
+              typeof aid === 'bigint' ? Number(aid) : Number(aid);
+            const docRows = await this.prisma.$queryRawUnsafe<
+              Array<{ doc_id: number }>
+            >(
+              `SELECT cd.doc_id FROM CarpetasDocumentos cd
+               WHERE cd.id = ${this.escapeSql(codigo)}
+                 AND (cd.tipo_documento = 'Justificante' OR cd.tipo_documento LIKE '%Justificante%')
+                 AND (cd.tipo_documento IS NULL OR cd.tipo_documento NOT LIKE '%presencia%')
+                 AND NOT EXISTS (SELECT 1 FROM ausencia_justificantes aj WHERE aj.doc_id = cd.doc_id)
+               ORDER BY cd.doc_id DESC LIMIT 1`,
+            );
+            const docId = docRows?.[0]?.doc_id;
+            if (docId != null) {
+              await this.prisma.$executeRawUnsafe(`
+                INSERT INTO ausencia_justificantes (ausencia_id, tipo, doc_id, documento_solicitado_id)
+                VALUES (${ausenciaId}, 'cerere', ${docId}, NULL)
+              `);
+              this.logger.log(
+                `✅ [UPDATE] Vinculado justificante cerere a ausencia: ausencia_id=${ausenciaId}, doc_id=${docId}`,
+              );
+            }
+          }
+        } catch (linkErr: any) {
+          this.logger.warn(
+            `⚠️ [UPDATE] No se pudo vincular justificante a ausencia_justificantes: ${linkErr.message}`,
+          );
+        }
+      }
 
       // Pentru BAJA_VOLUNTARIA aprobată: generează PDF, trimite email, setează fecha_baja_programada
       if (
@@ -2320,7 +2487,7 @@ export class SolicitudesService {
   ): Promise<any> {
     try {
       if (!id) {
-        throw new BadRequestException('id este obligatoriu pentru delete');
+        throw new BadRequestException('El id es obligatorio para eliminar');
       }
 
       // Obține informațiile solicitării înainte de ștergere pentru notificare Telegram
@@ -2339,14 +2506,13 @@ export class SolicitudesService {
       }
 
       if (!codigo) {
-        throw new BadRequestException('codigo este obligatoriu pentru delete');
+        throw new BadRequestException('El codigo es obligatorio para eliminar');
       }
 
       // Query-uri separate pentru DELETE
       const deleteAusenciaQuery = `
         DELETE FROM Ausencias
         WHERE solicitud_id = ${this.escapeSql(id)}
-          AND CODIGO = ${this.escapeSql(codigo)}
       `;
 
       const deleteSolicitudQuery = `

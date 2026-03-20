@@ -150,7 +150,7 @@ export class ScheduledMessagesController {
         await this.scheduledMessagesService.getScheduledMessageById(id);
 
       if (!message) {
-        throw new BadRequestException('Mesaj automat nu a fost găsit');
+        throw new BadRequestException('No se encontró el mensaje automático');
       }
 
       // Obține tipul de destinatar și alte informații necesare
@@ -405,7 +405,7 @@ export class ScheduledMessagesController {
         await this.scheduledMessagesService.getScheduledMessageById(id);
 
       if (!message) {
-        throw new BadRequestException('Mesaj automat nu a fost găsit');
+        throw new BadRequestException('No se encontró el mensaje automático');
       }
 
       return {

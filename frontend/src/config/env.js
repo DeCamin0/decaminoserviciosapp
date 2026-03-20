@@ -61,6 +61,19 @@ export const config = {
   DEBUG_MODE: import.meta.env.VITE_DEBUG_MODE === 'true' || false,
   PDF_QUALITY: fromEnv('VITE_PDF_QUALITY') || 'high',
   MAX_FILE_SIZE: import.meta.env.VITE_MAX_FILE_SIZE ? parseInt(import.meta.env.VITE_MAX_FILE_SIZE, 10) : 30 * 1024 * 1024,
+
+  /** Etiqueta sección nóminas: Decamino = "Nóminas", HERA = "Hojas de salario" (sin tocar lógica) */
+  NOMINAS_LABEL: fromEnv('VITE_NOMINAS_LABEL') || (isHera ? 'Hojas de salario' : 'Nóminas'),
+  /** Singular para mensajes: "subir nómina" / "hoja de salario" */
+  NOMINAS_LABEL_SINGULAR: fromEnv('VITE_NOMINAS_LABEL_SINGULAR') || (isHera ? 'hoja de salario' : 'nómina'),
+
+  /**
+   * Asistente IA: si es 'false', solo Manager/Supervisor/Developer ven el chat.
+   * Por defecto true (empleados autenticados con JWT; permisos reales en backend).
+   */
+  ASSISTANT_FOR_EMPLOYEES:
+    String(import.meta.env.VITE_ASSISTANT_FOR_EMPLOYEES || 'true').toLowerCase() !==
+    'false',
 };
 
 export const isEInvoiceXMLEnabled = () => config.ENABLE_EINVOICE_XML;

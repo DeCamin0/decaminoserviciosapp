@@ -3,7 +3,12 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 
-@Controller('api/db')
+/**
+ * Rute:
+ * - GET /api/db/health — canonic
+ * - GET /api/db-health — alias (scripturi / monitoring care folosesc cratima)
+ */
+@Controller('api')
 export class DbHealthController {
   constructor(
     private readonly prisma: PrismaService,
@@ -11,8 +16,18 @@ export class DbHealthController {
   ) {}
 
   @SkipThrottle() // Health checks nu trebuie să fie rate-limited
-  @Get('health')
+  @Get('db/health')
   async getHealth() {
+    return this.runDbCheck();
+  }
+
+  @SkipThrottle()
+  @Get('db-health')
+  async getHealthAlias() {
+    return this.runDbCheck();
+  }
+
+  private async runDbCheck() {
     const started = Date.now();
     try {
       const result = await this.prisma.$queryRawUnsafe('SELECT 1 AS ok');

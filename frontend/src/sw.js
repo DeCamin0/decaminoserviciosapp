@@ -91,8 +91,8 @@ self.addEventListener('push', (event) => {
   const defaultLogoPath = 'logo.svg';
   
   let notificationData = {
-    title: 'Nouă notificare',
-    body: 'Ai primit o notificare nouă',
+    title: 'Nueva notificación',
+    body: 'Has recibido una nueva notificación',
     icon: `${basePath}${defaultLogoPath}`,
     badge: `${basePath}${defaultLogoPath}`,
     tag: 'notification',

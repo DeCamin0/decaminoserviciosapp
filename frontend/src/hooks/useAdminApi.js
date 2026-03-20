@@ -257,10 +257,12 @@ export const useAdminApi = () => {
 
       console.log('[Permissions] Fetching from backend:', urlBackend);
 
-      // Folosim fetch normal (interceptat de fetchWithAuth) care adaugă automat token-ul
       const backendRes = await fetch(urlBackend, { 
-        headers: { Accept: 'application/json' },
-        credentials: 'include' // Include cookies dacă sunt necesare
+        headers: { 
+          Accept: 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        credentials: 'include',
       });
       if (backendRes.ok) {
         const backendData = await backendRes.json();

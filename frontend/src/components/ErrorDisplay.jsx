@@ -48,17 +48,17 @@ const ErrorDisplay = ({
     const diff = now - timestamp;
     const minutes = Math.floor(diff / 60000);
     
-    if (minutes < 1) return 'acum';
-    if (minutes === 1) return 'acum 1 minut';
-    if (minutes < 60) return `acum ${minutes} minute`;
+    if (minutes < 1) return 'ahora';
+    if (minutes === 1) return 'hace 1 minuto';
+    if (minutes < 60) return `hace ${minutes} minutos`;
     
     const hours = Math.floor(minutes / 60);
-    if (hours === 1) return 'acum 1 oră';
-    if (hours < 24) return `acum ${hours} ore`;
+    if (hours === 1) return 'hace 1 hora';
+    if (hours < 24) return `hace ${hours} horas`;
     
     const days = Math.floor(hours / 24);
-    if (days === 1) return 'ieri';
-    return `acum ${days} zile`;
+    if (days === 1) return 'ayer';
+    return `hace ${days} días`;
   };
 
   return (
@@ -109,7 +109,7 @@ const ErrorDisplay = ({
             onClick={onClearAll}
             className="text-xs text-gray-500 hover:text-gray-700 underline"
           >
-            Șterge toate erorile ({errors.length})
+            Eliminar todos los errores ({errors.length})
           </button>
         </div>
       )}

@@ -1254,7 +1254,7 @@ export default function CostePersonalTab() {
                             <th className="px-3 py-2 text-center">Estado</th>
                             <th className="px-3 py-2 text-left">Nombre BD</th>
                             <th className="px-3 py-2 text-right">Total (Excel)</th>
-                            <th className="px-3 py-2 text-right">Total (Calculat)</th>
+                            <th className="px-3 py-2 text-right">Total (Calculado)</th>
                             <th className="px-3 py-2 text-right">Neto</th>
                             <th className="px-3 py-2 text-right">Aport. Trab.</th>
                             <th className="px-3 py-2 text-right">IRPF</th>
@@ -1776,7 +1776,7 @@ export default function CostePersonalTab() {
                         <th className="px-3 py-2 text-left">Nombre BD</th>
                         <th className="px-3 py-2 text-left">Código</th>
                         <th className="px-3 py-2 text-center">Estado</th>
-                        <th className="px-3 py-2 text-right">Total (Calculat)</th>
+                        <th className="px-3 py-2 text-right">Total (Calculado)</th>
                         <th className="px-3 py-2 text-right">Neto</th>
                         <th className="px-3 py-2 text-right">Aport. Trab.</th>
                         <th className="px-3 py-2 text-right">IRPF</th>
