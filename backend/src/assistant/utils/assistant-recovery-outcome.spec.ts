@@ -75,6 +75,20 @@ describe('assistant recovery + outcome (controlled)', () => {
     expect(alt).toBeNull();
   });
 
+  it('CUADRANTE vacío + hoy + centro: sin fallback FICHAJES (plan por centro ≠ fichajes)', () => {
+    const s = computeBusinessLexiconSignals(
+      'quien trabaja hoy en Bosquepino',
+    );
+    const alt = pickPostQueryRecoveryIntent(
+      IntentType.CUADRANTE,
+      s,
+      'quien trabaja hoy en Bosquepino',
+      true,
+      { fecha: '2026-03-23', centro: 'Bosquepino' },
+    );
+    expect(alt).toBeNull();
+  });
+
   it('quien ha registrado la entrada hoy → fichajes signal; good outcome fără alertă pentru FICHAJES reușit', () => {
     const s = computeBusinessLexiconSignals(
       'quien ha registrado la entrada hoy',

@@ -50,6 +50,10 @@ export interface IntentResult {
     soloPendientes?: boolean;
     /** „Próximos N días” / next N days — fereastră de la CURDATE() (inclusiv). */
     proximos_dias?: number;
+    /** Centru de lucru (ex. „quién trabaja hoy en Bosquepino”) — filtru pe `CENTRO TRABAJO`, nu pe nume angajat. */
+    centro?: string;
+    /** „Listado … hoy por centro” = un bloque por cada centro de trabajo (agrupar respuesta), sin filtrar un solo centro. */
+    agrupar_por_centro?: boolean;
     /** Pregunta por empleados sin nómina / falta nómina (consulta anti‑lista genérica). */
     faltan_nominas?: boolean;
   };
@@ -589,6 +593,22 @@ export class IntentClassifierService {
   ): void {
     const n = normalizeForMatch(mensajeOriginal);
 
+    /** „¿Quién trabaja hoy en [centro]?” = plan del día por centro (cuadrante/horario), no registros de fichaje. */
+    if (/\b(quien|qui[eé]n)\s+trabaja\b/.test(n)) {
+      matches[IntentType.CUADRANTE] += 32;
+    }
+
+    /** Listado de trabajadores previstos hoy (por centro / plan) → consulta de planificación, no fichajes.
+     * Incluye errores frecuentes: «listrado», «previstro», «per centro» (por/por). */
+    if (
+      /\b(listado|lista|listrado)\b/.test(n) &&
+      /\btrabajador/.test(n) &&
+      /\bhoy\b/.test(n) &&
+      /\b(previsto|previstos|previstro|plan|cuadrante|horario)\b/.test(n)
+    ) {
+      matches[IntentType.CUADRANTE] += 28;
+    }
+
     const pedidoVacaciones =
       /\b(vacacion|vacaciones|concediu|asuntos\s+propios)\b/.test(n) ||
       /\bpedido\s+de\s+vacaciones\b/.test(n) ||
@@ -881,6 +901,19 @@ export class IntentClassifierService {
       ...fresh,
     };
 
+    /** Centru nou din mesaj (ex. „maquinilla 13”) trebuie să înlocuiască Bosque Pino din context; dacă întrebarea cere explicit „… en [lugar]” dar nu putem parsa, nu păstra centrul vechi (risc de date greșite). */
+    const centroNv = this.extractCentroTrabajoPlace(mensaje);
+    if (centroNv) {
+      merged.centro = centroNv;
+    } else if (
+      (ctx.lastIntent === IntentType.CUADRANTE || res.intent === IntentType.CUADRANTE) &&
+      /\b(?:qui[eé]n\s+trabaja|trabaja\s+hoy)\b/i.test(mensaje) &&
+      /\b(?:en|al)\s+[^\s]{2,}/i.test(mensaje) &&
+      ctx.lastEntities?.centro
+    ) {
+      delete merged.centro;
+    }
+
     const stickyNominasFollowUp =
       ctx.lastIntent === IntentType.NOMINAS &&
       looksLikeNominaTopicLex(mensaje) &&
@@ -910,6 +943,38 @@ export class IntentClassifierService {
       confianza: outConf,
       entidades: Object.keys(merged).length > 0 ? merged : res.entidades,
     };
+  }
+
+  /**
+   * Loc după „en / al” la sfârșitul întrebării (ex. „maquinilla 13”, „Bosque Pino II”).
+   * Evită falsuri „en la app”; nu cere ca fiecare token să înceapă cu literă (ex. „13”).
+   */
+  private extractCentroTrabajoPlace(mensaje: string): string | undefined {
+    const trimmed = mensaje.trim();
+    /** „quien trabaja … en X” — `.+?` până la ultimul „ en ” ca să nu mănânce „en” din mijlocul propoziției. */
+    const mQuien = trimmed.match(
+      /\b(?:qui[eé]n\s+trabaja|trabaja)\s+.+?\s+(?:en|al)\s+(.+?)\s*\??\s*$/i,
+    );
+    const rawFromQuien = mQuien?.[1]?.trim();
+    let raw = rawFromQuien?.replace(/[.:;!]+$/g, '').trim() ?? '';
+    if (!raw && /\btrabaja\b/i.test(trimmed)) {
+      const mEnd = trimmed.match(/\b(?:en|al)\s+(.+?)\s*\??\s*$/is);
+      raw = mEnd?.[1]?.trim().replace(/[.:;!]+$/g, '').trim() ?? '';
+    }
+    if (!raw || raw.length < 2 || raw.length > 80) {
+      return undefined;
+    }
+    const lower = raw.toLowerCase();
+    if (/^(la|el|los|las)\s+(app|aplicaci)/i.test(raw)) {
+      return undefined;
+    }
+    if (lower === 'la app' || lower === 'el centro') {
+      return undefined;
+    }
+    if (/^(total|el\s+mismo|este\s+mes|nadie)$/i.test(raw.trim())) {
+      return undefined;
+    }
+    return raw;
   }
 
   /**
@@ -1006,6 +1071,21 @@ export class IntentClassifierService {
       if (horarioTrabajoDe) {
         entidades.nombre = horarioTrabajoDe[1].trim();
       }
+    }
+
+    // Centru: „quien trabaja hoy en maquinilla 13” — trebuie să accepte cifre (ZI, „centro 5”), nu doar cuvinte cu literă inițială.
+    const centroPlace = this.extractCentroTrabajoPlace(mensaje);
+    if (centroPlace) {
+      entidades.centro = centroPlace;
+    }
+
+    /** „por centro” / „per centro” / „por cada centro” = listado agrupado por lugar de trabajo, no un solo centro. */
+    if (
+      /\b(por\s+centro|per\s+centro|por\s+cada\s+centro|agrupad[oa]s?\s+por\s+centro)\b/i.test(
+        mensaje,
+      )
+    ) {
+      entidades.agrupar_por_centro = true;
     }
 
     // Detectează "tot mesul", "este mes", "mes actual", "todo el mes"

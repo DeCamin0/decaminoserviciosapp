@@ -106,7 +106,8 @@ export class DataQueryService {
         `ðŸ“… Query fichajes para anio completo: ${fechaInicio} a ${fechaFin}`,
       );
     } else if (entidades?.fecha) {
-      fechaCondition = `AND DATE(FECHA) = '${this.escapeSql(entidades.fecha)}'`;
+      // escapeSql already wraps the value in single quotes — do not nest quotes here (MySQL 1064).
+      fechaCondition = `AND DATE(FECHA) = ${this.escapeSql(entidades.fecha)}`;
     } else {
       fechaCondition = `AND DATE(FECHA) = CURDATE()`;
     }
@@ -283,7 +284,7 @@ export class DataQueryService {
     rol: string | null,
     fecha?: string,
     dataScope?: AssistantDataScope,
-    empleado?: { codigo?: string; nombre?: string },
+    empleado?: { codigo?: string; nombre?: string; centro?: string },
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
       userId,
@@ -313,15 +314,23 @@ export class DataQueryService {
     let empleadoFilterSql = '';
     const cod = empleado?.codigo?.trim();
     const nomRaw = empleado?.nombre?.trim();
+    const centroRaw = empleado?.centro?.trim();
     if (cod) {
       empleadoFilterSql = `AND CAST(de.CODIGO AS CHAR) = ${this.escapeSql(cod)}`;
+    } else if (centroRaw) {
+      empleadoFilterSql = this.buildCentroPlanFilterSql(centroRaw);
     } else if (nomRaw) {
       empleadoFilterSql = this.buildNombreEmpleadoSqlFilter(
         'de.`NOMBRE / APELLIDOS`',
         nomRaw,
       );
     }
-    const rowLimit = empleadoFilterSql ? 25 : 200;
+    /** Listă „cine la centru” poate depăși 25; nume/cod rămân limitate. */
+    const rowLimit = empleadoFilterSql
+      ? centroRaw
+        ? 200
+        : 25
+      : 200;
     const assistantSelect = `
       SELECT
         CAST(de.CODIGO AS CHAR) AS CODIGO,
@@ -336,6 +345,8 @@ export class DataQueryService {
         ROUND(COALESCE(hdm.m1, 0) / 60, 2) AS horario_segmento_1_horas,
         ROUND(COALESCE(hdm.m2, 0) / 60, 2) AS horario_segmento_2_horas,
         ROUND(COALESCE(hdm.m3, 0) / 60, 2) AS horario_segmento_3_horas,
+        ROUND(COALESCE(hmdp.horas_horario_multicentro_dia, 0), 2) AS horas_horario_multicentro_dia,
+        hmcli.cliente_horario_multicentro,
         CASE WHEN dp.horas_plan > 0 THEN 1 ELSE 0 END AS trabaja_este_dia
       FROM daily_plan dp
       JOIN DatosEmpleados de ON CAST(de.CODIGO AS CHAR) = dp.empleadoId
@@ -345,6 +356,13 @@ export class DataQueryService {
         ON hd.empleadoId = dp.empleadoId AND hd.fecha = dp.fecha
       LEFT JOIN horario_dia_m hdm
         ON hdm.empleadoId = dp.empleadoId AND hdm.fecha = dp.fecha
+      LEFT JOIN horario_multicentro_dia_best hmdp
+        ON hmdp.empleadoId = dp.empleadoId AND hmdp.fecha = dp.fecha
+      LEFT JOIN (
+        SELECT empleadoId, fecha, MAX(cliente) AS cliente_horario_multicentro
+        FROM horario_multicentro_dia
+        GROUP BY empleadoId, fecha
+      ) hmcli ON hmcli.empleadoId = dp.empleadoId AND hmcli.fecha = dp.fecha
       WHERE de.ESTADO='ACTIVO'
         AND ${rbacDe}
         ${empleadoFilterSql}
@@ -1870,6 +1888,64 @@ LIMIT ${limit}
       return `${col} LIKE ${this.escapeSql(`%${p}%`)}`;
     });
     return `AND (${parts.join(' AND ')})`;
+  }
+
+  /**
+   * Filtru centru de lucru: „Bosquepino” trebuie să se potrivească și cu „BOSQUE PINO” / „bosque pino” din DB
+   * (compară coloana și textul fără spații, plus LIKE cu %).
+   */
+  private buildCentroTrabajoSqlFilter(
+    columnExpr: string,
+    centroRaw: string | undefined,
+  ): string {
+    if (!centroRaw?.trim()) {
+      return '';
+    }
+    let t = centroRaw
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/[^\p{L}\p{N}\s'-]/gu, '')
+      .trim()
+      .slice(0, 80);
+    if (t.length < 2) {
+      return '';
+    }
+    const colNoSpace = `REPLACE(UPPER(TRIM(${columnExpr})), ' ', '')`;
+    const needleNoSpace = t.replace(/\s+/g, '').toUpperCase();
+    return `AND ${colNoSpace} LIKE ${this.escapeSql(`%${needleNoSpace}%`)}`;
+  }
+
+  /**
+   * Centru pentru plan zilnic: `CENTRO TRABAJO` **sau** rând în `horario_multicentro` (CLIENTE + zi cu ore).
+   */
+  private buildCentroPlanFilterSql(centroRaw: string | undefined): string {
+    if (!centroRaw?.trim()) {
+      return '';
+    }
+    let t = centroRaw
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/[^\p{L}\p{N}\s'-]/gu, '')
+      .trim()
+      .slice(0, 80);
+    if (t.length < 2) {
+      return '';
+    }
+    const needleNoSpace = t.replace(/\s+/g, '').toUpperCase();
+    const likePattern = `%${needleNoSpace}%`;
+    const colTrabajo = `REPLACE(UPPER(TRIM(de.\`CENTRO TRABAJO\`)), ' ', '')`;
+    const ziCase = `CASE DAY(@fecha_buscar) ${Array.from({ length: 31 }, (_, i) => `WHEN ${i + 1} THEN hm.ZI_${i + 1}`).join(' ')} END`;
+    return `AND (
+      ${colTrabajo} LIKE ${this.escapeSql(likePattern)}
+      OR EXISTS (
+        SELECT 1 FROM horario_multicentro hm
+        WHERE CAST(hm.CODIGO AS CHAR) = CAST(de.CODIGO AS CHAR)
+          AND hm.LUNA = @lunaselectata
+          AND REPLACE(UPPER(TRIM(COALESCE(hm.CLIENTE,''))), ' ', '') LIKE ${this.escapeSql(likePattern)}
+          AND NULLIF(TRIM(${ziCase}), '') IS NOT NULL
+          AND UPPER(TRIM(${ziCase})) NOT IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X','0','0H')
+      )
+    )`;
   }
 
   private escapeSql(value: string): string {

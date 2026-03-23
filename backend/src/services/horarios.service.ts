@@ -1221,10 +1221,9 @@ export class HorariosService {
         }
 
         try {
-          const result = await this.prisma.$executeRawUnsafe(query);
-          if (result > 0) {
-            updatedCount += 1;
-          }
+          await this.prisma.$executeRawUnsafe(query);
+          // Contăm execuția reușită (MySQL poate raporta 0 rânduri modificați la ON DUPLICATE fără schimbări)
+          updatedCount += 1;
         } catch (sqlError: any) {
           this.logger.error(
             `❌ SQL Error saving horario_multicentro CODIGO=${horario.CODIGO}, LUNA=${horario.LUNA}, CLIENTE=${horario.CLIENTE}, HORARIO=${horario.HORARIO}: ${sqlError.message}`,
@@ -1236,6 +1235,12 @@ export class HorariosService {
       this.logger.log(
         `✅ Bulk save completed: ${updatedCount} horarios_multicentro saved`,
       );
+
+      if (updatedCount === 0 && horarios.length > 0) {
+        throw new BadRequestException(
+          'No se guardó ningún horario_multicentro (revisa CODIGO/LUNA/CLIENTE/HORARIO o errores SQL en logs).',
+        );
+      }
 
       return { success: true, updated: updatedCount };
     } catch (error: any) {

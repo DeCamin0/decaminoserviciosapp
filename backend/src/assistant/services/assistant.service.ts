@@ -1012,6 +1012,7 @@ export class AssistantService {
             usuario.rol,
             assistantPrefs,
             aiLanguage,
+            entidades,
           );
           this.logger.log(
             `✅ AI response received (${aiResponse.length} chars)`,
@@ -1173,6 +1174,7 @@ export class AssistantService {
             usuario.rol,
             assistantPrefs,
             aiLanguage,
+            entidades,
           );
         } catch (e: any) {
           this.logger.warn(`⚠️ AI sin datos fallback: ${e?.message ?? e}`);
@@ -1444,10 +1446,13 @@ export class AssistantService {
               usuario.rol,
               entidades.fecha,
               dataScope,
-              entidades?.codigo || entidades?.nombre
+              entidades?.codigo ||
+                entidades?.nombre ||
+                entidades?.centro
                 ? {
                     codigo: entidades.codigo,
                     nombre: entidades.nombre,
+                    centro: entidades.centro,
                   }
                 : undefined,
             );

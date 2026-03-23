@@ -140,6 +140,10 @@ export const WHITELIST_PLAN_TRABAJO_DIA = [
   'horario_segmento_1_horas',
   'horario_segmento_2_horas',
   'horario_segmento_3_horas',
+  /** Ore din `horario_multicentro` (dacă `fuente` = horario_multicentro). */
+  'horas_horario_multicentro_dia',
+  /** Client din `horario_multicentro` (repartizare pe centru/comunitate). */
+  'cliente_horario_multicentro',
   'trabaja_este_dia',
 ] as const;
 

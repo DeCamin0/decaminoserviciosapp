@@ -128,6 +128,88 @@ export function buildDailyPlanMysqlCore(
           ROUND((COALESCE(m1,0) + COALESCE(m2,0) + COALESCE(m3,0))/60, 2) AS horas_horario_dia
         FROM horario_dia_m
       ),
+      horario_multicentro_unpivot AS (
+        SELECT CAST(hm.CODIGO AS CHAR) AS empleadoId, 1 AS dia, hm.CLIENTE, hm.HORARIO, hm.ZI_1 AS val FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 2, hm.CLIENTE, hm.HORARIO, hm.ZI_2 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 3, hm.CLIENTE, hm.HORARIO, hm.ZI_3 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 4, hm.CLIENTE, hm.HORARIO, hm.ZI_4 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 5, hm.CLIENTE, hm.HORARIO, hm.ZI_5 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 6, hm.CLIENTE, hm.HORARIO, hm.ZI_6 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 7, hm.CLIENTE, hm.HORARIO, hm.ZI_7 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 8, hm.CLIENTE, hm.HORARIO, hm.ZI_8 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 9, hm.CLIENTE, hm.HORARIO, hm.ZI_9 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 10, hm.CLIENTE, hm.HORARIO, hm.ZI_10 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 11, hm.CLIENTE, hm.HORARIO, hm.ZI_11 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 12, hm.CLIENTE, hm.HORARIO, hm.ZI_12 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 13, hm.CLIENTE, hm.HORARIO, hm.ZI_13 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 14, hm.CLIENTE, hm.HORARIO, hm.ZI_14 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 15, hm.CLIENTE, hm.HORARIO, hm.ZI_15 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 16, hm.CLIENTE, hm.HORARIO, hm.ZI_16 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 17, hm.CLIENTE, hm.HORARIO, hm.ZI_17 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 18, hm.CLIENTE, hm.HORARIO, hm.ZI_18 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 19, hm.CLIENTE, hm.HORARIO, hm.ZI_19 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 20, hm.CLIENTE, hm.HORARIO, hm.ZI_20 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 21, hm.CLIENTE, hm.HORARIO, hm.ZI_21 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 22, hm.CLIENTE, hm.HORARIO, hm.ZI_22 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 23, hm.CLIENTE, hm.HORARIO, hm.ZI_23 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 24, hm.CLIENTE, hm.HORARIO, hm.ZI_24 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 25, hm.CLIENTE, hm.HORARIO, hm.ZI_25 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 26, hm.CLIENTE, hm.HORARIO, hm.ZI_26 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 27, hm.CLIENTE, hm.HORARIO, hm.ZI_27 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 28, hm.CLIENTE, hm.HORARIO, hm.ZI_28 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 29, hm.CLIENTE, hm.HORARIO, hm.ZI_29 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 30, hm.CLIENTE, hm.HORARIO, hm.ZI_30 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+        UNION ALL SELECT CAST(hm.CODIGO AS CHAR), 31, hm.CLIENTE, hm.HORARIO, hm.ZI_31 FROM horario_multicentro hm WHERE hm.LUNA = @lunaselectata
+      ),
+      horario_multicentro_dia AS (
+        SELECT
+          hmu.empleadoId,
+          DATE_ADD(@d_first, INTERVAL (hmu.dia - 1) DAY) AS fecha,
+          hmu.dia,
+          CASE WHEN hmu.val IS NOT NULL AND TRIM(hmu.val) <> '' AND TRIM(hmu.val) NOT IN ('0','0h','LIBRE') THEN 1 ELSE 0 END AS tiene_horario_multicentro,
+          ROUND(
+            CASE
+              WHEN UPPER(TRIM(hmu.val)) IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X','0','0h') THEN 0
+              WHEN TRIM(hmu.val) LIKE '%:%-%:%' THEN
+                (((TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(hmu.val),' ',-1),'-',-1),' ',1), '%H:%i'))
+                  - TIME_TO_SEC(STR_TO_DATE(SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(TRIM(hmu.val),' ',-1),'-', 1),' ',1), '%H:%i'))
+                  + 86400) % 86400) / 3600)
+              WHEN TRIM(hmu.val) REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN CAST(TRIM(hmu.val) AS DECIMAL(10,2))
+              WHEN TRIM(hmu.val) REGEXP '^[0-9]+(\\.[0-9]+)?h$' THEN CAST(SUBSTRING_INDEX(TRIM(hmu.val), 'h', 1) AS DECIMAL(10,2))
+              ELSE 0
+            END
+          ,2) AS horas_horario_multicentro_dia,
+          hmu.HORARIO AS horario_tipo,
+          hmu.CLIENTE AS cliente
+        FROM horario_multicentro_unpivot hmu
+        WHERE hmu.val IS NOT NULL AND TRIM(hmu.val) <> '' AND TRIM(hmu.val) NOT IN ('0','0h','LIBRE')
+          AND hmu.dia >= 1 AND hmu.dia <= 31
+          AND DATE_ADD(@d_first, INTERVAL (hmu.dia - 1) DAY) >= @d_first
+          AND DATE_ADD(@d_first, INTERVAL (hmu.dia - 1) DAY) <= @d_last
+      ),
+      horario_multicentro_dia_best AS (
+        SELECT
+          empleadoId,
+          fecha,
+          dia,
+          MAX(tiene_horario_multicentro) AS tiene_horario_multicentro,
+          MAX(horas_horario_multicentro_dia) AS horas_horario_multicentro_dia
+        FROM (
+          SELECT
+            empleadoId,
+            fecha,
+            dia,
+            tiene_horario_multicentro,
+            horas_horario_multicentro_dia,
+            CASE
+              WHEN UPPER(horario_tipo) LIKE '%NOCHE%' OR UPPER(horario_tipo) LIKE '%T3%' THEN 1
+              WHEN UPPER(horario_tipo) LIKE '%DIA%' OR UPPER(horario_tipo) LIKE '%T1%' OR UPPER(horario_tipo) LIKE '%T2%' THEN 2
+              ELSE 3
+            END AS prioridad
+          FROM horario_multicentro_dia
+        ) ranked
+        GROUP BY empleadoId, fecha, dia
+      ),
       bajas_intervalos AS (
         SELECT
           TRIM(CAST(mc.Codigo_Empleado AS CHAR)) AS empleadoId,
@@ -264,6 +346,7 @@ export function buildDailyPlanMysqlCore(
             ELSE GREATEST(
               COALESCE(
                 CASE WHEN cd.tiene_cuadrante = 1 THEN cd.horas_cuadrante_dia ELSE NULL END,
+                CASE WHEN hmd.tiene_horario_multicentro = 1 THEN hmd.horas_horario_multicentro_dia ELSE NULL END,
                 CASE WHEN hd.horas_horario_dia IS NOT NULL THEN hd.horas_horario_dia ELSE NULL END,
                 0
               ) - COALESCE(au.horas_ausencia_ore, 0),
@@ -276,12 +359,15 @@ export function buildDailyPlanMysqlCore(
             WHEN fd2.es_fiesta = 1 AND COALESCE(tf.trabaja_festivos,0) = 0 THEN 'fiesta'
             WHEN COALESCE(au.es_ausencia,0) = 1 THEN 'ausencia'
             WHEN cd.tiene_cuadrante = 1 THEN 'cuadrante'
+            WHEN hmd.tiene_horario_multicentro = 1 THEN 'horario_multicentro'
             WHEN hd.horas_horario_dia IS NOT NULL AND hd.horas_horario_dia > 0 THEN 'horario'
             ELSE 'none'
           END AS fuente
         FROM DatosEmpleados de
         LEFT JOIN cuadrante_dia cd
           ON cd.empleadoId = CAST(de.CODIGO AS CHAR) AND cd.fecha = @fecha_buscar
+        LEFT JOIN horario_multicentro_dia_best hmd
+          ON hmd.empleadoId = CAST(de.CODIGO AS CHAR) AND hmd.fecha = @fecha_buscar
         LEFT JOIN horario_dia hd
           ON hd.empleadoId = CAST(de.CODIGO AS CHAR) AND hd.fecha = @fecha_buscar
         LEFT JOIN bajas_dia bj

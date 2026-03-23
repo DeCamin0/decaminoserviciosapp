@@ -149,7 +149,7 @@ export class AssistantReadToolsService {
     rol: string | null,
     fecha?: string,
     dataScope?: AssistantDataScope,
-    empleado?: { codigo?: string; nombre?: string },
+    empleado?: { codigo?: string; nombre?: string; centro?: string },
   ): Promise<Record<string, unknown>[]> {
     const raw = await this.dataQuery.queryDailyPlanDiaForAssistant(
       userId,

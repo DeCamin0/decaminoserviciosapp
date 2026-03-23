@@ -90,12 +90,14 @@ export function pickPostQueryRecoveryIntent(
   }
   /** CUADRANTE + zi + încă gol: încearcă fichajes aceeași zi (dacă există fecha). */
   /** Nu pentru „horario de X / tiene [nombre]”: fichajes ≠ planificare; rămâne clarificare sau alt răspuns. */
+  /** Nu pentru „quién trabaja en [centro]”: fichajes nu filtrează centru; planul zilnic e sursa corectă. */
   if (
     currentIntent === IntentType.CUADRANTE &&
     dataEmpty &&
     Boolean(entidades?.fecha) &&
     !entidades?.nombre &&
     !entidades?.codigo &&
+    !entidades?.centro &&
     (/\b(hoy|manana|mañana|azi)\b/.test(normalizeAssistantText(mensaje)) ||
       signals.fichajes)
   ) {

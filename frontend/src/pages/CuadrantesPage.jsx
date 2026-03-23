@@ -41,6 +41,11 @@ const WEEKDAY_LABELS = [
   { key: 7, label: 'Dom' },
 ];
 
+/** Celda con prefijo MC->: el turno lo cubre otro empleado vía horario_multicentro; no son horas/días propios del titular. */
+function isCuadranteMarcaMulticentro(val) {
+  return val != null && String(val).trim().startsWith('MC->');
+}
+
 const CCAA_NAMES = {
   'ES-AN': 'Andalucía',
   'ES-AR': 'Aragón',
@@ -289,6 +294,9 @@ export default function CuadrantesPage() {
     
     const finalIndex = realIndex !== -1 ? realIndex : cuadranteIndex;
     
+    // Evită suprapunerea cu modalul de preview (selectedCell) — același showEditModal
+    setSelectedCell(null);
+    setEditingSchedule(null);
     setEditingDay({
       cuadranteIndex: finalIndex, // Folosește indexul real din lista completă
       dayNumber,
@@ -393,10 +401,13 @@ export default function CuadrantesPage() {
     if (!editingDay) return;
     
     const { cuadranteIndex, dayNumber, codigo, email, nombre, centro, cuadranteOriginal } = editingDay;
+    // MySQL / JSON pot returna CODIGO ca număr; comparările stricte (===) eșuează vs string din UI
+    const normCodigo = (v) => (v == null || v === '' ? '' : String(v).trim());
+    const normClienteHm = (v) => String(v ?? '').trim();
     
     // Găsește cuadrante-ul real din lista completă folosind identificatorul
     const cuadranteReal = cuadrantesLista.find(c => 
-      (codigo && c.CODIGO === codigo) ||
+      (codigo && normCodigo(c.CODIGO) === normCodigo(codigo)) ||
       (email && c.EMAIL === email) ||
       (nombre && (c.NOMBRE === nombre || c.nombre === nombre))
     ) || cuadranteOriginal || cuadrantesLista[cuadranteIndex];
@@ -417,14 +428,19 @@ export default function CuadrantesPage() {
     
     const cuadranteKey = `${identificator}_${dayNumber}`;
     
+    // Text în câmp dar fără selecție din listă → nu există CODIGO pentru multicentro
+    if (empleadoForDaySearch.trim() && !normCodigo(selectedEmpleadoForDay)) {
+      showToast('error', 'Selecciona un empleado de la lista (clic en un resultado). Escribir solo no asigna multicentro.');
+      return;
+    }
     
     // Dacă este selectat alt angajat și turnul nu este LIBRE, creează horario multicentro
     
-    if (selectedEmpleadoForDay && selectedEmpleadoForDay !== codigo && newValue && newValue !== 'LIBRE' && newValue.trim() !== '') {
+    if (selectedEmpleadoForDay && normCodigo(selectedEmpleadoForDay) !== normCodigo(codigo) && newValue && newValue !== 'LIBRE' && newValue.trim() !== '') {
       try {
         // Găsește informațiile despre noul angajat (folosește lista completă sau fallback)
         const listaCompleta = angajati.length > 0 ? angajati : angajatiFiltrati;
-        const nuevoEmpleado = listaCompleta.find(a => a.CODIGO === selectedEmpleadoForDay);
+        const nuevoEmpleado = listaCompleta.find(a => normCodigo(a.CODIGO) === normCodigo(selectedEmpleadoForDay));
         if (!nuevoEmpleado) {
           showToast('error', 'Empleado no encontrado');
           return;
@@ -436,7 +452,7 @@ export default function CuadrantesPage() {
         // Verifică dacă ziua era deja atribuită altui angajat în multicentro
         // Dacă da, actualizează marcajul în cuadrantul original al acelui angajat
         const mesAnoCheck = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
-        const clienteCentroCheck = centro || selectedCentro || 'N/A';
+        const clienteCentroCheck = normClienteHm(centro || selectedCentro || 'N/A');
         
         try {
           const getResponseCheck = await fetch(
@@ -456,12 +472,12 @@ export default function CuadrantesPage() {
             
             // Găsește horario_multicentro care au această zi atribuită și sunt din același centru
             const horariosConEstaZiCheck = horariosMulticentroCheck.filter(h => {
-              return h.CLIENTE === clienteCentroCheck && 
+              return normClienteHm(h.CLIENTE) === clienteCentroCheck && 
                      h[`ZI_${dayNumber}`] !== undefined && 
                      h[`ZI_${dayNumber}`] !== null && 
                      h[`ZI_${dayNumber}`] !== '' &&
-                     h.CODIGO !== codigo && // Nu este angajatul original
-                     h.CODIGO !== nuevoEmpleado.CODIGO; // Nu este noul angajat
+                     normCodigo(h.CODIGO) !== normCodigo(codigo) && // Nu este angajatul original
+                     normCodigo(h.CODIGO) !== normCodigo(nuevoEmpleado.CODIGO); // Nu este noul angajat
             });
             
             // Actualizează marcajul în cuadrantul original al angajaților care au avut ziua
@@ -498,7 +514,7 @@ export default function CuadrantesPage() {
         
         // Construiește obiectul horario multicentro
         const mesAno = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
-        const clienteCentro = centro || selectedCentro || 'N/A';
+        const clienteCentro = normClienteHm(centro || selectedCentro || 'N/A');
         // Folosim numele complet (NOMBRE / APELLIDOS) dacă există, altfel fallback la NOMBRE
         const nombreCompleto = nuevoEmpleado['NOMBRE / APELLIDOS'] || nuevoEmpleado.NOMBRE_APELLIDOS || nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre || '';
         
@@ -506,7 +522,7 @@ export default function CuadrantesPage() {
         let horarioExistente = [];
         try {
           const getResponse = await fetch(
-            `${routes.getHorarioMulticentro}?codigo=${nuevoEmpleado.CODIGO}&mes=${mesAno}`,
+            `${routes.getHorarioMulticentro}?codigo=${encodeURIComponent(codigoNuevoStr)}&mes=${encodeURIComponent(mesAno)}`,
             {
               method: 'GET',
               headers: {
@@ -528,13 +544,18 @@ export default function CuadrantesPage() {
         // Găsește orarul existent pentru acest centru (fără să verificăm HORARIO, deoarece în multicentro salvăm doar orele)
         // Folosim un HORARIO generic "MULTICENTRO" pentru toate zilele atribuite aceluiași angajat în același centru/lună
         let horarioExistenteParaCentro = horarioExistente.find(
-          h => h.CLIENTE === clienteCentro
+          h => normClienteHm(h.CLIENTE) === clienteCentro
         );
         
         // Construiește obiectul horario multicentro cu toate zilele
         // HORARIO și SERVICIO sunt generice pentru multicentro (nu depind de tipul de turn specific)
+        const codigoNuevoStr = String(nuevoEmpleado.CODIGO ?? '').trim();
+        if (!codigoNuevoStr) {
+          showToast('error', 'El empleado seleccionado no tiene CODIGO en DatosEmpleados');
+          return;
+        }
         const horarioMulticentro = {
-          CODIGO: nuevoEmpleado.CODIGO || '',
+          CODIGO: codigoNuevoStr,
           EMAIL: nuevoEmpleado['CORREO ELECTRONICO'] || nuevoEmpleado.EMAIL || '',
           NOMBRE: nombreCompleto, // Folosim numele complet
           LUNA: mesAno,
@@ -596,7 +617,12 @@ export default function CuadrantesPage() {
           throw new Error(errorData.message || 'Error al guardar horario multicentro');
         }
         
-        await response.json().catch(() => ({}));
+        const saveBody = await response.json().catch(() => ({}));
+        if (typeof saveBody.updated === 'number' && saveBody.updated < 1) {
+          console.error('❌ [handleSaveDayEdit] save-multicentro sin filas guardadas:', saveBody);
+          showToast('error', 'No se guardó en horario_multicentro (revisa logs del servidor o datos del empleado/centro).');
+          return;
+        }
         
         showToast('success', `Turno asignado a ${nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre} en horario multicentro`);
         
@@ -620,7 +646,7 @@ export default function CuadrantesPage() {
       // Comportament normal: actualizează cuadrantele (folosind identificatorul unic)
       // DAR: dacă ziua a fost atribuită anterior unui alt angajat în multicentro, trebuie să o ștergem de acolo
       const mesAno = selectedMesAno || `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
-      const clienteCentro = centro || selectedCentro || 'N/A';
+      const clienteCentro = normClienteHm(centro || selectedCentro || 'N/A');
       const token = localStorage.getItem('auth_token');
       
       // Căutăm în toate horario_multicentro pentru acest centru și lună dacă există ziua atribuită altui angajat
@@ -643,11 +669,11 @@ export default function CuadrantesPage() {
           // Găsește toate horario_multicentro care au această zi atribuită și sunt din același centru
           const horariosConEstaZi = horariosMulticentro.filter(h => {
             // Verifică dacă este din același centru și dacă ziua respectivă are o valoare
-            return h.CLIENTE === clienteCentro && 
+            return normClienteHm(h.CLIENTE) === clienteCentro && 
                    h[`ZI_${dayNumber}`] !== undefined && 
                    h[`ZI_${dayNumber}`] !== null && 
                    h[`ZI_${dayNumber}`] !== '' &&
-                   h.CODIGO !== codigo; // Nu este angajatul original
+                   normCodigo(h.CODIGO) !== normCodigo(codigo); // Nu este angajatul original
           });
           
           // Dacă există horario_multicentro cu această zi atribuită, o ștergem
@@ -886,6 +912,9 @@ export default function CuadrantesPage() {
         // Calculăm TotalHoras sumând orele din toate zilele
         const getHorasFromTurno = (turno) => {
           if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+            return 0;
+          }
+          if (isCuadranteMarcaMulticentro(turno)) {
             return 0;
           }
           
@@ -2366,6 +2395,9 @@ export default function CuadrantesPage() {
           if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
             return 0;
           }
+          if (isCuadranteMarcaMulticentro(turno)) {
+            return 0;
+          }
           
           // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
           const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
@@ -2941,6 +2973,9 @@ export default function CuadrantesPage() {
               if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
                 return 0;
               }
+              if (isCuadranteMarcaMulticentro(turno)) {
+                return 0;
+              }
               
               // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
               const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
@@ -3382,6 +3417,8 @@ export default function CuadrantesPage() {
 
   // Funcții pentru editare
   const handleCellClick = (employee, day, currentValue, tableType = 'preview') => {
+    setEditingDay(null);
+    setEditingSchedule(null);
     setSelectedCell({ employee, day, currentValue, tableType });
     setEditValue(currentValue);
     setEditNote('');
@@ -5664,7 +5701,7 @@ export default function CuadrantesPage() {
                                     const isEdited = editedCuadrantes[editKey] !== undefined;
                                     
                                     // Verifică dacă ziua este marcată ca multicentro
-                                    const esMulticentro = z && String(z).startsWith('MC->');
+                                    const esMulticentro = isCuadranteMarcaMulticentro(z);
                                     
                                     // Calculează ziua săptămânii pentru luna acestui cuadrante
                                     const getDayOfWeek = (dayNumber, lunaStr) => {
@@ -5714,14 +5751,17 @@ export default function CuadrantesPage() {
                                   <td className="border border-gray-300 p-3 text-center font-bold bg-blue-50">
                                     <div className="space-y-1">
                                       <div className="text-blue-600 text-sm">
-                                        {zile.filter(z => z && z !== 'LIBRE').length} días
+                                        {zile.filter(
+                                          (z) => z && z !== 'LIBRE' && !isCuadranteMarcaMulticentro(z)
+                                        ).length}{' '}
+                                        días
                                       </div>
                                       <div className="text-green-600 text-xs">
                                         {(() => {
                                           // Calcular total de ore cu precizie
                                           let totalHoras = 0;
                                           zile.forEach(z => {
-                                            if (z && z !== 'LIBRE' && z.trim() !== '') {
+                                            if (z && z !== 'LIBRE' && z.trim() !== '' && !isCuadranteMarcaMulticentro(z)) {
                                               // Primero intentar extraer orele din formato de tiempo directo
                                               const timeMatch = z.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
                                               if (timeMatch) {
@@ -6535,7 +6575,7 @@ export default function CuadrantesPage() {
                     // Verifică dacă row.zile există și nu este gol
                     const zile = row.zile || [];
                     const totalHoras = zile.length > 0 ? zile.reduce((total, z) => {
-                      if (z === 'LIBRE' || !z || z === '') return total;
+                      if (z === 'LIBRE' || !z || z === '' || isCuadranteMarcaMulticentro(z)) return total;
                       
                       // Extrage orele din formatul "T1 19:30-07:30"
                       const match = z.match(/T\d+\s+(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
@@ -6694,7 +6734,7 @@ export default function CuadrantesPage() {
                       {cuadranteAn[lunaPreview] && cuadranteAn[lunaPreview].map((row, idx) => {
                         // Calculează totalul de ore pentru fiecare angajat
                         const totalHoras = row.zile.reduce((total, z) => {
-                          if (z === 'LIBRE' || !z || z === '') return total;
+                          if (z === 'LIBRE' || !z || z === '' || isCuadranteMarcaMulticentro(z)) return total;
                           
                           // Extrage orele din formatul "T1 19:30-07:30"
                           const match = z.match(/T\d+\s+(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
@@ -6778,7 +6818,7 @@ export default function CuadrantesPage() {
       </Card>
 
       {/* Modal para editar */}
-      {showEditModal && (
+      {showEditModal && selectedCell && !editingDay && !editingSchedule && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-bold text-red-600 mb-4">
@@ -6985,8 +7025,8 @@ export default function CuadrantesPage() {
                       // Folosește lista completă de angajați (angajati) sau fallback la angajatiFiltrati dacă lista completă este goală
                       const listaCompleta = angajati.length > 0 ? angajati : angajatiFiltrati;
                       const filtered = listaCompleta.filter(emp => {
-                        // Exclude angajatul curent
-                        if (emp.CODIGO === editingDay.codigo) return false;
+                        // Exclude angajatul curent (CODIGO poate fi număr în API, string în modal)
+                        if (String(emp.CODIGO ?? '').trim() === String(editingDay.codigo ?? '').trim()) return false;
                         
                         const nombre = (emp['NOMBRE / APELLIDOS'] || emp.NOMBRE || emp.nombre || '').toLowerCase();
                         const codigo = (emp.CODIGO || '').toLowerCase();
@@ -7012,7 +7052,7 @@ export default function CuadrantesPage() {
                                 type="button"
                                 onClick={() => {
                                   setEmpleadoForDaySearch(`${nombre} - ${codigo}`);
-                                  setSelectedEmpleadoForDay(codigo);
+                                  setSelectedEmpleadoForDay(String(emp.CODIGO ?? '').trim());
                                   setShowEmpleadoForDayDropdown(false);
                                 }}
                                 className="w-full text-left px-3 py-2 hover:bg-red-50 rounded-lg transition-colors"
@@ -7200,6 +7240,9 @@ export default function CuadrantesPage() {
                         // Helper pentru calculul orelor dintr-un turno
                         const getHorasFromTurno = (turno) => {
                           if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+                            return 0;
+                          }
+                          if (isCuadranteMarcaMulticentro(turno)) {
                             return 0;
                           }
                           

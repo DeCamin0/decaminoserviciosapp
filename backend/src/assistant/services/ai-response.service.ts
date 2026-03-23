@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import { IntentType } from './intent-classifier.service';
+import { IntentType, type IntentResult } from './intent-classifier.service';
 import { looksLikeAppHelpDatosPersonales } from '../utils/assistant-app-help.util';
 import { procedimientosAppHelpDatosPersonalesSupplement } from '../utils/assistant-procedimientos-app-help-prompt.util';
 import {
@@ -75,6 +75,7 @@ export class AiResponseService {
     usuarioRol: string | null,
     prefs: ResolvedAssistantPreferences = DEFAULT_ASSISTANT_PREFERENCES,
     language?: AssistantAiLanguageContext,
+    entidades?: IntentResult['entidades'],
   ): Promise<string> {
     if (!this.isEnabled || !this.openai) {
       this.logger.warn(
@@ -103,6 +104,7 @@ export class AiResponseService {
         data,
         confianza,
         outputLocale,
+        entidades,
       );
       const maxTokens = this.getMaxTokensForResponse(prefs, 'main');
 
@@ -547,7 +549,7 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
       [IntentType.FICHAJES]:
         'El usuario pregunta sobre fichajes (registros de entrada/salida) o empleados que deberían haber fichado pero no lo hicieron. Responde de forma clara y concisa. Si hay empleados sin cuadrante, horario o centro asignado, menciona claramente qué les falta (ej: "Sin cuadrante asignado", "Sin horario asignado", "Sin centro asignado"). Si hay muchos registros (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
       [IntentType.CUADRANTE]:
-        'El usuario pregunta sobre cuadrantes (horarios de trabajo). Responde de forma clara y concisa. Si hay muchos registros, menciona que puede descargar los datos completos.',
+        'El usuario pregunta sobre cuadrantes y horarios de trabajo (**planificación**: cuadrante vs horario asignado). Los datos pueden incluir `horas_plan`, `fuente` (`cuadrante`, `horario`, `horario_multicentro`), `horas_horario_multicentro_dia`, `cliente_horario_multicentro` (cuando el empleado tiene turno en **horario multicentro** para un cliente/centro distinto del `centro` fijo en DatosEmpleados), `valor_celula_cuadrante`, `trabaja_este_dia`, `centro`. Incluye en la respuesta a quienes trabajan por **horario_multicentro** en ese centro/cliente, no solo los que tienen ese `centro` como centro principal. **REGLA CRÍTICA (confidencialidad):** usa **solo** los nombres de centro/cliente que aparecen en el JSON (`centro`, `cliente_horario_multicentro`). **PROHIBIDO** inventar, sustituir o «recordar» otro centro (ej. de conversaciones anteriores). Si el JSON no menciona un centro concreto, no lo nombres. **NO confundas esto con fichajes** (marcajes reales de entrada/salida): salvo que el usuario pida explícitamente fichajes, registros o marcas, explica quién **debería trabajar** según plan/horario para la fecha, no quién ha fichado. Si el rol es empleado (acceso solo a datos propios) y la pregunta es por **otro centro**, el listado puede venir vacío: explica con claridad que hace falta rol de supervisión/administración para ver el equipo completo de un centro, sin decir que «falta cuadrante» en el sistema si no hay datos. **REGLA CRÍTICA (exactitud de centro):** Distingue: (A) El usuario **nombra un centro concreto**: no titules con un centro distinto al de cada fila (`centro` / `cliente_horario_multicentro`); si no hay filas para ese centro, di que no hay resultados o pide el nombre exacto como en la app; **no inventes** ni listes personal como de otro centro. (B) El usuario pide **listado agrupado por centro** (p. ej. «por centro», «cada centro») **sin** nombrar un único centro: **prohibido** decir «no hay datos para el centro que solicitaste» o pedir el nombre exacto de un centro; si no hay filas, explica ausencia de plan para la fecha o alcance/rol sin culpar a un centro mal escrito; si hay filas, agrupa por `centro` y muestra todos los que aparecen en el JSON.',
       [IntentType.PEDIDOS]:
         'El usuario pregunta sobre **pedidos de material o catálogo** (compras de suministros desde la app). Usa ÚNICAMENTE el JSON de pedidos que recibes. PROHIBIDO mezclar, citar o inventar información de cuadrantes, fichajes o vacaciones. Si el array está vacío, di claramente que no hay pedidos en el período consultado.',
       [IntentType.VACACIONES]:
@@ -589,6 +591,7 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
     data: any[] | any | null,
     confianza: number,
     outputLocale: AssistantLocale,
+    entidades?: IntentResult['entidades'],
   ): string {
     const qLabel =
       outputLocale === 'ro'
@@ -678,7 +681,16 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
             if (item.fuente) optimized.fuente = item.fuente;
             if (item.horas_plan !== undefined)
               optimized.horas_plan = item.horas_plan;
-            if (item.centro) optimized.centro = item.centro;
+            const centroVal =
+              item.centro ?? item.CENTRO ?? item['CENTRO TRABAJO'];
+            if (centroVal !== undefined && centroVal !== null)
+              optimized.centro = String(centroVal).trim() || undefined;
+            if (item.horas_horario_multicentro_dia != null)
+              optimized.horas_horario_multicentro_dia =
+                item.horas_horario_multicentro_dia;
+            if (item.cliente_horario_multicentro != null)
+              optimized.cliente_horario_multicentro =
+                item.cliente_horario_multicentro;
             // Pentru listado empleados: include toate câmpurile relevante
             if (item.estado) optimized.estado = item.estado;
             if (item.tiene_cuadrante)
@@ -815,6 +827,28 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
         '\n\nREGLA CRÍTICA (PEDIDOS): Responde solo sobre pedidos de material/catálogo del JSON. No menciones cuadrantes, horarios ni fichajes.';
     }
 
+    if (intent === IntentType.CUADRANTE) {
+      const agruparSinCentroNombrado =
+        Boolean(entidades?.agrupar_por_centro) &&
+        !String(entidades?.centro ?? '').trim();
+
+      if (agruparSinCentroNombrado) {
+        prompt +=
+          '\n\nREGLA CRÍTICA (LISTADO POR CENTRO, SIN CENTRO CONCRETO EN LA PETICIÓN): El usuario pidió ver trabajadores **agrupados por centro** (no un solo centro nombrado). **PROHIBIDO** decir «no hay datos para el centro que solicitaste», «verifica el nombre exacto del centro» o pedir el nombre exacto de un centro: el usuario **no** ha solicitado un centro concreto. Si el JSON está vacío o no hay filas, di que no hay trabajadores previstos para la fecha en el alcance de datos disponible, o que el rol limita la visibilidad (p. ej. solo datos propios), **sin** culpar a un centro mal escrito. Si hay datos, sigue la instrucción de formato «por centro».';
+      } else {
+        prompt +=
+          '\n\nREGLA CRÍTICA (CENTRO / LISTADOS): Si el usuario pide quién trabaja «en [centro]» concreto, comprueba el campo `centro` (y `cliente_horario_multicentro` si el turno es multicentro) en **cada fila** del JSON. No titules ni afirmes «en el centro X…» si X no coincide con lo que pidió el usuario o con los valores reales de las filas. Si el centro pedido no aparece o no coincide con ninguna fila, **no inventes** otro centro: di que no hay resultados para ese centro o pide el nombre exacto como en la aplicación. Ante la duda, **no listes** personal como si fuera del centro equivocado.';
+      }
+    }
+
+    if (
+      intent === IntentType.CUADRANTE &&
+      entidades?.agrupar_por_centro
+    ) {
+      prompt +=
+        '\n\nINSTRUCCIÓN DE FORMATO (listado por centro): El usuario pidió trabajadores previstos **agrupados por centro de trabajo** (no un solo centro). Organiza la respuesta en **secciones**: un encabezado por cada valor distinto de `centro` en los datos; dentro de cada sección, lista empleados (nombre/código) con horas previstas para la fecha. Si una fila tiene turno por **horario_multicentro**, indica `cliente_horario_multicentro` y no mezcles esa fila como si el centro principal fuera el único contexto. No des una lista plana única sin separar por centro.';
+    }
+
     if (intent === IntentType.SOLICITUDES) {
       prompt +=
         '\n\nREGLA CRÍTICA (SOLICITUDES): Hay dos fuentes en el JSON cuando aparecen `solicitudes` y `ausencias_calendario`: (1) filas de `solicitudes` con estado/tipo de solicitud; (2) filas de tabla `Ausencias` (registro operativo por día o rango FECHA) — incluye permisos, ausencias justificadas, vacaciones materializadas, etc., como el cron n8n. Resume ambas. Usa los campos reales (NOMBRE/CODIGO/TIPO/FECHA_RAW en Ausencias). PROHIBIDO «información no disponible» si el JSON trae el dato. OBLIGATORIO: enumera TODOS los tipos con recuento > 0 de `distribucion_tipos_solicitudes` y de `distribucion_tipos_tabla_ausencias` (y de las claves `*_ordenada` si existen); no agrupar en un solo bloque genérico «otras» ni omitir tipos.';
@@ -935,17 +969,65 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
           nota: `Hay ${empleadosMap.size} empleado(s) que han fichado. Mostrando muestra de ${Math.min(5, empleadosMap.size)} empleado(s).`,
         };
 
-      case IntentType.CUADRANTE:
+      case IntentType.CUADRANTE: {
+        const first = data[0] as Record<string, unknown> | undefined;
+        /** Filas de `plan_trabajo_dia` (nombre, centro, horas_plan, fuente) vs rejilla mensual (LUNA, ZI_*). */
+        const isPlanTrabajoDia =
+          !!first &&
+          (first.horas_plan !== undefined ||
+            first.fuente !== undefined ||
+            (first.fecha != null && first.LUNA === undefined));
+
+        if (isPlanTrabajoDia) {
+          const porCentro: Record<string, number> = {};
+          let conHoras = 0;
+          for (const raw of data) {
+            const item = raw as Record<string, unknown>;
+            const c = String(
+              item.centro ?? item.CENTRO ?? item['CENTRO TRABAJO'] ?? '',
+            ).trim();
+            const key = c || 'Sin centro asignado';
+            porCentro[key] = (porCentro[key] || 0) + 1;
+            const hp = Number(item.horas_plan);
+            if (!Number.isNaN(hp) && hp > 0) conHoras++;
+          }
+          return {
+            tipo_consulta: 'plan_trabajo_dia',
+            total_registros: data.length,
+            empleados_con_horas_plan_positivas: conHoras,
+            distribucion_por_centro: porCentro,
+            muestra: data.slice(0, 12).map((raw: any) => ({
+              codigo: raw.CODIGO || raw.codigo,
+              nombre:
+                raw.nombre ||
+                raw.NOMBRE ||
+                raw['NOMBRE / APELLIDOS'],
+              centro:
+                raw.centro ??
+                raw.CENTRO ??
+                raw['CENTRO TRABAJO'] ??
+                null,
+              horas_plan: raw.horas_plan,
+              fuente: raw.fuente,
+              trabaja_este_dia: raw.trabaja_este_dia,
+              cliente_horario_multicentro: raw.cliente_horario_multicentro ?? null,
+            })),
+            nota:
+              'Datos del plan del día (daily_plan). Usa los campos `centro`, `horas_plan` y `fuente` de cada fila; no inventes N/A si vienen en la muestra o en la distribución. Para «quién trabaja hoy», prioriza filas con horas_plan > 0.',
+          };
+        }
+
         return {
           total_registros: data.length,
           muestra: data.slice(0, 3).map((item: any) => ({
             NOMBRE: item.NOMBRE || item.nombre || 'N/A',
             LUNA: item.LUNA || 'N/A',
-            CENTRO: item.CENTRO || 'N/A',
+            CENTRO: item.CENTRO || item.centro || 'N/A',
             TotalHoras: item.TotalHoras ?? 'N/A',
           })),
           nota: `Cuadrante(s); detalle por día (ZI_1…ZI_31) en filas completas cuando el listado es pequeño.`,
         };
+      }
 
       case IntentType.PEDIDOS:
         return {

@@ -371,6 +371,39 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     expect(r.entidades?.mes).toMatch(/^completo_/);
   });
 
+  it('quien trabaja hoy en Bosquepino → CUADRANTE + fecha + centro (nu FICHAJES)', async () => {
+    const r = await svc.classifyIntent('quien trabaja hoy en Bosquepino');
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r.entidades?.centro).toBe('Bosquepino');
+  });
+
+  it('quien trabaja hoy en maquinilla 13 → centro include cifre (nu pierde context)', async () => {
+    const r = await svc.classifyIntent('quien trabaja hoy en maquinilla 13 ?');
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.centro).toBe('maquinilla 13');
+  });
+
+  it('listado trabajadores previstos hoy por centro → CUADRANTE + agrupar_por_centro + hoy', async () => {
+    const r = await svc.classifyIntent(
+      'me puedes dar un listado con los trabajadores que tiene previsto trabajar hoy por centro ?',
+    );
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r.entidades?.agrupar_por_centro).toBe(true);
+    expect(r.entidades?.centro).toBeUndefined();
+  });
+
+  it('typos listrado/previstro/per centro → mismo intent (no DESCONOCIDO)', async () => {
+    const r = await svc.classifyIntent(
+      'me puedes dar un listrado con los trabajadores que tiene previstro trabajar hoy per centro ?',
+    );
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r.entidades?.agrupar_por_centro).toBe(true);
+    expect(r.entidades?.centro).toBeUndefined();
+  });
+
   it('quien tiene diplomas → DIPLOMAS', async () => {
     const r = await svc.classifyIntent('quien tiene diplomas');
     expect(r.intent).toBe(IntentType.DIPLOMAS);
