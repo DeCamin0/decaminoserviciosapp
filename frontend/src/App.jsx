@@ -53,6 +53,9 @@ import {
   LazyClienteDetallePage,
   LazyProveedorDetallePage,
   LazyAdminDashboard,
+  LazyLeadsPage,
+  LazyAdminChatAnalyticsPage,
+  LazyAdminAssistantFaqEditorPage,
   LazySuperAdminTenantsPage,
   LazyInspeccionesPage,
   LazyMisInspeccionesPage,
@@ -440,6 +443,39 @@ function AppRoutes() {
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyAdminDashboard />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/leads"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyLeadsPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/analytics"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyAdminChatAnalyticsPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/assistant/faq"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyAdminAssistantFaqEditorPage />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

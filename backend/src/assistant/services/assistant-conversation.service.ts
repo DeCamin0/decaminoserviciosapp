@@ -42,14 +42,15 @@ export class AssistantConversationService {
 
   /**
    * Salvează mesajul utilizatorului și răspunsul assistant (doar text).
-   * @returns id conversație
+   * @returns id conversație și id mesaj assistant (pentru feedback UI), dacă există răspuns salvat
    */
   async appendExchange(
     userId: string,
     conversationId: string | null | undefined,
     userText: string,
     assistantText: string,
-  ): Promise<string> {
+    assistantResponseSource?: string | null,
+  ): Promise<{ conversationId: string; assistantMessageId: string | null }> {
     const u = this.sanitizeContent(userText);
     const a = this.sanitizeContent(assistantText);
     if (!u) {
@@ -93,13 +94,19 @@ export class AssistantConversationService {
         },
       });
 
+      let assistantMessageId: string | null = null;
       if (a) {
+        assistantMessageId = randomUUID();
         await tx.assistantMessage.create({
           data: {
-            id: randomUUID(),
+            id: assistantMessageId,
             conversation_id: convId,
             role: 'assistant',
             content: a,
+            ...(assistantResponseSource != null &&
+            String(assistantResponseSource).trim() !== ''
+              ? { response_source: String(assistantResponseSource).trim() }
+              : {}),
           },
         });
       }
@@ -109,7 +116,7 @@ export class AssistantConversationService {
         data: { updated_at: new Date() },
       });
 
-      return convId;
+      return { conversationId: convId, assistantMessageId };
     });
   }
 
@@ -172,5 +179,50 @@ export class AssistantConversationService {
       where: { usuario_id: userId },
     });
     return { deletedConversations: result.count };
+  }
+
+  /**
+   * Admin: angajați care au cel puțin o conversație archivată (ordenat după ultima activitate).
+   */
+  async listEmpleadosWithArchivedConversations(maxRows = 500): Promise<
+    Array<{
+      codigo: string;
+      nombre: string;
+      estado: string | null;
+      conversationCount: number;
+      lastActivity: string | null;
+    }>
+  > {
+    const grouped = await this.prisma.assistantConversation.groupBy({
+      by: ['usuario_id'],
+      _count: { id: true },
+      _max: { updated_at: true },
+    });
+    const sorted = [...grouped].sort(
+      (a, b) =>
+        (b._max.updated_at?.getTime() ?? 0) -
+        (a._max.updated_at?.getTime() ?? 0),
+    );
+    const sliced = sorted.slice(0, Math.max(1, Math.min(maxRows, 2000)));
+    const codigos = sliced.map((g) => g.usuario_id);
+    if (codigos.length === 0) {
+      return [];
+    }
+    const users = await this.prisma.user.findMany({
+      where: { CODIGO: { in: codigos } },
+      select: {
+        CODIGO: true,
+        NOMBRE_APELLIDOS: true,
+        ESTADO: true,
+      },
+    });
+    const map = new Map(users.map((u) => [u.CODIGO, u]));
+    return sliced.map((g) => ({
+      codigo: g.usuario_id,
+      nombre: map.get(g.usuario_id)?.NOMBRE_APELLIDOS?.trim() || g.usuario_id,
+      estado: map.get(g.usuario_id)?.ESTADO ?? null,
+      conversationCount: g._count.id,
+      lastActivity: g._max.updated_at?.toISOString() ?? null,
+    }));
   }
 }

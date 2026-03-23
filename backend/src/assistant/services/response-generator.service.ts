@@ -254,6 +254,65 @@ export class ResponseGeneratorService {
   }
 
   private generateEmpleadosResponse(data: any[]): AssistantResponseDto {
+    if (data?.length === 1 && data[0]?.row_kind === 'contrato_propio') {
+      const r = data[0] as Record<string, unknown>;
+      const nom =
+        r.nombre != null && String(r.nombre).trim() !== ''
+          ? String(r.nombre)
+          : null;
+      const docSubido = r.documento_contrato_subido === true;
+      const lines: string[] = [];
+      if (nom) {
+        lines.push(`👤 ${nom}`);
+      }
+      lines.push(
+        'Estos datos son tu **ficha administrativa** (`DatosEmpleados`: tipo, horas, centro, etc.). No sustituyen la firma de un PDF en la carpeta de documentos.',
+      );
+      lines.push('');
+      lines.push('📄 **Resumen de tu contrato (datos de ficha)**');
+      lines.push(`- Código: ${r.codigo != null ? String(r.codigo) : '—'}`);
+      lines.push(
+        `- Tipo: ${r.tipo_contrato != null ? String(r.tipo_contrato) : '—'}`,
+      );
+      lines.push(
+        `- Horas de contrato: ${r.horas_contrato != null ? String(r.horas_contrato) : '—'}`,
+      );
+      lines.push(
+        `- Fecha de alta: ${r.fecha_alta != null ? String(r.fecha_alta) : '—'}`,
+      );
+      if (
+        r.fecha_antiguedad != null &&
+        String(r.fecha_antiguedad).trim() !== ''
+      ) {
+        lines.push(`- Fecha antigüedad: ${String(r.fecha_antiguedad)}`);
+      }
+      if (r.antiguedad != null && String(r.antiguedad).trim() !== '') {
+        lines.push(`- Antigüedad: ${String(r.antiguedad)}`);
+      }
+      lines.push(`- Empresa: ${r.empresa != null ? String(r.empresa) : '—'}`);
+      lines.push(`- Centro: ${r.centro != null ? String(r.centro) : '—'}`);
+      lines.push(`- Estado: ${r.estado != null ? String(r.estado) : '—'}`);
+      lines.push('');
+      lines.push('📎 **Copia del contrato en la app (Mis documentos)**');
+      if (docSubido) {
+        lines.push(
+          'Consta al menos un **archivo** en tu carpeta con tipo o nombre que indica **contrato** (puedes abrirlo o descargarlo desde la sección **Documentos** / **Mis documentos**).',
+        );
+      } else {
+        lines.push(
+          '**No aparece** en la carpeta de la app un PDF/archivo de contrato con “contrato” en el nombre o tipo (o no está subido el fichero). Revisa **Mis documentos**; si falta, pide a administración que lo suban o el envío por correo.',
+        );
+      }
+      lines.push(
+        '',
+        '_(No se muestran por el chat el salario ni otros datos sensibles.)_',
+      );
+      return {
+        respuesta: lines.join('\n'),
+        confianza: 0.92,
+      };
+    }
+
     if (!data || data.length === 0) {
       return {
         respuesta:

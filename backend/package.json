@@ -43,7 +43,10 @@
     "import:developer-to-hera": "node scripts/import-developer-user-to-hera.js",
     "db:setup-tenant-registry": "node scripts/setup-tenant-registry.js .env.decamino.local",
     "db:seed-existing-tenants": "node scripts/seed-existing-tenants-registry.js .env.decamino.local && node scripts/seed-existing-tenants-registry.js .env.hera.local",
-    "db:tenant-registry-inactive": "node scripts/run-tenant-registry-enum-inactive.js .env.decamino.local"
+    "db:tenant-registry-inactive": "node scripts/run-tenant-registry-enum-inactive.js .env.decamino.local",
+    "db:migrate:decamino": "node scripts/prisma-migrate-env.js .env.decamino.local",
+    "db:migrate:hera": "node scripts/prisma-migrate-env.js .env.hera.local",
+    "db:migrate:both": "node scripts/prisma-migrate-env.js .env.decamino.local && node scripts/prisma-migrate-env.js .env.hera.local"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.11",

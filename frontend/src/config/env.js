@@ -9,16 +9,50 @@ const inferApiBase = () => {
 
 const fromEnv = (key) => (import.meta.env[key] != null && String(import.meta.env[key]).trim() !== '' ? String(import.meta.env[key]).trim() : '');
 
+const isLocalhostBackendUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const u = new URL(url, 'https://placeholder.invalid');
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+  } catch {
+    return /localhost|127\.0\.0\.1/i.test(url);
+  }
+};
+
+/** Dacă build-ul a încorporat greșit localhost dar userul e pe domeniul real, folosim API-ul public. */
+const prodPublicApiFromWindow = () => {
+  if (typeof window === 'undefined') return null;
+  const h = window.location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1') return null;
+  if (h.includes('herafs')) return 'https://api.herafs.com';
+  if (h.includes('decaminoservicios')) return 'https://api.decaminoservicios.com';
+  return null;
+};
+
+const fixBackendBaseForRealProd = (backendBase) => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) return backendBase;
+  const pub = prodPublicApiFromWindow();
+  if (!pub) return backendBase;
+  if (!backendBase || isLocalhostBackendUrl(backendBase)) return pub;
+  return backendBase;
+};
+
 // API URLs. HERA (mode client2 | hera): dacă VITE_API_URL/VITE_API_BASE_URL sunt setate (prod) le folosim, altfel localhost:3002.
 const isHera = typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.MODE === 'client2' || import.meta.env.MODE === 'hera');
 const HERA_BASE = 'http://localhost:3002';
 const API_URL_RAW = fromEnv('VITE_API_URL');
 const API_BASE_URL_RAW = fromEnv('VITE_API_BASE_URL') || API_URL_RAW;
-const API_URL = isHera ? (API_URL_RAW || HERA_BASE) : API_URL_RAW;
-const API_BASE_URL_FULL = isHera ? (API_BASE_URL_RAW || HERA_BASE) : API_BASE_URL_RAW;
+let API_URL = isHera ? (API_URL_RAW || HERA_BASE) : API_URL_RAW;
+let API_BASE_URL_FULL = isHera ? (API_BASE_URL_RAW || HERA_BASE) : API_BASE_URL_RAW;
 const API_BASE_RELATIVE = inferApiBase();
 const devFallback = isHera ? HERA_BASE : 'http://localhost:3000';
-const BACKEND_BASE = API_BASE_URL_FULL || API_URL || (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV ? devFallback : '');
+let BACKEND_BASE = API_BASE_URL_FULL || API_URL || (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV ? devFallback : '');
+const backendBeforeFix = BACKEND_BASE;
+BACKEND_BASE = fixBackendBaseForRealProd(BACKEND_BASE);
+if (BACKEND_BASE !== backendBeforeFix) {
+  API_URL = BACKEND_BASE;
+  API_BASE_URL_FULL = BACKEND_BASE;
+}
 
 export const config = {
   API_URL,

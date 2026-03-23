@@ -53,6 +53,18 @@ function parseAssistantExportPayload(datos) {
 const rawColor = config.PRIMARY_COLOR || '#E53935';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
+/** Log lizibil în consolă (dev / DEBUG_MODE); evită obiecte colapsate „Object”. */
+function logAssistantDev(label, payload) {
+  if (!(import.meta.env.DEV || config.DEBUG_MODE)) return;
+  try {
+    const s =
+      typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+    console.log(`[ChatBot Assistant] ${label}\n${s}`);
+  } catch {
+    console.log(`[ChatBot Assistant] ${label}`, payload);
+  }
+}
+
 // Helper functions pentru conversie culori
 const hexToRgb = (hex) => {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -85,7 +97,9 @@ function mapArchiveToUiMessages(apiMessages) {
   return apiMessages.map((m) => {
     const role = m.role === 'user' ? 'user' : 'assistant';
     const text = typeof m.content === 'string' ? m.content : '';
-    return { id: `arch-${++n}`, role, text };
+    const serverMessageId =
+      role === 'assistant' && m.id && typeof m.id === 'string' ? m.id : undefined;
+    return { id: `arch-${++n}`, role, text, serverMessageId };
   });
 }
 
@@ -111,7 +125,7 @@ const ChatBot = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [activeHistoryId, setActiveHistoryId] = useState(null);
   const [threadKey, setThreadKey] = useState(0);
-  /** @type {[Array<{id: string, role: 'user'|'assistant', text: string, pending?: boolean, acciones?: unknown[], createdAt?: number}>|null, Function]} */
+  /** @type {[Array<{id: string, role: 'user'|'assistant', text: string, pending?: boolean, acciones?: unknown[], createdAt?: number, serverMessageId?: string, feedbackSubmitted?: boolean, feedbackRating?: 'positive'|'negative', feedbackSubmitting?: boolean, feedbackNegativeOpen?: boolean, feedbackCommentDraft?: string}>|null, Function]} */
   const [threadBootstrap, setThreadBootstrap] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -301,7 +315,12 @@ const ChatBot = () => {
         }
       };
 
-      console.log('📤 Trimite mesaj către AI:', requestData);
+      logAssistantDev('REQUEST', {
+        mensaje: requestData.mensaje,
+        conversationId: requestData.conversationId ?? null,
+        usuarioCodigo: requestData.usuario?.id,
+        usuarioRol: requestData.usuario?.rol,
+      });
 
       // Obține JWT token pentru autentificare
       const token = localStorage.getItem('auth_token');
@@ -336,7 +355,30 @@ const ChatBot = () => {
         data = await response.text().catch(() => null);
       }
 
-      console.log('📥 Răspuns AI complet:', data);
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        logAssistantDev('RESPONSE_SNAPSHOT', {
+          conversationId: data.conversationId,
+          assistantMessageId: data.assistantMessageId,
+          status: data.status,
+          responseType: data.responseType,
+          sources: data.sources,
+          confianza: data.confianza,
+          respuestaLength: (data.respuesta || '').length,
+          respuestaPreview: String(data.respuesta || '').slice(0, 600),
+          accionesCount: Array.isArray(data.acciones) ? data.acciones.length : 0,
+          accionesTipos: Array.isArray(data.acciones)
+            ? data.acciones.map((a) => a?.tipo)
+            : [],
+        });
+      } else {
+        logAssistantDev('RESPONSE_RAW', {
+          type: typeof data,
+          preview:
+            typeof data === 'string'
+              ? data.slice(0, 1200)
+              : JSON.stringify(data).slice(0, 1200),
+        });
+      }
 
       if (data && typeof data === 'object' && !Array.isArray(data) && data.conversationId) {
         conversationIdRef.current = data.conversationId;
@@ -350,9 +392,9 @@ const ChatBot = () => {
         // Extrage acțiunile dacă există
         if (data.acciones && Array.isArray(data.acciones)) {
           acciones = data.acciones;
-          console.log('✅ Acțiuni găsite:', acciones.length, acciones);
+          logAssistantDev('ACCIONES', { count: acciones.length, acciones });
         } else {
-          console.log('⚠️ Nu s-au găsit acțiuni în răspuns');
+          logAssistantDev('ACCIONES', { count: 0, note: 'no acciones array' });
         }
         
         // Încearcă diferite formate posibile
@@ -403,9 +445,19 @@ const ChatBot = () => {
           ? buildAssistantPremiumFooter(data)
           : '';
 
+      const assistantMessageId =
+        data &&
+        typeof data === 'object' &&
+        !Array.isArray(data) &&
+        data.assistantMessageId &&
+        typeof data.assistantMessageId === 'string'
+          ? data.assistantMessageId
+          : undefined;
+
       return {
         respuesta: mainText + premiumFooter,
         acciones,
+        assistantMessageId,
       };
 
     } catch (error) {
@@ -422,6 +474,75 @@ const ChatBot = () => {
       return errorMessage;
     }
   };
+
+  const submitAssistantFeedback = useCallback(
+    async (uiMessageId, serverMessageId, rating, comment) => {
+      const token = localStorage.getItem('auth_token');
+      if (!token || !serverMessageId) return;
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.id === uiMessageId ? { ...x, feedbackSubmitting: true } : x,
+        ),
+      );
+      try {
+        const res = await fetch(routes.assistantMessageFeedback(serverMessageId), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            rating,
+            ...(comment && String(comment).trim()
+              ? { comment: String(comment).trim() }
+              : {}),
+          }),
+        });
+        if (res.status === 409) {
+          setMessages((prev) =>
+            prev.map((x) =>
+              x.id === uiMessageId
+                ? {
+                    ...x,
+                    feedbackSubmitting: false,
+                    feedbackSubmitted: true,
+                    feedbackRating: rating,
+                    feedbackNegativeOpen: false,
+                    feedbackCommentDraft: undefined,
+                  }
+                : x,
+            ),
+          );
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        setMessages((prev) =>
+          prev.map((x) =>
+            x.id === uiMessageId
+              ? {
+                  ...x,
+                  feedbackSubmitting: false,
+                  feedbackSubmitted: true,
+                  feedbackRating: rating,
+                  feedbackNegativeOpen: false,
+                  feedbackCommentDraft: undefined,
+                }
+              : x,
+          ),
+        );
+      } catch (e) {
+        console.error('Feedback asistente:', e);
+        setMessages((prev) =>
+          prev.map((x) =>
+            x.id === uiMessageId ? { ...x, feedbackSubmitting: false } : x,
+          ),
+        );
+      }
+    },
+    [],
+  );
 
   // Funcție pentru descărcare Excel
   const downloadAsExcel = useCallback(async (datos, intent) => {
@@ -870,11 +991,13 @@ const ChatBot = () => {
       const response = await handleUserMessage(text);
       let respuestaText = '';
       let acciones = [];
+      let assistantMessageId;
       if (typeof response === 'string') {
         respuestaText = response;
       } else if (response && response.respuesta) {
         respuestaText = response.respuesta;
         acciones = response.acciones || [];
+        assistantMessageId = response.assistantMessageId;
       } else {
         respuestaText = 'Error procesando respuesta';
       }
@@ -887,6 +1010,9 @@ const ChatBot = () => {
                 pending: false,
                 acciones,
                 createdAt: Date.now(),
+                ...(assistantMessageId
+                  ? { serverMessageId: assistantMessageId }
+                  : {}),
               }
             : m,
         ),
@@ -969,6 +1095,17 @@ const ChatBot = () => {
             aria-label="Asistente del portal"
           >
             <header className="ast-header">
+              <button
+                type="button"
+                className="ast-header__close-touch"
+                aria-label="Cerrar asistente"
+                onClick={() => {
+                  setHistoryOpen(false);
+                  setIsOpen(false);
+                }}
+              >
+                <span aria-hidden>✕</span>
+              </button>
               <div className="ast-header__text">
                 <div className="ast-header__row">
                   <h2 className="ast-header__title">Asistente</h2>
@@ -1120,6 +1257,106 @@ const ChatBot = () => {
                               </div>
                             ) : null}
                           </div>
+                          {m.role === 'assistant' &&
+                          !m.pending &&
+                          m.serverMessageId ? (
+                            m.feedbackSubmitted ? (
+                              <div className="ast-feedback ast-feedback--done" role="status">
+                                Gracias por tu opinión
+                              </div>
+                            ) : (
+                              <div className="ast-feedback">
+                                <div className="ast-feedback__row">
+                                  <button
+                                    type="button"
+                                    className="ast-feedback__btn"
+                                    disabled={m.feedbackSubmitting}
+                                    aria-label="Respuesta útil"
+                                    onClick={() => {
+                                      setMessages((prev) =>
+                                        prev.map((x) => ({
+                                          ...x,
+                                          feedbackNegativeOpen: false,
+                                          feedbackCommentDraft: undefined,
+                                        })),
+                                      );
+                                      void submitAssistantFeedback(
+                                        m.id,
+                                        m.serverMessageId,
+                                        'positive',
+                                        undefined,
+                                      );
+                                    }}
+                                  >
+                                    👍
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="ast-feedback__btn"
+                                    disabled={m.feedbackSubmitting}
+                                    aria-label="Respuesta no útil"
+                                    onClick={() => {
+                                      setMessages((prev) => {
+                                        const cur = prev.find((x) => x.id === m.id);
+                                        const willOpen = !cur?.feedbackNegativeOpen;
+                                        return prev.map((x) => {
+                                          if (x.id !== m.id) {
+                                            return { ...x, feedbackNegativeOpen: false };
+                                          }
+                                          return {
+                                            ...x,
+                                            feedbackNegativeOpen: willOpen,
+                                            feedbackCommentDraft: willOpen
+                                              ? (x.feedbackCommentDraft ?? '')
+                                              : undefined,
+                                          };
+                                        });
+                                      });
+                                    }}
+                                  >
+                                    👎
+                                  </button>
+                                </div>
+                                {m.feedbackNegativeOpen ? (
+                                  <div className="ast-feedback__negative">
+                                    <textarea
+                                      className="ast-feedback__textarea"
+                                      rows={2}
+                                      placeholder="Cuéntanos qué podemos mejorar"
+                                      value={m.feedbackCommentDraft ?? ''}
+                                      disabled={m.feedbackSubmitting}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        setMessages((prev) =>
+                                          prev.map((x) =>
+                                            x.id === m.id
+                                              ? { ...x, feedbackCommentDraft: v }
+                                              : x,
+                                          ),
+                                        );
+                                      }}
+                                      aria-label="Comentario opcional"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="ast-feedback__send"
+                                      disabled={m.feedbackSubmitting}
+                                      onClick={() => {
+                                        void submitAssistantFeedback(
+                                          m.id,
+                                          m.serverMessageId,
+                                          'negative',
+                                          m.feedbackCommentDraft,
+                                        );
+                                      }}
+                                    >
+                                      Enviar comentario
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )
+                          ) : null}
                           <span className="ast-msg__meta">
                             {m.role === 'user' ? 'Tú' : 'Asistente'}
                             {m.createdAt ? ` · ${formatAssistantMsgTime(m.createdAt)}` : ''}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button, Input, Card, Modal } from '../components/ui';
 import Notification from '../components/ui/Notification';
@@ -932,6 +933,12 @@ export default function EmpleadosPage() {
   const [documentoTodosLoading, setDocumentoTodosLoading] = useState(false);
   const [documentoTodosProgress, setDocumentoTodosProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const [documentoTodosError, setDocumentoTodosError] = useState(null);
+  /** 'form' | 'confirm' — pas extra înainte de trimiterea în masă */
+  const [documentoTodosStep, setDocumentoTodosStep] = useState('form');
+  /** Previre + confirmare pentru Enviar Lista Activos / Lista IBAN */
+  const [emailListConfirm, setEmailListConfirm] = useState(null);
+  const [emailListPrepareLoading, setEmailListPrepareLoading] = useState(false);
+  const [emailListSending, setEmailListSending] = useState(false);
   const [emailForm, setEmailForm] = useState({
     destinatar: 'angajat',
     grup: 'Empleado',
@@ -2279,7 +2286,8 @@ export default function EmpleadosPage() {
     }
   };
 
-  const handleSendActiveEmployeesList = async () => {
+  /** Pregătește Excel + meta pentru lista activos; returnează null dacă nu se poate sau e gol */
+  const buildActiveEmployeesEmailPayload = async () => {
     try {
       // CODIGO-uri de utilizatori de exclus din listă (utilizatori de test/admin)
       const excludedCodigos = ['10000002', '10000001'];
@@ -2417,7 +2425,7 @@ export default function EmpleadosPage() {
           message: 'No hay empleados activos para enviar',
           show: true
         });
-        return;
+        return null;
       }
 
       // Extrage doar coloanele necesare și verifică dacă au baja activă în Mutua
@@ -2462,7 +2470,49 @@ export default function EmpleadosPage() {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
 
-      // Trimite email-ul cu attachment-ul
+      const subject = `Lista de Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`;
+      const messageHtml = `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${config.COMPANY_NAME}</strong></p>`;
+      const recipientLabel = config.COMPANY_GESTORIA_EMAIL || config.COMPANY_EMAIL || '(email gestoría en config)';
+
+      return {
+        type: 'activos',
+        excelFile,
+        filename,
+        subject,
+        messageHtml,
+        total: activeEmployees.length,
+        previewRows: dataToSend.slice(0, 35),
+        columnDefs: columns.map((c) => ({ key: c.key, label: c.label })),
+        activityLogType: 'empleados_activos_email',
+        recipientLabel,
+      };
+    } catch (error) {
+      console.error('Error preparando lista activos:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'No se pudo preparar la lista de empleados activos.',
+        show: true
+      });
+      return null;
+    }
+  };
+
+  const openConfirmSendActiveEmployeesList = async () => {
+    setEmailListPrepareLoading(true);
+    try {
+      const payload = await buildActiveEmployeesEmailPayload();
+      if (payload) setEmailListConfirm(payload);
+    } finally {
+      setEmailListPrepareLoading(false);
+    }
+  };
+
+  const executeEmailListConfirmSend = async () => {
+    if (!emailListConfirm) return;
+    const p = emailListConfirm;
+    setEmailListSending(true);
+    try {
       const token = localStorage.getItem('auth_token');
       if (!token) {
         throw new Error('No estás autenticado');
@@ -2472,15 +2522,17 @@ export default function EmpleadosPage() {
 
       const formData = new FormData();
       formData.append('recipientType', 'gestoria');
-      formData.append('recipientEmail', config.COMPANY_GESTORIA_EMAIL || config.COMPANY_EMAIL || '');
-      formData.append('subject', `Lista de Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
-      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${config.COMPANY_NAME}</strong></p>`);
-      formData.append('attachments', excelFile);
+      if (p.type === 'activos') {
+        formData.append('recipientEmail', config.COMPANY_GESTORIA_EMAIL || config.COMPANY_EMAIL || '');
+      }
+      formData.append('subject', p.subject);
+      formData.append('message', p.messageHtml);
+      formData.append('attachments', p.excelFile);
 
       setNotification({
         type: 'info',
         title: 'Enviando...',
-        message: 'Enviando lista de empleados activos...',
+        message: p.type === 'activos' ? 'Enviando lista de empleados activos...' : 'Enviando lista de IBAN a gestoria...',
         show: true
       });
 
@@ -2498,31 +2550,34 @@ export default function EmpleadosPage() {
         setNotification({
           type: 'success',
           title: 'Enviado',
-          message: `Lista de ${activeEmployees.length} empleados activos enviada correctamente`,
+          message: p.type === 'activos'
+            ? `Lista de ${p.total} empleados activos enviada correctamente`
+            : `Lista de IBAN de ${p.total} empleados activos enviada correctamente`,
           show: true
         });
 
-        // Log export
-        await activityLogger.logDataExport('empleados_activos_email', {
-          count: activeEmployees.length,
+        await activityLogger.logDataExport(p.activityLogType, {
+          count: p.total,
           sentTo: 'gestoria'
         }, authUser);
+        setEmailListConfirm(null);
       } else {
         throw new Error(result.message || 'Error al enviar el email');
       }
-      
     } catch (error) {
-      console.error('Error sending active employees list:', error);
+      console.error('Error sending email list:', error);
       setNotification({
         type: 'error',
         title: 'Error al Enviar',
-        message: error.message || 'Error al enviar la lista de empleados activos. Por favor, inténtalo de nuevo.',
+        message: error.message || 'Error al enviar. Por favor, inténtalo de nuevo.',
         show: true
       });
+    } finally {
+      setEmailListSending(false);
     }
   };
 
-  const handleSendListaIban = async () => {
+  const buildIbanEmailPayload = async () => {
     try {
       // CODIGO-uri de utilizatori de exclus din listă (utilizatori de test/admin)
       const excludedCodigos = ['10000002', '10000001'];
@@ -2554,7 +2609,7 @@ export default function EmpleadosPage() {
           message: 'No hay empleados activos para enviar',
           show: true
         });
-        return;
+        return null;
       }
 
       // Extrage doar coloanele necesare: CODIGO, NOMBRE, IBAN
@@ -2595,65 +2650,40 @@ export default function EmpleadosPage() {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
 
-      // Trimite email-ul cu Excel-ul
-      const token = localStorage.getItem('auth_token');
-      if (!token) {
-        throw new Error('No estás autenticado');
-      }
+      const subject = `Lista de IBAN - Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`;
+      const messageHtml = `<p>Hola,</p><p>Se adjunta la lista de IBAN de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${config.COMPANY_NAME}</strong></p>`;
 
-      const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
-
-      // Trimite la gestorie (default: altemprado@gmail.com)
-      // BCC-urile automat adăugate sunt: app@decaminoservicios.com și decamino.rrhh@gmail.com
-      const formData = new FormData();
-      formData.append('recipientType', 'gestoria');
-      // Nu specificăm recipientEmail pentru a folosi default-ul gestoriei: altemprado@gmail.com
-      formData.append('subject', `Lista de IBAN - Empleados Activos - ${new Date().toLocaleDateString('es-ES')}`);
-      formData.append('message', `<p>Hola,</p><p>Se adjunta la lista de IBAN de empleados activos en este momento.</p><p>Total: ${activeEmployees.length} empleados</p><p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${config.COMPANY_NAME}</strong></p>`);
-      formData.append('attachments', excelFile);
-
-      setNotification({
-        type: 'info',
-        title: 'Enviando...',
-        message: 'Enviando lista de IBAN a gestoria...',
-        show: true
-      });
-
-      const response = await fetch(`${baseUrl}/api/sent-emails/send`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setNotification({
-          type: 'success',
-          title: 'Enviado',
-          message: `Lista de IBAN de ${activeEmployees.length} empleados activos enviada correctamente`,
-          show: true
-        });
-
-        // Log export
-        await activityLogger.logDataExport('lista_iban_email', {
-          count: activeEmployees.length,
-          sentTo: 'gestoria'
-        }, authUser);
-      } else {
-        throw new Error(result.message || 'Error al enviar el email');
-      }
-      
+      return {
+        type: 'iban',
+        excelFile,
+        filename,
+        subject,
+        messageHtml,
+        total: activeEmployees.length,
+        previewRows: dataToSend.slice(0, 35),
+        columnDefs: columns.map((c) => ({ key: c.key, label: c.label })),
+        activityLogType: 'lista_iban_email',
+        recipientLabel: 'Gestoría (email por defecto del sistema)',
+      };
     } catch (error) {
-      console.error('Error sending IBAN list:', error);
+      console.error('Error preparando lista IBAN:', error);
       setNotification({
         type: 'error',
-        title: 'Error al Enviar',
-        message: error.message || 'Error al enviar la lista de IBAN. Por favor, inténtalo de nuevo.',
+        title: 'Error',
+        message: error.message || 'No se pudo preparar la lista de IBAN.',
         show: true
       });
+      return null;
+    }
+  };
+
+  const openConfirmSendListaIban = async () => {
+    setEmailListPrepareLoading(true);
+    try {
+      const payload = await buildIbanEmailPayload();
+      if (payload) setEmailListConfirm(payload);
+    } finally {
+      setEmailListPrepareLoading(false);
     }
   };
 
@@ -3285,6 +3315,7 @@ export default function EmpleadosPage() {
     });
     setDocumentoTodosError(null);
     setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
+    setDocumentoTodosStep('form');
     setShowSolicitarDocumentoTodosModal(true);
   };
 
@@ -3444,33 +3475,56 @@ export default function EmpleadosPage() {
     }
   };
 
-  const handleSolicitarDocumentoTodos = async () => {
-    if (!documentoTodosForm.tipo_documento) {
-      setDocumentoTodosError('Por favor, selecciona un tipo de documento.');
-      return;
-    }
-
-    // Verifică dacă e "Otro" și are tip personalizat completat
-    if (documentoTodosForm.tipo_documento === 'otro') {
-      if (!documentoTodosForm.tipo_personalizado || !documentoTodosForm.tipo_personalizado.trim()) {
-        setDocumentoTodosError('Por favor, especifica el tipo de documento personalizado.');
-        return;
-      }
-    }
-
-    // Filtrează angajații: toți sau doar activi
+  const getEmpleadosParaDocumentoTodos = () => {
     let empleadosParaSolicitar = documentoTodosForm.solo_activos
       ? users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO')
       : users;
 
-    // Dacă există filtru de căutare, aplică-l
     if (searchTerm) {
-      empleadosParaSolicitar = getFilteredUsers.filter(u => 
-        documentoTodosForm.solo_activos 
+      empleadosParaSolicitar = getFilteredUsers.filter(u =>
+        documentoTodosForm.solo_activos
           ? (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO'
           : true
       );
     }
+    return empleadosParaSolicitar;
+  };
+
+  const validateDocumentoTodosForm = () => {
+    if (!documentoTodosForm.tipo_documento) {
+      setDocumentoTodosError('Por favor, selecciona un tipo de documento.');
+      return false;
+    }
+    if (documentoTodosForm.tipo_documento === 'otro') {
+      if (!documentoTodosForm.tipo_personalizado || !documentoTodosForm.tipo_personalizado.trim()) {
+        setDocumentoTodosError('Por favor, especifica el tipo de documento personalizado.');
+        return false;
+      }
+    }
+    setDocumentoTodosError(null);
+    return true;
+  };
+
+  const handleDocumentoTodosContinueOrConfirm = () => {
+    if (!validateDocumentoTodosForm()) return;
+    if (documentoTodosStep === 'form') {
+      const empleadosParaSolicitar = getEmpleadosParaDocumentoTodos();
+      if (empleadosParaSolicitar.length === 0) {
+        setDocumentoTodosError('No hay empleados para solicitar documentos.');
+        return;
+      }
+      setDocumentoTodosStep('confirm');
+      return;
+    }
+    handleSolicitarDocumentoTodos();
+  };
+
+  const handleSolicitarDocumentoTodos = async () => {
+    if (!validateDocumentoTodosForm()) {
+      return;
+    }
+
+    const empleadosParaSolicitar = getEmpleadosParaDocumentoTodos();
 
     if (empleadosParaSolicitar.length === 0) {
       setDocumentoTodosError('No hay empleados para solicitar documentos.');
@@ -3550,6 +3604,7 @@ export default function EmpleadosPage() {
       // Închide modalul după un scurt delay
       setTimeout(() => {
         setShowSolicitarDocumentoTodosModal(false);
+        setDocumentoTodosStep('form');
         setDocumentoTodosForm({ tipo_documento: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
         setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
       }, 2000);
@@ -4436,8 +4491,10 @@ export default function EmpleadosPage() {
 
                   {/* Enviar Lista Activos - ORANGE */}
                   <button
-                    onClick={handleSendActiveEmployeesList}
-                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
+                    type="button"
+                    onClick={openConfirmSendActiveEmployeesList}
+                    disabled={emailListPrepareLoading}
+                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300 disabled:opacity-60 disabled:cursor-wait"
                     style={{
                       background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
                       backdropFilter: 'blur(10px)',
@@ -4478,8 +4535,10 @@ export default function EmpleadosPage() {
 
                   {/* Enviar Lista Iban - ORANGE */}
                   <button
-                    onClick={handleSendListaIban}
-                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
+                    type="button"
+                    onClick={openConfirmSendListaIban}
+                    disabled={emailListPrepareLoading}
+                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300 disabled:opacity-60 disabled:cursor-wait"
                     style={{
                       background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
                       backdropFilter: 'blur(10px)',
@@ -6513,10 +6572,17 @@ export default function EmpleadosPage() {
         ) : null}
       </Card>
 
-      {/* Modal ULTRA MODERN para editar empleado */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] flex flex-col shadow-2xl border border-gray-200 animate-in fade-in duration-300">
+      {/* Modal editar empleado: portal a body para z-index real (main tiene z-10; nav y FAB quedaban encima) */}
+      {showEditModal &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[10500]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-empleado-modal-title"
+          >
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[min(95dvh,calc(100dvh-2rem))] flex flex-col shadow-2xl border border-gray-200 animate-in fade-in duration-300 mb-[env(safe-area-inset-bottom,0px)]">
             {/* Header ULTRA MODERN */}
             <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200 flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -6525,7 +6591,7 @@ export default function EmpleadosPage() {
                     <span className="text-white text-xl">✏️</span>
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">Detalles del empleado</h2>
+                    <h2 id="edit-empleado-modal-title" className="text-xl font-bold text-gray-900">Detalles del empleado</h2>
                     <p className="text-sm text-blue-600 font-medium">Modificar información del empleado</p>
                   </div>
                 </div>
@@ -6538,8 +6604,8 @@ export default function EmpleadosPage() {
               </div>
             </div>
             
-            {/* Content - SCROLLABIL */}
-            <div className="flex-1 overflow-y-auto p-6">
+            {/* Content - SCROLLABIL (min-h-0: flex child poate scrolla fără să împingă footerul) */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {SHEET_FIELDS.filter(field => field !== 'NOMBRE' && field !== 'APELLIDO1' && field !== 'APELLIDO2' && field !== 'NOMBRE_SPLIT_CONFIANZA').map(field => {
                   const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
@@ -7423,8 +7489,100 @@ export default function EmpleadosPage() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
+
+      {/* Confirmación + vista previa antes de enviar lista activos / IBAN a gestoría */}
+      <Modal
+        isOpen={!!emailListConfirm}
+        onClose={() => {
+          if (!emailListSending) setEmailListConfirm(null);
+        }}
+        title={
+          emailListConfirm?.type === 'activos'
+            ? 'Vista previa: lista de empleados activos'
+            : emailListConfirm?.type === 'iban'
+              ? 'Vista previa: lista de IBAN'
+              : ''
+        }
+        size="lg"
+        showCloseButton={false}
+        closeOnBackdrop={!emailListSending}
+      >
+        {emailListConfirm && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 space-y-2">
+              <p>
+                <span className="font-semibold">Destinatario:</span>{' '}
+                {emailListConfirm.recipientLabel}
+              </p>
+              <p>
+                <span className="font-semibold">Asunto:</span> {emailListConfirm.subject}
+              </p>
+              <p>
+                <span className="font-semibold">Archivo adjunto:</span> {emailListConfirm.filename}
+              </p>
+              <p>
+                <span className="font-semibold">Filas en Excel:</span> {emailListConfirm.total}
+              </p>
+            </div>
+            <div
+              className="text-sm text-gray-600 border border-gray-100 rounded-lg p-3 bg-white max-h-48 overflow-y-auto"
+              dangerouslySetInnerHTML={{ __html: emailListConfirm.messageHtml }}
+            />
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-2">
+                Primeras filas (máx. 35) — mismo contenido que el Excel
+              </p>
+              <div className="overflow-x-auto max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      {emailListConfirm.columnDefs.map((col) => (
+                        <th key={col.key} className="px-2 py-2 text-left font-semibold text-gray-700">
+                          {col.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emailListConfirm.previewRows.map((row, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        {emailListConfirm.columnDefs.map((col) => (
+                          <td key={col.key} className="px-2 py-1.5 text-gray-800 border-t border-gray-100">
+                            {row[col.key] != null ? String(row[col.key]) : ''}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 justify-end pt-2 border-t border-gray-200">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => !emailListSending && setEmailListConfirm(null)}
+                disabled={emailListSending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={executeEmailListConfirmSend}
+                loading={emailListSending}
+                disabled={emailListSending}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                Confirmar y enviar
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal Enviar email de bienvenida a todos los empleados */}
       <Modal
@@ -7924,15 +8082,19 @@ export default function EmpleadosPage() {
       <Modal
         isOpen={showSolicitarDocumentoTodosModal}
         onClose={() => {
+          if (documentoTodosLoading) return;
           setShowSolicitarDocumentoTodosModal(false);
+          setDocumentoTodosStep('form');
           setDocumentoTodosForm({ tipo_documento: '', tipo_personalizado: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
           setDocumentoTodosError(null);
           setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
         }}
-        title="Solicitar Documento a Todos los Empleados"
+        title={documentoTodosStep === 'confirm' ? 'Confirmar solicitud a todos' : 'Solicitar Documento a Todos los Empleados'}
         size="md"
       >
         <div className="space-y-6">
+          {documentoTodosStep === 'form' && (
+            <>
           {/* Info */}
           <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
             <div className="flex items-center gap-3">
@@ -8059,6 +8221,64 @@ export default function EmpleadosPage() {
               rows={4}
             />
           </div>
+            </>
+          )}
+
+          {documentoTodosStep === 'confirm' && !documentoTodosLoading && (
+            <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4 space-y-3">
+              <p className="font-bold text-gray-900">Vista previa — confirma los datos</p>
+              <ul className="text-sm text-gray-800 space-y-1 list-disc list-inside">
+                <li>
+                  <strong>Tipo de documento:</strong>{' '}
+                  {documentoTodosForm.tipo_documento === 'otro'
+                    ? documentoTodosForm.tipo_personalizado?.trim()
+                    : documentoTodosForm.tipo_documento}
+                </li>
+                <li>
+                  <strong>Alcance:</strong>{' '}
+                  {documentoTodosForm.solo_activos ? 'Solo empleados activos' : 'Todos los empleados (activos e inactivos)'}
+                </li>
+                <li>
+                  <strong>A futuros empleados activos:</strong>{' '}
+                  {documentoTodosForm.aplicar_a_nuevos ? 'Sí' : 'No'}
+                </li>
+                <li>
+                  <strong>Total solicitudes a crear:</strong> {getEmpleadosParaDocumentoTodos().length}
+                </li>
+                {documentoTodosForm.notas?.trim() && (
+                  <li>
+                    <strong>Notas:</strong> {documentoTodosForm.notas.trim()}
+                  </li>
+                )}
+              </ul>
+              {searchTerm ? (
+                <p className="text-xs text-amber-900 bg-white/60 rounded p-2 border border-amber-200">
+                  Hay búsqueda activa en la lista: solo se incluyen empleados que coinciden con el filtro actual.
+                </p>
+              ) : null}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-1">Primeros empleados (máx. 15)</p>
+                <div className="max-h-40 overflow-y-auto border border-orange-200 rounded-lg bg-white text-xs">
+                  <table className="w-full">
+                    <thead className="bg-orange-100 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Código</th>
+                        <th className="px-2 py-1 text-left">Nombre</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getEmpleadosParaDocumentoTodos().slice(0, 15).map((emp, idx) => (
+                        <tr key={emp.CODIGO || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-2 py-1 border-t border-gray-100">{emp.CODIGO}</td>
+                          <td className="px-2 py-1 border-t border-gray-100">{getFormattedNombre(emp) || emp['NOMBRE / APELLIDOS'] || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Progress bar pentru procesare în masă */}
           {documentoTodosLoading && documentoTodosProgress.total > 0 && (
@@ -8113,11 +8333,12 @@ export default function EmpleadosPage() {
           )}
 
           {/* Butoane */}
-          <div className="flex gap-4 justify-center mt-8">
+          <div className="flex flex-wrap gap-3 justify-center mt-8">
             <Button
               onClick={() => {
                 setShowSolicitarDocumentoTodosModal(false);
-                setDocumentoTodosForm({ tipo_documento: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
+                setDocumentoTodosStep('form');
+                setDocumentoTodosForm({ tipo_documento: '', tipo_personalizado: '', notas: '', solo_activos: true, aplicar_a_nuevos: false });
                 setDocumentoTodosError(null);
                 setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
               }}
@@ -8129,8 +8350,22 @@ export default function EmpleadosPage() {
               <span className="mr-2">✖️</span>
               Cancelar
             </Button>
+            {documentoTodosStep === 'confirm' && !documentoTodosLoading && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="px-8 py-3 border-2 border-orange-300 text-orange-800"
+                onClick={() => {
+                  setDocumentoTodosStep('form');
+                  setDocumentoTodosError(null);
+                }}
+              >
+                ← Volver
+              </Button>
+            )}
             <Button
-              onClick={handleSolicitarDocumentoTodos}
+              onClick={handleDocumentoTodosContinueOrConfirm}
               variant="primary"
               size="lg"
               loading={documentoTodosLoading}
@@ -8142,10 +8377,15 @@ export default function EmpleadosPage() {
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                   Procesando...
                 </>
+              ) : documentoTodosStep === 'form' ? (
+                <>
+                  <span className="mr-2">➡️</span>
+                  Continuar
+                </>
               ) : (
                 <>
                   <span className="mr-2">📄</span>
-                  Solicitar a Todos
+                  Confirmar y enviar
                 </>
               )}
             </Button>

@@ -107,6 +107,8 @@ import { DiplomasService } from './services/diplomas.service';
 import { PedidosNotasController } from './controllers/pedidos-notas.controller';
 import { PedidosNotasService } from './services/pedidos-notas.service';
 import { SuperAdminTenantsModule } from './super-admin-tenants/super-admin-tenants.module';
+import { LeadsController } from './controllers/leads.controller';
+import { LeadsService } from './services/leads.service';
 
 @Module({
   imports: [
@@ -188,6 +190,7 @@ import { SuperAdminTenantsModule } from './super-admin-tenants/super-admin-tenan
     PrlDocumentsController,
     DiplomasController,
     PedidosNotasController,
+    LeadsController,
     // AssistantController se importa din AssistantModule
   ],
   providers: [
@@ -244,6 +247,7 @@ import { SuperAdminTenantsModule } from './super-admin-tenants/super-admin-tenan
     PrlDocumentsService,
     DiplomasService,
     PedidosNotasService,
+    LeadsService,
   ],
 })
 export class AppModule {}

@@ -309,6 +309,8 @@ export class IntentClassifierService {
         'solicitudes en curso',
         'cereri aprobate',
         'solicitudes aprobadas',
+        'justificante',
+        'justificantes',
         'ausencias',
         'ausencia',
         'faltas',
@@ -357,6 +359,29 @@ export class IntentClassifierService {
         'cum să cer',
         'cum solicit',
         'pas cu pas',
+        // App-help / datos personales (ETAPA 1): evitar DESCONOCIDO + no_data genérico
+        'datos personales',
+        'mis datos',
+        'mi perfil',
+        'direccion',
+        'dirección',
+        'domicilio',
+        'mi casa',
+        'no me deja',
+        'no me deja guardar',
+        'no puedo guardar',
+        'no puedo cambiar',
+        'donde estan mis datos',
+        'dónde están mis datos',
+        'donde edito',
+        'dónde edito',
+        'como cambio mi telefono',
+        'cómo cambio mi teléfono',
+        'como cambio mi direccion',
+        'cómo cambio mi dirección',
+        'quiero poner',
+        'actualizar mis datos',
+        'editar datos',
       ],
       [IntentType.INCIDENCIAS]: [
         'incidencia',
@@ -419,6 +444,8 @@ export class IntentClassifierService {
         'información de empleados',
         'my employees',
         'our employees',
+        'mi contrato',
+        'contrato laboral',
       ],
     };
 
@@ -580,6 +607,20 @@ export class IntentClassifierService {
       matches[IntentType.PEDIDOS] += 20;
     }
 
+    /**
+     * Albarán + subir/mandar/enviar… + cómo/dónde → Pedidos (material), no procedimientos+KB genérico.
+     * Incluye: subo, mando, mandar, enviar (usuarios no siempre dicen «subir»).
+     */
+    if (
+      /\b(albaran|albarán)\b/.test(n) &&
+      /\b(subir|subo|subimos|adjuntar|adjunto|adjuntamos|cargar|cargo|cargamos|mandar|mando|mandamos|enviar|envio|envío|enviamos)\b/.test(
+        n,
+      ) &&
+      /\b(como|cómo|donde|dónde)\b/.test(n)
+    ) {
+      matches[IntentType.PEDIDOS] += 45;
+    }
+
     /** Ausencias / faltas / bajas / absențe → tabla `solicitudes`, no saldo de vacaciones. */
     const absencePlanningLex =
       /\b(ausencias?)\b/.test(n) ||
@@ -590,6 +631,30 @@ export class IntentClassifierService {
       /\b(who\s+is\s+on\s+leave|on\s+leave)\b/.test(n);
     if (absencePlanningLex) {
       matches[IntentType.SOLICITUDES] += 24;
+    }
+
+    /**
+     * Justificantes (ausencias médicas, etc.): lexic comun în app; fără asta → DESCONOCIDO + LLM generic.
+     * „Cómo/necesito mandar…” → PROCEDIMIENTOS + KB (prioridad sobre consulta tabular).
+     */
+    if (/\bjustificante?s?\b/.test(n)) {
+      matches[IntentType.SOLICITUDES] += 22;
+      if (
+        /\b(necesito|quiero|debo|puedo|como|cómo|donde|dónde|mandar|enviar|subir|adjuntar|pasos|instrucciones|guia|guía)\b/.test(
+          n,
+        )
+      ) {
+        matches[IntentType.PROCEDIMIENTOS] += 36;
+      }
+    }
+
+    /** Contrato laboral propio (resumen en DatosEmpleados), no listados de equipo. */
+    if (
+      /\b(mi|mio|mis|meu)\s+contrato\b/.test(n) ||
+      /\b(tipo|horas)\s+(de\s+)?contrato\b/.test(n) ||
+      /\bcontrato\s+(laboral|de\s+trabajo)\b/.test(n)
+    ) {
+      matches[IntentType.EMPLEADOS] += 34;
     }
 
     /** Diplomas / certificaciones en la app (no confundir con „quien fichó”). */
@@ -884,6 +949,29 @@ export class IntentClassifierService {
         entidades.nombre = horarioTieneNombre2[1].trim();
       }
     }
+    // "qué horario tiene hoy IORDACHE IONUT ADRIAN" — el día va antes del nombre; sin esto el (?!hoy) bloquea capturar el nombre
+    if (!entidades.nombre) {
+      const horarioTieneDiaLuegoNombre = mensaje.match(
+        new RegExp(
+          `\\b(?:que|qué)\\s+horario\\s+tiene\\s+(?:${dayWord})\\s+${NAME_CHUNK}\\b`,
+          'i',
+        ),
+      );
+      if (horarioTieneDiaLuegoNombre) {
+        entidades.nombre = horarioTieneDiaLuegoNombre[1].trim();
+      }
+    }
+    if (!entidades.nombre) {
+      const horarioTieneDiaLuegoNombre2 = mensaje.match(
+        new RegExp(
+          `\\bhorario\\s+tiene\\s+(?:${dayWord})\\s+${NAME_CHUNK}\\b`,
+          'i',
+        ),
+      );
+      if (horarioTieneDiaLuegoNombre2) {
+        entidades.nombre = horarioTieneDiaLuegoNombre2[1].trim();
+      }
+    }
 
     // Nombre: "Juan Pérez", "de Juan", "de Anisoara" (una o más palabras con mayúscula inicial)
     const nombreMatch = mensaje.match(
@@ -891,6 +979,33 @@ export class IntentClassifierService {
     );
     if (nombreMatch) {
       entidades.nombre = nombreMatch[1].trim();
+    }
+
+    // Nombre en MAYÚSCULAS (listados RRHH): "de IORDACHE IONUT ADRIAN" — el patrón Title Case anterior no lo captura
+    if (!entidades.nombre) {
+      const deNombreMayusc = mensaje.match(
+        /\b(?:de|para|del)\s+([A-ZÁÉÍÓÚÜÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑ]{2,}){2,})\b/,
+      );
+      if (deNombreMayusc) {
+        entidades.nombre = deNombreMayusc[1].trim();
+      }
+    }
+    // "horario de IORDACHE IONUT ADRIAN" (sin "trabajo"; sensible a mayúsculas para no coincidir con "horario de trabajo")
+    if (!entidades.nombre) {
+      const horarioDeNombre = mensaje.match(
+        /\bhorario\s+de\s+([A-ZÁÉÍÓÚÜÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÜÑ]{2,})+)\b/,
+      );
+      if (horarioDeNombre) {
+        entidades.nombre = horarioDeNombre[1].trim();
+      }
+    }
+    if (!entidades.nombre) {
+      const horarioTrabajoDe = mensaje.match(
+        /\bhorario\s+de\s+trabajo\s+de\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)+)\b/i,
+      );
+      if (horarioTrabajoDe) {
+        entidades.nombre = horarioTrabajoDe[1].trim();
+      }
     }
 
     // Detectează "tot mesul", "este mes", "mes actual", "todo el mes"

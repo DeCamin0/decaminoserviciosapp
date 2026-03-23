@@ -11,12 +11,14 @@ import { AuditService } from './audit.service';
 import { AiResponseService } from './ai-response.service';
 import { ConversationContextService } from './conversation-context.service';
 import { AssistantUserPreferencesService } from './assistant-user-preferences.service';
+import { AssistantValidatedFaqService } from './assistant-validated-faq.service';
 import { AssistantResponseDto, MessageDto } from '../dto/message.dto';
 import {
   buildAssistantResponse,
   defaultFollowUpsForIntent,
   sourcesForSuccessfulDataIntent,
 } from '../utils/assistant-response.contract';
+import { resolveAssistantResponseSource } from '../utils/assistant-response-source.util';
 import { resolveAssistantResponseLanguage } from '../utils/assistant-message-language.util';
 import type {
   AssistantAiLanguageContext,
@@ -41,7 +43,11 @@ import {
   procedimientosSinArticulosUi,
   unsupportedIntentUi,
 } from '../utils/assistant-response-localized.util';
-import { computeBusinessLexiconSignals } from '../utils/assistant-business-signals.util';
+import {
+  computeBusinessLexiconSignals,
+  messageAsksOwnContractSummary,
+} from '../utils/assistant-business-signals.util';
+import { looksLikeAppHelpDatosPersonales } from '../utils/assistant-app-help.util';
 import {
   buildRecoveryCandidatesForDesconocido,
   pickPostQueryRecoveryIntent,
@@ -52,6 +58,11 @@ import { RbacService } from './rbac.service';
 import { AssistantOperationalAlertService } from './assistant-operational-alert.service';
 import { AssistantDataScope } from '../constants/assistant-data-scope.const';
 import { resolveRequestedAssistantDataScope } from '../utils/assistant-requested-scope.util';
+import { resolvePedidosProceduralStaticReply } from '../utils/assistant-pedidos-procedural.util';
+import {
+  getVagueAppHelpClarificationReply,
+  messageIsVeryVagueAppHelp,
+} from '../utils/assistant-vague-message.util';
 
 @Injectable()
 export class AssistantService {
@@ -174,6 +185,7 @@ export class AssistantService {
     private readonly userPreferencesService: AssistantUserPreferencesService,
     private readonly rbacService: RbacService,
     private readonly operationalAlerts: AssistantOperationalAlertService,
+    private readonly validatedFaq: AssistantValidatedFaqService,
   ) {}
 
   /**
@@ -313,6 +325,20 @@ export class AssistantService {
         }
       }
 
+      // ETAPA 1: datos personales / app-help → PROCEDIMIENTOS (antes del fallback DESCONOCIDO sin tools)
+      if (
+        intent === IntentType.DESCONOCIDO &&
+        looksLikeAppHelpDatosPersonales(mensaje)
+      ) {
+        intent = IntentType.PROCEDIMIENTOS;
+        confianza = Math.max(confianza, 0.72);
+        this.logAssistantPipeline('app_help_intent_override', {
+          userId: usuario.id,
+          from: IntentType.DESCONOCIDO,
+          to: IntentType.PROCEDIMIENTOS,
+        });
+      }
+
       this.logAssistantPipeline('after_followup_merge', {
         userId: usuario.id,
         intent,
@@ -329,6 +355,58 @@ export class AssistantService {
       // 3. Solo respuesta genérica sin tools si intent explícitamente desconocido.
       // (La confianza baja con intent conocido seguimos al pipeline de datos — read-only + RBAC.)
       if (intent === IntentType.DESCONOCIDO) {
+        if (messageIsVeryVagueAppHelp(mensaje)) {
+          const respuestaVag = getVagueAppHelpClarificationReply(
+            aiLanguage.responseLocale,
+          );
+          const durationMsVag = Date.now() - startTime;
+          await this.auditService.logInteraction({
+            usuario_id: usuario.id,
+            usuario_nombre: usuario.nombre,
+            usuario_rol: usuario.rol,
+            mensaje,
+            intent_detectado: intent,
+            confianza,
+            respuesta: respuestaVag,
+            escalado: false,
+            auditMetrics: {
+              durationMs: durationMsVag,
+              resultCount: 0,
+              tools: [],
+              responseStatus: 'success',
+              responseType: 'clarification',
+            },
+          });
+          this.emitAssistantOpsLog({
+            outcome: 'success',
+            userId: usuario.id,
+            intent,
+            status: 'success',
+            responseType: 'clarification',
+            ms: durationMsVag,
+            tools: [],
+            resultCount: 0,
+            escalated: false,
+          });
+          return buildAssistantResponse({
+            respuesta: respuestaVag,
+            confianza: Math.max(confianza, 0.55),
+            escalado: false,
+            status: 'success',
+            responseType: 'clarification',
+            responseSource: resolveAssistantResponseSource({
+              kind: 'llm_only',
+            }),
+            sources: [
+              {
+                type: 'generated_summary',
+                label: 'Aclaración',
+                detail: 'static:vague_app_help',
+              },
+            ],
+          });
+        }
+
         this.logger.log(
           `🤖 Using AI (sin datos) intent=${intent} confianza=${confianza.toFixed(2)}`,
         );
@@ -427,6 +505,7 @@ export class AssistantService {
           escalado: false,
           status: 'unsupported',
           responseType: 'generated_summary',
+          responseSource: resolveAssistantResponseSource({ kind: 'llm_only' }),
           sources: [
             {
               type: 'generated_summary',
@@ -600,6 +679,131 @@ export class AssistantService {
               detail: ticketId,
             },
           ],
+        });
+      }
+
+      // 4c. FAQ validate (înainte de read tools / LLM): intent + hash + locale
+      const faqMatch = await this.validatedFaq.findMatch(
+        intent,
+        mensaje,
+        responseLocale,
+      );
+      if (faqMatch) {
+        const durationMsFaq = Date.now() - startTime;
+        await this.auditService.logInteraction({
+          usuario_id: usuario.id,
+          usuario_nombre: usuario.nombre,
+          usuario_rol: usuario.rol,
+          mensaje,
+          intent_detectado: intent,
+          confianza,
+          respuesta: faqMatch.replyText,
+          escalado: false,
+          auditMetrics: {
+            durationMs: durationMsFaq,
+            resultCount: 0,
+            tools: ['validated_faq'],
+            responseStatus: 'success',
+            responseType: 'fallback',
+          },
+        });
+        this.emitAssistantOpsLog({
+          outcome: 'success',
+          userId: usuario.id,
+          intent,
+          status: 'success',
+          responseType: 'fallback',
+          ms: durationMsFaq,
+          tools: ['validated_faq'],
+          resultCount: 0,
+          escalated: false,
+        });
+        this.contextService.saveContext(
+          usuario.id,
+          intent,
+          entidades ?? null,
+          mensaje,
+          {},
+        );
+        return buildAssistantResponse({
+          respuesta: faqMatch.replyText,
+          confianza: Math.min(Math.max(confianza, 0.85), 1),
+          escalado: false,
+          status: 'success',
+          responseType: 'fallback',
+          responseSource: resolveAssistantResponseSource({
+            kind: 'validated_faq',
+          }),
+          sources: [
+            {
+              type: 'generated_summary',
+              label: 'FAQ validada',
+              detail: `curada · id=${faqMatch.id}`,
+            },
+          ],
+        });
+      }
+
+      // 4d. Pedidos / albarán: guía fija sin read_tools (evita listar pedidos como "cómo subir albarán")
+      const pedidosProc = resolvePedidosProceduralStaticReply(
+        mensaje,
+        intent,
+        aiLanguage.responseLocale,
+      );
+      if (pedidosProc) {
+        const durationMsProc = Date.now() - startTime;
+        await this.auditService.logInteraction({
+          usuario_id: usuario.id,
+          usuario_nombre: usuario.nombre,
+          usuario_rol: usuario.rol,
+          mensaje,
+          intent_detectado: intent,
+          confianza,
+          respuesta: pedidosProc.reply,
+          escalado: false,
+          auditMetrics: {
+            durationMs: durationMsProc,
+            resultCount: 0,
+            tools: ['static_procedural'],
+            responseStatus: 'success',
+            responseType: 'generated_summary',
+          },
+        });
+        this.emitAssistantOpsLog({
+          outcome: 'success',
+          userId: usuario.id,
+          intent,
+          status: 'success',
+          responseType: 'generated_summary',
+          ms: durationMsProc,
+          tools: ['static_procedural'],
+          resultCount: 0,
+          escalated: false,
+        });
+        this.contextService.saveContext(
+          usuario.id,
+          intent,
+          entidades ?? null,
+          mensaje,
+          {},
+        );
+        return buildAssistantResponse({
+          respuesta: pedidosProc.reply,
+          confianza: Math.min(Math.max(confianza, 0.86), 1),
+          escalado: false,
+          status: 'success',
+          responseType: 'generated_summary',
+          responseSource: resolveAssistantResponseSource({
+            kind: 'validated_faq',
+          }),
+          sources: [
+            {
+              type: 'generated_summary',
+              label: 'Guía fija',
+              detail: `procedural:${pedidosProc.kind}`,
+            },
+          ],
+          followUps: defaultFollowUpsForIntent(intent, entidades),
         });
       }
 
@@ -923,6 +1127,9 @@ export class AssistantService {
           escalado: false,
           status: 'success',
           responseType,
+          responseSource: resolveAssistantResponseSource({
+            kind: 'pipeline_with_data',
+          }),
           sources,
           followUps: defaultFollowUpsForIntent(intent, entidades),
           tabularExportMeta: tabularExportEligible
@@ -985,6 +1192,9 @@ export class AssistantService {
             acciones: structuredEmpty.acciones,
             status: 'success',
             responseType,
+            responseSource: resolveAssistantResponseSource({
+              kind: 'pipeline_empty_kb',
+            }),
             sources,
             limitations: kbUi.limitations,
             followUps: [
@@ -1001,6 +1211,9 @@ export class AssistantService {
             acciones: structuredEmpty.acciones,
             status: 'no_data',
             responseType: 'generated_summary',
+            responseSource: resolveAssistantResponseSource({
+              kind: 'pipeline_empty_no_data',
+            }),
             sources: [
               {
                 type: 'generated_summary',
@@ -1223,6 +1436,9 @@ export class AssistantService {
         case IntentType.CUADRANTE:
           if (entidades?.fecha) {
             executedReadTool = 'plan_trabajo_dia';
+            this.logger.log(
+              `[Assistant] CUADRANTE → plan_trabajo_dia fecha=${entidades.fecha} codigo=${entidades.codigo ?? '-'} nombre=${entidades.nombre ? String(entidades.nombre).slice(0, 48) : '-'}`,
+            );
             data = await this.readTools.planTrabajoDia(
               usuario.id,
               usuario.rol,
@@ -1237,6 +1453,9 @@ export class AssistantService {
             );
           } else {
             executedReadTool = 'cuadrante_mes';
+            this.logger.log(
+              `[Assistant] CUADRANTE → cuadrante_mes (sin fecha) mes=${entidades?.mes ?? '-'} codigo=${entidades?.codigo ?? '-'} nombre=${entidades?.nombre ? String(entidades.nombre).slice(0, 48) : '-'}`,
+            );
             data = await this.readTools.cuadranteMes(
               usuario.id,
               usuario.rol,
@@ -1323,6 +1542,15 @@ export class AssistantService {
 
         case IntentType.EMPLEADOS: {
           const mensajeLower = mensaje.toLowerCase();
+          if (messageAsksOwnContractSummary(mensaje)) {
+            executedReadTool = 'empleado_mis_datos_contrato';
+            data = await this.readTools.empleadoMisDatosContrato(
+              usuario.id,
+              usuario.rol,
+              dataScope,
+            );
+            break;
+          }
           const tieneCuadranteHorario =
             mensajeLower.includes('cuadrante') ||
             mensajeLower.includes('horario');

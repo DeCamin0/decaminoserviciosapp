@@ -6,10 +6,12 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Logger,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -20,6 +22,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AssistantUserThrottlerGuard } from './guards/assistant-user-throttler.guard';
 import { AssistantUserPreferencesService } from './services/assistant-user-preferences.service';
 import { AssistantConversationService } from './services/assistant-conversation.service';
+import { AssistantMessageFeedbackService } from './services/assistant-message-feedback.service';
+import { AssistantAnalyticsService } from './services/assistant-analytics.service';
+import { AssistantValidatedFaqAdminService } from './services/assistant-validated-faq-admin.service';
+import { ASSISTANT_FAQ_WILDCARD_INTENT } from './services/assistant-validated-faq.service';
 import { UpdateAssistantPreferencesDto } from './dto/assistant-preferences.dto';
 
 /** Usuario JWT validado por JwtStrategy (no confiar en el body para identidad). */
@@ -45,7 +51,184 @@ export class AssistantController {
     private readonly prisma: PrismaService,
     private readonly assistantPreferences: AssistantUserPreferencesService,
     private readonly assistantConversations: AssistantConversationService,
+    private readonly assistantMessageFeedback: AssistantMessageFeedbackService,
+    private readonly assistantAnalytics: AssistantAnalyticsService,
+    private readonly assistantValidatedFaqAdmin: AssistantValidatedFaqAdminService,
   ) {}
+
+  /** RRHH / supervisores: ver arhiva chat AI de otro empleado */
+  private assertStaffCanViewEmployeeChatAudit(user: JwtUser) {
+    const g = (user?.grupo || user?.role || '').toString().trim();
+    const allowed = ['Developer', 'Admin', 'Manager', 'Supervisor'];
+    if (!allowed.some((a) => a.toLowerCase() === g.toLowerCase())) {
+      throw new ForbiddenException(
+        'Sin permiso para consultar el historial de chat del asistente',
+      );
+    }
+  }
+
+  /**
+   * GET /api/assistant/admin/empleados-con-conversaciones
+   * Empleados con al menos un hilo archivado (para selector RRHH).
+   */
+  @Get('admin/empleados-con-conversaciones')
+  async adminListEmpleadosConConversaciones(
+    @CurrentUser() currentUser: JwtUser,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const empleados =
+      await this.assistantConversations.listEmpleadosWithArchivedConversations(
+        500,
+      );
+    return { empleados };
+  }
+
+  /**
+   * GET /api/assistant/admin/empleado/:codigo/conversations
+   * Lista hilos de chat archivados (mismo esquema que el usuario ve en la app).
+   */
+  @Get('admin/empleado/:codigo/conversations')
+  async adminListConversationsForEmpleado(
+    @CurrentUser() currentUser: JwtUser,
+    @Param('codigo') codigo: string,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const c = (codigo || '').trim();
+    if (!c) {
+      throw new BadRequestException('codigo es obligatorio');
+    }
+    const conversations = await this.assistantConversations.listForUser(c, 120);
+    return { usuarioId: c, conversations };
+  }
+
+  /**
+   * GET /api/assistant/admin/analytics/summary
+   * KPIs agregados (mensajes, response_source, feedback) en rango de fechas (UTC).
+   */
+  @Get('admin/analytics/summary')
+  async adminAnalyticsSummary(
+    @CurrentUser() currentUser: JwtUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const range = this.assistantAnalytics.parseRange(from, to);
+    return this.assistantAnalytics.getSummary(range.from, range.to);
+  }
+
+  /**
+   * GET /api/assistant/admin/analytics/feedback-negative
+   * Lista feedback negativo con preview de pregunta (mensaje user previo) y respuesta assistant.
+   */
+  @Get('admin/analytics/feedback-negative')
+  async adminAnalyticsFeedbackNegative(
+    @CurrentUser() currentUser: JwtUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const range = this.assistantAnalytics.parseRange(from, to);
+    const lim =
+      limit != null && String(limit).trim() !== ''
+        ? Number.parseInt(String(limit).trim(), 10)
+        : 50;
+    return this.assistantAnalytics.getFeedbackNegative(
+      range.from,
+      range.to,
+      lim,
+    );
+  }
+
+  /**
+   * GET /api/assistant/admin/analytics/app-help-insights
+   * Agregados app-help / datos personales desde assistant_audit_log (FAQ vs KB vacía, top preguntas).
+   */
+  @Get('admin/analytics/app-help-insights')
+  async adminAnalyticsAppHelpInsights(
+    @CurrentUser() currentUser: JwtUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+    @Query('minCount') minCount?: string,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const range = this.assistantAnalytics.parseRange(from, to);
+    const p = this.assistantAnalytics.parseAppHelpInsightsParams(
+      limit,
+      minCount,
+    );
+    return this.assistantAnalytics.getAppHelpInsights(
+      range.from,
+      range.to,
+      p.limit,
+      p.minCount,
+    );
+  }
+
+  /**
+   * GET /api/assistant/admin/validated-faq
+   * Una fila por clave (question_hash + intent + locale). Prefill del editor FAQ.
+   */
+  @Get('admin/validated-faq')
+  async adminGetValidatedFaq(
+    @CurrentUser() currentUser: JwtUser,
+    @Query('question_hash') questionHash?: string,
+    @Query('intent') intent?: string,
+    @Query('locale') locale?: string,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const i = (intent ?? ASSISTANT_FAQ_WILDCARD_INTENT).trim();
+    const l = (locale ?? 'es').trim().toLowerCase();
+    return this.assistantValidatedFaqAdmin.getByCompositeKey(
+      questionHash ?? '',
+      i,
+      l,
+    );
+  }
+
+  /**
+   * PUT /api/assistant/admin/validated-faq
+   * Upsert FAQ validada (hash recalculado en servidor desde normalizedQuestion).
+   */
+  @Put('admin/validated-faq')
+  async adminUpsertValidatedFaq(
+    @CurrentUser() currentUser: JwtUser,
+    @Body()
+    body: {
+      normalizedQuestion?: string;
+      replyText?: string;
+      intent?: string;
+      locale?: string;
+      active?: boolean;
+      priority?: number;
+      source?: string;
+    },
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    return this.assistantValidatedFaqAdmin.upsert(body ?? {});
+  }
+
+  /**
+   * GET /api/assistant/admin/empleado/:codigo/conversations/:conversationId/messages
+   */
+  @Get('admin/empleado/:codigo/conversations/:conversationId/messages')
+  async adminGetConversationMessagesForEmpleado(
+    @CurrentUser() currentUser: JwtUser,
+    @Param('codigo') codigo: string,
+    @Param('conversationId') conversationId: string,
+  ) {
+    this.assertStaffCanViewEmployeeChatAudit(currentUser);
+    const c = (codigo || '').trim();
+    if (!c) {
+      throw new BadRequestException('codigo es obligatorio');
+    }
+    const messages = await this.assistantConversations.getMessagesForUser(
+      c,
+      conversationId,
+    );
+    return { conversationId, messages };
+  }
 
   /**
    * POST /api/assistant/message
@@ -132,6 +315,30 @@ export class AssistantController {
     return { conversationId, messages };
   }
 
+  /**
+   * POST /api/assistant/messages/:messageId/feedback — valoración thumbs up/down (un envío por mensaje y usuario).
+   */
+  @Post('messages/:messageId/feedback')
+  async submitAssistantMessageFeedback(
+    @Param('messageId') messageId: string,
+    @Body() body: { rating?: string; comment?: string | null },
+    @CurrentUser() currentUser: JwtUser,
+  ) {
+    if (!currentUser?.userId) {
+      throw new UnauthorizedException(
+        'Token inválido: falta identidad de usuario',
+      );
+    }
+    return this.assistantMessageFeedback.submitFeedback(
+      currentUser.userId,
+      messageId,
+      body?.rating ?? '',
+      body?.comment === null || body?.comment === undefined
+        ? undefined
+        : String(body.comment),
+    );
+  }
+
   @Post('message')
   async processMessage(
     @Body() body: MessageDto,
@@ -202,13 +409,20 @@ export class AssistantController {
     const response = await this.assistantService.processMessage(messageDto);
 
     try {
-      const archivedId = await this.assistantConversations.appendExchange(
+      const archived = await this.assistantConversations.appendExchange(
         currentUser.userId,
         conversationIdRaw,
         body.mensaje.trim(),
         response.respuesta ?? '',
+        response.responseSource ?? null,
       );
-      return { ...response, conversationId: archivedId };
+      return {
+        ...response,
+        conversationId: archived.conversationId,
+        ...(archived.assistantMessageId
+          ? { assistantMessageId: archived.assistantMessageId }
+          : {}),
+      };
     } catch (e: any) {
       this.logger.warn(
         `Arhivă conversație: nu s-a putut salva (${e?.message ?? e})`,

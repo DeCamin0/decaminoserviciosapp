@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "default_profile_id": null,
+  "profiles": {
+    "limpieza": {
+      "aliases": ["limpieza", "cleaning", "cleaning services", "servicios de limpieza"],
+      "query_phrases": [
+        "limpieza",
+        "empresa de limpieza",
+        "servicios de limpieza",
+        "limpieza de edificios"
+      ],
+      "synonyms_extra": [],
+      "cnae_codes": ["8121", "8122", "8129"],
+      "preferred_source_order": [
+        "paginas_amarillas",
+        "empresite",
+        "google_discovery"
+      ]
+    },
+    "servicios_auxiliares": {
+      "aliases": [
+        "servicios auxiliares",
+        "auxiliares",
+        "facility services",
+        "facility-services",
+        "facilities",
+        "facility",
+        "auxiliares de servicios"
+      ],
+      "query_phrases": [
+        "servicios auxiliares",
+        "auxiliares de servicios",
+        "facility services",
+        "servicios integrales edificios"
+      ],
+      "synonyms_extra": [],
+      "cnae_codes": ["8110"],
+      "preferred_source_order": [
+        "paginas_amarillas",
+        "empresite",
+        "google_discovery"
+      ]
+    },
+    "mantenimiento": {
+      "aliases": ["mantenimiento", "maintenance", "mantenimiento industrial"],
+      "query_phrases": [
+        "mantenimiento",
+        "mantenimiento de edificios",
+        "mantenimiento integral",
+        "empresa mantenimiento"
+      ],
+      "synonyms_extra": [],
+      "cnae_codes": ["4322", "4329", "8110"],
+      "preferred_source_order": [
+        "paginas_amarillas",
+        "empresite",
+        "google_discovery"
+      ]
+    }
+  }
+}

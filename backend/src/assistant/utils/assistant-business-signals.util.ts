@@ -26,6 +26,32 @@ export function assistantTimeBucket15Min(nowMs: number = Date.now()): number {
   return Math.floor(nowMs / (15 * 60 * 1000));
 }
 
+/**
+ * Preguntas sobre el propio contrato laboral (DatosEmpleados), no listados de equipo.
+ */
+export function messageAsksOwnContractSummary(mensaje: string): boolean {
+  const n = normalizeAssistantText(mensaje);
+  if (!/\bcontrato/.test(n) && !/\bcontract\b/.test(n)) {
+    return false;
+  }
+  if (
+    /\b(listado|lista)\s+de\s+empleados\b/.test(n) ||
+    /\bempleados\s+sin\b/.test(n)
+  ) {
+    return false;
+  }
+  return (
+    /\b(mi|mio|mis|meu)\s+contrato\b/.test(n) ||
+    /\b(tipo|horas)\s+(de\s+)?contrato\b/.test(n) ||
+    /\bcontrato\s+(laboral|de\s+trabajo)\b/.test(n) ||
+    /\bsobre\s+(el\s+)?contrato\b/.test(n) ||
+    /\bdatos\s+(del\s+|de\s+)?(mi\s+)?contrato\b/.test(n) ||
+    (n.split(/\s+/).filter(Boolean).length <= 8 &&
+      /\bcontrato\b/.test(n) &&
+      !/\bempleados\b/.test(n))
+  );
+}
+
 export interface BusinessLexiconSignals {
   nomina: boolean;
   diploma: boolean;

@@ -7,6 +7,7 @@ import {
   WHITELIST_DIPLOMAS_METADATOS,
   WHITELIST_DOCUMENTOS_INSPECCION,
   WHITELIST_EMPLEADOS_LISTADO,
+  WHITELIST_EMPLEADO_CONTRATO,
   WHITELIST_FICHAJES_FALTANTES,
   WHITELIST_FICHAJES_REGISTRO,
   WHITELIST_COMUNICADOS,
@@ -109,7 +110,7 @@ export class AssistantReadToolsService {
   async cuadranteMes(
     userId: string,
     rol: string | null,
-    entidades?: { codigo?: string; mes?: string },
+    entidades?: { codigo?: string; mes?: string; nombre?: string },
     dataScope?: AssistantDataScope,
   ): Promise<Record<string, unknown>[]> {
     const raw = await this.dataQuery.queryCuadrante(
@@ -299,6 +300,23 @@ export class AssistantReadToolsService {
       dias_restantes: vacacionesData.vacaciones.dias_restantes,
     };
     return pickAssistantFields(raw, WHITELIST_VACACIONES_SALDO_FLAT);
+  }
+
+  /**
+   * Tool: empleado_mis_datos_contrato
+   * Solo fila propia (JWT); campos de contrato sin datos salariales.
+   */
+  async empleadoMisDatosContrato(
+    userId: string,
+    rol: string | null,
+    dataScope?: AssistantDataScope,
+  ): Promise<Record<string, unknown>[]> {
+    const raw = await this.dataQuery.queryMisDatosContrato(
+      userId,
+      rol,
+      dataScope,
+    );
+    return pickAssistantRows(this.asRows(raw), WHITELIST_EMPLEADO_CONTRATO);
   }
 
   /**

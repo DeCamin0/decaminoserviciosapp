@@ -2,6 +2,7 @@ import { IntentType } from '../services/intent-classifier.service';
 import type {
   AssistantResponseDto,
   AssistantResponseSource,
+  AssistantResponseSourceKind,
   AssistantResponseStatus,
   AssistantResponseType,
   AssistantTabularExportMeta,
@@ -23,6 +24,7 @@ export function buildAssistantResponse(params: {
   limitations?: string[];
   followUps?: string[];
   tabularExportMeta?: AssistantTabularExportMeta;
+  responseSource?: AssistantResponseSourceKind;
 }): AssistantResponseDto {
   const escalado = params.escalado ?? false;
   const dto: AssistantResponseDto = {
@@ -37,6 +39,7 @@ export function buildAssistantResponse(params: {
     limitations: params.limitations,
     followUps: params.followUps,
     tabularExportMeta: params.tabularExportMeta,
+    responseSource: params.responseSource,
   };
   if (escalado) {
     dto.escalated = true;

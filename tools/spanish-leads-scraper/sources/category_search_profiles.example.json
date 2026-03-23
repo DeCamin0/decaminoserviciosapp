@@ -1,0 +1,18 @@
+{
+  "_comment": "Copia como category_search_profiles.json y edita. Clave del objeto profiles = id estable (slug). aliases = textos que el usuario puede escribir y que activan el perfil.",
+  "version": 1,
+  "default_profile_id": null,
+  "profiles": {
+    "ejemplo_categoria": {
+      "aliases": ["mi sector", "mi-sector"],
+      "query_phrases": ["frase 1", "frase 2 empresa"],
+      "synonyms_extra": [],
+      "cnae_codes": ["1234", "5678"],
+      "preferred_source_order": [
+        "paginas_amarillas",
+        "empresite",
+        "google_discovery"
+      ]
+    }
+  }
+}

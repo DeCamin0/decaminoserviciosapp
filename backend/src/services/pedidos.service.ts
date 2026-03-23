@@ -2019,18 +2019,22 @@ export class PedidosService {
     file: Express.Multer.File,
     userInfo: string,
   ): Promise<any> {
-    const uid = (pedidoUid || '').replace(/^=+/, '');
+    const uidNorm = (pedidoUid || '').replace(/^=+/, '');
     try {
-      this.logger.log(`📦 Uploading albarán for pedido ${uid} by ${userInfo}`);
+      this.logger.log(
+        `📦 Uploading albarán for pedido ${uidNorm} by ${userInfo}`,
+      );
 
-      // Verifică dacă comanda există
+      // DB stochează pedido_uid cu '=' în față (=YYYYMMDDHHMMSS-X); UI-ul poate trimite fără '='.
       const pedidoExists = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(uid)} LIMIT 1`,
+        `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(uidNorm)} OR pedido_uid = ${this.escapeSql('=' + uidNorm)} LIMIT 1`,
       );
 
       if (!pedidoExists || pedidoExists.length === 0) {
-        throw new NotFoundException(`Pedido ${uid} no encontrado`);
+        throw new NotFoundException(`Pedido ${uidNorm} no encontrado`);
       }
+
+      const uid = String(pedidoExists[0].pedido_uid);
 
       // Convertește fișierul la Buffer
       const fileBuffer = file.buffer || Buffer.from(file.buffer);
@@ -2104,7 +2108,10 @@ export class PedidosService {
         },
       };
     } catch (error: any) {
-      this.logger.error(`❌ Error uploading albarán for pedido ${uid}:`, error);
+      this.logger.error(
+        `❌ Error uploading albarán for pedido ${uidNorm}:`,
+        error,
+      );
       if (
         error instanceof BadRequestException ||
         error instanceof NotFoundException

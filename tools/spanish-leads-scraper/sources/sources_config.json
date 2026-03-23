@@ -1,0 +1,14 @@
+{
+  "_comment": "Control de fuentes para el scraper Python y la UI Nest (GET /api/leads/scrape/registry).",
+  "disabled_source_ids": [],
+  "extra_enabled_source_ids": [],
+  "priority_overrides": {},
+  "auto_skip_health_statuses": ["blocked", "broken", "experimental", "partial"],
+  "auto_allow_experimental": false,
+  "_notes": [
+    "disabled_source_ids: la fuente no corre ni en auto ni como selección efectiva (vía Nest).",
+    "extra_enabled_source_ids: activa stubs con default_enabled false para pruebas (y los incluye en auto si include_in_auto o fuerza inclusión).",
+    "auto_skip_health_statuses: por defecto solo empresite (ok) entra en modo auto; quita 'blocked' si quieres PA/Google en auto.",
+    "auto_allow_experimental: true permite fuentes experimental en auto (pruebas)."
+  ]
+}

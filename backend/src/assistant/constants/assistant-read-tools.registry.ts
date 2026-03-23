@@ -77,6 +77,23 @@ export const WHITELIST_EMPLEADOS_LISTADO = [
   'detalles_faltantes',
 ] as const;
 
+/** Tool: empleado_mis_datos_contrato — resumen propio (sin sueldo/DNI). */
+export const WHITELIST_EMPLEADO_CONTRATO = [
+  'row_kind',
+  'codigo',
+  'nombre',
+  'tipo_contrato',
+  'horas_contrato',
+  'fecha_alta',
+  'fecha_antiguedad',
+  'antiguedad',
+  'empresa',
+  'centro',
+  'estado',
+  /** true = existe PDF/archivo en CarpetasDocumentos (tipo o nombre con „contrato”) */
+  'documento_contrato_subido',
+] as const;
+
 /** Coloane zi din `cuadrante` (export + LLM pot rezuma pe zile). */
 const CUADRANTE_ZI_KEYS = Array.from(
   { length: 31 },

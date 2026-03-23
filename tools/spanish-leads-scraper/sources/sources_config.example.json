@@ -1,0 +1,10 @@
+{
+  "disabled_source_ids": [
+    "infobel",
+    "kompass",
+    "maps_discovery",
+    "osm_overpass"
+  ],
+  "extra_enabled_source_ids": [],
+  "_comment": "Auto = fuentes con default_enabled true y no listadas en disabled (p. ej. PA, Empresite, Google). Stubs (infobel, kompass, maps, osm) van desactivados por defecto; quítalos de disabled y ponlos en extra_enabled para pruebas."
+}

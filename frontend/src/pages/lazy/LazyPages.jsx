@@ -19,6 +19,11 @@ const ClientesPage = lazy(() => import('../ClientesPage'));
 const ClienteDetallePage = lazy(() => import('../ClienteDetallePage'));
 const ProveedorDetallePage = lazy(() => import('../ProveedorDetallePage'));
 const AdminDashboard = lazy(() => import('../AdminDashboard'));
+const LeadsPage = lazy(() => import('../LeadsPage'));
+const AdminChatAnalyticsPage = lazy(() => import('../AdminChatAnalyticsPage'));
+const AdminAssistantFaqEditorPage = lazy(() =>
+  import('../AdminAssistantFaqEditorPage'),
+);
 const SuperAdminTenantsPage = lazy(() => import('../SuperAdminTenantsPage'));
 const InspeccionesPage = lazy(() => import('../InspeccionesPage'));
 const MisInspeccionesPage = lazy(() => import('../MisInspeccionesPage'));
@@ -179,6 +184,30 @@ export const LazyAdminDashboard = (props) => {
   return (
     <Suspense fallback={<PageLoading title={t('adminDashboard.loading')} />}>
       <AdminDashboard {...props} />
+    </Suspense>
+  );
+};
+
+export const LazyLeadsPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando leads..." />}>
+      <LeadsPage {...props} />
+    </Suspense>
+  );
+};
+
+export const LazyAdminChatAnalyticsPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando analytics chat…" />}>
+      <AdminChatAnalyticsPage {...props} />
+    </Suspense>
+  );
+};
+
+export const LazyAdminAssistantFaqEditorPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando editor FAQ…" />}>
+      <AdminAssistantFaqEditorPage {...props} />
     </Suspense>
   );
 };
@@ -352,6 +381,9 @@ export default {
   LazyClienteDetallePage,
   LazyProveedorDetallePage,
   LazyAdminDashboard,
+  LazyLeadsPage,
+  LazyAdminChatAnalyticsPage,
+  LazyAdminAssistantFaqEditorPage,
   LazySuperAdminTenantsPage,
   LazyInspeccionesPage,
   LazyMisInspeccionesPage,

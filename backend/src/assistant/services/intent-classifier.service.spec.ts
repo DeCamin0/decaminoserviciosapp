@@ -60,6 +60,11 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     expect(r.confianza).toBeGreaterThanOrEqual(0.3);
   });
 
+  it('Mi contrato → EMPLEADOS (datos propios, no DESCONOCIDO)', async () => {
+    const r = await svc.classifyIntent('Mi contrato');
+    expect(r.intent).toBe(IntentType.EMPLEADOS);
+  });
+
   it('vacaciones en mayo → VACACIONES + mayo', async () => {
     const r = await svc.classifyIntent('vacaciones en mayo');
     expect(r.intent).toBe(IntentType.VACACIONES);
@@ -86,6 +91,13 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
 
   it('¿Cómo registro la jornada? → PROCEDIMIENTOS (cómo fichar, no consulta SQL)', async () => {
     const r = await svc.classifyIntent('¿Cómo registro la jornada?');
+    expect(r.intent).toBe(IntentType.PROCEDIMIENTOS);
+  });
+
+  it('dirección + no me deja → PROCEDIMIENTOS (ETAPA 1 app-help)', async () => {
+    const r = await svc.classifyIntent(
+      'Quiero poner la direccion de mi casa y no me deja',
+    );
     expect(r.intent).toBe(IntentType.PROCEDIMIENTOS);
   });
 
@@ -274,6 +286,16 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     expect(r.entidades?.soloPendientes).toBe(true);
   });
 
+  it('Necesito mandar justificantes → PROCEDIMIENTOS (KB / cómo enviar, no DESCONOCIDO)', async () => {
+    const r = await svc.classifyIntent('Necesito mandar justificantes');
+    expect(r.intent).toBe(IntentType.PROCEDIMIENTOS);
+  });
+
+  it('justificantes sin verbo de procedimiento → SOLICITUDES', async () => {
+    const r = await svc.classifyIntent('mis justificantes de ausencia');
+    expect(r.intent).toBe(IntentType.SOLICITUDES);
+  });
+
   it('documente lipsesc → DOCUMENTOS_SOLICITADOS', async () => {
     const r = await svc.classifyIntent('ce documente îmi lipsesc');
     expect(r.intent).toBe(IntentType.DOCUMENTOS_SOLICITADOS);
@@ -306,6 +328,40 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     const r = await svc.classifyIntent('que horario tiene Anisoara hoy');
     expect(r.intent).toBe(IntentType.CUADRANTE);
     expect(r.entidades?.nombre).toBe('Anisoara');
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('nombre en MAYÚSCULAS: de IORDACHE IONUT ADRIAN para hoy → CUADRANTE + nombre + fecha', async () => {
+    const r = await svc.classifyIntent(
+      'de IORDACHE IONUT ADRIAN para hoy qué horario tiene',
+    );
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.nombre).toBe('IORDACHE IONUT ADRIAN');
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('horario de IORDACHE IONUT ADRIAN hoy → CUADRANTE + nombre + fecha', async () => {
+    const r = await svc.classifyIntent('horario de IORDACHE IONUT ADRIAN hoy');
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.nombre).toBe('IORDACHE IONUT ADRIAN');
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('horario de trabajo de IORDACHE IONUT ADRIAN para hoy → CUADRANTE + nombre + fecha', async () => {
+    const r = await svc.classifyIntent(
+      'horario de trabajo de IORDACHE IONUT ADRIAN para hoy',
+    );
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.nombre).toBe('IORDACHE IONUT ADRIAN');
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('que horario tiene hoy IORDACHE IONUT ADRIAN → CUADRANTE + nombre + fecha (día antes del nombre)', async () => {
+    const r = await svc.classifyIntent(
+      'que horario tiene hoy IORDACHE IONUT ADRIAN',
+    );
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.nombre).toBe('IORDACHE IONUT ADRIAN');
     expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
@@ -376,5 +432,27 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     expect(r.intent).toBe(IntentType.SOLICITUDES);
     expect(r.entidades?.year).toBe(y);
     expect(r.entidades?.tipo).toBe('ausencia_justificada');
+  });
+
+  it('como subo un albaran ? → PEDIDOS (prioridad sobre procedimientos+KB genérico)', async () => {
+    const r = await svc.classifyIntent('como subo un albaran ?');
+    expect(r.intent).toBe(IntentType.PEDIDOS);
+  });
+
+  it('como mando un albaran ? → PEDIDOS (mando/mandar, no solo subir)', async () => {
+    const r = await svc.classifyIntent('como mando un albaran ?');
+    expect(r.intent).toBe(IntentType.PEDIDOS);
+  });
+
+  it('dónde subo el albarán → PEDIDOS', async () => {
+    const r = await svc.classifyIntent('dónde subo el albarán');
+    expect(r.intent).toBe(IntentType.PEDIDOS);
+  });
+
+  it('Quiero poner la direccion de mi casa y no me deja → PROCEDIMIENTOS (datos personales / app-help)', async () => {
+    const r = await svc.classifyIntent(
+      'Quiero poner la direccion de mi casa y no me deja',
+    );
+    expect(r.intent).toBe(IntentType.PROCEDIMIENTOS);
   });
 });

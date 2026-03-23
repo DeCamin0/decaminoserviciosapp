@@ -47,6 +47,13 @@ export type AssistantSourceType =
   | 'generated_summary'
   | 'escalation_ticket';
 
+/** Proveniență răspuns (arhivă DB); opțional în JSON pentru client. */
+export type AssistantResponseSourceKind =
+  | 'validated_faq'
+  | 'read_tools'
+  | 'llm'
+  | 'no_data';
+
 export interface AssistantResponseSource {
   type: AssistantSourceType;
   /** Etiqueta corta para chips en UI (ej. "Datos en vivo") */
@@ -108,4 +115,8 @@ export class AssistantResponseDto {
   knowledgeBaseMeta?: AssistantKnowledgeBaseMeta;
   /** Id conversație arhivă (pentru mesaje ulterioare) */
   conversationId?: string;
+  /** Id mesaj assistant salvat în arhivă (pentru feedback UI); absent dacă nu s-a putut salva */
+  assistantMessageId?: string;
+  /** Opțional: cum s-a obținut textul principal (legacy: absent). */
+  responseSource?: AssistantResponseSourceKind;
 }

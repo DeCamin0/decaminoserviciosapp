@@ -29,7 +29,7 @@ export function resolveAssistantTools(
         ? ['vacaciones_solicitudes']
         : ['vacaciones_saldo'];
     case IntentType.EMPLEADOS:
-      return ['empleados_resumen_operativo'];
+      return ['empleados_resumen_operativo', 'empleado_mis_datos_contrato'];
     case IntentType.NOMINAS:
       return ['nominas_metadatos'];
     case IntentType.DIPLOMAS:

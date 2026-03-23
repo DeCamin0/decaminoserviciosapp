@@ -60,6 +60,19 @@ nano .env.client2
 
 Completezi: `PORT=3002`, `DB_NAME=hera_facility_db`, user/parolă DB pentru HERA, **alt JWT_SECRET** (nu același ca Decamino), `CORS_ORIGINS` (ex. https://app.herafs.com), `API_URL` (ex. https://api.herafs.com), toate `COMPANY_*` HERA. Vezi `backend/.env.client2.example`.
 
+### 0.3b. OpenAI (asistent) — ambele `.env`
+
+Pune **`OPENAI_API_KEY=`** o singură dată în **`backend/.env.production`** pe VPS (sau exportă înainte de deploy).
+
+La rularea **`backend/deploy-backend.sh`**, scriptul copiază automat cheia la **sfârșitul** lui **`.env`** (Decamino) și **`.env.client2`** (HERA): șterge orice linie veche `OPENAI_API_KEY=...` și adaugă una nouă. Astfel ambele servicii systemd primesc aceeași cheie fără să o pui manual de două ori.
+
+Alternativ, fără a o stoca în `.env.production`:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+cd /opt/decaminoserviciosapp/backend && ./deploy-backend.sh
+```
+
 ### 0.4. Servicii systemd (ambele backend-uri)
 
 **Decamino (port 3000):**

@@ -13,6 +13,10 @@ import { AiResponseService } from './services/ai-response.service';
 import { ConversationContextService } from './services/conversation-context.service';
 import { AssistantUserPreferencesService } from './services/assistant-user-preferences.service';
 import { AssistantConversationService } from './services/assistant-conversation.service';
+import { AssistantValidatedFaqService } from './services/assistant-validated-faq.service';
+import { AssistantValidatedFaqAdminService } from './services/assistant-validated-faq-admin.service';
+import { AssistantMessageFeedbackService } from './services/assistant-message-feedback.service';
+import { AssistantAnalyticsService } from './services/assistant-analytics.service';
 import { AssistantOperationalAlertService } from './services/assistant-operational-alert.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TelegramService } from '../services/telegram.service';
@@ -35,6 +39,10 @@ import { VacacionesModule } from '../vacaciones/vacaciones.module';
     ConversationContextService,
     AssistantUserPreferencesService,
     AssistantConversationService,
+    AssistantValidatedFaqService,
+    AssistantValidatedFaqAdminService,
+    AssistantMessageFeedbackService,
+    AssistantAnalyticsService,
     AssistantOperationalAlertService,
     TelegramService,
   ],

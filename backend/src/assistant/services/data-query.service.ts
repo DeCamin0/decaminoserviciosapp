@@ -316,13 +316,10 @@ export class DataQueryService {
     if (cod) {
       empleadoFilterSql = `AND CAST(de.CODIGO AS CHAR) = ${this.escapeSql(cod)}`;
     } else if (nomRaw) {
-      const safe = nomRaw
-        .replace(/[^\p{L}\p{N}\s'-]/gu, '')
-        .trim()
-        .slice(0, 80);
-      if (safe.length >= 2) {
-        empleadoFilterSql = `AND LOWER(TRIM(de.\`NOMBRE / APELLIDOS\`)) LIKE LOWER(${this.escapeSql(`%${safe}%`)})`;
-      }
+      empleadoFilterSql = this.buildNombreEmpleadoSqlFilter(
+        'de.`NOMBRE / APELLIDOS`',
+        nomRaw,
+      );
     }
     const rowLimit = empleadoFilterSql ? 25 : 200;
     const assistantSelect = `
@@ -601,6 +598,71 @@ ${assistantSelect}`;
   }
 
   /**
+   * Resumen del propio contrato (usuario JWT) desde DatosEmpleados.
+   * No expone sueldo, DNI, cuenta, email.
+   */
+  async queryMisDatosContrato(
+    userId: string,
+    _rol: string | null,
+    _dataScope?: AssistantDataScope,
+  ): Promise<Record<string, unknown>[]> {
+    const row = await this.prisma.user.findUnique({
+      where: { CODIGO: userId },
+      select: {
+        CODIGO: true,
+        NOMBRE_APELLIDOS: true,
+        TIPO_DE_CONTRATO: true,
+        HORAS_DE_CONTRATO: true,
+        FECHA_DE_ALTA: true,
+        Fecha_Antig_edad: true,
+        Antig_edad: true,
+        EMPRESA: true,
+        CENTRO_TRABAJO: true,
+        ESTADO: true,
+      },
+    });
+    if (!row) {
+      return [];
+    }
+
+    let documentoContratoSubido = false;
+    try {
+      const cnt = await this.prisma.$queryRawUnsafe<{ c: bigint }[]>(
+        `SELECT COUNT(*) AS c FROM CarpetasDocumentos
+         WHERE id = ${this.escapeSql(userId)}
+           AND archivo IS NOT NULL
+           AND LENGTH(archivo) > 0
+           AND (
+             LOWER(COALESCE(tipo_documento,'')) LIKE '%contrato%'
+             OR LOWER(COALESCE(nombre_archivo,'')) LIKE '%contrato%'
+           )`,
+      );
+      documentoContratoSubido = Number(cnt?.[0]?.c ?? 0) > 0;
+    } catch (e: any) {
+      this.logger.warn(
+        `queryMisDatosContrato: no se pudo comprobar CarpetasDocumentos (${e?.message ?? e})`,
+      );
+    }
+
+    return [
+      {
+        row_kind: 'contrato_propio',
+        codigo: row.CODIGO,
+        nombre: row.NOMBRE_APELLIDOS,
+        tipo_contrato: row.TIPO_DE_CONTRATO,
+        horas_contrato: row.HORAS_DE_CONTRATO,
+        fecha_alta: row.FECHA_DE_ALTA,
+        fecha_antiguedad: row.Fecha_Antig_edad,
+        antiguedad: row.Antig_edad,
+        empresa: row.EMPRESA,
+        centro: row.CENTRO_TRABAJO,
+        estado: row.ESTADO,
+        documento_contrato_subido: documentoContratoSubido,
+      },
+    ];
+  }
+
+  /**
    * ProceseazÄƒ rezultatele queryFichajesFaltantes pentru a calcula corect orele pentru ture multiple
    */
   private async processFichajesFaltantesResults(
@@ -837,7 +899,7 @@ ${assistantSelect}`;
   async queryCuadrante(
     userId: string,
     rol: string | null,
-    entidades?: { codigo?: string; mes?: string },
+    entidades?: { codigo?: string; mes?: string; nombre?: string },
     dataScope?: AssistantDataScope,
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
@@ -848,6 +910,16 @@ ${assistantSelect}`;
     );
 
     const mesCondition = this.buildCuadranteMesSqlCondition(entidades?.mes);
+
+    let empleadoFilterSql = '';
+    const cod = entidades?.codigo?.trim();
+    const nomRaw = entidades?.nombre?.trim();
+    if (cod) {
+      empleadoFilterSql = `AND CAST(CODIGO AS CHAR) = ${this.escapeSql(cod)}`;
+    } else if (nomRaw) {
+      empleadoFilterSql = this.buildNombreEmpleadoSqlFilter('NOMBRE', nomRaw);
+    }
+    const rowLimit = empleadoFilterSql ? 25 : 10;
 
     const ziCols = Array.from({ length: 31 }, (_, i) => `ZI_${i + 1}`).join(
       ',\n        ',
@@ -865,11 +937,15 @@ ${assistantSelect}`;
       FROM cuadrante
       WHERE ${rbacCondition}
         ${mesCondition}
+        ${empleadoFilterSql}
       ORDER BY LUNA DESC
-      LIMIT 10
+      LIMIT ${rowLimit}
     `;
 
-    this.logger.log(`ðŸ” Query cuadrante: ${query.substring(0, 100)}...`);
+    this.logger.log(
+      `[cuadrante_mes] mes=${entidades?.mes ?? '(luna implicită)'} codigo=${cod ?? '-'} nombre=${nomRaw ? `${nomRaw.slice(0, 40)}${nomRaw.length > 40 ? '…' : ''}` : '-'} empleadoFilter=${empleadoFilterSql ? 'yes' : 'no'} limit=${rowLimit}`,
+    );
+    this.logger.log(`🔍 Query cuadrante: ${query.substring(0, 160)}...`);
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
@@ -1761,6 +1837,39 @@ LIMIT ${limit}
     };
 
     return { rows: results, meta };
+  }
+
+  /**
+   * Filtru nume angajat aliniat cu EmpleadosService.findEmpleadoByIdentifier / GestoriaService:
+   * normalizare underscore și spații, cuvinte cu lungime > 2, AND între LIKE-uri
+   * (ordinea în `NOMBRE / APELLIDOS` nu trebuie să coincidă cu textul introdus).
+   */
+  private buildNombreEmpleadoSqlFilter(
+    columnExpr: string,
+    nombreRaw: string | undefined,
+  ): string {
+    if (!nombreRaw?.trim()) {
+      return '';
+    }
+    let nombreNormalizado = nombreRaw
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/[^\p{L}\p{N}\s'-]/gu, '')
+      .trim()
+      .slice(0, 80);
+    if (nombreNormalizado.length < 2) {
+      return '';
+    }
+    let palabras = nombreNormalizado.split(/\s+/).filter((p) => p.length > 2);
+    if (palabras.length === 0) {
+      palabras = [nombreNormalizado];
+    }
+    const col = `UPPER(REPLACE(REPLACE(${columnExpr}, '_', ' '), '  ', ' '))`;
+    const parts = palabras.map((palabra) => {
+      const p = palabra.toUpperCase();
+      return `${col} LIKE ${this.escapeSql(`%${p}%`)}`;
+    });
+    return `AND (${parts.join(' AND ')})`;
   }
 
   private escapeSql(value: string): string {

@@ -1402,15 +1402,58 @@ model AssistantConversation {
 }
 
 model AssistantMessage {
-  id               String                @id @default(uuid()) @db.VarChar(36)
-  conversation_id  String                @map("conversation_id") @db.VarChar(36)
-  role             String                @db.VarChar(20)
-  content          String                @db.MediumText
-  created_at       DateTime              @default(now()) @map("created_at") @db.Timestamp(0)
-  conversation     AssistantConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_assistant_msg_conversation")
+  id               String                     @id @default(uuid()) @db.VarChar(36)
+  conversation_id  String                     @map("conversation_id") @db.VarChar(36)
+  role             String                     @db.VarChar(20)
+  content          String                     @db.MediumText
+  /// Proveniență răspuns: validated_faq | read_tools | llm | no_data (legacy: null)
+  response_source  String?                    @map("response_source") @db.VarChar(32)
+  created_at       DateTime                   @default(now()) @map("created_at") @db.Timestamp(0)
+  conversation     AssistantConversation      @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_assistant_msg_conversation")
+  feedbacks        AssistantMessageFeedback[]
 
   @@index([conversation_id, created_at], map: "idx_assistant_msg_conv_created")
   @@map("assistant_messages")
+}
+
+/// FAQ validate înainte de LLM: hash pe întrebare normalizată + intent (sau `__ANY__`) + locale.
+model AssistantValidatedFaq {
+  id                   String   @id @default(uuid()) @db.VarChar(36)
+  question_hash        String   @map("question_hash") @db.VarChar(64)
+  normalized_question  String   @map("normalized_question") @db.VarChar(512)
+  /// Valoare `IntentType` sau `__ANY__` pentru orice intenție (evită UNIQUE cu NULL în MySQL).
+  intent               String   @db.VarChar(64)
+  locale               String   @db.VarChar(16)
+  reply_text           String   @map("reply_text") @db.Text
+  active               Boolean  @default(true)
+  priority             Int      @default(0)
+  answer_source        String?  @map("answer_source") @db.VarChar(120)
+  source_type          String?  @map("source_type") @db.VarChar(64)
+  is_high_risk         Boolean? @map("is_high_risk")
+  response_type        String?  @map("response_type") @db.VarChar(64)
+  created_at           DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at           DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@unique([question_hash, intent, locale], map: "uq_assistant_validated_faq_hash_intent_locale")
+  @@index([intent, active], map: "idx_assistant_faq_intent_active")
+  @@map("assistant_validated_faq")
+}
+
+/// Feedback utilizator pe răspunsuri assistant (thumbs up/down + comentariu opțional).
+model AssistantMessageFeedback {
+  id              String           @id @default(uuid()) @db.VarChar(36)
+  message_id      String           @map("message_id") @db.VarChar(36)
+  conversation_id String         @map("conversation_id") @db.VarChar(36)
+  usuario_id      String         @map("usuario_id") @db.VarChar(50)
+  rating          String           @map("rating") @db.VarChar(20)
+  comment         String?          @db.MediumText
+  created_at      DateTime         @default(now()) @map("created_at") @db.Timestamp(0)
+  message         AssistantMessage @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_assistant_feedback_message")
+
+  @@unique([message_id, usuario_id], map: "uq_assistant_feedback_msg_user")
+  @@index([usuario_id], map: "idx_assistant_feedback_user")
+  @@index([conversation_id], map: "idx_assistant_feedback_conv")
+  @@map("assistant_message_feedback")
 }
 
 model KbArticle {
@@ -1787,4 +1830,32 @@ model PedidosAlbaranes {
 
   @@index([pedido_uid], map: "idx_pedido_uid")
   @@map("PedidosAlbaranes")
+}
+
+// ============================================
+// LEADS (MVP) – import manual din tools/spanish-leads-scraper (CSV/JSON)
+// ============================================
+
+model Lead {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  companyName String    @map("company_name") @db.VarChar(500)
+  email       String?   @map("email") @db.VarChar(255)
+  phone       String?   @map("phone") @db.VarChar(64)
+  website     String?   @map("website") @db.VarChar(500)
+  category    String?   @map("category") @db.VarChar(120)
+  country     String    @default("ES") @map("country") @db.VarChar(8)
+  province    String?   @map("province") @db.VarChar(120)
+  city        String?   @map("city") @db.VarChar(120)
+  sourceName  String    @map("source_name") @db.VarChar(64)
+  sourceUrl   String?   @map("source_url") @db.Text
+  scrapedAt   DateTime? @map("scraped_at") @db.DateTime(0)
+  dedupeKey   String    @unique @map("dedupe_key") @db.VarChar(191)
+  status      String    @default("new") @map("status") @db.VarChar(32)
+  notes       String?   @map("notes") @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([country, province, city], map: "idx_leads_country_province_city")
+  @@index([category], map: "idx_leads_category")
+  @@map("leads")
 }

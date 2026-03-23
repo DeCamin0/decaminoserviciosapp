@@ -4,10 +4,12 @@ import { config } from '../config/env.js';
 const BACKEND_BASE = config.BACKEND_BASE || '';
 export const BASE_URL = BACKEND_BASE;
 
-console.log('🔧 BASE_URL value:', BASE_URL);
-console.log('🔧 import.meta.env.DEV:', import.meta.env.DEV);
-console.log('🔧 API_URL (from config):', config.API_URL);
-console.log('🎨 VITE_PRIMARY_COLOR:', config.PRIMARY_COLOR || '(not set)');
+if (import.meta.env.DEV || config.DEBUG_MODE) {
+  console.log('🔧 BASE_URL value:', BASE_URL);
+  console.log('🔧 import.meta.env.DEV:', import.meta.env.DEV);
+  console.log('🔧 API_URL (from config):', config.API_URL);
+  console.log('🎨 VITE_PRIMARY_COLOR:', config.PRIMARY_COLOR || '(not set)');
+}
 
 // Helper function pentru a construi URL-uri din endpoint-uri
 export const getN8nUrl = (endpoint) => {
@@ -334,7 +336,21 @@ export const routes = {
   assistantConversations: `${BACKEND_BASE}/api/assistant/conversations`,
   assistantConversationMessages: (id) =>
     `${BACKEND_BASE}/api/assistant/conversations/${encodeURIComponent(id)}`,
-  
+  assistantMessageFeedback: (messageId) =>
+    `${BACKEND_BASE}/api/assistant/messages/${encodeURIComponent(messageId)}/feedback`,
+  /** Arhivă chat AI per empleado (Developer / Admin / Manager / Supervisor) */
+  assistantAdminEmpleadosConConversaciones: `${BACKEND_BASE}/api/assistant/admin/empleados-con-conversaciones`,
+  assistantAdminEmpleadoConversations: (codigo) =>
+    `${BACKEND_BASE}/api/assistant/admin/empleado/${encodeURIComponent(codigo)}/conversations`,
+  assistantAdminEmpleadoConversationMessages: (codigo, conversationId) =>
+    `${BACKEND_BASE}/api/assistant/admin/empleado/${encodeURIComponent(codigo)}/conversations/${encodeURIComponent(conversationId)}/messages`,
+  /** KPIs y feedback negativo (Developer / Admin / Manager / Supervisor) */
+  assistantAdminAnalyticsSummary: `${BACKEND_BASE}/api/assistant/admin/analytics/summary`,
+  assistantAdminAnalyticsFeedbackNegative: `${BACKEND_BASE}/api/assistant/admin/analytics/feedback-negative`,
+  assistantAdminAnalyticsAppHelpInsights: `${BACKEND_BASE}/api/assistant/admin/analytics/app-help-insights`,
+  /** GET/PUT FAQ validada (Developer / Admin / Manager / Supervisor) */
+  assistantAdminValidatedFaq: `${BACKEND_BASE}/api/assistant/admin/validated-faq`,
+
   // Chat (REST API - backend NestJS)
   chatRooms: `${BACKEND_BASE}/chat/rooms`,
   chatColleagues: `${BACKEND_BASE}/chat/colleagues`,

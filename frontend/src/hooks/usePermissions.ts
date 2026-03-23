@@ -92,7 +92,9 @@ export const usePermissions = () => {
       // Nu încărca permisiunile dacă utilizatorul nu este autentificat
       // Verifică și token-ul pentru a preveni request-uri după logout
       const token = localStorage.getItem('auth_token');
-      if (!isAuthenticated || !user || !userGrupo || user?.isDemo || !token) {
+      // DEMO: no omitir la carga — sin matriz del backend, hasBackendPermissions queda false y páginas
+      // como Fichaje hacen `hasBackendPermissions ? hasPermission(...) : false` → acceso denegado siempre.
+      if (!isAuthenticated || !user || !userGrupo || !token) {
         setLoading(false);
         setUserPermissions(null);
         permissionsCacheRef.current = null;
@@ -137,7 +139,7 @@ export const usePermissions = () => {
     };
 
     loadPermissions();
-  }, [isAuthenticated, user, userGrupo, user?.isDemo, getPermissions]);
+  }, [isAuthenticated, user, userGrupo, getPermissions]);
 
   // Funcție helper pentru sistemul vechi (pentru comparație și fallback)
   const calculateOldPermission = useCallback((user: UserForPermissions | null | undefined, module: string): boolean => {

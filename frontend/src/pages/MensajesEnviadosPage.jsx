@@ -13,7 +13,20 @@ export default function MensajesEnviadosPage() {
   const { user: authUser } = useAuth();
   
   // State pentru formular trimitere email
-  const [activeTab, setActiveTab] = useState('enviar'); // 'enviar' | 'historial' | 'automaticos'
+  const [activeTab, setActiveTab] = useState('enviar'); // 'enviar' | 'historial' | 'automaticos' | 'chatAi'
+  /** Historical Chat AI (arhiva asistent) */
+  const [chatAiEmpleadoSearch, setChatAiEmpleadoSearch] = useState('');
+  const [chatAiSelectedEmpleado, setChatAiSelectedEmpleado] = useState(null);
+  const [chatAiShowDropdown, setChatAiShowDropdown] = useState(false);
+  const [chatAiConversations, setChatAiConversations] = useState([]);
+  const [chatAiLoadingList, setChatAiLoadingList] = useState(false);
+  const [chatAiError, setChatAiError] = useState(null);
+  const [chatAiSelectedConvoId, setChatAiSelectedConvoId] = useState(null);
+  const [chatAiMessages, setChatAiMessages] = useState([]);
+  const [chatAiLoadingMessages, setChatAiLoadingMessages] = useState(false);
+  /** Lista API: empleados que ya tienen conversaciones archivadas */
+  const [chatAiEmpleadosConHistorial, setChatAiEmpleadosConHistorial] = useState([]);
+  const [chatAiLoadingEmpleadosConHistorial, setChatAiLoadingEmpleadosConHistorial] = useState(false);
   const [recipientType, setRecipientType] = useState('empleado'); // 'empleado' | 'toti' | 'grupo' | 'gestoria'
   const [selectedEmpleado, setSelectedEmpleado] = useState(null);
   const [selectedGrupo, setSelectedGrupo] = useState('');
@@ -660,6 +673,115 @@ export default function MensajesEnviadosPage() {
     });
   }, [activeEmpleados, empleadoSearchTerm]);
 
+  const filteredChatAiEmpleados = useMemo(() => {
+    const list = empleados || [];
+    if (!chatAiEmpleadoSearch.trim()) return list.slice(0, 150);
+    const searchLower = chatAiEmpleadoSearch.toLowerCase();
+    return list.filter((emp) => {
+      const nombre = getFormattedNombre(emp).toLowerCase();
+      const codigo = (emp.CODIGO || '').toLowerCase();
+      const email = (emp['CORREO ELECTRONICO'] || emp.CORREO_ELECTRONICO || '').toLowerCase();
+      return nombre.includes(searchLower) || codigo.includes(searchLower) || email.includes(searchLower);
+    }).slice(0, 100);
+  }, [empleados, chatAiEmpleadoSearch]);
+
+  const loadChatAiConversationsFor = useCallback(async (empleado) => {
+    const codigo = empleado?.CODIGO;
+    if (!codigo) return;
+    setChatAiLoadingList(true);
+    setChatAiError(null);
+    setChatAiSelectedConvoId(null);
+    setChatAiMessages([]);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('No estás autenticado');
+      const res = await fetch(routes.assistantAdminEmpleadoConversations(codigo), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || data.error || `Error ${res.status}`);
+      }
+      setChatAiConversations(data.conversations || []);
+    } catch (e) {
+      console.error(e);
+      setChatAiError(e.message || 'Error al cargar el historial');
+      setChatAiConversations([]);
+    } finally {
+      setChatAiLoadingList(false);
+    }
+  }, []);
+
+  const loadChatAiEmpleadosConHistorial = useCallback(async () => {
+    setChatAiLoadingEmpleadosConHistorial(true);
+    setChatAiError(null);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+      const res = await fetch(routes.assistantAdminEmpleadosConConversaciones, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || data.error || `Error ${res.status}`);
+      }
+      setChatAiEmpleadosConHistorial(data.empleados || []);
+    } catch (e) {
+      console.error(e);
+      setChatAiEmpleadosConHistorial([]);
+      setChatAiError(e.message || 'No se pudo cargar la lista de empleados con historial');
+    } finally {
+      setChatAiLoadingEmpleadosConHistorial(false);
+    }
+  }, []);
+
+  const selectChatAiEmpleadoFromHistorial = useCallback(
+    (row) => {
+      const emp = {
+        CODIGO: row.codigo,
+        'NOMBRE / APELLIDOS': row.nombre,
+        ESTADO: row.estado,
+      };
+      setChatAiSelectedEmpleado(emp);
+      setChatAiEmpleadoSearch(`${row.nombre} (${row.codigo})`);
+      setChatAiShowDropdown(false);
+      setChatAiError(null);
+      loadChatAiConversationsFor(emp);
+    },
+    [loadChatAiConversationsFor],
+  );
+
+  const loadChatAiMessagesFor = useCallback(async (empleado, conversationId) => {
+    const codigo = empleado?.CODIGO;
+    if (!codigo || !conversationId) return;
+    setChatAiLoadingMessages(true);
+    setChatAiError(null);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) throw new Error('No estás autenticado');
+      const res = await fetch(routes.assistantAdminEmpleadoConversationMessages(codigo, conversationId), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || data.error || `Error ${res.status}`);
+      }
+      setChatAiMessages(data.messages || []);
+      setChatAiSelectedConvoId(conversationId);
+    } catch (e) {
+      console.error(e);
+      setChatAiError(e.message || 'Error al cargar mensajes');
+      setChatAiMessages([]);
+    } finally {
+      setChatAiLoadingMessages(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'chatAi' && canManageEmails) {
+      loadChatAiEmpleadosConHistorial();
+    }
+  }, [activeTab, canManageEmails, loadChatAiEmpleadosConHistorial]);
 
   if (!canManageEmails) {
     return (
@@ -718,6 +840,17 @@ export default function MensajesEnviadosPage() {
               }`}
             >
               ⏰ Mensajes Automáticos
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('chatAi')}
+              className={`px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
+                activeTab === 'chatAi'
+                  ? 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-lg'
+                  : 'bg-white text-indigo-600 border-2 border-indigo-200 hover:bg-indigo-50'
+              }`}
+            >
+              🤖 Historical Chat AI
             </button>
           </div>
 
@@ -1452,6 +1585,193 @@ export default function MensajesEnviadosPage() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Tab: Historical Chat AI — arhiva conversațiilor asistent (per empleado) */}
+          {activeTab === 'chatAi' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Consulta el historial archivado del chat del asistente (misma app) por empleado. Solo lectura.
+              </p>
+
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-indigo-900">
+                    Empleados con historial de chat
+                    {!chatAiLoadingEmpleadosConHistorial && (
+                      <span className="ml-2 font-normal text-indigo-600">
+                        ({chatAiEmpleadosConHistorial.length})
+                      </span>
+                    )}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => loadChatAiEmpleadosConHistorial()}
+                    disabled={chatAiLoadingEmpleadosConHistorial}
+                    className="text-xs font-semibold text-indigo-700 underline hover:text-indigo-900 disabled:opacity-50"
+                  >
+                    Actualizar lista
+                  </button>
+                </div>
+                {chatAiLoadingEmpleadosConHistorial ? (
+                  <div className="py-4">
+                    <TableLoading columns={2} rows={3} />
+                  </div>
+                ) : chatAiEmpleadosConHistorial.length === 0 ? (
+                  <p className="text-sm text-indigo-800/80">
+                    Nadie tiene conversaciones archivadas todavía, o la tabla aún no tiene datos.
+                  </p>
+                ) : (
+                  <ul className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                    {chatAiEmpleadosConHistorial.map((row) => (
+                      <li key={row.codigo}>
+                        <button
+                          type="button"
+                          onClick={() => selectChatAiEmpleadoFromHistorial(row)}
+                          className={`flex w-full flex-col rounded-lg border px-3 py-2 text-left text-sm transition-colors sm:flex-row sm:items-center sm:justify-between ${
+                            chatAiSelectedEmpleado?.CODIGO === row.codigo
+                              ? 'border-indigo-500 bg-white shadow-sm'
+                              : 'border-indigo-100 bg-white/80 hover:bg-white'
+                          }`}
+                        >
+                          <span className="font-medium text-gray-900">
+                            {row.nombre}{' '}
+                            <span className="text-gray-500">({row.codigo})</span>
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {row.conversationCount} hilo{row.conversationCount === 1 ? '' : 's'}
+                            {row.lastActivity
+                              ? ` · ${new Date(row.lastActivity).toLocaleDateString('es-ES')}`
+                              : ''}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="relative">
+                <label htmlFor="chat-ai-empleado-search" className="block text-sm font-medium text-gray-700 mb-2">
+                  O buscar otro empleado
+                </label>
+                <div className="relative">
+                  <Input
+                    id="chat-ai-empleado-search"
+                    name="chatAiEmpleadoSearch"
+                    value={chatAiEmpleadoSearch}
+                    onChange={(e) => {
+                      setChatAiEmpleadoSearch(e.target.value);
+                      setChatAiShowDropdown(true);
+                    }}
+                    onFocus={() => setChatAiShowDropdown(true)}
+                    onBlur={() => {
+                      setTimeout(() => setChatAiShowDropdown(false), 200);
+                    }}
+                    placeholder="Nombre, código o email..."
+                    className="pr-10"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                </div>
+                {chatAiShowDropdown && filteredChatAiEmpleados.length > 0 && (
+                  <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                    {filteredChatAiEmpleados.map((emp) => (
+                      <li key={emp.CODIGO}>
+                        <button
+                          type="button"
+                          className="w-full px-4 py-2 text-left text-sm hover:bg-indigo-50"
+                          onClick={() => {
+                            setChatAiSelectedEmpleado(emp);
+                            setChatAiEmpleadoSearch(`${getFormattedNombre(emp)} (${emp.CODIGO})`);
+                            setChatAiShowDropdown(false);
+                            loadChatAiConversationsFor(emp);
+                          }}
+                        >
+                          <span className="font-medium">{getFormattedNombre(emp)}</span>
+                          <span className="text-gray-500"> — {emp.CODIGO}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {chatAiSelectedEmpleado && (
+                <p className="text-sm text-gray-700">
+                  Empleado: <strong>{getFormattedNombre(chatAiSelectedEmpleado)}</strong> ({chatAiSelectedEmpleado.CODIGO})
+                </p>
+              )}
+
+              {chatAiError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {chatAiError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                  <h3 className="mb-3 text-sm font-bold text-gray-800">Conversaciones</h3>
+                  {chatAiLoadingList ? (
+                    <TableLoading columns={1} rows={4} />
+                  ) : !chatAiSelectedEmpleado ? (
+                    <p className="text-sm text-gray-500">Selecciona un empleado para cargar sus hilos.</p>
+                  ) : chatAiConversations.length === 0 ? (
+                    <p className="text-sm text-gray-500">No hay conversaciones archivadas para este empleado.</p>
+                  ) : (
+                    <ul className="max-h-72 space-y-2 overflow-y-auto">
+                      {chatAiConversations.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => loadChatAiMessagesFor(chatAiSelectedEmpleado, c.id)}
+                            className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                              chatAiSelectedConvoId === c.id
+                                ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
+                                : 'border-gray-200 bg-white hover:bg-white'
+                            }`}
+                          >
+                            <div className="font-medium text-gray-900 line-clamp-2">{c.title || 'Sin título'}</div>
+                            <div className="text-xs text-gray-500">
+                              {c.updatedAt ? new Date(c.updatedAt).toLocaleString('es-ES') : ''}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                  <h3 className="mb-3 text-sm font-bold text-gray-800">Mensajes</h3>
+                  {chatAiLoadingMessages ? (
+                    <TableLoading columns={1} rows={6} />
+                  ) : !chatAiSelectedConvoId ? (
+                    <p className="text-sm text-gray-500">Elige una conversación a la izquierda.</p>
+                  ) : chatAiMessages.length === 0 ? (
+                    <p className="text-sm text-gray-500">No hay mensajes en este hilo.</p>
+                  ) : (
+                    <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                      {chatAiMessages.map((m) => (
+                        <div
+                          key={m.id}
+                          className={`rounded-lg px-3 py-2 text-sm ${
+                            m.role === 'user'
+                              ? 'ml-4 border border-blue-100 bg-blue-50 text-gray-900'
+                              : 'mr-4 border border-violet-100 bg-violet-50 text-gray-900'
+                          }`}
+                        >
+                          <div className="mb-1 text-xs font-semibold text-gray-500">
+                            {m.role === 'user' ? '👤 Empleado' : '🤖 Asistente'}{' '}
+                            {m.createdAt ? new Date(m.createdAt).toLocaleString('es-ES') : ''}
+                          </div>
+                          <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </Card>

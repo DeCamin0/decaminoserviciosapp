@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { IntentType } from './intent-classifier.service';
+import { looksLikeAppHelpDatosPersonales } from '../utils/assistant-app-help.util';
+import { procedimientosAppHelpDatosPersonalesSupplement } from '../utils/assistant-procedimientos-app-help-prompt.util';
 import {
   DEFAULT_ASSISTANT_PREFERENCES,
   type AssistantAiLanguageContext,
@@ -771,6 +773,10 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
         intent === IntentType.PROCEDIMIENTOS
       ) {
         prompt += this.kbEmptyProcedimientosInstruction(outputLocale);
+        if (looksLikeAppHelpDatosPersonales(mensaje)) {
+          prompt +=
+            procedimientosAppHelpDatosPersonalesSupplement(outputLocale);
+        }
         prompt += '\n\n' + this.userPromptAnswerFromDataLine(outputLocale);
       } else if (
         typeof data === 'object' &&
@@ -790,6 +796,14 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
     } else {
       if (intent === IntentType.PROCEDIMIENTOS) {
         prompt += this.kbEmptyProcedimientosInstruction(outputLocale);
+        if (looksLikeAppHelpDatosPersonales(mensaje)) {
+          prompt +=
+            procedimientosAppHelpDatosPersonalesSupplement(outputLocale);
+        }
+        prompt += '\n\n' + this.userPromptAnswerFromDataLine(outputLocale);
+      } else if (looksLikeAppHelpDatosPersonales(mensaje)) {
+        prompt += this.kbEmptyProcedimientosInstruction(outputLocale);
+        prompt += procedimientosAppHelpDatosPersonalesSupplement(outputLocale);
         prompt += '\n\n' + this.userPromptAnswerFromDataLine(outputLocale);
       } else {
         prompt += this.userPromptNoDataBlock(outputLocale);

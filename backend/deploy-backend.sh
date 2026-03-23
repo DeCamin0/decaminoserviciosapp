@@ -2,6 +2,11 @@
 
 # Script de deploy automat pentru backend pe VPS (Node.js direct)
 # Folosire: ./deploy-backend.sh
+# Opțional înainte de deploy (asistent OpenAI în ambele backend-uri):
+#   export OPENAI_API_KEY="sk-..."
+#   ./deploy-backend.sh
+# Dacă nu exporți, scriptul citește OPENAI_API_KEY din .env.production (dacă există)
+# și o scrie la sfârșitul lui .env și .env.client2 (înlocuiește linia veche dacă era).
 # NOTĂ: Backend-ul rulează direct cu Node.js, nu în Docker
 #       (Docker config există pentru viitor, dar nu e folosit)
 
@@ -182,6 +187,38 @@ else
             echo -e "${GREEN}✅ SMTP configuration found in .env${NC}"
         fi
     fi
+fi
+
+# 4b. OpenAI: aceeași cheie în .env (Decamino) și .env.client2 (HERA), ca asistentul să aibă AI pe ambele
+echo -e "${YELLOW}📋 Step 3b: OPENAI_API_KEY → .env + .env.client2...${NC}"
+OPENAI_VAL=""
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+    OPENAI_VAL="$OPENAI_API_KEY"
+    echo -e "${GREEN}   Sursă: variabila de mediu OPENAI_API_KEY${NC}"
+elif [ -f ".env.production" ] && grep -q '^OPENAI_API_KEY=' .env.production 2>/dev/null; then
+    _line=$(grep '^OPENAI_API_KEY=' .env.production | head -1)
+    OPENAI_VAL="${_line#OPENAI_API_KEY=}"
+    OPENAI_VAL="${OPENAI_VAL%\"}"
+    OPENAI_VAL="${OPENAI_VAL#\"}"
+    OPENAI_VAL="${OPENAI_VAL%\'}"
+    OPENAI_VAL="${OPENAI_VAL#\'}"
+    echo -e "${GREEN}   Sursă: .env.production${NC}"
+fi
+
+if [ -z "$OPENAI_VAL" ]; then
+    echo -e "${YELLOW}⚠️  OPENAI_API_KEY lipsă — export OPENAI_API_KEY=... înainte de deploy sau adaugă în .env.production. Asistentul rămâne fără răspunsuri AI generative.${NC}"
+else
+    for _envf in .env .env.client2; do
+        if [ -f "$_envf" ]; then
+            _tmp=$(mktemp)
+            grep -v '^OPENAI_API_KEY=' "$_envf" > "$_tmp" || true
+            mv "$_tmp" "$_envf"
+            printf '\n# OpenAI (sincronizat de deploy-backend.sh %s)\nOPENAI_API_KEY=%s\n' "$(date -u +%Y-%m-%dT%H:%MZ)" "$OPENAI_VAL" >> "$_envf"
+            echo -e "${GREEN}✅ OPENAI_API_KEY actualizat în $_envf (fără a afișa cheia)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  $_envf nu există — sar peste (normal dacă n-ai HERA)${NC}"
+        fi
+    done
 fi
 
 # 5. Instalează dependențe

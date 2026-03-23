@@ -17,10 +17,26 @@ import {
   Image,
   Font
 } from '@react-pdf/renderer';
-import logoImg from '@/assets/logo.svg';
 import { useTranslation } from 'react-i18next';
 import i18nInstance from '../../i18n';
 import { config } from '../../config/env';
+
+/**
+ * Watermark PDF: același logo ca în UI (VITE_LOGO_PATH în public), nu asset-ul fix din @/assets.
+ */
+function getBrandingLogoUrlForPdf() {
+  const basePath = config.BASE_PATH || '/';
+  const logoPath = config.LOGO_PATH || 'logo.svg';
+  const rel = `${basePath}${logoPath}`.replace(/\/+/g, '/');
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      return new URL(rel, window.location.origin).href;
+    } catch {
+      return `${window.location.origin}${rel.startsWith('/') ? rel : `/${rel}`}`;
+    }
+  }
+  return rel;
+}
 
 // Polyfill pentru Buffer în browser
 if (typeof window !== 'undefined' && !window.Buffer) {
@@ -1063,7 +1079,7 @@ const InspectionForm = ({ type, solicitudData }) => {
             {/* Prima pagină */}
             <Page size="A4" style={styles.page}>
               {/* Watermark logo */}
-              <Image src={logoImg} style={styles.watermarkLogo} fixed />
+              <Image src={getBrandingLogoUrlForPdf()} style={styles.watermarkLogo} fixed />
               
                              {/* Header */}
                <View style={styles.header}>
@@ -1260,7 +1276,7 @@ const InspectionForm = ({ type, solicitudData }) => {
             {type === 'limpieza' && (
               <Page size="A4" style={styles.page}>
                 {/* Watermark logo */}
-                <Image src={logoImg} style={styles.watermarkLogo} fixed />
+                <Image src={getBrandingLogoUrlForPdf()} style={styles.watermarkLogo} fixed />
                 
                 {/* Fără antet pe paginile următoare */}
                 {/* Continuación de puntos en la segunda página si existen */}
@@ -1325,7 +1341,7 @@ const InspectionForm = ({ type, solicitudData }) => {
             {type === 'personalizada' && formData.puncte.length > 9 && (
               <Page size="A4" style={styles.page}>
                 {/* Watermark logo */}
-                <Image src={logoImg} style={styles.watermarkLogo} />
+                <Image src={getBrandingLogoUrlForPdf()} style={styles.watermarkLogo} />
                 
                 {/* Fără antet pe paginile următoare */}
 
