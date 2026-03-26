@@ -1030,6 +1030,21 @@ export class AssistantService {
           aiResponse = structuredResponse.respuesta;
         }
 
+        // «Mi contrato»: el template ya consulta CarpetasDocumentos (`documento_contrato_subido`)
+        // y distingue si hay PDF de contrato en la app o no. El LLM solía ignorar eso y
+        // responder genérico («no puedo enviar documentos»). Forzamos la plantilla.
+        if (
+          intent === IntentType.EMPLEADOS &&
+          Array.isArray(data) &&
+          data.length === 1 &&
+          (data[0] as Record<string, unknown>)?.row_kind === 'contrato_propio'
+        ) {
+          aiResponse = structuredResponse.respuesta;
+          this.logger.log(
+            'Assistant: contrato_propio → respuesta desde plantilla (no LLM)',
+          );
+        }
+
         // Acțiuni din template + payload util pentru client (ex. id-uri nóminas)
         let acciones = structuredResponse.acciones || [];
         acciones = acciones.map((a) => {
@@ -1465,7 +1480,7 @@ export class AssistantService {
           } else {
             executedReadTool = 'cuadrante_mes';
             this.logger.log(
-              `[Assistant] CUADRANTE → cuadrante_mes (sin fecha) mes=${entidades?.mes ?? '-'} codigo=${entidades?.codigo ?? '-'} nombre=${entidades?.nombre ? String(entidades.nombre).slice(0, 48) : '-'}`,
+              `[Assistant] CUADRANTE → cuadrante_mes (sin fecha) mes=${entidades?.mes ?? '-'} codigo=${entidades?.codigo ?? '-'} nombre=${entidades?.nombre ? String(entidades.nombre).slice(0, 48) : '-'} centro=${entidades?.centro ?? '-'}`,
             );
             data = await this.readTools.cuadranteMes(
               usuario.id,

@@ -62,6 +62,56 @@ export class AiResponseService {
   }
 
   /**
+   * Preguntas del tipo «cómo borrar / eliminar justificante (cita médica, etc.)»:
+   * la app puede no ofrecer borrado al empleado; el LLM inventaba menús. Respuesta fija.
+   */
+  private isDeleteJustificanteQuestion(mensaje: string): boolean {
+    const n = mensaje.toLowerCase();
+    const aboutJust =
+      /\bjustificantes?\b/.test(n) ||
+      /\b(cita|consulta)\s*m[eé]dica/.test(n) ||
+      /\bjustificativo\b/.test(n);
+    if (!aboutJust) return false;
+    return (
+      /\b(borrar|eliminar|quitar|suprimir|delete|remove|șterge|sterge)\b/.test(
+        n,
+      ) ||
+      /\b(borrarlo|eliminarlo|quitarlo)\b/.test(n) ||
+      /\b(cómo|como)\s+.{0,55}puedo\s+.{0,35}(borrar|eliminar|quitar)\b/.test(
+        n,
+      ) ||
+      /\b(borrar|eliminar)\s+.{0,45}(justificante|cita)\b/.test(n)
+    );
+  }
+
+  private templateDeleteJustificanteResponse(
+    outputLocale: AssistantLocale,
+  ): string {
+    switch (outputLocale) {
+      case 'ro':
+        return (
+          `În aplicație **nu este garantat** că există o opțiune pentru angajat de a **șterge** un justificativ deja trimis (ex. consultație medicală). ` +
+          `Dacă **nu vezi** buton sau acțiune de eliminare la cerere sau la document, asta poate fi normal: **nu inventăm** pași de meniu aici.\n\n` +
+          `Pentru **anulare, corecție sau înlocuire** a justificativului, contactează **supervizarea** sau **resurse umane (RRHH)**. ` +
+          `Dacă nu știi cui să scrii, întreabă **supervizorul** sau **administrația** companiei.`
+        );
+      case 'en':
+        return (
+          `The app **does not guarantee** that you can **delete** a justification you already submitted (e.g. medical appointment). ` +
+          `If you **see no delete option** in requests or documents, that may be expected — we do **not** invent menu steps here.\n\n` +
+          `To **cancel, correct or replace** it, contact **supervision** or **HR**. If unsure who to ask, speak to your **supervisor** or **company administration**.`
+        );
+      default:
+        return (
+          `En la aplicación **no está garantizado** que el empleado tenga una opción para **eliminar** un justificante ya enviado (por ejemplo, cita médica). ` +
+          `Si **no ves** botón ni acción de borrado en **solicitudes** o en el detalle, puede ser normal: **no inventamos** pasos de menú desde el chat.\n\n` +
+          `Para **anular, corregir o sustituir** el justificante, contacta a **supervisión** o a **recursos humanos (RRHH)**. ` +
+          `Si no sabes a quién dirigirte, pregunta a tu **supervisor** o a **administración** de la empresa.`
+        );
+    }
+  }
+
+  /**
    * Generează un răspuns natural folosind OpenAI bazat pe:
    * - Intent-ul detectat
    * - Datele din query (dacă există)
@@ -77,6 +127,14 @@ export class AiResponseService {
     language?: AssistantAiLanguageContext,
     entidades?: IntentResult['entidades'],
   ): Promise<string> {
+    const outputLocale = this.outputLocaleFor(prefs, language);
+    if (this.isDeleteJustificanteQuestion(mensaje)) {
+      this.logger.log(
+        'AiResponse: borrar/eliminar justificante → plantilla fija (sin LLM)',
+      );
+      return this.templateDeleteJustificanteResponse(outputLocale);
+    }
+
     if (!this.isEnabled || !this.openai) {
       this.logger.warn(
         `⚠️ OpenAI not enabled or not initialized. isEnabled: ${this.isEnabled}, openai: ${!!this.openai}`,
@@ -89,7 +147,6 @@ export class AiResponseService {
     }
 
     try {
-      const outputLocale = this.outputLocaleFor(prefs, language);
       // Construiește context-ul pentru AI
       this.logger.log(`🤖 Generating AI response for intent: ${intent}`);
       const systemPrompt = this.buildSystemPrompt(
@@ -549,7 +606,7 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
       [IntentType.FICHAJES]:
         'El usuario pregunta sobre fichajes (registros de entrada/salida) o empleados que deberían haber fichado pero no lo hicieron. Responde de forma clara y concisa. Si hay empleados sin cuadrante, horario o centro asignado, menciona claramente qué les falta (ej: "Sin cuadrante asignado", "Sin horario asignado", "Sin centro asignado"). Si hay muchos registros (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
       [IntentType.CUADRANTE]:
-        'El usuario pregunta sobre cuadrantes y horarios de trabajo (**planificación**: cuadrante vs horario asignado). Los datos pueden incluir `horas_plan`, `fuente` (`cuadrante`, `horario`, `horario_multicentro`), `horas_horario_multicentro_dia`, `cliente_horario_multicentro` (cuando el empleado tiene turno en **horario multicentro** para un cliente/centro distinto del `centro` fijo en DatosEmpleados), `valor_celula_cuadrante`, `trabaja_este_dia`, `centro`. Incluye en la respuesta a quienes trabajan por **horario_multicentro** en ese centro/cliente, no solo los que tienen ese `centro` como centro principal. **REGLA CRÍTICA (confidencialidad):** usa **solo** los nombres de centro/cliente que aparecen en el JSON (`centro`, `cliente_horario_multicentro`). **PROHIBIDO** inventar, sustituir o «recordar» otro centro (ej. de conversaciones anteriores). Si el JSON no menciona un centro concreto, no lo nombres. **NO confundas esto con fichajes** (marcajes reales de entrada/salida): salvo que el usuario pida explícitamente fichajes, registros o marcas, explica quién **debería trabajar** según plan/horario para la fecha, no quién ha fichado. Si el rol es empleado (acceso solo a datos propios) y la pregunta es por **otro centro**, el listado puede venir vacío: explica con claridad que hace falta rol de supervisión/administración para ver el equipo completo de un centro, sin decir que «falta cuadrante» en el sistema si no hay datos. **REGLA CRÍTICA (exactitud de centro):** Distingue: (A) El usuario **nombra un centro concreto**: no titules con un centro distinto al de cada fila (`centro` / `cliente_horario_multicentro`); si no hay filas para ese centro, di que no hay resultados o pide el nombre exacto como en la app; **no inventes** ni listes personal como de otro centro. (B) El usuario pide **listado agrupado por centro** (p. ej. «por centro», «cada centro») **sin** nombrar un único centro: **prohibido** decir «no hay datos para el centro que solicitaste» o pedir el nombre exacto de un centro; si no hay filas, explica ausencia de plan para la fecha o alcance/rol sin culpar a un centro mal escrito; si hay filas, agrupa por `centro` y muestra todos los que aparecen en el JSON.',
+        'El usuario pregunta sobre cuadrantes y horarios de trabajo (**planificación**: cuadrante vs horario asignado). El JSON del mes puede traer `fuente_plan`: `cuadrante` (grid ZI_* en tabla cuadrante), `horario_multicentro` (grid en horario_multicentro: CLIENTE/HORARIO/SERVICIO) o `plan_dia` (una fila por día cuando no hay grid pero sí plan vía horario plantilla u otras fuentes). En `plan_dia`, `fuente` indica la fuente del día (`cuadrante`, `horario`, `horario_multicentro`, etc.). Los datos pueden incluir `horas_plan`, `horas_horario_multicentro_dia`, `cliente_horario_multicentro`, `valor_celula_cuadrante`, `trabaja_este_dia`, `centro`. Incluye en la respuesta a quienes trabajan por **horario_multicentro** en ese centro/cliente, no solo los que tienen ese `centro` como centro principal. **REGLA CRÍTICA (confidencialidad):** usa **solo** los nombres de centro/cliente que aparecen en el JSON (`centro`, `cliente_horario_multicentro`, `CLIENTE`). **PROHIBIDO** inventar, sustituir o «recordar» otro centro (ej. de conversaciones anteriores). Si el JSON no menciona un centro concreto, no lo nombres. **NO confundas esto con fichajes** (marcajes reales de entrada/salida): salvo que el usuario pida explícitamente fichajes, registros o marcas, explica quién **debería trabajar** según plan/horario para la fecha, no quién ha fichado. Si el rol es empleado (acceso solo a datos propios) y la pregunta es por **otro centro**, el listado puede venir vacío: explica con claridad que hace falta rol de supervisión/administración para ver el equipo completo de un centro, sin decir que «falta cuadrante» en el sistema si no hay datos. **REGLA CRÍTICA (exactitud de centro):** Distingue: (A) El usuario **nombra un centro concreto**: no titules con un centro distinto al de cada fila (`centro` / `cliente_horario_multicentro`); si no hay filas para ese centro, di que no hay resultados o pide el nombre exacto como en la app; **no inventes** ni listes personal como de otro centro. (B) El usuario pide **listado agrupado por centro** (p. ej. «por centro», «cada centro») **sin** nombrar un único centro: **prohibido** decir «no hay datos para el centro que solicitaste» o pedir el nombre exacto de un centro; si no hay filas, explica ausencia de plan para la fecha o alcance/rol sin culpar a un centro mal escrito; si hay filas, agrupa por `centro` y muestra todos los que aparecen en el JSON.',
       [IntentType.PEDIDOS]:
         'El usuario pregunta sobre **pedidos de material o catálogo** (compras de suministros desde la app). Usa ÚNICAMENTE el JSON de pedidos que recibes. PROHIBIDO mezclar, citar o inventar información de cuadrantes, fichajes o vacaciones. Si el array está vacío, di claramente que no hay pedidos en el período consultado.',
       [IntentType.VACACIONES]:
@@ -565,11 +622,11 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
       [IntentType.DOCUMENTOS_SOLICITADOS]:
         'El usuario pregunta sobre documentación que la empresa le ha solicitado entregar (tabla documentos_solicitados). Enumera tipo_documento y estado; distingue pendiente vs completado. No inventes requisitos.',
       [IntentType.SOLICITUDES]:
-        'El usuario pregunta sobre ausencias / solicitudes. El JSON puede traer **solicitudes** (tabla solicitudes) y **ausencias_calendario** (tabla **Ausencias**, misma consulta que el cron n8n «Cron absente»: tipos operativos, FECHA en un día o rango, duración, ubicación). Usa ambas listas. Campos Ausencias: NOMBRE, CODIGO, TIPO, FECHA_RAW, fecha_inicio/fecha_fin derivadas, DURACION, UNIDAD_DURACION, LOCACION, MOTIVO. PROHIBIDO inventar datos ausentes; PROHIBIDO mezclar con saldo de vacaciones personales.',
+        'El usuario pregunta sobre ausencias / solicitudes. El JSON puede traer **solicitudes** (tabla solicitudes) y **ausencias_calendario** (tabla **Ausencias**, misma consulta que el cron n8n «Cron absente»: tipos operativos, FECHA en un día o rango, duración, ubicación). Usa ambas listas. Campos Ausencias: NOMBRE, CODIGO, TIPO, FECHA_RAW, fecha_inicio/fecha_fin derivadas, DURACION, UNIDAD_DURACION, LOCACION, MOTIVO. PROHIBIDO inventar datos ausentes; PROHIBIDO mezclar con saldo de vacaciones personales. Si la pregunta es **qué ausencias hay / tenemos** (día o periodo), **no** respondas con el **plan de trabajo** (quién tiene horas plan / cuadrante del día): eso es otro módulo; aquí solo **solicitudes** + **Ausencias** del JSON.',
       [IntentType.COMUNICADOS]:
         'El usuario pregunta sobre comunicados internos publicados. Usa titulo, resumen_texto, leido_por_mi. Indica cuántos sin leer. No inventes contenido que no esté en el JSON.',
       [IntentType.PROCEDIMIENTOS]:
-        'El usuario pregunta cómo usar la aplicación o un procedimiento interno. Si el JSON trae artículos de la base de conocimiento (título + contenido), redacta la respuesta en pasos numerados (1. 2. 3.) con lenguaje muy simple, sin inventar pantallas que no aparezcan en el texto. Si no hay artículos, da una guía general segura (menú, sección de solicitudes/cuadrantes/documentos según el tema de la pregunta) sin decir «no hay datos» ni «no tengo información».',
+        'El usuario pregunta cómo usar la aplicación o un procedimiento interno. Si el JSON trae artículos de la base de conocimiento (título + contenido), redacta la respuesta en pasos numerados (1. 2. 3.) con lenguaje muy simple, sin inventar pantallas que no aparezcan en el texto. Si no hay artículos, da una guía general segura (menú, sección de solicitudes/cuadrantes/documentos según el tema de la pregunta) sin decir «no hay datos» ni «no tengo información». **Excepción:** si la pregunta es **borrar o eliminar justificantes** (p. ej. cita médica) y **no** consta en los artículos que exista esa opción, **no inventes** menús ni pasos de eliminación: indica que debe contactar a **supervisión** o **RRHH**.',
       [IntentType.INCIDENCIAS]:
         'El usuario reporta una incidencia o problema. Responde de forma empática y profesional.',
       [IntentType.DESCONOCIDO]:

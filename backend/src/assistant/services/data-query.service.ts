@@ -10,6 +10,7 @@ import {
 } from '../constants/assistant-session.constants';
 import type { KbQueryMeta } from '../types/kb-query.types';
 import { normalizeKbSearchTerms } from '../utils/kb-search-normalize.util';
+import { getSpainCalendarYearMonthDay } from '../utils/month-and-relative-dates.util';
 
 import * as mysql from 'mysql2/promise';
 import { buildDailyPlanMysqlCore } from './daily-plan-mysql-core.util';
@@ -856,10 +857,7 @@ ${assistantSelect}`;
    * Coloana `cuadrante.LUNA` în produs este de obicei `YYYY-MM`, nu text „marzo”.
    * Filtrul vechi `LIKE '%marzo%'` nu găsea rânduri → „sin datos” la „horario este mes”.
    */
-  private buildCuadranteMesSqlCondition(
-    entidadesMes: string | undefined,
-    ref: Date = new Date(),
-  ): string {
+  private buildCuadranteMesSqlCondition(entidadesMes: string | undefined): string {
     const meses = [
       'enero',
       'febrero',
@@ -875,12 +873,13 @@ ${assistantSelect}`;
       'diciembre',
     ];
     const pad2 = (n: number) => String(n).padStart(2, '0');
+    const spain = getSpainCalendarYearMonthDay();
 
     if (!entidadesMes) {
-      const y = ref.getFullYear();
-      const m = ref.getMonth() + 1;
+      const y = spain.year;
+      const m = spain.month;
       const ym = `${y}-${pad2(m)}`;
-      const nombre = meses[ref.getMonth()];
+      const nombre = meses[m - 1];
       return `AND (
         LUNA = ${this.escapeSql(ym)}
         OR LUNA LIKE ${this.escapeSql(`${ym}-%`)}
@@ -897,8 +896,8 @@ ${assistantSelect}`;
       return `AND LOWER(CAST(LUNA AS CHAR)) LIKE ${this.escapeSql(`%${mesToken}%`)}`;
     }
 
-    let y = ref.getFullYear();
-    if (ref.getMonth() === 11 && mesIndex === 0) {
+    let y = spain.year;
+    if (spain.month === 12 && mesIndex === 0) {
       y += 1;
     }
     const ym = `${y}-${pad2(mesIndex + 1)}`;
@@ -913,7 +912,12 @@ ${assistantSelect}`;
   async queryCuadrante(
     userId: string,
     rol: string | null,
-    entidades?: { codigo?: string; mes?: string; nombre?: string },
+    entidades?: {
+      codigo?: string;
+      mes?: string;
+      nombre?: string;
+      centro?: string;
+    },
     dataScope?: AssistantDataScope,
   ): Promise<any[]> {
     const rbacCondition = this.rbacService.buildRbacCondition(
@@ -933,7 +937,18 @@ ${assistantSelect}`;
     } else if (nomRaw) {
       empleadoFilterSql = this.buildNombreEmpleadoSqlFilter('NOMBRE', nomRaw);
     }
-    const rowLimit = empleadoFilterSql ? 25 : 10;
+    const centroRaw = entidades?.centro?.trim();
+    const centroFilterSql = this.buildCentroTrabajoSqlFilter(
+      'CENTRO',
+      centroRaw,
+    );
+
+    let rowLimit = 10;
+    if (cod || nomRaw) {
+      rowLimit = 25;
+    } else if (centroRaw) {
+      rowLimit = 80;
+    }
 
     const ziCols = Array.from({ length: 31 }, (_, i) => `ZI_${i + 1}`).join(
       ',\n        ',
@@ -952,17 +967,120 @@ ${assistantSelect}`;
       WHERE ${rbacCondition}
         ${mesCondition}
         ${empleadoFilterSql}
+        ${centroFilterSql}
       ORDER BY LUNA DESC
       LIMIT ${rowLimit}
     `;
 
     this.logger.log(
-      `[cuadrante_mes] mes=${entidades?.mes ?? '(luna implicită)'} codigo=${cod ?? '-'} nombre=${nomRaw ? `${nomRaw.slice(0, 40)}${nomRaw.length > 40 ? '…' : ''}` : '-'} empleadoFilter=${empleadoFilterSql ? 'yes' : 'no'} limit=${rowLimit}`,
+      `[cuadrante_mes] mes=${entidades?.mes ?? '(luna implicită)'} codigo=${cod ?? '-'} nombre=${nomRaw ? `${nomRaw.slice(0, 40)}${nomRaw.length > 40 ? '…' : ''}` : '-'} centro=${centroRaw ?? '-'} empleadoFilter=${empleadoFilterSql ? 'yes' : 'no'} limit=${rowLimit}`,
     );
     this.logger.log(`🔍 Query cuadrante: ${query.substring(0, 160)}...`);
 
     const results = await this.prisma.$queryRawUnsafe<any[]>(query);
     return results || [];
+  }
+
+  /**
+   * Grid mensual `horario_multicentro` (misma columna LUNA / ZI_* que cuadrante).
+   * Empleados sin fila en `cuadrante` pero con turnos por cliente/centro.
+   */
+  async queryHorarioMulticentroMes(
+    userId: string,
+    rol: string | null,
+    entidades?: {
+      codigo?: string;
+      mes?: string;
+      nombre?: string;
+      centro?: string;
+    },
+    dataScope?: AssistantDataScope,
+  ): Promise<any[]> {
+    const rbacCondition = this.rbacService.buildRbacCondition(
+      userId,
+      rol,
+      'CODIGO',
+      dataScope,
+    );
+
+    const mesCondition = this.buildCuadranteMesSqlCondition(entidades?.mes);
+
+    let empleadoFilterSql = '';
+    const cod = entidades?.codigo?.trim();
+    const nomRaw = entidades?.nombre?.trim();
+    if (cod) {
+      empleadoFilterSql = `AND CAST(CODIGO AS CHAR) = ${this.escapeSql(cod)}`;
+    } else if (nomRaw) {
+      empleadoFilterSql = this.buildNombreEmpleadoSqlFilter('NOMBRE', nomRaw);
+    }
+    const centroRaw = entidades?.centro?.trim();
+    const centroHmSql =
+      this.buildHorarioMulticentroMesCentroClienteServicioFilterSql(centroRaw);
+
+    let rowLimit = 10;
+    if (cod || nomRaw) {
+      rowLimit = 25;
+    } else if (centroRaw) {
+      rowLimit = 80;
+    }
+
+    const ziCols = Array.from({ length: 31 }, (_, i) => `ZI_${i + 1}`).join(
+      ',\n        ',
+    );
+
+    const query = `
+      SELECT 
+        id,
+        CODIGO,
+        NOMBRE,
+        EMAIL,
+        LUNA,
+        CLIENTE,
+        HORARIO,
+        SERVICIO,
+        TotalHoras,
+        ${ziCols}
+      FROM horario_multicentro
+      WHERE ${rbacCondition}
+        ${mesCondition}
+        ${empleadoFilterSql}
+        ${centroHmSql}
+      ORDER BY LUNA DESC, CLIENTE ASC, HORARIO ASC
+      LIMIT ${rowLimit}
+    `;
+
+    this.logger.log(
+      `[horario_multicentro_mes] mes=${entidades?.mes ?? '(luna implicită)'} codigo=${cod ?? '-'} nombre=${nomRaw ? `${nomRaw.slice(0, 40)}${nomRaw.length > 40 ? '…' : ''}` : '-'} centro=${centroRaw ?? '-'} empleadoFilter=${empleadoFilterSql ? 'yes' : 'no'} limit=${rowLimit}`,
+    );
+
+    const results = await this.prisma.$queryRawUnsafe<any[]>(query);
+    return results || [];
+  }
+
+  /**
+   * Para fallback mensual día a día (`plan_trabajo_dia`): empleado concreto.
+   * OWN → codigo = userId. ALL → codigo o nombre en entidades; sin eso → null (no recorrer el mes).
+   */
+  resolveEmpleadoTargetForPlanMesRead(
+    userId: string,
+    rol: string | null,
+    entidades?: { codigo?: string; nombre?: string },
+    dataScope?: AssistantDataScope,
+  ): { codigo?: string; nombre?: string } | null {
+    const scope = this.rbacService.effectiveDataScope(rol, dataScope);
+    if (scope === AssistantDataScope.OWN) {
+      const c = String(userId).trim();
+      return c ? { codigo: c } : null;
+    }
+    const cod = entidades?.codigo?.trim();
+    if (cod) {
+      return { codigo: cod };
+    }
+    const nom = entidades?.nombre?.trim();
+    if (nom) {
+      return { nombre: nom };
+    }
+    return null;
   }
 
   /**
@@ -1884,6 +2002,28 @@ LIMIT ${limit}
       return `${col} LIKE ${this.escapeSql(`%${p}%`)}`;
     });
     return `AND (${parts.join(' AND ')})`;
+  }
+
+  /**
+   * `horario_multicentro` no tiene columna CENTRO: cliente / servicio.
+   */
+  private buildHorarioMulticentroMesCentroClienteServicioFilterSql(
+    centroRaw: string | undefined,
+  ): string {
+    if (!centroRaw?.trim()) {
+      return '';
+    }
+    const f1 = this.buildCentroTrabajoSqlFilter('CLIENTE', centroRaw);
+    const f2 = this.buildCentroTrabajoSqlFilter('SERVICIO', centroRaw);
+    const p1 = f1.replace(/^AND\s+/i, '').trim();
+    const p2 = f2.replace(/^AND\s+/i, '').trim();
+    if (!p1 && !p2) {
+      return '';
+    }
+    if (p1 && p2) {
+      return `AND (${p1} OR ${p2})`;
+    }
+    return p1 ? `AND (${p1})` : `AND (${p2})`;
   }
 
   /**

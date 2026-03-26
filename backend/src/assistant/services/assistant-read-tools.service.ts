@@ -3,7 +3,6 @@ import { AssistantDataScope } from '../constants/assistant-data-scope.const';
 import { DataQueryService } from './data-query.service';
 import { VacacionesService } from '../../services/vacaciones.service';
 import {
-  WHITELIST_CUADRANTE,
   WHITELIST_DIPLOMAS_METADATOS,
   WHITELIST_DOCUMENTOS_INSPECCION,
   WHITELIST_EMPLEADOS_LISTADO,
@@ -15,6 +14,7 @@ import {
   WHITELIST_KB_ARTICULO,
   WHITELIST_NOMINAS_METADATOS,
   WHITELIST_PEDIDOS,
+  WHITELIST_PLAN_MES_UNIFICADO,
   WHITELIST_PLAN_TRABAJO_DIA,
   WHITELIST_AUSENCIAS_CALENDARIO,
   WHITELIST_SOLICITUDES_TABLA,
@@ -27,6 +27,7 @@ import {
   truncateKbContenido,
 } from '../utils/assistant-output-sanitize.util';
 import type { KbQueryMeta } from '../types/kb-query.types';
+import { resolveSpainMonthYearFromEntities } from '../utils/month-and-relative-dates.util';
 
 /**
  * Capa de herramientas read-only del asistente.
@@ -105,21 +106,78 @@ export class AssistantReadToolsService {
   /**
    * Tool: cuadrante_mes
    * Input: userId, rol, entidades (mes, codigo opcional).
-   * Output: resumen cuadrante (sin email).
+   * Output: grid `cuadrante` + grid `horario_multicentro`; si ambos vacíos, plan por días (horario plantilla / multicentro vía daily_plan).
    */
   async cuadranteMes(
     userId: string,
     rol: string | null,
-    entidades?: { codigo?: string; mes?: string; nombre?: string },
+    entidades?: {
+      codigo?: string;
+      mes?: string;
+      nombre?: string;
+      centro?: string;
+    },
     dataScope?: AssistantDataScope,
   ): Promise<Record<string, unknown>[]> {
-    const raw = await this.dataQuery.queryCuadrante(
+    const rawC = await this.dataQuery.queryCuadrante(
       userId,
       rol,
       entidades,
       dataScope,
     );
-    return pickAssistantRows(this.asRows(raw), WHITELIST_CUADRANTE);
+    const rawH = await this.dataQuery.queryHorarioMulticentroMes(
+      userId,
+      rol,
+      entidades,
+      dataScope,
+    );
+    let combined: Record<string, unknown>[] = [
+      ...this.asRows(rawC).map((r) => ({ ...r, fuente_plan: 'cuadrante' })),
+      ...this.asRows(rawH).map((r) => ({
+        ...r,
+        fuente_plan: 'horario_multicentro',
+      })),
+    ];
+
+    if (combined.length === 0) {
+      const target = this.dataQuery.resolveEmpleadoTargetForPlanMesRead(
+        userId,
+        rol,
+        entidades,
+        dataScope,
+      );
+      const centroTrim = entidades?.centro?.trim();
+      const empleadoPlanMes: { codigo?: string; nombre?: string; centro?: string } | null =
+        target && centroTrim
+          ? { ...target, centro: centroTrim }
+          : target
+            ? target
+            : centroTrim
+              ? { centro: centroTrim }
+              : null;
+      if (empleadoPlanMes) {
+        const { y, m } = resolveSpainMonthYearFromEntities(entidades);
+        const lastDay = new Date(y, m, 0).getDate();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dailyRows: Record<string, unknown>[] = [];
+        for (let d = 1; d <= lastDay; d++) {
+          const fecha = `${y}-${pad(m)}-${pad(d)}`;
+          const rawD = await this.dataQuery.queryDailyPlanDiaForAssistant(
+            userId,
+            rol,
+            fecha,
+            dataScope,
+            empleadoPlanMes,
+          );
+          for (const row of this.asRows(rawD)) {
+            dailyRows.push({ ...row, fuente_plan: 'plan_dia' });
+          }
+        }
+        combined = dailyRows;
+      }
+    }
+
+    return pickAssistantRows(combined, WHITELIST_PLAN_MES_UNIFICADO);
   }
 
   /**

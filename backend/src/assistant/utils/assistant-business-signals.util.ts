@@ -11,6 +11,16 @@ export function normalizeAssistantText(mensaje: string): string {
     .trim();
 }
 
+/**
+ * Errores frecuentes de escritura que rompen keywords (ej. «aucensias» → «ausencias»).
+ */
+export function applyCommonAssistantTypos(raw: string): string {
+  return String(raw ?? '')
+    .replace(/\baucensias\b/gi, 'ausencias')
+    .replace(/\bausensias\b/gi, 'ausencias')
+    .replace(/\bauscencias\b/gi, 'ausencias');
+}
+
 /** Semnătură scurtă pentru dedup (fără PII structurată). */
 export function assistantMessageSignature(mensaje: string): string {
   const n = normalizeAssistantText(mensaje);
@@ -92,7 +102,7 @@ export interface BusinessLexiconSignals {
 export function computeBusinessLexiconSignals(
   mensaje: string,
 ): BusinessLexiconSignals {
-  const t = normalizeAssistantText(mensaje);
+  const t = normalizeAssistantText(applyCommonAssistantTypos(mensaje));
 
   const nomina =
     /\b(nomina|nominas|fluturas|fluturasi|salario|sueldo|paga)\b/.test(t) ||

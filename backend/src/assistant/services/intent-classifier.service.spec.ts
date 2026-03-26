@@ -201,6 +201,11 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     expect(r.entidades?.fecha).toBe(exp);
   });
 
+  it('Mañana que aucensias tenemos (typo) → SOLICITUDES, no CUADRANTE/plan trabajo', async () => {
+    const r = await svc.classifyIntent('Mañana que aucensias tenemos');
+    expect(r.intent).toBe(IntentType.SOLICITUDES);
+  });
+
   it('ausencias para los próximos 5 días → SOLICITUDES + proximos_dias 5', async () => {
     const r = await svc.classifyIntent('ausencias para los próximos 5 días');
     expect(r.intent).toBe(IntentType.SOLICITUDES);

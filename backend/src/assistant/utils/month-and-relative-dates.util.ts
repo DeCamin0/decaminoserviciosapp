@@ -11,6 +11,28 @@ export function normalizeForMatch(s: string): string {
     .trim();
 }
 
+/**
+ * Calendario en España (Europe/Madrid). El servidor suele estar en UTC;
+ * «este mes» a las 00:30 del día 1 en Madrid puede seguir siendo el mes anterior en UTC.
+ */
+export function getSpainCalendarYearMonthDay(): {
+  year: number;
+  month: number;
+  day: number;
+} {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Madrid',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = fmt.formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === 'year')?.value ?? 0);
+  const month = Number(parts.find((p) => p.type === 'month')?.value ?? 0);
+  const day = Number(parts.find((p) => p.type === 'day')?.value ?? 0);
+  return { year, month, day };
+}
+
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -29,6 +51,53 @@ export type SpanishMonthName =
   | 'octubre'
   | 'noviembre'
   | 'diciembre';
+
+const MESES_ES_CANON: SpanishMonthName[] = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+/**
+ * Año/mes (España) para filtros de cuadrante / plan mensual del asistente.
+ * Alineado con la lógica de `buildCuadranteMesSqlCondition` (enero pidiéndose en diciembre en España → año siguiente).
+ */
+export function resolveSpainMonthYearFromEntities(entidades?: {
+  mes?: string;
+  year?: string;
+}): { y: number; m: number } {
+  const spain = getSpainCalendarYearMonthDay();
+  let y = spain.year;
+  let mo = spain.month;
+  const explicitYear =
+    Boolean(entidades?.year) &&
+    /^\d{4}$/.test(String(entidades?.year).trim());
+  if (explicitYear) {
+    y = parseInt(String(entidades?.year).trim(), 10);
+  }
+  if (entidades?.mes) {
+    const raw = String(entidades.mes)
+      .replace(/^completo_/i, '')
+      .toLowerCase();
+    const idx = MESES_ES_CANON.indexOf(raw as SpanishMonthName);
+    if (idx >= 0) {
+      mo = idx + 1;
+      if (!explicitYear && spain.month === 12 && idx === 0) {
+        y = spain.year + 1;
+      }
+    }
+  }
+  return { y, m: mo };
+}
 
 const MONTH_RULES: { es: SpanishMonthName; aliases: string[] }[] = [
   {
@@ -169,8 +238,8 @@ export function extractNaturalPeriodEntityPatch(raw: string): {
 } {
   const n = normalizeForMatch(raw);
   const out: { mes?: string; year?: string } = {};
-  const now = new Date();
-  const yearStr = String(now.getFullYear());
+  const spain = getSpainCalendarYearMonthDay();
+  const yearStr = String(spain.year);
   const mesesEs: SpanishMonthName[] = [
     'enero',
     'febrero',
@@ -185,7 +254,7 @@ export function extractNaturalPeriodEntityPatch(raw: string): {
     'noviembre',
     'diciembre',
   ];
-  const currentMonthEs = mesesEs[now.getMonth()];
+  const currentMonthEs = mesesEs[spain.month - 1];
 
   const currentMonthPhrase =
     /\b(luna\s+asta|luna\s+aceasta|luna\s+curenta)\b/.test(n) ||

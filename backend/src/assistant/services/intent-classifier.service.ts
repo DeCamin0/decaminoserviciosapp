@@ -4,6 +4,7 @@ import {
   extractProximosDiasCount,
   extractRelativeDayIso,
   extractSpanishMonthFromText,
+  getSpainCalendarYearMonthDay,
   hasRelativeDayKeyword,
   looksLikeShortTemporalFollowUp,
   normalizeForMatch,
@@ -12,6 +13,7 @@ import {
   looksLikeDetailOrReformulationFollowUp,
   looksLikeNominaTopicLex,
 } from '../utils/follow-up-detail.util';
+import { applyCommonAssistantTypos } from '../utils/assistant-business-signals.util';
 
 export enum IntentType {
   FICHAJES = 'fichajes',
@@ -76,7 +78,8 @@ export class IntentClassifierService {
    * Returnează intent + confianza (0.0-1.0) + entități extrase
    */
   async classifyIntent(mensaje: string): Promise<IntentResult> {
-    const mensajeLower = mensaje.toLowerCase().trim();
+    const texto = applyCommonAssistantTypos(mensaje.trim());
+    const mensajeLower = texto.toLowerCase().trim();
 
     // Patrones pentru fiecare intenție
     const patterns = {
@@ -472,7 +475,7 @@ export class IntentClassifierService {
       [IntentType.DESCONOCIDO]: 0,
     };
 
-    this.applyPriorityScores(mensaje, matches);
+    this.applyPriorityScores(texto, matches);
 
     let bestMatch: IntentType = IntentType.DESCONOCIDO;
     let maxMatches = 0;
@@ -547,6 +550,18 @@ export class IntentClassifierService {
       }
     }
 
+    // Ausencias mañana + tenemos/hay: no confundir con CUADRANTE (plan del día / nombres de equipo).
+    const nAus = normalizeForMatch(texto);
+    if (
+      /\b(ausencias?)\b/.test(nAus) &&
+      /\b(manana|mañana|hoy|ayer)\b/.test(nAus) &&
+      /\b(tenemos|hay|previstas|previstos)\b/.test(nAus) &&
+      bestMatch === IntentType.CUADRANTE
+    ) {
+      bestMatch = IntentType.SOLICITUDES;
+      maxMatches = Math.max(maxMatches, 30);
+    }
+
     // Calculează confianza (0.0-1.0)
     // Pentru intent-uri cunoscute, confianza bazată pe numărul de matches
     let confianza = 0.1;
@@ -573,7 +588,7 @@ export class IntentClassifierService {
     }
 
     // Extrage entități (codigo, nombre, fecha, mes, tipo)
-    const entidades = this.extractEntities(mensaje);
+    const entidades = this.extractEntities(texto);
 
     this.logger.log(
       `🔍 Intent detectado: ${bestMatch} (confianza: ${confianza.toFixed(2)})`,
@@ -594,6 +609,25 @@ export class IntentClassifierService {
     matches: Record<IntentType, number>,
   ): void {
     const n = normalizeForMatch(mensajeOriginal);
+    const nombreComoTrabaja = this.extractNombreFromComoTrabajaPhrase(
+      mensajeOriginal,
+    );
+    /** „Cómo trabaja [nombre]” = horario/cuadrante de esa persona, no „cómo usar la app” (PROCEDIMIENTOS). */
+    if (nombreComoTrabaja) {
+      matches[IntentType.CUADRANTE] += 44;
+    }
+
+    /**
+     * „Mañana qué ausencias tenemos” / «aucencias» (typo) — listado de ausencias (SOLICITUDES + Ausencias),
+     * no el plan de trabajo del día (CUADRANTE).
+     */
+    const ausenciasDiaEquipo =
+      /\b(ausencias?)\b/.test(n) &&
+      /\b(manana|mañana|hoy|ayer)\b/.test(n) &&
+      /\b(tenemos|hay|previstas|previstos)\b/.test(n);
+    if (ausenciasDiaEquipo) {
+      matches[IntentType.SOLICITUDES] += 52;
+    }
 
     /** „¿Quién trabaja hoy en [centro]?” = plan del día por centro (cuadrante/horario), no registros de fichaje. */
     if (/\b(quien|qui[eé]n)\s+trabaja\b/.test(n)) {
@@ -609,6 +643,22 @@ export class IntentClassifierService {
       /\b(previsto|previstos|previstro|plan|cuadrante|horario)\b/.test(n)
     ) {
       matches[IntentType.CUADRANTE] += 28;
+    }
+
+    /** „¿Cuál es mi horario / cuadrante / turno…?” = consulta de planificación (cuadrante), no procedimiento genérico. */
+    if (
+      /\b(cu[aá]l\s+es)\b/.test(n) &&
+      /\b(horario|cuadrante|turno|plan)\b/.test(n)
+    ) {
+      matches[IntentType.CUADRANTE] += 30;
+    }
+
+    /** „Cuadrante de [centro]” / „horario del …” = plan por centro, no listado genérico de empleados. */
+    if (
+      /\bcuadrante\s+(?:de|del|para)\b/.test(n) ||
+      /\bhorarios?\s+(?:de|del|para)\b/.test(n)
+    ) {
+      matches[IntentType.CUADRANTE] += 22;
     }
 
     const pedidoVacaciones =
@@ -798,9 +848,17 @@ export class IntentClassifierService {
       /\b(cum\s+(inregistrez|inregistreaza|punctez|marchez|bifez))\b/.test(n);
     if (appHowToEs || appHowToRo) {
       matches[IntentType.PROCEDIMIENTOS] += 16;
-    } else if (/(^|\s)cum(\s|$)/.test(n) && n.length <= 96) {
+    } else if (
+      !nombreComoTrabaja &&
+      /(^|\s)cum(\s|$)/.test(n) &&
+      n.length <= 96
+    ) {
       matches[IntentType.PROCEDIMIENTOS] += 7;
-    } else if (/(^|\s)como(\s|$)/.test(n) && n.length <= 96) {
+    } else if (
+      !nombreComoTrabaja &&
+      /(^|\s)como(\s|$)/.test(n) &&
+      n.length <= 96
+    ) {
       matches[IntentType.PROCEDIMIENTOS] += 7;
     } else if (/(^|\s)(donde|dónde)(\s|$)/.test(n) && n.length <= 96) {
       matches[IntentType.PROCEDIMIENTOS] += 7;
@@ -847,7 +905,7 @@ export class IntentClassifierService {
   extractEntitiesFromMessage(
     mensaje: string,
   ): IntentResult['entidades'] | undefined {
-    return this.extractEntities(mensaje);
+    return this.extractEntities(applyCommonAssistantTypos(mensaje.trim()));
   }
 
   /**
@@ -984,6 +1042,108 @@ export class IntentClassifierService {
     return raw;
   }
 
+  /** Luni în ES — nu le folosi ca nume de centru la „cuadrante de marzo”. */
+  /**
+   * „como trabaja Denis Cosmin” / „cum lucrează Ion” — consulta de orar, nu procedimiento de app.
+   * El SQL hace coincidencia parcial por palabras (>2 letras) en NOMBRE.
+   */
+  private extractNombreFromComoTrabajaPhrase(mensaje: string): string | undefined {
+    const trimmed = mensaje.trim();
+    const stopFirst = new Set([
+      'el',
+      'la',
+      'los',
+      'las',
+      'un',
+      'una',
+      'hoy',
+      'ayer',
+      'mañana',
+      'manana',
+      'este',
+      'esta',
+      'turno',
+      'cuadrante',
+      'horario',
+      'sistema',
+      'aplicacion',
+      'aplicación',
+      'aqui',
+      'aquí',
+    ]);
+    const finish = (m: RegExpMatchArray | null): string | undefined => {
+      if (!m?.[1]) {
+        return undefined;
+      }
+      let raw = m[1].trim().replace(/[.:;!]+$/g, '').trim();
+      if (raw.length < 2 || raw.length > 80) {
+        return undefined;
+      }
+      const first = raw.split(/\s+/)[0]?.toLowerCase() ?? '';
+      if (!first || stopFirst.has(first)) {
+        return undefined;
+      }
+      return raw;
+    };
+    const es = trimmed.match(
+      /\b(?:como|cómo)\s+trabaja(?:n)?\s+(.+?)(?:\?|\.|$)/i,
+    );
+    const outEs = finish(es);
+    if (outEs) {
+      return outEs;
+    }
+    const ro = trimmed.match(/\b(?:cum)\s+lucreaz[aă]?\s+(.+?)(?:\?|\.|$)/i);
+    return finish(ro);
+  }
+
+  private static readonly MESES_ES_CENTRO = new Set([
+    'enero',
+    'febrero',
+    'marzo',
+    'abril',
+    'mayo',
+    'junio',
+    'julio',
+    'agosto',
+    'septiembre',
+    'octubre',
+    'noviembre',
+    'diciembre',
+  ]);
+
+  /**
+   * „cuadrante de Alsacia”, „el horario de Bosque Pino” — numele centrului după de/del/para.
+   */
+  private extractCentroFromCuadranteHorarioPhrase(mensaje: string): string | undefined {
+    const trimmed = mensaje.trim();
+    const patterns: RegExp[] = [
+      /\b(?:el\s+)?cuadrante\s+(?:de|del|para)\s+(.+?)(?:\?|\.|$)/i,
+      /\bhorarios?\s+(?:de|del|para)\s+(.+?)(?:\?|\.|$)/i,
+    ];
+    for (const re of patterns) {
+      const m = trimmed.match(re);
+      if (!m?.[1]) {
+        continue;
+      }
+      let c = m[1].trim().replace(/[.:;!]+$/g, '').trim();
+      if (c.length < 2 || c.length > 80) {
+        continue;
+      }
+      const first = c.split(/\s+/)[0]?.toLowerCase() ?? '';
+      if (IntentClassifierService.MESES_ES_CENTRO.has(first)) {
+        continue;
+      }
+      if (/\b(este\s+mes|mes\s+actual|hoy|ayer|mañana|manana)\b/i.test(c)) {
+        continue;
+      }
+      if (/^(el|la|los|las)\s+(mes|centro)$/i.test(c)) {
+        continue;
+      }
+      return c;
+    }
+    return undefined;
+  }
+
   /**
    * Extrage entități din mesaj (codigo, nombre, fecha, mes, tipo)
    */
@@ -1044,6 +1204,12 @@ export class IntentClassifierService {
         entidades.nombre = horarioTieneDiaLuegoNombre2[1].trim();
       }
     }
+    if (!entidades.nombre) {
+      const comoTrabajaNom = this.extractNombreFromComoTrabajaPhrase(mensaje);
+      if (comoTrabajaNom) {
+        entidades.nombre = comoTrabajaNom;
+      }
+    }
 
     // Nombre: "Juan Pérez", "de Juan", "de Anisoara" (una o más palabras con mayúscula inicial)
     const nombreMatch = mensaje.match(
@@ -1084,6 +1250,13 @@ export class IntentClassifierService {
     const centroPlace = this.extractCentroTrabajoPlace(mensaje);
     if (centroPlace) {
       entidades.centro = centroPlace;
+    }
+    // „el cuadrante de Alsacia”, „horario del centro X” (nu doar „… en X” la sfârșit).
+    if (!entidades.centro) {
+      const centroCuadrante = this.extractCentroFromCuadranteHorarioPhrase(mensaje);
+      if (centroCuadrante) {
+        entidades.centro = centroCuadrante;
+      }
     }
 
     /** „por centro” / „per centro” / „por cada centro” = listado agrupado por lugar de trabajo, no un solo centro. */
@@ -1162,8 +1335,8 @@ export class IntentClassifierService {
         'noviembre',
         'diciembre',
       ];
-      const ahora = new Date();
-      const mesActual = meses[ahora.getMonth()];
+      const spain = getSpainCalendarYearMonthDay();
+      const mesActual = meses[spain.month - 1];
       entidades.mes = `completo_${mesActual}`;
     }
 

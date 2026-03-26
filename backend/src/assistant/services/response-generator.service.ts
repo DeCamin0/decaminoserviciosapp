@@ -307,14 +307,14 @@ export class ResponseGeneratorService {
       );
       lines.push(`- Estado: ${r.estado != null ? String(r.estado) : '—'}`);
       lines.push('');
-      lines.push('📎 **Copia del contrato en la app (Mis documentos)**');
+      lines.push('📎 **Contrato en la aplicación (Mis documentos)**');
       if (docSubido) {
         lines.push(
-          'Consta al menos un **archivo** en tu carpeta con tipo o nombre que indica **contrato** (puedes abrirlo o descargarlo desde la sección **Documentos** / **Mis documentos**).',
+          'Sí consta al menos un **archivo** en tu carpeta cuyo tipo o nombre indica **contrato**: puedes **abrirlo o descargarlo en PDF** desde **Documentos** / **Mis documentos** en la app.',
         );
       } else {
         lines.push(
-          '**No aparece** en la carpeta de la app un PDF/archivo de contrato con “contrato” en el nombre o tipo (o no está subido el fichero). Revisa **Mis documentos**; si falta, pide copia a **supervisión o RRHH de la empresa** (no confundas con el solo centro de trabajo de la ficha).',
+          '**En la aplicación no hay ningún contrato disponible para descargar** (no hay archivo en «Mis documentos» con tipo o nombre que indique contrato). Para obtener una **copia oficial en PDF**, contacta a **supervisión** o **RRHH / administración de la empresa**; el centro de la ficha es solo dato de ubicación.',
         );
       }
       lines.push(

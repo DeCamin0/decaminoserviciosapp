@@ -113,6 +113,32 @@ export const WHITELIST_CUADRANTE = [
   ...CUADRANTE_ZI_KEYS,
 ] as const;
 
+/**
+ * Tool: cuadrante_mes — unifica cuadrante + horario_multicentro (grid) y, si hace falta, plan_dia por días.
+ */
+export const WHITELIST_PLAN_MES_UNIFICADO = [
+  'fuente_plan',
+  ...WHITELIST_CUADRANTE,
+  'EMAIL',
+  'CLIENTE',
+  'HORARIO',
+  'SERVICIO',
+  'fecha',
+  'nombre',
+  'centro',
+  'horas_plan',
+  'fuente',
+  'valor_celula_cuadrante',
+  'horas_cuadrante_dia',
+  'horas_horario_dia',
+  'horario_segmento_1_horas',
+  'horario_segmento_2_horas',
+  'horario_segmento_3_horas',
+  'horas_horario_multicentro_dia',
+  'cliente_horario_multicentro',
+  'trabaja_este_dia',
+] as const;
+
 /** Tool: pedidos_resumen — comandas material (PedidosTodos), sin líneas detalladas. */
 export const WHITELIST_PEDIDOS = [
   'pedido_uid',
