@@ -288,6 +288,45 @@ else
     exit 1
 fi
 
+# 6b. Aceleași migrări Prisma pe baza HERA (client 2) — regula multi-client: schema identică pe ambele DB
+DECAMINO_DATABASE_URL="$DATABASE_URL"
+if [ -f ".env.client2" ] && grep -q '^DATABASE_URL=' .env.client2 2>/dev/null; then
+    echo -e "${YELLOW}📋 Step 6b: Prisma migrate deploy (HERA — .env.client2)...${NC}"
+    _hera_line=$(grep '^DATABASE_URL=' .env.client2 | head -1)
+    HERA_DATABASE_URL="${_hera_line#DATABASE_URL=}"
+    HERA_DATABASE_URL="${HERA_DATABASE_URL%\"}"
+    HERA_DATABASE_URL="${HERA_DATABASE_URL#\"}"
+    HERA_DATABASE_URL="${HERA_DATABASE_URL%\'}"
+    HERA_DATABASE_URL="${HERA_DATABASE_URL#\'}"
+    export DATABASE_URL="$HERA_DATABASE_URL"
+    set +e
+    HERA_MIGRATE_OUT=$(npx prisma migrate deploy 2>&1)
+    HERA_MIGRATE_EXIT=$?
+    set -e
+    if [ $HERA_MIGRATE_EXIT -eq 0 ]; then
+        echo -e "${GREEN}✅ HERA: migrations applied${NC}"
+    elif echo "$HERA_MIGRATE_OUT" | grep -q "P3005"; then
+        echo -e "${YELLOW}⚠️  HERA: P3005 — db push...${NC}"
+        npx prisma db push --accept-data-loss || {
+            echo -e "${RED}❌ HERA database sync failed${NC}"
+            echo "$HERA_MIGRATE_OUT"
+            export DATABASE_URL="$DECAMINO_DATABASE_URL"
+            exit 1
+        }
+        echo -e "${GREEN}✅ HERA: schema synchronized${NC}"
+    else
+        echo -e "${RED}❌ HERA migration failed!${NC}"
+        echo "$HERA_MIGRATE_OUT"
+        export DATABASE_URL="$DECAMINO_DATABASE_URL"
+        echo -e "${RED}Check DATABASE_URL in .env.client2${NC}"
+        exit 1
+    fi
+    export DATABASE_URL="$DECAMINO_DATABASE_URL"
+    echo -e "${GREEN}✅ DATABASE_URL restored (Decamino)${NC}"
+elif [ -f ".env.client2" ]; then
+    echo -e "${YELLOW}⚠️  .env.client2 fără DATABASE_URL — sar migrările HERA${NC}"
+fi
+
 # 8. Recompilează
 echo -e "${YELLOW}📋 Step 7: Building backend...${NC}"
 npm run build
