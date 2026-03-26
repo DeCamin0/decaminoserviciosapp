@@ -264,8 +264,13 @@ if [ -z "$DATABASE_URL" ]; then
 fi
 
 # Încearcă să ruleze migrațiile
+# IMPORTANT: fără set +e, bash cu set -e oprește scriptul la eșecul din $(...)
+# înainte să putem citi MIGRATE_EXIT_CODE și afișa eroarea (pare „tăiat” brusc).
+echo -e "${YELLOW}   Running: npx prisma migrate deploy ...${NC}"
+set +e
 MIGRATE_OUTPUT=$(npx prisma migrate deploy 2>&1)
 MIGRATE_EXIT_CODE=$?
+set -e
 
 if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
     echo -e "${YELLOW}⚠️  Database is not empty (P3005). Using db push instead...${NC}"
