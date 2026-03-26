@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 // Cache global pentru documentos-solicitados (în afara componentei pentru a funcționa în React Strict Mode)
 const documentosSolicitadosGlobalCache = {
@@ -20,7 +21,7 @@ import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes.js';
 import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
-import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw, Lock, Unlock } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env.js';
@@ -34,6 +35,56 @@ const MONTHS = [
   'Todas las meses', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
+
+/** Inicio/fin locales (YYYY-MM-DD) para filtros por mes; alineado con Control vacaciones. */
+const getSolicitudRangoFechasLocal = (s) => {
+  let fi = '';
+  let ff = '';
+  if (s.FECHA && String(s.FECHA).includes(' - ')) {
+    [fi, ff] = String(s.FECHA).split(' - ');
+  } else {
+    fi = s.fecha_inicio || s['fecha inicio'] || s.fecha;
+    ff = s.fecha_fin || s['fecha fin'] || s.fecha;
+  }
+  if (!fi || !ff) return null;
+  const parseYmd = (raw) => {
+    const t = String(raw).trim();
+    const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      return new Date(
+        Number(m[1]),
+        Number(m[2]) - 1,
+        Number(m[3]),
+        0,
+        0,
+        0,
+        0,
+      );
+    }
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const start = parseYmd(fi);
+  const end = parseYmd(ff);
+  if (!start || !end) return null;
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  return { start, end };
+};
+
+/** selectedMonth: índice MONTHS 1=Enero … 12=Diciembre (no 0). */
+const solicitudSolapaMesCalendario = (s, selectedMonth, year) => {
+  const range = getSolicitudRangoFechasLocal(s);
+  if (!range) return false;
+  const monthIdx = selectedMonth - 1;
+  const monthStart = new Date(year, monthIdx, 1);
+  monthStart.setHours(0, 0, 0, 0);
+  const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+  const monthEnd = new Date(year, monthIdx, lastDay);
+  monthEnd.setHours(0, 0, 0, 0);
+  const { start, end } = range;
+  return end >= monthStart && start <= monthEnd;
+};
 
 const ENDPOINT = routes.getSolicitudesByEmail;
 const BAJA_UPLOAD_ENDPOINT = routes.uploadBajasMedicas || '';
@@ -1768,7 +1819,19 @@ export default function SolicitudesPage() {
 
 
   // Filtros para managers
-  const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja' | 'baja_voluntaria' | 'aprobacion'
+  const [selectedTab, setSelectedTab] = useState('asunto'); // 'asunto' | 'vacaciones' | 'ausencias' | 'baja' | 'baja_voluntaria' | 'aprobacion' | 'control_vacaciones'
+  /** Año del panel de control de cupos (Todas → Control vacaciones) */
+  const [vacationControlYear, setVacationControlYear] = useState(() => new Date().getFullYear());
+  /** Menú contextual (Control vacaciones): mes 0–11 (Ene–Dic), posición fija para no recortar con overflow-x */
+  const [vacationMonthMenuIdx, setVacationMonthMenuIdx] = useState(null);
+  const [vacationMonthMenuPos, setVacationMonthMenuPos] = useState({ top: 0, left: 0 });
+  const [vacationMonthActionBusy, setVacationMonthActionBusy] = useState(false);
+  /** Catálogo horarios (tabla `horarios`): carga en Control vacaciones para h/día desde horario asignado */
+  const [horariosCatalog, setHorariosCatalog] = useState([]);
+  /** Mes (0–11) para cruzar la tabla Limpiador/L con vacaciones (mismo año que vacationControlYear) */
+  const [vacationPartTimeCompareMonth, setVacationPartTimeCompareMonth] = useState(() =>
+    new Date().getMonth(),
+  );
   const selectedStatus = 'Todos';
   // Documentos asociados con BAJA_VOLUNTARIA: Map<solicitudId, documento>
   const [bajaVoluntariaDocumentos, setBajaVoluntariaDocumentos] = useState(new Map());
@@ -3800,6 +3863,55 @@ export default function SolicitudesPage() {
     }
   }, [activeTab, canAccessAllTabs, callApi]);
 
+  const estadisticasControlVacLoadedRef = useRef(false);
+  useEffect(() => {
+    if (activeTab !== 'todas' || selectedTab !== 'control_vacaciones') {
+      estadisticasControlVacLoadedRef.current = false;
+      return;
+    }
+    if (!canAccessAllTabs || authUser?.isDemo) return;
+    if (estadisticasControlVacLoadedRef.current) return;
+    estadisticasControlVacLoadedRef.current = true;
+    const loadVacControlStats = async () => {
+      setEstadisticasLoading(true);
+      try {
+        const response = await callApi(routes.getVacacionesEstadisticas, {
+          method: 'GET',
+        });
+        if (response?.success && response?.data?.success && response?.data?.estadisticas) {
+          setEstadisticas(response.data.estadisticas);
+        }
+      } catch (error) {
+        console.error('Error cargando estadísticas (control vacaciones):', error);
+      } finally {
+        setEstadisticasLoading(false);
+      }
+    };
+    loadVacControlStats();
+  }, [activeTab, selectedTab, canAccessAllTabs, authUser?.isDemo, callApi]);
+
+  const horariosControlVacLoadedRef = useRef(false);
+  useEffect(() => {
+    if (activeTab !== 'todas' || selectedTab !== 'control_vacaciones') {
+      horariosControlVacLoadedRef.current = false;
+      return;
+    }
+    if (!canAccessAllTabs || authUser?.isDemo) return;
+    if (horariosControlVacLoadedRef.current) return;
+    horariosControlVacLoadedRef.current = true;
+    (async () => {
+      try {
+        const response = await callApi(routes.getHorarios, { method: 'GET' });
+        const raw = response?.data ?? response;
+        const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+        setHorariosCatalog(list);
+      } catch (e) {
+        console.warn('No se pudo cargar catálogo horarios:', e);
+        setHorariosCatalog([]);
+      }
+    })();
+  }, [activeTab, selectedTab, canAccessAllTabs, authUser?.isDemo, callApi]);
+
   const handleBajaUploadClick = useCallback(() => {
     if (!canAccessAllTabs) return;
     bajaFileInputRef.current?.click();
@@ -5497,6 +5609,40 @@ export default function SolicitudesPage() {
         if (!tieneCertificadoHandicap && ![15, 30, 31].includes(diffZile)) {
           setErrorMsg('Solo puedes solicitar vacaciones por quincena (15 días) o mes entero.');
           return false;
+        }
+
+        // Misma persona: margen 15 días antes/después de otra quincena (Aprobada o Pendiente)
+        const QUINCENA_BUFFER_DAYS = 15;
+        const userCodeVac = authUser?.['CODIGO'] || authUser?.codigo || '';
+        const ownVac = solicitudes.filter(
+          (s) =>
+            s.tipo === 'Vacaciones' &&
+            (s.estado === 'Aprobada' || s.estado === 'Pendiente') &&
+            s.fecha_inicio &&
+            s.fecha_fin &&
+            String(s.codigo) === String(userCodeVac)
+        );
+        const n0 = new Date(y1, m1 - 1, d1);
+        const n1 = new Date(y2, m2 - 1, d2);
+        n0.setHours(0, 0, 0, 0);
+        n1.setHours(0, 0, 0, 0);
+        for (const s of ownVac) {
+          const a = new Date(s.fecha_inicio);
+          const b = new Date(s.fecha_fin);
+          a.setHours(0, 0, 0, 0);
+          b.setHours(0, 0, 0, 0);
+          const bs = new Date(a);
+          bs.setDate(bs.getDate() - QUINCENA_BUFFER_DAYS);
+          const be = new Date(b);
+          be.setDate(be.getDate() + QUINCENA_BUFFER_DAYS);
+          if (n0 <= be && n1 >= bs) {
+            const fi = String(s.fecha_inicio).split('T')[0];
+            const ff = String(s.fecha_fin).split('T')[0];
+            setErrorMsg(
+              `No puedes solicitar estas fechas: debe respetarse un margen de ${QUINCENA_BUFFER_DAYS} días antes y después de otra quincena ya solicitada o aprobada (${fi} - ${ff}).`
+            );
+            return false;
+          }
         }
         
         // Verifică dacă noua solicitare nu depășește limita maximă reală (folosind totalul ajustat)
@@ -7535,6 +7681,10 @@ export default function SolicitudesPage() {
   }, [selectedTab, allAusencias]);
 
   const getFilteredSolicitudes = useMemo(() => {
+    if (selectedTab === 'control_vacaciones') {
+      return [];
+    }
+
     let filtered;
     
     // Selectează sursa de date în funcție de tab-ul selectat
@@ -7640,23 +7790,25 @@ export default function SolicitudesPage() {
       });
     }
     if (selectedMonth > 0) {
-      filtered = filtered.filter(s => {
-        // Filtrează după FECHA combinată sau fecha_inicio
-        let fechaInicio = '';
+      filtered = filtered.filter((s) => {
         if (selectedTab === 'ausencias') {
-          // Pentru absențe, folosim FECHA
-          fechaInicio = s.FECHA || s.fecha || '';
-        } else {
-          // Pentru solicitări, folosim logica existentă
-          if (s.FECHA && s.FECHA.includes(' - ')) {
-            fechaInicio = s.FECHA.split(' - ')[0].trim();
-          } else {
-            fechaInicio = s.fecha_inicio || s["fecha inicio"] || s.fecha;
+          if (s.FECHA && String(s.FECHA).includes(' - ')) {
+            return solicitudSolapaMesCalendario(s, selectedMonth, vacationControlYear);
           }
+          const fechaInicio = s.FECHA || s.fecha || '';
+          if (!fechaInicio) return false;
+          const ymd = String(fechaInicio).match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (ymd) {
+            return (
+              parseInt(ymd[2], 10) === selectedMonth &&
+              parseInt(ymd[1], 10) === vacationControlYear
+            );
+          }
+          const luna = parseInt(String(fechaInicio).split(/[-/]/)[1] || '0', 10);
+          return luna === selectedMonth;
         }
-        if (!fechaInicio) return false;
-        const luna = parseInt(fechaInicio.split('-')[1], 10);
-        return luna === selectedMonth;
+        // Solicitudes (Vacaciones, etc.): solapamiento con el mes/año (mismo criterio que Control vacaciones)
+        return solicitudSolapaMesCalendario(s, selectedMonth, vacationControlYear);
       });
     }
     
@@ -7698,7 +7850,934 @@ export default function SolicitudesPage() {
       return 0;
     });
     return sorted;
-  }, [selectedTab, selectedUser, selectedMonth, selectedTipoAusencia, allAusencias, allSolicitudes, allBajasMedicas, allUsers, bajaFilter]);
+  }, [
+    selectedTab,
+    selectedUser,
+    selectedMonth,
+    selectedTipoAusencia,
+    allAusencias,
+    allSolicitudes,
+    allBajasMedicas,
+    allUsers,
+    bajaFilter,
+    vacationControlYear,
+  ]);
+
+  /**
+   * Por grupo y mes: cuántos empleados activos distintos tienen al menos un día de vacaciones
+   * (Aprobada/Pendiente) en ese mes / N activos del grupo. N y X solo cuentan ESTADO activo (como estadísticas API).
+   */
+  const vacationControlByGroupMonth = useMemo(() => {
+    if (!allSolicitudes?.length || !allUsers?.length) return [];
+    const isEmpleadoActivo = (u) =>
+      String(u?.ESTADO ?? u?.estado ?? '')
+        .trim()
+        .toUpperCase() === 'ACTIVO';
+
+    /** El listado global de solicitudes (GET /solicitudes) no trae `grupo`; hay que tomarlo del empleado activo por codigo/email. */
+    const vacSol = allSolicitudes.filter((s) => {
+      const t = String(s.tipo || s.TIPO || '')
+        .trim()
+        .toLowerCase();
+      if (t !== 'vacaciones') return false;
+      const e = (s.estado || s.ESTADO || '').trim();
+      return e === 'Aprobada' || e === 'Pendiente';
+    });
+
+    const activeUsers = allUsers.filter(isEmpleadoActivo);
+    const userByCodigo = new Map();
+    const userByEmail = new Map();
+    activeUsers.forEach((u) => {
+      const c = String(u.CODIGO ?? u.codigo ?? '')
+        .trim();
+      const m = String(
+        u['CORREO ELECTRONICO'] || u.CORREO_ELECTRONICO || u.EMAIL || u.email || '',
+      ).toLowerCase();
+      if (c) userByCodigo.set(c, u);
+      if (m) userByEmail.set(m, u);
+    });
+
+    const resolveActiveUserForSol = (sol) => {
+      const c = String(sol.codigo || sol.CODIGO || '')
+        .trim();
+      if (c && userByCodigo.has(c)) return userByCodigo.get(c);
+      const mail = String(
+        sol.email || sol.EMAIL || sol['CORREO ELECTRONICO'] || '',
+      ).toLowerCase();
+      if (mail && userByEmail.has(mail)) return userByEmail.get(mail);
+      return null;
+    };
+
+    const groupSet = new Set();
+    activeUsers.forEach((u) => {
+      const gr = normalizeGroup(u['GRUPO'] || u.grupo || '');
+      if (gr) groupSet.add(gr);
+    });
+    const groups = Array.from(groupSet).sort((a, b) => a.localeCompare(b));
+    const year = vacationControlYear;
+    const rows = [];
+    for (const g of groups) {
+      const groupUsers = activeUsers.filter(
+        (u) => normalizeGroup(u['GRUPO'] || u.grupo || '') === g,
+      );
+      const groupSize = groupUsers.length;
+      if (groupSize === 0) continue;
+
+      const months = [];
+      for (let month = 0; month < 12; month++) {
+        const monthStart = new Date(year, month, 1);
+        monthStart.setHours(0, 0, 0, 0);
+        const lastDay = getDaysInMonth(year, month);
+        const monthEnd = new Date(year, month, lastDay);
+        monthEnd.setHours(0, 0, 0, 0);
+
+        const empleadosEnMes = new Set();
+        vacSol.forEach((sol) => {
+          const emp = resolveActiveUserForSol(sol);
+          if (!emp) return;
+          const sg = normalizeGroup(emp['GRUPO'] || emp.grupo || '');
+          if (sg !== g) return;
+
+          const range = getSolicitudRangoFechasLocal(sol);
+          if (!range) return;
+          const { start, end } = range;
+          if (end < monthStart || start > monthEnd) return;
+
+          const uniq =
+            String(emp.CODIGO || emp.codigo || '').trim() ||
+            String(
+              emp['CORREO ELECTRONICO'] ||
+                emp.CORREO_ELECTRONICO ||
+                emp.email ||
+                '',
+            ).toLowerCase();
+          if (uniq) empleadosEnMes.add(uniq);
+        });
+
+        const empleadosConVacaciones = empleadosEnMes.size;
+        const empleadosDisponiblesCubrir = Math.max(
+          0,
+          groupSize - empleadosConVacaciones,
+        );
+
+        let picoSimultaneosMes = 0;
+        for (let day = 1; day <= lastDay; day++) {
+          const d = new Date(year, month, day);
+          d.setHours(0, 0, 0, 0);
+          const enEsteDia = new Set();
+          vacSol.forEach((sol) => {
+            const emp = resolveActiveUserForSol(sol);
+            if (!emp) return;
+            const sg = normalizeGroup(emp['GRUPO'] || emp.grupo || '');
+            if (sg !== g) return;
+            const range = getSolicitudRangoFechasLocal(sol);
+            if (!range) return;
+            const { start, end } = range;
+            if (end < d || start > d) return;
+            const uniq =
+              String(emp.CODIGO || emp.codigo || '').trim() ||
+              String(
+                emp['CORREO ELECTRONICO'] ||
+                  emp.CORREO_ELECTRONICO ||
+                  emp.email ||
+                  '',
+              ).toLowerCase();
+            if (uniq) enEsteDia.add(uniq);
+          });
+          picoSimultaneosMes = Math.max(picoSimultaneosMes, enEsteDia.size);
+        }
+
+        const limiteSimultaneosDia = getAvailabilityLimit(
+          month,
+          groupSize,
+          'Vacaciones',
+        );
+
+        months.push({
+          monthIndex: month,
+          monthLabel: MONTHS[month + 1] || String(month + 1),
+          empleadosConVacaciones,
+          empleadosDisponiblesCubrir,
+          picoSimultaneosMes,
+          limiteSimultaneosDia,
+          groupSize,
+        });
+      }
+      rows.push({ group: g, groupSize, months });
+    }
+    return rows;
+  }, [allSolicitudes, allUsers, vacationControlYear, getAvailabilityLimit]);
+
+  /**
+   * Estimación de contratación (personal NUEVO): déficit mensual = pico simultáneo de vacaciones − límite
+   * diario del grupo (misma regla que «Pico día / lím.» arriba). No asigna cobertura a la plantilla actual
+   * (evita lógica de horas extra / SS). Mínimo de refuerzos a contratar «a la vez» en el peor mes =
+   * max(deficits). Ese mismo número puede cubrir varios meses del año si en ningún día se supera ese pico.
+   */
+  const vacationNewHireEstimateByGroup = useMemo(() => {
+    return vacationControlByGroupMonth.map((row) => {
+      const deficits = row.months.map((m) =>
+        Math.max(0, m.picoSimultaneosMes - m.limiteSimultaneosDia),
+      );
+      const deficitMax = deficits.length ? Math.max(0, ...deficits) : 0;
+      const mesesConDeficit = deficits.filter((d) => d > 0).length;
+      return {
+        group: row.group,
+        groupSize: row.groupSize,
+        deficitMax,
+        mesesConDeficit,
+        deficits,
+        months: row.months,
+      };
+    });
+  }, [vacationControlByGroupMonth]);
+
+  /**
+   * Limpiador y «Auxiliar De Servicios - L»: activos con contrato que implica menos de 8 h/día Lun–Vie.
+   * Contrato: `HORAS DE CONTRATO` — si > 12 → semanal ÷5; si no → diario.
+   * Horario: registro en tabla `horarios` con mismo CENTRO TRABAJO + GRUPO y vigencia actual; usa
+   * total_horas_semanales o total_minutos_semanales → h/día = ÷5.
+   * Subida contrato: referencia 40 h/semana; «Puede subir» = 40 − h/sem según contrato (orientativo).
+   */
+  const vacationControlLimpiadorPartTimeList = useMemo(() => {
+    const parseHorasContrato = (raw) => {
+      const s = String(raw ?? '').trim();
+      if (!s) return null;
+      const m = s.match(/(\d+(?:[.,]\d+)?)/);
+      if (!m) return null;
+      const n = parseFloat(String(m[1]).replace(',', '.'));
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return n;
+    };
+    const inferDailyMonFri = (n) => {
+      if (n > 12) return n / 5;
+      return n;
+    };
+    const parseDateMs = (d) => {
+      if (d == null || d === '') return null;
+      const t = new Date(d).getTime();
+      return Number.isNaN(t) ? null : t;
+    };
+    const findHorarioVigente = (centro, grupo) => {
+      const c = String(centro || '').trim().toLowerCase();
+      const g = String(grupo || '').trim().toLowerCase();
+      if (!c || !g || !horariosCatalog?.length) return null;
+      const t = Date.now();
+      const candidates = horariosCatalog.filter((h) => {
+        const hc = String(h.centro_nombre ?? h.centroNombre ?? '').trim().toLowerCase();
+        const hg = String(h.grupo_nombre ?? h.grupoNombre ?? '').trim().toLowerCase();
+        return hc === c && hg === g;
+      });
+      const valid = candidates.filter((h) => {
+        const vd = parseDateMs(h.vigente_desde ?? h.vigenteDesde);
+        const vh = parseDateMs(h.vigente_hasta ?? h.vigenteHasta);
+        const vdOk = vd == null || t >= vd;
+        const vhOk = vh == null || t <= vh;
+        return vdOk && vhOk;
+      });
+      const pool = valid.length ? valid : candidates;
+      if (!pool.length) return null;
+      return [...pool].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
+    };
+    const horasSemanalesDesdeHorario = (h) => {
+      if (!h) return null;
+      const th = Number(h.total_horas_semanales ?? h.totalHorasSemanales);
+      if (Number.isFinite(th) && th > 0) return th;
+      const tm = Number(h.total_minutos_semanales ?? h.totalMinutosSemanales);
+      if (Number.isFinite(tm) && tm > 0) return tm / 60;
+      return null;
+    };
+
+    const TARGET_DAILY = 8;
+    /** Referencia jornada completa semanal (España); margen de subida de contrato hasta este tope */
+    const MAX_H_SEMANALES_CONTRATO_REF = 40;
+    const isActivo = (u) =>
+      String(u?.ESTADO ?? u?.estado ?? '')
+        .trim()
+        .toUpperCase() === 'ACTIVO';
+
+    const rows = [];
+    (allUsers || []).forEach((u) => {
+      if (!isActivo(u)) return;
+      const rawGrupo = String(u['GRUPO'] || u.grupo || '').trim();
+      if (normalizeGroup(rawGrupo) !== 'Limpiador') return;
+
+      const rawHoras =
+        u['HORAS DE CONTRATO'] ??
+        u.HORAS_DE_CONTRATO ??
+        u.horas_contrato ??
+        u.horasContrato;
+      const num = parseHorasContrato(rawHoras);
+      if (num == null) return;
+
+      const horasDia = inferDailyMonFri(num);
+      if (horasDia >= TARGET_DAILY - 1e-6) return;
+
+      const horasHasta8 = Math.max(0, TARGET_DAILY - horasDia);
+      const nombre =
+        u['NOMBRE / APELLIDOS'] ||
+        u.NOMBRE_APELLIDOS ||
+        u.nombre ||
+        u['CODIGO'];
+
+      const centroTrabajo = String(
+        u['CENTRO TRABAJO'] || u.CENTRO_TRABAJO || u.centro_trabajo || u.centroTrabajo || '',
+      ).trim();
+      const hRec = findHorarioVigente(centroTrabajo, rawGrupo);
+      const hs = horasSemanalesDesdeHorario(hRec);
+      const horasDiaHorario =
+        hs != null ? Math.round((hs / 5) * 100) / 100 : null;
+      const horasDisponiblesHasta8Horario =
+        horasDiaHorario != null
+          ? Math.round(Math.max(0, TARGET_DAILY - horasDiaHorario) * 100) / 100
+          : null;
+
+      const horasSemanalesContrato =
+        Math.round((num > 12 ? num : num * 5) * 100) / 100;
+      const puedeSubirContratoHasta40Semanal = Math.round(
+        Math.max(0, MAX_H_SEMANALES_CONTRATO_REF - horasSemanalesContrato) * 100,
+      ) / 100;
+
+      rows.push({
+        codigo: String(u.CODIGO ?? u.codigo ?? '').trim(),
+        nombre: String(nombre || '').trim(),
+        grupoRaw: rawGrupo,
+        centroTrabajo,
+        horasContratoRaw: String(rawHoras),
+        interpretacionSemanal: num > 12,
+        horasDia: Math.round(horasDia * 100) / 100,
+        horasDisponiblesHasta8: Math.round(horasHasta8 * 100) / 100,
+        horasSemanalesContrato,
+        puedeSubirContratoHasta40Semanal,
+        horarioNombre: hRec ? String(hRec.nombre || '').trim() : '',
+        horarioId: hRec?.id ?? null,
+        horasSemanalesHorario:
+          hs != null ? Math.round(hs * 100) / 100 : null,
+        horasDiaHorario,
+        horasDisponiblesHasta8Horario,
+      });
+    });
+    rows.sort((a, b) => b.horasDisponiblesHasta8 - a.horasDisponiblesHasta8);
+    return rows;
+  }, [allUsers, horariosCatalog]);
+
+  /**
+   * Misma lista Limpiador/L + cruce con solicitudes de vacaciones (Aprobada/Pendiente) en el mes
+   * seleccionado y año vacationControlYear. «Refuerzo» = no en vacaciones ese mes y con margen hasta 8 h.
+   */
+  const vacationControlLimpiadorPartTimeWithVacationMonth = useMemo(() => {
+    const vacSol = (allSolicitudes || []).filter((s) => {
+      const t = String(s.tipo || s.TIPO || '')
+        .trim()
+        .toLowerCase();
+      if (t !== 'vacaciones') return false;
+      const e = (s.estado || s.ESTADO || '').trim();
+      return e === 'Aprobada' || e === 'Pendiente';
+    });
+
+    const activeUsers = (allUsers || []).filter(
+      (u) =>
+        String(u?.ESTADO ?? u?.estado ?? '')
+          .trim()
+          .toUpperCase() === 'ACTIVO',
+    );
+    const userByCodigo = new Map();
+    const userByEmail = new Map();
+    activeUsers.forEach((u) => {
+      const c = String(u.CODIGO ?? u.codigo ?? '').trim();
+      const m = String(
+        u['CORREO ELECTRONICO'] || u.CORREO_ELECTRONICO || u.EMAIL || u.email || '',
+      ).toLowerCase();
+      if (c) userByCodigo.set(c, u);
+      if (m) userByEmail.set(m, u);
+    });
+
+    const resolveActiveUserForSol = (sol) => {
+      const c = String(sol.codigo || sol.CODIGO || '').trim();
+      if (c && userByCodigo.has(c)) return userByCodigo.get(c);
+      const mail = String(
+        sol.email || sol.EMAIL || sol['CORREO ELECTRONICO'] || '',
+      ).toLowerCase();
+      if (mail && userByEmail.has(mail)) return userByEmail.get(mail);
+      return null;
+    };
+
+    const year = vacationControlYear;
+    const monthIdx = vacationPartTimeCompareMonth;
+    const lastDay = getDaysInMonth(year, monthIdx);
+    const monthStart = new Date(year, monthIdx, 1);
+    monthStart.setHours(0, 0, 0, 0);
+    const monthEnd = new Date(year, monthIdx, lastDay);
+    monthEnd.setHours(0, 0, 0, 0);
+
+    const hasVacationInSelectedMonth = (codigo) => {
+      const c = String(codigo || '').trim();
+      if (!c) return false;
+      return vacSol.some((sol) => {
+        const emp = resolveActiveUserForSol(sol);
+        if (!emp) return false;
+        const sc = String(emp.CODIGO || emp.codigo || '').trim();
+        if (sc !== c) return false;
+        const range = getSolicitudRangoFechasLocal(sol);
+        if (!range) return false;
+        const { start, end } = range;
+        return !(end < monthStart || start > monthEnd);
+      });
+    };
+
+    return vacationControlLimpiadorPartTimeList.map((row) => {
+      const enVac = hasVacationInSelectedMonth(row.codigo);
+      const margenContr = row.horasDisponiblesHasta8;
+      const margenHor = row.horasDisponiblesHasta8Horario;
+      const tieneMargen =
+        margenContr > 0.05 ||
+        (margenHor != null && margenHor > 0.05);
+      const puedeSubir40 =
+        row.puedeSubirContratoHasta40Semanal != null &&
+        row.puedeSubirContratoHasta40Semanal > 0.05;
+      /** Candidato a refuerzo: margen actual o posibilidad de subir contrato hacia 40 h/sem (referencia) */
+      const refuerzoPosible = !enVac && (tieneMargen || puedeSubir40);
+      let refuerzoDetalle = `Hasta ${margenContr.toFixed(1)} h/día según contrato`;
+      if (margenHor != null) {
+        refuerzoDetalle += `; hasta ${margenHor.toFixed(1)} h/día según horario`;
+      }
+      if (puedeSubir40) {
+        refuerzoDetalle += `. Subida posible: +${row.puedeSubirContratoHasta40Semanal.toFixed(1)} h/sem hasta 40 h/sem (ref.)`;
+      }
+      return {
+        ...row,
+        enVacacionesEnMesSeleccionado: enVac,
+        refuerzoPosibleJornada: refuerzoPosible,
+        refuerzoDetalle,
+      };
+    });
+  }, [
+    vacationControlLimpiadorPartTimeList,
+    vacationPartTimeCompareMonth,
+    vacationControlYear,
+    allSolicitudes,
+    allUsers,
+  ]);
+
+  const vacationPartTimeCompareSummary = useMemo(() => {
+    const list = vacationControlLimpiadorPartTimeWithVacationMonth;
+    const enVac = list.filter((x) => x.enVacacionesEnMesSeleccionado);
+    const refuerzo = list.filter((x) => x.refuerzoPosibleJornada);
+    return {
+      enVacacionesCount: enVac.length,
+      refuerzoCount: refuerzo.length,
+      enVacacionesNombres: enVac.map((x) => x.nombre).filter(Boolean),
+      refuerzoNombres: refuerzo.map((x) => x.nombre).filter(Boolean),
+    };
+  }, [vacationControlLimpiadorPartTimeWithVacationMonth]);
+
+  /**
+   * Por cada candidato a refuerzo: compañeros en vacaciones en el mes (misma lista) que podría cubrir
+   * (mismo CENTRO; prioridad mismo GRUPO). Segunda columna: mismo GRUPO pero OTRO centro.
+   * Horas: máx. h/día = max(h/día+margen, 8) si «Puede subir»>0 hacia 40 h/sem; si no, solo h/día+margen.
+   * Así se cuenta una posible subida de contrato para cubrir el puesto (orientativo).
+   */
+  const vacationPartTimeRefuerzoCobertura = useMemo(() => {
+    const list = vacationControlLimpiadorPartTimeWithVacationMonth;
+    const vacRows = list.filter((r) => r.enVacacionesEnMesSeleccionado);
+    const refRows = list.filter((r) => r.refuerzoPosibleJornada);
+
+    const normC = (r) => String(r.centroTrabajo || '').trim().toLowerCase();
+    const normG = (r) => String(r.grupoRaw || '').trim().toLowerCase();
+
+    const sameCentro = (a, b) => {
+      const ca = normC(a);
+      const cb = normC(b);
+      return ca.length > 0 && ca === cb;
+    };
+    const sameGrupo = (a, b) => normG(a) === normG(b);
+
+    /** h/día del puesto que queda vacante: preferir horario del compañero; si no, contrato */
+    const horasPuestoACubrir = (v) => {
+      if (v.horasDiaHorario != null && Number.isFinite(v.horasDiaHorario)) return v.horasDiaHorario;
+      if (Number.isFinite(v.horasDia)) return v.horasDia;
+      return null;
+    };
+    /** Margen del refuerzo hasta completar jornada 8 h: lo más restrictivo entre contrato y horario */
+    const margenRefuerzoHacia8 = (r) => {
+      const mC = r.horasDisponiblesHasta8;
+      const mH = r.horasDisponiblesHasta8Horario;
+      const okC = Number.isFinite(mC);
+      const okH = mH != null && Number.isFinite(mH);
+      if (okC && okH) return Math.min(mC, mH);
+      if (okC) return mC;
+      if (okH) return mH;
+      return null;
+    };
+    /** Máx. h/día que el refuerzo puede alcanzar (h/día contrato + margen hacia 8 h). Suele ser 8. */
+    const maxHorasDiaRefuerzo = (r) => {
+      const m = margenRefuerzoHacia8(r);
+      const hd = r.horasDia;
+      if (m == null || !Number.isFinite(hd)) return null;
+      return hd + m;
+    };
+    const JORNADA_REF_DIA = 8;
+    /**
+     * Techo h/día para cubrir bajas: si aún puede subir contrato hacia 40 h/sem, se admite hasta 8 h/día
+     * (misma referencia que «Puede subir» en la tabla); si no, solo el máximo actual.
+     */
+    const maxHorasDiaRefuerzoInclSubida = (r) => {
+      const base = maxHorasDiaRefuerzo(r);
+      const puedeSubir =
+        r.puedeSubirContratoHasta40Semanal != null &&
+        r.puedeSubirContratoHasta40Semanal > 0.05;
+      if (puedeSubir) {
+        const b = base != null && Number.isFinite(base) ? base : 0;
+        return Math.max(b, JORNADA_REF_DIA);
+      }
+      return base;
+    };
+    const HORAS_TOL = 0.05;
+    /** El puesto pide `nec` h/día; el refuerzo debe poder llegar al menos a eso (incl. subida teórica a 40 h/sem). */
+    const puedeCubrirPorHoras = (r, v) => {
+      const nec = horasPuestoACubrir(v);
+      const max = maxHorasDiaRefuerzoInclSubida(r);
+      if (nec == null || nec <= 0) return false;
+      if (max == null || !Number.isFinite(max)) return false;
+      return max + 1e-6 >= nec - HORAS_TOL;
+    };
+
+    /**
+     * Referencia orientativa: si en un mismo día se suman h/día propias del refuerzo (máx. contrato vs horario)
+     * y las h/día del puesto a cubrir, ¿se supera el tope de 8 h/día? Devuelve el exceso en horas o 0.
+     */
+    const horasDiaPropiaRefuerzo = (r) => {
+      const c = Number.isFinite(r.horasDia) ? r.horasDia : 0;
+      const h =
+        r.horasDiaHorario != null && Number.isFinite(r.horasDiaHorario)
+          ? r.horasDiaHorario
+          : null;
+      if (h == null) return c;
+      return Math.max(c, h);
+    };
+    const excesoSobre8hCombinadoRefVac = (ref, vac) => {
+      const nec = horasPuestoACubrir(vac);
+      if (nec == null || !Number.isFinite(nec) || nec <= 0) return 0;
+      const propia = horasDiaPropiaRefuerzo(ref);
+      if (!Number.isFinite(propia)) return 0;
+      const suma = propia + nec;
+      if (suma <= JORNADA_REF_DIA + HORAS_TOL) return 0;
+      return Math.round((suma - JORNADA_REF_DIA) * 100) / 100;
+    };
+    /** `quien`: nombre del refuerzo (lista «le pueden cubrir») o del compañero en vacaciones (lista «cubre»). */
+    const etiquetaRefVacConExceso8h = (ref, vac, quien) => {
+      const ex = excesoSobre8hCombinadoRefVac(ref, vac);
+      const nome =
+        quien === 'refuerzo'
+          ? String(ref.nombre || ref.codigo || '').trim()
+          : String(vac.nombre || vac.codigo || '').trim();
+      if (ex <= 0) return nome;
+      return `${nome} (+${ex} h sobre 8 h/día)`;
+    };
+
+    const refCandidatesAll = list.filter((r) => r.refuerzoPosibleJornada);
+
+    const quienPuedeCubrirAVacacion = (v) => {
+      const ideal = [];
+      const soloCentro = [];
+      for (const c of refCandidatesAll) {
+        if (String(c.codigo || '') === String(v.codigo || '')) continue;
+        if (!sameCentro(c, v)) continue;
+        if (!puedeCubrirPorHoras(c, v)) continue;
+        if (sameGrupo(c, v)) ideal.push(c);
+        else soloCentro.push(c);
+      }
+      const idealCodes = new Set(ideal.map((x) => x.codigo));
+      const soloCentroFiltered = soloCentro.filter((x) => !idealCodes.has(x.codigo));
+      const parts = [];
+      if (ideal.length) {
+        parts.push(
+          `Mismo centro y grupo: ${ideal.map((c) => etiquetaRefVacConExceso8h(c, v, 'refuerzo')).join(', ')}`,
+        );
+      }
+      if (soloCentroFiltered.length) {
+        parts.push(
+          `Mismo centro (otro grupo): ${soloCentroFiltered.map((c) => etiquetaRefVacConExceso8h(c, v, 'refuerzo')).join(', ')}`,
+        );
+      }
+      const otroCentroMg = [];
+      for (const c of refCandidatesAll) {
+        if (String(c.codigo || '') === String(v.codigo || '')) continue;
+        if (!normC(c).length || !normC(v).length) continue;
+        if (sameCentro(c, v)) continue;
+        if (!sameGrupo(c, v)) continue;
+        if (!puedeCubrirPorHoras(c, v)) continue;
+        otroCentroMg.push(c);
+      }
+      otroCentroMg.sort((a, b) =>
+        String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'),
+      );
+      const otroParts =
+        otroCentroMg.length > 0
+          ? [
+              `Mismo grupo, otro centro: ${otroCentroMg.map((c) => etiquetaRefVacConExceso8h(c, v, 'refuerzo')).join(', ')}`,
+            ]
+          : [];
+      const otroTooltip =
+        otroParts.length > 0
+          ? `${otroParts.join('\n')}\n\nCandidatos refuerzo en esta lista que podrían cubrir tu puesto (mismas reglas de horas y subida). Si «+X h sobre 8 h/día»: suma orientativa de tu jornada habitual (máx. contr./horario) + h/día del puesto a cubrir; la organización reparte horas y límites legales.`
+          : '';
+      return {
+        lePuedenCubrirMismoCentroEtiqueta: parts.length ? parts.join(' · ') : null,
+        lePuedenCubrirMismoCentroTooltip: parts.length
+          ? `${parts.join('\n')}\n\nQuién puede cubrir tu vacación si estás de baja (mismo centro). «+X h sobre 8 h/día»: suma orientativa jornada del candidato + tu puesto (mismo día); orientativo.`
+          : '',
+        lePuedenCubrirOtroCentroEtiqueta: otroParts.length ? otroParts.join(' · ') : null,
+        lePuedenCubrirOtroCentroTooltip: otroTooltip,
+      };
+    };
+
+    const rows = list.map((row) => {
+      if (!row.refuerzoPosibleJornada) {
+        const vacExtra = row.enVacacionesEnMesSeleccionado
+          ? quienPuedeCubrirAVacacion(row)
+          : {
+              lePuedenCubrirMismoCentroEtiqueta: null,
+              lePuedenCubrirMismoCentroTooltip: '',
+              lePuedenCubrirOtroCentroEtiqueta: null,
+              lePuedenCubrirOtroCentroTooltip: '',
+            };
+        return {
+          ...row,
+          refuerzoVacantesIdeal: [],
+          refuerzoVacantesSoloCentro: [],
+          refuerzoVacantesEtiqueta: null,
+          refuerzoVacantesTooltip: '',
+          refuerzoVacantesOtroCentro: [],
+          refuerzoVacantesOtroCentroEtiqueta: null,
+          refuerzoVacantesOtroCentroTooltip: '',
+          ...vacExtra,
+        };
+      }
+      const ideal = [];
+      const soloCentro = [];
+      for (const v of vacRows) {
+        if (String(v.codigo || '') === String(row.codigo || '')) continue;
+        if (!sameCentro(row, v)) continue;
+        if (!puedeCubrirPorHoras(row, v)) continue;
+        if (sameGrupo(row, v)) ideal.push(v);
+        else soloCentro.push(v);
+      }
+      const idealCodes = new Set(ideal.map((x) => x.codigo));
+      const soloCentroFiltered = soloCentro.filter((x) => !idealCodes.has(x.codigo));
+
+      const parts = [];
+      if (ideal.length) {
+        parts.push(
+          `Mismo centro y grupo: ${ideal.map((vac) => etiquetaRefVacConExceso8h(row, vac, 'vacacion')).join(', ')}`,
+        );
+      }
+      if (soloCentroFiltered.length) {
+        parts.push(
+          `Mismo centro (otro grupo): ${soloCentroFiltered.map((vac) => etiquetaRefVacConExceso8h(row, vac, 'vacacion')).join(', ')}`,
+        );
+      }
+      const refuerzoVacantesEtiqueta = parts.length ? parts.join(' · ') : null;
+      const refuerzoVacantesTooltip = parts.length
+        ? `${parts.join('\n')}\n\nIncluye posible subida de contrato hasta 40 h/sem (tope 8 h/día) si «Puede subir»>0. «+X h sobre 8 h/día»: suma orientativa de tu jornada (máx. contr./horario) + h/día del puesto del compañero en vacaciones (mismo día); orientativo.`
+        : '';
+
+      /** Mismo grupo, distinto centro (no incluye mismo centro). Requiere centro en ambas fichas. */
+      const otroCentroMismoGrupo = [];
+      for (const v of vacRows) {
+        if (String(v.codigo || '') === String(row.codigo || '')) continue;
+        if (!normC(row).length || !normC(v).length) continue;
+        if (sameCentro(row, v)) continue;
+        if (!sameGrupo(row, v)) continue;
+        if (!puedeCubrirPorHoras(row, v)) continue;
+        otroCentroMismoGrupo.push(v);
+      }
+      otroCentroMismoGrupo.sort((a, b) =>
+        String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'),
+      );
+
+      const otroParts = [];
+      if (otroCentroMismoGrupo.length) {
+        otroParts.push(
+          `Mismo grupo, otro centro: ${otroCentroMismoGrupo.map((vac) => etiquetaRefVacConExceso8h(row, vac, 'vacacion')).join(', ')}`,
+        );
+      }
+      const refuerzoVacantesOtroCentroEtiqueta = otroParts.length
+        ? otroParts.join(' · ')
+        : null;
+      const refuerzoVacantesOtroCentroTooltip = otroParts.length
+        ? `${otroParts.join('\n')}\n\nCada nombre es una baja distinta en el mes. Criterio de horas: máx. actual o 8 h/día si puede subir contrato (40 h/sem ref.). «+X h sobre 8 h/día»: suma orientativa jornada + puesto a cubrir. La organización decide la subida real.`
+        : '';
+
+      return {
+        ...row,
+        refuerzoVacantesIdeal: ideal,
+        refuerzoVacantesSoloCentro: soloCentroFiltered,
+        refuerzoVacantesEtiqueta,
+        refuerzoVacantesTooltip,
+        refuerzoVacantesOtroCentro: otroCentroMismoGrupo,
+        refuerzoVacantesOtroCentroEtiqueta,
+        refuerzoVacantesOtroCentroTooltip,
+        lePuedenCubrirMismoCentroEtiqueta: null,
+        lePuedenCubrirMismoCentroTooltip: '',
+        lePuedenCubrirOtroCentroEtiqueta: null,
+        lePuedenCubrirOtroCentroTooltip: '',
+      };
+    });
+
+    const N = vacRows.length;
+    let conCentroGrupo = 0;
+    let conCentro = 0;
+    for (const v of vacRows) {
+      let okG = false;
+      let okC = false;
+      for (const r of refRows) {
+        if (String(r.codigo || '') === String(v.codigo || '')) continue;
+        if (!sameCentro(r, v)) continue;
+        if (!puedeCubrirPorHoras(r, v)) continue;
+        okC = true;
+        if (sameGrupo(r, v)) okG = true;
+      }
+      if (okG) conCentroGrupo += 1;
+      if (okC) conCentro += 1;
+    }
+
+    const pct = (a, n) => (n > 0 ? Math.round((a / n) * 1000) / 10 : null);
+
+    return {
+      rows,
+      stats: {
+        vacacionesTotal: N,
+        cubiertasMismoCentroYGrupo: conCentroGrupo,
+        cubiertasMismoCentro: conCentro,
+        pctCentroYGrupo: pct(conCentroGrupo, N),
+        pctCentro: pct(conCentro, N),
+      },
+    };
+  }, [vacationControlLimpiadorPartTimeWithVacationMonth]);
+
+  const exportLimpiadorRefuerzoTableXlsx = useCallback(async () => {
+    const dataRows = vacationPartTimeRefuerzoCobertura?.rows ?? [];
+    if (!dataRows.length) return;
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Refuerzos', {
+        views: [{ state: 'frozen', ySplit: 2 }],
+      });
+      const mesLabel = MONTHS[vacationPartTimeCompareMonth + 1] || '';
+      const title = `Limpiador / Auxiliar L (< 8 h/día) — ${mesLabel} ${vacationControlYear}`;
+      ws.mergeCells(1, 1, 1, 20);
+      const tCell = ws.getCell(1, 1);
+      tCell.value = title;
+      tCell.font = { bold: true, size: 12 };
+      tCell.alignment = { vertical: 'middle' };
+
+      const headers = [
+        'Código',
+        'Nombre',
+        'Centro',
+        'Grupo',
+        'H. contrato',
+        'h/día (contr.)',
+        'hasta 8 (contr.)',
+        'H. sem. (contr.)',
+        'Puede subir (h/sem)',
+        'Horario (catálogo)',
+        'Horario id',
+        'H. sem. (horario)',
+        'h/día (horario)',
+        'hasta 8 (horario)',
+        'Vac. mes',
+        '¿Refuerzo?',
+        'Cubre vac. (mismo centro)',
+        'Cubre vac. (otro centro)',
+        'Le pueden cubrir (mismo centro)',
+        'Le pueden cubrir (otro centro)',
+      ];
+      const hr = ws.addRow(headers);
+      hr.font = { bold: true };
+      hr.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE8DEF5' },
+      };
+
+      const yn = (b) => (b ? 'Sí' : 'No');
+      dataRows.forEach((r) => {
+        ws.addRow([
+          r.codigo ?? '',
+          r.nombre ?? '',
+          r.centroTrabajo ?? '',
+          r.grupoRaw ?? '',
+          `${r.horasContratoRaw ?? ''}${r.interpretacionSemanal ? ' (sem.)' : ' (día)'}`,
+          r.horasDia ?? '',
+          r.horasDisponiblesHasta8 ?? '',
+          r.horasSemanalesContrato ?? '',
+          r.puedeSubirContratoHasta40Semanal ?? '',
+          r.horarioNombre ?? '',
+          r.horarioId ?? '',
+          r.horasSemanalesHorario ?? '',
+          r.horasDiaHorario ?? '',
+          r.horasDisponiblesHasta8Horario ?? '',
+          yn(r.enVacacionesEnMesSeleccionado),
+          yn(r.refuerzoPosibleJornada),
+          r.refuerzoVacantesEtiqueta ?? '',
+          r.refuerzoVacantesOtroCentroEtiqueta ?? '',
+          r.lePuedenCubrirMismoCentroEtiqueta ?? '',
+          r.lePuedenCubrirOtroCentroEtiqueta ?? '',
+        ]);
+      });
+
+      [10, 28, 36, 22, 12, 10, 10, 10, 10, 24, 8, 10, 10, 10, 8, 10, 36, 36, 36, 36].forEach((w, i) => {
+        ws.getColumn(i + 1).width = w;
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `refuerzos-limpiador-L-${vacationControlYear}-${String(vacationPartTimeCompareMonth + 1).padStart(2, '0')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo generar el Excel. Inténtalo de nuevo.');
+    }
+  }, [
+    vacationPartTimeRefuerzoCobertura,
+    vacationPartTimeCompareMonth,
+    vacationControlYear,
+  ]);
+
+  /**
+   * Estado por mes (año = vacationControlYear): Abierta vs Cerrada para solicitar vacaciones.
+   * Cerrada si: (1) bloqueo API cubre todo el mes (como modal «Bloquear mes entero»), o (2) mes ya pasado por completo.
+   */
+  const vacationMonthHeaderStatus = useMemo(() => {
+    const year = vacationControlYear;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const list = [];
+    for (let month1 = 1; month1 <= 12; month1++) {
+      const firstDay = `${year}-${String(month1).padStart(2, '0')}-01`;
+      const lastDayNum = new Date(year, month1, 0).getDate();
+      const lastDay = `${year}-${String(month1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+      const fullyBlockedByApi = (vacationBlockedPeriods || []).some((p) => {
+        const inicio = (
+          typeof p.fecha_inicio === 'string'
+            ? p.fecha_inicio
+            : p.fecha_inicio?.split?.('T')[0] ?? ''
+        ).slice(0, 10);
+        const fin = (
+          typeof p.fecha_fin === 'string'
+            ? p.fecha_fin
+            : p.fecha_fin?.split?.('T')[0] ?? ''
+        ).slice(0, 10);
+        return inicio <= firstDay && fin >= lastDay;
+      });
+      const exactFullMonthPeriodId =
+        (vacationBlockedPeriods || []).find((p) => {
+          const inicio = (
+            typeof p.fecha_inicio === 'string'
+              ? p.fecha_inicio
+              : p.fecha_inicio?.split?.('T')[0] ?? ''
+          ).slice(0, 10);
+          const fin = (
+            typeof p.fecha_fin === 'string'
+              ? p.fecha_fin
+              : p.fecha_fin?.split?.('T')[0] ?? ''
+          ).slice(0, 10);
+          return inicio === firstDay && fin === lastDay;
+        })?.id ?? null;
+      const monthEnd = new Date(year, month1 - 1, lastDayNum);
+      monthEnd.setHours(0, 0, 0, 0);
+      const entirelyPast = monthEnd < today;
+
+      let locked = false;
+      let title = '';
+      let reason = 'open';
+      if (fullyBlockedByApi) {
+        locked = true;
+        reason = 'api';
+        title =
+          'Cerrada: mes bloqueado por administración (periodo que cubre todo el mes; no se pueden solicitar vacaciones en estas fechas).';
+      } else if (entirelyPast) {
+        locked = true;
+        reason = 'past';
+        title =
+          'Cerrada: mes pasado (no se pueden solicitar nuevas vacaciones en fechas ya cerradas).';
+      } else {
+        locked = false;
+        reason = 'open';
+        title =
+          'Abierta: se pueden solicitar vacaciones en fechas disponibles (pueden existir intervalos concretos o reglas de calendario).';
+      }
+      list.push({
+        locked,
+        title,
+        reason,
+        exactFullMonthPeriodId,
+        fullyBlockedByApi,
+        entirelyPast,
+        firstDay,
+        lastDay,
+      });
+    }
+    return list;
+  }, [vacationControlYear, vacationBlockedPeriods]);
+
+  /** Empleados activos (API estadísticas): uso completo / parcial / sin consumo. */
+  const vacationControlUso = useMemo(() => {
+    const list = (estadisticas || []).map((emp) => {
+      const v = emp.vacaciones;
+      const consum = Number(v?.dias_consumidos_aprobados) || 0;
+      const rest = Number(v?.dias_restantes) || 0;
+      let estadoUso = 'sin_uso';
+      if (consum > 0) {
+        estadoUso = rest <= 0.01 ? 'completo' : 'parcial';
+      }
+      return { ...emp, consum, rest, estadoUso };
+    });
+    const summary = { completo: 0, parcial: 0, sin_uso: 0, total: list.length };
+    list.forEach((e) => {
+      if (e.estadoUso === 'completo') summary.completo++;
+      else if (e.estadoUso === 'parcial') summary.parcial++;
+      else summary.sin_uso++;
+    });
+    return { list, summary };
+  }, [estadisticas]);
+
+  const vacationControlEmpleadosFiltrados = useMemo(() => {
+    let list = vacationControlUso.list;
+    if (selectedUser !== 'ALL') {
+      const u = allUsers.find(
+        (x) =>
+          (x['CORREO ELECTRONICO'] || x.EMAIL || x.email) === selectedUser,
+      );
+      const cod = u?.CODIGO || u?.codigo;
+      if (cod) list = list.filter((e) => e.codigo === cod);
+    }
+    return list;
+  }, [vacationControlUso, selectedUser, allUsers]);
+
+  /** Todas → Vacaciones: empleados distintos en la lista filtrada (mismo filtro que la tabla; no el nº de solicitudes). */
+  const vacacionesListaEmpleadosUnicos = useMemo(() => {
+    if (selectedTab !== 'vacaciones') return 0;
+    const keys = new Set();
+    getFilteredSolicitudes.forEach((s) => {
+      const em = String(s.email || s.EMAIL || '').trim().toLowerCase();
+      const cod = String(s.codigo || s.CODIGO || '').trim();
+      if (em) keys.add(`e:${em}`);
+      else if (cod) keys.add(`c:${cod}`);
+    });
+    return keys.size;
+  }, [getFilteredSolicitudes, selectedTab]);
 
   // Statistici pentru bajas médicas
   const bajasStats = useMemo(() => {
@@ -7837,6 +8916,85 @@ export default function SolicitudesPage() {
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solicitudes]);
+
+  const handleVacationMonthBlockAction = useCallback(
+    async (monthIdx, action) => {
+      if (authUser?.isDemo || !canAccessAllTabs) return;
+      const year = vacationControlYear;
+      const month1 = monthIdx + 1;
+      const firstDay = `${year}-${String(month1).padStart(2, '0')}-01`;
+      const lastDayNum = new Date(year, month1, 0).getDate();
+      const lastDay = `${year}-${String(month1).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+      const periodId =
+        (vacationBlockedPeriods || []).find((p) => {
+          const inicio = (
+            typeof p.fecha_inicio === 'string'
+              ? p.fecha_inicio
+              : p.fecha_inicio?.split?.('T')[0] ?? ''
+          ).slice(0, 10);
+          const fin = (
+            typeof p.fecha_fin === 'string'
+              ? p.fecha_fin
+              : p.fecha_fin?.split?.('T')[0] ?? ''
+          ).slice(0, 10);
+          return inicio === firstDay && fin === lastDay;
+        })?.id ?? null;
+
+      setErrorMsg('');
+      setVacationMonthActionBusy(true);
+      try {
+        if (action === 'block') {
+          await callApi(routes.createVacationBlockedPeriod, {
+            method: 'POST',
+            body: JSON.stringify({ fecha_inicio: firstDay, fecha_fin: lastDay }),
+            headers: { 'Content-Type': 'application/json' },
+          });
+          await fetchVacationBlockedPeriods();
+          setVacationMonthMenuIdx(null);
+        } else if (action === 'unblock') {
+          if (periodId == null) {
+            setErrorMsg(
+              'No hay bloqueo exacto de mes; usa «Bloquear periodos vacaciones» para ajustar el periodo.',
+            );
+            return;
+          }
+          await callApi(routes.deleteVacationBlockedPeriod(periodId), { method: 'DELETE' });
+          await fetchVacationBlockedPeriods();
+          setVacationMonthMenuIdx(null);
+        }
+      } catch (e) {
+        setErrorMsg(e?.message || 'Error al actualizar el bloqueo.');
+      } finally {
+        setVacationMonthActionBusy(false);
+      }
+    },
+    [
+      authUser?.isDemo,
+      canAccessAllTabs,
+      vacationControlYear,
+      vacationBlockedPeriods,
+      callApi,
+      fetchVacationBlockedPeriods,
+    ],
+  );
+
+  useEffect(() => {
+    if (vacationMonthMenuIdx === null) return;
+    const onDown = (e) => {
+      const t = e.target;
+      if (t.closest?.('[data-vacation-month-menu]') || t.closest?.('[data-vacation-month-trigger]')) return;
+      setVacationMonthMenuIdx(null);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setVacationMonthMenuIdx(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [vacationMonthMenuIdx]);
 
   const isMotivoExpanded = (solicitud) => {
     const sid = solicitud?.id ?? 'unknown';
@@ -8874,7 +10032,9 @@ export default function SolicitudesPage() {
               
               <button
                 onClick={handleExportExcel}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
+                  disabled={selectedTab === 'control_vacaciones'}
+                  title={selectedTab === 'control_vacaciones' ? 'Cambia de pestaña para exportar la lista' : undefined}
+                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm">📊</span>
@@ -8884,7 +10044,9 @@ export default function SolicitudesPage() {
 
               <button
                 onClick={handleExportPDF}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white"
+                  disabled={selectedTab === 'control_vacaciones'}
+                  title={selectedTab === 'control_vacaciones' ? 'Cambia de pestaña para exportar la lista' : undefined}
+                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm">📄</span>
@@ -9042,6 +10204,29 @@ export default function SolicitudesPage() {
                     <span>Vacaciones</span>
                   </div>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedTab('control_vacaciones')}
+                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+                    selectedTab === 'control_vacaciones'
+                      ? 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-teal-200'
+                      : 'bg-white text-teal-700 border-2 border-teal-200 hover:border-teal-400 hover:bg-teal-50'
+                  }`}
+                >
+                  <div
+                    className={`absolute inset-0 rounded-xl transition-all duration-300 ${
+                      selectedTab === 'control_vacaciones'
+                        ? 'bg-teal-400 opacity-25 blur-md animate-pulse'
+                        : 'bg-teal-400 opacity-0 group-hover:opacity-15 blur-md'
+                    }`}
+                  />
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-lg">📈</span>
+                    <span className="hidden sm:inline">Control vacaciones</span>
+                    <span className="sm:hidden">Ctrl. vac.</span>
+                  </div>
+                </button>
                 
                 <button
                   onClick={() => setSelectedTab('ausencias')}
@@ -9144,23 +10329,97 @@ export default function SolicitudesPage() {
 
               {/* Selector meses y tipo - Dropdowns en línea */}
               <div className="flex flex-col sm:flex-row gap-4 w-full">
-                <div className="flex-1 sm:flex-initial sm:w-auto">
-                  <label htmlFor="month-selector" className="block text-sm font-semibold text-gray-700 mb-2">
-                    Filtrar por mes
-                  </label>
-                  <select
-                    id="month-selector"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
-                  >
-                    {MONTHS.map((month, idx) => (
-                      <option key={month} value={idx}>
-                        {idx === 0 ? `📅 ${month}` : month}
-                      </option>
-                    ))}
-                  </select>
+                {selectedTab === 'control_vacaciones' ? (
+                  <div className="flex-1 sm:flex-initial sm:w-auto">
+                    <label
+                      htmlFor="vacation-control-year"
+                      className="block text-sm font-semibold text-gray-700 mb-2"
+                    >
+                      Año (cupos y calendario)
+                    </label>
+                    <select
+                      id="vacation-control-year"
+                      value={vacationControlYear}
+                      onChange={(e) => setVacationControlYear(Number(e.target.value))}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 bg-white text-teal-800 border-2 border-teal-200 hover:border-teal-400 cursor-pointer"
+                    >
+                      {[0, 1, 2].map((offset) => {
+                        const y = new Date().getFullYear() - 1 + offset;
+                        return (
+                          <option key={y} value={y}>
+                            📅 {y}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500 max-w-md">
+                      La tabla cuenta empleados únicos con vacaciones en el mes (no el cupo simultáneo por día).
+                    </p>
+                  </div>
+                ) : (
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-4 w-full sm:w-auto">
+                  <div className="flex-1 sm:flex-initial sm:w-auto min-w-0">
+                    <label htmlFor="month-selector" className="block text-sm font-semibold text-gray-700 mb-2">
+                      Filtrar por mes
+                    </label>
+                    <select
+                      id="month-selector"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                    >
+                      {MONTHS.map((month, idx) => (
+                        <option key={month} value={idx}>
+                          {idx === 0 ? `📅 ${month}` : month}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {selectedMonth > 0 && (
+                    <div className="flex-1 sm:flex-initial sm:w-auto min-w-0">
+                      <label
+                        htmlFor="todas-month-filter-year"
+                        className="block text-sm font-semibold text-gray-700 mb-2"
+                      >
+                        Año (lista y Control vacaciones)
+                      </label>
+                      <select
+                        id="todas-month-filter-year"
+                        value={vacationControlYear}
+                        onChange={(e) => setVacationControlYear(Number(e.target.value))}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                      >
+                        {[0, 1, 2].map((offset) => {
+                          const y = new Date().getFullYear() - 1 + offset;
+                          return (
+                            <option key={y} value={y}>
+                              📅 {y}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500 max-w-xs hidden sm:block">
+                        Mismo año que la tabla Control vacaciones. El mes incluye solicitudes cuyo periodo se solapa con
+                        ese mes (no solo las que empiezan en el mes).
+                      </p>
+                    </div>
+                  )}
+                  {selectedTab === 'vacaciones' && (
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-cyan-200 bg-cyan-50 text-cyan-900 text-sm shadow-sm shrink-0"
+                      title={`Empleados distintos con al menos una solicitud en la lista (año ${vacationControlYear}, periodo solapado con el mes)`}
+                    >
+                      <span className="text-base" aria-hidden>
+                        👤
+                      </span>
+                      <span>
+                        <span className="font-bold text-lg tabular-nums">{vacacionesListaEmpleadosUnicos}</span>
+                        <span className="text-cyan-800/90"> empleado(s)</span>
+                      </span>
+                    </div>
+                  )}
                 </div>
+                )}
 
                 {/* Selector tipo ausencia - Multi-select Dropdown (doar pentru tab-ul 'ausencias') */}
                 {selectedTab === 'ausencias' && (
@@ -9408,7 +10667,933 @@ export default function SolicitudesPage() {
             )}
 
             {/* Lista filtrada */}
-            {(isOperationLoading('allSolicitudes') || (selectedTab === 'ausencias' && isOperationLoading('ausencias'))) ? (
+            {selectedTab === 'control_vacaciones' ? (
+              <div className="space-y-6 mb-6">
+                {authUser?.isDemo ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900 text-sm">
+                    En modo demo no se cargan estadísticas de vacaciones para este panel.
+                  </div>
+                ) : isOperationLoading('allSolicitudes') ? (
+                  <div className="flex justify-center py-12">
+                    <LoadingSpinner size="lg" text="Cargando solicitudes..." />
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-gray-900`}>
+                          Vacaciones por grupo y mes (empleados)
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Año {vacationControlYear}. Solo activos. X/N y %: distintos con vacaciones en el mes. «Disp.
+                          cubrir»: N − X (sin vacaciones en el mes). «Pico día / lím.»: en el día más cargado del mes,
+                          cuántos del grupo están de vacaciones a la vez, frente al tope diario del grupo (regla
+                          10%/15%). Si el pico supera el límite, revisar planificación. En cabecera:{' '}
+                          <span className="text-emerald-700">Abierta</span> /{' '}
+                          <span className="text-rose-700">Cerrada</span> según bloqueo de mes completo (misma lógica que
+                          «Bloquear periodos vacaciones») o mes ya pasado.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setEstadisticasLoading(true);
+                          try {
+                            const response = await callApi(routes.getVacacionesEstadisticas, {
+                              method: 'GET',
+                            });
+                            if (response?.success && response?.data?.success && response?.data?.estadisticas) {
+                              setEstadisticas(response.data.estadisticas);
+                            }
+                          } catch (e) {
+                            console.error(e);
+                          } finally {
+                            setEstadisticasLoading(false);
+                          }
+                        }}
+                        disabled={estadisticasLoading}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${estadisticasLoading ? 'animate-spin' : ''}`} />
+                        Actualizar empleados
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <div className="text-xs font-medium text-gray-500">Empleados activos</div>
+                        <div className="text-2xl font-bold text-gray-900">{vacationControlUso.summary.total}</div>
+                      </div>
+                      <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
+                        <div className="text-xs font-medium text-orange-800">Cupo agotado</div>
+                        <div className="text-2xl font-bold text-orange-900">{vacationControlUso.summary.completo}</div>
+                        <div className="text-[10px] text-orange-700 mt-1">Sin días restantes (con consumo)</div>
+                      </div>
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+                        <div className="text-xs font-medium text-blue-800">Uso parcial</div>
+                        <div className="text-2xl font-bold text-blue-900">{vacationControlUso.summary.parcial}</div>
+                      </div>
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
+                        <div className="text-xs font-medium text-gray-600">Sin consumir</div>
+                        <div className="text-2xl font-bold text-gray-900">{vacationControlUso.summary.sin_uso}</div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-teal-200 bg-white shadow-sm">
+                      <table className="min-w-[900px] w-full text-xs sm:text-sm">
+                        <thead>
+                          <tr className="bg-teal-600 text-white">
+                            <th className="sticky left-0 z-10 bg-teal-600 px-3 py-2 text-left font-semibold">Grupo</th>
+                            <th
+                              className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                              title="Empleados activos en el grupo (ESTADO = Activo)"
+                            >
+                              N
+                            </th>
+                            {MONTHS.slice(1).map((m, idx) => {
+                              const st = vacationMonthHeaderStatus[idx];
+                              const canInteract =
+                                canAccessAllTabs && !authUser?.isDemo;
+                              const pillClass = `inline-flex items-center justify-center gap-0.5 rounded-full px-1 py-0.5 text-[8px] sm:text-[9px] font-bold leading-none ${
+                                st?.locked
+                                  ? 'bg-rose-100 text-rose-800 ring-1 ring-rose-200/80'
+                                  : 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200/80'
+                              }`;
+                              const pillInner = (
+                                <>
+                                  {st?.locked ? (
+                                    <Lock className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" aria-hidden />
+                                  ) : (
+                                    <Unlock className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" aria-hidden />
+                                  )}
+                                  <span className="hidden sm:inline max-w-[3rem] truncate">
+                                    {st?.locked ? 'Cerrada' : 'Abierta'}
+                                  </span>
+                                </>
+                              );
+                              return (
+                                <th
+                                  key={m}
+                                  className="px-1 py-2 text-center font-semibold align-bottom min-w-[3.25rem]"
+                                >
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span className="text-[11px] sm:text-xs leading-tight">
+                                      {m.slice(0, 3)}
+                                    </span>
+                                    {canInteract ? (
+                                      <button
+                                        type="button"
+                                        data-vacation-month-trigger
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const r = e.currentTarget.getBoundingClientRect();
+                                          setVacationMonthMenuPos({
+                                            top: r.bottom + 6,
+                                            left: r.left + r.width / 2,
+                                          });
+                                          setVacationMonthMenuIdx((prev) =>
+                                            prev === idx ? null : idx,
+                                          );
+                                        }}
+                                        className={`${pillClass} cursor-pointer hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400`}
+                                        title={`${st?.title ?? ''} Clic: bloquear o desbloquear el mes completo.`}
+                                        aria-expanded={vacationMonthMenuIdx === idx}
+                                        aria-haspopup="menu"
+                                      >
+                                        {pillInner}
+                                      </button>
+                                    ) : (
+                                      <span className={pillClass} title={st?.title}>
+                                        {pillInner}
+                                      </span>
+                                    )}
+                                  </div>
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {vacationControlByGroupMonth.length === 0 ? (
+                            <tr>
+                              <td colSpan={14} className="px-4 py-6 text-center text-gray-500">
+                                No hay grupos con empleados en la lista cargada.
+                              </td>
+                            </tr>
+                          ) : (
+                            vacationControlByGroupMonth.map((row) => (
+                              <tr key={row.group} className="hover:bg-gray-50/80">
+                                <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-gray-900 border-r border-gray-100">
+                                  {row.group}
+                                </td>
+                                <td className="text-center text-gray-600">{row.groupSize}</td>
+                                {row.months.map((m) => (
+                                  <td
+                                    key={m.monthIndex}
+                                    className={`px-1 py-2 text-center align-top ${
+                                      m.groupSize > 0 &&
+                                      m.empleadosConVacaciones >= m.groupSize
+                                        ? 'bg-amber-50 text-amber-900'
+                                        : m.empleadosConVacaciones > 0
+                                          ? 'bg-teal-50/60'
+                                          : ''
+                                    }`}
+                                    title={`${m.monthLabel}: ${m.empleadosConVacaciones} con vacaciones en el mes; ${m.empleadosDisponiblesCubrir} sin vacaciones en el mes. Pico: hasta ${m.picoSimultaneosMes} a la vez en un día (carga a repartir); límite regla: ${m.limiteSimultaneosDia}/día.`}
+                                  >
+                                    <div className="font-bold leading-tight">
+                                      {m.empleadosConVacaciones}/{m.groupSize}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 leading-tight">
+                                      {m.groupSize > 0
+                                        ? `${Math.round((100 * m.empleadosConVacaciones) / m.groupSize)}%`
+                                        : '—'}
+                                    </div>
+                                    <div className="text-[10px] text-emerald-800/90 leading-tight mt-0.5 font-medium">
+                                      Disp. cubrir: {m.empleadosDisponiblesCubrir}
+                                    </div>
+                                    <div
+                                      className={`text-[10px] leading-tight mt-0.5 font-medium ${
+                                        m.picoSimultaneosMes > m.limiteSimultaneosDia
+                                          ? 'text-red-700'
+                                          : 'text-slate-700'
+                                      }`}
+                                    >
+                                      Pico día: {m.picoSimultaneosMes}
+                                      <span className="text-slate-500 font-normal">
+                                        {' '}
+                                        / lím. {m.limiteSimultaneosDia}
+                                      </span>
+                                    </div>
+                                  </td>
+                                ))}
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {vacationMonthMenuIdx !== null &&
+                      canAccessAllTabs &&
+                      !authUser?.isDemo &&
+                      vacationMonthHeaderStatus[vacationMonthMenuIdx] &&
+                      createPortal(
+                        <div
+                          data-vacation-month-menu
+                          role="menu"
+                          aria-label="Bloqueo de mes de vacaciones"
+                          className="fixed z-[100] min-w-[240px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg text-left text-sm"
+                          style={{
+                            top: vacationMonthMenuPos.top,
+                            left: vacationMonthMenuPos.left,
+                            transform: 'translateX(-50%)',
+                          }}
+                        >
+                          {(() => {
+                            const ms = vacationMonthHeaderStatus[vacationMonthMenuIdx];
+                            const monthLabel =
+                              MONTHS[vacationMonthMenuIdx + 1] ?? 'Mes';
+                            if (ms.reason === 'past') {
+                              return (
+                                <p className="px-3 py-2 text-xs text-gray-600">
+                                  {monthLabel} ({vacationControlYear}): mes pasado
+                                  — no se puede bloquear ni desbloquear desde aquí.
+                                </p>
+                              );
+                            }
+                            if (ms.reason === 'open') {
+                              return (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  disabled={vacationMonthActionBusy}
+                                  onClick={() =>
+                                    handleVacationMonthBlockAction(
+                                      vacationMonthMenuIdx,
+                                      'block',
+                                    )
+                                  }
+                                  className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-amber-50 disabled:opacity-50"
+                                >
+                                  {vacationMonthActionBusy
+                                    ? 'Procesando…'
+                                    : `Bloquear ${monthLabel} completo`}
+                                </button>
+                              );
+                            }
+                            if (ms.reason === 'api') {
+                              if (ms.exactFullMonthPeriodId != null) {
+                                return (
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={vacationMonthActionBusy}
+                                    onClick={() =>
+                                      handleVacationMonthBlockAction(
+                                        vacationMonthMenuIdx,
+                                        'unblock',
+                                      )
+                                    }
+                                    className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-amber-50 disabled:opacity-50"
+                                  >
+                                    {vacationMonthActionBusy
+                                      ? 'Procesando…'
+                                      : `Desbloquear ${monthLabel}`}
+                                  </button>
+                                );
+                              }
+                              return (
+                                <p className="px-3 py-2 text-xs text-gray-600">
+                                  {monthLabel} está cubierto por un periodo distinto
+                                  al mes entero. Elimínalo en «Bloquear periodos
+                                  vacaciones».
+                                </p>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>,
+                        document.body,
+                      )}
+
+                    <div className="rounded-xl border border-slate-300 bg-gradient-to-br from-slate-50 to-white shadow-sm overflow-hidden">
+                      <div className="px-4 py-3 border-b border-slate-200 bg-slate-100/80">
+                        <h4 className="font-semibold text-gray-900">
+                          Contratación estimada (personal nuevo — no sobrecargar la plantilla)
+                        </h4>
+                        <p className="text-sm text-gray-700 mt-1.5 leading-relaxed">
+                          Aquí <strong>no</strong> se usa a tus empleados actuales para cubrir vacantes (eso
+                          sumaría horas y puede chocar con límites de Seguridad Social). Se calcula cuántas
+                          personas <strong>nuevas</strong> harían falta como refuerzo usando la misma regla que
+                          arriba: en cada mes, déficit = «Pico día» − «límite» del grupo. El{' '}
+                          <strong>mínimo a contratar «a la vez»</strong> es el peor déficit del año en ese grupo.
+                          Si contratas ese mínimo, <strong>las mismas personas nuevas</strong> pueden ir cubriendo
+                          varios meses del año, porque en ningún día necesitas más refuerzos simultáneos que ese
+                          máximo. Es una <strong>estimación orientativa</strong>, no sustituye asesoría laboral.
+                        </p>
+                      </div>
+                      {vacationNewHireEstimateByGroup.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                          No hay grupos con datos para esta estimación.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-[640px] w-full text-xs sm:text-sm">
+                            <thead className="bg-slate-200/90">
+                              <tr className="text-slate-900">
+                                <th className="px-3 py-2 text-left font-semibold">Grupo</th>
+                                <th
+                                  className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                                  title="Activos en el grupo"
+                                >
+                                  N
+                                </th>
+                                <th
+                                  className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                                  title="Mínimo de refuerzos simultáneos en el peor mes (pico − límite)"
+                                >
+                                  Mín. refuerzos (peor mes)
+                                </th>
+                                <th
+                                  className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                                  title="Meses en que el pico supera el límite"
+                                >
+                                  Meses con déficit
+                                </th>
+                                <th className="px-3 py-2 text-left font-semibold min-w-[200px]">
+                                  Déficit por mes (pico − lím.)
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {vacationNewHireEstimateByGroup.map((g) => (
+                                <tr key={g.group} className="hover:bg-slate-50/90 align-top">
+                                  <td className="px-3 py-2 font-medium text-gray-900">{g.group}</td>
+                                  <td className="px-2 py-2 text-center text-gray-700">{g.groupSize}</td>
+                                  <td className="px-2 py-2 text-center">
+                                    {g.deficitMax > 0 ? (
+                                      <span className="inline-flex items-center justify-center min-w-[2rem] rounded-lg bg-amber-100 text-amber-950 font-bold px-2 py-1 border border-amber-300">
+                                        {g.deficitMax}
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-700 font-medium">0</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 text-center text-gray-800">
+                                    {g.mesesConDeficit}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-700">
+                                    <div className="flex flex-wrap gap-1">
+                                      {g.months.map((m, idx) => {
+                                        const d = g.deficits[idx] ?? 0;
+                                        if (d <= 0) return null;
+                                        return (
+                                          <span
+                                            key={m.monthIndex}
+                                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-[10px] sm:text-xs"
+                                            title={`${m.monthLabel}: pico ${m.picoSimultaneosMes}, lím. ${m.limiteSimultaneosDia}`}
+                                          >
+                                            {m.monthLabel.slice(0, 3)}:{' '}
+                                            <strong className="text-amber-900">+{d}</strong>
+                                          </span>
+                                        );
+                                      })}
+                                      {g.mesesConDeficit === 0 && (
+                                        <span className="text-gray-500 text-xs">—</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {vacationNewHireEstimateByGroup.some((x) => x.deficitMax > 0) && (
+                        <div className="px-4 py-3 border-t border-slate-200 bg-white text-xs text-gray-600 leading-relaxed">
+                          <strong className="text-gray-800">Continuidad:</strong> el número «Mín. refuerzos» es
+                          el máximo simultáneo que necesitas en un solo día del año (en el peor mes). Contratando
+                          al menos esa cifra por grupo, puedes repartir esas mismas personas a lo largo de los
+                          meses con déficit sin exigir más horas a quien ya está en nómina.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/90 to-white shadow-sm overflow-hidden">
+                      <div className="px-4 py-3 border-b border-violet-100">
+                        <h4 className="font-semibold text-gray-900">
+                          Limpiador / Auxiliar De Servicios — L: contrato &lt; 8 h/día (Lun–Vie)
+                        </h4>
+                        <p className="text-sm text-gray-700 mt-1.5 leading-relaxed">
+                          Lista de activos del grupo <strong>Limpiador</strong> o{' '}
+                          <strong>Auxiliar De Servicios - L</strong> cuyo <strong>HORAS DE CONTRATO</strong>{' '}
+                          implica menos de <strong>8 h/día</strong> Lun–Vie. Columnas de <strong>contrato</strong>:
+                          si el valor es &gt; 12 se trata como semanal (÷5); si no, como diario. Columnas de{' '}
+                          <strong>horario</strong>: se busca en el catálogo <code className="text-xs bg-violet-100 px-1 rounded">horarios</code>{' '}
+                          la fila con mismo <strong>CENTRO TRABAJO</strong> y <strong>GRUPO</strong> que el
+                          empleado y vigencia que incluya hoy; se usan{' '}
+                          <code className="text-xs bg-violet-100 px-1 rounded">total_horas_semanales</code> o{' '}
+                          <code className="text-xs bg-violet-100 px-1 rounded">total_minutos_semanales</code> → h/día
+                          = ÷5. Si no hay coincidencia o no hay totales, aparece «—». En{' '}
+                          <strong>h/día (horario)</strong>, valor en <strong className="text-red-600">rojo</strong> si
+                          difiere de <strong>h/día (contr.)</strong> (tolerancia 0,05 h).{' '}
+                          <strong>H. sem. (contr.)</strong> y <strong>Puede subir (h/sem)</strong>: horas semanales
+                          inferidas del contrato (misma regla que arriba) y margen hasta <strong>40 h/sem</strong> de
+                          referencia (orientativo, no compromiso legal).
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                          <label className="text-gray-700 font-medium whitespace-nowrap">
+                            Cruzar con vacaciones (mes):
+                          </label>
+                          <select
+                            className="rounded-lg border border-violet-200 bg-white px-2 py-1.5 text-gray-900 text-sm shadow-sm focus:ring-2 focus:ring-violet-300"
+                            value={vacationPartTimeCompareMonth}
+                            onChange={(e) =>
+                              setVacationPartTimeCompareMonth(Number(e.target.value))
+                            }
+                          >
+                            {MONTHS.slice(1).map((m, idx) => (
+                              <option key={m} value={idx}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-gray-600 text-xs sm:text-sm">
+                            Año: <strong className="text-gray-800">{vacationControlYear}</strong> (mismo selector
+                            «Año» del panel de control arriba)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={exportLimpiadorRefuerzoTableXlsx}
+                            disabled={vacationControlLimpiadorPartTimeList.length === 0}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400 bg-violet-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-violet-700 disabled:opacity-50 disabled:pointer-events-none"
+                            title="Descargar esta tabla en Excel (.xlsx)"
+                          >
+                            Exportar Excel (.xlsx)
+                          </button>
+                        </div>
+                        <p className="text-xs text-violet-900/80 mt-2 leading-relaxed">
+                          <strong>Vac. mes:</strong> solicitud de vacaciones (Aprobada o Pendiente) con fechas que
+                          solapan el mes elegido. <strong>¿Refuerzo?</strong> empleado <em>no</em> en vacaciones ese
+                          mes y con <strong>margen</strong> hacia 8 h (contrato u horario) <strong>o</strong> con{' '}
+                          <strong>subida posible</strong> hacia 40 h/sem en «Puede subir».{' '}
+                          <strong>Cubre vacaciones</strong>: quién puede cubrir a quién si eres refuerzo.{' '}
+                          <strong>Le pueden cubrir</strong>: si <strong>Vac. mes = Sí</strong>, lista inversa (quién
+                          de esta tabla podría cubrirte en tu centro u otro centro mismo grupo). Mismas reglas de
+                          horas y subida. Si un nombre lleva <strong>«+X h sobre 8 h/día»</strong>, es una suma
+                          orientativa (jornada habitual del refuerzo + h/día del puesto a cubrir) que supera el tope
+                          de referencia de 8 h/día en X horas; no implica doble jornada real automática. Orientativo.
+                        </p>
+                      </div>
+                      {vacationControlLimpiadorPartTimeList.length > 0 && (
+                        <div className="px-4 py-2.5 bg-violet-50/90 border-b border-violet-100 text-xs text-gray-800 space-y-1.5">
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            <span>
+                              <strong>
+                                {MONTHS[vacationPartTimeCompareMonth + 1]} {vacationControlYear}
+                              </strong>
+                              :{' '}
+                              <span className="text-amber-900">
+                                {vacationPartTimeCompareSummary.enVacacionesCount} en vacaciones
+                              </span>
+                              {' · '}
+                              <span className="text-emerald-900">
+                                {vacationPartTimeCompareSummary.refuerzoCount} candidatos a refuerzo
+                              </span>
+                            </span>
+                          </div>
+                          {vacationPartTimeCompareSummary.enVacacionesNombres.length > 0 && (
+                            <p
+                              className="text-gray-700 line-clamp-2"
+                              title={vacationPartTimeCompareSummary.enVacacionesNombres.join(', ')}
+                            >
+                              <span className="font-medium text-gray-800">En vacaciones:</span>{' '}
+                              {vacationPartTimeCompareSummary.enVacacionesNombres.join(', ')}
+                            </p>
+                          )}
+                          {vacationPartTimeCompareSummary.refuerzoNombres.length > 0 && (
+                            <p
+                              className="text-gray-700 line-clamp-2"
+                              title={vacationPartTimeCompareSummary.refuerzoNombres.join(', ')}
+                            >
+                              <span className="font-medium text-gray-800">Candidatos refuerzo:</span>{' '}
+                              {vacationPartTimeCompareSummary.refuerzoNombres.join(', ')}
+                            </p>
+                          )}
+                          {vacationPartTimeCompareSummary.enVacacionesCount === 0 && (
+                            <p className="text-violet-900/90 border-t border-violet-200/80 pt-1.5 mt-1">
+                              Con <strong>0</strong> personas de esta tabla en vacaciones el mes, las columnas
+                              «Cubre vacaciones» muestran <em>Sin bajas en el mes</em> (no es un error: no hay a
+                              quién cubrir dentro de esta lista).
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {authUser?.isDemo || !allUsers?.length ? (
+                        <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                          {authUser?.isDemo
+                            ? 'En modo demo no hay lista de empleados.'
+                            : 'Cargando empleados…'}
+                        </div>
+                      ) : vacationControlLimpiadorPartTimeList.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-gray-600 text-sm">
+                          No hay Limpiador / Auxiliar L activos con contrato &lt; 8 h/día según los datos, o falta
+                          «HORAS DE CONTRATO» en ficha.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto max-h-[min(60vh,420px)] overflow-y-auto">
+                          <table className="min-w-[2100px] w-full text-xs sm:text-sm">
+                            <thead className="bg-violet-100/90 sticky top-0 z-[1]">
+                              <tr className="text-violet-950">
+                                <th className="sticky left-0 z-[2] bg-violet-100 px-3 py-2 text-left font-semibold">
+                                  Empleado
+                                </th>
+                                <th className="px-2 py-2 text-left font-semibold max-w-[140px]">Centro</th>
+                                <th className="px-2 py-2 text-left font-semibold">Grupo</th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap border-l border-violet-200">
+                                  H. contrato
+                                </th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap">
+                                  h/día (contr.)
+                                </th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap">
+                                  hasta 8 (contr.)
+                                </th>
+                                <th
+                                  className="px-2 py-2 text-center font-semibold whitespace-nowrap border-l border-violet-200"
+                                  title="Horas semanales según contrato: si el valor es >12 se toma como semanal; si no, h/día × 5."
+                                >
+                                  H. sem. (contr.)
+                                </th>
+                                <th
+                                  className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                                  title="Margen orientativo hasta 40 h/semana de referencia (jornada completa típica)."
+                                >
+                                  Puede subir (h/sem)
+                                </th>
+                                <th className="px-2 py-2 text-left font-semibold max-w-[160px] border-l border-violet-200">
+                                  Horario (catálogo)
+                                </th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap">
+                                  H. sem. (horario)
+                                </th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap">
+                                  h/día (horario)
+                                </th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap">
+                                  hasta 8 (horario)
+                                </th>
+                                <th className="px-2 py-2 text-center font-semibold whitespace-nowrap border-l border-violet-200">
+                                  Vac. mes
+                                </th>
+                                <th
+                                  className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                                  title="Sí si no está en vacaciones el mes y tiene margen hacia 8 h o puede subir contrato (40 h/sem ref.)."
+                                >
+                                  ¿Refuerzo?
+                                </th>
+                                <th
+                                  className="px-3 py-2 text-left font-semibold min-w-[200px] max-w-[260px]"
+                                  title="Mismo centro; solo si h/día refuerzo + margen hacia 8 h ≥ h/día del puesto (compañero en vacaciones)."
+                                >
+                                  Cubre vacaciones (mismo centro)
+                                </th>
+                                <th
+                                  className="px-3 py-2 text-left font-semibold min-w-[200px] max-w-[240px]"
+                                  title="Mismo grupo, distinto centro; mismo filtro de horas que la columna anterior. Varias bajas distintas; no cubrirlas todas a la vez."
+                                >
+                                  Cubre vacaciones (otro centro, mismo grupo)
+                                </th>
+                                <th
+                                  className="px-3 py-2 text-left font-semibold min-w-[200px] max-w-[240px] border-l border-violet-200"
+                                  title="Si estás en vacaciones el mes: compañeros de esta lista que podrían cubrirte (mismo centro)."
+                                >
+                                  Le pueden cubrir (mismo centro)
+                                </th>
+                                <th
+                                  className="px-3 py-2 text-left font-semibold min-w-[200px] max-w-[240px]"
+                                  title="Si estás en vacaciones: refuerzo en otro centro, mismo grupo."
+                                >
+                                  Le pueden cubrir (otro centro)
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-violet-100">
+                              {vacationPartTimeRefuerzoCobertura.rows.map((r) => (
+                                <tr key={r.codigo || r.nombre} className="hover:bg-white/90">
+                                  <td className="sticky left-0 z-[1] bg-white px-3 py-2 font-medium text-gray-900 border-r border-gray-100 max-w-[200px] truncate">
+                                    {r.nombre}
+                                    {r.codigo ? (
+                                      <span className="block text-[10px] text-gray-500 font-normal">
+                                        {r.codigo}
+                                      </span>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-2 py-2 text-gray-700 max-w-[140px] truncate" title={r.centroTrabajo}>
+                                    {r.centroTrabajo || '—'}
+                                  </td>
+                                  <td className="px-2 py-2 text-gray-800 whitespace-nowrap">{r.grupoRaw}</td>
+                                  <td className="px-2 py-2 text-center text-gray-700 whitespace-nowrap border-l border-violet-100">
+                                    {r.horasContratoRaw}
+                                    {r.interpretacionSemanal ? (
+                                      <span className="block text-[10px] text-violet-700">(sem.)</span>
+                                    ) : (
+                                      <span className="block text-[10px] text-violet-700">(día)</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 text-center font-medium text-gray-900">
+                                    {r.horasDia}
+                                  </td>
+                                  <td className="px-2 py-2 text-center">
+                                    <span className="inline-flex items-center justify-center min-w-[2.25rem] rounded-lg bg-violet-100 text-violet-950 font-bold px-1.5 py-0.5 border border-violet-300 text-[11px]">
+                                      {r.horasDisponiblesHasta8}
+                                    </span>
+                                  </td>
+                                  <td className="px-2 py-2 text-center text-gray-800 whitespace-nowrap border-l border-violet-200">
+                                    {r.horasSemanalesContrato != null ? r.horasSemanalesContrato : '—'}
+                                  </td>
+                                  <td className="px-2 py-2 text-center whitespace-nowrap">
+                                    {r.puedeSubirContratoHasta40Semanal != null ? (
+                                      <span
+                                        className={`inline-flex items-center justify-center min-w-[2.25rem] rounded-lg font-bold px-1.5 py-0.5 border text-[11px] ${
+                                          r.puedeSubirContratoHasta40Semanal > 0.05
+                                            ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                            : 'bg-gray-100 text-gray-500 border-gray-200'
+                                        }`}
+                                        title="Hasta 40 h/sem de referencia; si 0, el contrato ya alcanza ese tope en la ficha."
+                                      >
+                                        {r.puedeSubirContratoHasta40Semanal}
+                                      </span>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 text-gray-800 max-w-[160px] truncate border-l border-violet-100" title={r.horarioNombre || ''}>
+                                    {r.horarioNombre ? (
+                                      <>
+                                        {r.horarioNombre}
+                                        {r.horarioId != null ? (
+                                          <span className="block text-[10px] text-gray-500">id {r.horarioId}</span>
+                                        ) : null}
+                                      </>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 text-center text-gray-800 whitespace-nowrap">
+                                    {r.horasSemanalesHorario != null ? r.horasSemanalesHorario : '—'}
+                                  </td>
+                                  <td
+                                    className={`px-2 py-2 text-center font-medium ${
+                                      r.horasDiaHorario != null &&
+                                      Number.isFinite(r.horasDia) &&
+                                      Math.abs(r.horasDiaHorario - r.horasDia) > 0.05
+                                        ? 'text-red-600'
+                                        : 'text-gray-900'
+                                    }`}
+                                    title={
+                                      r.horasDiaHorario != null &&
+                                      Number.isFinite(r.horasDia) &&
+                                      Math.abs(r.horasDiaHorario - r.horasDia) > 0.05
+                                        ? `No coincide con h/día contrato (${r.horasDia})`
+                                        : undefined
+                                    }
+                                  >
+                                    {r.horasDiaHorario != null ? r.horasDiaHorario : '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    {r.horasDisponiblesHasta8Horario != null ? (
+                                      <span className="inline-flex items-center justify-center min-w-[2.25rem] rounded-lg bg-fuchsia-50 text-fuchsia-950 font-bold px-1.5 py-0.5 border border-fuchsia-200 text-[11px]">
+                                        {r.horasDisponiblesHasta8Horario}
+                                      </span>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2 text-center whitespace-nowrap border-l border-violet-200">
+                                    {r.enVacacionesEnMesSeleccionado ? (
+                                      <span className="text-amber-800 font-semibold" title="Vacaciones Aprobada/Pendiente en el mes">
+                                        Sí
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-500">No</span>
+                                    )}
+                                  </td>
+                                  <td
+                                    className="px-3 py-2 text-center whitespace-nowrap"
+                                    title={r.refuerzoDetalle}
+                                  >
+                                    {r.enVacacionesEnMesSeleccionado ? (
+                                      <span className="text-gray-400" title="En vacaciones: no aplica como refuerzo">
+                                        —
+                                      </span>
+                                    ) : r.refuerzoPosibleJornada ? (
+                                      <span className="text-emerald-800 font-semibold">Sí</span>
+                                    ) : (
+                                      <span className="text-gray-500">No</span>
+                                    )}
+                                  </td>
+                                  <td
+                                    className="px-3 py-2 text-left align-top text-gray-800 max-w-[280px]"
+                                    title={r.refuerzoVacantesTooltip || undefined}
+                                  >
+                                    {!r.refuerzoPosibleJornada ? (
+                                      <span className="text-gray-400">—</span>
+                                    ) : r.refuerzoVacantesEtiqueta ? (
+                                      <span className="line-clamp-3 text-[11px] sm:text-xs leading-snug">
+                                        {r.refuerzoVacantesEtiqueta}
+                                      </span>
+                                    ) : vacationPartTimeRefuerzoCobertura.stats.vacacionesTotal === 0 ? (
+                                      <span
+                                        className="text-violet-800/90 text-[11px] sm:text-xs italic"
+                                        title="Ningún empleado de esta tabla tiene vacaciones (Aprobada/Pendiente) en el mes y año seleccionados; no hay bajas que cubrir en esta lista."
+                                      >
+                                        Sin bajas en el mes
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="text-gray-500 text-[11px] sm:text-xs"
+                                        title="Hay compañeros en vacaciones, pero ninguno con el mismo centro que tú (o falta centro en ficha)."
+                                      >
+                                        Sin coincidencia
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td
+                                    className="px-3 py-2 text-left align-top text-gray-800 max-w-[260px] border-l border-violet-100"
+                                    title={r.refuerzoVacantesOtroCentroTooltip || undefined}
+                                  >
+                                    {!r.refuerzoPosibleJornada ? (
+                                      <span className="text-gray-400">—</span>
+                                    ) : r.refuerzoVacantesOtroCentroEtiqueta ? (
+                                      <span className="line-clamp-3 text-[11px] sm:text-xs leading-snug">
+                                        {r.refuerzoVacantesOtroCentroEtiqueta}
+                                      </span>
+                                    ) : vacationPartTimeRefuerzoCobertura.stats.vacacionesTotal === 0 ? (
+                                      <span
+                                        className="text-violet-800/90 text-[11px] sm:text-xs italic"
+                                        title="Ningún empleado de esta tabla tiene vacaciones (Aprobada/Pendiente) en el mes y año seleccionados; no hay bajas que cubrir en esta lista."
+                                      >
+                                        Sin bajas en el mes
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="text-gray-500 text-[11px] sm:text-xs"
+                                        title="Hay compañeros en vacaciones, pero ninguno con mismo grupo y otro centro distinto al tuyo (o falta centro en ficha)."
+                                      >
+                                        Sin coincidencia
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td
+                                    className="px-3 py-2 text-left align-top text-gray-800 max-w-[240px] border-l border-violet-200"
+                                    title={r.lePuedenCubrirMismoCentroTooltip || undefined}
+                                  >
+                                    {!r.enVacacionesEnMesSeleccionado ? (
+                                      <span className="text-gray-400" title="Solo si tienes vacaciones en el mes seleccionado">
+                                        —
+                                      </span>
+                                    ) : r.lePuedenCubrirMismoCentroEtiqueta ? (
+                                      <span className="line-clamp-3 text-[11px] sm:text-xs leading-snug text-teal-900">
+                                        {r.lePuedenCubrirMismoCentroEtiqueta}
+                                      </span>
+                                    ) : vacationPartTimeRefuerzoCobertura.stats.vacacionesTotal === 0 ? (
+                                      <span className="text-gray-400 text-[11px]">—</span>
+                                    ) : (
+                                      <span
+                                        className="text-gray-500 text-[11px] sm:text-xs"
+                                        title="Ningún candidato a refuerzo en esta lista con mismo centro y horas suficientes."
+                                      >
+                                        Sin coincidencia
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td
+                                    className="px-3 py-2 text-left align-top text-gray-800 max-w-[240px]"
+                                    title={r.lePuedenCubrirOtroCentroTooltip || undefined}
+                                  >
+                                    {!r.enVacacionesEnMesSeleccionado ? (
+                                      <span className="text-gray-400" title="Solo si tienes vacaciones en el mes seleccionado">
+                                        —
+                                      </span>
+                                    ) : r.lePuedenCubrirOtroCentroEtiqueta ? (
+                                      <span className="line-clamp-3 text-[11px] sm:text-xs leading-snug text-teal-900">
+                                        {r.lePuedenCubrirOtroCentroEtiqueta}
+                                      </span>
+                                    ) : vacationPartTimeRefuerzoCobertura.stats.vacacionesTotal === 0 ? (
+                                      <span className="text-gray-400 text-[11px]">—</span>
+                                    ) : (
+                                      <span
+                                        className="text-gray-500 text-[11px] sm:text-xs"
+                                        title="Ningún refuerzo con mismo grupo y otro centro que pueda cubrir tus h/día."
+                                      >
+                                        Sin coincidencia
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {vacationControlLimpiadorPartTimeList.length > 0 && (
+                        <div className="px-4 py-3 border-t border-violet-100 bg-white text-xs text-gray-800 leading-relaxed space-y-1.5">
+                          <p className="font-semibold text-gray-900">
+                            Cobertura interna (esta lista, mes seleccionado)
+                          </p>
+                          {vacationPartTimeRefuerzoCobertura.stats.vacacionesTotal === 0 ? (
+                            <p className="text-gray-600">
+                              No hay empleados de esta tabla en vacaciones en el mes: no aplica el %.
+                            </p>
+                          ) : (
+                            <>
+                              <p>
+                                Bajas por vacaciones en la lista:{' '}
+                                <strong>{vacationPartTimeRefuerzoCobertura.stats.vacacionesTotal}</strong>. Con al
+                                menos un candidato a refuerzo en el <strong>mismo centro y grupo</strong>:{' '}
+                                <strong>
+                                  {vacationPartTimeRefuerzoCobertura.stats.cubiertasMismoCentroYGrupo}
+                                </strong>{' '}
+                                (
+                                {vacationPartTimeRefuerzoCobertura.stats.pctCentroYGrupo != null
+                                  ? `${vacationPartTimeRefuerzoCobertura.stats.pctCentroYGrupo}%`
+                                  : '—'}
+                                ). Con al menos un refuerzo en el <strong>mismo centro</strong> (cualquier
+                                grupo):{' '}
+                                <strong>
+                                  {vacationPartTimeRefuerzoCobertura.stats.cubiertasMismoCentro}
+                                </strong>{' '}
+                                (
+                                {vacationPartTimeRefuerzoCobertura.stats.pctCentro != null
+                                  ? `${vacationPartTimeRefuerzoCobertura.stats.pctCentro}%`
+                                  : '—'}
+                                ).
+                              </p>
+                              <p className="text-gray-600">
+                                El % cuenta si el refuerzo puede cubrir las h/día del puesto (máx. actual o 8 h/día
+                                si hay margen de subida a 40 h/sem). No garantiza solapes de fechas ni desplazamiento
+                                entre sedes.
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <h4 className="font-semibold text-gray-900">Uso del cupo individual (activos)</h4>
+                        {selectedUser !== 'ALL' && (
+                          <span className="text-xs text-teal-700 bg-teal-50 px-2 py-1 rounded border border-teal-100">
+                            Filtrado por empleado seleccionado arriba
+                          </span>
+                        )}
+                      </div>
+                      {estadisticasLoading && vacationControlEmpleadosFiltrados.length === 0 ? (
+                        <div className="flex justify-center py-10">
+                          <LoadingSpinner size="lg" text="Cargando estadísticas de empleados..." />
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                          <table className="min-w-[640px] w-full text-xs sm:text-sm">
+                            <thead className="bg-gray-50 sticky top-0 z-[1]">
+                              <tr>
+                                <th className="text-left px-3 py-2 font-semibold text-gray-700">Empleado</th>
+                                <th className="text-left px-3 py-2 font-semibold text-gray-700">Grupo</th>
+                                <th className="text-center px-2 py-2 font-semibold text-gray-700">Generados</th>
+                                <th className="text-center px-2 py-2 font-semibold text-gray-700">Consumidos</th>
+                                <th className="text-center px-2 py-2 font-semibold text-gray-700">Restantes</th>
+                                <th className="text-left px-3 py-2 font-semibold text-gray-700">Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {vacationControlEmpleadosFiltrados.map((emp) => (
+                                <tr key={emp.codigo} className="hover:bg-gray-50/80">
+                                  <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{emp.nombre}</td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{emp.grupo || '—'}</td>
+                                  <td className="px-2 py-2 text-center text-gray-700">
+                                    {(emp.vacaciones?.dias_generados_hasta_hoy ?? 0).toFixed(1)}
+                                  </td>
+                                  <td className="px-2 py-2 text-center text-gray-700">
+                                    {(emp.vacaciones?.dias_consumidos_aprobados ?? 0).toFixed(1)}
+                                  </td>
+                                  <td className="px-2 py-2 text-center font-semibold text-gray-900">
+                                    {(emp.vacaciones?.dias_restantes ?? 0).toFixed(1)}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {emp.estadoUso === 'completo' && (
+                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-orange-100 text-orange-800 border border-orange-200">
+                                        Cupo agotado
+                                      </span>
+                                    )}
+                                    {emp.estadoUso === 'parcial' && (
+                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                                        Parcial
+                                      </span>
+                                    )}
+                                    {emp.estadoUso === 'sin_uso' && (
+                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                                        Sin consumo
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {vacationControlEmpleadosFiltrados.length === 0 && !estadisticasLoading && (
+                            <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                              No hay datos de empleados. Pulsa «Actualizar empleados».
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (isOperationLoading('allSolicitudes') || (selectedTab === 'ausencias' && isOperationLoading('ausencias'))) ? (
               <div className="flex justify-center py-8">
                 <LoadingSpinner size="lg" text={selectedTab === 'ausencias' ? "Cargando ausencias..." : "Cargando todas las solicitudes..."} />
               </div>

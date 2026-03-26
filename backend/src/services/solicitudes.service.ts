@@ -13,6 +13,9 @@ import { DocumentosService } from './documentos.service';
 export class SolicitudesService {
   private readonly logger = new Logger(SolicitudesService.name);
 
+  /** Zile libere înainte/după o quincenă (aceeași persoană) – nu se poate cere alt concediu în această „fereastră”. */
+  private readonly VACACIONES_QUINCENA_BUFFER_DAYS = 15;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
@@ -139,6 +142,89 @@ export class SolicitudesService {
         `❌ [checkVacacionesConflict] Eroare la verificarea conflictelor: ${error.message}`,
       );
       // În caz de eroare, nu blocăm - doar logăm
+      return { hasConflict: false };
+    }
+  }
+
+  /**
+   * Aceeași persoană: o quincenă (sau cerere în curs) blochează ±15 zile în jurul perioadei.
+   * Nu se permite suprapunere cu [fecha_inicio−15, fecha_fin+15] față de altă Vacaciones Aprobada/Pendiente.
+   */
+  private async checkVacacionesQuincenaBufferConflict(
+    codigo: string,
+    fechaInicio: string,
+    fechaFin: string,
+    excludeSolicitudId?: string,
+  ): Promise<{
+    hasConflict: boolean;
+    conflictInfo?: { fecha_inicio: string; fecha_fin: string };
+  }> {
+    try {
+      const parseYmd = (s: string): Date | null => {
+        if (!s) return null;
+        const raw = String(s).includes('T')
+          ? String(s)
+          : `${String(s).split('T')[0]}T12:00:00`;
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+      };
+
+      const nStart = parseYmd(fechaInicio);
+      const nEnd = parseYmd(fechaFin);
+      if (!nStart || !nEnd || nEnd < nStart) {
+        return { hasConflict: false };
+      }
+
+      const excludeClause = excludeSolicitudId
+        ? `AND s.id != ${this.escapeSql(excludeSolicitudId)}`
+        : '';
+      const query = `
+        SELECT s.fecha_inicio, s.fecha_fin
+        FROM solicitudes s
+        WHERE s.codigo = ${this.escapeSql(codigo)}
+          AND s.tipo = 'Vacaciones'
+          AND s.estado IN ('Aprobada', 'Pendiente')
+          AND s.fecha_inicio IS NOT NULL
+          AND s.fecha_fin IS NOT NULL
+          ${excludeClause}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
+      if (!rows?.length) return { hasConflict: false };
+
+      const buffer = this.VACACIONES_QUINCENA_BUFFER_DAYS;
+
+      for (const row of rows) {
+        const fi =
+          row.fecha_inicio instanceof Date
+            ? row.fecha_inicio.toISOString().split('T')[0]
+            : String(row.fecha_inicio).split('T')[0];
+        const ff =
+          row.fecha_fin instanceof Date
+            ? row.fecha_fin.toISOString().split('T')[0]
+            : String(row.fecha_fin).split('T')[0];
+        const eStart = parseYmd(fi);
+        const eEnd = parseYmd(ff);
+        if (!eStart || !eEnd) continue;
+
+        const blockStart = new Date(eStart);
+        blockStart.setDate(blockStart.getDate() - buffer);
+        const blockEnd = new Date(eEnd);
+        blockEnd.setDate(blockEnd.getDate() + buffer);
+
+        if (nStart <= blockEnd && nEnd >= blockStart) {
+          return {
+            hasConflict: true,
+            conflictInfo: { fecha_inicio: fi, fecha_fin: ff },
+          };
+        }
+      }
+      return { hasConflict: false };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ [checkVacacionesQuincenaBufferConflict] ${error.message}`,
+      );
       return { hasConflict: false };
     }
   }
@@ -1111,6 +1197,31 @@ export class SolicitudesService {
         `📝 Create solicitud: ${data.id} (${data.tipo}), estado: ${estado}`,
       );
 
+      // Quincena: ±15 zile în jurul altei vacanțe (aceeași persoană)
+      if (
+        data.tipo === 'Vacaciones' &&
+        (estado === 'Aprobada' || estado === 'Pendiente') &&
+        data.fecha_inicio &&
+        data.fecha_fin
+      ) {
+        const dIni = new Date(data.fecha_inicio);
+        const dFin = new Date(data.fecha_fin);
+        if (!isNaN(dIni.getTime()) && !isNaN(dFin.getTime())) {
+          const iniStr = dIni.toISOString().split('T')[0];
+          const finStr = dFin.toISOString().split('T')[0];
+          const buf = await this.checkVacacionesQuincenaBufferConflict(
+            data.codigo,
+            iniStr,
+            finStr,
+          );
+          if (buf.hasConflict && buf.conflictInfo) {
+            throw new BadRequestException(
+              `No se puede registrar esta solicitud de vacaciones: debe respetarse un margen de ${this.VACACIONES_QUINCENA_BUFFER_DAYS} días antes y después de otra quincena ya solicitada o aprobada (período ${buf.conflictInfo.fecha_inicio} - ${buf.conflictInfo.fecha_fin}).`,
+            );
+          }
+        }
+      }
+
       // Validare conflict Vacaciones - doar dacă este aprobată direct
       if (
         data.tipo === 'Vacaciones' &&
@@ -1666,6 +1777,33 @@ export class SolicitudesService {
         fechaFinSQL = this.escapeSql(solicitudBefore.fecha_fin);
       }
 
+      let fechaInicioForVac: string | null = null;
+      let fechaFinForVac: string | null = null;
+      if (tipo === 'Vacaciones') {
+        if (data.fecha_inicio !== undefined && data.fecha_inicio) {
+          const fechaInicioDate = new Date(data.fecha_inicio);
+          if (!isNaN(fechaInicioDate.getTime())) {
+            fechaInicioForVac = fechaInicioDate.toISOString().split('T')[0];
+          }
+        } else if (solicitudBefore?.fecha_inicio) {
+          const fechaInicioDate = new Date(solicitudBefore.fecha_inicio);
+          if (!isNaN(fechaInicioDate.getTime())) {
+            fechaInicioForVac = fechaInicioDate.toISOString().split('T')[0];
+          }
+        }
+        if (data.fecha_fin !== undefined && data.fecha_fin) {
+          const fechaFinDate = new Date(data.fecha_fin);
+          if (!isNaN(fechaFinDate.getTime())) {
+            fechaFinForVac = fechaFinDate.toISOString().split('T')[0];
+          }
+        } else if (solicitudBefore?.fecha_fin) {
+          const fechaFinDate = new Date(solicitudBefore.fecha_fin);
+          if (!isNaN(fechaFinDate.getTime())) {
+            fechaFinForVac = fechaFinDate.toISOString().split('T')[0];
+          }
+        }
+      }
+
       // Query 1: UPDATE în solicitudes
       const updateSolicitudQuery = `
         UPDATE solicitudes
@@ -1676,45 +1814,36 @@ export class SolicitudesService {
 
       this.logger.log(`📝 Update solicitud: ${id}, estado: ${estado}`);
 
+      if (
+        tipo === 'Vacaciones' &&
+        fechaInicioForVac &&
+        fechaFinForVac &&
+        (estado === 'Aprobada' || estado === 'Pendiente')
+      ) {
+        const buf = await this.checkVacacionesQuincenaBufferConflict(
+          codigo,
+          fechaInicioForVac,
+          fechaFinForVac,
+          id,
+        );
+        if (buf.hasConflict && buf.conflictInfo) {
+          throw new BadRequestException(
+            `No se puede registrar esta solicitud de vacaciones: debe respetarse un margen de ${this.VACACIONES_QUINCENA_BUFFER_DAYS} días antes y después de otra quincena ya solicitada o aprobada (período ${buf.conflictInfo.fecha_inicio} - ${buf.conflictInfo.fecha_fin}).`,
+          );
+        }
+      }
+
       // Validare conflict Vacaciones - doar când se aprobă (estado = 'Aprobada')
       // Verifică dacă este o aprobare nouă (nu era deja Aprobada)
       const isNewApproval =
         estado === 'Aprobada' && solicitudBefore?.estado !== 'Aprobada';
 
       if (tipo === 'Vacaciones' && isNewApproval) {
-        // Obține fecha_inicio și fecha_fin pentru verificare (din data sau din solicitudBefore)
-        let fechaInicioForCheck: string | null = null;
-        let fechaFinForCheck: string | null = null;
-
-        if (data.fecha_inicio !== undefined && data.fecha_inicio) {
-          const fechaInicioDate = new Date(data.fecha_inicio);
-          if (!isNaN(fechaInicioDate.getTime())) {
-            fechaInicioForCheck = fechaInicioDate.toISOString().split('T')[0];
-          }
-        } else if (solicitudBefore?.fecha_inicio) {
-          const fechaInicioDate = new Date(solicitudBefore.fecha_inicio);
-          if (!isNaN(fechaInicioDate.getTime())) {
-            fechaInicioForCheck = fechaInicioDate.toISOString().split('T')[0];
-          }
-        }
-
-        if (data.fecha_fin !== undefined && data.fecha_fin) {
-          const fechaFinDate = new Date(data.fecha_fin);
-          if (!isNaN(fechaFinDate.getTime())) {
-            fechaFinForCheck = fechaFinDate.toISOString().split('T')[0];
-          }
-        } else if (solicitudBefore?.fecha_fin) {
-          const fechaFinDate = new Date(solicitudBefore.fecha_fin);
-          if (!isNaN(fechaFinDate.getTime())) {
-            fechaFinForCheck = fechaFinDate.toISOString().split('T')[0];
-          }
-        }
-
-        if (fechaInicioForCheck && fechaFinForCheck) {
+        if (fechaInicioForVac && fechaFinForVac) {
           const conflictCheck = await this.checkVacacionesConflict(
             codigo,
-            fechaInicioForCheck,
-            fechaFinForCheck,
+            fechaInicioForVac,
+            fechaFinForVac,
             id, // Exclude solicitarea curentă
           );
 

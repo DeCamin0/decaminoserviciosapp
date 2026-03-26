@@ -7,6 +7,87 @@ import { join } from 'path'
 // import viteImagemin from 'vite-plugin-imagemin'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
+/** MIME pentru icon PWA / manifest după extensia fișierului din public/ */
+function mimeFromLogoPath(logoPath) {
+  const ext = (String(logoPath).split('.').pop() || '').toLowerCase()
+  if (ext === 'svg') return 'image/svg+xml'
+  if (ext === 'png') return 'image/png'
+  if (ext === 'ico') return 'image/x-icon'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  return 'image/png'
+}
+
+/** Cale absolută în site pentru manifest (evită rezolvări relative greșite față de manifest.webmanifest) */
+function manifestUrlPath(viteBasePath, fileName) {
+  const base = (viteBasePath || '/').replace(/\/$/, '')
+  const name = String(fileName || '').replace(/^\//, '')
+  if (!base || base === '') return `/${name}`
+  return `${base}/${name}`
+}
+
+/**
+ * Dimensiuni + MIME reale din fișier (ex. logo.png poate fi JPEG; LOGO_hera.png e 2000×1000 → nu e maskable 512).
+ * Edge refuză iconițe cu sizes fals / maskable pe imagini ne-pătrate → literă „H”.
+ */
+function getPublicIconMeta(filePath) {
+  try {
+    const buf = readFileSync(filePath)
+    if (buf.length < 24) return null
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+      const w = buf.readUInt32BE(16)
+      const h = buf.readUInt32BE(20)
+      return { mime: 'image/png', sizes: `${w}x${h}` }
+    }
+    if (buf[0] === 0xff && buf[1] === 0xd8) {
+      let i = 2
+      while (i < buf.length - 9) {
+        if (buf[i] !== 0xff) {
+          i++
+          continue
+        }
+        const marker = buf[i + 1]
+        if (marker >= 0xc0 && marker <= 0xc3) {
+          const h = buf.readUInt16BE(i + 5)
+          const w = buf.readUInt16BE(i + 7)
+          return { mime: 'image/jpeg', sizes: `${w}x${h}` }
+        }
+        const segLen = buf.readUInt16BE(i + 2)
+        i += 2 + segLen
+      }
+      return { mime: 'image/jpeg', sizes: '512x512' }
+    }
+    const head = buf.slice(0, Math.min(buf.length, 500)).toString('utf8').trimStart()
+    if (head.includes('<svg')) {
+      return { mime: 'image/svg+xml', sizes: 'any' }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/** Iconuri manifest: SVG acceptă 192/512 ca vector; raster: sizes trebuie să coincidă cu pixelii reali (altfel Edge → literă „H”). */
+function buildPwaManifestIcons(abs, srcFile, mime, intrinsicSizes) {
+  const isSvg = srcFile.toLowerCase().endsWith('.svg')
+  if (isSvg) {
+    return [
+      { src: abs, sizes: '192x192', type: 'image/svg+xml', purpose: 'any' },
+      { src: abs, sizes: '512x512', type: 'image/svg+xml', purpose: 'any' },
+      { src: abs, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
+    ]
+  }
+  const intr = intrinsicSizes && /^\d+x\d+$/.test(String(intrinsicSizes)) ? String(intrinsicSizes) : ''
+  if (intr) {
+    return [{ src: abs, sizes: intr, type: mime, purpose: 'any' }]
+  }
+  return [
+    { src: abs, sizes: '192x192', type: mime, purpose: 'any' },
+    { src: abs, sizes: '512x512', type: mime, purpose: 'any' },
+    { src: abs, sizes: '48x48', type: mime, purpose: 'any' }
+  ]
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Încarcă .env ca titlul și logo-ul să fie corecte și la dev
@@ -19,11 +100,94 @@ export default defineConfig(({ mode }) => {
   // HERA build → dist-client2 ca să nu suprascrie dist/ (Decamino)
   const buildOutDir = (mode === 'client2' || mode === 'hera') ? 'dist-client2' : 'dist';
 
+  // PWA: același manifest nu trebuie să listeze favicon.ico partajat + logo.svg Decamino la build Hera.
+  const logoPath = (getEnv('VITE_LOGO_PATH') || 'logo.svg').trim();
+  const pwaIconEnv = getEnv('VITE_PWA_ICON');
+  const publicDir = join(process.cwd(), 'public');
+  const manifestIconSrc = (() => {
+    if (pwaIconEnv && existsSync(join(publicDir, pwaIconEnv))) return pwaIconEnv;
+    // LOGO_hera.png e foarte lat (ex. 2000×1000). Manifest cu sizes 192/512 pe același URL → Edge respinge iconurile → literă „H”. Preferă vectorul dacă există.
+    const heraSvg = 'logo-hera.svg';
+    if (existsSync(join(publicDir, heraSvg)) && /^logo_hera\.png$/i.test(logoPath.trim())) {
+      return heraSvg;
+    }
+    if (logoPath.toLowerCase().endsWith('.svg')) {
+      const png = logoPath.replace(/\.svg$/i, '.png');
+      if (existsSync(join(publicDir, png))) {
+        // PWA / favicon: logo.png (fundal alb) se vede mai bine la instalare decât SVG transparent; MIME real din fișier (PNG sau JPEG)
+        return png;
+      }
+      return logoPath;
+    }
+    return logoPath;
+  })();
+  const manifestIconFsPath = join(publicDir, manifestIconSrc);
+  const iconMeta = existsSync(manifestIconFsPath) ? getPublicIconMeta(manifestIconFsPath) : null;
+  // Tipul din manifest trebuie să coincidă cu Content-Type la GET /logo.png (Vite: după extensie → image/png).
+  // logo.png poate fi JPEG la byte-level; dacă punem image/jpeg în manifest dar serverul trimite image/png, Chrome/Edge invalidează PWA → dispare „Instalar”.
+  const manifestIconMime = mimeFromLogoPath(manifestIconSrc);
+  const manifestIconSizes = iconMeta?.sizes || (manifestIconSrc.toLowerCase().endsWith('.svg') ? 'any' : '512x512');
+  const manifestIconAbs = manifestUrlPath(env.VITE_BASE_PATH, manifestIconSrc);
+  const pwaManifestIcons = buildPwaManifestIcons(
+    manifestIconAbs,
+    manifestIconSrc,
+    manifestIconMime,
+    manifestIconSizes
+  );
+  /** Favicon tab: logo brand (VITE_LOGO_PATH), nu VITE_PWA_ICON – instalarea PWA folosește doar manifest.icons. */
+  const faviconTabSrc =
+    logoPath && existsSync(join(publicDir, logoPath)) ? logoPath : manifestIconSrc;
+  const pwaIncludeAssets = (() => {
+    const s = new Set();
+    if (existsSync(join(publicDir, 'favicon.ico'))) s.add('favicon.ico');
+    for (const f of [logoPath, manifestIconSrc, pwaIconEnv]) {
+      if (f && existsSync(join(publicDir, f))) s.add(f);
+    }
+    return [...s];
+  })();
+
   return {
   // Deploy pe subdomeniu la rădăcină → servește din root
   // Pentru test environment pe /html/app-test, setează VITE_BASE_PATH=/html/app-test/
   base: env.VITE_BASE_PATH || '/',
   plugins: [
+    // GET /favicon.ico: tab = VITE_LOGO_PATH (brand); manifest PWA = alt asset (ex. logo-hera-solo.png).
+    {
+      name: 'favicon-ico-match-brand',
+      enforce: 'pre',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const pathOnly = (req.url && req.url.split('?')[0]) || '';
+          if (pathOnly !== '/favicon.ico') return next();
+          try {
+            const src = join(publicDir, faviconTabSrc);
+            if (!existsSync(src)) return next();
+            const buf = readFileSync(src);
+            const isSvg = faviconTabSrc.toLowerCase().endsWith('.svg');
+            res.setHeader(
+              'Content-Type',
+              isSvg ? 'image/svg+xml; charset=utf-8' : mimeFromLogoPath(faviconTabSrc)
+            );
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.statusCode = 200;
+            res.end(buf);
+          } catch {
+            next();
+          }
+        });
+      },
+      // După copy din public/, suprascrie dist/.../favicon.ico cu logo tab (VITE_LOGO_PATH), nu iconul PWA dedicat.
+      closeBundle() {
+        const outDir = join(process.cwd(), buildOutDir);
+        const src = join(publicDir, faviconTabSrc);
+        if (!existsSync(src)) return;
+        try {
+          copyFileSync(src, join(outDir, 'favicon.ico'));
+        } catch {
+          /* ignore */
+        }
+      },
+    },
     nodePolyfills({
       include: ['process', 'buffer', 'util', 'stream', 'crypto', 'path'],
       exclude: ['fs', 'vm'],
@@ -68,6 +232,7 @@ export default defineConfig(({ mode }) => {
         const appName = getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || '';
         const logoPath = (getEnv('VITE_LOGO_PATH') || 'logo.svg').trim();
         const logoPng = logoPath.replace(/\.(svg|jpg|jpeg|gif|webp)$/i, '.png');
+        const iconType = mimeFromLogoPath(logoPath);
         let out = html.replace(/<html([^>]*)data-version="[^"]*"([^>]*)>/,
                             `<html$1 data-version="${buildVersion}"$2>`)
                    .replace(/<html(?![^>]*data-version)([^>]*)>/,
@@ -75,6 +240,7 @@ export default defineConfig(({ mode }) => {
         out = out.replace(/__VITE_APP_NAME__/g, appName);
         out = out.replace(/__VITE_LOGO_PATH__/g, logoPath);
         out = out.replace(/__VITE_LOGO_PNG__/g, logoPng);
+        out = out.replace(/__VITE_ICON_TYPE__/g, iconType);
         out = out.replace(/<title>.*?<\/title>/, `<title>${appName}</title>`);
         out = out.replace(/(<meta\s+property="og:site_name"\s+content=")[^"]*(")/, `$1${appName}$2`);
         out = out.replace(/(<meta\s+property="og:title"\s+content=")[^"]*(")/, `$1${appName}$2`);
@@ -155,7 +321,7 @@ export default defineConfig(({ mode }) => {
     // Plugin PWA cu configurație optimizată pentru a preveni conflicts
     VitePWA({
       registerType: 'autoUpdate', // Actualizare automată: la următoarea deschidere userii primesc noua versiune fără prompt
-      includeAssets: ['favicon.ico', 'logo.svg'],
+      includeAssets: pwaIncludeAssets,
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
@@ -171,7 +337,7 @@ export default defineConfig(({ mode }) => {
         cleanupOutdatedCaches: true,
         // Adaugă versioning explicit pentru a forța actualizările
         // Workbox generează automat hash-uri pentru fișiere, dar adăugăm și un cache ID cu versiune
-        cacheId: `app-v2-${process.env.npm_package_version || '1.0.0'}`,
+        cacheId: `app-v2-${mode}-${process.env.npm_package_version || '1.0.0'}`,
         // Configurație pentru a preveni conflicts
         navigateFallback: (process.env.VITE_BASE_PATH || '/') + 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/webhook\//, /\/firmar\.html($|\?)/],
@@ -196,6 +362,7 @@ export default defineConfig(({ mode }) => {
         })()
       },
       manifest: {
+        id: `/pwa-${mode}`,
         name: getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || 'App',
         short_name: getEnv('VITE_APP_NAME') || getEnv('VITE_COMPANY_NAME') || 'App',
         description: 'Aplicación web para gestión de empleados y servicios auxiliares',
@@ -203,29 +370,12 @@ export default defineConfig(({ mode }) => {
         background_color: '#ffffff',
         display: 'standalone',
         scope: env.VITE_BASE_PATH || '/',
-        start_url: `${env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}`, // Adaugă versiunea în start_url pentru a forța actualizarea
+        // &c=mode discriminează tenantul fără a schimba rutele (query e ignorat de router).
+        start_url: `${env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}&c=${mode}`,
         lang: 'es',
         categories: ['business', 'productivity'],
         version: process.env.npm_package_version || '1.0.0', // Adaugă versiunea în manifest
-        icons: [
-          {
-            src: 'favicon.ico',
-            sizes: '16x16 32x32 48x48',
-            type: 'image/x-icon'
-          },
-          {
-            src: getEnv('VITE_PWA_ICON') || getEnv('VITE_LOGO_PATH') || 'logo.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any maskable'
-          },
-          {
-            src: getEnv('VITE_PWA_ICON') || getEnv('VITE_LOGO_PATH') || 'logo.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable'
-          }
-        ]
+        icons: pwaManifestIcons
       },
       devOptions: {
         enabled: true,
@@ -257,25 +407,7 @@ export default defineConfig(({ mode }) => {
           res.end('Not found');
         });
 
-        server.middlewares.use('/manifest.json', (req, res) => {
-          console.log('🔍 Serving manifest.json via middleware');
-          try {
-            const filePath = join(process.cwd(), 'public', '/manifest.json');
-            if (existsSync(filePath)) {
-              const fileContent = readFileSync(filePath);
-              res.setHeader('Content-Type', 'application/json');
-              res.setHeader('Access-Control-Allow-Origin', '*');
-              res.statusCode = 200;
-              res.end(fileContent);
-              console.log('✅ manifest.json served successfully');
-              return;
-            }
-          } catch (error) {
-            console.error('❌ Error serving manifest.json:', error);
-          }
-          res.statusCode = 404;
-          res.end('Not found');
-        });
+        // PWA folosește manifest.webmanifest (VitePWA). public/manifest.json rămâne în public/ și e servit de Vite ca /manifest.json dacă e nevoie (legacy); nu duplicăm aici.
 
         server.middlewares.use('/DeCamino-04.svg', (req, res) => {
           console.log('🔍 Serving DeCamino-04.svg via middleware');

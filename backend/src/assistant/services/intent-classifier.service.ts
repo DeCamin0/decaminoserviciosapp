@@ -56,6 +56,8 @@ export interface IntentResult {
     agrupar_por_centro?: boolean;
     /** Pregunta por empleados sin nómina / falta nómina (consulta anti‑lista genérica). */
     faltan_nominas?: boolean;
+    /** „Cómo solicito / pedir copia del contrato” — no dirigir la solicitud solo al centro de ficha. */
+    contrato_solicitud_procedimiento?: boolean;
   };
 }
 
@@ -906,7 +908,8 @@ export class IntentClassifierService {
     if (centroNv) {
       merged.centro = centroNv;
     } else if (
-      (ctx.lastIntent === IntentType.CUADRANTE || res.intent === IntentType.CUADRANTE) &&
+      (ctx.lastIntent === IntentType.CUADRANTE ||
+        res.intent === IntentType.CUADRANTE) &&
       /\b(?:qui[eé]n\s+trabaja|trabaja\s+hoy)\b/i.test(mensaje) &&
       /\b(?:en|al)\s+[^\s]{2,}/i.test(mensaje) &&
       ctx.lastEntities?.centro
@@ -959,7 +962,11 @@ export class IntentClassifierService {
     let raw = rawFromQuien?.replace(/[.:;!]+$/g, '').trim() ?? '';
     if (!raw && /\btrabaja\b/i.test(trimmed)) {
       const mEnd = trimmed.match(/\b(?:en|al)\s+(.+?)\s*\??\s*$/is);
-      raw = mEnd?.[1]?.trim().replace(/[.:;!]+$/g, '').trim() ?? '';
+      raw =
+        mEnd?.[1]
+          ?.trim()
+          .replace(/[.:;!]+$/g, '')
+          .trim() ?? '';
     }
     if (!raw || raw.length < 2 || raw.length > 80) {
       return undefined;

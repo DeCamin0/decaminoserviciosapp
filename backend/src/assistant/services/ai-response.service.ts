@@ -555,7 +555,7 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
       [IntentType.VACACIONES]:
         'El usuario pregunta sobre vacaciones o asuntos propios. Responde de forma clara y concisa.',
       [IntentType.EMPLEADOS]:
-        'El usuario pregunta sobre un listado de empleados con su estado, cuadrantes, horarios y centros asignados. Presenta la información de forma clara y organizada. Si hay muchos empleados (>10), menciona que puede descargar los datos completos en Excel, TXT o PDF usando los botones de descarga.',
+        'El usuario pregunta sobre un listado de empleados con su estado, cuadrantes, horarios y centros asignados, o sobre **su propio contrato** (resumen en datos de ficha). Presenta la información de forma clara. Si la pregunta es **cómo solicitar o obtener una copia del contrato**, no digas que debe ir al «RRHH del centro de trabajo» por el campo `centro` de la ficha: indica supervisión / RRHH o administración de la empresa. Si hay muchos empleados (>10), menciona descarga Excel/TXT/PDF cuando aplique.',
       [IntentType.NOMINAS]:
         'El usuario pregunta sobre nóminas (payslips). Si las filas traen row_kind=sin_nomina_mes, son empleados ACTIVOS sin fila en Nominas para ese mes/año (heurística): lista quién falta; NO ofrezcas descargar nómina ni hables como si fueran PDFs de nómina. Si son nóminas reales (id, Mes, fecha_subida), enumera periodos; si hay muchas (>10), resume y recuerda descarga cuando aplique.',
       [IntentType.DIPLOMAS]:
@@ -578,7 +578,35 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
 
     const closing = `${this.buildLanguageInstructionClosing(outputLocale)} ${this.buildDataHandlingClosingLocale(outputLocale)}`;
 
-    return `${rolContext}\n\n${intentContexts[intent]}\n\n${closing}${this.buildPreferenceSuffix(prefs)}`;
+    return `${rolContext}\n\n${intentContexts[intent]}\n\n${this.buildGlobalPolicyNoCenterAdministrator(outputLocale)}\n\n${closing}${this.buildPreferenceSuffix(prefs)}`;
+  }
+
+  /**
+   * Política fija: no dirigir al usuario a un «administrador del centro de trabajo» como contacto (cualquier tema).
+   */
+  private buildGlobalPolicyNoCenterAdministrator(
+    outputLocale: AssistantLocale,
+  ): string {
+    if (outputLocale === 'ro') {
+      return '**REGULĂ GLOBALĂ (obligatorie):** Nu spune niciodată că utilizatorul trebuie să se adreseze **administratorului centrului de lucru** / „responsabilului de centru” ca persoană de contact pentru cereri, documente, reclamații sau pași în aplicație. Câmpul „centru” din date este doar **informație de locație**. Orientează spre **resurse umane**, **administrația companiei**, **supervizare**, secțiunile relevante din **aplicație** sau canalele oficiale ale firmei — dar **nu** inventa sau impune un „administrator al centrului” ca destinatar.';
+    }
+    if (outputLocale === 'en') {
+      return '**GLOBAL RULE (mandatory):** Never tell the user to contact a **work-center administrator** / **site administrator** as the person to reach for requests, documents, complaints, or app steps. The `centro` / work-site field in data is **location information only**. Point to **HR**, **company administration**, **supervision**, the relevant **app sections**, or official company channels — **never** present “the center administrator” as the addressee.';
+    }
+    return '**REGLA GLOBAL (obligatoria):** Nunca indiques que el usuario debe dirigirse al **administrador del centro de trabajo** (ni a un «responsable del centro» como persona de contacto única) para trámites, solicitudes, documentos, incidencias o pasos en la app. El campo `centro` en los datos es solo **información de ubicación laboral**. Orienta hacia **recursos humanos**, **administración de la empresa**, **supervisión**, las secciones pertinentes de la **aplicación** o los canales oficiales de la empresa, según el tema — **prohibido** presentar al «administrador del centro de trabajo» como destinatario.';
+  }
+
+  /** Repetición breve en el user prompt (refuerzo). */
+  private buildGlobalPolicyNoCenterAdministratorUserReminder(
+    outputLocale: AssistantLocale,
+  ): string {
+    if (outputLocale === 'ro') {
+      return 'Recordator obligatoriu: nu îndruma niciodată utilizatorul către „administratorul centrului de lucru” ca persoană de contact.';
+    }
+    if (outputLocale === 'en') {
+      return 'Mandatory reminder: never direct the user to a “work-center administrator” as the contact person.';
+    }
+    return 'Recordatorio obligatorio: no indiques nunca al «administrador del centro de trabajo» como persona de contacto para trámites.';
   }
 
   /**
@@ -841,10 +869,7 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
       }
     }
 
-    if (
-      intent === IntentType.CUADRANTE &&
-      entidades?.agrupar_por_centro
-    ) {
+    if (intent === IntentType.CUADRANTE && entidades?.agrupar_por_centro) {
       prompt +=
         '\n\nINSTRUCCIÓN DE FORMATO (listado por centro): El usuario pidió trabajadores previstos **agrupados por centro de trabajo** (no un solo centro). Organiza la respuesta en **secciones**: un encabezado por cada valor distinto de `centro` en los datos; dentro de cada sección, lista empleados (nombre/código) con horas previstas para la fecha. Si una fila tiene turno por **horario_multicentro**, indica `cliente_horario_multicentro` y no mezcles esa fila como si el centro principal fuera el único contexto. No des una lista plana única sin separar por centro.';
     }
@@ -854,6 +879,15 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
         '\n\nREGLA CRÍTICA (SOLICITUDES): Hay dos fuentes en el JSON cuando aparecen `solicitudes` y `ausencias_calendario`: (1) filas de `solicitudes` con estado/tipo de solicitud; (2) filas de tabla `Ausencias` (registro operativo por día o rango FECHA) — incluye permisos, ausencias justificadas, vacaciones materializadas, etc., como el cron n8n. Resume ambas. Usa los campos reales (NOMBRE/CODIGO/TIPO/FECHA_RAW en Ausencias). PROHIBIDO «información no disponible» si el JSON trae el dato. OBLIGATORIO: enumera TODOS los tipos con recuento > 0 de `distribucion_tipos_solicitudes` y de `distribucion_tipos_tabla_ausencias` (y de las claves `*_ordenada` si existen); no agrupar en un solo bloque genérico «otras» ni omitir tipos.';
     }
 
+    if (
+      intent === IntentType.EMPLEADOS &&
+      entidades?.contrato_solicitud_procedimiento
+    ) {
+      prompt +=
+        '\n\nREGLA CRÍTICA (solicitud de copia del contrato): La pregunta es **cómo solicitar o conseguir** el contrato o una copia oficial. **NO** indiques que debe dirigirse al «departamento de recursos humanos del centro de trabajo» ni uses el campo `centro` del JSON como **destino** de la solicitud o como único interlocutor. El `centro` en ficha es **dato laboral de ubicación**, no el canal oficial para expedir el documento. Indica que debe contactar a **supervisión**, **recursos humanos / administración de la empresa** o el canal que la empresa haya establecido. Si el JSON incluye `empresa`, puedes citarla como empleador; **no** presentes al administrador del centro asignado como responsable de entregar el contrato. Si hay `documento_contrato_subido`, puedes mencionar si consta copia en la app; no inventes trámites internos.';
+    }
+
+    prompt += `\n\n${this.buildGlobalPolicyNoCenterAdministratorUserReminder(outputLocale)}`;
     prompt += `\n\n${this.userPromptLanguageFooter(outputLocale)}`;
     return prompt;
   }
@@ -998,22 +1032,15 @@ ${this.clarificationClosingInstruction(outputLocale)}`;
             distribucion_por_centro: porCentro,
             muestra: data.slice(0, 12).map((raw: any) => ({
               codigo: raw.CODIGO || raw.codigo,
-              nombre:
-                raw.nombre ||
-                raw.NOMBRE ||
-                raw['NOMBRE / APELLIDOS'],
-              centro:
-                raw.centro ??
-                raw.CENTRO ??
-                raw['CENTRO TRABAJO'] ??
-                null,
+              nombre: raw.nombre || raw.NOMBRE || raw['NOMBRE / APELLIDOS'],
+              centro: raw.centro ?? raw.CENTRO ?? raw['CENTRO TRABAJO'] ?? null,
               horas_plan: raw.horas_plan,
               fuente: raw.fuente,
               trabaja_este_dia: raw.trabaja_este_dia,
-              cliente_horario_multicentro: raw.cliente_horario_multicentro ?? null,
+              cliente_horario_multicentro:
+                raw.cliente_horario_multicentro ?? null,
             })),
-            nota:
-              'Datos del plan del día (daily_plan). Usa los campos `centro`, `horas_plan` y `fuente` de cada fila; no inventes N/A si vienen en la muestra o en la distribución. Para «quién trabaja hoy», prioriza filas con horas_plan > 0.',
+            nota: 'Datos del plan del día (daily_plan). Usa los campos `centro`, `horas_plan` y `fuente` de cada fila; no inventes N/A si vienen en la muestra o en la distribución. Para «quién trabaja hoy», prioriza filas con horas_plan > 0.',
           };
         }
 

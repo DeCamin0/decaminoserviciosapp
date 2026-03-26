@@ -61,7 +61,10 @@ export class ResponseGeneratorService {
         return this.generateVacacionesResponse(data);
 
       case IntentType.EMPLEADOS:
-        return this.generateEmpleadosResponse(this.assistantDataAsArray(data));
+        return this.generateEmpleadosResponse(
+          this.assistantDataAsArray(data),
+          entidades,
+        );
 
       case IntentType.NOMINAS:
         return this.generateNominasResponse(
@@ -253,7 +256,10 @@ export class ResponseGeneratorService {
     };
   }
 
-  private generateEmpleadosResponse(data: any[]): AssistantResponseDto {
+  private generateEmpleadosResponse(
+    data: any[],
+    entidades?: { contrato_solicitud_procedimiento?: boolean },
+  ): AssistantResponseDto {
     if (data?.length === 1 && data[0]?.row_kind === 'contrato_propio') {
       const r = data[0] as Record<string, unknown>;
       const nom =
@@ -268,6 +274,12 @@ export class ResponseGeneratorService {
       lines.push(
         'Estos datos son tu **ficha administrativa** (`DatosEmpleados`: tipo, horas, centro, etc.). No sustituyen la firma de un PDF en la carpeta de documentos.',
       );
+      if (entidades?.contrato_solicitud_procedimiento) {
+        lines.push(
+          '',
+          'Para **solicitar una copia oficial** del contrato, contacta a **tu supervisión** o a **recursos humanos / administración de la empresa**; el centro de trabajo de la ficha es solo **dato de ubicación**, no el canal oficial para documentos.',
+        );
+      }
       lines.push('');
       lines.push('📄 **Resumen de tu contrato (datos de ficha)**');
       lines.push(`- Código: ${r.codigo != null ? String(r.codigo) : '—'}`);
@@ -290,7 +302,9 @@ export class ResponseGeneratorService {
         lines.push(`- Antigüedad: ${String(r.antiguedad)}`);
       }
       lines.push(`- Empresa: ${r.empresa != null ? String(r.empresa) : '—'}`);
-      lines.push(`- Centro: ${r.centro != null ? String(r.centro) : '—'}`);
+      lines.push(
+        `- Centro de trabajo (referencia): ${r.centro != null ? String(r.centro) : '—'}`,
+      );
       lines.push(`- Estado: ${r.estado != null ? String(r.estado) : '—'}`);
       lines.push('');
       lines.push('📎 **Copia del contrato en la app (Mis documentos)**');
@@ -300,7 +314,7 @@ export class ResponseGeneratorService {
         );
       } else {
         lines.push(
-          '**No aparece** en la carpeta de la app un PDF/archivo de contrato con “contrato” en el nombre o tipo (o no está subido el fichero). Revisa **Mis documentos**; si falta, pide a administración que lo suban o el envío por correo.',
+          '**No aparece** en la carpeta de la app un PDF/archivo de contrato con “contrato” en el nombre o tipo (o no está subido el fichero). Revisa **Mis documentos**; si falta, pide copia a **supervisión o RRHH de la empresa** (no confundas con el solo centro de trabajo de la ficha).',
         );
       }
       lines.push(

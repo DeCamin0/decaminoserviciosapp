@@ -76,9 +76,7 @@ describe('assistant recovery + outcome (controlled)', () => {
   });
 
   it('CUADRANTE vacío + hoy + centro: sin fallback FICHAJES (plan por centro ≠ fichajes)', () => {
-    const s = computeBusinessLexiconSignals(
-      'quien trabaja hoy en Bosquepino',
-    );
+    const s = computeBusinessLexiconSignals('quien trabaja hoy en Bosquepino');
     const alt = pickPostQueryRecoveryIntent(
       IntentType.CUADRANTE,
       s,

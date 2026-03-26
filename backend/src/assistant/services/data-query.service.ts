@@ -326,11 +326,7 @@ export class DataQueryService {
       );
     }
     /** Listă „cine la centru” poate depăși 25; nume/cod rămân limitate. */
-    const rowLimit = empleadoFilterSql
-      ? centroRaw
-        ? 200
-        : 25
-      : 200;
+    const rowLimit = empleadoFilterSql ? (centroRaw ? 200 : 25) : 200;
     const assistantSelect = `
       SELECT
         CAST(de.CODIGO AS CHAR) AS CODIGO,

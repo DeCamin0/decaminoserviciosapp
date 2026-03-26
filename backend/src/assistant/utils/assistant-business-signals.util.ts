@@ -29,6 +29,26 @@ export function assistantTimeBucket15Min(nowMs: number = Date.now()): number {
 /**
  * Preguntas sobre el propio contrato laboral (DatosEmpleados), no listados de equipo.
  */
+/**
+ * Cómo pedir / solicitar / obtener copia del contrato (procedimiento), no solo resumen de datos.
+ */
+export function messageAsksHowToRequestContract(mensaje: string): boolean {
+  const n = normalizeAssistantText(mensaje);
+  if (!/\bcontrato/.test(n) && !/\bcontract\b/.test(n)) {
+    return false;
+  }
+  return (
+    /\b(como|cómo|cum)\s+.{0,55}(solicito|solicitar|pido|pedir|obtener|conseguir|recuperar|sacar)\b/.test(
+      n,
+    ) ||
+    /\b(solicito|solicitar|pido|pedir|obtener|conseguir)\s+.{0,35}(mi\s+)?contrato\b/.test(
+      n,
+    ) ||
+    /\b(donde|dónde|unde)\s+.{0,45}contrato\b/.test(n) ||
+    /\b(copia|copie|duplicado)\s+.{0,40}contrato\b/.test(n)
+  );
+}
+
 export function messageAsksOwnContractSummary(mensaje: string): boolean {
   const n = normalizeAssistantText(mensaje);
   if (!/\bcontrato/.test(n) && !/\bcontract\b/.test(n)) {

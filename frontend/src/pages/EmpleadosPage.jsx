@@ -1949,6 +1949,42 @@ export default function EmpleadosPage() {
     setPdfEmployeeData(null);
   };
 
+  /** Campos modificados para el registro de actividad (antes → después). Contraseñas: sin valor en claro. */
+  const buildEmployeeFieldChanges = (original, current) => {
+    if (!original || !current) return [];
+    const sensitive = /contraseña|password|token|secret/i;
+    const keys = new Set([...Object.keys(original), ...Object.keys(current)]);
+    const out = [];
+    keys.forEach((key) => {
+      if (key === 'CODIGO') return;
+      const valorAnterior = original[key];
+      const valorNuevo = current[key];
+      const a = String(valorAnterior ?? '').trim();
+      const b = String(valorNuevo ?? '').trim();
+      if (a === b) return;
+      if (sensitive.test(key)) {
+        out.push({
+          campo: key,
+          valorAnterior: '(oculto)',
+          valorNuevo: '(modificado)',
+        });
+      } else {
+        out.push({
+          campo: key,
+          valorAnterior:
+            valorAnterior === '' || valorAnterior === null || valorAnterior === undefined
+              ? '(vacío)'
+              : String(valorAnterior),
+          valorNuevo:
+            valorNuevo === '' || valorNuevo === null || valorNuevo === undefined
+              ? '(vacío)'
+              : String(valorNuevo),
+        });
+      }
+    });
+    return out;
+  };
+
   const handleEditUser = async () => {
     setAddLoading(true);
     
@@ -2094,13 +2130,16 @@ export default function EmpleadosPage() {
       if (normalizedSuccess) {
         console.log('✅ [handleEditUser] Empleado EDITADO correctamente');
         
-        // Log EDITAREA utilizatorului (nu salvare)
+        // Log EDITAREA utilizatorului (nu salvare) — incluye campos modificados para auditoría
+        const fieldChanges = buildEmployeeFieldChanges(originalEmployeeData, editForm);
         await activityLogger.logAction('user_updated', {
           user: editForm['NOMBRE / APELLIDOS'],
           email: editForm['CORREO ELECTRONICO'],
           codigo: editForm.CODIGO,
+          target_user: editForm['NOMBRE / APELLIDOS'],
           updated_by: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
-          updated_by_email: authUser?.email
+          updated_by_email: authUser?.email,
+          field_changes: fieldChanges,
         });
         
         // Email-ul la gestorie se trimite automat prin backend dacă enviarAGestoriaEdit este true

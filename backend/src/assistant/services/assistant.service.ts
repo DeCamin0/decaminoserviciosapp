@@ -45,6 +45,7 @@ import {
 } from '../utils/assistant-response-localized.util';
 import {
   computeBusinessLexiconSignals,
+  messageAsksHowToRequestContract,
   messageAsksOwnContractSummary,
 } from '../utils/assistant-business-signals.util';
 import { looksLikeAppHelpDatosPersonales } from '../utils/assistant-app-help.util';
@@ -284,6 +285,13 @@ export class AssistantService {
         this.logger.log(
           `📋 Entități completate: ${JSON.stringify(this.snapshotEntitiesForLog(entidades))}`,
         );
+      }
+
+      if (messageAsksHowToRequestContract(mensaje)) {
+        entidades = {
+          ...(entidades ?? {}),
+          contrato_solicitud_procedimiento: true,
+        } as IntentResult['entidades'];
       }
 
       // CUADRANTE: „este mes” / completo_* trebuie să folosească cuadrante_mes, nu fecha lipită din „hoy”.
@@ -1446,9 +1454,7 @@ export class AssistantService {
               usuario.rol,
               entidades.fecha,
               dataScope,
-              entidades?.codigo ||
-                entidades?.nombre ||
-                entidades?.centro
+              entidades?.codigo || entidades?.nombre || entidades?.centro
                 ? {
                     codigo: entidades.codigo,
                     nombre: entidades.nombre,
@@ -1547,7 +1553,10 @@ export class AssistantService {
 
         case IntentType.EMPLEADOS: {
           const mensajeLower = mensaje.toLowerCase();
-          if (messageAsksOwnContractSummary(mensaje)) {
+          if (
+            messageAsksOwnContractSummary(mensaje) ||
+            messageAsksHowToRequestContract(mensaje)
+          ) {
             executedReadTool = 'empleado_mis_datos_contrato';
             data = await this.readTools.empleadoMisDatosContrato(
               usuario.id,

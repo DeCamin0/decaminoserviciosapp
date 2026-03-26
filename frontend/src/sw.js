@@ -86,9 +86,9 @@ self.addEventListener('push', (event) => {
   console.log('[SW] Push event received:', event);
   
   const basePath = self.location.pathname.replace(/\/sw\.js$/, '') || '/';
-  // Backward compatible: default logo.svg (env vars nu sunt disponibile în service worker)
-  // Logo path poate fi overriden prin data din push event (vezi linia 115-116)
-  const defaultLogoPath = 'logo.svg';
+  // Build-time per mod (decamino / hera): VITE_LOGO_PATH din .env.<mode>; fallback la logo.svg
+  const defaultLogoPath =
+    (import.meta.env.VITE_LOGO_PATH && String(import.meta.env.VITE_LOGO_PATH).trim()) || 'logo.svg';
   
   let notificationData = {
     title: 'Nueva notificación',

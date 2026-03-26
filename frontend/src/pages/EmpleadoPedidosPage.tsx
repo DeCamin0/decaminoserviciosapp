@@ -1639,7 +1639,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                 <thead>
                   <tr className="border-b">
                     <th className="text-left py-2">Producto</th>
-                    <th className="text-left py-2">Cantidad</th>
+                    <th className="text-left py-2 min-w-[11rem]">Cantidad</th>
                     <th className="text-left py-2">Acciones</th>
                   </tr>
                 </thead>
@@ -1654,9 +1654,9 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                             <div className="text-sm text-gray-600">{producto?.descripcion || 'N/A'}</div>
                           </div>
                         </td>
-                        <td className="py-2">
+                        <td className="py-2 min-w-[11rem]">
                           <label htmlFor={`cantidad-pedido-${index}`} className="sr-only">Cantidad</label>
-                          <div className="flex items-center gap-1 w-fit">
+                          <div className="flex items-center gap-1.5 w-fit">
                             <Button
                               type="button"
                               variant="outline"
@@ -1680,7 +1680,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
                                 else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidad(index, n); }
                               }}
                               onBlur={() => { if (linea.cantidad === 0) actualizarCantidad(index, 1); }}
-                              className="!w-14 shrink-0"
+                              className="!min-w-[5.5rem] !w-28 shrink-0 tabular-nums text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               aria-label={`Cantidad para ${producto?.descripcion || 'producto'}`}
                             />
                             <Button
@@ -2490,8 +2490,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                           <tr key={index} className="border-b">
                             <td className="px-3 py-2">{item.numero_articulo || 'N/A'}</td>
                             <td className="px-3 py-2">{item.descripcion || 'N/A'}</td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1 w-fit ml-auto">
+                            <td className="px-3 py-2 text-right min-w-[11rem]">
+                              <div className="flex items-center justify-end gap-1.5 w-fit ml-auto">
                                 <Button
                                   type="button"
                                   variant="outline"
@@ -2513,7 +2513,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                                     else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidadProducto(index, n); }
                                   }}
                                   onBlur={() => { if (item.cantidad === 0) actualizarCantidadProducto(index, 1); }}
-                                  className="w-14 px-2 py-1 border border-gray-300 rounded text-right shrink-0"
+                                  className="min-w-[5.5rem] w-28 px-2 py-1 border border-gray-300 rounded text-right shrink-0 tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 />
                                 <Button
                                   type="button"

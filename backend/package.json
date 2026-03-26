@@ -129,6 +129,7 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
+    "picomatch": "4.0.4",
     "multer": "^2.1.0",
     "glob": "^11.0.0",
     "tmp": "^0.2.4",

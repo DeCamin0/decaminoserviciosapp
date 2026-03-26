@@ -1218,11 +1218,62 @@ export default function ActivityLog() {
               </div>
             </div>
 
+            {/* Cambios de ficha (empleado actualizado) */}
+            {selectedLog.action === 'user_updated' &&
+              selectedLog.details?.field_changes &&
+              Array.isArray(selectedLog.details.field_changes) &&
+              selectedLog.details.field_changes.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-md font-semibold text-gray-800 border-b pb-2">
+                    📝 Campos modificados
+                  </h4>
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="text-left p-2 border-b">Campo</th>
+                          <th className="text-left p-2 border-b">Valor anterior</th>
+                          <th className="text-left p-2 border-b">Valor nuevo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedLog.details.field_changes.map((row, idx) => (
+                          <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="p-2 font-mono text-xs align-top">{row.campo}</td>
+                            <td className="p-2 text-gray-700 align-top break-words max-w-[200px]">
+                              {row.valorAnterior}
+                            </td>
+                            <td className="p-2 text-gray-800 align-top break-words max-w-[200px]">
+                              {row.valorNuevo}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {selectedLog.details.updated_by && (
+                    <p className="text-xs text-gray-500">
+                      Editado por: <span className="font-medium">{selectedLog.details.updated_by}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+            {selectedLog.action === 'user_updated' &&
+              (!selectedLog.details?.field_changes ||
+                !Array.isArray(selectedLog.details.field_changes) ||
+                selectedLog.details.field_changes.length === 0) && (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  No hay listado de campos modificados para este registro (log anterior a la mejora o sin
+                  snapshot de edición).
+                </p>
+              )}
+
             {/* Detalles adicionales */}
             {selectedLog.details && Object.keys(selectedLog.details).length > 0 && (
               <div className="space-y-4">
                 <h4 className="text-md font-semibold text-gray-800 border-b pb-2">
-                  📋 Detalles Adicionales
+                  📋 Detalles Adicionales (JSON)
                 </h4>
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <pre className="text-xs text-gray-700 whitespace-pre-wrap">

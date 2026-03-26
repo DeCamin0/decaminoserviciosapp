@@ -593,6 +593,17 @@ export const useAdminApi = () => {
       } else if (data && Array.isArray(data.data)) {
         logs = data.data;
       }
+
+      // details_json (DB) → details para la UI (field_changes, etc.)
+      if (Array.isArray(logs) && logs.length > 0) {
+        logs = logs.map((log) => ({
+          ...log,
+          details:
+            log.details_json != null && log.details_json !== undefined
+              ? log.details_json
+              : log.details,
+        }));
+      }
       
       // Filtrare suplimentară pentru user (nume) dacă e specificat
       // (pentru că backend nu suportă încă filtrare după user/nume)

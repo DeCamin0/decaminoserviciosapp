@@ -421,7 +421,7 @@
       var params = new URLSearchParams(window.location.search);
       var quotationId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var numeroPresupuesto = null;
-      var API_BASE = ('https://api.herafs.com' && 'https://api.herafs.com'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      var API_BASE = ('http://localhost:3002' && 'http://localhost:3002'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
         : '');
 

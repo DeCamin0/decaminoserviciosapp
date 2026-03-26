@@ -2009,7 +2009,7 @@ const TabNuevoPedido: React.FC<{
                 <thead>
                   <tr className="border-b">
                     <th className="text-left p-2">Producto</th>
-                    <th className="text-left p-2">Cantidad</th>
+                    <th className="text-left p-2 min-w-[11rem]">Cantidad</th>
                     <th className="text-left p-2">Precio Unit.</th>
                     <th className="text-left p-2">IVA %</th>
                     <th className="text-left p-2">Total Línea</th>
@@ -2031,9 +2031,9 @@ const TabNuevoPedido: React.FC<{
                             <div className="text-sm text-gray-600">{producto?.descripcion}</div>
                           </div>
                         </td>
-                        <td className="p-2">
+                        <td className="p-2 min-w-[11rem]">
                           <label htmlFor={`cantidad-${index}`} className="sr-only">Cantidad</label>
-                          <div className="flex items-center gap-1 w-fit">
+                          <div className="flex items-center gap-1.5 w-fit">
                             <Button
                               type="button"
                               variant="outline"
@@ -2059,7 +2059,7 @@ const TabNuevoPedido: React.FC<{
                               onBlur={() => {
                                 if (linea.cantidad === 0) actualizarLinea(index, 'cantidad', 1);
                               }}
-                              className="!w-14 shrink-0"
+                              className="!min-w-[5.5rem] !w-28 shrink-0 tabular-nums text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                               aria-label={`Cantidad para ${producto?.numero || 'producto'}`}
                             />
                             <Button
@@ -2196,6 +2196,8 @@ const TabGestionarPedidos: React.FC<{
   const [addressSuggestionsLoading, setAddressSuggestionsLoading] = useState<Record<string, boolean>>({});
   const addressSearchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mostrarPreviewEnvio, setMostrarPreviewEnvio] = useState(false);
+  const [mostrarSeleccionEnvio, setMostrarSeleccionEnvio] = useState(false);
+  const [uidsSeleccionadosEnvio, setUidsSeleccionadosEnvio] = useState<Record<string, boolean>>({});
   const [pedidosParaEnviar, setPedidosParaEnviar] = useState<Pedido[]>([]);
   const [mostrarModalExcel, setMostrarModalExcel] = useState(false);
   const [excelBlob, setExcelBlob] = useState<Blob | null>(null);
@@ -2962,7 +2964,11 @@ const TabGestionarPedidos: React.FC<{
 
   // Salvează doar fecha_envio fără să schimbe statusul
   const guardarFechaEnvio = async (pedidoUid: string) => {
-    if (!fechasEnvio[pedidoUid]) {
+    const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
+    const fechaParaGuardar =
+      fechasEnvio[pedidoUid] ||
+      (pedido?.fecha_envio ? formatDateOnlyForInput(pedido.fecha_envio) : '');
+    if (!fechaParaGuardar) {
       addToast('warning', 'Fecha requerida', 'Debes seleccionar una fecha de envío.');
       return;
     }
@@ -2981,7 +2987,6 @@ const TabGestionarPedidos: React.FC<{
       }
 
       // Actualizează doar fecha_envio, păstrând statusul actual
-      const pedido = pedidos.find(p => p.pedido_uid === pedidoUid);
       const estadoActual = pedido?.estado || 'pendiente';
 
       const response = await fetch(routes.updatePedidoEstado(pedidoUid), {
@@ -2989,7 +2994,7 @@ const TabGestionarPedidos: React.FC<{
         headers,
         body: JSON.stringify({ 
           estado: estadoActual,
-          fecha_envio: fechasEnvio[pedidoUid]
+          fecha_envio: fechaParaGuardar,
         }),
       });
 
@@ -3166,17 +3171,59 @@ const TabGestionarPedidos: React.FC<{
     }
   };
 
-  // Deschide modalul de preview pentru comenzile aprobate
-  const abrirPreviewEnvio = () => {
-    const pedidosAprobados = pedidos.filter(p => p.estado === 'aprobado');
-    
-    if (pedidosAprobados.length === 0) {
-      addToast('info', 'Sin pedidos aprobados', 'No hay pedidos aprobados para enviar.');
+  // Lista aprobados según filtros actuales (lo que ves en pantalla)
+  const pedidosAprobadosFiltrados = useMemo(
+    () => pedidosFiltrados.filter(p => p.estado === 'aprobado'),
+    [pedidosFiltrados],
+  );
+
+  // Paso 1: elegir qué pedidos aprobados enviar (urgentes vs periódicos, etc.)
+  const abrirSeleccionEnvio = () => {
+    if (pedidosAprobadosFiltrados.length === 0) {
+      addToast(
+        'info',
+        'Sin pedidos aprobados',
+        'No hay pedidos aprobados en la lista actual. Prueba a cambiar el filtro de estado o centro.',
+      );
       return;
     }
+    const initial: Record<string, boolean> = {};
+    pedidosAprobadosFiltrados.forEach(p => {
+      initial[p.pedido_uid] = true;
+    });
+    setUidsSeleccionadosEnvio(initial);
+    setMostrarSeleccionEnvio(true);
+  };
 
-    setPedidosParaEnviar(pedidosAprobados);
+  const cerrarSeleccionEnvio = () => {
+    setMostrarSeleccionEnvio(false);
+    setUidsSeleccionadosEnvio({});
+  };
+
+  const continuarSeleccionAlPreview = () => {
+    const seleccionados = pedidosAprobadosFiltrados.filter(
+      p => uidsSeleccionadosEnvio[p.pedido_uid],
+    );
+    if (seleccionados.length === 0) {
+      addToast(
+        'warning',
+        'Selecciona pedidos',
+        'Marca al menos un pedido para continuar.',
+      );
+      return;
+    }
+    setPedidosParaEnviar(seleccionados);
+    setMostrarSeleccionEnvio(false);
+    setUidsSeleccionadosEnvio({});
     setMostrarPreviewEnvio(true);
+  };
+
+  const toggleTodosSeleccionEnvio = (marcar: boolean) => {
+    const next: Record<string, boolean> = {};
+    pedidosAprobadosFiltrados.forEach(p => {
+      next[p.pedido_uid] = marcar;
+    });
+    setUidsSeleccionadosEnvio(next);
   };
 
   // Încarcă SERVICIO_ENTREGA pentru toate pedidos
@@ -3494,14 +3541,14 @@ const TabGestionarPedidos: React.FC<{
                 {loading ? '🔄 Cargando...' : '🔄 Actualizar'}
               </Button>
 
-              {pedidosFiltrados.filter(p => p.estado === 'aprobado').length > 0 && (
+              {pedidosAprobadosFiltrados.length > 0 && (
                 <Button
-                  onClick={abrirPreviewEnvio}
+                  onClick={abrirSeleccionEnvio}
                   className="bg-green-600 hover:bg-green-700 text-white"
                   disabled={loading}
-                  title="Ver preview y enviar todas las órdenes aprobadas. Se generará un Excel y se marcarán como 'enviado'."
+                  title="Elige qué pedidos aprobados (de la lista filtrada) enviar al proveedor: urgentes, periódicos, etc."
                 >
-                  📤 Enviar Todos los Aprobados ({pedidosFiltrados.filter(p => p.estado === 'aprobado').length})
+                  📤 Seleccionar pedidos a enviar ({pedidosAprobadosFiltrados.length})
                 </Button>
               )}
             </div>
@@ -3649,11 +3696,15 @@ const TabGestionarPedidos: React.FC<{
                         </Button>
                       );
                     })()}
-                    {pedido.estado === 'pendiente' && (
-                      <>
+                    {(pedido.estado === 'pendiente' ||
+                      (pedidoEditando === pedido.pedido_uid && pedido.estado === 'aprobado')) && (
                         <div className="mb-2">
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Fecha de Envío (solo fecha; el horario está en Horario Entrega):
+                            Fecha de Envío (solo fecha; el horario está en Horario Entrega)
+                            {pedido.estado === 'aprobado' && (
+                              <span className="text-gray-500 font-normal"> — puedes corregir la fecha si faltaba o estaba mal</span>
+                            )}
+                            :
                           </label>
                           <div className="flex gap-2">
                             <input
@@ -3666,7 +3717,11 @@ const TabGestionarPedidos: React.FC<{
                                 }));
                               }}
                               className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                              min={formatDateOnlyForInput(new Date())}
+                              min={
+                                pedido.estado === 'aprobado'
+                                  ? undefined
+                                  : formatDateOnlyForInput(new Date())
+                              }
                             />
                             <Button
                               onClick={() => guardarFechaEnvio(pedido.pedido_uid)}
@@ -3678,9 +3733,17 @@ const TabGestionarPedidos: React.FC<{
                             </Button>
                           </div>
                         </div>
+                    )}
+                    {(pedido.estado === 'pendiente' ||
+                      (pedidoEditando === pedido.pedido_uid && pedido.estado === 'aprobado')) && (
+                      <>
                         <div className="mb-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                           <label className="block text-xs font-medium text-gray-700 mb-2">
-                            📍 Dirección de Envío (Opcional):
+                            📍 Dirección de Envío{' '}
+                            {pedido.estado === 'aprobado'
+                              ? '(añade o corrige teléfono de envío si faltaba)'
+                              : '(Opcional)'}
+                            :
                           </label>
                           <div className="space-y-2">
                             <div>
@@ -3900,7 +3963,12 @@ const TabGestionarPedidos: React.FC<{
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Teléfono (envío)</label>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Teléfono (envío){' '}
+                                {pedido.estado === 'aprobado' && (
+                                  <span className="text-amber-700 font-medium">*</span>
+                                )}
+                              </label>
                               <input
                                 type="tel"
                                 placeholder="Ej: 612 345 678"
@@ -3926,6 +3994,10 @@ const TabGestionarPedidos: React.FC<{
                             </Button>
                           </div>
                         </div>
+                      </>
+                    )}
+                    {pedido.estado === 'pendiente' && (
+                      <>
                         <Button
                           onClick={() => updateEstado(pedido.pedido_uid, 'aprobado')}
                           className="bg-green-600 hover:bg-green-700 text-white"
@@ -4102,7 +4174,7 @@ const TabGestionarPedidos: React.FC<{
                           <tr className="border-b bg-gray-50">
                             <th className="text-left p-2">Artículo</th>
                             <th className="text-left p-2">Descripción</th>
-                            <th className="text-right p-2">Cantidad</th>
+                            <th className="text-right p-2 min-w-[11rem] whitespace-nowrap">Cantidad</th>
                             <th className="text-right p-2">Precio Unit.</th>
                             <th className="text-right p-2">Subtotal</th>
                             <th className="text-right p-2">IVA</th>
@@ -4118,9 +4190,9 @@ const TabGestionarPedidos: React.FC<{
                             <tr key={index} className="border-b hover:bg-gray-50">
                               <td className="p-2 font-medium">{item.numero_articulo}</td>
                               <td className="p-2">{item.descripcion}</td>
-                              <td className="p-2 text-right">
+                              <td className="p-2 text-right min-w-[11rem]">
                                 {pedidoEditando === pedido.pedido_uid ? (
-                                  <div className="flex items-center justify-end gap-1 w-fit ml-auto">
+                                  <div className="flex items-center justify-end gap-1.5 w-fit ml-auto max-w-none">
                                     <Button
                                       type="button"
                                       variant="outline"
@@ -4175,7 +4247,7 @@ const TabGestionarPedidos: React.FC<{
                                           ));
                                         }
                                       }}
-                                      className="!w-14 text-right shrink-0"
+                                      className="!min-w-[5.5rem] !w-28 text-right shrink-0 tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                     />
                                     <Button
                                       type="button"
@@ -4287,6 +4359,106 @@ const TabGestionarPedidos: React.FC<{
               </div>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* Paso 1: selección de pedidos aprobados a enviar */}
+      {mostrarSeleccionEnvio && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
+            <div className="mb-4 pb-4 border-b">
+              <h2 className="text-xl font-bold text-gray-800">
+                Seleccionar pedidos a enviar al proveedor
+              </h2>
+              <p className="text-sm text-gray-600 mt-2">
+                Solo se listan los pedidos <strong>aprobados</strong> que coinciden con los filtros actuales (estado, centro, año).
+                Desmarca los que no quieras enviar ahora (por ejemplo deja los periódicos para más tarde).
+              </p>
+              <p className="text-sm text-purple-700 mt-2 font-medium">
+                Seleccionados:{' '}
+                {pedidosAprobadosFiltrados.filter(p => uidsSeleccionadosEnvio[p.pedido_uid]).length}{' '}
+                de {pedidosAprobadosFiltrados.length}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => toggleTodosSeleccionEnvio(true)}
+              >
+                Seleccionar todos
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => toggleTodosSeleccionEnvio(false)}
+              >
+                Quitar selección
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left w-10"></th>
+                    <th className="p-2 text-left">Pedido</th>
+                    <th className="p-2 text-left">Empleado</th>
+                    <th className="p-2 text-left">Comunidad</th>
+                    <th className="p-2 text-right">Total</th>
+                    <th className="p-2 text-left">Fecha envío</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedidosAprobadosFiltrados.map(p => (
+                    <tr
+                      key={p.pedido_uid}
+                      className={`border-t border-gray-100 ${uidsSeleccionadosEnvio[p.pedido_uid] ? 'bg-green-50/50' : 'bg-white'}`}
+                    >
+                      <td className="p-2 align-middle">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                          checked={uidsSeleccionadosEnvio[p.pedido_uid] ?? false}
+                          onChange={() =>
+                            setUidsSeleccionadosEnvio(prev => ({
+                              ...prev,
+                              [p.pedido_uid]: !prev[p.pedido_uid],
+                            }))
+                          }
+                        />
+                      </td>
+                      <td className="p-2 font-mono text-xs align-middle">{p.pedido_uid}</td>
+                      <td className="p-2 align-middle">{p.empleado?.nombre || '—'}</td>
+                      <td className="p-2 align-middle max-w-[200px] truncate" title={p.comunidad?.nombre || ''}>
+                        {p.comunidad?.nombre || '—'}
+                      </td>
+                      <td className="p-2 text-right align-middle">{formatMoney(p.total)}</td>
+                      <td className="p-2 align-middle whitespace-nowrap">
+                        {p.fecha_envio ? formatDateOnly(p.fecha_envio) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={cerrarSeleccionEnvio}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={continuarSeleccionAlPreview}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                Continuar al preview →
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

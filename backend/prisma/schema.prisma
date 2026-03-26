@@ -510,17 +510,19 @@ model LeadsDigitalizacion {
 }
 
 model Logs {
-  id        Int     @id @default(autoincrement())
-  timestamp String? @db.VarChar(255)
-  action    String? @db.VarChar(100)
-  user      String? @db.VarChar(100)
-  email     String? @db.VarChar(255)
-  grupo     String? @db.VarChar(100)
-  updateby  String? @db.Text
-  userAgent String? @db.Text
-  url       String? @db.Text
-  sessionId String? @db.VarChar(255)
-  ip        String? @db.VarChar(100)
+  id           Int     @id @default(autoincrement())
+  timestamp    String? @db.VarChar(255)
+  action       String? @db.VarChar(100)
+  user         String? @db.VarChar(100)
+  email        String? @db.VarChar(255)
+  grupo        String? @db.VarChar(100)
+  updateby     String? @db.Text
+  userAgent    String? @db.Text
+  url          String? @db.Text
+  sessionId    String? @db.VarChar(255)
+  ip           String? @db.VarChar(100)
+  /// Payload JSON (details del front: field_changes, emails, etc.)
+  details_json Json?
 
   @@map("Logs")
 }

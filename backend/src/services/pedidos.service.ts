@@ -145,6 +145,17 @@ export class PedidosService {
         throw new BadRequestException('horario_entrega es obligatorio');
       }
 
+      const telefonoEntregaIn = (pedidoData.pedido as any).telefono_entrega;
+      if (
+        telefonoEntregaIn === undefined ||
+        telefonoEntregaIn === null ||
+        String(telefonoEntregaIn).trim() === ''
+      ) {
+        throw new BadRequestException(
+          'telefono_entrega es obligatorio. Actualiza la aplicación a la última versión o introduce el teléfono de entrega antes de enviar el pedido.',
+        );
+      }
+
       // Generează UID pentru pedido
       const pedidoUid = this.generatePedidoUid();
 
@@ -517,6 +528,11 @@ export class PedidosService {
           MAX(provincia_envio) as provincia_envio,
           MAX(horario_entrega) as horario_entrega,
           MAX(telefono_entrega) as telefono_entrega,
+          MAX(fecha_envio) as fecha_envio,
+          MAX(aprobado_por) as aprobado_por,
+          MAX(aprobado_en) as aprobado_en,
+          MAX(rechazado_por) as rechazado_por,
+          MAX(rechazado_en) as rechazado_en,
           creado_en,
           COUNT(*) as num_items,
           GROUP_CONCAT(
@@ -539,7 +555,7 @@ export class PedidosService {
                  comunidad_telefono, comunidad_email, comunidad_nif,
                  fecha, moneda, descuento_global, impuestos, subtotal,
                  iva_total, total, limite_excedido, exceso_limite,
-                 estado, fecha_envio, creado_en
+                 estado, creado_en
         LIMIT 1
       `;
 
@@ -667,6 +683,11 @@ export class PedidosService {
         updates.push(`provincia_envio = ${this.escapeSql(provincia_envio)}`);
       }
       if (telefono_entrega !== undefined) {
+        if (String(telefono_entrega).trim() === '') {
+          throw new BadRequestException(
+            'telefono_entrega no puede estar vacío. Introduce un teléfono de entrega válido.',
+          );
+        }
         updates.push(`telefono_entrega = ${this.escapeSql(telefono_entrega)}`);
       }
 
@@ -919,7 +940,18 @@ export class PedidosService {
               iva_linea,
               total_linea,
               estado,
-              fecha_envio
+              fecha_envio,
+              direccion_envio,
+              codigo_postal_envio,
+              localidad_envio,
+              provincia_envio,
+              horario_entrega,
+              telefono_entrega,
+              aprobado_por,
+              aprobado_en,
+              rechazado_por,
+              rechazado_en,
+              creado_en
             ) VALUES (
               ${this.escapeSql(pedidoUid)},
               ${this.escapeSql(pedidoExistente.empleado?.id || '')},
@@ -956,7 +988,18 @@ export class PedidosService {
               ${ivaLinea},
               ${totalLinea},
               ${this.escapeSql(estadoPedido)},
-              ${pedidoExistente.fecha_envio ? this.escapeSql(new Date(pedidoExistente.fecha_envio).toISOString().slice(0, 19).replace('T', ' ')) : 'NULL'}
+              ${pedidoExistente.fecha_envio ? this.escapeSql(new Date(pedidoExistente.fecha_envio).toISOString().slice(0, 19).replace('T', ' ')) : 'NULL'},
+              ${this.escapeSql(pedidoExistente.direccion_envio || '')},
+              ${this.escapeSql(pedidoExistente.codigo_postal_envio || '')},
+              ${this.escapeSql(pedidoExistente.localidad_envio || '')},
+              ${this.escapeSql(pedidoExistente.provincia_envio || '')},
+              ${this.escapeSql((pedidoExistente.horario_entrega || '').toString())},
+              ${this.escapeSql(pedidoExistente.telefono_entrega != null ? String(pedidoExistente.telefono_entrega).trim() : '')},
+              ${pedidoExistente.aprobado_por ? this.escapeSql(pedidoExistente.aprobado_por) : 'NULL'},
+              ${pedidoExistente.aprobado_en ? this.escapeSql(new Date(pedidoExistente.aprobado_en).toISOString().slice(0, 19).replace('T', ' ')) : 'NULL'},
+              ${pedidoExistente.rechazado_por ? this.escapeSql(pedidoExistente.rechazado_por) : 'NULL'},
+              ${pedidoExistente.rechazado_en ? this.escapeSql(new Date(pedidoExistente.rechazado_en).toISOString().slice(0, 19).replace('T', ' ')) : 'NULL'},
+              ${pedidoExistente.creado_en ? this.escapeSql(new Date(pedidoExistente.creado_en).toISOString().slice(0, 19).replace('T', ' ')) : this.escapeSql(new Date().toISOString().slice(0, 19).replace('T', ' '))}
             )
           `;
           await tx.$executeRawUnsafe(insertQuery);

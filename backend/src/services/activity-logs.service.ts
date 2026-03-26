@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateActivityLogDto {
@@ -66,6 +67,32 @@ export class ActivityLogsService {
         sessionId: finalSessionId,
       });
 
+      // Persistă întreg obiectul `details` din frontend (field_changes, target user, etc.)
+      let detailsJson: Prisma.InputJsonValue | null = null;
+      const rawDetails = dtoAny.details;
+      if (
+        rawDetails != null &&
+        typeof rawDetails === 'object' &&
+        !Array.isArray(rawDetails)
+      ) {
+        detailsJson = rawDetails as Prisma.InputJsonValue;
+      } else if (typeof rawDetails === 'string') {
+        try {
+          detailsJson = JSON.parse(rawDetails) as Prisma.InputJsonValue;
+        } catch {
+          detailsJson = null;
+        }
+      }
+      if (
+        detailsJson === null &&
+        Array.isArray(dtoAny.field_changes) &&
+        dtoAny.field_changes.length > 0
+      ) {
+        detailsJson = {
+          field_changes: dtoAny.field_changes,
+        } as Prisma.InputJsonValue;
+      }
+
       // Salvează în baza de date folosind Prisma
       const log = await this.prisma.logs.create({
         data: {
@@ -79,6 +106,7 @@ export class ActivityLogsService {
           url: finalUrl || null,
           sessionId: finalSessionId || null,
           ip: ip || null,
+          details_json: detailsJson,
         },
       });
 
