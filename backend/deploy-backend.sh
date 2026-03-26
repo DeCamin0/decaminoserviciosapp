@@ -221,9 +221,9 @@ else
     done
 fi
 
-# 5. Instalează dependențe
+# 5. Instalează dependențe (inclusiv dev: @nestjs/cli e necesar pentru build pe VPS)
 echo -e "${YELLOW}📋 Step 4: Installing dependencies...${NC}"
-npm install
+npm install --include=dev
 echo -e "${GREEN}✅ Dependencies installed${NC}"
 
 # 6. Regeneră Prisma client
