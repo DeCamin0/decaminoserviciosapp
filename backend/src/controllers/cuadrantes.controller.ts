@@ -182,6 +182,7 @@ export class CuadrantesController {
    *   - file: Excel file (.xlsx, .xls)
    *   - mes: luna în format "YYYY-MM" (ex: "2025-01")
    *   - centro: centrul de lucru
+   *   - excelFormat (opcional): "auto" | "he_hs" | "celdas_multilinea" | "turno_horas_tabla"
    */
   @Post('upload-excel')
   @UseInterceptors(
@@ -211,7 +212,8 @@ export class CuadrantesController {
   )
   async uploadExcel(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { mes?: string; centro?: string },
+    @Body()
+    body: { mes?: string; centro?: string; excelFormat?: string },
   ) {
     try {
       if (!file) {
@@ -220,6 +222,14 @@ export class CuadrantesController {
 
       const mes = body.mes;
       const centro = body.centro;
+      const excelFormat =
+        body.excelFormat === 'auto'
+          ? 'auto'
+          : body.excelFormat === 'celdas_multilinea'
+            ? 'celdas_multilinea'
+            : body.excelFormat === 'turno_horas_tabla'
+              ? 'turno_horas_tabla'
+              : 'he_hs';
 
       if (!mes || !mes.match(/^\d{4}-\d{2}$/)) {
         throw new BadRequestException(
@@ -239,6 +249,7 @@ export class CuadrantesController {
         file.buffer,
         mes,
         centro,
+        { excelFormat },
       );
 
       return result;

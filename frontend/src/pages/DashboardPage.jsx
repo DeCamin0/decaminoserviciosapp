@@ -18,6 +18,7 @@ import {
   FileText,
   Folder,
   Mail,
+  Phone,
   Settings,
   ShoppingCart,
   Trophy,
@@ -67,6 +68,17 @@ const InicioPage = () => {
   const [rentaSolicitudes, setRentaSolicitudes] = useState([]);
   const [rentaSolicitudesLoading, setRentaSolicitudesLoading] = useState(false);
   const [rentaEjercicioInput, setRentaEjercicioInput] = useState('');
+  const [contactoEmergenciaLoading, setContactoEmergenciaLoading] = useState(true);
+  const [contactoEmergenciaStatus, setContactoEmergenciaStatus] = useState(null);
+  const [contactoEmergenciaSubmitting, setContactoEmergenciaSubmitting] = useState(false);
+  const [ceNombre, setCeNombre] = useState('');
+  const [ceParentesco, setCeParentesco] = useState('');
+  const [ceTelefono, setCeTelefono] = useState('');
+  const [contactoPendientesOpen, setContactoPendientesOpen] = useState(false);
+  const [contactoPendientes, setContactoPendientes] = useState([]);
+  const [contactoPendientesLoading, setContactoPendientesLoading] = useState(false);
+  /** Con datos completos: vista compacta; true = mostrar formulario para editar */
+  const [ceEditMode, setCeEditMode] = useState(false);
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -164,6 +176,147 @@ const InicioPage = () => {
     setRentaCampanaLoading(true);
     refreshRentaCampanaStatus();
   }, [user, refreshRentaCampanaStatus]);
+
+  const refreshContactoEmergenciaStatus = useCallback(async () => {
+    const token = localStorage.getItem('auth_token');
+    const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+    try {
+      const res = await fetch(`${baseUrl}/api/monitoring/contacto-emergencia/status`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = res.ok ? await res.json() : { enabled: false, complete: false };
+      setContactoEmergenciaStatus(data);
+      if (typeof data.nombre === 'string') setCeNombre(data.nombre);
+      if (typeof data.parentesco === 'string') setCeParentesco(data.parentesco);
+      if (typeof data.telefono === 'string') setCeTelefono(data.telefono);
+    } catch {
+      setContactoEmergenciaStatus({ enabled: false, complete: false });
+    } finally {
+      setContactoEmergenciaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setContactoEmergenciaLoading(false);
+      return;
+    }
+    setContactoEmergenciaLoading(true);
+    refreshContactoEmergenciaStatus();
+  }, [user, refreshContactoEmergenciaStatus]);
+
+  const fetchContactoPendientes = useCallback(async () => {
+    if (!isDeveloper) return;
+    setContactoPendientesLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/contacto-emergencia/pendientes`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = res.ok ? await res.json() : { items: [] };
+      setContactoPendientes(data.items || []);
+    } catch {
+      setContactoPendientes([]);
+    } finally {
+      setContactoPendientesLoading(false);
+    }
+  }, [isDeveloper]);
+
+  useEffect(() => {
+    if (contactoPendientesOpen && isDeveloper) {
+      fetchContactoPendientes();
+    }
+  }, [contactoPendientesOpen, isDeveloper, fetchContactoPendientes]);
+
+  const handleContactoEmergenciaGuardar = useCallback(async () => {
+    if (!user || contactoEmergenciaSubmitting) return;
+    setContactoEmergenciaSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/contacto-emergencia`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          nombre: ceNombre,
+          parentesco: ceParentesco,
+          telefono: ceTelefono,
+        }),
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch {
+        /* ignore */
+      }
+      if (res.ok && data.ok !== false) {
+        setCeEditMode(false);
+        await refreshContactoEmergenciaStatus();
+        if (contactoPendientesOpen && isDeveloper) fetchContactoPendientes();
+        setNotification({
+          type: 'success',
+          message: 'Datos de contacto de emergencia guardados correctamente.',
+        });
+      } else {
+        setNotification({
+          type: 'warning',
+          message: data.message || 'No se pudieron guardar los datos.',
+        });
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Error de red al guardar.' });
+    } finally {
+      setContactoEmergenciaSubmitting(false);
+    }
+  }, [
+    user,
+    contactoEmergenciaSubmitting,
+    ceNombre,
+    ceParentesco,
+    ceTelefono,
+    refreshContactoEmergenciaStatus,
+    contactoPendientesOpen,
+    isDeveloper,
+    fetchContactoPendientes,
+  ]);
+
+  const handleContactoBannerToggle = useCallback(
+    async (nextEnabled) => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+        const res = await fetch(`${baseUrl}/api/monitoring/contacto-emergencia/banner`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ enabled: nextEnabled }),
+        });
+        if (!res.ok) {
+          setNotification({
+            type: 'error',
+            message: 'No se pudo actualizar el aviso (¿Developer?).',
+          });
+          return;
+        }
+        await refreshContactoEmergenciaStatus();
+        setNotification({
+          type: 'info',
+          message: nextEnabled
+            ? 'Aviso de contacto de emergencia activado.'
+            : 'Aviso de contacto de emergencia desactivado.',
+        });
+      } catch {
+        setNotification({ type: 'error', message: 'Error al actualizar el aviso.' });
+      }
+    },
+    [refreshContactoEmergenciaStatus],
+  );
 
   const rentaEjercicioDisplay = useMemo(() => {
     if (typeof rentaCampanaStatus?.ejercicio === 'number') {
@@ -2071,6 +2224,292 @@ const InicioPage = () => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Contacto emergencia – Developer: aviso desactivado */}
+      {!contactoEmergenciaLoading && isDeveloper && contactoEmergenciaStatus?.enabled === false && (
+        <div className="rounded-lg border border-dashed border-teal-300 bg-teal-50/40 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-800">
+              <strong>Contacto de emergencia:</strong> el aviso para empleados está{' '}
+              <span className="font-semibold text-amber-800">desactivado</span>. Los datos solo se
+              solicitan cuando actives la campaña.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                  checked={false}
+                  onChange={() => handleContactoBannerToggle(true)}
+                />
+                Activar aviso
+              </label>
+              <button
+                type="button"
+                onClick={() => setContactoPendientesOpen((o) => !o)}
+                className="text-sm font-semibold text-teal-800 underline hover:text-teal-950"
+              >
+                {contactoPendientesOpen ? 'Ocultar pendientes' : 'Ver empleados sin datos'}
+              </button>
+            </div>
+          </div>
+          {typeof contactoEmergenciaStatus?.totalActivos === 'number' && isDeveloper && (
+            <p className="mt-2 text-xs text-gray-600">
+              Empleados ACTIVO: <strong>{contactoEmergenciaStatus.totalActivos}</strong> — Con datos:{' '}
+              <strong className="text-emerald-700">{contactoEmergenciaStatus.completados ?? 0}</strong>{' '}
+              — Pendientes:{' '}
+              <strong className="text-amber-800">{contactoEmergenciaStatus.pendientes ?? 0}</strong>
+            </p>
+          )}
+          {contactoPendientesOpen && (
+            <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-teal-200 bg-white">
+              {contactoPendientesLoading ? (
+                <p className="p-3 text-sm text-gray-500">Cargando…</p>
+              ) : contactoPendientes.length === 0 ? (
+                <p className="p-3 text-sm text-gray-500">Todos los activos tienen datos completos.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100 text-sm">
+                  {contactoPendientes.map((p) => (
+                    <li key={p.codigo} className="flex justify-between gap-2 px-3 py-2">
+                      <span className="font-medium text-gray-900">{p.nombre || '—'}</span>
+                      <span className="shrink-0 text-gray-500">{p.codigo}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Contacto emergencia – empleados (aviso activo) */}
+      {!contactoEmergenciaLoading && contactoEmergenciaStatus?.enabled === true && (
+        <div className="space-y-3">
+          {contactoEmergenciaStatus?.complete && !ceEditMode ? (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold text-gray-800">
+                    Contacto de emergencia
+                  </h3>
+                  <dl className="mt-3 space-y-2 text-sm text-gray-800">
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Nombre
+                      </dt>
+                      <dd className="mt-0.5 font-medium text-gray-900">
+                        {ceNombre || '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Parentesco
+                      </dt>
+                      <dd className="mt-0.5">{ceParentesco || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Teléfono
+                      </dt>
+                      <dd className="mt-0.5 font-mono text-gray-900">{ceTelefono || '—'}</dd>
+                    </div>
+                  </dl>
+                  {contactoEmergenciaStatus?.actualizadoAt && (
+                    <p className="mt-3 text-xs text-gray-500">
+                      Actualizado:{' '}
+                      {new Date(contactoEmergenciaStatus.actualizadoAt).toLocaleString('es-ES', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCeEditMode(true)}
+                  className="shrink-0 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
+                >
+                  Editar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className={`rounded-xl border shadow-lg overflow-hidden ${
+                contactoEmergenciaStatus?.complete
+                  ? 'border-teal-200 bg-white'
+                  : 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50'
+              }`}
+            >
+              <div className="p-4 md:p-6">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
+                  <div
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl text-white shadow-md ${
+                      contactoEmergenciaStatus?.complete ? 'bg-teal-600' : 'bg-amber-600'
+                    }`}
+                  >
+                    {contactoEmergenciaStatus?.complete ? '✎' : '📇'}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900 md:text-xl">
+                        {contactoEmergenciaStatus?.complete
+                          ? 'Editar contacto de emergencia'
+                          : 'Persona de contacto en caso de emergencia'}
+                      </h3>
+                      {!contactoEmergenciaStatus?.complete && (
+                        <p className="mt-2 text-sm leading-relaxed text-gray-700 md:text-base">
+                          Por favor indica <strong>una persona de confianza</strong> a la que podamos
+                          contactar si no te localizamos: accidente laboral, urgencia o incidencias con
+                          el fichaje. Son solo tres datos y ayudan mucho a RRHH.
+                        </p>
+                      )}
+                      {contactoEmergenciaStatus?.complete && ceEditMode && (
+                        <p className="mt-2 text-sm text-gray-600">
+                          Modifica los datos y pulsa <strong>Guardar cambios</strong>, o cancela para
+                          volver a la vista resumida.
+                        </p>
+                      )}
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-3">
+                      <label className="block text-sm font-medium text-gray-800">
+                        Nombre y apellidos
+                        <input
+                          type="text"
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                          value={ceNombre}
+                          onChange={(e) => setCeNombre(e.target.value)}
+                          placeholder="Ej. María García López"
+                          autoComplete="name"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-gray-800">
+                        Parentesco
+                        <input
+                          type="text"
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                          value={ceParentesco}
+                          onChange={(e) => setCeParentesco(e.target.value)}
+                          placeholder="Ej. cónyuge, madre, hijo/a"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-gray-800">
+                        Teléfono
+                        <input
+                          type="tel"
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                          value={ceTelefono}
+                          onChange={(e) => setCeTelefono(e.target.value)}
+                          placeholder="Móvil o fijo"
+                          autoComplete="tel"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        disabled={contactoEmergenciaSubmitting}
+                        onClick={handleContactoEmergenciaGuardar}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Phone className="h-4 w-4 shrink-0" aria-hidden />
+                        {contactoEmergenciaSubmitting
+                          ? 'Guardando…'
+                          : contactoEmergenciaStatus?.complete
+                            ? 'Guardar cambios'
+                            : 'Guardar contacto'}
+                      </button>
+                      {contactoEmergenciaStatus?.complete && ceEditMode && (
+                        <button
+                          type="button"
+                          disabled={contactoEmergenciaSubmitting}
+                          onClick={() => {
+                            setCeNombre(contactoEmergenciaStatus?.nombre || '');
+                            setCeParentesco(contactoEmergenciaStatus?.parentesco || '');
+                            setCeTelefono(contactoEmergenciaStatus?.telefono || '');
+                            setCeEditMode(false);
+                          }}
+                          className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                      {!contactoEmergenciaStatus?.complete &&
+                        contactoEmergenciaStatus?.actualizadoAt && (
+                          <span className="text-xs text-gray-500">
+                            Última actualización:{' '}
+                            {new Date(
+                              contactoEmergenciaStatus.actualizadoAt,
+                            ).toLocaleString('es-ES', {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
+                          </span>
+                        )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isDeveloper && (
+              <div className="mt-5 border-t border-teal-100 pt-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-teal-900">
+                  Developer – control del aviso
+                </p>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                      checked={contactoEmergenciaStatus?.enabled === true}
+                      onChange={(e) => handleContactoBannerToggle(e.target.checked)}
+                    />
+                    Aviso activo en el dashboard
+                  </label>
+                  {typeof contactoEmergenciaStatus?.totalActivos === 'number' && (
+                    <span className="text-sm text-gray-700">
+                      ACTIVO: <strong>{contactoEmergenciaStatus.totalActivos}</strong> — Completado:{' '}
+                      <strong className="text-emerald-700">
+                        {contactoEmergenciaStatus.completados ?? 0}
+                      </strong>{' '}
+                      — Falta:{' '}
+                      <strong className="text-amber-800">
+                        {contactoEmergenciaStatus.pendientes ?? 0}
+                      </strong>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setContactoPendientesOpen((o) => !o)}
+                    className="text-sm font-semibold text-teal-800 underline hover:text-teal-950"
+                  >
+                    {contactoPendientesOpen ? 'Ocultar lista' : 'Lista sin datos completos'}
+                  </button>
+                </div>
+                {contactoPendientesOpen && (
+                  <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white">
+                    {contactoPendientesLoading ? (
+                      <p className="p-3 text-sm text-gray-500">Cargando…</p>
+                    ) : contactoPendientes.length === 0 ? (
+                      <p className="p-3 text-sm text-gray-500">Ningún pendiente.</p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 text-sm">
+                        {contactoPendientes.map((p) => (
+                          <li key={p.codigo} className="flex justify-between gap-2 px-3 py-2">
+                            <span className="font-medium text-gray-900">{p.nombre || '—'}</span>
+                            <span className="shrink-0 text-gray-500">{p.codigo}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
         </div>
       )}
 

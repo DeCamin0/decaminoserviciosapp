@@ -320,27 +320,57 @@ export class EmailService {
    */
   getDefaultBcc(): string[] {
     const emailBcc = this.configService.get<string>('EMAIL_BCC');
+    let list: string[] = [];
     if (emailBcc) {
       // Suportă multiple adrese separate prin virgulă
-      return emailBcc
+      list = emailBcc
         .split(',')
         .map((email) => email.trim())
         .filter(Boolean);
-    }
-    const company = this.configService.get<{ emailBcc?: string }>('company');
-    if (company?.emailBcc) {
-      return company.emailBcc
-        .split(',')
-        .map((e) => e.trim())
-        .filter(Boolean);
-    }
-    const fallback = process.env.COMPANY_EMAIL_BCC || '';
-    return fallback
-      ? fallback
+    } else {
+      const company = this.configService.get<{ emailBcc?: string }>('company');
+      if (company?.emailBcc) {
+        list = company.emailBcc
           .split(',')
           .map((e) => e.trim())
-          .filter(Boolean)
-      : [];
+          .filter(Boolean);
+      } else {
+        const fallback = process.env.COMPANY_EMAIL_BCC || '';
+        list = fallback
+          ? fallback
+              .split(',')
+              .map((e) => e.trim())
+              .filter(Boolean)
+          : [];
+      }
+    }
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of list) {
+      const n = this.normalizeEmailAddress(raw);
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      out.push(raw.trim());
+    }
+    return out;
+  }
+
+  /** Pentru comparare TO vs BCC (inclusiv format "Name <addr@x.com>"). */
+  private normalizeEmailAddress(addr: string): string {
+    const s = (addr || '').trim();
+    const m = s.match(/<([^>]+)>/);
+    const raw = (m ? m[1] : s).trim();
+    return raw.toLowerCase();
+  }
+
+  /**
+   * Elimină din BCC adresele care coincid cu destinatarul TO.
+   * Dacă nu, unii servere SMTP / clienți livrează două mesaje identice aceluiași inbox.
+   */
+  excludeBccOverlappingTo(to: string, bcc: string[]): string[] {
+    if (!bcc?.length) return [];
+    const toNorm = this.normalizeEmailAddress(to);
+    return bcc.filter((b) => this.normalizeEmailAddress(b) !== toNorm);
   }
 
   /**

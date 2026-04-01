@@ -6,6 +6,70 @@
  */
 
 /**
+ * Extrage toate intervalele HH:MM–HH:MM dintr-o celulă ZI (ex. Castillo:
+ * "T1 08:00-14:00 / T2 15:00-19:00 / T3 23:00-06:00"). Ignoră prefixele T1/T2/T3.
+ * @param {string|null|undefined} daySchedule
+ * @returns {{ start: string, end: string }[]}
+ */
+export function parseCuadranteDayIntervals(daySchedule) {
+  if (!daySchedule || daySchedule === 'LIBRE' || String(daySchedule).trim() === '') {
+    return [];
+  }
+  const s = String(daySchedule).trim();
+  const re = /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g;
+  const out = [];
+  const pad = (n) => String(Number(n)).padStart(2, '0');
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    out.push({
+      start: `${pad(m[1])}:${pad(m[2])}`,
+      end: `${pad(m[3])}:${pad(m[4])}`,
+    });
+  }
+  return out;
+}
+
+/**
+ * @param {string} start - "HH:MM"
+ * @param {string} end - "HH:MM"
+ */
+export function intervalCrossesMidnight(start, end) {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return false;
+  const smin = sh * 60 + sm;
+  const emin = eh * 60 + em;
+  return emin <= smin;
+}
+
+/** Cel puțin un interval HH:MM–HH:MM din text trece peste miezul nopții (ex. 23:00–06:00). */
+export function dayScheduleHasOvernightInterval(daySchedule) {
+  if (!daySchedule || daySchedule === 'LIBRE') return false;
+  const intervals = parseCuadranteDayIntervals(daySchedule);
+  return intervals.some(({ start, end }) => intervalCrossesMidnight(start, end));
+}
+
+/** Turno compartido: mai multe franje sau mai multe etichete T1/T2/T3 în aceeași celulă ZI. */
+export function isCuadranteTurnoCompartidoDisplay(daySchedule) {
+  if (!daySchedule || daySchedule === 'LIBRE') return false;
+  const s = String(daySchedule).trim();
+  const tLabels = s.match(/T[123]/g);
+  if (tLabels && tLabels.length > 1) return true;
+  return parseCuadranteDayIntervals(s).length > 1;
+}
+
+/**
+ * Text pentru UI (fichaje, etc.): "08:00 - 14:00 / 15:00 - 19:00 / …"
+ */
+export function formatCuadranteIntervalsForDisplay(daySchedule) {
+  const intervals = parseCuadranteDayIntervals(daySchedule);
+  if (intervals.length === 0) {
+    return null;
+  }
+  return intervals.map((i) => `${i.start} - ${i.end}`).join(' / ');
+}
+
+/**
  * Calculează orele dintr-un interval de timp
  * @param {string} startTime - Format "HH:MM"
  * @param {string} endTime - Format "HH:MM"

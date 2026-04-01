@@ -46,7 +46,8 @@
     "db:tenant-registry-inactive": "node scripts/run-tenant-registry-enum-inactive.js .env.decamino.local",
     "db:migrate:decamino": "node scripts/prisma-migrate-env.js .env.decamino.local",
     "db:migrate:hera": "node scripts/prisma-migrate-env.js .env.hera.local",
-    "db:migrate:both": "node scripts/prisma-migrate-env.js .env.decamino.local && node scripts/prisma-migrate-env.js .env.hera.local"
+    "db:migrate:both": "node scripts/prisma-migrate-env.js .env.decamino.local && node scripts/prisma-migrate-env.js .env.hera.local",
+    "db:migrate:contacto-emergencia": "node scripts/run-contacto-emergencia-migration.js .env.decamino.local && node scripts/run-contacto-emergencia-migration.js .env.hera.local"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.11",

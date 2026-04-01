@@ -1281,6 +1281,7 @@ export class HorariosService {
         FROM cuadrante
         WHERE CODIGO = ${this.escapeSql(codigoClean)}
           AND LUNA = ${this.escapeSql(mesStr)}
+          AND (visible IS NULL OR visible = 1)
           AND (
             (ZI_1 IS NOT NULL AND TRIM(ZI_1) != '' AND ZI_1 != '0' AND ZI_1 != '0h' AND UPPER(TRIM(ZI_1)) NOT IN ('LIB','LIBRE','L'))
             OR (ZI_2 IS NOT NULL AND TRIM(ZI_2) != '' AND ZI_2 != '0' AND ZI_2 != '0h' AND UPPER(TRIM(ZI_2)) NOT IN ('LIB','LIBRE','L'))

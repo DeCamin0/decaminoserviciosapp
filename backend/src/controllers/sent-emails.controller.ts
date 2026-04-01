@@ -24,6 +24,27 @@ import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 
+/** Evita dos envíos al mismo buzón si varios empleados comparten correo. */
+function normalizeEmailForDedup(addr: string): string {
+  const s = (addr || '').trim();
+  const m = s.match(/<([^>]+)>/);
+  return (m ? m[1] : s).trim().toLowerCase();
+}
+
+function dedupeRecipientsByEmail(
+  rows: Array<{ email: string; nombre: string; codigo?: string }>,
+): Array<{ email: string; nombre: string; codigo?: string }> {
+  const seen = new Set<string>();
+  const out: typeof rows = [];
+  for (const r of rows) {
+    const k = normalizeEmailForDedup(r.email);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
 @Controller('api/sent-emails')
 export class SentEmailsController {
   private readonly logger = new Logger(SentEmailsController.name);
@@ -231,6 +252,8 @@ export class SentEmailsController {
         throw new BadRequestException('Tip de destinatar invalid');
       }
 
+      recipients = dedupeRecipientsByEmail(recipients);
+
       if (recipients.length === 0) {
         throw new BadRequestException('No se encontraron destinatarios');
       }
@@ -310,6 +333,8 @@ export class SentEmailsController {
         user?.CODIGO || user?.codigo || user?.userId || 'system',
       );
 
+      const baseBcc = this.emailService.getDefaultBcc();
+
       // Trimite progres inițial
       if (totalRecipients > 1) {
         this.notificationsGateway.sendToUser(currentUserId, {
@@ -332,9 +357,11 @@ export class SentEmailsController {
             recipientType === 'gestoria',
           );
 
-          // Trimite email
-          // Folosește BCC din env var (EMAIL_BCC)
-          const bccList = this.emailService.getDefaultBcc();
+          // Trimite email (BCC fără overlap cu TO — evită duplicate la același inbox)
+          const bccList = this.emailService.excludeBccOverlappingTo(
+            recipient.email,
+            baseBcc,
+          );
 
           if (attachments.length > 0) {
             await this.emailService.sendEmailWithAttachments(

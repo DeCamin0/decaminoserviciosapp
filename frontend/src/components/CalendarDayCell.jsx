@@ -1,4 +1,5 @@
 import { memo, useMemo, useCallback, useState, useEffect } from 'react';
+import { dayScheduleHasOvernightInterval } from '../utils/cuadrante-hours-helper.js';
 
 /**
  * CalendarDayCell - Componentă pentru o zi din calendar
@@ -49,6 +50,25 @@ const CalendarDayCell = memo(({
     const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     return days[date.getDay()];
   }, [selectedLunaNorm, cell.day]);
+
+  /** Text complet ZI_* (turno compartido) sau reconstruit din tip + orar */
+  const rawPlanForCell = useMemo(() => {
+    if (cell.ziRaw && String(cell.ziRaw).trim()) return String(cell.ziRaw).trim();
+    const t = cell.tip;
+    const o = (cell.orar || '').trim();
+    if ((t === 'T1' || t === 'T2' || t === 'T3' || t === 'TC') && o) {
+      if (t === 'TC') return o;
+      return `${t} ${o}`.trim();
+    }
+    return '';
+  }, [cell.ziRaw, cell.tip, cell.orar]);
+
+  /** Reguli fichaje nocturn (Salida ziua următoare, etc.): T2/T3 sau orice interval peste miezul nopții. */
+  const overnightPlan = useMemo(() => {
+    if (cell.tip === 'T2' || cell.tip === 'T3') return true;
+    if (rawPlanForCell) return dayScheduleHasOvernightInterval(rawPlanForCell);
+    return false;
+  }, [cell.tip, rawPlanForCell]);
   // Helper pentru formatare data - folosim useCallback pentru a evita recrearea la fiecare render
   const pad2 = (n) => n < 10 ? '0' + n : n;
   const formatDateYMD = useCallback((year, month, day) => year + '-' + pad2(month) + '-' + pad2(day), []);
@@ -66,7 +86,7 @@ const CalendarDayCell = memo(({
   
   // Pentru turele nocturne, extragem și ziua următoare
   const salidasZiUrmatoare = useMemo(() => {
-    if ((cell.tip !== 'T2' && cell.tip !== 'T3') || !fichajes) return [];
+    if (!overnightPlan || !fichajes) return [];
     const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
     const dataZiUrmatoare = cell.day < daysInMonth 
       ? formatDateYMD(selectedYear, selectedMonth, cell.day + 1)
@@ -74,7 +94,7 @@ const CalendarDayCell = memo(({
     return Array.isArray(fichajes) ? fichajes.filter(f => 
       f["TIPO"] === 'Salida' && (f["FECHA"] || '').startsWith(dataZiUrmatoare)
     ) : [];
-  }, [fichajes, cell.tip, cell.day, selectedYear, selectedMonth, formatDateYMD]);
+  }, [fichajes, overnightPlan, cell.day, selectedYear, selectedMonth, formatDateYMD]);
   
   // CALCULUL ALERTAFICHAJ ȘI DURATAMUNCA ÎN COMPONENTĂ - cu useMemo pentru optimizare
   const { alertaFichaj, durataMunca, hasRegularizacion } = useMemo(() => {
@@ -98,7 +118,7 @@ const CalendarDayCell = memo(({
     
     // Verifică pentru toate tipurile de ture (T1, T2, T3)
     // Dacă nu este tură (T1, T2, T3), nu setăm alertaFichaj (ex: Fiesta, LIBRE, Vacaciones, etc.)
-    if (cell.tip !== 'T1' && cell.tip !== 'T2' && cell.tip !== 'T3') {
+    if (cell.tip !== 'T1' && cell.tip !== 'T2' && cell.tip !== 'T3' && cell.tip !== 'TC') {
       if (cell.day === 1) {
         console.log('✅ [CELL DAY 1] Nu este tură, return early (tip:', cell.tip, ')');
       }
@@ -135,7 +155,7 @@ const CalendarDayCell = memo(({
     
     // Pentru turele nocturne (T2, T3), verificăm și Entrada de pe ziua anterioară
     let entradasZiAnterioara = [];
-    if (cell.tip === 'T2' || cell.tip === 'T3') {
+    if (overnightPlan) {
       if (cell.day > 1) {
         const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth, cell.day - 1);
         entradasZiAnterioara = Array.isArray(fichajes) ? fichajes.filter(f => 
@@ -177,7 +197,7 @@ const CalendarDayCell = memo(({
     // Verificăm regularizarea pe ziua anterioară DOAR pentru turele nocturne (T2, T3)
     // Pentru turele normale (T1), regularizarea pentru ziua anterioară NU afectează ziua curentă
     let hasRegularizacionAnterioara = false;
-    if (cell.tip === 'T2' || cell.tip === 'T3') {
+    if (overnightPlan) {
       // DOAR pentru turele nocturne verificăm regularizarea pentru ziua anterioară
     if (cell.day > 1) {
       const dataZiAnterioara = formatDateYMD(selectedYear, selectedMonth, cell.day - 1);
@@ -196,7 +216,7 @@ const CalendarDayCell = memo(({
     // IMPORTANT: Excludem regularizările NO_PUNCH (HORA = 00:00:00) - acestea nu sunt fichajes reale
     let hasDuracionZiUrmatoare = false;
     let hasDuracionZiCurenta = false;
-    if (cell.tip === 'T2' || cell.tip === 'T3') {
+    if (overnightPlan) {
       // Verifică DURACION în Salida de pe ziua următoare (exclude NO_PUNCH)
       if (salidasZiUrmatoare.length > 0) {
         hasDuracionZiUrmatoare = salidasZiUrmatoare.some(f => 
@@ -235,7 +255,7 @@ const CalendarDayCell = memo(({
     // - ȘI există Salida cu DURACION pe ziua curentă SAU pe ziua următoare (exclude NO_PUNCH)
     // Regularizările NO_PUNCH (HORA = 00:00:00) nu sunt considerate fichajes complete
     let hasEntradaCompleta = false;
-    if (cell.tip === 'T2' || cell.tip === 'T3') {
+    if (overnightPlan) {
       // Pentru turele nocturne:
       // - Dacă există Entrada pe ziua curentă → completă
       // - SAU dacă există Entrada pe ziua anterioară ȘI Salida cu DURACION pe ziua curentă → completă (tura nocturnă care se termină în ziua curentă)
@@ -343,7 +363,7 @@ const CalendarDayCell = memo(({
     // trebuie atribuite doar zilei corespunzătoare workday_date, nu zilei anterioare
     let salidaConRegularizacion = null;
     
-    if (cell.tip === 'T2' || cell.tip === 'T3') {
+    if (overnightPlan) {
       // Căutăm regularizarea în Salida de pe ziua următoare (pentru turele nocturne)
       // EXCLUDE regularizările NO_PUNCH (HORA = 00:00:00) - acestea sunt pentru ziua următoare, nu pentru ziua curentă
       salidaConRegularizacion = salidasZiUrmatoare.find(f => 
@@ -402,7 +422,7 @@ const CalendarDayCell = memo(({
       // deci NU afișăm timpul pentru ziua curentă
       let salidaConDuracion = null;
       
-      if (cell.tip === 'T2' || cell.tip === 'T3') {
+      if (overnightPlan) {
         // Pentru turele nocturne, căutăm DURACION în Salida de pe ziua următoare
         // DOAR dacă există Entrada pe ziua curentă (tura începe în ziua curentă)
         if (hasEntradaCompleta) {
@@ -418,7 +438,7 @@ const CalendarDayCell = memo(({
       // Dacă nu am găsit în ziua următoare (sau e T1), căutăm în ziua curentă
       // Pentru turele nocturne, DOAR dacă există Entrada pe ziua curentă
       if (!salidaConDuracion) {
-        if (cell.tip === 'T2' || cell.tip === 'T3') {
+        if (overnightPlan) {
           // Pentru turele nocturne, folosim DURACION din ziua curentă DOAR dacă există Entrada pe ziua curentă
           if (hasEntradaCompleta) {
             salidaConDuracion = salidas.find(f => 
@@ -459,12 +479,12 @@ const CalendarDayCell = memo(({
         let salidasToUse = [...salidas];
         
         // Pentru turele nocturne, adăugăm Salida de pe ziua următoare DOAR dacă există Entrada pe ziua curentă
-        if ((cell.tip === 'T2' || cell.tip === 'T3') && hasEntradaCompleta && salidasZiUrmatoare.length > 0) {
+        if (overnightPlan && hasEntradaCompleta && salidasZiUrmatoare.length > 0) {
           salidasToUse = [...salidas, ...salidasZiUrmatoare];
         }
         
         // Pentru turele nocturne, dacă nu există Entrada pe ziua curentă, nu calculăm durata
-        if ((cell.tip === 'T2' || cell.tip === 'T3') && !hasEntradaCompleta) {
+        if (overnightPlan && !hasEntradaCompleta) {
           // Nu calculăm durata pentru ziua curentă dacă nu există Entrada pe ziua curentă
           // Salida de pe ziua curentă este partea finală a turei de pe ziua anterioară
           durataMunca = '';
@@ -514,6 +534,7 @@ const CalendarDayCell = memo(({
     fichajesZi,
     fichajes,
     salidasZiUrmatoare,
+    overnightPlan,
     regularizacionesConfirmadas,
     loadingRegularizaciones,
     formatDateYMD
@@ -607,8 +628,8 @@ const CalendarDayCell = memo(({
     textColor = '#92400e';
     shadowColor = 'rgba(251, 191, 36, 0.25)';
     glowColor = '#fbbf24';
-  } else if (cell.tip === 'T1' || cell.tip === 'T2' || cell.tip === 'T3') {
-    // Toate tipurile de ture (T1, T2, T3) au culoare verde pentru zile lucrătoare
+  } else if (cell.tip === 'T1' || cell.tip === 'T2' || cell.tip === 'T3' || cell.tip === 'TC') {
+    // Ture + turno compartido (TC): verde
     bgGradient = 'linear-gradient(135deg, rgba(134, 239, 172, 0.2) 0%, rgba(74, 222, 128, 0.2) 100%)';
     borderColor = 'rgba(34, 197, 94, 0.4)';
     textColor = '#15803d';
@@ -800,6 +821,7 @@ const CalendarDayCell = memo(({
   if (prevProps.cell?.day !== nextProps.cell?.day) return false;
   if (prevProps.cell?.tip !== nextProps.cell?.tip) return false;
   if (prevProps.cell?.orar !== nextProps.cell?.orar) return false;
+  if (prevProps.cell?.ziRaw !== nextProps.cell?.ziRaw) return false;
   if (prevProps.selectedLunaNorm !== nextProps.selectedLunaNorm) return false;
   if (prevProps.ziSelectata?.day !== nextProps.ziSelectata?.day) return false;
   if (prevProps.loadingFichajes !== nextProps.loadingFichajes) return false;

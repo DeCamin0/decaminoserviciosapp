@@ -194,6 +194,7 @@ export default function CuadrantesPage() {
   const [error, setError] = useState('');
   
   // State pentru import Excel
+  const [excelCuadrantesFormat, setExcelCuadrantesFormat] = useState('auto'); // auto | he_hs | celdas_multilinea | turno_horas_tabla
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [excelPreviewData, setExcelPreviewData] = useState(null);
   const [showExcelPreviewModal, setShowExcelPreviewModal] = useState(false);
@@ -2587,6 +2588,7 @@ export default function CuadrantesPage() {
       formData.append('file', file);
       formData.append('mes', `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`);
       formData.append('centro', selectedCentro);
+      formData.append('excelFormat', excelCuadrantesFormat);
 
       const response = await fetch(routes.uploadCuadrantesExcel, {
         method: 'POST',
@@ -2662,6 +2664,17 @@ export default function CuadrantesPage() {
         console.log(`📊 Resumen: ${existentes.length} de ${cuadrantesConVerificare.length} cuadrantes ya existen`);
 
         setExcelPreviewData({ ...result, cuadrantes: cuadrantesConVerificare });
+        if (excelCuadrantesFormat === 'auto' && result.excelFormatUsed) {
+          const fmtLabels = {
+            turno_horas_tabla: 'Tabla Nombre/Código + Turno/Horas',
+            he_hs: 'Estándar (M/T + HE/HS)',
+            celdas_multilinea: 'Celdas multilínea',
+          };
+          showToast(
+            'success',
+            `Formato detectado: ${fmtLabels[result.excelFormatUsed] || result.excelFormatUsed}`,
+          );
+        }
         setSelectedForHorarioMulticentro(new Set()); // Reset checkbox-uri la încărcare nouă
         // Reset checkbox-uri rescriere - selectează automat toate cuadrantesle existente pentru rescriere
         const existentesKeys = cuadrantesConVerificare
@@ -4080,7 +4093,31 @@ export default function CuadrantesPage() {
             </Card>
 
             {/* Buton Import Excel - vizibil oricând */}
-            <div className="flex justify-end gap-3 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-end gap-3 mb-6">
+              <div className="flex flex-col gap-1 sm:mr-auto">
+                <label htmlFor="excel-format-cuadrantes" className="text-sm font-medium text-gray-700">
+                  Formato Excel
+                </label>
+                <select
+                  id="excel-format-cuadrantes"
+                  value={excelCuadrantesFormat}
+                  onChange={(e) => setExcelCuadrantesFormat(e.target.value)}
+                  disabled={uploadingExcel || !selectedCentro}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm max-w-md"
+                >
+                  <option value="auto">Detectar automáticamente (recomendado)</option>
+                  <option value="he_hs">Estándar (M/T + HE/HS)</option>
+                  <option value="turno_horas_tabla">Tabla Nombre/Código + Turno y Horas por día</option>
+                  <option value="celdas_multilinea">Celdas con varias horas (p. ej. 4 líneas → dos tramos)</option>
+                </select>
+                <p className="text-xs text-gray-500 max-w-md">
+                  Con <strong>Detectar automáticamente</strong> el servidor elige entre tabla ancha (Turno/Horas o HE/HS por día), plantilla M/T+HE/HS o celdas multilínea según las cabeceras y las filas.
+                  <br />
+                  <strong>Tabla Turno/Horas:</strong> cabecera con pares Turno | Horas por cada día; columnas Nombre, Código, Email, Centro. Si el código está solo en &quot;Nombre&quot; (número), también se busca por CODIGO.
+                  <br />
+                  <strong>Celdas multilínea:</strong> guarda <code className="bg-gray-100 px-1 rounded">19:00-22:00 / 23:00-06:00</code> cuando la celda tiene cuatro horarios.
+                </p>
+              </div>
               <input
                 id="excel-upload-cuadrantes"
                 type="file"
@@ -7533,6 +7570,36 @@ export default function CuadrantesPage() {
                   </p>
                   <p className="text-xs text-gray-600 mt-1 font-medium">
                     📅 Mes: {MONTHS[selectedMonth]} {selectedYear} | Centro: {selectedCentro || 'N/A'}
+                    {excelPreviewData.excelFormatUsed ? (
+                      <span className="ml-2 text-indigo-700">
+                        | Formato:{' '}
+                        {{
+                          turno_horas_tabla: 'Tabla Turno/Horas',
+                          he_hs: 'M/T + HE/HS',
+                          celdas_multilinea: 'Multilínea',
+                        }[excelPreviewData.excelFormatUsed] || excelPreviewData.excelFormatUsed}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2 max-w-3xl">
+                    <strong>Un campo por día en el sistema:</strong> la columna <strong>Turno</strong> es lo que se guarda (puede incluir varios tramos con <code className="bg-white px-0.5 rounded"> / </code>).
+                    Si el Excel tiene <strong>dos pares Turno+Horas por día</strong> (o cabecera <strong>HE, HS, HE, HS</strong> por día), el import los une en un solo valor por día.
+                    <strong> Horas</strong> es la suma calculada de ese texto (no son dos celdas independientes en la base de datos).
+                    <span className="block mt-1">
+                      <strong>Celdas unidas (nombre):</strong> si <strong>Nombre / TRABAJADOR</strong> queda vacío en filas con turno <strong>M</strong> o <strong>T</strong>, el import reutiliza el empleado de la fila anterior (típico en Excel con celdas fusionadas).
+                    </span>
+                    <span className="block mt-1">
+                      <strong>Fila HS sin M/T:</strong> si la columna <strong>TURNO</strong> está vacía en la fila de <strong>HS</strong> (después de una fila con <strong>M</strong> o <strong>T</strong>), se asigna a la misma banda mañana/tarde (plantilla Bosquepino).
+                    </span>
+                    <span className="block mt-1">
+                      <strong>Castillo Oropesa (bloque tarde sin M/T):</strong> cuando ya hay un par <strong>HE+HS</strong> en mañana, las filas siguientes con <strong>TURNO</strong> vacío y <strong>HE/HS</strong> se tratan como <strong>tarde</strong> hasta que aparezca <strong>T</strong> explícito (no se mezclan con M).
+                    </span>
+                    <span className="block mt-1">
+                      <strong>Turno compartido (2+2 HE/HS):</strong> si en la misma banda <strong>M</strong> o <strong>T</strong> hay <strong>varias filas HE</strong> y el mismo número de <strong>HS</strong>, se leen <strong>todas las parejas</strong> y se guardan en un solo día separadas por <strong> / </strong> (ej. mañana + tarde + noche en columnas del mismo día). Bosquepino sigue siendo <strong>una pareja</strong> por banda.
+                    </span>
+                    <span className="block mt-1">
+                      <strong>Celdas unidas (horas):</strong> si la fila <strong>HS</strong> está vacía: (1) si <strong>HE</strong> trae un rango o dos horas en texto, se usan; (2) si solo hay <strong>una</strong> hora de entrada y hay dos filas M/T (HE+HS), se asume salida <strong>+8 h</strong> para formar el intervalo guardado.
+                    </span>
                   </p>
                 </div>
                 <button
@@ -7609,54 +7676,62 @@ export default function CuadrantesPage() {
                         const horas = [];
                         let totalHoras = 0;
                         
-                        // Helper pentru calculul orelor dintr-un turno
-                        const getHorasFromTurno = (turno) => {
-                          if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
-                            return 0;
+                        /**
+                         * Ore pentru preview: un singur ZI_* poate fi "T1 08:00-14:00 / T3 23:00-06:00"
+                         * → sumăm fiecare parte (aliniat cu backend horasFromZiCellValue).
+                         */
+                        const previewHorasFromZiPart = (partRaw) => {
+                          const part = String(partRaw ?? '').trim();
+                          if (!part || part === 'LIBRE') return 0;
+                          if (isCuadranteMarcaMulticentro(part)) return 0;
+                          const tOre = transformaZiValueInOre(part);
+                          if (tOre != null) {
+                            const n = parseFloat(String(tOre).replace(',', '.'));
+                            return !isNaN(n) && n > 0 ? n : 0;
                           }
-                          if (isCuadranteMarcaMulticentro(turno)) {
-                            return 0;
+                          const tm = part.match(/^T[123]\s+(\d+(?:[.,]\d+)?)\s*h?$/i);
+                          if (tm) {
+                            const n = parseFloat(tm[1].replace(',', '.'));
+                            return !isNaN(n) && n > 0 ? n : 8;
                           }
-                          
-                          // Format: "T2 19:30-07:30" sau "T1 07:00-15:00"
-                          const timeMatch = turno.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+                          const solo = part.match(/^(\d+(?:[.,]\d+)?)\s*h?$/i);
+                          if (solo) {
+                            const n = parseFloat(solo[1].replace(',', '.'));
+                            return !isNaN(n) && n > 0 ? n : 0;
+                          }
+                          if (/^T[123]$/i.test(part)) return 8;
+                          const timeMatch = part.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
                           if (timeMatch) {
                             const startHour = parseInt(timeMatch[1], 10);
                             const startMin = parseInt(timeMatch[2], 10);
                             const endHour = parseInt(timeMatch[3], 10);
                             const endMin = parseInt(timeMatch[4], 10);
-                            
                             let startMinutes = startHour * 60 + startMin;
                             let endMinutes = endHour * 60 + endMin;
-                            
-                            // Pentru ture nocturne (peste miezul nopții)
-                            if (endMinutes < startMinutes) {
-                              endMinutes += 24 * 60;
-                            }
-                            
-                            const diffMinutes = endMinutes - startMinutes;
-                            return diffMinutes / 60;
+                            if (endMinutes < startMinutes) endMinutes += 24 * 60;
+                            return (endMinutes - startMinutes) / 60;
                           }
-                          
-                          // T1, T2, T3 fără ore = 8 ore standard
-                          if (turno === 'T1' || turno === 'T2' || turno === 'T3') {
-                            return 8;
-                          }
-                          
-                          // Dacă turno conține "T1", "T2", "T3" dar fără ore
-                          if (turno.includes('T1') && !turno.includes(':')) return 8;
-                          if (turno.includes('T2') && !turno.includes(':')) return 8;
-                          if (turno.includes('T3') && !turno.includes(':')) return 8;
-                          
-                          // Fallback: 8 ore
-                          return 8;
+                          return 0;
                         };
-                        
+
+                        const previewHorasFromZi = (turno) => {
+                          if (!turno || turno === '' || turno === null || turno === 'LIBRE') {
+                            return 0;
+                          }
+                          const s = String(turno).trim();
+                          if (s.includes(' / ')) {
+                            return s
+                              .split(' / ')
+                              .reduce((acc, p) => acc + previewHorasFromZiPart(p.trim()), 0);
+                          }
+                          return previewHorasFromZiPart(s);
+                        };
+
                         for (let i = 1; i <= getDaysInMonth(selectedMonth, selectedYear); i++) {
                           const turno = cuadrante[`ZI_${i}`] || '';
                           zile.push(turno);
-                          
-                          const horasDia = getHorasFromTurno(turno);
+
+                          const horasDia = previewHorasFromZi(turno);
                           horas.push(horasDia);
                           totalHoras += horasDia;
                         }
@@ -7763,15 +7838,16 @@ export default function CuadrantesPage() {
                             {zile.map((z, i) => (
                               <React.Fragment key={`day-${idx}-${i}`}>
                                 <td 
-                                  className="px-1 py-2 text-center border border-gray-200 text-xs"
+                                  className="px-1 py-2 text-center border border-gray-200 text-xs align-top max-w-[140px]"
                                 >
                                   {z && z !== '' && z !== null ? (
                                     <span 
-                                      className={`inline-block px-1 py-0.5 rounded ${
+                                      className={`inline-block px-1 py-0.5 rounded text-left whitespace-pre-wrap break-words ${
                                         z === 'LIBRE' 
                                           ? 'bg-gray-100 text-gray-700' 
                                           : 'bg-blue-100 text-blue-700'
                                       }`}
+                                      title={String(z).length > 40 ? String(z) : undefined}
                                     >
                                       {z}
                                     </span>

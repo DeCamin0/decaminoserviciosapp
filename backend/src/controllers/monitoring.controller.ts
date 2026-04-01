@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Put,
   Patch,
   Body,
   Query,
@@ -33,6 +34,8 @@ const RENTA_EJERCICIO_SETTING_KEY = 'renta_campana_ejercicio';
 function rentaCampaignKeyFromEjercicio(ejercicio: number): string {
   return `renta_${ejercicio}`;
 }
+
+const CONTACTO_EMERGENCIA_BANNER_KEY = 'contacto_emergencia_banner_enabled';
 
 @Controller('api/monitoring')
 export class MonitoringController {
@@ -215,6 +218,51 @@ export class MonitoringController {
       } catch {
         // ignore
       }
+    }
+  }
+
+  /**
+   * Telegram (bot gestoría) cuando un empleado guarda / actualiza contacto de emergencia.
+   * No bloquea la respuesta HTTP si falla.
+   */
+  private async notifyGestoriaContactoEmergenciaTelegram(payload: {
+    codigo: string;
+    nombreEmpleado: string;
+    contactoNombre: string;
+    contactoParentesco: string;
+    contactoTelefono: string;
+  }): Promise<void> {
+    const company = this.getCompanyName() || 'Empresa';
+    const lines = [
+      '📇 Contacto de emergencia — guardado en el portal',
+      '',
+      `Empresa: ${company}`,
+      `Empleado: ${payload.nombreEmpleado}`,
+      `Código: ${payload.codigo}`,
+      '',
+      'Persona de contacto:',
+      `  Nombre: ${payload.contactoNombre}`,
+      `  Parentesco: ${payload.contactoParentesco}`,
+      `  Teléfono: ${payload.contactoTelefono}`,
+    ];
+    const plainText = lines.join('\n');
+    try {
+      if (this.telegramService.isConfigured()) {
+        await this.telegramService.sendMessage(plainText, {
+          disableMarkdown: true,
+        });
+        this.logger.log(
+          `✅ Telegram gestoría: contacto emergencia para ${payload.codigo}`,
+        );
+      } else {
+        this.logger.warn(
+          '⚠️ Telegram gestoría no configurado — no se envió aviso contacto emergencia',
+        );
+      }
+    } catch (e: any) {
+      this.logger.error(
+        `❌ Telegram contacto emergencia (${payload.codigo}): ${e?.message}`,
+      );
     }
   }
 
@@ -784,5 +832,215 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
         };
       }),
     };
+  }
+
+  private async isContactoEmergenciaBannerEnabled(): Promise<boolean> {
+    const row = await this.prisma.appSetting.findUnique({
+      where: { setting_key: CONTACTO_EMERGENCIA_BANNER_KEY },
+    });
+    if (!row) return false;
+    const v = (row.value || '').trim().toLowerCase();
+    return v === 'true' || v === '1' || v === 'yes';
+  }
+
+  private contactoEmergenciaCompleto(u: {
+    contacto_emergencia_nombre?: string | null;
+    contacto_emergencia_parentesco?: string | null;
+    contacto_emergencia_telefono?: string | null;
+  }): boolean {
+    const n = (u.contacto_emergencia_nombre ?? '').trim();
+    const p = (u.contacto_emergencia_parentesco ?? '').trim();
+    const t = (u.contacto_emergencia_telefono ?? '').trim();
+    return n.length >= 2 && p.length >= 2 && t.replace(/\s/g, '').length >= 6;
+  }
+
+  /**
+   * Aviso datos contacto emergencia: estado, campos propios; si Developer → totales ACTIVO.
+   */
+  @Get('contacto-emergencia/status')
+  @UseGuards(JwtAuthGuard)
+  async getContactoEmergenciaStatus(
+    @Request() req: { user?: { userId?: string; grupo?: string } },
+  ) {
+    const codigo = req.user?.userId;
+    if (!codigo) {
+      return {
+        enabled: false,
+        complete: false,
+        error: 'no_user',
+      };
+    }
+    try {
+      const enabled = await this.isContactoEmergenciaBannerEnabled();
+      const row = await this.prisma.user.findUnique({
+        where: { CODIGO: codigo },
+        select: {
+          contacto_emergencia_nombre: true,
+          contacto_emergencia_parentesco: true,
+          contacto_emergencia_telefono: true,
+          contacto_emergencia_actualizado_at: true,
+        },
+      });
+      const complete = row ? this.contactoEmergenciaCompleto(row) : false;
+      const isDev = req.user?.grupo === 'Developer';
+      let totalActivos: number | undefined;
+      let completados: number | undefined;
+      let pendientes: number | undefined;
+      if (isDev) {
+        const agg = await this.prisma.$queryRaw<
+          { total: bigint; ok: bigint }[]
+        >`
+          SELECT
+            COUNT(*) AS total,
+            COALESCE(SUM(
+              CASE
+                WHEN TRIM(IFNULL(\`CONTACTO_EMERGENCIA_NOMBRE\`, '')) <> ''
+                  AND TRIM(IFNULL(\`CONTACTO_EMERGENCIA_PARENTESCO\`, '')) <> ''
+                  AND CHAR_LENGTH(TRIM(REPLACE(IFNULL(\`CONTACTO_EMERGENCIA_TELEFONO\`, ''), ' ', ''))) >= 6
+                THEN 1 ELSE 0 END
+            ), 0) AS ok
+          FROM DatosEmpleados
+          WHERE \`ESTADO\` = 'ACTIVO'
+        `;
+        const a = agg[0];
+        totalActivos = Number(a?.total ?? 0);
+        completados = Number(a?.ok ?? 0);
+        pendientes = Math.max(0, totalActivos - completados);
+      }
+      return {
+        enabled,
+        complete,
+        nombre: row?.contacto_emergencia_nombre ?? '',
+        parentesco: row?.contacto_emergencia_parentesco ?? '',
+        telefono: row?.contacto_emergencia_telefono ?? '',
+        actualizadoAt: row?.contacto_emergencia_actualizado_at
+          ? row.contacto_emergencia_actualizado_at.toISOString()
+          : null,
+        totalActivos,
+        completados,
+        pendientes,
+      };
+    } catch (err: any) {
+      this.logger.error(`contacto-emergencia/status: ${err?.message}`);
+      return { enabled: false, complete: false, error: err.message };
+    }
+  }
+
+  /** Empleados ACTIVO sin datos completos (solo Developer). */
+  @Get('contacto-emergencia/pendientes')
+  @UseGuards(JwtAuthGuard)
+  async getContactoEmergenciaPendientes(
+    @Request() req: { user?: { grupo?: string } },
+  ) {
+    this.assertDeveloper(req);
+    const rows = await this.prisma.$queryRaw<
+      { CODIGO: string; nombre: string | null }[]
+    >`
+      SELECT
+        \`CODIGO\` AS CODIGO,
+        \`NOMBRE / APELLIDOS\` AS nombre
+      FROM DatosEmpleados
+      WHERE \`ESTADO\` = 'ACTIVO'
+        AND (
+          TRIM(IFNULL(\`CONTACTO_EMERGENCIA_NOMBRE\`, '')) = ''
+          OR TRIM(IFNULL(\`CONTACTO_EMERGENCIA_PARENTESCO\`, '')) = ''
+          OR CHAR_LENGTH(TRIM(REPLACE(IFNULL(\`CONTACTO_EMERGENCIA_TELEFONO\`, ''), ' ', ''))) < 6
+        )
+      ORDER BY \`CODIGO\`
+      LIMIT 500
+    `;
+    return {
+      items: rows.map((r) => ({
+        codigo: r.CODIGO,
+        nombre: r.nombre ?? null,
+      })),
+    };
+  }
+
+  @Put('contacto-emergencia')
+  @UseGuards(JwtAuthGuard)
+  async putContactoEmergencia(
+    @Request() req: { user?: { userId?: string } },
+    @Body()
+    body: { nombre?: string; parentesco?: string; telefono?: string },
+  ) {
+    const codigo = req.user?.userId;
+    if (!codigo) {
+      throw new BadRequestException('Usuario no identificado');
+    }
+    const nombre = String(body?.nombre ?? '')
+      .trim()
+      .slice(0, 200);
+    const parentesco = String(body?.parentesco ?? '')
+      .trim()
+      .slice(0, 120);
+    const telefono = String(body?.telefono ?? '')
+      .trim()
+      .slice(0, 40);
+    if (nombre.length < 2) {
+      throw new BadRequestException('Indica el nombre (mín. 2 caracteres)');
+    }
+    if (parentesco.length < 2) {
+      throw new BadRequestException(
+        'Indica el parentesco (mín. 2 caracteres, ej. cónyuge, madre)',
+      );
+    }
+    if (telefono.replace(/\s/g, '').length < 6) {
+      throw new BadRequestException('Indica un teléfono válido');
+    }
+    const empleadoRow = await this.prisma.user.findUnique({
+      where: { CODIGO: codigo },
+      select: { NOMBRE_APELLIDOS: true, CORREO_ELECTRONICO: true },
+    });
+    const nombreEmpleado =
+      empleadoRow?.NOMBRE_APELLIDOS?.trim() ||
+      empleadoRow?.CORREO_ELECTRONICO?.trim() ||
+      codigo;
+
+    await this.prisma.user.update({
+      where: { CODIGO: codigo },
+      data: {
+        contacto_emergencia_nombre: nombre,
+        contacto_emergencia_parentesco: parentesco,
+        contacto_emergencia_telefono: telefono,
+        contacto_emergencia_actualizado_at: new Date(),
+      },
+    });
+
+    void this.notifyGestoriaContactoEmergenciaTelegram({
+      codigo,
+      nombreEmpleado,
+      contactoNombre: nombre,
+      contactoParentesco: parentesco,
+      contactoTelefono: telefono,
+    }).catch((err) =>
+      this.logger.error(
+        `notifyGestoriaContactoEmergenciaTelegram: ${err?.message || err}`,
+      ),
+    );
+
+    return { ok: true };
+  }
+
+  @Patch('contacto-emergencia/banner')
+  @UseGuards(JwtAuthGuard)
+  async patchContactoEmergenciaBanner(
+    @Request() req: { user?: { grupo?: string } },
+    @Body() body: { enabled?: boolean },
+  ) {
+    this.assertDeveloper(req);
+    if (body?.enabled === undefined) {
+      throw new BadRequestException('enabled es obligatorio');
+    }
+    const enabled = body.enabled === true;
+    await this.prisma.appSetting.upsert({
+      where: { setting_key: CONTACTO_EMERGENCIA_BANNER_KEY },
+      create: {
+        setting_key: CONTACTO_EMERGENCIA_BANNER_KEY,
+        value: enabled ? 'true' : 'false',
+      },
+      update: { value: enabled ? 'true' : 'false' },
+    });
+    return { ok: true, enabled };
   }
 }

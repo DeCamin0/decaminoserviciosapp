@@ -19,7 +19,13 @@ import {
 import activityLogger from '../utils/activityLogger';
 import HorasTrabajadas from '../components/HorasTrabajadas';
 import HorasPermitidas from '../components/HorasPermitidas';
-import { calculateCuadranteHours, calculateHorarioHours } from '../utils/cuadrante-hours-helper';
+import {
+  calculateCuadranteHours,
+  calculateHorarioHours,
+  parseCuadranteDayIntervals,
+  formatCuadranteIntervalsForDisplay,
+} from '../utils/cuadrante-hours-helper';
+import { isCuadranteRowVisible } from '../utils/cuadranteVisible';
 import { debug as loggerDebug, warn, error as logError, success, demo, info } from '../utils/logger';
 import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 import { config } from '../config/env.js';
@@ -701,16 +707,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const daySchedule = cuadranteAsignado[dayKey];
       
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        if (daySchedule.includes(',')) {
-          const matches = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/g);
-          if (matches && matches.length > 0) {
-            return matches.map(match => match).join(' / ');
-          }
-        } else {
-          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-          if (match) {
-            return `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
-          }
+        const formatted = formatCuadranteIntervalsForDisplay(daySchedule);
+        if (formatted) {
+          return formatted;
         }
       }
       return null;
@@ -2668,24 +2667,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const daySchedule = cuadranteAsignado[dayKey];
       
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        let intervals = [];
-        if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
-          const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
-          if (match) {
-            intervals = [{ start: match[1], end: match[2] }];
-          }
-        } else {
-          intervals = daySchedule.split(',').map(interval => {
-            const [start, end] = interval.trim().split('-');
-            return { start: start?.trim(), end: end?.trim() };
-          }).filter(interval => interval.start && interval.end);
-        }
-        
+        const intervals = parseCuadranteDayIntervals(daySchedule);
         if (intervals.length > 0) {
-          const firstInterval = intervals[0];
-          const startTime = (parseInt(firstInterval.start.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.start.split(':')[1]) || 0);
-          const endTime = (parseInt(firstInterval.end.split(':')[0]) || 0) * 60 + (parseInt(firstInterval.end.split(':')[1]) || 0);
-          isOvernightShiftToday = endTime < startTime;
+          isOvernightShiftToday = intervals.some((iv) => {
+            const startTime =
+              (parseInt(iv.start.split(':')[0], 10) || 0) * 60 +
+              (parseInt(iv.start.split(':')[1], 10) || 0);
+            const endTime =
+              (parseInt(iv.end.split(':')[0], 10) || 0) * 60 +
+              (parseInt(iv.end.split(':')[1], 10) || 0);
+            return endTime < startTime;
+          });
         }
       }
     }
@@ -2810,14 +2802,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       const dayKey = `ZI_${todayDay}`;
       const daySchedule = cuadranteAsignado[dayKey];
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        const scheduleIntervals = daySchedule.split(',');
-        intervalCount = scheduleIntervals.length;
-        scheduleIntervals.forEach(interval => {
-          const match = interval.match(/(\d{1,2}):(\d{2})/g);
-          if (match && match.length === 2) {
-            intervals.push({ start: match[0], end: match[1] });
-          }
-        });
+        const parsed = parseCuadranteDayIntervals(daySchedule);
+        intervalCount = parsed.length;
+        parsed.forEach((iv) => intervals.push({ start: iv.start, end: iv.end }));
       }
     } else if (horarioAsignado && horarioAsignado.days) {
       const todayDayOfWeek = new Date().getDay();
@@ -2877,28 +2864,22 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         const daySchedule = cuadranteAsignado[dayKey];
         
         if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-          const scheduleIntervals = daySchedule.split(',');
+          const parsed = parseCuadranteDayIntervals(daySchedule);
           let minStartTime = 1440;
           let maxEndTime = 0;
-          scheduleIntervals.forEach(interval => {
-            const match = interval.match(/(\d{1,2}):(\d{2})/g);
-            if (match && match.length === 2) {
-              const startMatch = match[0].match(/(\d{1,2}):(\d{2})/);
-              const endMatch = match[1].match(/(\d{1,2}):(\d{2})/);
-              if (startMatch) {
-                const startMinutes = parseInt(startMatch[1]) * 60 + parseInt(startMatch[2]);
-                if (startMinutes < minStartTime) {
-                  minStartTime = startMinutes;
-                  firstInTime = startMinutes;
-                }
-              }
-              if (endMatch) {
-                const endMinutes = parseInt(endMatch[1]) * 60 + parseInt(endMatch[2]);
-                if (endMinutes > maxEndTime) {
-                  maxEndTime = endMinutes;
-                  lastOutTime = endMinutes;
-                }
-              }
+          parsed.forEach((iv) => {
+            const startMinutes = parseTimeToMinutes(iv.start);
+            let endMinutes = parseTimeToMinutes(iv.end);
+            if (endMinutes < startMinutes) {
+              endMinutes += 24 * 60;
+            }
+            if (startMinutes < minStartTime) {
+              minStartTime = startMinutes;
+              firstInTime = startMinutes;
+            }
+            if (endMinutes > maxEndTime) {
+              maxEndTime = endMinutes;
+              lastOutTime = endMinutes;
             }
           });
         }
@@ -3354,9 +3335,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                           const dayKey = `ZI_${todayDay}`;
                           const daySchedule = cuadranteAsignado[dayKey];
                           if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-                            // Numără intervalele separate prin virgulă
-                            const intervals = daySchedule.split(',');
-                            intervalCount = intervals.length;
+                            intervalCount = parseCuadranteDayIntervals(daySchedule).length;
                           }
                         } else if (horarioAsignado && horarioAsignado.days) {
                           const today = new Date().getDay();
@@ -8054,7 +8033,11 @@ export default function FichajePage() {
             const date = new Date(Math.round((luna - 25569) * 86400 * 1000));
             luna = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
           }
-          return luna === currentMonthFormatted && codigo === codigoEmpleado;
+          return (
+            luna === currentMonthFormatted &&
+            codigo === codigoEmpleado &&
+            isCuadranteRowVisible(cuadrante)
+          );
         });
         
         if (cuadranteMatch) {
@@ -8464,17 +8447,7 @@ export default function FichajePage() {
       const daySchedule = cuadranteAsignado[dayKey];
       
       if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
-        if (daySchedule.includes(',')) {
-          const matches = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/g);
-          if (matches && matches.length > 0) {
-            todaySchedule = matches.map(match => match).join(' / ');
-          }
-        } else {
-          const match = daySchedule.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-          if (match) {
-            todaySchedule = `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
-          }
-        }
+        todaySchedule = formatCuadranteIntervalsForDisplay(daySchedule);
       }
     } else if (horarioMulticentroAsignado) {
       const horarioNombre = safe(horarioMulticentroAsignado.nombre || horarioMulticentroAsignado.NOMBRE);
@@ -8591,20 +8564,8 @@ export default function FichajePage() {
       return false; // Zi liberă explicită sau goală, NU permite fichar
     }
 
-    // Parsează orarul din cuadrante (format: "T1 09:00-17:00" sau "09:00-12:00,14:00-18:00")
-    if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
-      // Format cuadrante: "T1 09:00-17:00"
-      const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
-      if (match) {
-        intervals = [{ start: match[1], end: match[2] }];
-      }
-    } else {
-      // Format clasic: "08:00-12:00,14:00-18:00"
-      intervals = daySchedule.split(',').map(interval => {
-        const [start, end] = interval.trim().split('-');
-        return { start: start?.trim(), end: end?.trim() };
-      }).filter(interval => interval.start && interval.end);
-    }
+    // Toate franjele: "T1 08:00-14:00 / T2 15:00-19:00 / …" sau "08:00-12:00,14:00-18:00"
+    intervals = parseCuadranteDayIntervals(daySchedule);
 
     // Pentru Salida în ture nocturne, verifică ziua de ieri pentru a găsi începutul turei nocturne
     if (tipo === 'Salida' && intervals.length > 0) {
@@ -8619,22 +8580,11 @@ export default function FichajePage() {
         const yesterdaySchedule = cuadranteAsignado[yesterdayKey];
         
         if (yesterdaySchedule && yesterdaySchedule !== 'LIBRE' && yesterdaySchedule.trim() !== '') {
-          // Extrage intervalele de ieri pentru a obține întregul spectru al turei nocturne
-          let yesterdayIntervals = [];
-          if (yesterdaySchedule.includes('T1') || yesterdaySchedule.includes('T2') || yesterdaySchedule.includes('T3')) {
-            const match = yesterdaySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
-            if (match) {
-              yesterdayIntervals = [{ start: match[1], end: match[2] }];
-            }
-          }
-          
-          // Dacă ieri avea tură care se termină astăzi dimineață
+          const yesterdayIntervals = parseCuadranteDayIntervals(yesterdaySchedule);
           if (yesterdayIntervals.length > 0) {
             const yesterStartTime = parseTimeToMinutes(yesterdayIntervals[0].start);
             const yesterEndTime = parseTimeToMinutes(yesterdayIntervals[0].end);
-            
             if (yesterEndTime < yesterStartTime) {
-              // Tură nocturnă continuă de ieri
               intervals = yesterdayIntervals;
             }
           }
@@ -8987,22 +8937,7 @@ export default function FichajePage() {
         return null;
       }
       
-      let intervals = [];
-      
-      // Parsează orarul din cuadrante (format: "T1 09:00-17:00" sau "09:00-12:00,14:00-18:00" sau "19:30-07:30")
-      if (daySchedule.includes('T1') || daySchedule.includes('T2') || daySchedule.includes('T3')) {
-        // Format cuadrante: "T1 09:00-17:00"
-        const match = daySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
-        if (match) {
-          intervals = [{ start: match[1], end: match[2] }];
-        }
-      } else {
-        // Format clasic: "08:00-12:00,14:00-18:00" sau "19:30-07:30"
-        intervals = daySchedule.split(',').map(interval => {
-          const [start, end] = interval.trim().split('-');
-          return { start: start?.trim(), end: end?.trim() };
-        }).filter(interval => interval.start && interval.end);
-      }
+      let intervals = parseCuadranteDayIntervals(daySchedule);
       
       if (intervals.length === 0) return null;
       
@@ -9012,25 +8947,16 @@ export default function FichajePage() {
         const startTime = parseTimeToMinutes(lastInterval.start);
         const endTime = parseTimeToMinutes(lastInterval.end);
         
-        // Dacă detectează tură nocturnă (19:30-07:30), verifică și ziua de ieri
         if (endTime < startTime) {
           const yesterdayDay = currentDay - 1;
           const yesterdayKey = `ZI_${yesterdayDay}`;
           const yesterdaySchedule = cuadranteAsignado[yesterdayKey];
           
           if (yesterdaySchedule && yesterdaySchedule !== 'LIBRE' && yesterdaySchedule.trim() !== '') {
-            let yesterdayIntervals = [];
-            if (yesterdaySchedule.includes('T1') || yesterdaySchedule.includes('T2') || yesterdaySchedule.includes('T3')) {
-              const match = yesterdaySchedule.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
-              if (match) {
-                yesterdayIntervals = [{ start: match[1], end: match[2] }];
-              }
-            }
-            
+            const yesterdayIntervals = parseCuadranteDayIntervals(yesterdaySchedule);
             if (yesterdayIntervals.length > 0) {
               const yesterStartTime = parseTimeToMinutes(yesterdayIntervals[0].start);
               const yesterEndTime = parseTimeToMinutes(yesterdayIntervals[0].end);
-              
               if (yesterEndTime < yesterStartTime) {
                 intervals = yesterdayIntervals;
               }
@@ -9039,26 +8965,20 @@ export default function FichajePage() {
         }
       }
       
-      // Găsește primul interval relevant
-      const relevantInterval = intervals[0];
-      if (!relevantInterval) return null;
-      
-      const startTime = parseTimeToMinutes(relevantInterval.start);
-      const endTime = parseTimeToMinutes(relevantInterval.end);
-      const isOvernightShift = endTime < startTime;
-      
+      const franjasText = intervals
+        .map((i) => `${i.start} - ${i.end}`)
+        .join(' / ');
+
       if (tipo === 'Entrada') {
-        // Pentru Entrada, folosește START TIME (19:30 pentru tură nocturnă)
-        return `Entrada permitida: ${relevantInterval.start} (±10 min)`;
-      } else if (tipo === 'Salida') {
-        // Pentru Salida, folosește END TIME (07:30 pentru tură nocturnă)
-        if (isOvernightShift) {
-          return `Salida permitida: ${relevantInterval.end} (±10 min) - día siguiente`;
-        }
-        return `Salida permitida: ${relevantInterval.end} (±10 min)`;
+        return `Franjas hoy (±10 min c/u): ${franjasText}`;
       }
-      
-      return null;
+      const last = intervals[intervals.length - 1];
+      const et = parseTimeToMinutes(last.end);
+      const st = parseTimeToMinutes(last.start);
+      if (et < st) {
+        return `Última salida: ${last.end} (±10 min, puede ser día siguiente). Todas: ${franjasText}`;
+      }
+      return `Salidas previstas: ${franjasText} (±10 min)`;
     }
     
     // Fallback la horarioAsignado

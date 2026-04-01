@@ -15,10 +15,25 @@ import { routes } from '../utils/routes.js';
 import { config } from '../config/env';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import activityLogger from '../utils/activityLogger';
-
-
+import { isCuadranteRowVisible } from '../utils/cuadranteVisible';
+import {
+  formatCuadranteIntervalsForDisplay,
+  isCuadranteTurnoCompartidoDisplay,
+} from '../utils/cuadrante-hours-helper.js';
 
 // Helper functions
+
+/** Pentru CalendarDayCell / turno compartido: "HH:MM-HH:MM / …" din in/out horario */
+function ziRawFromHorarioIntervals(intervals) {
+  if (!intervals || intervals.length === 0) return null;
+  return intervals
+    .map(({ in: a, out: b }) => {
+      const tin = (a || '').toString().substring(0, 5);
+      const tout = (b || '').toString().substring(0, 5);
+      return `${tin}-${tout}`;
+    })
+    .join(' / ');
+}
 
 function getDaysInMonth(month, year) {
 
@@ -1525,31 +1540,8 @@ export default function CuadrantesEmpleadoPage() {
     const codigoMatch = (c.CODIGO || '').trim() === codigoEmpleado.trim();
     const nombreMatch = (c.NOMBRE || '').trim() === nombreEmpleado.trim();
     
-    // Verifică dacă cuadrantul este vizibil
-    // MySQL returnează 1/0 (number) sau true/false (boolean)
-    // Compatibilitate: undefined/null = vizibil (pentru cuadrante vechi)
-    const visibleValue = c.visible;
-    
-    // Conversie robustă: orice valoare "truthy" sau undefined/null = vizibil
-    // Excludem explicit: false, 0, '0', 'false'
-    let isVisible = true; // Default: vizibil (pentru compatibilitate cu cuadrante vechi)
-    
-    if (visibleValue !== undefined && visibleValue !== null) {
-      // Dacă este boolean
-      if (typeof visibleValue === 'boolean') {
-        isVisible = visibleValue === true;
-      }
-      // Dacă este number (MySQL returnează 1/0)
-      else if (typeof visibleValue === 'number') {
-        isVisible = visibleValue === 1;
-      }
-      // Dacă este string
-      else if (typeof visibleValue === 'string') {
-        isVisible = visibleValue === '1' || visibleValue.toLowerCase() === 'true';
-      }
-    }
-    
-    // Debug logging pentru a vedea ce se întâmplă
+    const isVisible = isCuadranteRowVisible(c);
+
     if (lunaMatch && (emailMatch || codigoMatch || nombreMatch)) {
       console.log('🔍 Cuadrante found for user:', {
         CODIGO: c.CODIGO,
@@ -1557,21 +1549,20 @@ export default function CuadrantesEmpleadoPage() {
         EMAIL: c.EMAIL,
         emailLogat: emailLogat,
         codigoEmpleado: codigoEmpleado,
-        visible: visibleValue,
-        visibleType: typeof visibleValue,
-        visibleValueString: String(visibleValue),
-        isVisible: isVisible,
+        visible: c.visible,
+        isVisible,
         emailMatch,
         codigoMatch,
         nombreMatch,
         lunaMatch,
         willMatch: lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible,
-        finalResult: lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible ? '✅ MATCH' : '❌ NO MATCH'
+        finalResult:
+          lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible
+            ? '✅ MATCH'
+            : '❌ NO MATCH',
       });
     }
-    
-    // Verificare cuadrant
-    
+
     return lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible;
 
   });
@@ -2070,6 +2061,8 @@ const getFirstValue = (record, keys) => {
       
       // Pentru horario_multicentro, adăugăm informația despre orele programate (ZI_X) pentru această zi
       let horarioMulticentroHours = null;
+      /** Valoarea brută ZI (cuadrante / horario) pentru parsare turno compartido în CalendarDayCell */
+      let ziRaw = null;
 
 
 
@@ -2295,11 +2288,17 @@ const getFirstValue = (record, keys) => {
                 console.log('⏳ [DAY 1] Setat tip = LIBRE (loadingRegularizaciones && !planFuente)');
               }
             } else {
-              // Extrage tipul (T1, T2, T3)
+              ziRaw = tipZiStr;
               const turnMatch = tipZiStr.match(/^(T[123])\s*(.*)$/);
-              if (turnMatch) {
-                tip = turnMatch[1]; // T1, T2 sau T3
-                orar = turnMatch[2] || ''; // Orarul fără prefix
+              if (isCuadranteTurnoCompartidoDisplay(tipZiStr)) {
+                tip = 'TC';
+                orar =
+                  formatCuadranteIntervalsForDisplay(tipZiStr) ||
+                  (turnMatch ? (turnMatch[2] || '').trim() : '') ||
+                  tipZiStr;
+              } else if (turnMatch) {
+                tip = turnMatch[1];
+                orar = turnMatch[2] || '';
               } else {
                 tip = tipZiStr.startsWith('T1') ? 'T1' : tipZiStr.startsWith('T2') ? 'T2' : 'T3';
                 orar = tipZiStr.replace(/^T[123]\s*/, '');
@@ -2316,8 +2315,14 @@ const getFirstValue = (record, keys) => {
               tip = 'Fiesta';
               orar = '';
             } else {
-              tip = 'T1';
-              orar = tipZiStr;
+              ziRaw = tipZiStr;
+              if (isCuadranteTurnoCompartidoDisplay(tipZiStr)) {
+                tip = 'TC';
+                orar = formatCuadranteIntervalsForDisplay(tipZiStr) || tipZiStr;
+              } else {
+                tip = 'T1';
+                orar = tipZiStr;
+              }
             }
           }
           // Altfel, setează ca LIBRE sau Fiesta
@@ -2387,11 +2392,17 @@ const getFirstValue = (record, keys) => {
                 tip = 'Fiesta';
                 orar = '';
               } else {
-                // Extrage tipul (T1, T2, T3)
+                ziRaw = dayScheduleStr;
                 const turnMatch = dayScheduleStr.match(/^(T[123])\s*(.*)$/);
-                if (turnMatch) {
-                  tip = turnMatch[1]; // T1, T2 sau T3
-                  orar = turnMatch[2] || ''; // Orarul fără prefix
+                if (isCuadranteTurnoCompartidoDisplay(dayScheduleStr)) {
+                  tip = 'TC';
+                  orar =
+                    formatCuadranteIntervalsForDisplay(dayScheduleStr) ||
+                    (turnMatch ? (turnMatch[2] || '').trim() : '') ||
+                    dayScheduleStr;
+                } else if (turnMatch) {
+                  tip = turnMatch[1];
+                  orar = turnMatch[2] || '';
                 } else {
                   tip = dayScheduleStr.startsWith('T1') ? 'T1' : dayScheduleStr.startsWith('T2') ? 'T2' : 'T3';
                   orar = dayScheduleStr.replace(/^T[123]\s*/, '');
@@ -2404,8 +2415,14 @@ const getFirstValue = (record, keys) => {
                 tip = 'Fiesta';
                 orar = '';
               } else {
-                tip = 'T1';
-                orar = dayScheduleStr;
+                ziRaw = dayScheduleStr;
+                if (isCuadranteTurnoCompartidoDisplay(dayScheduleStr)) {
+                  tip = 'TC';
+                  orar = formatCuadranteIntervalsForDisplay(dayScheduleStr) || dayScheduleStr;
+                } else {
+                  tip = 'T1';
+                  orar = dayScheduleStr;
+                }
               }
             }
             // Dacă este un număr (ore), afișăm doar numărul de ore (ex: "8h")
@@ -2462,8 +2479,14 @@ const getFirstValue = (record, keys) => {
               
               if (intervals.length > 0) {
                 if (planFuente !== 'fiesta') {
-                  tip = 'T1';
-                  orar = intervals.map(interval => `${interval.in}-${interval.out}`).join(', ');
+                  ziRaw = ziRawFromHorarioIntervals(intervals);
+                  if (intervals.length > 1) {
+                    tip = 'TC';
+                    orar = formatCuadranteIntervalsForDisplay(ziRaw) || ziRaw;
+                  } else {
+                    tip = 'T1';
+                    orar = intervals.map(interval => `${interval.in}-${interval.out}`).join(', ');
+                  }
                 } else {
                   tip = 'Fiesta';
                   orar = '';
@@ -2486,6 +2509,7 @@ const getFirstValue = (record, keys) => {
               if (dayOfWeek >= 1 && dayOfWeek <= 5) {
                 tip = 'T1';
                 orar = '08:00-17:00';
+                ziRaw = '08:00-17:00';
               } else {
                 tip = 'LIBRE';
               }
@@ -2526,11 +2550,14 @@ const getFirstValue = (record, keys) => {
               // Verifică din nou plan_fuente înainte de a seta tip = 'T1'
               // Dacă plan_fuente este 'fiesta', nu setăm tip = 'T1'
               if (planFuente !== 'fiesta') {
-                tip = 'T1';
-                // Construiește orarul din intervalele complete
-                orar = intervals.map(interval => 
-                  `${interval.in}-${interval.out}`
-                ).join(', ');
+                ziRaw = ziRawFromHorarioIntervals(intervals);
+                if (intervals.length > 1) {
+                  tip = 'TC';
+                  orar = formatCuadranteIntervalsForDisplay(ziRaw) || ziRaw;
+                } else {
+                  tip = 'T1';
+                  orar = intervals.map(interval => `${interval.in}-${interval.out}`).join(', ');
+                }
               } else {
                 tip = 'Fiesta';
                 orar = '';
@@ -2565,6 +2592,7 @@ const getFirstValue = (record, keys) => {
             if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Luni până Vineri
               tip = 'T1';
               orar = '08:00-17:00'; // Program standard
+              ziRaw = '08:00-17:00';
             } else { // Sâmbătă și Duminică
               tip = 'LIBRE';
             }
@@ -2611,7 +2639,9 @@ const getFirstValue = (record, keys) => {
         planFuente, // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
         
         // Adăugăm informația despre orele programate din horario_multicentro pentru această zi
-        horarioMulticentroHours
+        horarioMulticentroHours,
+
+        ...(ziRaw ? { ziRaw } : {})
 
       });
 
@@ -2748,7 +2778,10 @@ const getFirstValue = (record, keys) => {
   // IMPORTANT: Nu afișăm alerta dacă fichajes sau regularizările sunt încă în proces de încărcare
   if (!loading && !loadingFichajes && !loadingRegularizaciones && cuadrant) {
 
-    const zileCuAlerta = calendarCells.filter(cell => cell && cell.tip === 'T1' && cell.alertaFichaj);
+    const zileCuAlerta = calendarCells.filter(
+      (cell) =>
+        cell && ['T1', 'T2', 'T3', 'TC'].includes(cell.tip) && cell.alertaFichaj
+    );
 
     if (zileCuAlerta.length > 0) {
       erori.push(`Tienes ${zileCuAlerta.length} día${zileCuAlerta.length === 1 ? '' : 's'} laborable${zileCuAlerta.length === 1 ? '' : 's'} con turnos incompletos (falta Entrada o Salida) en el mes seleccionado!`);

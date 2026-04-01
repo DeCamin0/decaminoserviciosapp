@@ -42,6 +42,10 @@ model User {
   ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS Decimal? @map("ASUNTOS_PROPIOS_ANUALES_PERSONALIZADAS") @db.Decimal(5, 1)
   certificado_handicap_confirmado   Boolean? @map("certificado_handicap_confirmado")
   fecha_baja_programada             String?  @map("fecha_baja_programada") @db.VarChar(100)
+  contacto_emergencia_nombre        String?  @map("CONTACTO_EMERGENCIA_NOMBRE") @db.VarChar(200)
+  contacto_emergencia_parentesco    String?  @map("CONTACTO_EMERGENCIA_PARENTESCO") @db.VarChar(120)
+  contacto_emergencia_telefono      String?  @map("CONTACTO_EMERGENCIA_TELEFONO") @db.VarChar(40)
+  contacto_emergencia_actualizado_at DateTime? @map("CONTACTO_EMERGENCIA_ACTUALIZADO_AT")
 
   @@index([DNI_NIE], map: "idx_datos_dni")
   @@index([CENTRO_TRABAJO], map: "idx_datos_empleados_centro")

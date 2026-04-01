@@ -40,7 +40,8 @@ export default function MensajesEnviadosPage() {
   const [sendError, setSendError] = useState(null);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [emailProgress, setEmailProgress] = useState(null); // { total, current, success, failed, status }
-  
+  const sendInFlightRef = useRef(false);
+
   // WebSocket pentru progres email
   const { socket } = useWebSocket('/notifications');
   
@@ -525,6 +526,7 @@ export default function MensajesEnviadosPage() {
 
   // Trimite email
   const handleSendEmail = async () => {
+    if (sendInFlightRef.current) return;
     if (!subject.trim() || !message.trim()) {
       setSendError('El asunto y el mensaje son obligatorios');
       return;
@@ -540,6 +542,7 @@ export default function MensajesEnviadosPage() {
       return;
     }
 
+    sendInFlightRef.current = true;
     setSending(true);
     setSendError(null);
     setSendSuccess(false);
@@ -615,6 +618,7 @@ export default function MensajesEnviadosPage() {
     } catch (error) {
       setSendError(error.message || 'Error al enviar el email');
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   };

@@ -500,7 +500,11 @@ export class EmpleadosService {
         \`DerechoPedidos\`,
         \`TrabajaFestivos\`,
         \`Contraseña\`,
-        certificado_handicap_confirmado
+        certificado_handicap_confirmado,
+        CONTACTO_EMERGENCIA_NOMBRE,
+        CONTACTO_EMERGENCIA_PARENTESCO,
+        CONTACTO_EMERGENCIA_TELEFONO,
+        CONTACTO_EMERGENCIA_ACTUALIZADO_AT
       FROM DatosEmpleados
       WHERE CODIGO = ${codigo}
       LIMIT 1
@@ -540,6 +544,13 @@ export class EmpleadosService {
       FECHA_ANTIGUEDAD:
         empleado['Fecha Antigüedad'] ?? empleado.FECHA_ANTIGUEDAD ?? null,
       ANTIGUEDAD: empleado['Antigüedad'] ?? empleado.ANTIGUEDAD ?? null,
+      contacto_emergencia_nombre: empleado.CONTACTO_EMERGENCIA_NOMBRE ?? null,
+      contacto_emergencia_parentesco:
+        empleado.CONTACTO_EMERGENCIA_PARENTESCO ?? null,
+      contacto_emergencia_telefono:
+        empleado.CONTACTO_EMERGENCIA_TELEFONO ?? null,
+      contacto_emergencia_actualizado_at:
+        empleado.CONTACTO_EMERGENCIA_ACTUALIZADO_AT ?? null,
       empleadoId: empleado.CODIGO,
       empleadoNombre:
         empleado['NOMBRE / APELLIDOS'] ??
