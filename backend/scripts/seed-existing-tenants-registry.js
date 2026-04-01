@@ -62,6 +62,22 @@ function slugFromDbName(dbName) {
   return d.replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').slice(0, 24) || 'tenant';
 }
 
+/** API publică pentru health super-admin; override: TENANT_SEED_API_PUBLIC_URL în .env */
+const DEFAULT_API_PUBLIC_URL_BY_SLUG = {
+  decamino: 'https://api.decaminoservicios.com',
+  hera: 'https://api.herafs.com',
+};
+
+function apiPublicUrlForSlug(slug) {
+  const fromEnv = process.env.TENANT_SEED_API_PUBLIC_URL?.trim();
+  if (fromEnv) return fromEnv;
+  return DEFAULT_API_PUBLIC_URL_BY_SLUG[slug] || null;
+}
+
+function environmentForSeed() {
+  return process.env.TENANT_SEED_ENVIRONMENT?.trim() || 'production';
+}
+
 async function main() {
   const envRel = process.argv[2] || '.env.decamino.local';
   const envFile = path.resolve(process.cwd(), envRel);
@@ -97,10 +113,13 @@ async function main() {
   const notes =
     'Instanță existentă (creată înainte de panoul de provisioning). Nu s-a rulat CREATE DATABASE din wizard.';
 
+  const apiPublicUrl = apiPublicUrlForSlug(slug);
+  const environment = environmentForSeed();
+
   await conn.execute(
     `INSERT INTO tenants (
-      id, name, slug, timezone, notes, plan, database_name, database_user, database_password_enc, status, last_error
-    ) VALUES (?, ?, ?, 'Europe/Madrid', ?, NULL, ?, ?, ?, 'active', NULL)
+      id, name, slug, timezone, notes, plan, api_public_url, environment, database_name, database_user, database_password_enc, status, last_error
+    ) VALUES (?, ?, ?, 'Europe/Madrid', ?, NULL, ?, ?, ?, ?, ?, 'active', NULL)
     ON DUPLICATE KEY UPDATE
       name = VALUES(name),
       database_name = VALUES(database_name),
@@ -109,12 +128,16 @@ async function main() {
       status = 'active',
       last_error = NULL,
       notes = VALUES(notes),
+      api_public_url = VALUES(api_public_url),
+      environment = VALUES(environment),
       updated_at = CURRENT_TIMESTAMP`,
     [
       id,
       companyName,
       slug,
       notes,
+      apiPublicUrl,
+      environment,
       dbName,
       dbUser,
       passwordEnc,
@@ -122,7 +145,7 @@ async function main() {
   );
 
   console.log(
-    `OK: tenant registry — slug="${slug}" → DB "${dbName}" (din ${path.basename(envFile)})`,
+    `OK: tenant registry — slug="${slug}" → DB "${dbName}" | api_public_url=${apiPublicUrl || '(null)'} | env=${environment} (${path.basename(envFile)})`,
   );
   await conn.end();
 }

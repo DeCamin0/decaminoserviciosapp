@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import Back3DButton from '../components/Back3DButton.jsx';
+import { config } from '../config/env';
 
 function authHeaders() {
   const token = localStorage.getItem('auth_token');
@@ -16,10 +17,13 @@ function authHeaders() {
   return h;
 }
 
+/** Super-admin UI: display + API calls only. Status, health, and rules come from the backend. */
 export default function SuperAdminTenantsPage() {
   const { user: authUser, loading: authLoading } = useAuth();
-  const isDeveloper =
-    authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer';
+  const canSuperAdmin =
+    authUser?.isSuperAdminControlPlane === true ||
+    authUser?.GRUPO === 'Developer' ||
+    authUser?.grupo === 'Developer';
 
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,8 +32,8 @@ export default function SuperAdminTenantsPage() {
     client_name: '',
     client_slug: '',
     timezone: 'Europe/Madrid',
-    notes: '',
-    plan: '',
+    api_public_url: '',
+    environment: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [oncePassword, setOncePassword] = useState(null);
@@ -37,6 +41,9 @@ export default function SuperAdminTenantsPage() {
   const [logsTenant, setLogsTenant] = useState(null);
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [editingTenant, setEditingTenant] = useState(null);
+  const [metaForm, setMetaForm] = useState({ api_public_url: '', environment: '' });
+  const [metaSaving, setMetaSaving] = useState(false);
 
   const loadTenants = useCallback(async () => {
     setError('');
@@ -72,9 +79,9 @@ export default function SuperAdminTenantsPage() {
   }, []);
 
   useEffect(() => {
-    if (authLoading || !isDeveloper) return;
+    if (authLoading || !canSuperAdmin || config.IS_HERA) return;
     loadTenants();
-  }, [authLoading, isDeveloper, loadTenants]);
+  }, [authLoading, canSuperAdmin, loadTenants]);
 
   const openLogs = async (id) => {
     setLogsTenant(id);
@@ -117,6 +124,44 @@ export default function SuperAdminTenantsPage() {
     }
   };
 
+  const saveMeta = async () => {
+    if (!editingTenant?.id) return;
+    setMetaSaving(true);
+    try {
+      const res = await fetch(routes.superAdminTenant(editingTenant.id), {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          api_public_url: metaForm.api_public_url.trim(),
+          environment: metaForm.environment.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(
+          typeof data.message === 'string'
+            ? data.message
+            : data.error || res.statusText,
+        );
+        return;
+      }
+      setEditingTenant(null);
+      await loadTenants();
+    } catch (e) {
+      alert(e.message || 'Error');
+    } finally {
+      setMetaSaving(false);
+    }
+  };
+
+  const startEditMeta = (t) => {
+    setEditingTenant(t);
+    setMetaForm({
+      api_public_url: t.api_public_url || '',
+      environment: t.environment || '',
+    });
+  };
+
   const retryProvision = async (id) => {
     try {
       const res = await fetch(routes.superAdminTenantRetry(id), {
@@ -146,8 +191,12 @@ export default function SuperAdminTenantsPage() {
         client_slug: form.client_slug.trim().toLowerCase(),
         timezone: form.timezone.trim(),
       };
-      if (form.notes.trim()) body.notes = form.notes.trim();
-      if (form.plan.trim()) body.plan = form.plan.trim();
+      if (form.api_public_url.trim()) {
+        body.api_public_url = form.api_public_url.trim();
+      }
+      if (form.environment.trim()) {
+        body.environment = form.environment.trim();
+      }
 
       const res = await fetch(routes.superAdminTenants, {
         method: 'POST',
@@ -173,8 +222,8 @@ export default function SuperAdminTenantsPage() {
         ...f,
         client_name: '',
         client_slug: '',
-        notes: '',
-        plan: '',
+        api_public_url: '',
+        environment: '',
       }));
       await loadTenants();
     } catch (err) {
@@ -192,14 +241,30 @@ export default function SuperAdminTenantsPage() {
     );
   }
 
-  if (!isDeveloper) {
+  if (config.IS_HERA) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <p className="text-slate-700 font-semibold mb-4">
-          Solo el grupo Developer puede gestionar tenants.
+        <p className="text-slate-700 font-semibold mb-4 text-center max-w-md">
+          El panel super-admin (tenants / registry) no está disponible en esta
+          instancia. Usa el frontend DeCamino y la ruta{' '}
+          <code className="text-sm bg-slate-200 px-1 rounded">/superadmin/tenants</code>.
         </p>
-        <Link to="/admin" className="text-red-600 underline">
-          Volver al Admin Panel
+        <Link to="/inicio" className="text-red-600 underline">
+          Volver al inicio
+        </Link>
+      </div>
+    );
+  }
+
+  if (!canSuperAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+        <p className="text-slate-700 font-semibold mb-4 text-center max-w-md">
+          Sin acceso. Se requiere grupo Developer o email autorizado
+          (SUPER_ADMIN_EMAILS en el servidor).
+        </p>
+        <Link to="/inicio" className="text-red-600 underline">
+          Volver al inicio
         </Link>
       </div>
     );
@@ -207,18 +272,15 @@ export default function SuperAdminTenantsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="max-w-5xl mx-auto px-4 py-8">
+      <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-8">
-          <Back3DButton to="/admin" title="Admin Panel" />
+          <Back3DButton to="/inicio" title="Inicio" />
           <div>
             <h1 className="text-2xl font-bold text-slate-900">
               Super-admin · Tenants
             </h1>
             <p className="text-sm text-slate-600">
-              Registry + provisioning (DB nueva, usuario, schema sin seed).{' '}
-              <span className="text-slate-500">
-                Desactivar = solo marca inactivo en el registro (no apaga el servidor).
-              </span>
+              Control plane: registry + provisioning. Health = GET API/health (servidor).
             </p>
           </div>
         </div>
@@ -257,15 +319,15 @@ export default function SuperAdminTenantsPage() {
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-8">
+        <div className="grid lg:grid-cols-5 gap-8">
           <form
             onSubmit={onSubmit}
-            className="bg-white rounded-2xl shadow border border-slate-200 p-6 space-y-4"
+            className="lg:col-span-2 bg-white rounded-2xl shadow border border-slate-200 p-6 space-y-4"
           >
-            <h2 className="font-semibold text-lg">Añadir cliente</h2>
+            <h2 className="font-semibold text-lg">Crear tenant</h2>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
-                Nombre (client_name) *
+                Nombre *
               </label>
               <input
                 required
@@ -278,9 +340,7 @@ export default function SuperAdminTenantsPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
-                Slug * (a-z, 0-9, _ máx 24) → DB{' '}
-                <code className="text-xs">tenant_…</code> / user{' '}
-                <code className="text-xs">app_…</code>
+                Slug * (a-z, 0-9, _ máx 24)
               </label>
               <input
                 required
@@ -311,26 +371,27 @@ export default function SuperAdminTenantsPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
-                Notas (opcional)
+                API pública (https://…) — opcional, para health
               </label>
-              <textarea
+              <input
+                type="url"
+                placeholder="https://api.ejemplo.com"
                 className="w-full border rounded-lg px-3 py-2 text-sm"
-                rows={2}
-                value={form.notes}
+                value={form.api_public_url}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, notes: e.target.value }))
+                  setForm((f) => ({ ...f, api_public_url: e.target.value }))
                 }
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">
-                Plan (opcional)
+                Entorno — opcional (ej. production)
               </label>
               <input
                 className="w-full border rounded-lg px-3 py-2 text-sm"
-                value={form.plan}
+                value={form.environment}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, plan: e.target.value }))
+                  setForm((f) => ({ ...f, environment: e.target.value }))
                 }
               />
             </div>
@@ -343,7 +404,7 @@ export default function SuperAdminTenantsPage() {
             </button>
           </form>
 
-          <div className="bg-white rounded-2xl shadow border border-slate-200 p-6">
+          <div className="lg:col-span-3 bg-white rounded-2xl shadow border border-slate-200 p-6 overflow-x-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="font-semibold text-lg">Clientes</h2>
               <button
@@ -357,86 +418,144 @@ export default function SuperAdminTenantsPage() {
                 Actualizar
               </button>
             </div>
+
+            {editingTenant && (
+              <div className="mb-4 p-4 border border-slate-200 rounded-lg bg-slate-50 text-sm space-y-2">
+                <div className="font-medium">
+                  Editar URL / entorno: {editingTenant.name}
+                </div>
+                <input
+                  className="w-full border rounded px-2 py-1 text-xs"
+                  placeholder="https://api…"
+                  value={metaForm.api_public_url}
+                  onChange={(e) =>
+                    setMetaForm((m) => ({ ...m, api_public_url: e.target.value }))
+                  }
+                />
+                <input
+                  className="w-full border rounded px-2 py-1 text-xs"
+                  placeholder="production"
+                  value={metaForm.environment}
+                  onChange={(e) =>
+                    setMetaForm((m) => ({ ...m, environment: e.target.value }))
+                  }
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={metaSaving}
+                    className="px-3 py-1 bg-slate-800 text-white rounded text-xs"
+                    onClick={saveMeta}
+                  >
+                    {metaSaving ? '…' : 'Guardar'}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1 border rounded text-xs"
+                    onClick={() => setEditingTenant(null)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <p className="text-sm text-slate-500">Cargando…</p>
             ) : tenants.length === 0 ? (
               <p className="text-sm text-slate-500">Ningún tenant todavía.</p>
             ) : (
-              <ul className="space-y-3 max-h-[480px] overflow-y-auto">
-                {tenants.map((t) => (
-                  <li
-                    key={t.id}
-                    className="border border-slate-100 rounded-lg p-3 text-sm"
-                  >
-                    <div className="font-medium text-slate-900">{t.name}</div>
-                    <div className="text-xs text-slate-500 font-mono">
-                      {t.slug} · {t.database_name}
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500 border-b">
+                    <th className="py-2 pr-2">Nombre</th>
+                    <th className="py-2 pr-2">Slug</th>
+                    <th className="py-2 pr-2">Estado</th>
+                    <th className="py-2 pr-2">API pública</th>
+                    <th className="py-2 pr-2">Entorno</th>
+                    <th className="py-2 pr-2">Health</th>
+                    <th className="py-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tenants.map((t) => (
+                    <tr key={t.id} className="border-b border-slate-100 align-top">
+                      <td className="py-2 pr-2 font-medium">{t.name}</td>
+                      <td className="py-2 pr-2 font-mono text-xs">{t.slug}</td>
+                      <td className="py-2 pr-2 font-mono text-xs">{t.status}</td>
+                      <td className="py-2 pr-2 text-xs break-all max-w-[140px]">
+                        {t.api_public_url || '—'}
+                      </td>
+                      <td className="py-2 pr-2 text-xs">{t.environment || '—'}</td>
+                      <td className="py-2 pr-2 font-mono text-xs">
+                        {t.api_health ?? '—'}
+                      </td>
+                      <td className="py-2 text-xs space-x-1 whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="text-blue-600 underline"
+                          onClick={() => openLogs(t.id)}
+                        >
+                          Logs
+                        </button>
+                        <button
+                          type="button"
+                          className="text-slate-600 underline"
+                          onClick={() => startEditMeta(t)}
+                        >
+                          URL
+                        </button>
+                        {t.status !== 'inactive' && (
+                          <button
+                            type="button"
+                            className="text-rose-600 underline"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  '¿Desactivar en el registro? (No borra la base de datos.)',
+                                )
+                              ) {
+                                setTenantLifecycle(t.id, 'inactive');
+                              }
+                            }}
+                          >
+                            Off
+                          </button>
+                        )}
+                        {t.status === 'inactive' && (
+                          <button
+                            type="button"
+                            className="text-emerald-700 underline"
+                            onClick={() => setTenantLifecycle(t.id, 'active')}
+                          >
+                            On
+                          </button>
+                        )}
+                        {t.status === 'failed' && (
+                          <button
+                            type="button"
+                            className="text-orange-600 underline"
+                            onClick={() => retryProvision(t.id)}
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {tenants.some((t) => t.last_error) && (
+              <div className="mt-4 text-xs text-red-700 space-y-1">
+                {tenants
+                  .filter((t) => t.last_error)
+                  .map((t) => (
+                    <div key={`err-${t.id}`}>
+                      <span className="font-mono">{t.slug}</span>: {t.last_error}
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-2 items-center">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          t.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : t.status === 'inactive'
-                              ? 'bg-slate-200 text-slate-700'
-                              : t.status === 'failed'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-amber-100 text-amber-900'
-                        }`}
-                      >
-                        {t.status}
-                      </span>
-                      <button
-                        type="button"
-                        className="text-xs text-blue-600 underline"
-                        onClick={() => openLogs(t.id)}
-                      >
-                        Logs
-                      </button>
-                      {t.status !== 'inactive' && (
-                        <button
-                          type="button"
-                          className="text-xs text-rose-600 font-medium underline"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                '¿Desactivar este cliente en el registro? (No borra la base de datos; solo marca inactivo en la lista.)',
-                              )
-                            ) {
-                              setTenantLifecycle(t.id, 'inactive');
-                            }
-                          }}
-                        >
-                          Desactivar
-                        </button>
-                      )}
-                      {t.status === 'inactive' && (
-                        <button
-                          type="button"
-                          className="text-xs text-emerald-700 font-medium underline"
-                          onClick={() => setTenantLifecycle(t.id, 'active')}
-                        >
-                          Activar
-                        </button>
-                      )}
-                      {t.status === 'failed' && (
-                        <button
-                          type="button"
-                          className="text-xs text-orange-600 underline"
-                          onClick={() => retryProvision(t.id)}
-                        >
-                          Reintentar
-                        </button>
-                      )}
-                    </div>
-                    {t.last_error && (
-                      <p className="text-xs text-red-600 mt-1 line-clamp-2">
-                        {t.last_error}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
+                  ))}
+              </div>
             )}
           </div>
         </div>

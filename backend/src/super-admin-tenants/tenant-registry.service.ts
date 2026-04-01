@@ -16,6 +16,10 @@ export interface TenantRow {
   timezone: string;
   notes: string | null;
   plan: string | null;
+  /** Public API base URL (e.g. https://api.client.com) for super-admin health probes */
+  api_public_url: string | null;
+  /** e.g. production, staging */
+  environment: string | null;
   database_name: string;
   database_user: string;
   status: TenantStatus;
@@ -105,14 +109,16 @@ export class TenantRegistryService {
     timezone: string;
     notes: string | null;
     plan: string | null;
+    api_public_url: string | null;
+    environment: string | null;
     database_name: string;
     database_user: string;
     database_password_enc: string;
   }): Promise<void> {
     try {
       await this.getPool().execute(
-        `INSERT INTO tenants (id, name, slug, timezone, notes, plan, database_name, database_user, database_password_enc, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning')`,
+        `INSERT INTO tenants (id, name, slug, timezone, notes, plan, api_public_url, environment, database_name, database_user, database_password_enc, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning')`,
         [
           params.id,
           params.name,
@@ -120,6 +126,8 @@ export class TenantRegistryService {
           params.timezone,
           params.notes,
           params.plan,
+          params.api_public_url,
+          params.environment,
           params.database_name,
           params.database_user,
           params.database_password_enc,
@@ -136,30 +144,77 @@ export class TenantRegistryService {
 
   async listTenants(): Promise<TenantRow[]> {
     const [rows] = await this.getPool().query<RowDataPacket[]>(
-      `SELECT id, name, slug, timezone, notes, plan, database_name, database_user, status, last_error, created_at, updated_at
+      `SELECT id, name, slug, timezone, notes, plan, api_public_url, environment, database_name, database_user, status, last_error, created_at, updated_at
        FROM tenants ORDER BY created_at DESC`,
     );
-    return rows as TenantRow[];
+    return (rows as TenantRow[]).map((r) =>
+      this.normalizeTenantRow(r as RowDataPacket),
+    );
   }
 
   async getTenant(id: string): Promise<TenantRow | null> {
     const [rows] = await this.getPool().query<RowDataPacket[]>(
-      `SELECT id, name, slug, timezone, notes, plan, database_name, database_user, status, last_error, created_at, updated_at
+      `SELECT id, name, slug, timezone, notes, plan, api_public_url, environment, database_name, database_user, status, last_error, created_at, updated_at
        FROM tenants WHERE id = ? LIMIT 1`,
       [id],
     );
-    return (rows[0] as TenantRow) || null;
+    const row = rows[0] as RowDataPacket | undefined;
+    return row ? this.normalizeTenantRow(row) : null;
   }
 
   async getTenantWithSecret(
     id: string,
   ): Promise<(TenantRow & { database_password_enc: string }) | null> {
     const [rows] = await this.getPool().query<RowDataPacket[]>(
-      `SELECT id, name, slug, timezone, notes, plan, database_name, database_user, database_password_enc, status, last_error, created_at, updated_at
+      `SELECT id, name, slug, timezone, notes, plan, api_public_url, environment, database_name, database_user, database_password_enc, status, last_error, created_at, updated_at
        FROM tenants WHERE id = ? LIMIT 1`,
       [id],
     );
-    return (rows[0] as TenantRow & { database_password_enc: string }) || null;
+    const row = rows[0] as RowDataPacket | undefined;
+    if (!row) {
+      return null;
+    }
+    const base = this.normalizeTenantRow(row);
+    return {
+      ...base,
+      database_password_enc: String(row.database_password_enc ?? ''),
+    };
+  }
+
+  private normalizeTenantRow(row: RowDataPacket): TenantRow {
+    const api_public_url =
+      row.api_public_url != null && String(row.api_public_url).trim() !== ''
+        ? String(row.api_public_url).trim()
+        : null;
+    const environment =
+      row.environment != null && String(row.environment).trim() !== ''
+        ? String(row.environment).trim()
+        : null;
+    return { ...(row as unknown as TenantRow), api_public_url, environment };
+  }
+
+  async updateTenantMeta(
+    id: string,
+    meta: { api_public_url?: string | null; environment?: string | null },
+  ): Promise<void> {
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (meta.api_public_url !== undefined) {
+      sets.push('api_public_url = ?');
+      vals.push(meta.api_public_url);
+    }
+    if (meta.environment !== undefined) {
+      sets.push('environment = ?');
+      vals.push(meta.environment);
+    }
+    if (sets.length === 0) {
+      return;
+    }
+    vals.push(id);
+    await this.getPool().execute(
+      `UPDATE tenants SET ${sets.join(', ')} WHERE id = ?`,
+      vals,
+    );
   }
 
   async appendLog(

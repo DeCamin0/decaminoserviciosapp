@@ -609,9 +609,8 @@ export class IntentClassifierService {
     matches: Record<IntentType, number>,
   ): void {
     const n = normalizeForMatch(mensajeOriginal);
-    const nombreComoTrabaja = this.extractNombreFromComoTrabajaPhrase(
-      mensajeOriginal,
-    );
+    const nombreComoTrabaja =
+      this.extractNombreFromComoTrabajaPhrase(mensajeOriginal);
     /** „Cómo trabaja [nombre]” = horario/cuadrante de esa persona, no „cómo usar la app” (PROCEDIMIENTOS). */
     if (nombreComoTrabaja) {
       matches[IntentType.CUADRANTE] += 44;
@@ -1047,7 +1046,9 @@ export class IntentClassifierService {
    * „como trabaja Denis Cosmin” / „cum lucrează Ion” — consulta de orar, nu procedimiento de app.
    * El SQL hace coincidencia parcial por palabras (>2 letras) en NOMBRE.
    */
-  private extractNombreFromComoTrabajaPhrase(mensaje: string): string | undefined {
+  private extractNombreFromComoTrabajaPhrase(
+    mensaje: string,
+  ): string | undefined {
     const trimmed = mensaje.trim();
     const stopFirst = new Set([
       'el',
@@ -1075,7 +1076,10 @@ export class IntentClassifierService {
       if (!m?.[1]) {
         return undefined;
       }
-      let raw = m[1].trim().replace(/[.:;!]+$/g, '').trim();
+      let raw = m[1]
+        .trim()
+        .replace(/[.:;!]+$/g, '')
+        .trim();
       if (raw.length < 2 || raw.length > 80) {
         return undefined;
       }
@@ -1114,7 +1118,9 @@ export class IntentClassifierService {
   /**
    * „cuadrante de Alsacia”, „el horario de Bosque Pino” — numele centrului după de/del/para.
    */
-  private extractCentroFromCuadranteHorarioPhrase(mensaje: string): string | undefined {
+  private extractCentroFromCuadranteHorarioPhrase(
+    mensaje: string,
+  ): string | undefined {
     const trimmed = mensaje.trim();
     const patterns: RegExp[] = [
       /\b(?:el\s+)?cuadrante\s+(?:de|del|para)\s+(.+?)(?:\?|\.|$)/i,
@@ -1125,7 +1131,10 @@ export class IntentClassifierService {
       if (!m?.[1]) {
         continue;
       }
-      let c = m[1].trim().replace(/[.:;!]+$/g, '').trim();
+      let c = m[1]
+        .trim()
+        .replace(/[.:;!]+$/g, '')
+        .trim();
       if (c.length < 2 || c.length > 80) {
         continue;
       }
@@ -1253,7 +1262,8 @@ export class IntentClassifierService {
     }
     // „el cuadrante de Alsacia”, „horario del centro X” (nu doar „… en X” la sfârșit).
     if (!entidades.centro) {
-      const centroCuadrante = this.extractCentroFromCuadranteHorarioPhrase(mensaje);
+      const centroCuadrante =
+        this.extractCentroFromCuadranteHorarioPhrase(mensaje);
       if (centroCuadrante) {
         entidades.centro = centroCuadrante;
       }

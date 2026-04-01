@@ -14,10 +14,90 @@ import { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../services/email.service';
-import { PresupuestoDocumentoService } from '../services/presupuesto-documento.service';
+import {
+  PresupuestoDocumentoService,
+  expandOfertaInvernalPiscinaDesdePayload,
+} from '../services/presupuesto-documento.service';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
 import * as fs from 'fs';
 import * as path from 'path';
+
+/** Datos de horario por variante piscina para prellenar el editor en firmar.html */
+function buildPiscinaHorariosFirmaDesdePayload(
+  payload: Record<string, unknown>,
+): { piscina_variant_index: number; horario_por_periodos: unknown[] }[] {
+  const principal = (payload.presupuestoCalculoPiscina || {}) as Record<
+    string,
+    unknown
+  >;
+  const rest = (payload.presupuestoCalculoPiscinaRest || []) as Record<
+    string,
+    unknown
+  >[];
+  const out: {
+    piscina_variant_index: number;
+    horario_por_periodos: unknown[];
+  }[] = [];
+  const hp0 = principal.horarioPorPeriodos;
+  if (Array.isArray(hp0) && hp0.length > 0) {
+    out.push({ piscina_variant_index: 0, horario_por_periodos: hp0 });
+  } else {
+    const leg = payload.presupuestoHorarioPiscina;
+    if (Array.isArray(leg) && leg.length > 0) {
+      out.push({ piscina_variant_index: 0, horario_por_periodos: leg });
+    } else {
+      out.push({ piscina_variant_index: 0, horario_por_periodos: [] });
+    }
+  }
+  for (let i = 0; i < rest.length; i++) {
+    const hp = rest[i]?.horarioPorPeriodos;
+    out.push({
+      piscina_variant_index: i + 1,
+      horario_por_periodos: Array.isArray(hp) ? hp : [],
+    });
+  }
+  return out;
+}
+
+function mergePiscinaHorarioFirmaEnPayload(
+  payload: Record<string, unknown>,
+  entries: Array<{
+    piscina_variant_index: number;
+    horario_por_periodos: unknown[];
+  }>,
+): Record<string, unknown> {
+  const next = { ...payload };
+  const principal = {
+    ...((next.presupuestoCalculoPiscina || {}) as Record<string, unknown>),
+  };
+  const rest = [
+    ...((next.presupuestoCalculoPiscinaRest || []) as Record<
+      string,
+      unknown
+    >[]),
+  ];
+  for (const entry of entries) {
+    const vi = entry.piscina_variant_index;
+    const hp = entry.horario_por_periodos;
+    if (typeof vi !== 'number' || vi < 0 || !Array.isArray(hp)) continue;
+    if (vi === 0) {
+      Object.assign(principal, { horarioPorPeriodos: hp });
+    } else {
+      while (rest.length < vi) rest.push({});
+      rest[vi - 1] = {
+        ...(rest[vi - 1] || {}),
+        horarioPorPeriodos: hp,
+      };
+    }
+  }
+  next.presupuestoCalculoPiscina = principal;
+  next.presupuestoCalculoPiscinaRest = rest;
+  const hp0 = principal.horarioPorPeriodos;
+  next.presupuestoHorarioPiscina = Array.isArray(hp0)
+    ? hp0
+    : ((next.presupuestoHorarioPiscina as unknown[]) ?? []);
+  return next;
+}
 
 /** DTO enviado por la página de firma (firmar.html) */
 export interface PresupuestoFirmadoDto {
@@ -50,6 +130,14 @@ export interface PresupuestoFirmadoDto {
   recogida_llaves?: string;
   /** Si el cliente desmarcó Mantenimiento invernal y acepta Recuperación de Agua (650 € sin IVA). */
   recuperacion_agua?: boolean;
+  /**
+   * Horarios por periodos confirmados al firmar (solo variantes piscina verano que el cliente edita).
+   * Cada entrada actualiza `presupuestoCalculoPiscina` (índice 0) o `presupuestoCalculoPiscinaRest[i-1]`.
+   */
+  piscina_horario_firma?: Array<{
+    piscina_variant_index: number;
+    horario_por_periodos: unknown[];
+  }>;
   ip?: string;
   user_agent?: string;
 }
@@ -169,6 +257,10 @@ export class PresupuestosFirmadoController {
           anualidadSinIva: Number(row?.anualidadSinIva) || 0,
           anualidadConIva: Number(row?.anualidadConIva) || 0,
         }));
+        oferta_economica = expandOfertaInvernalPiscinaDesdePayload(
+          oferta_economica,
+          payload,
+        );
         const hasPiscina = (d: string) => /piscina/i.test(d);
         es_solo_piscina = oferta_economica.every((r) =>
           hasPiscina(r.descripcion),
@@ -182,6 +274,26 @@ export class PresupuestosFirmadoController {
           : Number(String(rawRecuperacion ?? '').trim()) || 650;
     }
 
+    const tienePiscinaVeranoEnOferta = oferta_economica.some((r) => {
+      const d = (r.descripcion || '').toLowerCase();
+      if (d.includes('invernal')) return false;
+      if (d.includes('recuperación') || d.includes('recuperacion'))
+        return false;
+      return d.includes('piscina') || d.includes('verano');
+    });
+    let piscina_horarios_firma: ReturnType<
+      typeof buildPiscinaHorariosFirmaDesdePayload
+    > | null = null;
+    if (
+      tienePiscinaVeranoEnOferta &&
+      p.payload &&
+      typeof p.payload === 'object'
+    ) {
+      piscina_horarios_firma = buildPiscinaHorariosFirmaDesdePayload(
+        p.payload as Record<string, unknown>,
+      );
+    }
+
     return {
       numero_presupuesto: numeroPresupuesto,
       cliente_nombre: p.cliente_nombre ? String(p.cliente_nombre).trim() : null,
@@ -191,6 +303,7 @@ export class PresupuestosFirmadoController {
       oferta_economica: oferta_economica.length ? oferta_economica : null,
       es_solo_piscina: oferta_economica.length > 0 ? es_solo_piscina : null,
       recuperacion_agua_precio,
+      piscina_horarios_firma,
     };
   }
 
@@ -243,6 +356,29 @@ export class PresupuestosFirmadoController {
           newPayload.selectedOfertaIndex = selectedOfertaIndex;
         if (body.recuperacion_agua === true)
           newPayload.recuperacion_agua = true;
+        if (
+          Array.isArray(body.piscina_horario_firma) &&
+          body.piscina_horario_firma.length > 0
+        ) {
+          const cleaned = body.piscina_horario_firma.filter(
+            (
+              x,
+            ): x is {
+              piscina_variant_index: number;
+              horario_por_periodos: unknown[];
+            } =>
+              x != null &&
+              typeof x.piscina_variant_index === 'number' &&
+              x.piscina_variant_index >= 0 &&
+              Array.isArray(x.horario_por_periodos),
+          );
+          if (cleaned.length > 0) {
+            Object.assign(
+              newPayload,
+              mergePiscinaHorarioFirmaEnPayload(newPayload, cleaned),
+            );
+          }
+        }
         await this.presupuestosGuardadosService.update(presupuestoId, {
           ...(nombreCliente && { cliente_nombre: nombreCliente }),
           payload: newPayload,

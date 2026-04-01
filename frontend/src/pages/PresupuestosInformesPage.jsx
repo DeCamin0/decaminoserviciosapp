@@ -19,6 +19,108 @@ if (!ReactQuill.Quill.imports['modules/better-table']) {
   ReactQuill.Quill.register('modules/better-table', QuillBetterTable);
 }
 
+/** Días personalizados (lun–dom); se usa con diasTipo === 'PERS' */
+const PRESUPUESTO_HORARIO_DIAS_SEMANA_EMPTY = {
+  lun: false,
+  mar: false,
+  mie: false,
+  jue: false,
+  vie: false,
+  sab: false,
+  dom: false,
+};
+
+const PRESUPUESTO_HORARIO_DIAS_SEMANA_ROWS = [
+  { key: 'lun', label: 'Lun' },
+  { key: 'mar', label: 'Mar' },
+  { key: 'mie', label: 'Mié' },
+  { key: 'jue', label: 'Jue' },
+  { key: 'vie', label: 'Vie' },
+  { key: 'sab', label: 'Sáb' },
+  { key: 'dom', label: 'Dom' },
+];
+
+/** getDay(): 0 = domingo … 6 = sábado */
+const JS_DAY_TO_DIAS_SEMANA_KEY = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
+
+function normalizeDiasSemanaPayload(d) {
+  const base = { ...PRESUPUESTO_HORARIO_DIAS_SEMANA_EMPTY };
+  if (!d || typeof d !== 'object') return base;
+  for (const k of Object.keys(base)) {
+    if (Object.prototype.hasOwnProperty.call(d, k)) base[k] = !!d[k];
+  }
+  return base;
+}
+
+function diasPresetDesdeTipo(tipo) {
+  if (tipo === 'LV') return { lun: true, mar: true, mie: true, jue: true, vie: true, sab: false, dom: false };
+  if (tipo === 'SD') return { lun: false, mar: false, mie: false, jue: false, vie: false, sab: true, dom: true };
+  if (tipo === 'LD') return { lun: true, mar: true, mie: true, jue: true, vie: true, sab: true, dom: true };
+  return { ...PRESUPUESTO_HORARIO_DIAS_SEMANA_EMPTY };
+}
+
+/** Cuenta días en [desde,hasta] cuyo día de la semana está marcado en diasSemana */
+function countDiasEnRangoPorSemana(fechaDesde, fechaHasta, diasSemana) {
+  if (!fechaDesde || !fechaHasta || typeof fechaDesde !== 'string' || typeof fechaHasta !== 'string') return null;
+  const ds = normalizeDiasSemanaPayload(diasSemana);
+  const d1 = new Date(`${fechaDesde.trim()}T12:00:00`);
+  const d2 = new Date(`${fechaHasta.trim()}T12:00:00`);
+  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return null;
+  if (d2 < d1) return null;
+  let n = 0;
+  const cur = new Date(d1);
+  while (cur <= d2) {
+    const key = JS_DAY_TO_DIAS_SEMANA_KEY[cur.getDay()];
+    if (ds[key]) n += 1;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return n;
+}
+
+/**
+ * Días del rango [desde,hasta] donde aplica el tipo de horario (no el total calendario).
+ * LV = lun–vie, SD = sáb–dom, LD = todos. PERS → null (usar countDiasEnRangoPorSemana).
+ */
+function countDiasEnRangoPorDiasTipo(fechaDesde, fechaHasta, diasTipo) {
+  if (!fechaDesde || !fechaHasta || typeof fechaDesde !== 'string' || typeof fechaHasta !== 'string') return null;
+  const dt = String(diasTipo || 'LV').trim().toUpperCase();
+  if (dt === 'PERS') return null;
+  const d1 = new Date(`${fechaDesde.trim()}T12:00:00`);
+  const d2 = new Date(`${fechaHasta.trim()}T12:00:00`);
+  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return null;
+  if (d2 < d1) return null;
+  let n = 0;
+  const cur = new Date(d1);
+  while (cur <= d2) {
+    const day = cur.getDay();
+    if (dt === 'LD') {
+      n += 1;
+    } else if (dt === 'LV') {
+      if (day >= 1 && day <= 5) n += 1;
+    } else if (dt === 'SD') {
+      if (day === 0 || day === 6) n += 1;
+    } else {
+      if (day >= 1 && day <= 5) n += 1;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return n;
+}
+
+const DIAS_TIPOS_HORARIO_PISCINA = ['LV', 'SD', 'LD', 'PERS'];
+
+/** Un periodo de horario piscina (PDF 2.7). diasTipo: L-V | S-D | L-D | PERS */
+const PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY = {
+  fechaDesde: '',
+  fechaHasta: '',
+  diasTipo: 'LV',
+  diasSemana: { ...PRESUPUESTO_HORARIO_DIAS_SEMANA_EMPTY },
+  turn1Desde: '',
+  turn1Hasta: '',
+  turn2Desde: '',
+  turn2Hasta: '',
+};
+
 export default function PresupuestosInformesPage() {
   useAuth();
   const navigate = useNavigate();
@@ -190,24 +292,24 @@ export default function PresupuestosInformesPage() {
   });
   const [presupuestoCalculoCubosRest, setPresupuestoCalculoCubosRest] = useState([]);
 
-  // Estado para Piscina (mantenimiento verano: horas, días, precio mensual, horarioPeriodos por variante)
+  // Estado para Piscina (mantenimiento verano: horas, días, precio temporada; horarioPorPeriodos por variante; horarioPeriodos legacy)
   const [presupuestoCalculoPiscina, setPresupuestoCalculoPiscina] = useState({
     concepto: 'Mantenimiento integral en piscina comunitaria',
     horas: '',
     dias: '',
     precioSinIva: '',
     horarioPeriodos: [],
+    horarioPorPeriodos: [],
   });
   const [presupuestoCalculoPiscinaRest, setPresupuestoCalculoPiscinaRest] = useState([]);
-  // Mantenimiento invernal piscina (antes de OFERTA ECONOMICA): con lona / sin lona + precio
+  // Mantenimiento invernal piscina (antes de OFERTA ECONOMICA): precios editables con/sin lona; checkbox elige cuál aplica a la oferta
   const [mantenimientoInvernalPiscina, setMantenimientoInvernalPiscina] = useState({
-    conLona: false,
-    precio: '1800',
+    conLona: true,
+    precioConLona: '1800',
+    precioSinLona: '1600',
   });
   // Recuperación de Agua (precio editable; se ofrece si el cliente renuncia al mantenimiento invernal)
   const [recuperacionAguaPrecio, setRecuperacionAguaPrecio] = useState('650');
-  // Horario piscina (una sola vez al final del presupuesto, orientativo) — no por variante
-  const [presupuestoHorarioPiscina, setPresupuestoHorarioPiscina] = useState([]);
 
   // Presupuestos guardados: listă, încărcare, editare, vista previa
   const [presupuestosGuardadosList, setPresupuestosGuardadosList] = useState([]);
@@ -447,6 +549,40 @@ export default function PresupuestosInformesPage() {
     return { turn1Desde: t1.desde, turn1Hasta: t1.hasta, turn2Desde: t2.desde, turn2Hasta: t2.hasta };
   };
 
+  const hydrateHorarioPorPeriodosFromSaved = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    return rows.map((h) => {
+      const turns = parseHorarioString(h.horario);
+      const dt = h.diasTipo;
+      return {
+        fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
+        fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
+        diasTipo: DIAS_TIPOS_HORARIO_PISCINA.includes(dt) ? dt : 'LV',
+        diasSemana: normalizeDiasSemanaPayload(h.diasSemana),
+        horario: h.horario ?? '',
+        ...turns,
+      };
+    });
+  };
+
+  const serializeHorarioPorPeriodosForPayload = (periodos) => {
+    return (periodos || []).map((p) => {
+      const diasTipo = DIAS_TIPOS_HORARIO_PISCINA.includes(p.diasTipo) ? p.diasTipo : 'LV';
+      const row = {
+        fechaDesde: (p.fechaDesde || '').trim()
+          ? (p.fechaDesde.includes('-') ? dateToDDMM(p.fechaDesde) : String(p.fechaDesde).trim())
+          : '',
+        fechaHasta: (p.fechaHasta || '').trim()
+          ? (p.fechaHasta.includes('-') ? dateToDDMM(p.fechaHasta) : String(p.fechaHasta).trim())
+          : '',
+        diasTipo,
+        horario: buildHorarioString(p.turn1Desde, p.turn1Hasta, p.turn2Desde, p.turn2Hasta) || (p.horario || '').trim(),
+      };
+      if (diasTipo === 'PERS') return { ...row, diasSemana: normalizeDiasSemanaPayload(p.diasSemana) };
+      return row;
+    }).filter((h) => h.fechaDesde || h.fechaHasta || h.horario);
+  };
+
   const normalizarPiscinaParaPayload = (p) => {
     if (!p) return p;
     const precioNum = parsePrecioEurosSpanish(p.precioSinIva);
@@ -472,6 +608,7 @@ export default function PresupuestosInformesPage() {
       horas: horas,
       dias: dias,
       horarioPeriodos,
+      horarioPorPeriodos: serializeHorarioPorPeriodosForPayload(p.horarioPorPeriodos),
     };
   };
   const descripcionPiscina = (calc) => {
@@ -490,6 +627,29 @@ export default function PresupuestosInformesPage() {
     const conDecimal = sinMiles.replace(',', '.');
     const n = parseFloat(conDecimal);
     return Number.isNaN(n) ? 0 : n;
+  };
+
+  /** Precio que entra en oferta según checkbox (compat: campo antiguo `precio`). */
+  const precioMantenimientoInvernalActivo = (mi) => {
+    const legacy = mi.precio;
+    const con = parsePrecioEurosSpanish(mi.precioConLona ?? legacy);
+    const sin = parsePrecioEurosSpanish(mi.precioSinLona ?? legacy);
+    return mi.conLona ? con : sin;
+  };
+
+  const normalizarMantenimientoInvernalDesdePayload = (mi) => {
+    if (!mi || typeof mi !== 'object') {
+      return { conLona: true, precioConLona: '1800', precioSinLona: '1600' };
+    }
+    const numToStr = (v) => {
+      if (v == null || v === '') return '';
+      if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
+      return String(v).trim();
+    };
+    const legacy = numToStr(mi.precio);
+    const con = numToStr(mi.precioConLona) || legacy || '1800';
+    const sin = numToStr(mi.precioSinLona) || legacy || '1600';
+    return { conLona: !!mi.conLona, precioConLona: con, precioSinLona: sin };
   };
 
   const buildOfertaEconomica = () => {
@@ -549,17 +709,32 @@ export default function PresupuestosInformesPage() {
       }
       return { descripcion, mensualidadSinIva, mensualidadConIva, anualidadSinIva, anualidadConIva };
     }).concat(
-      selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio) > 0
-        ? [{
-            descripcion: mantenimientoInvernalPiscina.conLona
-              ? 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)'
-              : 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)',
-            mensualidadSinIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio),
-            mensualidadConIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio) * 1.21,
-            anualidadSinIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio),
-            anualidadConIva: parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio) * 1.21,
-          }]
-        : []
+      (() => {
+        if (!selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina')) return [];
+        const mi = mantenimientoInvernalPiscina;
+        const precioCon = parsePrecioEurosSpanish(mi.precioConLona ?? mi.precio);
+        const precioSin = parsePrecioEurosSpanish(mi.precioSinLona ?? mi.precio);
+        const filas = [];
+        if (precioCon > 0) {
+          filas.push({
+            descripcion: 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)',
+            mensualidadSinIva: precioCon,
+            mensualidadConIva: precioCon * 1.21,
+            anualidadSinIva: precioCon,
+            anualidadConIva: precioCon * 1.21,
+          });
+        }
+        if (precioSin > 0) {
+          filas.push({
+            descripcion: 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)',
+            mensualidadSinIva: precioSin,
+            mensualidadConIva: precioSin * 1.21,
+            anualidadSinIva: precioSin,
+            anualidadConIva: precioSin * 1.21,
+          });
+        }
+        return filas;
+      })(),
     );
   };
 
@@ -575,14 +750,13 @@ export default function PresupuestosInformesPage() {
     presupuestoCalculoCubosRest: presupuestoCalculoCubosRest.map(normalizarCubosParaPayload),
     presupuestoCalculoPiscina: normalizarPiscinaParaPayload(presupuestoCalculoPiscina),
     presupuestoCalculoPiscinaRest: presupuestoCalculoPiscinaRest.map(normalizarPiscinaParaPayload),
-    presupuestoHorarioPiscina: (presupuestoHorarioPiscina || []).map((p) => ({
-      fechaDesde: (p.fechaDesde || '').trim() ? (p.fechaDesde.includes('-') ? dateToDDMM(p.fechaDesde) : p.fechaDesde.trim()) : '',
-      fechaHasta: (p.fechaHasta || '').trim() ? (p.fechaHasta.includes('-') ? dateToDDMM(p.fechaHasta) : p.fechaHasta.trim()) : '',
-      horario: buildHorarioString(p.turn1Desde, p.turn1Hasta, p.turn2Desde, p.turn2Hasta) || (p.horario || '').trim(),
-    })).filter((h) => h.fechaDesde || h.fechaHasta || h.horario),
+    /** @deprecated compat PDF/backend: se rellena desde 1ª variante si aún hay clientes antiguos */
+    presupuestoHorarioPiscina: serializeHorarioPorPeriodosForPayload(presupuestoCalculoPiscina?.horarioPorPeriodos),
     mantenimientoInvernalPiscina: {
       conLona: mantenimientoInvernalPiscina.conLona,
-      precio: String(mantenimientoInvernalPiscina.precio ?? '').trim() || '0',
+      precioConLona: String(mantenimientoInvernalPiscina.precioConLona ?? '').trim() || '0',
+      precioSinLona: String(mantenimientoInvernalPiscina.precioSinLona ?? '').trim() || '0',
+      precio: String(precioMantenimientoInvernalActivo(mantenimientoInvernalPiscina) || '').trim() || '0',
     },
     recuperacionAguaPrecio: String(recuperacionAguaPrecio ?? '').trim() || '650',
     presupuestoClienteId,
@@ -738,9 +912,12 @@ export default function PresupuestosInformesPage() {
           setPresupuestoCalculoCubosRest([]);
         }
       }
+      const legacyHorarioPiscinaSaved = Array.isArray(p.presupuestoHorarioPiscina) ? p.presupuestoHorarioPiscina : [];
       if (p.presupuestoCalculoPiscina) {
         const pi = p.presupuestoCalculoPiscina;
         const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
+        const hpPi = hydrateHorarioPorPeriodosFromSaved(pi.horarioPorPeriodos);
+        const horarioPorPeriodosMerged = hpPi.length > 0 ? hpPi : hydrateHorarioPorPeriodosFromSaved(legacyHorarioPiscinaSaved);
         setPresupuestoCalculoPiscina({
           concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
           horas: pi.horas ?? '',
@@ -755,6 +932,7 @@ export default function PresupuestosInformesPage() {
             ...turns,
           };
         }) : [],
+          horarioPorPeriodos: horarioPorPeriodosMerged,
         });
       }
       if (Array.isArray(p.presupuestoCalculoPiscinaRest)) {
@@ -774,6 +952,7 @@ export default function PresupuestosInformesPage() {
             ...turns,
           };
         }) : [],
+            horarioPorPeriodos: hydrateHorarioPorPeriodosFromSaved(pi.horarioPorPeriodos),
           };
         }));
       } else {
@@ -788,28 +967,14 @@ export default function PresupuestosInformesPage() {
             dias: pi.dias ?? '',
             precioSinIva: precioStr,
             horarioPeriodos: [],
+            horarioPorPeriodos: [],
           })));
         } else {
           setPresupuestoCalculoPiscinaRest([]);
         }
       }
-      if (Array.isArray(p.presupuestoHorarioPiscina)) {
-        setPresupuestoHorarioPiscina(p.presupuestoHorarioPiscina.map((h) => {
-          const turns = parseHorarioString(h.horario);
-          return {
-            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
-            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
-            horario: h.horario ?? '',
-            ...turns,
-          };
-        }));
-      } else {
-        setPresupuestoHorarioPiscina([]);
-      }
       if (p.mantenimientoInvernalPiscina && typeof p.mantenimientoInvernalPiscina === 'object') {
-        const mi = p.mantenimientoInvernalPiscina;
-        const precioStr = typeof mi.precio === 'number' ? (Number.isInteger(mi.precio) ? String(mi.precio) : mi.precio.toFixed(2)) : String(mi.precio ?? '1800').trim();
-        setMantenimientoInvernalPiscina({ conLona: !!mi.conLona, precio: precioStr || '1800' });
+        setMantenimientoInvernalPiscina(normalizarMantenimientoInvernalDesdePayload(p.mantenimientoInvernalPiscina));
       }
       if (p.recuperacionAguaPrecio !== undefined) {
         const v = typeof p.recuperacionAguaPrecio === 'number' ? String(p.recuperacionAguaPrecio) : String(p.recuperacionAguaPrecio ?? '650').trim();
@@ -1086,9 +1251,12 @@ export default function PresupuestosInformesPage() {
           setPresupuestoCalculoCubosRest([]);
         }
       }
+      const legacyHorarioPiscinaSaved = Array.isArray(p.presupuestoHorarioPiscina) ? p.presupuestoHorarioPiscina : [];
       if (p.presupuestoCalculoPiscina) {
         const pi = p.presupuestoCalculoPiscina;
         const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
+        const hpPi = hydrateHorarioPorPeriodosFromSaved(pi.horarioPorPeriodos);
+        const horarioPorPeriodosMerged = hpPi.length > 0 ? hpPi : hydrateHorarioPorPeriodosFromSaved(legacyHorarioPiscinaSaved);
         setPresupuestoCalculoPiscina({
           concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
           horas: pi.horas ?? '',
@@ -1103,6 +1271,7 @@ export default function PresupuestosInformesPage() {
             ...turns,
           };
         }) : [],
+          horarioPorPeriodos: horarioPorPeriodosMerged,
         });
       }
       if (Array.isArray(p.presupuestoCalculoPiscinaRest)) {
@@ -1122,6 +1291,7 @@ export default function PresupuestosInformesPage() {
             ...turns,
           };
         }) : [],
+            horarioPorPeriodos: hydrateHorarioPorPeriodosFromSaved(pi.horarioPorPeriodos),
           };
         }));
       } else {
@@ -1136,28 +1306,14 @@ export default function PresupuestosInformesPage() {
             dias: pi.dias ?? '',
             precioSinIva: precioStr,
             horarioPeriodos: [],
+            horarioPorPeriodos: [],
           })));
         } else {
           setPresupuestoCalculoPiscinaRest([]);
         }
       }
-      if (Array.isArray(p.presupuestoHorarioPiscina)) {
-        setPresupuestoHorarioPiscina(p.presupuestoHorarioPiscina.map((h) => {
-          const turns = parseHorarioString(h.horario);
-          return {
-            fechaDesde: toDateInputValue(h.fechaDesde ?? ''),
-            fechaHasta: toDateInputValue(h.fechaHasta ?? ''),
-            horario: h.horario ?? '',
-            ...turns,
-          };
-        }));
-      } else {
-        setPresupuestoHorarioPiscina([]);
-      }
       if (p.mantenimientoInvernalPiscina && typeof p.mantenimientoInvernalPiscina === 'object') {
-        const mi = p.mantenimientoInvernalPiscina;
-        const precioStr = typeof mi.precio === 'number' ? (Number.isInteger(mi.precio) ? String(mi.precio) : mi.precio.toFixed(2)) : String(mi.precio ?? '1800').trim();
-        setMantenimientoInvernalPiscina({ conLona: !!mi.conLona, precio: precioStr || '1800' });
+        setMantenimientoInvernalPiscina(normalizarMantenimientoInvernalDesdePayload(p.mantenimientoInvernalPiscina));
       }
       if (p.recuperacionAguaPrecio !== undefined) {
         const v = typeof p.recuperacionAguaPrecio === 'number' ? String(p.recuperacionAguaPrecio) : String(p.recuperacionAguaPrecio ?? '650').trim();
@@ -3261,7 +3417,17 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                   const last = presupuestoCalculoPiscinaRest.length > 0
                                     ? presupuestoCalculoPiscinaRest[presupuestoCalculoPiscinaRest.length - 1]
                                     : presupuestoCalculoPiscina;
-                                  setPresupuestoCalculoPiscinaRest(prev => [...prev, { ...last, horarioPeriodos: Array.isArray(last.horarioPeriodos) ? [...last.horarioPeriodos] : [] }]);
+                                  const hp = Array.isArray(last.horarioPorPeriodos)
+                                    ? last.horarioPorPeriodos.map((row) => ({ ...row, diasSemana: Array.isArray(row.diasSemana) ? [...row.diasSemana] : row.diasSemana }))
+                                    : [];
+                                  setPresupuestoCalculoPiscinaRest((prev) => [
+                                    ...prev,
+                                    {
+                                      ...last,
+                                      horarioPeriodos: Array.isArray(last.horarioPeriodos) ? last.horarioPeriodos.map((x) => ({ ...x })) : [],
+                                      horarioPorPeriodos: hp,
+                                    },
+                                  ]);
                                 }
                               }}
                               title="Añadir otra variante del mismo servicio (formulario independiente)"
@@ -4825,21 +4991,27 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                               </span>
                             </div>
                           </div>
-                        </div>
-                        );
-                      })}
-
-                      {/* Horario por periodos (opcional) — una sola vez al final, orientativo; se refleja en el PDF 2.7 */}
                       <div className="mt-6 p-4 bg-sky-50/80 border border-sky-200 rounded-lg">
-                        <h4 className="text-sm font-semibold text-sky-800 mb-1">Horario por periodos (opcional)</h4>
+                        <h4 className="text-sm font-semibold text-sky-800 mb-1">
+                          Horario por periodos (opcional)
+                          {presupuestoCalculoPiscinaAll.length > 1 ? ` — variante ${variantIndex + 1}` : ''}
+                        </h4>
                         <p className="text-xs text-gray-600 mb-2">
-                          Añade periodos con fechas y dos turnos de horario. Es orientativo y se muestra una sola vez en el PDF 2.7 (sección Horario).
+                          Añade periodos con fechas, días (L-V / S-D / L-D o personalizado con casillas) y dos turnos de horario. Es orientativo y se muestra en el PDF 2.7 (sección Horario).
                         </p>
                         <div className="space-y-3">
                           {(() => {
-                            const horarioList = (presupuestoHorarioPiscina?.length) ? presupuestoHorarioPiscina : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                            const horarioList = (calculo.horarioPorPeriodos?.length) ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
                             return horarioList.map((periodo, idx) => {
-                              const dias = diasEntreFechas(periodo.fechaDesde, periodo.fechaHasta);
+                              const diasCalendario = diasEntreFechas(periodo.fechaDesde, periodo.fechaHasta);
+                              const diasParaHorasTotales =
+                                periodo.diasTipo === 'PERS'
+                                  ? countDiasEnRangoPorSemana(periodo.fechaDesde, periodo.fechaHasta, periodo.diasSemana)
+                                  : countDiasEnRangoPorDiasTipo(
+                                      periodo.fechaDesde,
+                                      periodo.fechaHasta,
+                                      periodo.diasTipo || 'LV',
+                                    );
                               const h1 = horasEntreHoras(periodo.turn1Desde, periodo.turn1Hasta);
                               const h2 = horasEntreHoras(periodo.turn2Desde, periodo.turn2Hasta);
                               const horasTotal = (h1 != null ? h1 : 0) + (h2 != null ? h2 : 0);
@@ -4852,12 +5024,12 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                     className="min-w-[130px] border border-gray-300 rounded px-2 py-1.5 text-sm"
                                     value={periodo.fechaDesde ?? ''}
                                     onChange={(e) => {
-                                      const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
-                                      const empty = { fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' };
+                                      const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
+                                      const empty = { ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY };
                                       if (list[idx]) list[idx] = { ...list[idx], fechaDesde: e.target.value };
                                       else list[idx] = { ...empty, fechaDesde: e.target.value };
                                       const hasAny = list.some((x) => x.fechaDesde || x.fechaHasta || x.turn1Desde || x.turn1Hasta || x.turn2Desde || x.turn2Hasta);
-                                      setPresupuestoHorarioPiscina(hasAny ? list : [{ ...empty, fechaDesde: e.target.value }]);
+                                      setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: hasAny ? list : [{ ...empty, fechaDesde: e.target.value }] }));
                                     }}
                                   />
                                   <span className="text-gray-400">→</span>
@@ -4866,21 +5038,38 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                     className="min-w-[130px] border border-gray-300 rounded px-2 py-1.5 text-sm"
                                     value={periodo.fechaHasta ?? ''}
                                     onChange={(e) => {
-                                      const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
-                                      const empty = { fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' };
+                                      const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
+                                      const empty = { ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY };
                                       if (list[idx]) list[idx] = { ...list[idx], fechaHasta: e.target.value };
                                       else list[idx] = { ...empty, fechaHasta: e.target.value };
                                       const hasAny = list.some((x) => x.fechaDesde || x.fechaHasta || x.turn1Desde || x.turn1Hasta || x.turn2Desde || x.turn2Hasta);
-                                      setPresupuestoHorarioPiscina(hasAny ? list : [{ ...empty, fechaHasta: e.target.value }]);
+                                      setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: hasAny ? list : [{ ...empty, fechaHasta: e.target.value }] }));
                                     }}
                                   />
-                                  {dias != null && (
-                                    <span className="text-sm font-medium text-sky-700 whitespace-nowrap">({dias} días)</span>
+                                  {diasParaHorasTotales != null && (
+                                    <span className="text-sm font-medium text-sky-700 whitespace-nowrap">
+                                      ({diasParaHorasTotales} días
+                                      {periodo.diasTipo === 'LV'
+                                        ? ' L-V'
+                                        : periodo.diasTipo === 'SD'
+                                          ? ' S-D'
+                                          : periodo.diasTipo === 'LD'
+                                            ? ' L-D'
+                                            : ''}
+                                      )
+                                      {diasCalendario != null &&
+                                        diasCalendario !== diasParaHorasTotales &&
+                                        periodo.diasTipo !== 'LD' && (
+                                          <span className="text-gray-500 font-normal text-xs ml-1">
+                                            ({diasCalendario} días cal.)
+                                          </span>
+                                        )}
+                                    </span>
                                   )}
-                                  {(presupuestoHorarioPiscina?.length > 0) && (
+                                  {(calculo.horarioPorPeriodos?.length > 0) && (
                                     <button
                                       type="button"
-                                      onClick={() => setPresupuestoHorarioPiscina((prev) => (prev || []).filter((_, i) => i !== idx))}
+                                      onClick={() => setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: (prev.horarioPorPeriodos || []).filter((_, i) => i !== idx) }))}
                                       className="p-1.5 text-red-600 hover:bg-red-50 rounded ml-auto"
                                       title="Eliminar periodo"
                                     >
@@ -4888,6 +5077,57 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                     </button>
                                   )}
                                 </div>
+                                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-sky-100">
+                                  <label className="text-xs text-gray-600 w-full sm:w-auto">Días (horario aplicable)</label>
+                                  <select
+                                    className="border border-gray-300 rounded px-2 py-1.5 text-sm min-w-[240px] max-w-full"
+                                    value={periodo.diasTipo || 'LV'}
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
+                                      if (!list[idx]) list[idx] = { ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY };
+                                      const prevTipo = list[idx].diasTipo || 'LV';
+                                      let diasSemana = normalizeDiasSemanaPayload(list[idx].diasSemana);
+                                      if (v === 'PERS') {
+                                        diasSemana = prevTipo === 'PERS' ? diasSemana : diasPresetDesdeTipo(prevTipo);
+                                      }
+                                      list[idx] = { ...list[idx], diasTipo: v, diasSemana };
+                                      setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: list }));
+                                    }}
+                                  >
+                                    <option value="LV">Lunes a viernes (L-V)</option>
+                                    <option value="SD">Sábado a domingo (S-D)</option>
+                                    <option value="LD">Lunes a domingo (L-D)</option>
+                                    <option value="PERS">Personalizada</option>
+                                  </select>
+                                </div>
+                                {periodo.diasTipo === 'PERS' && (
+                                  <div className="w-full pt-2 border-t border-sky-100">
+                                    <p className="text-xs text-gray-600 mb-2">Días con este horario (marca los que apliquen):</p>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                      {PRESUPUESTO_HORARIO_DIAS_SEMANA_ROWS.map(({ key, label }) => {
+                                        const ds = normalizeDiasSemanaPayload(periodo.diasSemana);
+                                        return (
+                                          <label key={key} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!ds[key]}
+                                              onChange={(e) => {
+                                                const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
+                                                if (!list[idx]) list[idx] = { ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY };
+                                                const next = { ...normalizeDiasSemanaPayload(list[idx].diasSemana), [key]: e.target.checked };
+                                                list[idx] = { ...list[idx], diasSemana: next };
+                                                setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: list }));
+                                              }}
+                                              className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                            />
+                                            <span>{label}</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-sky-100">
                                   <div>
                                     <label className="text-xs text-gray-600 block mb-0.5">
@@ -4899,10 +5139,10 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                         className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
                                         value={periodo.turn1Desde ?? ''}
                                         onChange={(e) => {
-                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
                                           if (list[idx]) list[idx] = { ...list[idx], turn1Desde: e.target.value };
                                           else list[idx] = { ...list[idx] || {}, turn1Desde: e.target.value };
-                                          setPresupuestoHorarioPiscina(list);
+                                          setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: list }));
                                         }}
                                       />
                                       <span className="text-gray-400">-</span>
@@ -4911,10 +5151,10 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                         className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
                                         value={periodo.turn1Hasta ?? ''}
                                         onChange={(e) => {
-                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
                                           if (list[idx]) list[idx] = { ...list[idx], turn1Hasta: e.target.value };
                                           else list[idx] = { ...list[idx] || {}, turn1Hasta: e.target.value };
-                                          setPresupuestoHorarioPiscina(list);
+                                          setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: list }));
                                         }}
                                       />
                                     </div>
@@ -4929,10 +5169,10 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                         className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
                                         value={periodo.turn2Desde ?? ''}
                                         onChange={(e) => {
-                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
                                           if (list[idx]) list[idx] = { ...list[idx], turn2Desde: e.target.value };
                                           else list[idx] = { ...list[idx] || {}, turn2Desde: e.target.value };
-                                          setPresupuestoHorarioPiscina(list);
+                                          setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: list }));
                                         }}
                                       />
                                       <span className="text-gray-400">-</span>
@@ -4941,10 +5181,10 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                         className="flex-1 min-w-0 border border-gray-300 rounded px-2 py-1 text-sm"
                                         value={periodo.turn2Hasta ?? ''}
                                         onChange={(e) => {
-                                          const list = presupuestoHorarioPiscina?.length ? [...presupuestoHorarioPiscina] : [{ fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }];
+                                          const list = calculo.horarioPorPeriodos?.length ? [...calculo.horarioPorPeriodos] : [{ ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }];
                                           if (list[idx]) list[idx] = { ...list[idx], turn2Hasta: e.target.value };
                                           else list[idx] = { ...list[idx] || {}, turn2Hasta: e.target.value };
-                                          setPresupuestoHorarioPiscina(list);
+                                          setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: list }));
                                         }}
                                       />
                                     </div>
@@ -4953,8 +5193,8 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 {horasTotal > 0 && (
                                   <p className="text-xs text-gray-600 pt-0.5 border-t border-sky-100">
                                     Total por día: <span className="font-semibold text-sky-700">{horasTotal} h</span>
-                                    {dias != null && dias > 0 && (
-                                      <span className="ml-2">· En el periodo: <span className="font-semibold text-sky-700">{Math.round(horasTotal * dias * 10) / 10} h</span></span>
+                                    {diasParaHorasTotales != null && diasParaHorasTotales > 0 && (
+                                      <span className="ml-2">· En el periodo: <span className="font-semibold text-sky-700">{Math.round(horasTotal * diasParaHorasTotales * 10) / 10} h</span></span>
                                     )}
                                   </p>
                                 )}
@@ -4962,15 +5202,61 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                               );
                             });
                           } )() }
+                          {(() => {
+                            const list = calculo.horarioPorPeriodos?.length ? calculo.horarioPorPeriodos : [];
+                            let sumHorasPorDiaDias = 0;
+                            let sumDiasAplicables = 0;
+                            for (const periodo of list) {
+                              const diasParaHorasTotales =
+                                periodo.diasTipo === 'PERS'
+                                  ? countDiasEnRangoPorSemana(periodo.fechaDesde, periodo.fechaHasta, periodo.diasSemana)
+                                  : countDiasEnRangoPorDiasTipo(
+                                      periodo.fechaDesde,
+                                      periodo.fechaHasta,
+                                      periodo.diasTipo || 'LV',
+                                    );
+                              const h1 = horasEntreHoras(periodo.turn1Desde, periodo.turn1Hasta);
+                              const h2 = horasEntreHoras(periodo.turn2Desde, periodo.turn2Hasta);
+                              const horasTotal = (h1 != null ? h1 : 0) + (h2 != null ? h2 : 0);
+                              if (horasTotal > 0 && diasParaHorasTotales != null && diasParaHorasTotales > 0) {
+                                sumHorasPorDiaDias += horasTotal * diasParaHorasTotales;
+                                sumDiasAplicables += diasParaHorasTotales;
+                              }
+                            }
+                            if (sumDiasAplicables <= 0) return null;
+                            const media = sumHorasPorDiaDias / sumDiasAplicables;
+                            const mediaRounded = Math.round(media * 100) / 100;
+                            return (
+                              <div className="mt-1 p-3 bg-white border border-sky-300 rounded-lg shadow-sm">
+                                <p className="text-xs font-semibold text-sky-900 mb-0.5">
+                                  Media ponderada de horas diarias (entre periodos)
+                                </p>
+                                <p className="text-xs text-gray-600 mb-2">
+                                  Cada periodo pesa según los días en que aplica su horario (laborables para L-V, fines de semana para S-D, todos para L-D, o casillas en personalizado), no el total de días de calendario del rango.
+                                </p>
+                                <p className="text-lg font-bold text-sky-800 tabular-nums">
+                                  {mediaRounded.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                                  <span className="text-sm font-semibold text-sky-700">h/día</span>
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {sumDiasAplicables} días considerados en total ·{' '}
+                                  {Math.round(sumHorasPorDiaDias * 10) / 10} h acumuladas en esos días
+                                </p>
+                              </div>
+                            );
+                          })()}
                           <button
                             type="button"
-                            onClick={() => setPresupuestoHorarioPiscina([...(presupuestoHorarioPiscina || []), { fechaDesde: '', fechaHasta: '', turn1Desde: '', turn1Hasta: '', turn2Desde: '', turn2Hasta: '' }])}
+                            onClick={() => setPiscinaCalculoAt((prev) => ({ ...prev, horarioPorPeriodos: [...(prev.horarioPorPeriodos || []), { ...PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY }] }))}
                             className="text-xs text-sky-600 hover:text-sky-800 font-medium flex items-center gap-1"
                           >
                             <Plus className="w-3.5 h-3.5" /> Añadir otro periodo
                           </button>
                         </div>
                       </div>
+                        </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -4978,9 +5264,9 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                   {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && (
                     <div className="p-5 bg-white border border-gray-200 rounded-lg shadow-sm mt-4">
                       <p className="text-sm font-medium text-gray-800 mb-3">
-                        COSTE MANTENIMIENTO INVERNAL DE INSTALACIONES Y AGUA PISCINA SIN LONA: 1.800,00 EUROS (I.V.A. No Incluido)
+                        COSTE MANTENIMIENTO INVERNAL DE INSTALACIONES Y AGUA PISCINA (I.V.A. No Incluido). Precios editables; marca &quot;Con lona&quot; si la oferta aplica la tarifa con lona.
                       </p>
-                      <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 mb-3">
                         <label className="inline-flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -4988,22 +5274,53 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                             onChange={(e) => setMantenimientoInvernalPiscina((prev) => ({ ...prev, conLona: e.target.checked }))}
                             className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                           />
-                          <span className="text-sm text-gray-700">Con lona</span>
+                          <span className="text-sm font-medium text-gray-700">Oferta con lona (si está marcado, en la tabla entra el precio &quot;con lona&quot;)</span>
                         </label>
-                        <span className="text-sm text-gray-500">|</span>
-                        <label className="inline-flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-700">Precio (€ sin IVA):</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-sm font-medium text-gray-700">Precio con lona (€ sin IVA):</span>
                           <Input
                             type="text"
-                            value={mantenimientoInvernalPiscina.precio}
-                            onChange={(e) => setMantenimientoInvernalPiscina((prev) => ({ ...prev, precio: e.target.value }))}
+                            value={mantenimientoInvernalPiscina.precioConLona}
+                            onChange={(e) => setMantenimientoInvernalPiscina((prev) => ({ ...prev, precioConLona: e.target.value }))}
                             placeholder="1800"
-                            className="w-28"
+                            className="w-full max-w-[12rem]"
                           />
+                          <span className="text-xs text-gray-500">
+                            {parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precioConLona).toLocaleString('es-ES', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{' '}
+                            € + IVA
+                          </span>
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-sm font-medium text-gray-700">Precio sin lona (€ sin IVA):</span>
+                          <Input
+                            type="text"
+                            value={mantenimientoInvernalPiscina.precioSinLona}
+                            onChange={(e) => setMantenimientoInvernalPiscina((prev) => ({ ...prev, precioSinLona: e.target.value }))}
+                            placeholder="1600"
+                            className="w-full max-w-[12rem]"
+                          />
+                          <span className="text-xs text-gray-500">
+                            {parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precioSinLona).toLocaleString('es-ES', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{' '}
+                            € + IVA
+                          </span>
                         </label>
                       </div>
                       <p className="text-xs text-gray-500 mt-2">
-                        {mantenimientoInvernalPiscina.conLona ? 'Con lona' : 'Sin lona'} — precio introducido: {mantenimientoInvernalPiscina.precio || '0'} € + IVA
+                        En oferta económica se usa:{' '}
+                        <strong>{mantenimientoInvernalPiscina.conLona ? 'con lona' : 'sin lona'}</strong> —{' '}
+                        {precioMantenimientoInvernalActivo(mantenimientoInvernalPiscina).toLocaleString('es-ES', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{' '}
+                        € + IVA
                       </p>
                     </div>
                   )}
@@ -5118,28 +5435,42 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 </tr>
                               );
                             })}
-                            {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && (() => {
-                              const precioInvernal = parsePrecioEurosSpanish(mantenimientoInvernalPiscina.precio);
-                              if (precioInvernal <= 0) return null;
-                              const desc = mantenimientoInvernalPiscina.conLona
-                                ? 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)'
-                                : 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)';
-                              return (
-                                <tr key="mantenimiento-invernal" className="border-b border-gray-200">
-                                  <td className="border border-gray-300 px-3 py-2 text-gray-800">{desc}</td>
-                                  <td className="border border-gray-300 px-3 py-2">
-                                    <div>{precioInvernal.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
-                                    <div className="text-gray-600">{(precioInvernal * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
-                                  </td>
-                                  {!ofertaSoloPiscina && (
+                            {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') &&
+                              (() => {
+                                const mi = mantenimientoInvernalPiscina;
+                                const pCon = parsePrecioEurosSpanish(mi.precioConLona ?? mi.precio);
+                                const pSin = parsePrecioEurosSpanish(mi.precioSinLona ?? mi.precio);
+                                const filasInv = [];
+                                if (pCon > 0) {
+                                  filasInv.push({
+                                    key: 'inv-con',
+                                    desc: 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)',
+                                    p: pCon,
+                                  });
+                                }
+                                if (pSin > 0) {
+                                  filasInv.push({
+                                    key: 'inv-sin',
+                                    desc: 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)',
+                                    p: pSin,
+                                  });
+                                }
+                                return filasInv.map((row) => (
+                                  <tr key={row.key} className="border-b border-gray-200">
+                                    <td className="border border-gray-300 px-3 py-2 text-gray-800">{row.desc}</td>
                                     <td className="border border-gray-300 px-3 py-2">
-                                      <div>{precioInvernal.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
-                                      <div className="text-gray-600">{(precioInvernal * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
+                                      <div>{row.p.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
+                                      <div className="text-gray-600">{(row.p * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
                                     </td>
-                                  )}
-                                </tr>
-                              );
-                            })()}
+                                    {!ofertaSoloPiscina && (
+                                      <td className="border border-gray-300 px-3 py-2">
+                                        <div>{row.p.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
+                                        <div className="text-gray-600">{(row.p * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
+                                      </td>
+                                    )}
+                                  </tr>
+                                ));
+                              })()}
                           </tbody>
                         </table>
                       </div>
@@ -5671,8 +6002,27 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         if (prevAux > 1) setPresupuestoCalculoAuxiliaresRest((prev) => [...prev, { ...presupuestoCalculo }]);
                       } else if (tipo === 'piscina') {
                         const prevPiscina = newSelected.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length;
-                        if (prevPiscina === 1) setPresupuestoCalculoPiscina((p) => ({ concepto: p?.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: p?.horas ?? '', dias: p?.dias ?? '', precioSinIva: p?.precioSinIva ?? '' }));
-                        else setPresupuestoCalculoPiscinaRest((prev) => [...prev, { concepto: 'Mantenimiento integral en piscina comunitaria', horas: '', dias: '', precioSinIva: '', horarioPeriodos: [] }]);
+                        if (prevPiscina === 1) {
+                          setPresupuestoCalculoPiscina((p) => ({
+                            ...p,
+                            concepto: p?.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+                            horas: p?.horas ?? '',
+                            dias: p?.dias ?? '',
+                            precioSinIva: p?.precioSinIva ?? '',
+                          }));
+                        } else {
+                          setPresupuestoCalculoPiscinaRest((prev) => [
+                            ...prev,
+                            {
+                              concepto: 'Mantenimiento integral en piscina comunitaria',
+                              horas: '',
+                              dias: '',
+                              precioSinIva: '',
+                              horarioPeriodos: [],
+                              horarioPorPeriodos: [],
+                            },
+                          ]);
+                        }
                       }
                     }
                   }
@@ -5683,7 +6033,13 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                   setTipoServicioPresupuesto(derivarTipoDesdeServicio(selectedFromModal[0].nombre));
                   setPresupuestoCalculo((prev) => ({ ...prev, nombre: selectedFromModal.map((s) => servicioNombreTexto(s.nombre)).join(', ') }));
                   if (derivarTipoDesdeServicio(selectedFromModal[0].nombre) === 'piscina') {
-                    setPresupuestoCalculoPiscina((p) => ({ concepto: p?.concepto ?? 'Mantenimiento integral en piscina comunitaria', horas: p?.horas ?? '', dias: p?.dias ?? '', precioSinIva: p?.precioSinIva ?? '' }));
+                    setPresupuestoCalculoPiscina((p) => ({
+                      ...p,
+                      concepto: p?.concepto ?? 'Mantenimiento integral en piscina comunitaria',
+                      horas: p?.horas ?? '',
+                      dias: p?.dias ?? '',
+                      precioSinIva: p?.precioSinIva ?? '',
+                    }));
                   }
                 }
                 setShowModalSeleccionServicioPresupuesto(false);

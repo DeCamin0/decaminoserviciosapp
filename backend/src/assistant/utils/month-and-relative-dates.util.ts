@@ -79,8 +79,7 @@ export function resolveSpainMonthYearFromEntities(entidades?: {
   let y = spain.year;
   let mo = spain.month;
   const explicitYear =
-    Boolean(entidades?.year) &&
-    /^\d{4}$/.test(String(entidades?.year).trim());
+    Boolean(entidades?.year) && /^\d{4}$/.test(String(entidades?.year).trim());
   if (explicitYear) {
     y = parseInt(String(entidades?.year).trim(), 10);
   }

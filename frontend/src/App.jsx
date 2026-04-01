@@ -481,16 +481,31 @@ function AppRoutes() {
         }
       />
 
-      <Route
-        path="/admin/tenants"
-        element={
-          <ProtectedRoute>
-            <ResponsiveLayout>
-              <LazySuperAdminTenantsPage />
-            </ResponsiveLayout>
-          </ProtectedRoute>
-        }
-      />
+      {/* Super-admin control plane: solo build DeCamino (no HERA). Separado del panel /admin. */}
+      {!config.IS_HERA && (
+        <>
+          <Route
+            path="/superadmin/tenants"
+            element={
+              <ProtectedRoute>
+                <ResponsiveLayout>
+                  <LazySuperAdminTenantsPage />
+                </ResponsiveLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/tenants"
+            element={<Navigate to="/superadmin/tenants" replace />}
+          />
+        </>
+      )}
+      {config.IS_HERA && (
+        <Route
+          path="/admin/tenants"
+          element={<Navigate to="/admin" replace />}
+        />
+      )}
 
       {/* Ruta para documentos por empleado */}
       <Route

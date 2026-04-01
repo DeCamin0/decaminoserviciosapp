@@ -77,18 +77,32 @@ export class PedidosController {
   }
 
   /**
+   * GET /api/pedidos/:pedidoUid/albaranes
+   * Lista metadatelor albaranes (fără fișiere).
+   */
+  @Get(':pedidoUid/albaranes')
+  async listAlbaranes(@Param('pedidoUid') pedidoUid: string) {
+    const decodedUid = decodeURIComponent(pedidoUid);
+    return this.pedidosService.listAlbaranes(decodedUid);
+  }
+
+  /**
    * GET /api/pedidos/:pedidoUid/albaran
-   * Descarcă sau vizualizează albarán-ul existent. ?preview=1 pentru inline (ver), altfel attachment.
+   * Descarcă sau vizualizează un albarán. ?id= pentru un document anume; fără id = primul (id asc).
+   * ?preview=1 pentru inline (ver), altfel attachment.
    */
   @Get(':pedidoUid/albaran')
   async getAlbaran(
     @Param('pedidoUid') pedidoUid: string,
     @Query('preview') preview: string | undefined,
+    @Query('id') albaranIdParam: string | undefined,
     @Res() res: Response,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    const parsed = albaranIdParam ? parseInt(albaranIdParam, 10) : NaN;
+    const albaranId = !Number.isNaN(parsed) && parsed > 0 ? parsed : undefined;
     const { archivo, nombre_archivo, tipo_mime } =
-      await this.pedidosService.getAlbaran(decodedUid);
+      await this.pedidosService.getAlbaran(decodedUid, albaranId);
     const isPreview = preview === '1' || preview === 'true';
     const safeName = nombre_archivo.replace(/[^\w.-]/g, '_');
     res.setHeader('Content-Type', tipo_mime);

@@ -86,6 +86,23 @@ export class MeService {
       grupo === 'Developer' ||
       grupo === 'Admin';
 
+    const emailNorm = String(
+      currentUser?.email || user.CORREO_ELECTRONICO || '',
+    )
+      .trim()
+      .toLowerCase();
+    const rawSa = process.env.SUPER_ADMIN_EMAILS || '';
+    const allowSa = rawSa
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    /** Same rule as SuperAdminGuard — UI for /superadmin/tenants (DeCamino build only). */
+    const isSuperAdminControlPlane =
+      grupo === 'Developer' ||
+      (allowSa.length > 0 &&
+        emailNorm.length > 0 &&
+        allowSa.includes(emailNorm));
+
     return {
       success: true,
       user: {
@@ -101,6 +118,7 @@ export class MeService {
         isManager,
         role,
         GRUPO: grupo,
+        isSuperAdminControlPlane,
       },
       permissions,
       avatar,

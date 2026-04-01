@@ -101,7 +101,7 @@
       var informeId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:3000'
-        : (window.location.origin || 'http://localhost:3002');
+        : (window.location.origin || 'https://api.herafs.com');
 
       if (!informeId) {
         document.getElementById('id-info').textContent = 'No se ha indicado informe (falta ?id= en la URL).';

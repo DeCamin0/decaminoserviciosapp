@@ -124,16 +124,14 @@ export default function CostePersonalTab() {
     loadData();
   }, [loadData]);
 
-  // Încărcăm lista de angajați când se deschide preview Excel
+  // Încărcăm lista de angajați când se deschide preview Excel sau PDF
   useEffect(() => {
-    if (showExcelPreviewModal) {
-      console.log('📋 Modal opened, empleadosList length:', empleadosList.length);
+    if (showExcelPreviewModal || showPdfsPreviewModal) {
       if (empleadosList.length === 0) {
-        console.log('📋 Loading empleados list...');
         loadEmpleadosList();
       }
     }
-  }, [showExcelPreviewModal, empleadosList.length, loadEmpleadosList]);
+  }, [showExcelPreviewModal, showPdfsPreviewModal, empleadosList.length, loadEmpleadosList]);
 
   const handleSelectEmpleado = (sheetIdx, rowIdx, empleado) => {
     const newExcelData = { ...excelPreviewData };
@@ -147,6 +145,23 @@ export default function CostePersonalTab() {
     newExcelData.sheets[sheetIdx].data[rowIdx].confianza = 100; // 100% pentru selecție manuală
     
     setExcelPreviewData(newExcelData);
+    setEditingCell(null);
+    setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
+  };
+
+  const handleSelectEmpleadoPDF = (rowIdx, empleado) => {
+    if (!pdfsPreviewData?.preview) return;
+    const nombreCompleto = empleado['NOMBRE / APELLIDOS'] || '';
+    const codigo = empleado.CODIGO || '';
+    const updatedPreview = [...pdfsPreviewData.preview];
+    updatedPreview[rowIdx] = {
+      ...updatedPreview[rowIdx],
+      codigo,
+      nombre_bd: nombreCompleto,
+      empleado_encontrado: true,
+      confianza: 100,
+    };
+    setPdfsPreviewData({ ...pdfsPreviewData, preview: updatedPreview });
     setEditingCell(null);
     setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
   };
@@ -525,7 +540,9 @@ export default function CostePersonalTab() {
       setSuccess(true);
       setShowPdfsPreviewModal(false);
       setPdfsPreviewData(null);
-      
+      setEditingCell(null);
+      setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
+
       // Recărcăm datele
       await loadData();
     } catch (err) {
@@ -1731,6 +1748,8 @@ export default function CostePersonalTab() {
             if (e.target === e.currentTarget) {
               setShowPdfsPreviewModal(false);
               setPdfsPreviewData(null);
+              setEditingCell(null);
+              setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
             }
           }}
         >
@@ -1755,6 +1774,8 @@ export default function CostePersonalTab() {
                   onClick={() => {
                     setShowPdfsPreviewModal(false);
                     setPdfsPreviewData(null);
+                    setEditingCell(null);
+                    setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
                   }}
                   className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
                 >
@@ -1830,32 +1851,195 @@ export default function CostePersonalTab() {
                             )}
                           </td>
                           <td className="px-3 py-2 font-medium text-gray-900">{row.nombre}</td>
-                          {/* Nombre BD - editabil */}
-                          <td 
-                            className="px-3 py-2 cursor-pointer hover:bg-indigo-50"
-                            onClick={() => setEditingCell(`pdf-nombre_bd-${idx}`)}
+                          {/* Nombre BD - combobox (misma lógica que verificación Excel) */}
+                          <td
+                            className="px-3 py-2 text-left text-gray-600 relative overflow-visible"
+                            style={{ position: 'relative' }}
                           >
-                            {editingCell === `pdf-nombre_bd-${idx}` ? (
-                              <input
-                                type="text"
-                                defaultValue={row.nombre_bd || ''}
-                                onBlur={(e) => handlePDFCellEdit(idx, 'nombre_bd', e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handlePDFCellEdit(idx, 'nombre_bd', e.target.value);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingCell(null);
-                                  }
-                                }}
-                                autoFocus
-                                className="w-full px-2 py-1 border border-indigo-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                              />
+                            {editingCell === `preview-pdf-${idx}-nombre_bd` ? (
+                              <div className="relative w-full combobox-container">
+                                <input
+                                  type="text"
+                                  value={comboboxState.rowKey === `preview-pdf-${idx}` ? comboboxState.searchTerm : (row.nombre_bd || '')}
+                                  onChange={(e) => {
+                                    setComboboxState({
+                                      show: true,
+                                      searchTerm: e.target.value,
+                                      selectedIndex: -1,
+                                      rowKey: `preview-pdf-${idx}`,
+                                    });
+                                  }}
+                                  onFocus={() => {
+                                    setComboboxState({
+                                      show: true,
+                                      searchTerm: row.nombre_bd || '',
+                                      selectedIndex: -1,
+                                      rowKey: `preview-pdf-${idx}`,
+                                    });
+                                  }}
+                                  onKeyDown={(e) => {
+                                    const filteredEmpleados = empleadosList.filter((emp) => {
+                                      const nombre = (emp['NOMBRE / APELLIDOS'] || emp.nombre || '').toUpperCase();
+                                      const search = comboboxState.searchTerm.toUpperCase();
+                                      return nombre.includes(search);
+                                    });
+
+                                    if (e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                      setComboboxState((prev) => ({
+                                        ...prev,
+                                        selectedIndex:
+                                          prev.selectedIndex < filteredEmpleados.length - 1
+                                            ? prev.selectedIndex + 1
+                                            : prev.selectedIndex,
+                                      }));
+                                    } else if (e.key === 'ArrowUp') {
+                                      e.preventDefault();
+                                      setComboboxState((prev) => ({
+                                        ...prev,
+                                        selectedIndex: prev.selectedIndex > 0 ? prev.selectedIndex - 1 : -1,
+                                      }));
+                                    } else if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      if (
+                                        comboboxState.selectedIndex >= 0 &&
+                                        comboboxState.selectedIndex < filteredEmpleados.length
+                                      ) {
+                                        handleSelectEmpleadoPDF(idx, filteredEmpleados[comboboxState.selectedIndex]);
+                                      } else if (filteredEmpleados.length === 1) {
+                                        handleSelectEmpleadoPDF(idx, filteredEmpleados[0]);
+                                      }
+                                    } else if (e.key === 'Escape') {
+                                      setEditingCell(null);
+                                      setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    setTimeout(() => {
+                                      if (!e.currentTarget.contains(document.activeElement)) {
+                                        setEditingCell(null);
+                                        setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
+                                      }
+                                    }, 200);
+                                  }}
+                                  autoFocus
+                                  className="w-full text-left border-2 border-indigo-500 rounded px-2 py-1"
+                                  placeholder="Buscar empleado..."
+                                />
+                                {comboboxState.show && comboboxState.rowKey === `preview-pdf-${idx}` && (
+                                  <div className="absolute z-[9999] w-full min-w-[220px] mt-1 bg-white border border-gray-300 rounded-lg shadow-lg flex flex-col">
+                                    <div className="max-h-60 overflow-y-auto">
+                                      {loadingEmpleados ? (
+                                        <div className="p-3 text-center text-gray-500 text-sm">Cargando empleados...</div>
+                                      ) : (() => {
+                                        const filtered = empleadosList.filter((emp) => {
+                                          const nombre = (emp['NOMBRE / APELLIDOS'] || emp.nombre || '').toUpperCase();
+                                          const search = comboboxState.searchTerm.toUpperCase();
+                                          return nombre.includes(search);
+                                        });
+
+                                        if (filtered.length === 0) {
+                                          return (
+                                            <div className="p-3 text-center text-gray-500 text-sm">
+                                              {comboboxState.searchTerm ? 'No se encontraron empleados' : 'Escribe para buscar...'}
+                                            </div>
+                                          );
+                                        }
+
+                                        return (
+                                          <>
+                                            {filtered.slice(0, 50).map((emp, empIdx) => {
+                                              const nombre = emp['NOMBRE / APELLIDOS'] || emp.nombre || '';
+                                              const codigo = emp.CODIGO || emp.codigo || '';
+                                              return (
+                                                <div
+                                                  key={codigo || `emp-${empIdx}`}
+                                                  onMouseDown={(ev) => ev.preventDefault()}
+                                                  onClick={() => handleSelectEmpleadoPDF(idx, emp)}
+                                                  className={`p-2 cursor-pointer hover:bg-indigo-50 ${
+                                                    comboboxState.selectedIndex === empIdx ? 'bg-indigo-100 border-l-2 border-indigo-500' : ''
+                                                  }`}
+                                                >
+                                                  <div className="font-medium text-sm text-gray-900">{nombre}</div>
+                                                  <div className="text-xs text-gray-500">Código: {codigo}</div>
+                                                </div>
+                                              );
+                                            })}
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+                                    <div className="border-t border-gray-200 p-2 flex gap-2 justify-end bg-gray-50 flex-shrink-0">
+                                      <button
+                                        type="button"
+                                        onMouseDown={(ev) => ev.preventDefault()}
+                                        onClick={(ev) => {
+                                          ev.stopPropagation();
+                                          setEditingCell(null);
+                                          setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
+                                        }}
+                                        className="px-3 py-1.5 text-sm font-medium bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded"
+                                      >
+                                        <span className="text-red-500">✕</span> Cancelar
+                                      </button>
+                                      {(() => {
+                                        const filtered = empleadosList.filter((emp) => {
+                                          const nombre = (emp['NOMBRE / APELLIDOS'] || emp.nombre || '').toUpperCase();
+                                          const search = comboboxState.searchTerm.toUpperCase();
+                                          return nombre.includes(search);
+                                        });
+                                        const hasSelection =
+                                          comboboxState.selectedIndex >= 0 &&
+                                          comboboxState.selectedIndex < filtered.length;
+                                        const hasSingleResult =
+                                          filtered.length === 1 && comboboxState.searchTerm.trim().length > 0;
+                                        if (hasSelection || hasSingleResult) {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onMouseDown={(ev) => ev.preventDefault()}
+                                              onClick={(ev) => {
+                                                ev.stopPropagation();
+                                                if (hasSelection) {
+                                                  handleSelectEmpleadoPDF(idx, filtered[comboboxState.selectedIndex]);
+                                                } else if (hasSingleResult) {
+                                                  handleSelectEmpleadoPDF(idx, filtered[0]);
+                                                }
+                                              }}
+                                              className="px-3 py-1.5 text-sm font-medium bg-green-500 hover:bg-green-600 text-white rounded"
+                                            >
+                                              ✓ Confirmar
+                                            </button>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
-                              row.nombre_bd ? (
-                                <span className="text-indigo-700 font-medium">{row.nombre_bd}</span>
-                              ) : (
-                                <span className="text-gray-400 italic">-</span>
-                              )
+                              <span
+                                className="text-gray-700 cursor-pointer hover:bg-indigo-50 px-1 py-0.5 rounded inline-block"
+                                onClick={() => {
+                                  if (empleadosList.length === 0) {
+                                    loadEmpleadosList();
+                                  }
+                                  setEditingCell(`preview-pdf-${idx}-nombre_bd`);
+                                  setComboboxState({
+                                    show: true,
+                                    searchTerm: row.nombre_bd || '',
+                                    selectedIndex: -1,
+                                    rowKey: `preview-pdf-${idx}`,
+                                  });
+                                }}
+                              >
+                                {row.nombre_bd ? (
+                                  <span className="text-indigo-700 font-medium">{row.nombre_bd}</span>
+                                ) : (
+                                  <span className="text-gray-400 italic">-</span>
+                                )}
+                              </span>
                             )}
                           </td>
                           {/* Código - editabil */}
@@ -1951,6 +2135,8 @@ export default function CostePersonalTab() {
                 onClick={() => {
                   setShowPdfsPreviewModal(false);
                   setPdfsPreviewData(null);
+                  setEditingCell(null);
+                  setComboboxState({ show: false, searchTerm: '', selectedIndex: -1, rowKey: null });
                 }}
                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
               >

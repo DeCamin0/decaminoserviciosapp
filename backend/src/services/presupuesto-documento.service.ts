@@ -636,6 +636,130 @@ function derivarTipoDesdeServicio(
   return 'auxiliares';
 }
 
+/** Precio en formato español (miles con punto, decimal con coma), alineado con el front. */
+function parsePrecioEurosEs(val: unknown): number {
+  if (val == null || val === '') return 0;
+  if (typeof val === 'number' && !Number.isNaN(val)) return val;
+  const s = String(val).trim().replace(/\s/g, '');
+  if (!s) return 0;
+  const sinMiles = s.replace(/\./g, '');
+  const conDecimal = sinMiles.replace(',', '.');
+  const n = parseFloat(conDecimal);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function isOfertaRowInvernalPiscina(descripcion: string): boolean {
+  const d = String(descripcion || '').toLowerCase();
+  return /mantenimiento invernal/.test(d) && /piscina/.test(d);
+}
+
+/**
+ * En 3.1 OFERTA ECONÓMICA: el payload guardado puede traer una sola fila invernal (antigua);
+ * reconstruimos siempre con lona + sin lona desde `mantenimientoInvernalPiscina` cuando hay precios.
+ */
+export function expandOfertaInvernalPiscinaDesdePayload(
+  oferta: OfertaEconomicaRow[],
+  payload: Record<string, unknown>,
+): OfertaEconomicaRow[] {
+  const selected = (payload.selectedServiciosPresupuesto || []) as Array<{
+    nombre?: string;
+  }>;
+  const tienePiscinaServicio = selected.some(
+    (s) => derivarTipoDesdeServicio(s.nombre || '') === 'piscina',
+  );
+  const tienePiscinaEnFilas = oferta.some((r) =>
+    /piscina/i.test(r.descripcion || ''),
+  );
+  if (!tienePiscinaServicio && !tienePiscinaEnFilas) return oferta;
+
+  const mi = payload.mantenimientoInvernalPiscina as
+    | Record<string, unknown>
+    | undefined
+    | null;
+  if (!mi || typeof mi !== 'object') return oferta;
+
+  const precioCampoUtil = (v: unknown): boolean => {
+    if (v == null) return false;
+    const s = String(v).trim().toLowerCase();
+    return s !== '' && s !== 'null' && s !== 'undefined';
+  };
+  const explicitCon = precioCampoUtil(mi.precioConLona);
+  const explicitSin = precioCampoUtil(mi.precioSinLona);
+
+  const filtered = oferta.filter(
+    (r) => !isOfertaRowInvernalPiscina(r.descripcion),
+  );
+
+  if (!explicitCon && !explicitSin) {
+    if (!precioCampoUtil(mi.precio)) return oferta;
+    const legacy = parsePrecioEurosEs(mi.precio);
+    if (legacy <= 0) return oferta;
+    const conLona = mi.conLona !== false && mi.conLona !== 0;
+    const desc = conLona
+      ? 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)'
+      : 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)';
+    return [
+      ...filtered,
+      {
+        descripcion: desc,
+        mensualidadSinIva: legacy,
+        mensualidadConIva: legacy * 1.21,
+        anualidadSinIva: legacy,
+        anualidadConIva: legacy * 1.21,
+      },
+    ];
+  }
+
+  const precioCon = explicitCon ? parsePrecioEurosEs(mi.precioConLona) : 0;
+  const precioSin = explicitSin ? parsePrecioEurosEs(mi.precioSinLona) : 0;
+
+  const nuevas: OfertaEconomicaRow[] = [];
+  if (precioCon > 0) {
+    nuevas.push({
+      descripcion:
+        'Piscina - Mantenimiento invernal instalaciones y agua (con lona)',
+      mensualidadSinIva: precioCon,
+      mensualidadConIva: precioCon * 1.21,
+      anualidadSinIva: precioCon,
+      anualidadConIva: precioCon * 1.21,
+    });
+  }
+  if (precioSin > 0) {
+    nuevas.push({
+      descripcion:
+        'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)',
+      mensualidadSinIva: precioSin,
+      mensualidadConIva: precioSin * 1.21,
+      anualidadSinIva: precioSin,
+      anualidadConIva: precioSin * 1.21,
+    });
+  }
+  if (nuevas.length === 0) return oferta;
+
+  return [...filtered, ...nuevas];
+}
+
+/** Índice de variante piscina (0, 1, …) según la fila de oferta elegida al firmar; null si no es fila piscina o es fila extra (ej. invernal). */
+function piscinaVariantIndexFromSelectedOferta(
+  selectedOfertaIndex: number,
+  selectedServicios: Array<{ nombre?: string }>,
+): number | null {
+  if (selectedOfertaIndex < 0) return null;
+  const n = selectedServicios.length;
+  if (selectedOfertaIndex >= n) return null;
+  const nombre = selectedServicios[selectedOfertaIndex]?.nombre || '';
+  if (derivarTipoDesdeServicio(nombre) !== 'piscina') return null;
+  let variantIndex = 0;
+  for (let si = 0; si < selectedOfertaIndex; si++) {
+    if (
+      derivarTipoDesdeServicio(selectedServicios[si]?.nombre || '') ===
+      'piscina'
+    )
+      variantIndex++;
+  }
+  return variantIndex;
+}
+
 /** Datos de la firma para rellenar la página de aceptación y la portada del PDF firmado. */
 export interface DatosFirmaAceptacion {
   fecha_hora: string;
@@ -979,6 +1103,10 @@ export class PresupuestoDocumentoService {
           };
         });
       }
+      ofertaEconomica = expandOfertaInvernalPiscinaDesdePayload(
+        ofertaEconomica,
+        payload,
+      );
       let tiposIncluidos = new Set(
         (
           (payload.selectedServiciosPresupuesto || []) as Array<{
@@ -2608,80 +2736,246 @@ export class PresupuestoDocumentoService {
           horarioY +=
             doc.heightOfString('2.7.1', { width: horarioContentWidth }) + 4;
           doc.font('Helvetica').fontSize(10);
-          const horarioP1 =
-            'El periodo de apertura de las instalaciones se fija por un periodo de 93 días consecutivos, fijado por la comunidad de propietarios con una antelación mínima de 20 días entre la fecha deseada y la comunicación de esta por escrito. En caso de no haber ninguna comunicación, el periodo de apertura se fija entre el 13 de junio de 2026 y el 13 de septiembre de 2025 (fechas provisionales a confirmar por la comunidad de propietarios).';
+          // Mismo criterio que la fecha de emisión de la portada: año del presupuesto (no fechas fijas con error tipográfico 2025/2026).
+          const anioTemporadaPiscina = presupuesto.created_at
+            ? new Date(presupuesto.created_at).getFullYear()
+            : new Date().getFullYear();
+          const horarioP1 = `El periodo de apertura de las instalaciones se fija por un periodo de 93 días consecutivos, fijado por la comunidad de propietarios con una antelación mínima de 20 días entre la fecha deseada y la comunicación de esta por escrito. En caso de no haber ninguna comunicación, el periodo de apertura se fija entre el 13 de junio de ${anioTemporadaPiscina} y el 13 de septiembre de ${anioTemporadaPiscina} (fechas provisionales a confirmar por la comunidad de propietarios).`;
           doc.text(horarioP1, horarioContentX, horarioY, {
             width: horarioContentWidth,
             align: 'justify',
           });
           horarioY +=
             doc.heightOfString(horarioP1, { width: horarioContentWidth }) + 16;
-          // PDF firmado + variante acceptată: completar cu numărul de ore din oferta (ex. "8" din "Mantenimiento de Piscina – 8 horas")
-          let horasPiscinaStr = '__';
+          // Varias variantes piscina en 1.2: no fijar "X horas diarias" hasta firma con opción piscina elegida (evita mostrar 8 h si otra opción es 7 h).
+          let vSelHorario: number | null = null;
           if (
             datosFirma != null &&
             typeof payload.selectedOfertaIndex === 'number' &&
-            payload.selectedOfertaIndex >= 0 &&
-            payload.selectedOfertaIndex < ofertaEconomica.length
+            payload.selectedOfertaIndex >= 0
           ) {
-            const desc = (
-              ofertaEconomica[payload.selectedOfertaIndex]?.descripcion ?? ''
-            ).toString();
-            const match = desc.match(/(\d+)\s*horas?/i);
-            if (match) horasPiscinaStr = match[1];
+            vSelHorario = piscinaVariantIndexFromSelectedOferta(
+              payload.selectedOfertaIndex,
+              selectedServicios,
+            );
           }
-          if (horasPiscinaStr === '__') {
-            const calcPiscina = (payload.presupuestoCalculoPiscina ||
-              {}) as Record<string, unknown>;
-            const h = calcPiscina.horas;
-            if (h != null && String(h).trim() !== '')
-              horasPiscinaStr = String(h).trim();
+          const variasVariantesPiscina = piscinaAll.length > 1;
+          const mostrarHorasDiariasConcretas =
+            !variasVariantesPiscina ||
+            (datosFirma != null && vSelHorario != null);
+
+          let horasPiscinaStr = '__';
+          if (mostrarHorasDiariasConcretas) {
+            if (
+              datosFirma != null &&
+              typeof payload.selectedOfertaIndex === 'number' &&
+              payload.selectedOfertaIndex >= 0 &&
+              payload.selectedOfertaIndex < ofertaEconomica.length
+            ) {
+              const desc = (
+                ofertaEconomica[payload.selectedOfertaIndex]?.descripcion ?? ''
+              ).toString();
+              const match = desc.match(/(\d+(?:[.,]\d+)?)\s*horas?/i);
+              if (match) horasPiscinaStr = match[1].replace(',', '.');
+            }
+            if (horasPiscinaStr === '__') {
+              const calcIdx =
+                vSelHorario != null &&
+                vSelHorario >= 0 &&
+                vSelHorario < piscinaAll.length
+                  ? vSelHorario
+                  : 0;
+              const calcPiscina = (piscinaAll[calcIdx] || {}) as Record<
+                string,
+                unknown
+              >;
+              const h = calcPiscina.horas;
+              if (h != null && String(h).trim() !== '')
+                horasPiscinaStr = String(h).trim();
+            }
           }
+
           doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
-          doc.text(
-            'El horario de apertura de la piscina será de ',
-            horarioContentX,
-            horarioY,
-            { width: horarioContentWidth, continued: true },
-          );
-          doc.font('Helvetica-Bold');
-          doc.text(horasPiscinaStr, { continued: true });
-          doc.font('Helvetica');
-          doc.text(' horas diarias:', { width: horarioContentWidth });
-          horarioY +=
-            doc.heightOfString(
-              `El horario de apertura de la piscina será de ${horasPiscinaStr} horas diarias:`,
-              { width: horarioContentWidth },
-            ) + 8;
-          // Horario por periodos (una sola vez, orientativo; viene en payload.presupuestoHorarioPiscina)
-          const horarioPeriodos = (payload.presupuestoHorarioPiscina ||
-            []) as Array<{
+          if (mostrarHorasDiariasConcretas && horasPiscinaStr !== '__') {
+            doc.text(
+              'El horario de apertura de la piscina será de ',
+              horarioContentX,
+              horarioY,
+              { width: horarioContentWidth, continued: true },
+            );
+            doc.font('Helvetica-Bold');
+            doc.text(horasPiscinaStr, { continued: true });
+            doc.font('Helvetica');
+            doc.text(' horas diarias:', { width: horarioContentWidth });
+            horarioY +=
+              doc.heightOfString(
+                `El horario de apertura de la piscina será de ${horasPiscinaStr} horas diarias:`,
+                { width: horarioContentWidth },
+              ) + 8;
+          } else if (!mostrarHorasDiariasConcretas) {
+            const horarioHorasGenerico =
+              'El número de horas diarias de apertura de la piscina se concretará según la opción de servicio elegida por la comunidad entre las ofertadas en el apartado 1.2.';
+            doc.text(horarioHorasGenerico, horarioContentX, horarioY, {
+              width: horarioContentWidth,
+              align: 'justify',
+            });
+            horarioY +=
+              doc.heightOfString(horarioHorasGenerico, {
+                width: horarioContentWidth,
+              }) + 8;
+          } else {
+            const horarioSinHorasFijas =
+              'El horario de apertura de la piscina y las horas diarias quedarán sujetos a confirmación con la comunidad.';
+            doc.text(horarioSinHorasFijas, horarioContentX, horarioY, {
+              width: horarioContentWidth,
+              align: 'justify',
+            });
+            horarioY +=
+              doc.heightOfString(horarioSinHorasFijas, {
+                width: horarioContentWidth,
+              }) + 8;
+          }
+          // Horario por periodos: por variante en presupuestoCalculoPiscina[*].horarioPorPeriodos; compat: presupuestoHorarioPiscina → solo 1ª variante
+          type HorarioPiscinaPdfRow = {
             fechaDesde?: string;
             fechaHasta?: string;
             horario?: string;
-          }>;
-          const horarioPeriodosFiltrados = horarioPeriodos.filter(
-            (p) =>
-              (p.fechaDesde && String(p.fechaDesde).trim()) ||
-              (p.fechaHasta && String(p.fechaHasta).trim()) ||
-              (p.horario && String(p.horario).trim()),
-          );
-          if (horarioPeriodosFiltrados.length > 0) {
+            diasTipo?: string;
+            diasSemana?: Record<string, boolean>;
+          };
+          const legacyHorarioPiscina = (payload.presupuestoHorarioPiscina ||
+            []) as HorarioPiscinaPdfRow[];
+          let legacyHorarioUsado = false;
+          const horarioPorPeriodosFromCalc = (
+            calc: Record<string, unknown> | undefined,
+          ): HorarioPiscinaPdfRow[] => {
+            const raw = calc?.horarioPorPeriodos;
+            if (!Array.isArray(raw) || raw.length === 0) return [];
+            return raw as HorarioPiscinaPdfRow[];
+          };
+          const horarioBlocksConVariante: {
+            variantIndex: number;
+            titulo?: string;
+            filas: HorarioPiscinaPdfRow[];
+          }[] = [];
+          for (let vi = 0; vi < piscinaAll.length; vi++) {
+            const calc = piscinaAll[vi] as Record<string, unknown> | undefined;
+            let filas = horarioPorPeriodosFromCalc(calc);
+            if (
+              filas.length === 0 &&
+              vi === 0 &&
+              legacyHorarioPiscina.length > 0 &&
+              !legacyHorarioUsado
+            ) {
+              filas = legacyHorarioPiscina;
+              legacyHorarioUsado = true;
+            }
+            const filasOk = filas.filter(
+              (row) =>
+                (row.fechaDesde && String(row.fechaDesde).trim()) ||
+                (row.fechaHasta && String(row.fechaHasta).trim()) ||
+                (row.horario && String(row.horario).trim()),
+            );
+            if (filasOk.length === 0) continue;
+            horarioBlocksConVariante.push({
+              variantIndex: vi,
+              titulo:
+                piscinaAll.length > 1
+                  ? `Horario — opción ${vi + 1} (variante ofertada)`
+                  : undefined,
+              filas: filasOk,
+            });
+          }
+          let horarioBlocksPdf = horarioBlocksConVariante;
+          if (
+            datosFirma != null &&
+            typeof payload.selectedOfertaIndex === 'number'
+          ) {
+            const vSel = piscinaVariantIndexFromSelectedOferta(
+              payload.selectedOfertaIndex,
+              selectedServicios,
+            );
+            if (vSel != null) {
+              const match = horarioBlocksConVariante.find(
+                (b) => b.variantIndex === vSel,
+              );
+              if (match) horarioBlocksPdf = [match];
+            }
+          }
+          const diasTipoHorarioPiscinaLabel: Record<string, string> = {
+            LV: 'Lunes a viernes (L-V)',
+            SD: 'Sábado a domingo (S-D)',
+            LD: 'Lunes a domingo (L-D)',
+          };
+          const diasSemanaPiscinaOrder = [
+            'lun',
+            'mar',
+            'mie',
+            'jue',
+            'vie',
+            'sab',
+            'dom',
+          ] as const;
+          const diasSemanaPiscinaShort: Record<string, string> = {
+            lun: 'Lun',
+            mar: 'Mar',
+            mie: 'Mié',
+            jue: 'Jue',
+            vie: 'Vie',
+            sab: 'Sáb',
+            dom: 'Dom',
+          };
+          /** Solo paréntesis con días abreviados, sin la palabra «Personalizada». */
+          const formatDiasSemanaPiscinaPdf = (
+            d?: Record<string, boolean>,
+          ): string => {
+            const parts = diasSemanaPiscinaOrder
+              .filter((k) => d && d[k])
+              .map((k) => diasSemanaPiscinaShort[k] || k);
+            return parts.length > 0 ? `(${parts.join(', ')})` : '';
+          };
+          if (horarioBlocksPdf.length > 0) {
             doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
-            for (const p of horarioPeriodosFiltrados) {
-              const desde = (p.fechaDesde || '').trim();
-              const hasta = (p.fechaHasta || '').trim();
-              const hor = (p.horario || '').trim();
-              const line =
-                desde && hasta
-                  ? `${desde} AL ${hasta}${hor ? ': ' + hor : ''}`
-                  : hor || `${desde} ${hasta}`.trim();
-              if (line) {
-                doc.text(line, horarioContentX, horarioY, {
+            for (const block of horarioBlocksPdf) {
+              if (block.titulo) {
+                doc.font('Helvetica-Bold').fontSize(10);
+                doc.text(block.titulo, horarioContentX, horarioY, {
                   width: horarioContentWidth,
                 });
                 horarioY +=
-                  doc.heightOfString(line, { width: horarioContentWidth }) + 6;
+                  doc.heightOfString(block.titulo, {
+                    width: horarioContentWidth,
+                  }) + 6;
+                doc.font('Helvetica').fontSize(10);
+              }
+              for (const p of block.filas) {
+                const desde = (p.fechaDesde || '').trim();
+                const hasta = (p.fechaHasta || '').trim();
+                const hor = (p.horario || '').trim();
+                const dt = String(p.diasTipo || 'LV')
+                  .trim()
+                  .toUpperCase();
+                const diasTxt =
+                  dt === 'PERS'
+                    ? formatDiasSemanaPiscinaPdf(p.diasSemana)
+                    : diasTipoHorarioPiscinaLabel[dt] ||
+                      diasTipoHorarioPiscinaLabel.LV;
+                const baseLine =
+                  desde && hasta
+                    ? `${desde} AL ${hasta}${hor ? ': ' + hor : ''}`
+                    : hor || `${desde} ${hasta}`.trim();
+                const line = [baseLine, diasTxt].filter(Boolean).join(' · ');
+                if (line) {
+                  doc.text(line, horarioContentX, horarioY, {
+                    width: horarioContentWidth,
+                  });
+                  horarioY +=
+                    doc.heightOfString(line, { width: horarioContentWidth }) +
+                    6;
+                }
+              }
+              if (horarioBlocksPdf.length > 1) {
+                horarioY += 4;
               }
             }
           } else {

@@ -147,7 +147,11 @@ export class AssistantReadToolsService {
         dataScope,
       );
       const centroTrim = entidades?.centro?.trim();
-      const empleadoPlanMes: { codigo?: string; nombre?: string; centro?: string } | null =
+      const empleadoPlanMes: {
+        codigo?: string;
+        nombre?: string;
+        centro?: string;
+      } | null =
         target && centroTrim
           ? { ...target, centro: centroTrim }
           : target

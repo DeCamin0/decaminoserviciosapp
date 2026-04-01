@@ -26,6 +26,23 @@ import { getPdfMake } from '../utils/getPdfMake';
 const rawColor = config.PRIMARY_COLOR || '#CC0000';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
+/** Unește fișiere noi din input cu cele deja alese (fiecare deschidere a dialogului înlocuiește doar selecția curentă a input-ului). */
+function mergeFileSelections(existing, fileList) {
+  const incoming = Array.from(fileList || []);
+  if (incoming.length === 0) return existing;
+  const fileKey = (f) => `${f.name}|${f.size}|${f.lastModified}`;
+  const seen = new Set(existing.map(fileKey));
+  const merged = [...existing];
+  for (const f of incoming) {
+    const k = fileKey(f);
+    if (!seen.has(k)) {
+      seen.add(k);
+      merged.push(f);
+    }
+  }
+  return merged;
+}
+
 // Funcție helper pentru transformare automată în majuscule
 const toUpperCaseIfNeeded = (field, value) => {
   // Câmpuri care NU trebuie transformate în majuscule
@@ -3768,13 +3785,18 @@ export default function EmpleadosPage() {
   };
 
   const handleDespidoFileChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 10) {
-      setDespidoError('Máximo 10 archivos permitidos.');
-      return;
-    }
-    setDespidoAttachments(files);
-    setDespidoError(null);
+    const incoming = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (incoming.length === 0) return;
+    setDespidoAttachments((prev) => {
+      const merged = mergeFileSelections(prev, incoming);
+      if (merged.length > 10) {
+        queueMicrotask(() => setDespidoError('Máximo 10 archivos permitidos.'));
+        return prev;
+      }
+      queueMicrotask(() => setDespidoError(null));
+      return merged;
+    });
   };
 
   const handleSendEmail = async () => {
@@ -5635,7 +5657,8 @@ export default function EmpleadosPage() {
                     multiple
                     onChange={(e) => {
                       const files = Array.from(e.target.files || []);
-                      setArchivosGestoria(files);
+                      setArchivosGestoria((prev) => mergeFileSelections(prev, files));
+                      e.target.value = '';
                     }}
                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
@@ -7432,7 +7455,8 @@ export default function EmpleadosPage() {
                     multiple
                     onChange={(e) => {
                       const files = Array.from(e.target.files || []);
-                      setArchivosGestoriaEdit(files);
+                      setArchivosGestoriaEdit((prev) => mergeFileSelections(prev, files));
+                      e.target.value = '';
                     }}
                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer bg-white"
                   />

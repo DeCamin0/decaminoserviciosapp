@@ -2026,6 +2026,14 @@ export class PedidosService {
         );
       }
 
+      // Șterge toate albaranes asociate (pot fi mai multe rânduri per pedido)
+      const uidAlt = pedidoUid.trim().startsWith('=')
+        ? pedidoUid.trim()
+        : '=' + pedidoUid.trim();
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM PedidosAlbaranes WHERE pedido_uid = ${pedidoUidEscaped} OR pedido_uid = ${this.escapeSql(uidAlt)}`,
+      );
+
       // Șterge toate rândurile asociate cu pedido_uid
       const deleteQuery = `DELETE FROM PedidosTodos WHERE pedido_uid = ${pedidoUidEscaped}`;
       const result = await this.prisma.$executeRawUnsafe(deleteQuery);
@@ -2087,48 +2095,32 @@ export class PedidosService {
       // Pentru moment, salvăm direct în PedidosTodos folosind un câmp albaran_bytes
       const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-      // Verifică dacă există deja un albarán pentru această comandă
-      const existingAlbaran = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT id FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(uid)} LIMIT 1`,
+      // Un nou rând per upload (mai multe albaranes per pedido)
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO PedidosAlbaranes (
+          pedido_uid,
+          archivo,
+          nombre_archivo,
+          tipo_mime,
+          tamano_bytes,
+          subido_por,
+          subido_en,
+          actualizado_en
+        ) VALUES (
+          ${this.escapeSql(uid)},
+          0x${fileBuffer.toString('hex')},
+          ${this.escapeSql(file.originalname || 'albaran.pdf')},
+          ${this.escapeSql(file.mimetype || 'application/pdf')},
+          ${fileBuffer.length},
+          ${this.escapeSql(userInfo)},
+          ${this.escapeSql(now)},
+          ${this.escapeSql(now)}
+        )`,
       );
-
-      if (existingAlbaran && existingAlbaran.length > 0) {
-        // Actualizează albarán-ul existent
-        await this.prisma.$executeRawUnsafe(
-          `UPDATE PedidosAlbaranes SET 
-            archivo = 0x${fileBuffer.toString('hex')},
-            nombre_archivo = ${this.escapeSql(file.originalname || 'albaran.pdf')},
-            tipo_mime = ${this.escapeSql(file.mimetype || 'application/pdf')},
-            tamano_bytes = ${fileBuffer.length},
-            subido_por = ${this.escapeSql(userInfo)},
-            subido_en = ${this.escapeSql(now)},
-            actualizado_en = ${this.escapeSql(now)}
-          WHERE pedido_uid = ${this.escapeSql(uid)}`,
-        );
-      } else {
-        // Creează un albarán nou
-        await this.prisma.$executeRawUnsafe(
-          `INSERT INTO PedidosAlbaranes (
-            pedido_uid,
-            archivo,
-            nombre_archivo,
-            tipo_mime,
-            tamano_bytes,
-            subido_por,
-            subido_en,
-            actualizado_en
-          ) VALUES (
-            ${this.escapeSql(uid)},
-            0x${fileBuffer.toString('hex')},
-            ${this.escapeSql(file.originalname || 'albaran.pdf')},
-            ${this.escapeSql(file.mimetype || 'application/pdf')},
-            ${fileBuffer.length},
-            ${this.escapeSql(userInfo)},
-            ${this.escapeSql(now)},
-            ${this.escapeSql(now)}
-          )`,
-        );
-      }
+      const idRows = await this.prisma.$queryRawUnsafe<{ id: bigint }[]>(
+        `SELECT LAST_INSERT_ID() AS id`,
+      );
+      const newAlbaranId = Number(idRows[0]?.id ?? 0);
 
       // Actualizează statusul comenzii la "entregado"
       await this.updatePedidoEstado(uid, 'entregado', undefined, userInfo);
@@ -2142,7 +2134,9 @@ export class PedidosService {
         message: 'Albarán subido correctamente y pedido marcado como entregado',
         pedido_uid: uid,
         estado: 'entregado',
+        albaran_id: newAlbaranId,
         albaran: {
+          id: newAlbaranId,
           nombre_archivo: file.originalname || 'albaran.pdf',
           tipo_mime: file.mimetype || 'application/pdf',
           tamano_bytes: fileBuffer.length,
@@ -2166,27 +2160,82 @@ export class PedidosService {
   }
 
   /**
-   * Returnează albarán-ul existent pentru un pedido (pentru vizualizare/descărcare).
-   * Acceptă UID cu sau fără '=' în față (ex. =20260312072800-9 → 20260312072800-9).
+   * Listează metadatele albaranes pentru un pedido (fără blob-uri).
    */
-  async getAlbaran(pedidoUid: string): Promise<{
+  async listAlbaranes(pedidoUid: string): Promise<
+    Array<{
+      id: number;
+      nombre_archivo: string;
+      tipo_mime: string | null;
+      tamano_bytes: number | null;
+      subido_en: string;
+      subido_por: string | null;
+    }>
+  > {
+    const uidNorm = (pedidoUid || '').replace(/^=+/, '');
+    let rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT pedido_uid FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(uidNorm)} OR pedido_uid = ${this.escapeSql('=' + uidNorm)} LIMIT 1`,
+    );
+    if (!rows?.length) {
+      return [];
+    }
+    const canonical = String(rows[0].pedido_uid);
+    const list = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, nombre_archivo, tipo_mime, tamano_bytes, subido_en, subido_por FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(canonical)} ORDER BY id ASC`,
+    );
+    return (list || []).map((r) => ({
+      id: Number(r.id),
+      nombre_archivo: String(r.nombre_archivo || 'albaran'),
+      tipo_mime: r.tipo_mime != null ? String(r.tipo_mime) : null,
+      tamano_bytes: r.tamano_bytes != null ? Number(r.tamano_bytes) : null,
+      subido_en:
+        r.subido_en instanceof Date
+          ? r.subido_en.toISOString().slice(0, 19).replace('T', ' ')
+          : String(r.subido_en ?? ''),
+      subido_por: r.subido_por != null ? String(r.subido_por) : null,
+    }));
+  }
+
+  /**
+   * Returnează un albarán (blob). Dacă `albaranId` lipsește, primul după id (comportament vechi).
+   * Acceptă UID cu sau fără '=' în față.
+   */
+  async getAlbaran(
+    pedidoUid: string,
+    albaranId?: number | null,
+  ): Promise<{
     archivo: Buffer;
     nombre_archivo: string;
     tipo_mime: string;
   }> {
-    const uid = (pedidoUid || '').replace(/^=+/, '');
+    const uidNorm = (pedidoUid || '').replace(/^=+/, '');
     let rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(uid)} LIMIT 1`,
+      `SELECT pedido_uid FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(uidNorm)} OR pedido_uid = ${this.escapeSql('=' + uidNorm)} LIMIT 1`,
     );
-    if ((!rows?.length || !rows[0].archivo) && uid) {
+    if (!rows?.length) {
       rows = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql('=' + uid)} LIMIT 1`,
+        `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(uidNorm)} OR pedido_uid = ${this.escapeSql('=' + uidNorm)} LIMIT 1`,
       );
     }
-    if (!rows?.length || !rows[0].archivo) {
+    if (!rows?.length) {
       throw new NotFoundException('No existe albarán para este pedido');
     }
-    const row = rows[0];
+    const canonical = String(rows[0].pedido_uid);
+
+    let sel: any[];
+    if (albaranId != null && albaranId > 0) {
+      sel = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE id = ${albaranId} AND pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
+      );
+    } else {
+      sel = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(canonical)} ORDER BY id ASC LIMIT 1`,
+      );
+    }
+    if (!sel?.length || !sel[0].archivo) {
+      throw new NotFoundException('No existe albarán para este pedido');
+    }
+    const row = sel[0];
     const archivo =
       row.archivo instanceof Buffer ? row.archivo : Buffer.from(row.archivo);
     return {

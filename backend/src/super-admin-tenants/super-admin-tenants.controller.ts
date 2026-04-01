@@ -17,10 +17,8 @@ import { SuperAdminGuard } from './guards/super-admin.guard';
 import { TenantRegistryService } from './tenant-registry.service';
 import { TenantProvisioningService } from './tenant-provisioning.service';
 import { TenantCryptoService } from './tenant-crypto.service';
-import {
-  createTenantSchema,
-  patchTenantLifecycleSchema,
-} from './dto/create-tenant.dto';
+import { createTenantSchema, patchTenantSchema } from './dto/create-tenant.dto';
+import { TenantApiHealthService } from './tenant-api-health.service';
 
 @SkipThrottle()
 @Controller('api/super-admin/tenants')
@@ -30,13 +28,20 @@ export class SuperAdminTenantsController {
     private readonly registry: TenantRegistryService,
     private readonly provisioning: TenantProvisioningService,
     private readonly crypto: TenantCryptoService,
+    private readonly tenantHealth: TenantApiHealthService,
   ) {}
 
   @Get()
   async list() {
     this.registry.assertConfigured();
     const tenants = await this.registry.listTenants();
-    return { success: true, tenants };
+    const tenantsOut = await Promise.all(
+      tenants.map(async (t) => {
+        const api_health = await this.tenantHealth.probe(t.api_public_url);
+        return { ...t, api_health };
+      }),
+    );
+    return { success: true, tenants: tenantsOut };
   }
 
   /**
@@ -47,7 +52,7 @@ export class SuperAdminTenantsController {
     this.registry.assertConfigured();
     let parsed;
     try {
-      parsed = patchTenantLifecycleSchema.parse(body);
+      parsed = patchTenantSchema.parse(body);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Invalid body';
       throw new BadRequestException(msg);
@@ -56,6 +61,32 @@ export class SuperAdminTenantsController {
     const tenant = await this.registry.getTenant(id);
     if (!tenant) {
       throw new NotFoundException('Tenant not found');
+    }
+
+    if (
+      parsed.api_public_url !== undefined ||
+      parsed.environment !== undefined
+    ) {
+      const api_public_url =
+        parsed.api_public_url === undefined
+          ? undefined
+          : parsed.api_public_url.trim() === ''
+            ? null
+            : parsed.api_public_url.trim();
+      const environment =
+        parsed.environment === undefined
+          ? undefined
+          : parsed.environment.trim() === ''
+            ? null
+            : parsed.environment.trim();
+      await this.registry.updateTenantMeta(id, {
+        api_public_url,
+        environment,
+      });
+      if (parsed.status === undefined) {
+        const updated = await this.registry.getTenant(id);
+        return { success: true, tenant: updated };
+      }
     }
 
     if (parsed.status === 'inactive') {
@@ -139,6 +170,14 @@ export class SuperAdminTenantsController {
         timezone: parsed.timezone.trim(),
         notes: parsed.notes?.trim() || null,
         plan: parsed.plan?.trim() || null,
+        api_public_url:
+          parsed.api_public_url?.trim() && parsed.api_public_url.trim() !== ''
+            ? parsed.api_public_url.trim()
+            : null,
+        environment:
+          parsed.environment?.trim() && parsed.environment.trim() !== ''
+            ? parsed.environment.trim()
+            : null,
         database_name,
         database_user,
         database_password_enc: enc,

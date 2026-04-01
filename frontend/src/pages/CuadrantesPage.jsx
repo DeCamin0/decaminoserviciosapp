@@ -217,9 +217,26 @@ export default function CuadrantesPage() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+  /** Zile reale în luna selectată pentru tabelul Horarios Multicentro (nu 31 fix). */
+  const daysInMonthHorariosMulticentro = useMemo(() => {
+    if (!selectedMonthHorariosMulticentro || !String(selectedMonthHorariosMulticentro).includes('-')) {
+      return 31;
+    }
+    const [y, m] = selectedMonthHorariosMulticentro.split('-').map((x) => parseInt(x, 10));
+    if (!y || !m) return 31;
+    return getDaysInMonth(m - 1, y);
+  }, [selectedMonthHorariosMulticentro]);
   const [selectedEmpleadoHorariosMulticentro, setSelectedEmpleadoHorariosMulticentro] = useState('');
   const [empleadoHorariosMulticentroSearch, setEmpleadoHorariosMulticentroSearch] = useState('');
   const [showEmpleadoHorariosMulticentroDropdown, setShowEmpleadoHorariosMulticentroDropdown] = useState(false);
+  /** Cliente / comunidad (centro) para crear horario_multicentro manual */
+  const [nuevoClienteMulticentro, setNuevoClienteMulticentro] = useState('');
+  const [savingNuevoMulticentro, setSavingNuevoMulticentro] = useState(false);
+  /** Día → texto (turno completo, horas «8», LIBRE, vacío) para crear/editar multicentro manual */
+  const [multicentroManualDias, setMulticentroManualDias] = useState({});
+  /** Borrador por fila listada: id horario_multicentro → { día: texto } */
+  const [multicentroListEdits, setMulticentroListEdits] = useState({});
+  const [savingMulticentroListId, setSavingMulticentroListId] = useState(null);
 
   const showToast = useCallback((arg1, arg2) => {
     const allowedTypes = new Set(['success', 'error', 'info', 'warning']);
@@ -1017,6 +1034,14 @@ export default function CuadrantesPage() {
   };
   const [selectedEmpleado, setSelectedEmpleado] = useState(''); // Nuevo selector de empleado
   const [selectedMesAno, setSelectedMesAno] = useState(''); // Selector de mes/año para filtrar cuadrantes
+  /** Zile reale pentru „Cuadrantes Consolidados” / lista (lună din filtru sau selector principal). */
+  const daysInMonthListaCuadrantes = useMemo(() => {
+    const monthIndex = selectedMesAno
+      ? parseInt(selectedMesAno.split('-')[1], 10) - 1
+      : selectedMonth;
+    const year = selectedMesAno ? parseInt(selectedMesAno.split('-')[0], 10) : selectedYear;
+    return getDaysInMonth(monthIndex, year);
+  }, [selectedMesAno, selectedMonth, selectedYear]);
   const [editedCuadrantes, setEditedCuadrantes] = useState({}); // Para trackear modificările
   const [hasChanges, setHasChanges] = useState(false); // Para afișa butonul de salvare
   const [showEditModal, setShowEditModal] = useState(false); // Para modal de editare
@@ -1078,8 +1103,9 @@ export default function CuadrantesPage() {
     });
     
     // Parcurge doar cuadrantele filtrate (inclusiv modificările din editedCuadrantes)
+    const dayLimit = selectedMesAno ? daysInMonthListaCuadrantes : 31;
     filteredCuadrantes.forEach(cuadrante => {
-      for (let i = 1; i <= 31; i++) {
+      for (let i = 1; i <= dayLimit; i++) {
         const ziKey = `ZI_${i}`;
         const identificator = getCuadranteIdentificator(cuadrante);
         const editKey = `${identificator}_${i}`;
@@ -1133,7 +1159,7 @@ export default function CuadrantesPage() {
       }
       return a.shift.localeCompare(b.shift);
     });
-  }, [cuadrantesLista, editedCuadrantes, selectedMesAno, selectedEmpleado]);
+  }, [cuadrantesLista, editedCuadrantes, selectedMesAno, selectedEmpleado, daysInMonthListaCuadrantes]);
   
   // Funcție pentru a actualiza toate aparițiile unei ture cu noile ore
   const handleUpdateShiftHours = (oldShift, newStart, newEnd) => {
@@ -1993,6 +2019,11 @@ export default function CuadrantesPage() {
     setFestivosMonthFilter('all');
     loadFestivos(festivosYear);
   }, [activeTab, festivosYear, loadFestivos]);
+
+  useEffect(() => {
+    setMulticentroManualDias({});
+    setMulticentroListEdits({});
+  }, [selectedMonthHorariosMulticentro]);
 
   // Încarcă datele pentru horarios
   const loadHorariosData = useCallback(async () => {
@@ -5556,16 +5587,16 @@ export default function CuadrantesPage() {
                                 )}
                               </div>
                             </th>
-                            {Array.from({ length: 31 }, (_, i) => {
+                            {Array.from({ length: daysInMonthListaCuadrantes }, (_, i) => {
                               const dayNumber = i + 1;
-                              const currentMonth = selectedMesAno ? parseInt(selectedMesAno.split('-')[1]) - 1 : selectedMonth;
-                              const currentYear = selectedMesAno ? parseInt(selectedMesAno.split('-')[0]) : selectedYear;
+                              const currentMonth = selectedMesAno ? parseInt(selectedMesAno.split('-')[1], 10) - 1 : selectedMonth;
+                              const currentYear = selectedMesAno ? parseInt(selectedMesAno.split('-')[0], 10) : selectedYear;
                               const date = new Date(currentYear, currentMonth, dayNumber);
                               const dayOfWeek = date.getDay();
                               const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
                               
                               return (
-                                <th key={i} className="border border-gray-300 p-1 text-center text-xs font-bold min-w-[60px]">
+                                <th key={dayNumber} className="border border-gray-300 p-1 text-center text-xs font-bold min-w-[60px]">
                                   <div className="space-y-1">
                                     <div className="text-gray-800">{dayNumber}</div>
                                     <div className={`text-xs font-normal ${
@@ -5587,9 +5618,9 @@ export default function CuadrantesPage() {
                               // Folosește funcția helper pentru identificator consistent
                               const identificator = getCuadranteIdentificator(cuadrante) || String(index);
                               
-                              // Construir array de zile din cuadrante
+                              // Construir array de zile din cuadrante (doar zilele lunii curente, nu 31 fix)
                               const zile = [];
-                              for (let i = 1; i <= 31; i++) {
+                              for (let i = 1; i <= daysInMonthListaCuadrantes; i++) {
                                 const ziKey = `ZI_${i}`;
                                 const editKey = `${identificator}_${i}`;
                                 // Folosește valoarea editată dacă există, altfel valoarea originală
@@ -5871,8 +5902,8 @@ export default function CuadrantesPage() {
                 📋 Horario Multicentro
               </h3>
               <p className="text-blue-800">
-                Importa horarios especiales para empleados que trabajan en múltiples centros.
-                Cada fila del Excel representa un centro diferente con su turno y horas por día.
+                Importa horarios especiales para empleados que trabajan en múltiples centros, o{' '}
+                <strong>crea un registro manual</strong> con el editor de días (turno u horas) más abajo, o importa Excel.
               </p>
               <p className="text-sm text-blue-700 mt-2">
                 <strong>Formato Excel esperado:</strong> Nome empleado (Row 2), Luna (Row 3), 
@@ -6040,15 +6071,18 @@ export default function CuadrantesPage() {
                       const data = await response.json();
                       if (data.success && Array.isArray(data.horarios)) {
                         setHorariosMulticentroList(data.horarios);
+                        setMulticentroListEdits({});
                         showToast('success', `Se encontraron ${data.horarios.length} horarios multicentro`);
                       } else {
                         setHorariosMulticentroList([]);
+                        setMulticentroListEdits({});
                         showToast('info', 'No se encontraron horarios multicentro para los filtros seleccionados');
                       }
                     } catch (error) {
                       console.error('Error fetching horarios multicentro:', error);
                       showToast('error', `Error al cargar horarios multicentro: ${error.message}`);
                       setHorariosMulticentroList([]);
+                      setMulticentroListEdits({});
                     } finally {
                       setLoadingHorariosMulticentro(false);
                     }
@@ -6058,6 +6092,214 @@ export default function CuadrantesPage() {
                 >
                   {loadingHorariosMulticentro ? 'Cargando...' : '🔍 Buscar Horarios'}
                 </Button>
+              </div>
+            </div>
+
+            {/* Crear horario multicentro: empleado + cliente + editor de días */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+              <h4 className="text-lg font-bold text-green-900 mb-1">
+                ➕ Crear horario multicentro (manual)
+              </h4>
+              <p className="text-sm text-green-800 mb-3">
+                Mes y empleado arriba. Indica el <strong>cliente / comunidad</strong> y, para cada día del mes, el{' '}
+                <strong>turno</strong> (ej. <code>T1 07:30-15:00</code>) o solo <strong>horas</strong> (ej.{' '}
+                <code>8</code>). Deja en blanco los días libres. Pulsa <strong>Guardar horario</strong> (se exige al menos
+                un día con dato).
+              </p>
+              <div className="flex flex-col md:flex-row gap-3 md:items-end mb-4">
+                <div className="flex-1 min-w-0">
+                  <label
+                    htmlFor="nuevo-cliente-multicentro"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Cliente / centro (comunidad)
+                  </label>
+                  <input
+                    id="nuevo-cliente-multicentro"
+                    type="text"
+                    list="centros-datalist-multicentro-crear"
+                    value={nuevoClienteMulticentro}
+                    onChange={(e) => setNuevoClienteMulticentro(e.target.value)}
+                    placeholder="Ej. COMUNIDAD DE PROPIETARIOS…"
+                    className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                  <datalist id="centros-datalist-multicentro-crear">
+                    {centros.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="border border-gray-400 whitespace-nowrap"
+                  onClick={() => setMulticentroManualDias({})}
+                >
+                  Limpiar días
+                </Button>
+                <Button
+                  type="button"
+                  disabled={
+                    savingNuevoMulticentro ||
+                    !selectedMonthHorariosMulticentro ||
+                    !nuevoClienteMulticentro.trim() ||
+                    !Object.values(multicentroManualDias).some(
+                      (v) => v != null && String(v).trim() !== '',
+                    )
+                  }
+                  loading={savingNuevoMulticentro}
+                  className="bg-green-600 hover:bg-green-700 text-white whitespace-nowrap"
+                  onClick={async () => {
+                    if (!selectedMonthHorariosMulticentro) {
+                      showToast('error', 'Selecciona un mes');
+                      return;
+                    }
+                    let codigoParaCrear = selectedEmpleadoHorariosMulticentro;
+                    if (!codigoParaCrear && empleadoHorariosMulticentroSearch) {
+                      const searchLower = empleadoHorariosMulticentroSearch.toLowerCase();
+                      const encontrado = angajati.find((emp) => {
+                        const nombre = (emp['NOMBRE / APELLIDOS'] || '').toLowerCase();
+                        const cod = (emp.CODIGO || '').toLowerCase();
+                        return nombre.includes(searchLower) || cod.includes(searchLower);
+                      });
+                      if (encontrado?.CODIGO) {
+                        codigoParaCrear = String(encontrado.CODIGO);
+                      }
+                    }
+                    if (!codigoParaCrear) {
+                      showToast('error', 'Selecciona o busca un empleado');
+                      return;
+                    }
+                    const clienteTrim = nuevoClienteMulticentro.trim();
+                    if (!clienteTrim) {
+                      showToast('error', 'Indica el cliente / centro');
+                      return;
+                    }
+                    const hasDia = Object.values(multicentroManualDias).some(
+                      (v) => v != null && String(v).trim() !== '',
+                    );
+                    if (!hasDia) {
+                      showToast('error', 'Rellena al menos un día');
+                      return;
+                    }
+                    const emp = angajati.find((e) => String(e.CODIGO) === String(codigoParaCrear));
+                    setSavingNuevoMulticentro(true);
+                    try {
+                      const token = localStorage.getItem('auth_token');
+                      const horarioRow = {
+                        CODIGO: String(codigoParaCrear),
+                        EMAIL: emp?.['CORREO ELECTRONICO'] || emp?.EMAIL || '',
+                        NOMBRE: emp?.['NOMBRE / APELLIDOS'] || emp?.NOMBRE || '',
+                        LUNA: selectedMonthHorariosMulticentro,
+                        CLIENTE: clienteTrim,
+                        HORARIO: 'MULTICENTRO',
+                        SERVICIO: 'MULTICENTRO',
+                      };
+                      for (let d = 1; d <= 31; d++) {
+                        const raw = multicentroManualDias[d];
+                        if (raw == null || String(raw).trim() === '') continue;
+                        const t = String(raw).trim();
+                        if (t.toUpperCase() === 'LIBRE') {
+                          horarioRow[`ZI_${d}`] = null;
+                        } else {
+                          horarioRow[`ZI_${d}`] = t;
+                        }
+                      }
+                      let totalSum = 0;
+                      for (let d = 1; d <= 31; d++) {
+                        const cell = multicentroManualDias[d];
+                        if (cell == null || String(cell).trim() === '') continue;
+                        const t = String(cell).trim();
+                        if (t.toUpperCase() === 'LIBRE') continue;
+                        const oreStr = transformaZiValueInOre(t);
+                        if (oreStr) totalSum += parseFloat(oreStr) || 0;
+                      }
+                      if (totalSum > 0) {
+                        horarioRow.TotalHoras = totalSum.toFixed(1);
+                      }
+                      const response = await fetch(routes.saveHorariosMulticentro, {
+                        method: 'POST',
+                        headers: {
+                          Authorization: token ? `Bearer ${token}` : '',
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          horarios: [horarioRow],
+                        }),
+                      });
+                      if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.message || 'Error al guardar horario multicentro');
+                      }
+                      const data = await response.json().catch(() => ({}));
+                      showToast(
+                        'success',
+                        `Horario guardado (${data.updated ?? 1}). Puedes pulsar «Buscar Horarios» para verlo.`,
+                      );
+                      setNuevoClienteMulticentro('');
+                      setMulticentroManualDias({});
+                      const params = new URLSearchParams({
+                        mes: selectedMonthHorariosMulticentro,
+                        codigo: String(codigoParaCrear),
+                      });
+                      const refresh = await fetch(`${routes.getHorarioMulticentro}?${params.toString()}`, {
+                        method: 'GET',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: token ? `Bearer ${token}` : '',
+                        },
+                      });
+                      if (refresh.ok) {
+                        const j = await refresh.json();
+                        if (j.success && Array.isArray(j.horarios)) {
+                          setHorariosMulticentroList(j.horarios);
+                        }
+                      }
+                    } catch (err) {
+                      console.error(err);
+                      showToast('error', err?.message || 'Error al guardar');
+                    } finally {
+                      setSavingNuevoMulticentro(false);
+                    }
+                  }}
+                >
+                  Guardar horario
+                </Button>
+              </div>
+              <div className="border-t border-green-200 pt-4">
+                <p className="text-xs font-semibold text-gray-700 mb-2">
+                  Días del mes ({daysInMonthHorariosMulticentro} días)
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 max-h-[min(420px,50vh)] overflow-y-auto pr-1">
+                  {Array.from({ length: daysInMonthHorariosMulticentro }, (_, i) => {
+                    const day = i + 1;
+                    const mesParts = selectedMonthHorariosMulticentro.split('-');
+                    const y = parseInt(mesParts[0], 10);
+                    const m = parseInt(mesParts[1], 10) - 1;
+                    const dow = new Date(y, m, day).getDay();
+                    const dowShort = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][dow];
+                    return (
+                      <div key={day} className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold text-gray-600">
+                          {day} · {dowShort}
+                        </span>
+                        <input
+                          type="text"
+                          className="w-full text-xs p-1.5 border border-gray-300 rounded-md bg-white"
+                          value={multicentroManualDias[day] ?? ''}
+                          onChange={(e) =>
+                            setMulticentroManualDias((prev) => ({
+                              ...prev,
+                              [day]: e.target.value,
+                            }))
+                          }
+                          placeholder="T1… / 8"
+                          title="Turno (T1 08:00-16:00) u horas (8)"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -6192,11 +6434,11 @@ export default function CuadrantesPage() {
                               <th className="px-3 py-2 text-left border border-gray-200">Código</th>
                               <th className="px-3 py-2 text-left border border-gray-200">Horario</th>
                               <th className="px-3 py-2 text-left border border-gray-200">Servicio</th>
-                              {Array.from({ length: 31 }, (_, i) => {
+                              {Array.from({ length: daysInMonthHorariosMulticentro }, (_, i) => {
                                 const dayNumber = i + 1;
                                 return (
                                   <th 
-                                    key={`day-header-${i + 1}`} 
+                                    key={`day-header-${dayNumber}`} 
                                     className="px-1 py-2 text-center border border-gray-200 min-w-[60px]"
                                   >
                                     {dayNumber}
@@ -6209,18 +6451,19 @@ export default function CuadrantesPage() {
                           </thead>
                           <tbody>
                             {horarios.map((horario, idx) => {
-                              const horas = [];
+                              const rowId = horario.id;
                               let totalHoras = 0;
-
-                              for (let i = 1; i <= 31; i++) {
-                                const horasStr = horario[`ZI_${i}`] || horario[`zi_${i}`] || '';
-                                const horasNum = calculaOreDinFormat(horasStr);
-                                horas.push(horasStr || '');
-                                totalHoras += horasNum;
+                              for (let i = 1; i <= daysInMonthHorariosMulticentro; i++) {
+                                const baseStr = String(horario[`ZI_${i}`] ?? horario[`zi_${i}`] ?? '');
+                                const merged =
+                                  rowId != null && multicentroListEdits[rowId]?.[i] !== undefined
+                                    ? multicentroListEdits[rowId][i]
+                                    : baseStr;
+                                totalHoras += calculaOreDinFormat(merged);
                               }
 
                               return (
-                                <tr key={idx} className="hover:bg-gray-50">
+                                <tr key={rowId ?? `${centro}-${idx}`} className="hover:bg-gray-50">
                                   <td className="px-3 py-2 border border-gray-200 font-medium">
                                     {horario.NOMBRE || horario.nombre || 'N/A'}
                                   </td>
@@ -6233,25 +6476,149 @@ export default function CuadrantesPage() {
                                   <td className="px-3 py-2 border border-gray-200">
                                     {horario.SERVICIO || horario.servicio || 'N/A'}
                                   </td>
-                                  {horas.map((h, dayIdx) => (
-                                    <td 
-                                      key={`day-${dayIdx + 1}`}
-                                      className={`px-1 py-2 text-center border border-gray-200 text-xs ${
-                                        h === '' || h === 'LIBRE' || h === '0' || h === '0h' 
-                                          ? 'bg-gray-50 text-gray-400' 
-                                          : 'bg-green-50 text-green-700 font-medium'
-                                      }`}
-                                      title={h || '-'}
-                                    >
-                                      {h ? (h.length > 8 ? `${h.substring(0, 8)}...` : h) : '-'}
-                                    </td>
-                                  ))}
+                                  {Array.from({ length: daysInMonthHorariosMulticentro }, (_, dayIdx) => {
+                                    const day = dayIdx + 1;
+                                    const baseStr = String(horario[`ZI_${day}`] ?? horario[`zi_${day}`] ?? '');
+                                    const merged =
+                                      rowId != null && multicentroListEdits[rowId]?.[day] !== undefined
+                                        ? multicentroListEdits[rowId][day]
+                                        : baseStr;
+                                    const h = merged;
+                                    const isEmpty =
+                                      h === '' ||
+                                      h === 'LIBRE' ||
+                                      h === '0' ||
+                                      h === '0h' ||
+                                      String(h).trim() === '';
+                                    return (
+                                      <td
+                                        key={`day-${day}`}
+                                        className="px-0.5 py-1 border border-gray-200 align-top"
+                                      >
+                                        <input
+                                          type="text"
+                                          className={`w-full min-w-[48px] max-w-[92px] text-[10px] leading-tight p-1 border rounded box-border ${
+                                            isEmpty
+                                              ? 'bg-gray-50 text-gray-500 border-gray-200'
+                                              : 'bg-green-50 text-green-800 border-green-200 font-medium'
+                                          }`}
+                                          value={h}
+                                          title={h || '—'}
+                                          placeholder="—"
+                                          disabled={rowId == null || savingMulticentroListId === rowId}
+                                          onChange={(e) => {
+                                            if (rowId == null) return;
+                                            setMulticentroListEdits((prev) => ({
+                                              ...prev,
+                                              [rowId]: {
+                                                ...(prev[rowId] || {}),
+                                                [day]: e.target.value,
+                                              },
+                                            }));
+                                          }}
+                                        />
+                                      </td>
+                                    );
+                                  })}
                                   <td className="px-3 py-2 text-center border border-gray-200 font-bold bg-blue-50">
                                     {totalHoras > 0 ? `${totalHoras.toFixed(1)}h` : '-'}
                                   </td>
                                   <td className="px-3 py-2 text-center border border-gray-200">
-                                    <div className="flex gap-2 justify-center">
+                                    <div className="flex flex-wrap gap-2 justify-center">
                                       <button
+                                        type="button"
+                                        disabled={
+                                          rowId == null ||
+                                          savingMulticentroListId === rowId
+                                        }
+                                        onClick={async () => {
+                                          if (!horario.id) {
+                                            showToast(
+                                              'error',
+                                              'No se puede guardar: falta id del registro',
+                                            );
+                                            return;
+                                          }
+                                          setSavingMulticentroListId(horario.id);
+                                          try {
+                                            const token = localStorage.getItem('auth_token');
+                                            const updateData = {};
+                                            for (let zi = 1; zi <= 31; zi++) {
+                                              const baseZi = String(
+                                                horario[`ZI_${zi}`] ?? horario[`zi_${zi}`] ?? '',
+                                              );
+                                              const mergedZi =
+                                                multicentroListEdits[horario.id]?.[zi] !== undefined
+                                                  ? multicentroListEdits[horario.id][zi]
+                                                  : baseZi;
+                                              const t = String(mergedZi).trim();
+                                              updateData[`ZI_${zi}`] =
+                                                t === '' || t.toUpperCase() === 'LIBRE' ? null : t;
+                                            }
+                                            const updateResponse = await fetch(
+                                              `${routes.updateHorarioMulticentro}/${horario.id}`,
+                                              {
+                                                method: 'PUT',
+                                                headers: {
+                                                  'Content-Type': 'application/json',
+                                                  Authorization: token ? `Bearer ${token}` : '',
+                                                },
+                                                body: JSON.stringify(updateData),
+                                              },
+                                            );
+                                            if (!updateResponse.ok) {
+                                              throw new Error(
+                                                `HTTP error! status: ${updateResponse.status}`,
+                                              );
+                                            }
+                                            const mes =
+                                              horario.LUNA ||
+                                              horario.luna ||
+                                              selectedMonthHorariosMulticentro;
+                                            const codigo = horario.CODIGO || horario.codigo;
+                                            const refreshResponse = await fetch(
+                                              `${routes.getHorarioMulticentro}?mes=${mes}${codigo ? `&codigo=${codigo}` : ''}`,
+                                              {
+                                                method: 'GET',
+                                                headers: {
+                                                  'Content-Type': 'application/json',
+                                                  Authorization: token ? `Bearer ${token}` : '',
+                                                },
+                                              },
+                                            );
+                                            if (refreshResponse.ok) {
+                                              const refreshData = await refreshResponse.json();
+                                              if (
+                                                refreshData.success &&
+                                                Array.isArray(refreshData.horarios)
+                                              ) {
+                                                setHorariosMulticentroList(refreshData.horarios);
+                                                setMulticentroListEdits((prev) => {
+                                                  const next = { ...prev };
+                                                  delete next[horario.id];
+                                                  return next;
+                                                });
+                                                showToast('success', 'Horario multicentro guardado');
+                                              }
+                                            }
+                                          } catch (error) {
+                                            console.error('Error guardando horario multicentro:', error);
+                                            showToast(
+                                              'error',
+                                              `Error al guardar: ${error.message}`,
+                                            );
+                                          } finally {
+                                            setSavingMulticentroListId(null);
+                                          }
+                                        }}
+                                        className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs rounded"
+                                        title="Guardar cambios de esta fila"
+                                      >
+                                        {savingMulticentroListId === horario.id ? '…' : '💾'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={savingMulticentroListId === horario.id}
                                         onClick={async () => {
                                           // Preia ture din cuadrante
                                           try {
@@ -6321,6 +6688,11 @@ export default function CuadrantesPage() {
                                                 const refreshData = await refreshResponse.json();
                                                 if (refreshData.success && Array.isArray(refreshData.horarios)) {
                                                   setHorariosMulticentroList(refreshData.horarios);
+                                                  setMulticentroListEdits((prev) => {
+                                                    const next = { ...prev };
+                                                    if (horario.id != null) delete next[horario.id];
+                                                    return next;
+                                                  });
                                                   showToast('success', 'Turnos importados desde cuadrante correctamente');
                                                 }
                                               }
@@ -7519,158 +7891,51 @@ export default function CuadrantesPage() {
                     
                     // Salvează cuadrantes în horario_multicentro
                     if (cuadrantesMulticentro.length > 0) {
-                      // Transformă cuadrantes în format horario_multicentro
-                      // Funcție helper pentru a transforma formatul complet în număr de ore
-                      const transformaZiValueInOre = (ziValue) => {
-                        if (!ziValue || ziValue === '' || ziValue === 'LIBRE' || ziValue === '0' || ziValue === '0h') {
-                          return null; // LIBRE rămâne LIBRE
-                        }
-                        
-                        const ziStr = String(ziValue).trim();
-                        
-                        // Dacă este deja un număr (ex: "8", "8h", "8.0")
-                        if (!isNaN(parseFloat(ziStr)) && isFinite(parseFloat(ziStr))) {
-                          const hours = parseFloat(ziStr);
-                          return hours > 0 ? String(hours) : null; // Returnează numărul de ore ca string
-                        }
-                        
-                        // PRIORITATE 1: Dacă este format "T1 XX:XX-XX:XX", "T2 XX:XX-XX:XX", "T3 XX:XX-XX:XX"
-                        // Încearcă mai multe variante de regex pentru a acoperi toate formatele posibile
-                        // Format cu spațiu: "T3 23:00-07:00" sau "T3 8:00:00 - 16:00:00"
-                        // Format fără spațiu: "T323:00-07:00"
-                        // Format cu secunde: "8:00:00 - 16:00:00" sau "T3 8:00:00 - 16:00:00"
-                        let turnoMatch = ziStr.match(/^T[123]\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-                        if (!turnoMatch) {
-                          turnoMatch = ziStr.match(/^T[123](\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/); // Fără spațiu după T
-                        }
-                        if (!turnoMatch) {
-                          turnoMatch = ziStr.match(/^T[123]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/); // Spațiu opțional
-                        }
-                        
-                        if (turnoMatch) {
-                          const startHour = parseInt(turnoMatch[1], 10);
-                          const startMin = parseInt(turnoMatch[2], 10);
-                          // turnoMatch[3] este secunde (opțional) - ignorăm
-                          let endHour = parseInt(turnoMatch[4], 10);
-                          const endMin = parseInt(turnoMatch[5], 10);
-                          // turnoMatch[6] este secunde (opțional) - ignorăm
-                          
-                          // Pentru T3 (ture de noapte), ora de sfârșit este următoarea zi
-                          // De exemplu: T3 23:00-07:00 → 23:00 până la 07:00 următoarea zi = 8 ore
-                          if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
-                            endHour += 24;
+                      // Același comportament ca la editarea manuală a zilei: păstrăm **orarul complet** (ex. T1 07:30-15:00),
+                      // nu îl reducem la ore. TotalHoras se recalculează din aceste string-uri (folosind transformaZiValueInOre doar pentru sumă).
+                      const horariosMulticentro = cuadrantesMulticentro.map((c) => {
+                        const ziPreserved = {};
+                        for (let i = 1; i <= 31; i++) {
+                          const ziKey = `ZI_${i}`;
+                          const raw =
+                            c[ziKey] ??
+                            c[ziKey.toLowerCase()] ??
+                            c[ziKey.toUpperCase()] ??
+                            null;
+                          if (
+                            raw == null ||
+                            raw === '' ||
+                            String(raw).trim() === '' ||
+                            String(raw).trim().toUpperCase() === 'LIBRE'
+                          ) {
+                            ziPreserved[ziKey] = null;
+                            continue;
                           }
-                          
-                          const startMinutes = startHour * 60 + startMin;
-                          const endMinutes = endHour * 60 + endMin;
-                          const durationMinutes = endMinutes - startMinutes;
-                          const durationHours = durationMinutes / 60;
-                          
-                          // Returnează numărul de ore ca string (fără zecimale dacă este întreg, altfel cu 1 zecimală)
-                          if (durationHours === Math.round(durationHours)) {
-                            return String(Math.round(durationHours));
-                          } else {
-                            return String(Math.round(durationHours * 10) / 10);
+                          ziPreserved[ziKey] = String(raw).trim();
+                        }
+                        let totalSum = 0;
+                        for (let i = 1; i <= 31; i++) {
+                          const ziKey = `ZI_${i}`;
+                          const cell = ziPreserved[ziKey];
+                          if (!cell) continue;
+                          const oreStr = transformaZiValueInOre(cell);
+                          if (oreStr) {
+                            const n = parseFloat(oreStr);
+                            if (!isNaN(n)) totalSum += n;
                           }
                         }
-                        
-                        // Dacă este format "XX:XX-XX:XX" sau "XX:XX:XX - XX:XX:XX" (fără T1/T2/T3, cu sau fără secunde)
-                        const timeMatch = ziStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-                        if (timeMatch) {
-                          const startHour = parseInt(timeMatch[1], 10);
-                          const startMin = parseInt(timeMatch[2], 10);
-                          // timeMatch[3] este secunde (opțional) - ignorăm
-                          let endHour = parseInt(timeMatch[4], 10);
-                          const endMin = parseInt(timeMatch[5], 10);
-                          // timeMatch[6] este secunde (opțional) - ignorăm
-                          
-                          // Dacă ora de sfârșit este mai mică, înseamnă că este următoarea zi
-                          if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
-                            endHour += 24;
-                          }
-                          
-                          const startMinutes = startHour * 60 + startMin;
-                          const endMinutes = endHour * 60 + endMin;
-                          const durationMinutes = endMinutes - startMinutes;
-                          const durationHours = durationMinutes / 60;
-                          
-                          return String(Math.round(durationHours * 10) / 10); // Returnează cu 1 zecimală
-                        }
-                        
-                        // Dacă este doar "T1", "T2", "T3" fără ore, presupunem 8 ore (standard)
-                        if (ziStr.match(/^T[123]$/)) {
-                          return '8';
-                        }
-                        
-                        // Fallback: Încercăm să extragem orice format de orar din string
-                        // Ex: "T3 23:00-07:00", "T323:00-07:00", "23:00-07:00", "8:00:00 - 16:00:00", etc.
-                        const anyTimeMatch = ziStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-                        if (anyTimeMatch) {
-                          const startHour = parseInt(anyTimeMatch[1], 10);
-                          const startMin = parseInt(anyTimeMatch[2], 10);
-                          // anyTimeMatch[3] este secunde (opțional) - ignorăm
-                          let endHour = parseInt(anyTimeMatch[4], 10);
-                          const endMin = parseInt(anyTimeMatch[5], 10);
-                          // anyTimeMatch[6] este secunde (opțional) - ignorăm
-                          
-                          if (endHour < startHour || (endHour === startHour && endMin < startMin)) {
-                            endHour += 24;
-                          }
-                          
-                          const startMinutes = startHour * 60 + startMin;
-                          const endMinutes = endHour * 60 + endMin;
-                          const durationMinutes = endMinutes - startMinutes;
-                          const durationHours = durationMinutes / 60;
-                          
-                          if (durationHours === Math.round(durationHours)) {
-                            return String(Math.round(durationHours));
-                          } else {
-                            return String(Math.round(durationHours * 10) / 10);
-                          }
-                        }
-                        
-                        // Pentru alte formate necunoscute, returnăm null (va fi ignorat)
-                        console.warn(`⚠️ [transformaZiValueInOre] Nu s-a putut transforma valoarea: "${ziStr}"`);
-                        return null;
-                      };
-                      
-                      const horariosMulticentro = cuadrantesMulticentro.map(c => {
-                        // Notă: horarioTipo și horarioCompleto nu sunt folosite - se folosește 'MULTICENTRO' hardcodat în obiectul horario
-                        
-                        // Transformă toate valorile ZI_X în număr de ore
-                        const ziTransformed = Object.fromEntries(
-                          Array.from({ length: 31 }, (_, i) => {
-                            const ziKey = `ZI_${i + 1}`;
-                            // Încearcă mai multe variante de chei (ZI_1, zi_1, ZI_1, etc.)
-                            const ziValue = c[ziKey] || c[ziKey.toLowerCase()] || c[ziKey.toUpperCase()] || null;
-                            const oreValue = transformaZiValueInOre(ziValue);
-                            // Debug log pentru toate valorile care nu sunt null și nu sunt deja transformate
-                            if (ziValue && ziValue !== oreValue) {
-                              console.log(`🔍 [Transform ZI_${i + 1}] Original: "${ziValue}" (type: ${typeof ziValue}) → Transformat: "${oreValue}"`);
-                            }
-                            // Dacă transformarea nu a funcționat și valoarea originală este un format complet (ex: "T3 23:00-07:00"),
-                            // încercăm să o transformăm manual
-                            if (ziValue && !oreValue && String(ziValue).includes('T') && String(ziValue).includes('-')) {
-                              console.warn(`⚠️ [Transform ZI_${i + 1}] Transformare eșuată pentru: "${ziValue}"`);
-                            }
-                            return [ziKey, oreValue || null]; // Asigurăm că returnăm null dacă transformarea a eșuat
-                          })
-                        );
-                        
-                        const horario = {
+                        return {
                           CODIGO: c.CODIGO,
                           EMAIL: c.EMAIL,
                           NOMBRE: c.NOMBRE,
                           LUNA: c.LUNA || mesAno,
                           CLIENTE: c.CENTRO || selectedCentro || 'N/A',
-                          // HORARIO și SERVICIO sunt generice pentru multicentro (toate zilele pentru același angajat/centru/lună)
                           HORARIO: 'MULTICENTRO',
                           SERVICIO: 'MULTICENTRO',
-                          // ZI_X sunt transformate în număr de ore
-                          ...ziTransformed,
-                          TotalHoras: c.TotalHoras || null,
+                          ...ziPreserved,
+                          TotalHoras:
+                            totalSum > 0 ? totalSum.toFixed(1) : c.TotalHoras || null,
                         };
-                        return horario;
                       });
                       
                       const responseMulticentro = await fetch(routes.saveHorariosMulticentro, {

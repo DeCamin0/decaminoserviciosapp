@@ -211,7 +211,7 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Enlaces admin: analytics (también Manager), leads (Admin/Developer), tenants (solo Developer) */}
+        {/* Enlaces admin: analytics (también Manager), leads (Admin/Developer). Super-admin tenants: ruta directa /superadmin/tenants (no menú). */}
         {(isAdmin || isDeveloper || isManager) && (
           <div className="mb-4 flex flex-wrap justify-end gap-2">
             <Link
@@ -226,14 +226,6 @@ export default function AdminDashboard() {
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-red-700 shadow border border-red-100 hover:bg-red-50 transition-colors"
               >
                 📇 Leads (España)
-              </Link>
-            )}
-            {isDeveloper && (
-              <Link
-                to="/admin/tenants"
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 transition-colors"
-              >
-                🗄️ Tenants (multi-DB)
               </Link>
             )}
           </div>

@@ -2206,10 +2206,21 @@ const TabGestionarPedidos: React.FC<{
   const [serviciosEntrega, setServiciosEntrega] = useState<Record<number, string>>({});
   const [loadingServicios, setLoadingServicios] = useState(false);
   const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
-  const [albaranFile, setAlbaranFile] = useState<File | null>(null);
+  const [albaranFiles, setAlbaranFiles] = useState<File[]>([]);
   const [albaranPreview, setAlbaranPreview] = useState<string | null>(null);
   const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
   const [pedidoViendoAlbaran, setPedidoViendoAlbaran] = useState<string | null>(null);
+  const [albaranesListaMeta, setAlbaranesListaMeta] = useState<
+    Array<{
+      id: number;
+      nombre_archivo: string;
+      tipo_mime: string | null;
+      tamano_bytes: number | null;
+      subido_en: string;
+      subido_por: string | null;
+    }>
+  | null>(null);
+  const [albaranViewSelectedId, setAlbaranViewSelectedId] = useState<number | null>(null);
   const [albaranViewBlobUrl, setAlbaranViewBlobUrl] = useState<string | null>(null);
   /** Data URL pentru preview la imagini (mai fiabil decât blob URL în <img>) */
   const [albaranViewPreviewUrl, setAlbaranViewPreviewUrl] = useState<string | null>(null);
@@ -2250,9 +2261,11 @@ const TabGestionarPedidos: React.FC<{
     return filtered;
   }, [pedidos, filtroEstado, filtroCentro, filtroAn]);
 
-  // Când utilizatorul deschide "Ver Albarán", încarcă fișierul pentru vizualizare
+  // Lista albaranes când se deschide "Ver Albarán"
   useEffect(() => {
     if (!pedidoViendoAlbaran) {
+      setAlbaranesListaMeta(null);
+      setAlbaranViewSelectedId(null);
       setAlbaranViewBlobUrl(null);
       setAlbaranViewPreviewUrl(null);
       setAlbaranViewMime('');
@@ -2260,18 +2273,70 @@ const TabGestionarPedidos: React.FC<{
       setAlbaranViewError(null);
       return;
     }
+    let cancelled = false;
+    const token = localStorage.getItem('auth_token');
+    const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+    const uid = (pedidoViendoAlbaran || '').replace(/^=+/, '');
+    setAlbaranViewLoading(true);
+    setAlbaranViewError(null);
+    fetch(`${base}/api/pedidos/${encodeURIComponent(uid)}/albaranes`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `Error ${res.status}`);
+        }
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : [];
+        setAlbaranesListaMeta(list);
+        if (list.length === 0) {
+          setAlbaranViewSelectedId(null);
+          setAlbaranViewError('No hay albaranes guardados para este pedido.');
+          setAlbaranViewLoading(false);
+        } else {
+          setAlbaranViewSelectedId(list[0].id);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setAlbaranViewError(err?.message || 'No se pudo cargar la lista de albaranes');
+          setAlbaranViewLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pedidoViendoAlbaran]);
+
+  // Blob preview pentru albarán selectat (id)
+  useEffect(() => {
+    if (!pedidoViendoAlbaran || albaranViewSelectedId == null) {
+      return;
+    }
     let revoked = false;
     let heicHandlesLoading = false;
     setAlbaranViewLoading(true);
     setAlbaranViewError(null);
     setAlbaranViewPreviewUrl(null);
+    if (albaranViewBlobUrlRef.current) {
+      URL.revokeObjectURL(albaranViewBlobUrlRef.current);
+      albaranViewBlobUrlRef.current = null;
+    }
+    if (albaranViewPreviewUrlRef.current) {
+      URL.revokeObjectURL(albaranViewPreviewUrlRef.current);
+      albaranViewPreviewUrlRef.current = null;
+    }
+    setAlbaranViewBlobUrl(null);
     const token = localStorage.getItem('auth_token');
     const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
     const uid = (pedidoViendoAlbaran || '').replace(/^=+/, '');
-    const url = `${base}/api/pedidos/${encodeURIComponent(uid)}/albaran?preview=1`;
+    const url = `${base}/api/pedidos/${encodeURIComponent(uid)}/albaran?preview=1&id=${albaranViewSelectedId}`;
     fetch(url, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
         if (revoked) return;
@@ -2302,9 +2367,9 @@ const TabGestionarPedidos: React.FC<{
               if (revoked) return;
               const b = Array.isArray(converted) ? converted[0] : converted;
               if (b) {
-                const url = URL.createObjectURL(b);
-                albaranViewPreviewUrlRef.current = url;
-                setAlbaranViewPreviewUrl(url);
+                const u = URL.createObjectURL(b);
+                albaranViewPreviewUrlRef.current = u;
+                setAlbaranViewPreviewUrl(u);
               }
             })
             .catch(() => { if (!revoked) setAlbaranViewPreviewUrl(null); })
@@ -2336,7 +2401,7 @@ const TabGestionarPedidos: React.FC<{
         albaranViewPreviewUrlRef.current = null;
       }
     };
-  }, [pedidoViendoAlbaran]);
+  }, [pedidoViendoAlbaran, albaranViewSelectedId]);
 
   // Produse disponibile filtrate și sortate
   const productosDisponiblesFiltrados = useMemo(() => {
@@ -2908,15 +2973,17 @@ const TabGestionarPedidos: React.FC<{
   };
 
   const handleAlbaranFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setAlbaranFile(file);
-      if (file.type.startsWith('image/')) {
+    const files = event.target.files;
+    if (files?.length) {
+      const arr = Array.from(files);
+      setAlbaranFiles(arr);
+      const firstImg = arr.find((f) => f.type.startsWith('image/'));
+      if (firstImg) {
         const reader = new FileReader();
         reader.onload = (e) => {
           setAlbaranPreview(e.target?.result as string);
         };
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(firstImg);
       } else {
         setAlbaranPreview(null);
       }
@@ -2924,35 +2991,43 @@ const TabGestionarPedidos: React.FC<{
   };
 
   const handleUploadAlbaran = async () => {
-    if (!pedidoCargandoAlbaran || !albaranFile) {
-      addToast('error', 'Error', 'Por favor selecciona un archivo');
+    if (!pedidoCargandoAlbaran || albaranFiles.length === 0) {
+      addToast('error', 'Error', 'Por favor selecciona al menos un archivo');
       return;
     }
     setUploadingAlbaran(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const formData = new FormData();
-      formData.append('albaran', albaranFile);
       const uidForUpload = (pedidoCargandoAlbaran || '').replace(/^=+/, '');
       const encodedUid = encodeURIComponent(uidForUpload);
       const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
       const url = `${base}/api/pedidos/${encodedUid}/albaran`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      for (const file of albaranFiles) {
+        const formData = new FormData();
+        formData.append('albaran', file);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        await response.json();
       }
-      await response.json();
-      setPedidos(prev => prev.map(p =>
-        p.pedido_uid === pedidoCargandoAlbaran ? { ...p, estado: 'entregado' } : p
-      ));
-      addToast('success', 'Albarán subido', 'El albarán ha sido subido correctamente y el pedido ha sido marcado como entregado');
+      setPedidos((prev) =>
+        prev.map((p) =>
+          p.pedido_uid === pedidoCargandoAlbaran ? { ...p, estado: 'entregado' } : p,
+        ),
+      );
+      addToast(
+        'success',
+        'Albarán(es) subido(s)',
+        `${albaranFiles.length} archivo(s) subido(s). El pedido queda como entregado.`,
+      );
       setPedidoCargandoAlbaran(null);
-      setAlbaranFile(null);
+      setAlbaranFiles([]);
       setAlbaranPreview(null);
     } catch (error: unknown) {
       console.error('Error uploading albarán:', error);
@@ -4029,6 +4104,16 @@ const TabGestionarPedidos: React.FC<{
                         📄 {pedido.estado?.toLowerCase() === 'entregado' ? 'Ver Albarán' : 'Cargar Albarán'}
                       </Button>
                     )}
+                    {pedido.estado?.toLowerCase() === 'entregado' && (
+                      <Button
+                        onClick={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
+                        className="bg-white border-2 border-green-600 text-green-800 hover:bg-green-50"
+                        size="sm"
+                        title="Subir más documentos de albarán"
+                      >
+                        ➕ Añadir albarán
+                      </Button>
+                    )}
                     <Button
                       onClick={() => setPedidoSeleccionado(
                         pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid
@@ -4752,6 +4837,8 @@ const TabGestionarPedidos: React.FC<{
                     albaranViewPreviewUrlRef.current = null;
                   }
                   setPedidoViendoAlbaran(null);
+                  setAlbaranesListaMeta(null);
+                  setAlbaranViewSelectedId(null);
                   setAlbaranViewBlobUrl(null);
                   setAlbaranViewPreviewUrl(null);
                   setAlbaranViewMime('');
@@ -4767,6 +4854,25 @@ const TabGestionarPedidos: React.FC<{
               <p className="text-sm text-gray-600 mb-3">
                 Pedido: <strong>{pedidoViendoAlbaran}</strong>
               </p>
+              {albaranesListaMeta && albaranesListaMeta.length > 1 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {albaranesListaMeta.map((a, i) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => setAlbaranViewSelectedId(a.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        albaranViewSelectedId === a.id
+                          ? 'bg-green-600 text-white border-green-600'
+                          : 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200'
+                      }`}
+                      title={a.nombre_archivo}
+                    >
+                      {i + 1}. {a.nombre_archivo.length > 28 ? `${a.nombre_archivo.slice(0, 28)}…` : a.nombre_archivo}
+                    </button>
+                  ))}
+                </div>
+              )}
               {albaranViewLoading && (
                 <div className="flex items-center justify-center py-12">
                   <span className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 inline-block"></span>
@@ -4779,6 +4885,8 @@ const TabGestionarPedidos: React.FC<{
                   <Button
                     onClick={() => {
                       setPedidoViendoAlbaran(null);
+                      setAlbaranesListaMeta(null);
+                      setAlbaranViewSelectedId(null);
                       setAlbaranViewError(null);
                     }}
                     variant="outline"
@@ -4858,6 +4966,8 @@ const TabGestionarPedidos: React.FC<{
                           albaranViewPreviewUrlRef.current = null;
                         }
                         setPedidoViendoAlbaran(null);
+                        setAlbaranesListaMeta(null);
+                        setAlbaranViewSelectedId(null);
                         setAlbaranViewBlobUrl(null);
                         setAlbaranViewPreviewUrl(null);
                       }}
@@ -4883,7 +4993,7 @@ const TabGestionarPedidos: React.FC<{
                 <button
                   onClick={() => {
                     setPedidoCargandoAlbaran(null);
-                    setAlbaranFile(null);
+                    setAlbaranFiles([]);
                     setAlbaranPreview(null);
                   }}
                   className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
@@ -4896,15 +5006,16 @@ const TabGestionarPedidos: React.FC<{
                   Pedido: <strong>{pedidoCargandoAlbaran}</strong>
                 </p>
                 <p className="text-sm text-gray-600 mb-4">
-                  Sube una foto o PDF del albarán de entrega. El pedido será marcado como &quot;Entregado&quot; automáticamente.
+                  Puedes subir uno o varios archivos (foto o PDF). El pedido será marcado como &quot;Entregado&quot; automáticamente.
                 </p>
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Seleccionar archivo (PDF, JPG, PNG)
+                  Seleccionar archivos (PDF, JPG, PNG) — múltiples permitidos
                 </label>
                 <input
                   type="file"
+                  multiple
                   accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf"
                   onChange={handleAlbaranFileChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -4912,7 +5023,7 @@ const TabGestionarPedidos: React.FC<{
               </div>
               {albaranPreview && (
                 <div className="mb-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Vista previa:</p>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Vista previa (primera imagen):</p>
                   <div className="border border-gray-300 rounded-lg p-2">
                     <img
                       src={albaranPreview}
@@ -4922,18 +5033,25 @@ const TabGestionarPedidos: React.FC<{
                   </div>
                 </div>
               )}
-              {albaranFile && !albaranPreview && (
+              {albaranFiles.length > 0 && !albaranPreview && (
                 <div className="mb-4">
                   <p className="text-sm text-gray-600">
-                    Archivo seleccionado: <strong>{albaranFile.name}</strong> ({(albaranFile.size / 1024).toFixed(2)} KB)
+                    {albaranFiles.length} archivo(s) seleccionado(s):
                   </p>
+                  <ul className="mt-1 text-sm list-disc list-inside text-gray-700 max-h-32 overflow-y-auto">
+                    {albaranFiles.map((f) => (
+                      <li key={`${f.name}-${f.size}`}>
+                        <strong>{f.name}</strong> ({(f.size / 1024).toFixed(2)} KB)
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               <div className="flex gap-3 justify-end">
                 <Button
                   onClick={() => {
                     setPedidoCargandoAlbaran(null);
-                    setAlbaranFile(null);
+                    setAlbaranFiles([]);
                     setAlbaranPreview(null);
                   }}
                   variant="outline"
@@ -4944,7 +5062,7 @@ const TabGestionarPedidos: React.FC<{
                 <Button
                   onClick={handleUploadAlbaran}
                   className="bg-green-600 hover:bg-green-700 text-white"
-                  disabled={!albaranFile || uploadingAlbaran}
+                  disabled={albaranFiles.length === 0 || uploadingAlbaran}
                 >
                   {uploadingAlbaran ? (
                     <>
@@ -4952,7 +5070,7 @@ const TabGestionarPedidos: React.FC<{
                       Subiendo...
                     </>
                   ) : (
-                    '📤 Subir Albarán'
+                    '📤 Subir albarán(es)'
                   )}
                 </Button>
               </div>

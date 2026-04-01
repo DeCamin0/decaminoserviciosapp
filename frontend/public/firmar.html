@@ -31,7 +31,7 @@
     }
     .page-wrap {
       width: 100%;
-      max-width: 480px;
+      max-width: 540px;
     }
     .logo-wrap {
       text-align: center;
@@ -298,7 +298,58 @@
       height: 12px;
       object-fit: contain;
     }
+    /* Editor horario piscina (firma) */
+    #horario-piscina-firma-root {
+      margin: 0 0 20px;
+      padding: 14px;
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 12px;
+      text-align: left;
+    }
+    #horario-piscina-firma-root .horario-firma-main-title {
+      font-size: 1rem;
+      margin: 0 0 10px;
+      color: #0369a1;
+    }
+    .ph-variant {
+      margin-bottom: 16px;
+      padding: 12px;
+      background: #fff;
+      border: 1px solid #e0f2fe;
+      border-radius: 10px;
+    }
+    .ph-variant-title { font-size: 0.9rem; margin: 0 0 6px; color: #0c4a6e; }
+    .ph-note { font-size: 0.75rem; color: #64748b; margin: 0 0 10px; line-height: 1.4; }
+    .ph-period {
+      margin-bottom: 12px;
+      padding: 10px;
+      background: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    .ph-period-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .ph-period-label { font-weight: 600; font-size: 0.8rem; color: #334155; }
+    .ph-row { margin-bottom: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .ph-lbl { font-size: 0.75rem; color: #475569; min-width: 4rem; }
+    .ph-in, .ph-sel, .ph-time { font-size: 0.85rem; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    .ph-sel { min-width: 200px; max-width: 100%; }
+    .ph-dias-hint { font-size: 0.75rem; color: #0284c7; }
+    .ph-pers { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0; }
+    .ph-check { font-size: 0.8rem; color: #374151; cursor: pointer; }
+    .ph-total { font-size: 0.75rem; color: #64748b; margin: 6px 0 0; }
+    .ph-btn-add, .ph-btn-del {
+      font-size: 0.75rem;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .ph-btn-add { background: #e0f2fe; color: #0369a1; margin-top: 4px; }
+    .ph-btn-del { background: #fef2f2; color: #b91c1c; }
   </style>
+  <script src="./js/firmar-piscina-horario.js"></script>
 </head>
 <body>
   <div class="main">
@@ -323,6 +374,8 @@
         </div>
         <p id="servicios-variante-note" class="servicios-variante-note" style="display: none;">Seleccione la variante que acepta (obligatorio).</p>
       </div>
+
+      <div id="horario-piscina-firma-root" style="display: none;" aria-live="polite"></div>
 
   <form id="form" novalidate>
     <label for="nombre_comunidad">Nombre de Cliente <span class="req">*</span></label>
@@ -446,12 +499,64 @@
         return desc.indexOf('Mantenimiento invernal') !== -1;
       }
 
+      function rowEsPiscinaVerano(desc) {
+        if (!desc || typeof desc !== 'string') return false;
+        var d = desc.toLowerCase();
+        if (d.indexOf('invernal') !== -1) return false;
+        if (d.indexOf('recuperación') !== -1 || d.indexOf('recuperacion') !== -1) return false;
+        return d.indexOf('piscina') !== -1 || d.indexOf('verano') !== -1;
+      }
+
+      function getVisiblePiscinaVariants() {
+        var tbody = document.getElementById('servicios-tbody');
+        if (!tbody || !window.__PISCINA_HORARIOS_FIRMA || !window.__PISCINA_HORARIOS_FIRMA.length) return [];
+        var hasMulti = ofertaEconomicaRows && ofertaEconomicaRows.length > 1;
+        var set = {};
+        if (!hasMulti) {
+          var tr0 = tbody.querySelector('tr');
+          if (tr0) {
+            var pv0 = tr0.getAttribute('data-piscina-variant');
+            if (pv0 != null && pv0 !== '' && parseInt(pv0, 10) >= 0) set[parseInt(pv0, 10)] = true;
+          }
+        } else {
+          tbody.querySelectorAll('input[name="selected_oferta"]:checked').forEach(function (cb) {
+            var tr = cb.closest('tr');
+            if (!tr) return;
+            var pv = tr.getAttribute('data-piscina-variant');
+            if (pv != null && pv !== '' && parseInt(pv, 10) >= 0) set[parseInt(pv, 10)] = true;
+          });
+        }
+        return Object.keys(set).map(function (x) { return parseInt(x, 10); });
+      }
+
+      function syncHorarioFirmaSection() {
+        if (typeof FirmarPiscinaHorario === 'undefined') return;
+        var vis = getVisiblePiscinaVariants();
+        FirmarPiscinaHorario.sync('horario-piscina-firma-root', vis);
+      }
+
       function fmtNum(n) {
         if (n == null || isNaN(n)) return '-';
         return Number(n).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
 
-      function renderServiciosContractados(oferta, soloPiscina) {
+      function captureOfertaChecks() {
+        var m = {};
+        document.querySelectorAll('#servicios-tbody input[name="selected_oferta"]').forEach(function (cb) {
+          m[String(cb.value)] = cb.checked;
+        });
+        return m;
+      }
+      function applyOfertaChecks(m) {
+        if (!m || typeof m !== 'object') return;
+        document.querySelectorAll('#servicios-tbody input[name="selected_oferta"]').forEach(function (cb) {
+          var k = String(cb.value);
+          if (Object.prototype.hasOwnProperty.call(m, k)) cb.checked = m[k];
+        });
+      }
+
+      function renderServiciosContractados(oferta, soloPiscina, opts) {
+        opts = opts || {};
         var section = document.getElementById('servicios-section');
         var thead = document.getElementById('servicios-thead');
         var tbody = document.getElementById('servicios-tbody');
@@ -475,36 +580,51 @@
         thead.innerHTML = headerHtml;
 
         var rowsHtml = '';
+        var piscinaVeranoSeq = 0;
         oferta.forEach(function(row, idx) {
           var mens = fmtNum(row.mensualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.mensualidadConIva) + '€ IVA incl.</small>';
           var anu = esSoloPiscina ? '' : (fmtNum(row.anualidadSinIva) + '€+IVA<br><small>' + fmtNum(row.anualidadConIva) + '€ IVA incl.</small>');
           var isInvernal = isMantenimientoInvernalRow(row.descripcion);
           var isRecuperacion = row.descripcion === 'Recuperación de Agua';
           var dataAttr = isInvernal ? ' data-invernal="1"' : '';
+          var isPV = rowEsPiscinaVerano(row.descripcion);
+          var piscinaVAttr = '';
+          if (isPV) {
+            piscinaVAttr = ' data-piscina-variant="' + piscinaVeranoSeq + '"';
+            piscinaVeranoSeq++;
+          }
           var input = '';
           if (hasVariantes && !isRecuperacion) {
             input = '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check"' + dataAttr + '>';
           } else if (isRecuperacion) {
             input = '<span class="recuperacion-incl" title="Incluido al renunciar al mantenimiento invernal">Incl.</span>';
           }
-          rowsHtml += '<tr class="radio-row' + (isRecuperacion ? ' recuperacion-row' : '') + '"><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
+          rowsHtml += '<tr class="radio-row' + (isRecuperacion ? ' recuperacion-row' : '') + '"' + piscinaVAttr + '><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
           if (!esSoloPiscina) rowsHtml += '<td class="precio-block">' + anu + '</td>';
           rowsHtml += '</tr>';
         });
         tbody.innerHTML = rowsHtml;
         if (hasVariantes) {
           tbody.querySelectorAll('input[name="selected_oferta"]').forEach(function(cb) {
-            cb.addEventListener('change', updateSubmitState);
+            cb.addEventListener('change', function() { updateSubmitState(); syncHorarioFirmaSection(); });
           });
           var conRecuperacion = ofertaOriginal && oferta.length === ofertaOriginal.length + 1 && oferta[oferta.length - 1].descripcion === 'Recuperación de Agua';
           if (!conRecuperacion) {
-            tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) { cb.checked = true; });
+            if (opts.restoreChecks) {
+              applyOfertaChecks(opts.restoreChecks);
+            } else {
+              tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) { cb.checked = true; });
+            }
           }
           tbody.querySelectorAll('input[data-invernal="1"]').forEach(function(cb) {
             cb.addEventListener('change', function onInvernalChange() {
-              if (this.checked) {
+              var invBoxes = document.querySelectorAll('#servicios-tbody input[data-invernal="1"]');
+              var allInvernalUnchecked = true;
+              invBoxes.forEach(function (b) { if (b.checked) allInvernalUnchecked = false; });
+              var snap = captureOfertaChecks();
+              if (!allInvernalUnchecked) {
                 ofertaEconomicaRows = ofertaOriginal.slice();
-                renderServiciosContractados(ofertaEconomicaRows, esSoloPiscina);
+                renderServiciosContractados(ofertaEconomicaRows, esSoloPiscina, { restoreChecks: snap });
               } else {
                 ofertaEconomicaRows = ofertaOriginal.slice();
                 ofertaEconomicaRows.push(buildRecuperacionAguaRow(window.recuperacionAguaPrecio));
@@ -534,6 +654,7 @@
           });
         }
         updateSubmitState();
+        syncHorarioFirmaSection();
       }
 
       if (!quotationId) {
@@ -562,6 +683,11 @@
                 ofertaEconomicaRows = data.oferta_economica.slice();
                 esSoloPiscina = !!data.es_solo_piscina;
                 renderServiciosContractados(ofertaEconomicaRows, data.es_solo_piscina);
+              }
+              if (data.piscina_horarios_firma && typeof FirmarPiscinaHorario !== 'undefined') {
+                window.__PISCINA_HORARIOS_FIRMA = data.piscina_horarios_firma;
+                FirmarPiscinaHorario.setServerData(data.piscina_horarios_firma);
+                syncHorarioFirmaSection();
               }
             }
             if (typeof updateSubmitState === 'function') updateSubmitState();
@@ -728,6 +854,11 @@
           payload.dni_presidente = document.getElementById('dni_presidente').value.trim();
           payload.n_viviendas = document.getElementById('n_viviendas').value.trim();
           payload.recogida_llaves = document.getElementById('recogida_llaves').value.trim();
+        }
+
+        var visHor = getVisiblePiscinaVariants();
+        if (visHor.length > 0 && typeof FirmarPiscinaHorario !== 'undefined') {
+          payload.piscina_horario_firma = FirmarPiscinaHorario.collectPayload(visHor);
         }
 
         var btn = document.getElementById('btn-submit');

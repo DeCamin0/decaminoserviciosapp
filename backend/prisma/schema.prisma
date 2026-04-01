@@ -180,6 +180,28 @@ model ComunicadoLeido {
   @@map("comunicados_leidos")
 }
 
+/// Clave/valor para flags de aplicación (ej. avisos de campaña)
+model AppSetting {
+  setting_key String   @id @map("setting_key") @db.VarChar(100)
+  value       String   @db.Text
+  updated_at  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@map("app_settings")
+}
+
+/// Solicitudes de empleados para campaña declaración de la renta (gestoría)
+model RentaCampanaSolicitud {
+  id              BigInt   @id @default(autoincrement())
+  user_codigo     String   @map("user_codigo") @db.VarChar(50)
+  campaign_key    String   @default("renta_2025") @map("campaign_key") @db.VarChar(50)
+  nombre_snapshot String?  @map("nombre_snapshot") @db.VarChar(255)
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@unique([user_codigo, campaign_key], map: "uq_renta_campana_user_campaign")
+  @@index([campaign_key], map: "idx_renta_campana_campaign")
+  @@map("renta_campana_solicitudes")
+}
+
 model Avatar {
   CODIGO       String   @id @map("CODIGO") @db.VarChar(50)
   NOMBRE       String   @map("NOMBRE") @db.VarChar(255)
@@ -1821,7 +1843,8 @@ model PedidosNotasImagen {
 
 model PedidosAlbaranes {
   id             Int       @id @default(autoincrement())
-  pedido_uid     String    @unique @map("pedido_uid") @db.VarChar(64)
+  /// Un pedido poate avea mai multe albaranes (upload succesive)
+  pedido_uid     String    @map("pedido_uid") @db.VarChar(64)
   archivo        Bytes     @map("archivo") @db.LongBlob
   nombre_archivo String    @map("nombre_archivo") @db.VarChar(255)
   tipo_mime      String?   @map("tipo_mime") @db.VarChar(100)

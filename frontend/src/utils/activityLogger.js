@@ -450,6 +450,22 @@ class ActivityLogger {
     }, 50);
   }
 
+  /** @param {number} [ejercicio] año fiscal de la renta (ej. 2025) */
+  async logRentaCampanaSolicitud(user, ejercicio) {
+    try {
+      await this.logAction('renta_campana_solicitud', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email || user.CORREO_ELECTRONICO,
+        grupo: user.GRUPO || user.grupo,
+        role: user.role,
+        codigo: user.CODIGO || user.codigo,
+        ejercicio: ejercicio ?? null,
+      });
+    } catch (error) {
+      console.error('Error logging renta campaña solicitud:', error);
+    }
+  }
+
   async logBannerHorariosDismissed(user) {
     setTimeout(() => {
       this.logAction('banner_horarios_dismissed', {

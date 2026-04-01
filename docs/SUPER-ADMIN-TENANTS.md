@@ -3,7 +3,7 @@
 ## Stack
 
 - **Backend:** NestJS 11, MySQL (`mysql2`), Prisma schema aplicată cu **`prisma db push`** pe baza nouă (fără seed).
-- **Frontend:** React (Vite), pagină `/admin/tenants` (doar **Developer**).
+- **Frontend:** React (Vite), rută **`/superadmin/tenants`** (doar build **DeCamino**; nu există în build HERA). Acces UI: `isSuperAdminControlPlane` din `/api/me` (Developer sau email în `SUPER_ADMIN_EMAILS`). Redirect non-breaking: `/admin/tenants` → `/superadmin/tenants` (DeCamino).
 - **Registry:** tabele `tenants` și `tenant_provision_logs` — fie într-o **bază dedicată** (`tenant_registry`), fie în **aceeași bază** ca aplicația (ex. `decamino_db`) dacă userul MySQL nu are `CREATE DATABASE`.
 
 ## Setup (o dată)
@@ -20,7 +20,13 @@
 
 2. **Manual:** importă `backend/migrations/tenant_registry_tables.sql` pe baza aleasă (ex. `decamino_db`).
 
-3. În `.env` (același fișier ca backend-ul care pornește API-ul):
+3. **Migrare v1 (coloane opționale observabilitate):** pe aceeași bază unde e `tenants`, rulează o dată:
+   ```bash
+   mysql -h ... -u ... -p nombre_db < backend/migrations/tenant_registry_add_v1_columns.sql
+   ```
+   Adaugă `api_public_url` și `environment` (nullable). Fără acest pas, INSERT/SELECT pe tenants pot eșua după deploy de cod nou.
+
+4. În `.env` (același fișier ca backend-ul care pornește API-ul):
 
    | Variabilă | Rol |
    |-----------|-----|
@@ -38,7 +44,7 @@
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
 
-4. **Nu** pune credențialele de admin MySQL în UI — doar în env pe server.
+5. **Nu** pune credențialele de admin MySQL în UI — doar în env pe server.
 
 **HERA + Decamino:** poți folosi **aceeași** `TENANT_REGISTRY_DATABASE_URL` (ex. ambele pointează la `decamino_db`) ca să existe o singură listă de tenants.
 
@@ -51,20 +57,22 @@ cd backend
 npm run db:seed-existing-tenants
 ```
 
-Inserează (sau actualizează) rânduri pentru `DB_NAME` din fiecare `.env` — slug `decamino` / `hera`, status `active`, parolă DB cifrată ca la tenants noi. Nu rulează `CREATE DATABASE`.
+Inserează (sau actualizează) rânduri pentru `DB_NAME` din fiecare `.env` — slug `decamino` / `hera`, status `active`, parolă DB cifrată ca la tenants noi. Completează și **`api_public_url`** / **`environment`** (implicit `https://api.decaminoservicios.com` / `https://api.herafs.com` și `production`). Override: `TENANT_SEED_API_PUBLIC_URL`, `TENANT_SEED_ENVIRONMENT` în `.env`. Nu rulează `CREATE DATABASE`.
 
 ### Desactivar / activar (solo registro)
 
-En `/admin/tenants`: **Desactivar** pone `status = inactive` (no borra datos). **Activar** solo desde `inactive`.  
+En `/superadmin/tenants`: **Desactivar** pone `status = inactive` (no borra datos). **Activar** solo desde `inactive`.  
 Migración ENUM (una vez): `npm run db:tenant-registry-inactive`  
 **Nota:** esto no corta solo el tráfico de la API por sí mismo; es marcar en el panel / tabla `tenants`.
 
 ## Comportament
 
-- **POST** `/api/super-admin/tenants` creează rândul (`provisioning`), generează `tenant_<slug>`, `app_<slug>`, parolă aleatoare, o cifrează, pornește job **async** (same process, `setImmediate`).
+- **POST** `/api/super-admin/tenants` creează rândul (`provisioning`), generează `tenant_<slug>`, `app_<slug>`, parolă aleatoare, o cifrează, pornește job **async** (same process, `setImmediate`). Body opțional: `api_public_url` (https…), `environment` (ex. `production`).
 - Răspunsul include **`db_password_once`** o singură dată.
 - Job-ul: `CREATE DATABASE` (dacă lipsește), `CREATE USER` / `ALTER USER`, `GRANT`, apoi `prisma db push --skip-generate` cu `DATABASE_URL` către noua bază (**fără seed**).
 - **Retry:** `POST /api/super-admin/tenants/:id/retry` doar dacă `status === failed`.
+- **GET** listă: fiecare tenant include **`api_health`**: `OK` | `DOWN` | `UNKNOWN`, calculat pe server cu **GET `{api_public_url}/health`** (timeout ~3.5s). Dacă lipsește `api_public_url`, `UNKNOWN`.
+- **PATCH** `/api/super-admin/tenants/:id`: poți trimite `status` (active/inactive) ca înainte, și/sau `api_public_url` / `environment` (string gol = șterge valoarea în registry).
 
 ## Securitate
 

@@ -60,6 +60,13 @@ const InicioPage = () => {
   const [documentosOficialesNecesitanFirmaCount, setDocumentosOficialesNecesitanFirmaCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [bannerStatusLoading, setBannerStatusLoading] = useState(true);
+  const [rentaCampanaLoading, setRentaCampanaLoading] = useState(true);
+  const [rentaCampanaStatus, setRentaCampanaStatus] = useState(null);
+  const [rentaCampanaSubmitting, setRentaCampanaSubmitting] = useState(false);
+  const [rentaSolicitudesOpen, setRentaSolicitudesOpen] = useState(false);
+  const [rentaSolicitudes, setRentaSolicitudes] = useState([]);
+  const [rentaSolicitudesLoading, setRentaSolicitudesLoading] = useState(false);
+  const [rentaEjercicioInput, setRentaEjercicioInput] = useState('');
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -126,6 +133,197 @@ const InicioPage = () => {
   const isManager = useMemo(() => user?.isManager || false, [user?.isManager]);
   const isAdmin = useMemo(() => user?.GRUPO === 'Admin' || user?.grupo === 'Admin', [user?.GRUPO, user?.grupo]);
   const isDeveloper = useMemo(() => user?.GRUPO === 'Developer' || user?.grupo === 'Developer', [user?.GRUPO, user?.grupo]);
+
+  const refreshRentaCampanaStatus = useCallback(async () => {
+    const token = localStorage.getItem('auth_token');
+    const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+    try {
+      const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/status`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = res.ok ? await res.json() : { enabled: false, solicited: false };
+      setRentaCampanaStatus(data);
+    } catch {
+      setRentaCampanaStatus({ enabled: false, solicited: false });
+    } finally {
+      setRentaCampanaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof rentaCampanaStatus?.ejercicio === 'number') {
+      setRentaEjercicioInput(String(rentaCampanaStatus.ejercicio));
+    }
+  }, [rentaCampanaStatus?.ejercicio]);
+
+  useEffect(() => {
+    if (!user) {
+      setRentaCampanaLoading(false);
+      return;
+    }
+    setRentaCampanaLoading(true);
+    refreshRentaCampanaStatus();
+  }, [user, refreshRentaCampanaStatus]);
+
+  const rentaEjercicioDisplay = useMemo(() => {
+    if (typeof rentaCampanaStatus?.ejercicio === 'number') {
+      return rentaCampanaStatus.ejercicio;
+    }
+    return new Date().getFullYear() - 1;
+  }, [rentaCampanaStatus?.ejercicio]);
+
+  const fetchRentaSolicitudes = useCallback(async () => {
+    if (!isDeveloper) return;
+    setRentaSolicitudesLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/solicitudes`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      const data = res.ok ? await res.json() : { items: [] };
+      setRentaSolicitudes(data.items || []);
+    } catch {
+      setRentaSolicitudes([]);
+    } finally {
+      setRentaSolicitudesLoading(false);
+    }
+  }, [isDeveloper]);
+
+  useEffect(() => {
+    if (rentaSolicitudesOpen && isDeveloper) {
+      fetchRentaSolicitudes();
+    }
+  }, [rentaSolicitudesOpen, isDeveloper, fetchRentaSolicitudes]);
+
+  const handleRentaCampanaConfirm = useCallback(async () => {
+    if (!user || rentaCampanaSubmitting) return;
+    setRentaCampanaSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/solicitar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = res.ok ? await res.json() : { ok: false };
+      if (data.ok) {
+        const ej =
+          typeof data.ejercicio === 'number'
+            ? data.ejercicio
+            : rentaCampanaStatus?.ejercicio;
+        await activityLogger.logRentaCampanaSolicitud(user, ej);
+        await refreshRentaCampanaStatus();
+        if (rentaSolicitudesOpen && isDeveloper) {
+          fetchRentaSolicitudes();
+        }
+        setNotification({
+          type: 'success',
+          message: data.alreadyHad
+            ? 'Tu solicitud ya estaba registrada.'
+            : 'Tu solicitud ha quedado registrada. La gestoría se pondrá en contacto contigo.',
+        });
+      } else {
+        setNotification({
+          type: 'warning',
+          message: data.message || 'No se pudo registrar la solicitud.',
+        });
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Error de red al registrar la solicitud.' });
+    } finally {
+      setRentaCampanaSubmitting(false);
+    }
+  }, [
+    user,
+    rentaCampanaSubmitting,
+    refreshRentaCampanaStatus,
+    rentaSolicitudesOpen,
+    isDeveloper,
+    fetchRentaSolicitudes,
+    rentaCampanaStatus?.ejercicio,
+  ]);
+
+  const handleRentaEjercicioSave = useCallback(async () => {
+    const n = parseInt(String(rentaEjercicioInput).trim(), 10);
+    if (!Number.isInteger(n) || n < 2000 || n > 2100) {
+      setNotification({
+        type: 'warning',
+        message: 'Introduce un año de ejercicio entre 2000 y 2100.',
+      });
+      return;
+    }
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/banner`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ejercicio: n }),
+      });
+      if (!res.ok) {
+        setNotification({
+          type: 'error',
+          message: 'No se pudo guardar el ejercicio (¿Developer?).',
+        });
+        return;
+      }
+      await refreshRentaCampanaStatus();
+      if (rentaSolicitudesOpen) {
+        fetchRentaSolicitudes();
+      }
+      setNotification({
+        type: 'info',
+        message: `Ejercicio actualizado: renta ${n}.`,
+      });
+    } catch {
+      setNotification({ type: 'error', message: 'Error al guardar el ejercicio.' });
+    }
+  }, [
+    rentaEjercicioInput,
+    refreshRentaCampanaStatus,
+    rentaSolicitudesOpen,
+    fetchRentaSolicitudes,
+  ]);
+
+  const handleRentaBannerToggle = useCallback(
+    async (nextEnabled) => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+        const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/banner`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ enabled: nextEnabled }),
+        });
+        if (!res.ok) {
+          setNotification({
+            type: 'error',
+            message: 'No se pudo actualizar el aviso (¿permisos Developer?).',
+          });
+          return;
+        }
+        await refreshRentaCampanaStatus();
+        setNotification({
+          type: 'info',
+          message: nextEnabled ? 'Avis de campaña activado.' : 'Avis de campaña desactivado.',
+        });
+      } catch {
+        setNotification({ type: 'error', message: 'Error al actualizar el aviso.' });
+      }
+    },
+    [refreshRentaCampanaStatus],
+  );
 
   // Funcție helper pentru a găsi cheia corectă în permisiuni bazat pe numele grupului
   const findGrupoKey = useCallback((grupo, permissions) => {
@@ -1607,6 +1805,271 @@ const InicioPage = () => {
                 );
               })()}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Campaña Renta (ejercicio dinámico) – barra Developer si aviso desactivado */}
+      {!rentaCampanaLoading && isDeveloper && rentaCampanaStatus?.enabled === false && (
+        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-700">
+              <strong>Campaña Renta {rentaEjercicioDisplay}:</strong> el aviso está <span className="font-semibold text-amber-800">desactivado</span> para los empleados.
+              {rentaCampanaStatus?.campaignKey ? (
+                <span className="ml-1 text-xs font-normal text-gray-500">
+                  ({rentaCampanaStatus.campaignKey})
+                </span>
+              ) : null}
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={false}
+                  onChange={() => handleRentaBannerToggle(true)}
+                />
+                Activar aviso
+              </label>
+              <button
+                type="button"
+                onClick={() => setRentaSolicitudesOpen((o) => !o)}
+                className="text-sm font-semibold text-indigo-700 underline hover:text-indigo-900"
+              >
+                {rentaSolicitudesOpen ? 'Ocultar solicitudes' : 'Ver solicitudes guardadas'}
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-200 pt-3">
+            <label className="text-sm text-gray-700">
+              Ejercicio (año renta){' '}
+              <input
+                type="number"
+                min={2000}
+                max={2100}
+                className="ml-1 w-24 rounded border border-gray-300 px-2 py-1"
+                value={rentaEjercicioInput}
+                onChange={(e) => setRentaEjercicioInput(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleRentaEjercicioSave}
+              className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              Guardar año
+            </button>
+          </div>
+          {rentaSolicitudesOpen && (
+            <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+              {rentaSolicitudesLoading ? (
+                <p className="p-4 text-sm text-gray-500">Cargando…</p>
+              ) : rentaSolicitudes.length === 0 ? (
+                <p className="p-4 text-sm text-gray-500">No hay solicitudes registradas.</p>
+              ) : (
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-600">
+                    <tr>
+                      <th className="px-3 py-2">Empleado</th>
+                      <th className="px-3 py-2">Código</th>
+                      <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Fecha</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rentaSolicitudes.map((row) => (
+                      <tr key={row.id} className="hover:bg-gray-50/80">
+                        <td className="px-3 py-2 font-medium text-gray-900">
+                          {row.nombre_actual || row.nombre_snapshot || '—'}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">{row.user_codigo}</td>
+                        <td className="px-3 py-2 text-gray-600">{row.email || '—'}</td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {row.created_at
+                            ? new Date(row.created_at).toLocaleString('es-ES', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Campaña Renta (ejercicio dinámico) – gestoría */}
+      {!rentaCampanaLoading && rentaCampanaStatus?.enabled === true && (
+        <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 shadow-lg overflow-hidden">
+          <div className="p-4 md:p-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-2xl text-white shadow-md">
+                📢
+              </div>
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <h3 className="text-lg font-bold text-indigo-950 md:text-xl">
+                    Campaña Renta {rentaEjercicioDisplay} – Servicio disponible 💼
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-700 md:text-base">
+                    Hola a todos,
+                    <br />
+                    <br />
+                    Desde la gestoría se ofrece la posibilidad de realizar la declaración de la renta{' '}
+                    <strong>{rentaEjercicioDisplay}</strong> para aquellos que lo necesiten.
+                    <br />
+                    <br />
+                    El coste sería de <strong>40€ + IVA</strong>, y el importe se descontaría posteriormente
+                    en la próxima nómina para mayor comodidad.
+                    <br />
+                    <br />
+                    Si estás interesado/a, confirma aquí abajo para que podamos gestionarlo.
+                    <br />
+                    <br />
+                    Muchas gracias.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={
+                        rentaCampanaSubmitting || rentaCampanaStatus?.solicited === true
+                      }
+                      onClick={handleRentaCampanaConfirm}
+                      title={
+                        rentaCampanaStatus?.solicited
+                          ? `Ya registraste tu solicitud para el ejercicio ${rentaEjercicioDisplay}`
+                          : undefined
+                      }
+                      className={
+                        rentaCampanaStatus?.solicited
+                          ? 'inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-800 shadow-sm opacity-95'
+                          : 'inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60'
+                      }
+                    >
+                      {rentaCampanaStatus?.solicited ? (
+                        <>
+                          <CheckCircle className="h-5 w-5 shrink-0" aria-hidden />
+                          Solicitud registrada
+                        </>
+                      ) : rentaCampanaSubmitting ? (
+                        'Registrando…'
+                      ) : (
+                        `Sí, quiero la renta ${rentaEjercicioDisplay} con la gestoría`
+                      )}
+                    </button>
+                  </div>
+                  {rentaCampanaStatus?.solicited && (
+                    <p className="max-w-xl text-xs leading-relaxed text-gray-600">
+                      Esta confirmación es solo para la renta del ejercicio{' '}
+                      <strong>{rentaEjercicioDisplay}</strong>: no puedes volver a pulsar para el mismo año.
+                      Cuando la empresa active la campaña de un <strong>nuevo ejercicio</strong>, aquí podrás
+                      confirmar de nuevo si lo necesitas.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {isDeveloper && (
+              <div className="mt-5 border-t border-indigo-100 pt-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-indigo-800">
+                  Developer – control del aviso
+                </p>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      checked={rentaCampanaStatus?.enabled === true}
+                      onChange={(e) => handleRentaBannerToggle(e.target.checked)}
+                    />
+                    Aviso activo en el dashboard
+                  </label>
+                  {typeof rentaCampanaStatus?.totalSolicitudes === 'number' && (
+                    <span className="text-sm text-gray-600">
+                      Solicitudes: <strong>{rentaCampanaStatus.totalSolicitudes}</strong>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setRentaSolicitudesOpen((o) => !o)}
+                    className="text-sm font-semibold text-indigo-700 underline hover:text-indigo-900"
+                  >
+                    {rentaSolicitudesOpen ? 'Ocultar lista' : 'Ver lista de solicitudes'}
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <label className="text-sm text-gray-700">
+                    Ejercicio (año de la renta){' '}
+                    <input
+                      type="number"
+                      min={2000}
+                      max={2100}
+                      className="ml-1 w-24 rounded border border-gray-300 px-2 py-1"
+                      value={rentaEjercicioInput}
+                      onChange={(e) => setRentaEjercicioInput(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRentaEjercicioSave}
+                    className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700"
+                  >
+                    Guardar año
+                  </button>
+                  {rentaCampanaStatus?.campaignKey ? (
+                    <span className="pb-1 text-xs text-gray-500">
+                      Clave: {rentaCampanaStatus.campaignKey}
+                    </span>
+                  ) : null}
+                </div>
+                {rentaSolicitudesOpen && (
+                  <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                    {rentaSolicitudesLoading ? (
+                      <p className="p-4 text-sm text-gray-500">Cargando…</p>
+                    ) : rentaSolicitudes.length === 0 ? (
+                      <p className="p-4 text-sm text-gray-500">Aún no hay solicitudes.</p>
+                    ) : (
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-600">
+                          <tr>
+                            <th className="px-3 py-2">Empleado</th>
+                            <th className="px-3 py-2">Código</th>
+                            <th className="px-3 py-2">Email</th>
+                            <th className="px-3 py-2">Fecha</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {rentaSolicitudes.map((row) => (
+                            <tr key={row.id} className="hover:bg-gray-50/80">
+                              <td className="px-3 py-2 font-medium text-gray-900">
+                                {row.nombre_actual || row.nombre_snapshot || '—'}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">{row.user_codigo}</td>
+                              <td className="px-3 py-2 text-gray-600">{row.email || '—'}</td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {row.created_at
+                                  ? new Date(row.created_at).toLocaleString('es-ES', {
+                                      dateStyle: 'short',
+                                      timeStyle: 'short',
+                                    })
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

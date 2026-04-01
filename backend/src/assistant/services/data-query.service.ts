@@ -857,7 +857,9 @@ ${assistantSelect}`;
    * Coloana `cuadrante.LUNA` în produs este de obicei `YYYY-MM`, nu text „marzo”.
    * Filtrul vechi `LIKE '%marzo%'` nu găsea rânduri → „sin datos” la „horario este mes”.
    */
-  private buildCuadranteMesSqlCondition(entidadesMes: string | undefined): string {
+  private buildCuadranteMesSqlCondition(
+    entidadesMes: string | undefined,
+  ): string {
     const meses = [
       'enero',
       'febrero',
