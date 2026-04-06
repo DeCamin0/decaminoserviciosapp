@@ -5,6 +5,7 @@ import { routes } from '../utils/routes';
 import ConfirmModal from './ui/ConfirmModal';
 import './ChatBot.css';
 import { config } from '../config/env.js';
+import { DECAMINO_OPEN_ASSISTANT_EVENT } from '../utils/reportError.js';
 import { buildAssistantPremiumFooter } from '../utils/assistantPremiumMeta.js';
 import {
   pickCuadranteResumenRow,
@@ -130,7 +131,11 @@ const ChatBot = () => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
+  const [errorReportHint, setErrorReportHint] = useState(false);
   const messagesContainerRef = useRef(null);
+  const composerInputRef = useRef(null);
+  /** Texto del informe de error a enviar al asistente (autoSend). */
+  const pendingErrorReportSendRef = useRef(null);
 
   // Setează CSS variables pentru culori branding
   useEffect(() => {
@@ -287,6 +292,30 @@ const ChatBot = () => {
   }, [shouldShowAssistant]);
 
   useEffect(() => {
+    const onOpenAssistant = (e) => {
+      const initialMessage =
+        typeof e.detail?.initialMessage === 'string' ? e.detail.initialMessage : '';
+      const autoSend = e.detail?.autoSend === true;
+      if (!shouldShowAssistant) {
+        window.dispatchEvent(new CustomEvent('decamino-report-error-no-chat'));
+        return;
+      }
+      setIsOpen(true);
+      setErrorReportHint(true);
+      if (autoSend && initialMessage.trim()) {
+        pendingErrorReportSendRef.current = initialMessage.trim();
+        setInputValue('');
+      } else {
+        pendingErrorReportSendRef.current = null;
+        setInputValue(initialMessage);
+      }
+    };
+    window.addEventListener(DECAMINO_OPEN_ASSISTANT_EVENT, onOpenAssistant);
+    return () =>
+      window.removeEventListener(DECAMINO_OPEN_ASSISTANT_EVENT, onOpenAssistant);
+  }, [shouldShowAssistant]);
+
+  useEffect(() => {
     if (Array.isArray(threadBootstrap) && threadBootstrap.length > 0) {
       setMessages(threadBootstrap);
     } else {
@@ -299,6 +328,26 @@ const ChatBot = () => {
     const el = messagesContainerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [isOpen, messages, threadKey]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !errorReportHint) return;
+    const el = composerInputRef.current;
+    if (!el) return;
+    el.focus();
+    try {
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    } catch {
+      /* ignore */
+    }
+  }, [isOpen, errorReportHint]);
+
+  const closeAssistantPanel = useCallback(() => {
+    setHistoryOpen(false);
+    setIsOpen(false);
+    setErrorReportHint(false);
+    pendingErrorReportSendRef.current = null;
+  }, []);
 
   // Funcție pentru procesarea mesajelor
   const handleUserMessage = async (message) => {
@@ -1035,6 +1084,19 @@ const ChatBot = () => {
     }
   };
 
+  const sendAssistantMessageRef = useRef(sendAssistantMessage);
+  sendAssistantMessageRef.current = sendAssistantMessage;
+
+  useEffect(() => {
+    if (!isOpen || !errorReportHint || !pendingErrorReportSendRef.current) return;
+    const text = pendingErrorReportSendRef.current;
+    const id = window.setTimeout(() => {
+      pendingErrorReportSendRef.current = null;
+      void sendAssistantMessageRef.current(text);
+    }, 200);
+    return () => window.clearTimeout(id);
+  }, [isOpen, errorReportHint]);
+
   const onComposerKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1071,7 +1133,13 @@ const ChatBot = () => {
       <button
         type="button"
         className="ast-fab"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (isOpen) {
+            closeAssistantPanel();
+          } else {
+            setIsOpen(true);
+          }
+        }}
         aria-expanded={isOpen}
         aria-label={isOpen ? 'Cerrar asistente' : 'Abrir asistente'}
       >
@@ -1086,7 +1154,7 @@ const ChatBot = () => {
             type="button"
             className="ast-scrim"
             aria-label="Cerrar asistente"
-            onClick={() => setIsOpen(false)}
+            onClick={closeAssistantPanel}
           />
           <div
             className={`ast-panel${historyOpen ? ' ast-panel--with-history' : ''}`}
@@ -1099,10 +1167,7 @@ const ChatBot = () => {
                 type="button"
                 className="ast-header__close-touch"
                 aria-label="Cerrar asistente"
-                onClick={() => {
-                  setHistoryOpen(false);
-                  setIsOpen(false);
-                }}
+                onClick={closeAssistantPanel}
               >
                 <span aria-hidden>✕</span>
               </button>
@@ -1367,8 +1432,30 @@ const ChatBot = () => {
                   )}
                 </div>
 
+                {errorReportHint ? (
+                  <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-950 shadow-sm">
+                    <p className="font-medium text-amber-900">
+                      Tu informe con el contexto (página, empleado, centro, etc.) se ha enviado al
+                      asistente. El equipo también recibe un aviso por <strong>Telegram</strong>.
+                      Puedes añadir más detalles en el chat si lo necesitas.
+                    </p>
+                    <p className="mt-1.5 text-amber-900/90">
+                      Si el asistente no responde a tiempo, contacta con un{' '}
+                      <strong>supervisor</strong> o <strong>RRHH</strong> por los canales habituales.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-2 text-[11px] font-semibold text-amber-800 underline hover:text-amber-950"
+                      onClick={() => setErrorReportHint(false)}
+                    >
+                      Entendido, ocultar aviso
+                    </button>
+                  </div>
+                ) : null}
+
                 <div className="ast-composer">
                   <textarea
+                    ref={composerInputRef}
                     className="ast-composer__input"
                     rows={1}
                     placeholder="Escribe tu consulta…"

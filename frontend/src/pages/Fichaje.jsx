@@ -29,6 +29,7 @@ import { isCuadranteRowVisible } from '../utils/cuadranteVisible';
 import { debug as loggerDebug, warn, error as logError, success, demo, info } from '../utils/logger';
 import ConfirmarJornadaModal from '../components/ConfirmarJornadaModal';
 import { config } from '../config/env.js';
+import { openWhatsAppErrorReport } from '../utils/reportError';
 import { getPdfMake } from '../utils/getPdfMake';
 
 // Cache global pentru checkConfirmation - previne apeluri duplicate pentru aceeași combinație codigo + data
@@ -2678,6 +2679,51 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               (parseInt(iv.end.split(':')[1], 10) || 0);
             return endTime < startTime;
           });
+        }
+      }
+    }
+
+    // Cuadrante cu două sau mai multe frânghii în aceeași zi (ex. 08:00–14:00 / 15:00–19:00):
+    // înainte, isShiftComplete devenea true după prima frânghie (orice Entrada + orice Salida astăzi)
+    // și bloca butonul Salida normal pentru a doua frânghie deschisă.
+    if (cuadranteAsignado) {
+      const currentDay = new Date().getDate();
+      const dayKey = `ZI_${currentDay}`;
+      const daySchedule = cuadranteAsignado[dayKey];
+      if (daySchedule && daySchedule !== 'LIBRE' && daySchedule.trim() !== '') {
+        const intervals = parseCuadranteDayIntervals(daySchedule);
+        if (intervals.length > 1) {
+          const allSameCalendarDay = intervals.every((iv) => {
+            const st = parseTimeToMinutes(iv.start);
+            const en = parseTimeToMinutes(iv.end);
+            return en >= st;
+          });
+          if (allSameCalendarDay) {
+            const cuadIntervalComplete = (intervalStart, intervalEnd) => {
+              const startTime = parseTimeToMinutes(intervalStart);
+              const endTime = parseTimeToMinutes(intervalEnd);
+              const hasEntradaForInterval = logs.some((log) => {
+                const logDate = log.data || log.FECHA || log.fecha;
+                if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Entrada') {
+                  return false;
+                }
+                const logTime = log.hora || log.HORA || log.hora_fichaje;
+                if (!logTime) return false;
+                return Math.abs(parseTimeToMinutes(logTime) - startTime) <= 30;
+              });
+              const hasSalidaForInterval = logs.some((log) => {
+                const logDate = log.data || log.FECHA || log.fecha;
+                if (!logDate || !logDate.startsWith(today) || (log.tipo || log.TIPO) !== 'Salida') {
+                  return false;
+                }
+                const logTime = log.hora || log.HORA || log.hora_fichaje;
+                if (!logTime) return false;
+                return Math.abs(parseTimeToMinutes(logTime) - endTime) <= 30;
+              });
+              return hasEntradaForInterval && hasSalidaForInterval;
+            };
+            return intervals.every((iv) => cuadIntervalComplete(iv.start, iv.end));
+          }
         }
       }
     }
@@ -9476,60 +9522,14 @@ export default function FichajePage() {
 
       {/* Botón Reportar Error */}
       <div className="flex justify-end mb-4">
-        <button 
-          onClick={async () => {
-            const phone = config.WHATSAPP_PHONE || "34635289087"; // Per client (HERA: 600 52 27 37)
-            const message = buildErrorReportMessage();
-            const text = encodeURIComponent(message);
-            const whatsappUrl = `https://wa.me/${phone}?text=${text}`;
-            
-            // Trimite o copie pe Telegram (bot general) - non-blocking
-            const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || '';
-            
-            const token = localStorage.getItem('auth_token');
-            if (token) {
-              // Trimite pe Telegram în paralel (non-blocking)
-              fetch(`${baseUrl}/api/monitoring/telegram`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                  message: message,
-                  botType: 'general', // Bot general pentru erori
-                }),
-              }).catch((error) => {
-                // Nu afișăm eroare utilizatorului, doar logăm
-                console.warn('Error sending to Telegram:', error);
-              });
-            }
-            
-            // Try WhatsApp Desktop protocol first (opens in app, not browser)
-            // This avoids opening a new browser tab
-            const whatsappDesktopUrl = `whatsapp://send?phone=${phone}&text=${text}`;
-            
-            // Create a temporary link to try WhatsApp Desktop
-            const link = document.createElement('a');
-            link.href = whatsappDesktopUrl;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            // Fallback to web WhatsApp after a delay
-            // If Desktop is installed, this won't execute
-            // If not, it opens in the same tab to avoid leaving a new tab open
-            setTimeout(() => {
-              // Check if we're still on the same page (Desktop didn't open)
-              if (document.hasFocus()) {
-                window.location.href = whatsappUrl;
-              }
-            }, 1000);
-          }}
+        <button
+          type="button"
+          onClick={() => openWhatsAppErrorReport(buildErrorReportMessage())}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
         >
-          <span className="text-base">📱</span>
+          <span className="text-base" aria-hidden>
+            💬
+          </span>
           Reportar error
         </button>
       </div>

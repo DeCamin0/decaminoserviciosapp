@@ -1,5 +1,9 @@
 import { useLocation } from '../contexts/LocationContextBase';
 
+/** Adresa încă nu a venit de la Nominatim — doar lat/lon afișate provizoriu. */
+const looksLikeCoordPair = (s) =>
+  typeof s === 'string' && /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(s.trim());
+
 const LocationDisplay = () => {
   const { currentAddress, currentLocation, isLoading, error } = useLocation();
 
@@ -27,7 +31,7 @@ const LocationDisplay = () => {
     );
   }
 
-  // Dacă avem locație dar nu avem încă adresă, afișăm loading pentru adresă
+  // GPS ok, dar încă nu s-a setat adresa (fereastră scurtă înainte de batch React) — max câteva sute ms
   if (!currentAddress && currentLocation) {
     return (
       <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-yellow-200 dark:border-yellow-800 max-w-xs">
@@ -61,26 +65,37 @@ const LocationDisplay = () => {
     );
   }
 
+  const isCoordsOnly = looksLikeCoordPair(currentAddress);
+
   return (
     <div className="flex items-center space-x-3 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow duration-200 max-w-xs">
       {/* Icon modernizat cu fundal circular */}
       <div className="flex-shrink-0">
-        <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-          <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isCoordsOnly ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+          {isCoordsOnly ? (
+            <div className="animate-spin rounded-full h-5 w-5 border-2 border-amber-600 border-t-transparent" aria-hidden />
+          ) : (
+            <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          )}
         </div>
       </div>
       
       {/* Text content */}
       <div className="flex-1 min-w-0">
         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">
-          Ubicación actual:
+          {isCoordsOnly ? 'GPS — buscando calle…' : 'Ubicación actual:'}
         </span>
         <div className="text-sm font-medium text-gray-900 dark:text-white truncate" title={currentAddress}>
           {currentAddress}
         </div>
+        {isCoordsOnly && (
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">
+            Si tarda, ya puedes usar la app; la dirección se actualizará sola.
+          </p>
+        )}
       </div>
     </div>
   );

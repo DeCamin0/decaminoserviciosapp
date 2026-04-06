@@ -466,6 +466,38 @@ class ActivityLogger {
     }
   }
 
+  /** No desea el servicio — solo registro + Telegram a gestoría */
+  async logRentaCampanaDeclinar(user, ejercicio) {
+    try {
+      await this.logAction('renta_campana_declinar', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email || user.CORREO_ELECTRONICO,
+        grupo: user.GRUPO || user.grupo,
+        role: user.role,
+        codigo: user.CODIGO || user.codigo,
+        ejercicio: ejercicio ?? null,
+      });
+    } catch (error) {
+      console.error('Error logging renta campaña declinar:', error);
+    }
+  }
+
+  /** Retirada voluntaria (equivocación) — renta con gestoría */
+  async logRentaCampanaRetract(user, ejercicio) {
+    try {
+      await this.logAction('renta_campana_retract', {
+        user: user['NOMBRE / APELLIDOS'] || user.nombre,
+        email: user.email || user.CORREO_ELECTRONICO,
+        grupo: user.GRUPO || user.grupo,
+        role: user.role,
+        codigo: user.CODIGO || user.codigo,
+        ejercicio: ejercicio ?? null,
+      });
+    } catch (error) {
+      console.error('Error logging renta campaña retract:', error);
+    }
+  }
+
   async logBannerHorariosDismissed(user) {
     setTimeout(() => {
       this.logAction('banner_horarios_dismissed', {

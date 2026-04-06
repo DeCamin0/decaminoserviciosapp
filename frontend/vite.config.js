@@ -139,7 +139,9 @@ export default defineConfig(({ mode }) => {
     logoPath && existsSync(join(publicDir, logoPath)) ? logoPath : manifestIconSrc;
   const pwaIncludeAssets = (() => {
     const s = new Set();
-    if (existsSync(join(publicDir, 'favicon.ico'))) s.add('favicon.ico');
+    // NU adăuga favicon.ico aici: Vite copiază public/favicon.ico în dist/, iar pluginul
+    // favicon-ico-match-brand îl suprascrie cu logo tab → două intrări precache pentru același
+    // URL (/favicon.ico) cu __WB_REVISION__ diferit → Workbox: add-to-cache-list-conflicting-entries.
     for (const f of [logoPath, manifestIconSrc, pwaIconEnv]) {
       if (f && existsSync(join(publicDir, f))) s.add(f);
     }

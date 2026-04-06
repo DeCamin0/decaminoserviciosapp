@@ -206,6 +206,19 @@ model RentaCampanaSolicitud {
   @@map("renta_campana_solicitudes")
 }
 
+/// Empleados que indican explícitamente que no desean la renta con gestoría (ejercicio/campaña)
+model RentaCampanaDeclinacion {
+  id              BigInt   @id @default(autoincrement())
+  user_codigo     String   @map("user_codigo") @db.VarChar(50)
+  campaign_key    String   @default("renta_2025") @map("campaign_key") @db.VarChar(50)
+  nombre_snapshot String?  @map("nombre_snapshot") @db.VarChar(255)
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@unique([user_codigo, campaign_key], map: "uq_renta_campana_decl_user_campaign")
+  @@index([campaign_key], map: "idx_renta_campana_decl_campaign")
+  @@map("renta_campana_declinaciones")
+}
+
 model Avatar {
   CODIGO       String   @id @map("CODIGO") @db.VarChar(50)
   NOMBRE       String   @map("NOMBRE") @db.VarChar(255)

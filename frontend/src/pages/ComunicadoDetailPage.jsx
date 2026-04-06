@@ -15,6 +15,7 @@ import {
   Send,
   Users,
   Eye,
+  X,
 } from 'lucide-react';
 import Notification from '../components/ui/Notification';
 import ConfirmModal from '../components/ui/ConfirmModal';
@@ -298,14 +299,28 @@ const ComunicadoDetailPage = () => {
     }
   };
 
-  const handleClosePreview = () => {
-    // Cleanup blob URL dacă există
-    if (previewData?.previewUrl && typeof previewData.previewUrl === 'string' && previewData.previewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(previewData.previewUrl);
-    }
+  const handleClosePreview = useCallback(() => {
+    setPreviewData((current) => {
+      if (
+        current?.previewUrl &&
+        typeof current.previewUrl === 'string' &&
+        current.previewUrl.startsWith('blob:')
+      ) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return null;
+    });
     setShowFilePreview(false);
-    setPreviewData(null);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!showFilePreview) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') handleClosePreview();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showFilePreview, handleClosePreview]);
 
   // Cleanup blob URLs când componenta se unmount sau previewData se schimbă
   useEffect(() => {
@@ -614,35 +629,56 @@ const ComunicadoDetailPage = () => {
         )}
       </Modal>
 
-      {/* Modal de Preview pentru Archivo */}
+      {/* Modal de Preview para Archivo (móvil: min-w-0 en cabecera para que el cierre no quede fuera de pantalla) */}
       {showFilePreview && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700 animate-in fade-in duration-300 relative">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm"
+          onClick={handleClosePreview}
+          role="presentation"
+        >
+          <div
+            className="relative flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in duration-300 dark:border-gray-700 dark:bg-gray-800"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vista previa del archivo"
+          >
+            {/* Cierre fijo esquina: siempre visible en móvil */}
+            <button
+              type="button"
+              onClick={handleClosePreview}
+              className="absolute right-2 top-2 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-700 shadow-lg ring-1 ring-black/5 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-red-900/30 dark:hover:text-red-300 sm:right-3 sm:top-3"
+              aria-label="Cerrar vista previa"
+            >
+              <X className="h-6 w-6" strokeWidth={2.5} />
+            </button>
+
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-gray-700 dark:to-gray-800 px-6 py-4 border-b border-blue-200 dark:border-gray-600">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <Eye className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white break-all leading-tight">
-                      Vista Previa: {previewData?.fileName || comunicado?.nombre_archivo}
-                    </h3>
-                    <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Visualización de archivo</p>
-                  </div>
+            <div className="shrink-0 border-b border-blue-200 bg-gradient-to-r from-blue-50 to-blue-100 px-4 pb-3 pt-12 dark:border-gray-600 dark:from-gray-700 dark:to-gray-800 sm:px-6 sm:py-4 sm:pt-4">
+              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+                <div className="hidden h-12 w-12 shrink-0 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg sm:flex sm:items-center sm:justify-center">
+                  <Eye className="h-6 w-6 text-white" />
                 </div>
-                <button
-                  onClick={handleClosePreview}
-                  className="w-10 h-10 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 border border-gray-200 dark:border-gray-600 hover:border-red-300 dark:hover:border-red-500 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
-                >
-                  <span className="text-gray-400 dark:text-gray-300 group-hover:text-red-500 text-xl">✕</span>
-                </button>
+                <div className="min-w-0 flex-1 pr-10 sm:pr-2">
+                  <h3 className="line-clamp-2 text-base font-bold leading-tight text-gray-900 dark:text-white sm:text-xl">
+                    Vista previa: {previewData?.fileName || comunicado?.nombre_archivo}
+                  </h3>
+                  <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400 sm:text-sm">
+                    Visualización de archivo
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleClosePreview}
+                    className="mt-3 w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 sm:hidden"
+                  >
+                    Cerrar
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900 p-4">
+            <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-3 dark:bg-gray-900 sm:p-4">
               {previewLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>

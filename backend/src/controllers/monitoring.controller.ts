@@ -222,6 +222,143 @@ export class MonitoringController {
   }
 
   /**
+   * Aviso a gestoría cuando un empleado retira su solicitud (equivocación).
+   */
+  private async notifyGestoriaRentaCampanaRetract(payload: {
+    ejercicio: number;
+    codigo: string;
+    nombreCompleto: string;
+    dni: string;
+    emailEmpleado: string;
+  }): Promise<void> {
+    const ej = payload.ejercicio;
+    const company = this.getCompanyName() || 'Empresa';
+    const lines = [
+      `⚠️ Retirada de solicitud — Campaña Renta ${ej}`,
+      '',
+      'El empleado ha indicado en el portal que se equivocó y ya no desea la renta con la gestoría.',
+      '',
+      `Empresa: ${company}`,
+      `Nombre completo: ${payload.nombreCompleto}`,
+      `Código empleado: ${payload.codigo}`,
+      `DNI / NIE: ${payload.dni || '—'}`,
+      `Email empleado: ${payload.emailEmpleado || '—'}`,
+    ];
+    const plainText = lines.join('\n');
+
+    try {
+      if (this.telegramService.isConfigured()) {
+        await this.telegramService.sendMessage(plainText, {
+          disableMarkdown: true,
+        });
+        this.logger.log(
+          `✅ Telegram gestoría: retirada renta ${ej} (${payload.codigo})`,
+        );
+      }
+    } catch (e: any) {
+      this.logger.error(
+        `❌ Telegram retirada renta ${ej} (${payload.codigo}): ${e?.message}`,
+      );
+    }
+
+    const gestoriaTo = this.getGestoriaEmail();
+    if (!gestoriaTo || !this.emailService.isConfigured()) {
+      return;
+    }
+
+    const subject = `⚠️ Renta ${ej} — Retirada solicitud empleado ${payload.codigo}`;
+    const html = `
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; line-height: 1.5; color: #333;">
+  <p><strong>Retirada de solicitud</strong> — El empleado ha indicado en el portal que se equivocó y <strong>ya no desea la declaración de la renta ${ej}</strong> con la gestoría. La solicitud ha sido eliminada del registro del portal.</p>
+  <table style="border-collapse: collapse; margin-top: 12px;">
+    <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Empresa</td><td>${this.escapeHtml(company)}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Nombre completo</td><td>${this.escapeHtml(payload.nombreCompleto)}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Código</td><td>${this.escapeHtml(payload.codigo)}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">DNI / NIE</td><td>${this.escapeHtml(payload.dni || '—')}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Email empleado</td><td>${this.escapeHtml(payload.emailEmpleado || '—')}</td></tr>
+  </table>
+  <p style="margin-top: 16px; color: #666; font-size: 12px;">Mensaje automático — Campaña Renta ${ej}</p>
+</body></html>`.trim();
+
+    try {
+      await this.emailService.sendEmail(gestoriaTo, subject, html, {
+        bcc: this.emailService.getDefaultBcc(),
+      });
+      this.logger.log(
+        `✅ Email gestoría retirada renta ${ej} a ${gestoriaTo} (${payload.codigo})`,
+      );
+      try {
+        await this.sentEmailsService.saveSentEmail({
+          senderId: 'system',
+          recipientType: 'gestoria',
+          recipientId: payload.codigo,
+          recipientEmail: gestoriaTo,
+          recipientName: 'Gestoría',
+          subject,
+          message: html,
+          status: 'sent',
+        });
+      } catch (saveErr: any) {
+        this.logger.warn(
+          `⚠️ No se pudo guardar sent_emails retirada renta: ${saveErr.message}`,
+        );
+      }
+    } catch (e: any) {
+      this.logger.error(
+        `❌ Email gestoría retirada renta (${payload.codigo}): ${e?.message}`,
+      );
+    }
+  }
+
+  /**
+   * Solo Telegram: empleado indica que no desea la renta con la gestoría (sin email).
+   */
+  private async notifyGestoriaRentaCampanaDeclinoTelegramOnly(payload: {
+    ejercicio: number;
+    codigo: string;
+    nombreCompleto: string;
+    dni: string;
+    emailEmpleado: string;
+  }): Promise<void> {
+    const ej = payload.ejercicio;
+    const company = this.getCompanyName() || 'Empresa';
+    const lines = [
+      `🚫 No desea el servicio — Campaña Renta ${ej}`,
+      '',
+      'El empleado ha indicado en el portal que NO desea la declaración de la renta con la gestoría para este ejercicio.',
+      'Aviso solo por Telegram (no se envía email a gestoría).',
+      '',
+      `Empresa: ${company}`,
+      `Nombre completo: ${payload.nombreCompleto}`,
+      `Código empleado: ${payload.codigo}`,
+      `DNI / NIE: ${payload.dni || '—'}`,
+      `Email empleado: ${payload.emailEmpleado || '—'}`,
+    ];
+    const plainText = lines.join('\n');
+
+    try {
+      if (this.telegramService.isConfigured()) {
+        await this.telegramService.sendMessage(plainText, {
+          disableMarkdown: true,
+        });
+        this.logger.log(
+          `✅ Telegram gestoría: declinación renta ${ej} (${payload.codigo})`,
+        );
+      } else {
+        this.logger.warn(
+          '⚠️ Telegram gestoría no configurado — no se envió aviso declinación renta',
+        );
+      }
+    } catch (e: any) {
+      this.logger.error(
+        `❌ Telegram declinación renta ${ej} (${payload.codigo}): ${e?.message}`,
+      );
+    }
+  }
+
+  /**
    * Telegram (bot gestoría) cuando un empleado guarda / actualiza contacto de emergencia.
    * No bloquea la respuesta HTTP si falla.
    */
@@ -645,7 +782,12 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
   ) {
     const codigo = req.user?.userId;
     if (!codigo) {
-      return { enabled: false, solicited: false, error: 'no_user' };
+      return {
+        enabled: false,
+        solicited: false,
+        declined: false,
+        error: 'no_user',
+      };
     }
     try {
       const ejercicio = await this.getRentaEjercicio();
@@ -654,10 +796,17 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
       const existing = await this.prisma.rentaCampanaSolicitud.findFirst({
         where: { user_codigo: codigo, campaign_key: campaignKey },
       });
+      const decl = await this.prisma.rentaCampanaDeclinacion.findFirst({
+        where: { user_codigo: codigo, campaign_key: campaignKey },
+      });
       const isDev = req.user?.grupo === 'Developer';
       let totalSolicitudes: number | undefined;
+      let totalDeclinaciones: number | undefined;
       if (isDev) {
         totalSolicitudes = await this.prisma.rentaCampanaSolicitud.count({
+          where: { campaign_key: campaignKey },
+        });
+        totalDeclinaciones = await this.prisma.rentaCampanaDeclinacion.count({
           where: { campaign_key: campaignKey },
         });
       }
@@ -669,12 +818,16 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
         solicitedAt: existing?.created_at
           ? existing.created_at.toISOString()
           : null,
+        declined: !!decl,
+        declinedAt: decl?.created_at ? decl.created_at.toISOString() : null,
         totalSolicitudes,
+        totalDeclinaciones,
       };
     } catch (err: any) {
       return {
         enabled: false,
         solicited: false,
+        declined: false,
         error: err.message,
       };
     }
@@ -716,6 +869,9 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
     const emailEmpleado = (empleado?.CORREO_ELECTRONICO ?? '').trim();
 
     try {
+      await this.prisma.rentaCampanaDeclinacion.deleteMany({
+        where: { user_codigo: codigo, campaign_key: campaignKey },
+      });
       await this.prisma.rentaCampanaSolicitud.create({
         data: {
           user_codigo: codigo,
@@ -740,6 +896,139 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
       }
       throw e;
     }
+  }
+
+  /**
+   * El empleado indica que no desea el servicio. Solo aviso por Telegram (sin email).
+   */
+  @Post(['renta-campana/declinar', 'renta-campana-2025/declinar'])
+  @UseGuards(JwtAuthGuard)
+  async postRentaCampanaDeclinar(
+    @Request() req: { user?: { userId?: string } },
+  ) {
+    const codigo = req.user?.userId;
+    if (!codigo) {
+      return { ok: false, message: 'Usuario no identificado' };
+    }
+    const enabled = await this.isRentaBannerEnabled();
+    if (!enabled) {
+      return { ok: false, message: 'La campaña no está activa' };
+    }
+    const ejercicio = await this.getRentaEjercicio();
+    const campaignKey = rentaCampaignKeyFromEjercicio(ejercicio);
+    const yaSolicitud = await this.prisma.rentaCampanaSolicitud.findFirst({
+      where: { user_codigo: codigo, campaign_key: campaignKey },
+    });
+    if (yaSolicitud) {
+      return {
+        ok: false,
+        message:
+          'Ya tienes una solicitud registrada. Si fue un error, usa la opción para retirarla.',
+        ejercicio,
+        campaignKey,
+      };
+    }
+    const empleado = await this.prisma.user.findUnique({
+      where: { CODIGO: codigo },
+      select: {
+        NOMBRE_APELLIDOS: true,
+        CORREO_ELECTRONICO: true,
+        DNI_NIE: true,
+      },
+    });
+    const nombre =
+      empleado?.NOMBRE_APELLIDOS?.trim() ||
+      empleado?.CORREO_ELECTRONICO ||
+      codigo;
+    const dni = (empleado?.DNI_NIE ?? '').trim();
+    const emailEmpleado = (empleado?.CORREO_ELECTRONICO ?? '').trim();
+
+    try {
+      await this.prisma.rentaCampanaDeclinacion.create({
+        data: {
+          user_codigo: codigo,
+          campaign_key: campaignKey,
+          nombre_snapshot: nombre,
+        },
+      });
+      void this.notifyGestoriaRentaCampanaDeclinoTelegramOnly({
+        ejercicio,
+        codigo,
+        nombreCompleto: nombre,
+        dni,
+        emailEmpleado,
+      }).catch((err) =>
+        this.logger.error(
+          `notifyGestoriaRentaCampanaDeclinoTelegramOnly: ${err?.message || err}`,
+        ),
+      );
+      return { ok: true, alreadyHad: false, ejercicio, campaignKey };
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        return { ok: true, alreadyHad: true, ejercicio, campaignKey };
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * El empleado retira su solicitud (p. ej. pulsación por error). Notifica a gestoría.
+   */
+  @Post(['renta-campana/retract', 'renta-campana-2025/retract'])
+  @UseGuards(JwtAuthGuard)
+  async postRentaCampanaRetract(
+    @Request() req: { user?: { userId?: string } },
+  ) {
+    const codigo = req.user?.userId;
+    if (!codigo) {
+      return { ok: false, message: 'Usuario no identificado' };
+    }
+    const ejercicio = await this.getRentaEjercicio();
+    const campaignKey = rentaCampaignKeyFromEjercicio(ejercicio);
+    const existing = await this.prisma.rentaCampanaSolicitud.findFirst({
+      where: { user_codigo: codigo, campaign_key: campaignKey },
+    });
+    if (!existing) {
+      return {
+        ok: false,
+        message: 'No hay solicitud registrada para retirar.',
+        ejercicio,
+        campaignKey,
+      };
+    }
+    const empleado = await this.prisma.user.findUnique({
+      where: { CODIGO: codigo },
+      select: {
+        NOMBRE_APELLIDOS: true,
+        CORREO_ELECTRONICO: true,
+        DNI_NIE: true,
+      },
+    });
+    const nombre =
+      empleado?.NOMBRE_APELLIDOS?.trim() ||
+      existing.nombre_snapshot?.trim() ||
+      empleado?.CORREO_ELECTRONICO ||
+      codigo;
+    const dni = (empleado?.DNI_NIE ?? '').trim();
+    const emailEmpleado = (empleado?.CORREO_ELECTRONICO ?? '').trim();
+
+    await this.prisma.rentaCampanaSolicitud.deleteMany({
+      where: { user_codigo: codigo, campaign_key: campaignKey },
+    });
+
+    void this.notifyGestoriaRentaCampanaRetract({
+      ejercicio,
+      codigo,
+      nombreCompleto: nombre,
+      dni,
+      emailEmpleado,
+    }).catch((err) =>
+      this.logger.error(
+        `notifyGestoriaRentaCampanaRetract: ${err?.message || err}`,
+      ),
+    );
+
+    return { ok: true, ejercicio, campaignKey };
   }
 
   /**

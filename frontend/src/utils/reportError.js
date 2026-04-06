@@ -1,6 +1,6 @@
 /**
- * Helper functions pentru raportarea erorilor prin WhatsApp
- * Reutilizabil pe toate paginile. Numărul folosit: config.WHATSAPP_PHONE (per client) sau parametrul phone.
+ * Reporte de incidencias: Telegram (bot general) + abrir el asistente del portal.
+ * Ya no se usa WhatsApp.
  */
 import { config } from '../config/env.js';
 
@@ -19,20 +19,13 @@ export const formatDateTimeES = (d = new Date()) => {
       minute: "2-digit",
     }).format(d);
   } catch {
-    // fallback
     const pad = (n) => String(n).padStart(2, "0");
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 };
 
 /**
- * Construiește mesajul de raportare eroare pentru WhatsApp
- * @param {Object} options - Opțiuni pentru mesaj
- * @param {Object} options.authUser - Utilizatorul autentificat
- * @param {Object} options.userData - Datele complete ale utilizatorului (opțional)
- * @param {string} options.pageName - Numele paginii (ex: "Registro de Jornada", "Gestión de Solicitudes")
- * @param {Object} options.pageData - Date specifice paginii (opțional)
- * @returns {string} Mesajul formatat pentru WhatsApp
+ * Construiește mesajul de raportare (asistente + Telegram)
  */
 export const buildErrorReportMessage = ({
   authUser,
@@ -42,34 +35,31 @@ export const buildErrorReportMessage = ({
 }) => {
   const now = formatDateTimeES(new Date());
 
-  // User data (best effort - multiple fallbacks)
   const codigo = safe(
-    authUser?.CODIGO || 
-    authUser?.codigo || 
-    userData?.CODIGO || 
-    userData?.codigo
+    authUser?.CODIGO ||
+      authUser?.codigo ||
+      userData?.CODIGO ||
+      userData?.codigo
   );
-  const nombre = safe(
-    authUser?.['NOMBRE / APELLIDOS'] || 
-    authUser?.NOMBRE || 
-    authUser?.nombre || 
-    userData?.['NOMBRE / APELLIDOS'] || 
-    userData?.NOMBRE || 
-    userData?.nombre
-  ) || "—";
+  const nombre =
+    safe(
+      authUser?.['NOMBRE / APELLIDOS'] ||
+        authUser?.NOMBRE ||
+        authUser?.nombre ||
+        userData?.['NOMBRE / APELLIDOS'] ||
+        userData?.NOMBRE ||
+        userData?.nombre
+    ) || "—";
   const centro = safe(
-    authUser?.['CENTRO TRABAJO'] || 
-    authUser?.CENTRO_TRABAJO || 
-    authUser?.centro || 
-    userData?.['CENTRO TRABAJO']
+    authUser?.['CENTRO TRABAJO'] ||
+      authUser?.CENTRO_TRABAJO ||
+      authUser?.centro ||
+      userData?.['CENTRO TRABAJO']
   );
   const grupo = safe(
-    authUser?.GRUPO || 
-    authUser?.grupo || 
-    userData?.GRUPO
+    authUser?.GRUPO || authUser?.grupo || userData?.GRUPO
   );
 
-  // Build message in Spanish, clear and concise
   const msg = [
     "Hola, tengo un problema con el sistema.",
     "",
@@ -78,7 +68,6 @@ export const buildErrorReportMessage = ({
     `📅 FECHA: ${now}`,
     centro || grupo ? `🏢 CENTRO: ${[centro, grupo].filter(Boolean).join(" / ")}` : null,
     "",
-    // Page-specific data
     ...(pageData.additionalInfo || []),
   ]
     .filter(Boolean)
@@ -87,31 +76,53 @@ export const buildErrorReportMessage = ({
   return msg;
 };
 
+/** Evento: ChatBot abre el panel y rellena el mensaje */
+export const DECAMINO_OPEN_ASSISTANT_EVENT = 'decamino-open-assistant';
+
+function telegramPayload(message) {
+  return `🐞 Reporte de incidencia (portal)\n\n${message}`;
+}
+
 /**
- * Deschide WhatsApp cu mesajul de raportare eroare
- * @param {string} message - Mesajul formatat
- * @param {string} [phone] - Numărul de telefon (E.164); dacă lipsește, folosește config.WHATSAPP_PHONE (per client)
+ * Envía el texto al bot Telegram "general" (mismo criterio que otros avisos de error).
  */
-export const openWhatsAppErrorReport = (message, phone) => {
-  const whatsappPhone = phone || config.WHATSAPP_PHONE || '34635289087';
-  const text = encodeURIComponent(message);
-  const whatsappUrl = `https://wa.me/${whatsappPhone}?text=${text}`;
-  
-  // Try WhatsApp Desktop protocol first (opens in app, not browser)
-  const whatsappDesktopUrl = `whatsapp://send?phone=${whatsappPhone}&text=${text}`;
-  
-  // Create a temporary link to try WhatsApp Desktop
-  const link = document.createElement('a');
-  link.href = whatsappDesktopUrl;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  // Fallback to web WhatsApp after a delay
-  setTimeout(() => {
-    if (document.hasFocus()) {
-      window.location.href = whatsappUrl;
-    }
-  }, 1000);
+export async function sendErrorReportToTelegram(message) {
+  const baseUrl =
+    config.BACKEND_BASE || config.API_URL || config.API_BASE_URL || '';
+  if (!baseUrl) return false;
+  const token = localStorage.getItem('auth_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  try {
+    const res = await fetch(`${baseUrl}/api/monitoring/telegram`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message: telegramPayload(message),
+        botType: 'general',
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Flujo unificado: Telegram (sin email) + abrir asistente con el texto en el compositor.
+ * Si algún código antiguo pasa un segundo argumento (teléfono), JavaScript lo ignora.
+ */
+export const openWhatsAppErrorReport = (message) => {
+  void sendErrorReportToTelegram(message).catch(() => {});
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(DECAMINO_OPEN_ASSISTANT_EVENT, {
+        detail: {
+          initialMessage: typeof message === 'string' ? message : '',
+          /** Envía el informe al API del asistente sin pedir Enter (mismo contexto que Telegram). */
+          autoSend: true,
+        },
+      }),
+    );
+  }
 };

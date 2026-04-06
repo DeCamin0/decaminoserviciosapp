@@ -12,70 +12,84 @@ export const LocationProvider = ({ children }) => {
   const retryCountRef = useRef(0); // Contor pentru retry-uri
   const MAX_RETRIES = 2; // Maxim 2 retry-uri
 
-  // Funcție pentru reverse geocoding folosind backend-ul nostru
-  // Backend-ul face request-ul către Nominatim, evitând problemele de CORS și interceptori
-  const getAddressFromCoords = useCallback(async (latitude, longitude) => {
-    try {
-      // Construim URL-ul către backend-ul nostru
-      const BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
-      
-      const url = `${BASE_URL}/api/geocoding/reverse?lat=${latitude}&lon=${longitude}`;
-      
-      if (import.meta.env.DEV) {
-        console.log(`🌍 Requesting address from backend geocoding service: ${url}`);
-      }
-      
-      // Obținem token-ul JWT
-      const token = localStorage.getItem('auth_token');
-      const headers = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      // Facem request către backend-ul nostru
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: headers,
-        // Nu folosim credentials pentru că backend-ul nostru nu necesită
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success && result.address && result.address.trim() !== '') {
-        if (import.meta.env.DEV) {
-          console.log('✅ Address obtained from backend:', result.address);
-        }
-        return result.address;
-      }
-      
-      // Dacă nu avem adresă, dar avem coordonate, construim un string cu coordonatele
-      if (result.coordinates) {
-        const coordsStr = `${result.coordinates.latitude.toFixed(5)}, ${result.coordinates.longitude.toFixed(5)}`;
-        if (import.meta.env.DEV) {
-          console.warn('⚠️ No address found, using coordinates:', coordsStr);
-        }
-        return coordsStr; // Returnăm coordonatele ca fallback
-      }
-      
-      // Dacă nu avem nici adresă, nici coordonate, returnăm string gol
-      if (import.meta.env.DEV) {
-        console.warn('⚠️ No address or coordinates found in backend response');
-      }
-      return '';
-    } catch (error) {
-      console.error('❌ Error getting address from backend:', error);
-      // Nu aruncăm eroare - returnăm string gol pentru a permite continuarea
-      return '';
+  /** Fallback vizibil mereu când geocodarea eșuează sau întârzie — evită UI blocat la „Obteniendo dirección…”. */
+  const coordsAsFallback = useCallback((latitude, longitude) => {
+    const lat = Number(latitude);
+    const lon = Number(longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     }
+    return '';
   }, []);
+
+  // Reverse geocoding prin backend (Nominatim). Timeout client + fallback la coordonate la orice eșec.
+  const getAddressFromCoords = useCallback(
+    async (latitude, longitude) => {
+      const fallback = coordsAsFallback(latitude, longitude);
+      const BASE_URL = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+      if (!BASE_URL) {
+        if (import.meta.env.DEV) {
+          console.warn('⚠️ Geocoding: BACKEND_BASE lipsă, folosim doar coordonate');
+        }
+        return fallback;
+      }
+
+      const url = `${BASE_URL}/api/geocoding/reverse?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`;
+
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const GEOCODE_CLIENT_MS = 22000; // > worst-case backend (~2×8s Nominatim + retry)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), GEOCODE_CLIENT_MS);
+
+      try {
+        if (import.meta.env.DEV) {
+          console.log(`🌍 Geocoding reverse: ${url}`);
+        }
+
+        const response = await fetch(url, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          if (import.meta.env.DEV) {
+            console.warn('⚠️ Geocoding HTTP', response.status, result);
+          }
+          return fallback;
+        }
+
+        if (result.success && result.address && String(result.address).trim() !== '') {
+          if (import.meta.env.DEV) {
+            console.log('✅ Address from backend:', result.address);
+          }
+          return String(result.address).trim();
+        }
+
+        if (result.coordinates) {
+          const c = result.coordinates;
+          return coordsAsFallback(c.latitude, c.longitude) || fallback;
+        }
+
+        return fallback;
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          console.warn('⚠️ Geocoding reverse: timeout client, usando coordenadas');
+        } else {
+          console.error('❌ Error getting address from backend:', error);
+        }
+        return fallback;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    },
+    [coordsAsFallback],
+  );
 
   // Funcție pentru actualizarea locației
   const updateLocation = useCallback(async (position) => {
@@ -85,6 +99,8 @@ export const LocationProvider = ({ children }) => {
     };
     
     setCurrentLocation(coords);
+    // Afișăm imediat coordonatele; dacă vine adresa de la backend, o înlocuim după.
+    setCurrentAddress(coordsAsFallback(coords.latitude, coords.longitude));
     
     // Throttle geocodarea inversă pentru a evita prea multe cereri
     const nowTs = Date.now();
@@ -100,7 +116,7 @@ export const LocationProvider = ({ children }) => {
     } catch (err) {
       console.error('Error updating address:', err);
     }
-  }, [getAddressFromCoords]);
+  }, [coordsAsFallback, getAddressFromCoords]);
 
   // Detectare browser pentru ajustarea opțiunilor de geolocație
   const isEdge = useCallback(() => {
@@ -175,6 +191,7 @@ export const LocationProvider = ({ children }) => {
           
           console.log('✅ Location obtained:', coords);
           setCurrentLocation(coords);
+          setCurrentAddress(coordsAsFallback(coords.latitude, coords.longitude));
           setIsLoading(false);
           retryCountRef.current = 0; // Reset retry counter la succes
 
@@ -233,7 +250,7 @@ export const LocationProvider = ({ children }) => {
       locationRequestedRef.current = false;
       setIsLoading(false);
     }
-  }, [currentLocation, getAddressFromCoords, handleLocationError, isLoading]);
+  }, [coordsAsFallback, currentLocation, getAddressFromCoords, handleLocationError, isLoading]);
 
   // Cerem geolocația automat când utilizatorul este autentificat
   // Folosim maximumAge mare (10 minute) pentru a folosi cache-ul browser-ului cât mai mult
@@ -318,6 +335,7 @@ export const LocationProvider = ({ children }) => {
           };
           
           setCurrentLocation(coords);
+          setCurrentAddress(coordsAsFallback(coords.latitude, coords.longitude));
           setIsLoading(false);
 
           // Obține adresa automat
@@ -339,7 +357,7 @@ export const LocationProvider = ({ children }) => {
         geolocationOptions
       );
     });
-  }, [getAddressFromCoords, handleLocationError]);
+  }, [coordsAsFallback, getAddressFromCoords, handleLocationError]);
 
   // Funcție pentru refresh manual (actualizează state-ul global)
   const refreshLocation = useCallback(() => {

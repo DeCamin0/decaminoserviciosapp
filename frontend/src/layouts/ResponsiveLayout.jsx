@@ -1,6 +1,7 @@
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import DesktopLayout from './DesktopLayout';
 import MobileLayout from './MobileLayout';
+import ErrorReportNoAssistantModal from '../components/ErrorReportNoAssistantModal';
 
 /**
  * ResponsiveLayout - Wrapper care switch-ează între DesktopLayout și MobileLayout
@@ -9,11 +10,16 @@ import MobileLayout from './MobileLayout';
 const ResponsiveLayout = ({ children }) => {
   const { isMobile } = useBreakpoint();
 
-  if (isMobile) {
-    return <MobileLayout>{children}</MobileLayout>;
-  }
-
-  return <DesktopLayout>{children}</DesktopLayout>;
+  return (
+    <>
+      {isMobile ? (
+        <MobileLayout>{children}</MobileLayout>
+      ) : (
+        <DesktopLayout>{children}</DesktopLayout>
+      )}
+      <ErrorReportNoAssistantModal />
+    </>
+  );
 };
 
 export default ResponsiveLayout;

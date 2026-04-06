@@ -9,7 +9,19 @@ interface CachedAddress {
 @Injectable()
 export class GeocodingService {
   private readonly logger = new Logger(GeocodingService.name);
-  private readonly NOMINATIM_BASE_URL = 'https://nominatim.openstreetmap.org';
+  private readonly NOMINATIM_BASE_URL =
+    process.env.NOMINATIM_BASE_URL?.trim() ||
+    'https://nominatim.openstreetmap.org';
+  /** Photon (OSM) — a doua sursă gratuită dacă Nominatim eșuează. */
+  private readonly PHOTON_BASE_URL =
+    process.env.PHOTON_GEOCODING_URL?.trim() || 'https://photon.komoot.io';
+  /** User-Agent identificabil (politica Nominatim). */
+  private readonly GEO_HTTP_HEADERS = {
+    'User-Agent':
+      process.env.NOMINATIM_USER_AGENT?.trim() ||
+      'DeCaminoServiciosApp/1.0 (geocoding; contact: info@decaminoservicios.com)',
+    Accept: 'application/json',
+  } as const;
   // Cache pentru adrese (coordonate -> adresă) cu TTL de 24 ore
   private readonly addressCache = new Map<string, CachedAddress>();
   // Cache pentru eșecuri (coordonate -> timestamp) cu TTL de 1 oră (evită retry-uri repetate)
@@ -176,7 +188,7 @@ export class GeocodingService {
     }
 
     // Creăm un nou request și îl adăugăm în pendingRequests
-    const requestPromise = this.fetchAddressFromNominatim(latitude, longitude);
+    const requestPromise = this.fetchAddressWithFallbacks(latitude, longitude);
     this.pendingRequests.set(cacheKey, requestPromise);
 
     try {
@@ -189,15 +201,59 @@ export class GeocodingService {
   }
 
   /**
-   * Face request-ul efectiv către Nominatim
+   * Nominatim → Photon (gratuit) → Google Geocoding (doar dacă GOOGLE_GEOCODING_API_KEY).
+   * markAsFailed doar dacă toate sursele eșuează.
    */
-  private async fetchAddressFromNominatim(
+  private async fetchAddressWithFallbacks(
     latitude: number,
     longitude: number,
   ): Promise<string> {
-    // Facem request către Nominatim
-    const MAX_RETRIES = 2; // Redus la 2 încercări (mai rapid)
-    const TIMEOUT = 8000; // Redus la 8 secunde (mai rapid, cache-ul va ajuta)
+    const nominatim = await this.tryNominatimReverse(latitude, longitude);
+    if (nominatim) {
+      this.setCachedAddress(latitude, longitude, nominatim);
+      return nominatim;
+    }
+
+    this.logger.warn(
+      `⚠️ Nominatim: no address for ${latitude},${longitude} — trying Photon`,
+    );
+    const photon = await this.tryPhotonReverse(latitude, longitude);
+    if (photon) {
+      this.setCachedAddress(latitude, longitude, photon);
+      this.logger.log(`✅ Address from Photon: ${photon}`);
+      return photon;
+    }
+
+    const googleKey = process.env.GOOGLE_GEOCODING_API_KEY?.trim();
+    if (googleKey) {
+      this.logger.warn(
+        `⚠️ Photon: no address — trying Google Geocoding (paid key present)`,
+      );
+      const googleAddr = await this.tryGoogleReverse(
+        latitude,
+        longitude,
+        googleKey,
+      );
+      if (googleAddr) {
+        this.setCachedAddress(latitude, longitude, googleAddr);
+        this.logger.log(`✅ Address from Google: ${googleAddr}`);
+        return googleAddr;
+      }
+    }
+
+    this.markAsFailed(latitude, longitude);
+    this.logger.warn(
+      `⚠️ All reverse geocoding providers failed for ${latitude},${longitude}`,
+    );
+    return '';
+  }
+
+  private async tryNominatimReverse(
+    latitude: number,
+    longitude: number,
+  ): Promise<string> {
+    const MAX_RETRIES = 2;
+    const TIMEOUT = 8000;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
@@ -211,15 +267,12 @@ export class GeocodingService {
         };
 
         this.logger.log(
-          `🌍 Requesting address from Nominatim (attempt ${attempt + 1}/${MAX_RETRIES}) for coordinates: ${latitude}, ${longitude}`,
+          `🌍 Nominatim reverse (attempt ${attempt + 1}/${MAX_RETRIES}): ${latitude}, ${longitude}`,
         );
 
-        // Facem request către Nominatim cu User-Agent header (cerință Nominatim)
         const response = await axios.get(url, {
           params,
-          headers: {
-            'User-Agent': 'DeCaminoServiciosApp/1.0',
-          },
+          headers: { ...this.GEO_HTTP_HEADERS },
           timeout: TIMEOUT,
         });
 
@@ -229,19 +282,12 @@ export class GeocodingService {
         }
 
         const data = response.data;
-
-        // Prioritate 1: display_name (adresa completă)
         let finalAddress = '';
         if (data.display_name) {
           finalAddress = data.display_name;
-          this.logger.log(
-            `✅ Address obtained from Nominatim: ${finalAddress}`,
-          );
         } else if (data.address) {
-          // Prioritate 2: construim adresa din componente
           const addr = data.address;
-          const parts = [];
-
+          const parts: string[] = [];
           if (addr.road) parts.push(addr.road);
           if (addr.house_number) parts.push(addr.house_number);
           if (addr.city || addr.town || addr.village) {
@@ -250,25 +296,16 @@ export class GeocodingService {
           if (addr.state || addr.region) parts.push(addr.state || addr.region);
           if (addr.postcode) parts.push(addr.postcode);
           if (addr.country) parts.push(addr.country);
-
-          if (parts.length > 0) {
-            finalAddress = parts.join(', ');
-            this.logger.log(
-              `✅ Address constructed from components: ${finalAddress}`,
-            );
-          }
+          if (parts.length > 0) finalAddress = parts.join(', ');
         }
 
-        // Dacă am obținut adresă, o salvăm în cache
-        if (finalAddress && finalAddress.trim() !== '') {
-          this.setCachedAddress(latitude, longitude, finalAddress);
-          return finalAddress;
+        if (finalAddress.trim() !== '') {
+          return finalAddress.trim();
         }
 
-        this.logger.warn('⚠️ No address found in Nominatim response');
+        this.logger.warn('⚠️ No address in Nominatim response');
         return '';
       } catch (error: any) {
-        // Verificăm dacă este eroare de timeout sau network
         const isTimeout =
           error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
         const isNetworkError =
@@ -278,34 +315,107 @@ export class GeocodingService {
 
         if (isTimeout || isNetworkError) {
           this.logger.warn(
-            `⚠️ Nominatim request failed (attempt ${attempt + 1}/${MAX_RETRIES}): ${error.message || error.code}`,
+            `⚠️ Nominatim failed (attempt ${attempt + 1}/${MAX_RETRIES}): ${error.message || error.code}`,
           );
-
-          // Dacă nu e ultima încercare, așteptăm înainte de retry
           if (attempt < MAX_RETRIES - 1) {
-            const delay = 500; // Delay scurt (500ms) pentru retry rapid
-            this.logger.log(`⏳ Retrying in ${delay}ms...`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            continue; // Retry
+            await new Promise((r) => setTimeout(r, 500));
+            continue;
           }
         } else {
-          // Eroare HTTP sau altă eroare - nu retry
-          this.logger.error('❌ Error getting address from Nominatim:', error);
+          this.logger.error('❌ Nominatim error:', error?.message || error);
           break;
         }
       }
     }
-
-    // Dacă toate încercările au eșuat, marchem ca eșuat
-    this.markAsFailed(latitude, longitude);
-
-    this.logger.warn(
-      `⚠️ Could not get address from Nominatim after ${MAX_RETRIES} attempts. Returning empty string (coordinates will be shown).`,
-    );
-
-    // Returnăm string gol în loc să aruncăm eroare - permite continuarea aplicației
-    // Frontend-ul va afișa coordonatele dacă adresa nu este disponibilă
     return '';
+  }
+
+  /** Photon reverse — fără cheie; folosiți rezonabil (fair use Komoot). */
+  private async tryPhotonReverse(
+    latitude: number,
+    longitude: number,
+  ): Promise<string> {
+    const TIMEOUT = 7000;
+    try {
+      const url = `${this.PHOTON_BASE_URL.replace(/\/$/, '')}/reverse`;
+      const response = await axios.get(url, {
+        params: { lat: latitude, lon: longitude, lang: 'es' },
+        headers: { ...this.GEO_HTTP_HEADERS },
+        timeout: TIMEOUT,
+      });
+
+      const features = response.data?.features;
+      if (!Array.isArray(features) || features.length === 0) {
+        return '';
+      }
+
+      const props = features[0]?.properties;
+      if (!props || typeof props !== 'object') return '';
+
+      const line = this.formatPhotonAddress(props as Record<string, unknown>);
+      return line.trim() !== '' ? line : '';
+    } catch (error: any) {
+      this.logger.warn(
+        `⚠️ Photon reverse failed: ${error?.message || error?.code || error}`,
+      );
+      return '';
+    }
+  }
+
+  private formatPhotonAddress(p: Record<string, unknown>): string {
+    const parts: string[] = [];
+    const street =
+      (p.street && String(p.street).trim()) ||
+      (p.name && String(p.name).trim());
+    const hn = p.housenumber && String(p.housenumber).trim();
+    if (street) {
+      parts.push(hn ? `${street} ${hn}` : street);
+    }
+    const city =
+      (p.city && String(p.city).trim()) ||
+      (p.town && String(p.town).trim()) ||
+      (p.district && String(p.district).trim());
+    if (city) parts.push(city);
+    if (p.state) parts.push(String(p.state).trim());
+    if (p.postcode) parts.push(String(p.postcode).trim());
+    if (p.country) parts.push(String(p.country).trim());
+    return parts.filter(Boolean).join(', ');
+  }
+
+  private async tryGoogleReverse(
+    latitude: number,
+    longitude: number,
+    apiKey: string,
+  ): Promise<string> {
+    const TIMEOUT = 8000;
+    try {
+      const url = 'https://maps.googleapis.com/maps/api/geocode/json';
+      const response = await axios.get(url, {
+        params: {
+          latlng: `${latitude},${longitude}`,
+          key: apiKey,
+          language: 'es',
+        },
+        headers: { Accept: 'application/json' },
+        timeout: TIMEOUT,
+      });
+
+      const status = response.data?.status;
+      if (status !== 'OK' || !response.data?.results?.length) {
+        this.logger.warn(`⚠️ Google Geocoding status: ${status || 'unknown'}`);
+        return '';
+      }
+
+      const formatted = response.data.results[0]?.formatted_address;
+      return formatted && String(formatted).trim() !== ''
+        ? String(formatted).trim()
+        : '';
+    } catch (error: any) {
+      this.logger.warn(
+        `⚠️ Google reverse failed: ${error?.message || error?.code || error}`,
+      );
+      return '';
+    }
   }
 
   /**
@@ -344,9 +454,7 @@ export class GeocodingService {
 
       const response = await axios.get(url, {
         params,
-        headers: {
-          'User-Agent': 'DeCaminoServiciosApp/1.0',
-        },
+        headers: { ...this.GEO_HTTP_HEADERS },
         timeout: 5000,
       });
 
@@ -410,9 +518,7 @@ export class GeocodingService {
 
       const response = await axios.get(url, {
         params,
-        headers: {
-          'User-Agent': 'DeCaminoServiciosApp/1.0',
-        },
+        headers: { ...this.GEO_HTTP_HEADERS },
         timeout: 5000,
       });
 

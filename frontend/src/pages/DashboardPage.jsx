@@ -1,7 +1,7 @@
 import { useAuth } from '../contexts/AuthContextBase';
 import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Notification } from '../components/ui';
+import { Notification, Modal } from '../components/ui';
 import { routes } from '../utils/routes';
 import { getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 import QuickAccessOrb from '../components/QuickAccessOrb';
@@ -13,6 +13,7 @@ import {
   Calendar,
   CheckCircle,
   ClipboardCheck,
+  ChevronDown,
   ClipboardList,
   Clock,
   FileText,
@@ -64,6 +65,11 @@ const InicioPage = () => {
   const [rentaCampanaLoading, setRentaCampanaLoading] = useState(true);
   const [rentaCampanaStatus, setRentaCampanaStatus] = useState(null);
   const [rentaCampanaSubmitting, setRentaCampanaSubmitting] = useState(false);
+  const [rentaCampanaConfirmOpen, setRentaCampanaConfirmOpen] = useState(false);
+  const [rentaRetractOpen, setRentaRetractOpen] = useState(false);
+  const [rentaRetractSubmitting, setRentaRetractSubmitting] = useState(false);
+  const [rentaDeclinarOpen, setRentaDeclinarOpen] = useState(false);
+  const [rentaDeclinarSubmitting, setRentaDeclinarSubmitting] = useState(false);
   const [rentaSolicitudesOpen, setRentaSolicitudesOpen] = useState(false);
   const [rentaSolicitudes, setRentaSolicitudes] = useState([]);
   const [rentaSolicitudesLoading, setRentaSolicitudesLoading] = useState(false);
@@ -79,6 +85,8 @@ const InicioPage = () => {
   const [contactoPendientesLoading, setContactoPendientesLoading] = useState(false);
   /** Con datos completos: vista compacta; true = mostrar formulario para editar */
   const [ceEditMode, setCeEditMode] = useState(false);
+  /** Resumen guardado: acordeón cerrado por defecto */
+  const [contactoEmergenciaResumenOpen, setContactoEmergenciaResumenOpen] = useState(false);
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -255,6 +263,7 @@ const InicioPage = () => {
       }
       if (res.ok && data.ok !== false) {
         setCeEditMode(false);
+        setContactoEmergenciaResumenOpen(false);
         await refreshContactoEmergenciaStatus();
         if (contactoPendientesOpen && isDeveloper) fetchContactoPendientes();
         setNotification({
@@ -325,6 +334,13 @@ const InicioPage = () => {
     return new Date().getFullYear() - 1;
   }, [rentaCampanaStatus?.ejercicio]);
 
+  /** Solicitud o declinación explícita: ocultar aviso principal para el empleado */
+  const rentaUsuarioRespondio = useMemo(
+    () =>
+      !!(rentaCampanaStatus?.solicited || rentaCampanaStatus?.declined),
+    [rentaCampanaStatus?.solicited, rentaCampanaStatus?.declined],
+  );
+
   const fetchRentaSolicitudes = useCallback(async () => {
     if (!isDeveloper) return;
     setRentaSolicitudesLoading(true);
@@ -349,7 +365,7 @@ const InicioPage = () => {
     }
   }, [rentaSolicitudesOpen, isDeveloper, fetchRentaSolicitudes]);
 
-  const handleRentaCampanaConfirm = useCallback(async () => {
+  const submitRentaCampanaSolicitud = useCallback(async () => {
     if (!user || rentaCampanaSubmitting) return;
     setRentaCampanaSubmitting(true);
     try {
@@ -400,6 +416,118 @@ const InicioPage = () => {
     fetchRentaSolicitudes,
     rentaCampanaStatus?.ejercicio,
   ]);
+
+  const handleRentaCampanaModalConfirm = useCallback(async () => {
+    await submitRentaCampanaSolicitud();
+    setRentaCampanaConfirmOpen(false);
+  }, [submitRentaCampanaSolicitud]);
+
+  const submitRentaCampanaDeclinar = useCallback(async () => {
+    if (!user || rentaDeclinarSubmitting) return;
+    setRentaDeclinarSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/declinar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = res.ok ? await res.json() : { ok: false };
+      if (data.ok) {
+        const ej =
+          typeof data.ejercicio === 'number'
+            ? data.ejercicio
+            : rentaCampanaStatus?.ejercicio;
+        await activityLogger.logRentaCampanaDeclinar(user, ej);
+        await refreshRentaCampanaStatus();
+        setNotification({
+          type: 'success',
+          message: data.alreadyHad
+            ? 'Tu respuesta ya estaba registrada.'
+            : 'Queda registrado que no deseas el servicio. Se ha avisado a la gestoría por Telegram (sin email).',
+        });
+      } else {
+        setNotification({
+          type: 'warning',
+          message: data.message || 'No se pudo registrar tu respuesta.',
+        });
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Error de red al registrar.' });
+    } finally {
+      setRentaDeclinarSubmitting(false);
+    }
+  }, [
+    user,
+    rentaDeclinarSubmitting,
+    refreshRentaCampanaStatus,
+    rentaCampanaStatus?.ejercicio,
+  ]);
+
+  const handleRentaDeclinarModalConfirm = useCallback(async () => {
+    await submitRentaCampanaDeclinar();
+    setRentaDeclinarOpen(false);
+  }, [submitRentaCampanaDeclinar]);
+
+  const submitRentaCampanaRetract = useCallback(async () => {
+    if (!user || rentaRetractSubmitting) return;
+    setRentaRetractSubmitting(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+      const res = await fetch(`${baseUrl}/api/monitoring/renta-campana/retract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = res.ok ? await res.json() : { ok: false };
+      if (data.ok) {
+        const ej =
+          typeof data.ejercicio === 'number'
+            ? data.ejercicio
+            : rentaCampanaStatus?.ejercicio;
+        await activityLogger.logRentaCampanaRetract(user, ej);
+        await refreshRentaCampanaStatus();
+        if (rentaSolicitudesOpen && isDeveloper) {
+          fetchRentaSolicitudes();
+        }
+        setNotification({
+          type: 'success',
+          message:
+            'Tu solicitud ha sido retirada. Se ha avisado a la gestoría de que fue un error por tu parte.',
+        });
+      } else {
+        setNotification({
+          type: 'warning',
+          message: data.message || 'No se pudo retirar la solicitud.',
+        });
+      }
+    } catch {
+      setNotification({ type: 'error', message: 'Error de red al retirar la solicitud.' });
+    } finally {
+      setRentaRetractSubmitting(false);
+    }
+  }, [
+    user,
+    rentaRetractSubmitting,
+    refreshRentaCampanaStatus,
+    rentaSolicitudesOpen,
+    isDeveloper,
+    fetchRentaSolicitudes,
+    rentaCampanaStatus?.ejercicio,
+  ]);
+
+  const handleRentaRetractModalConfirm = useCallback(async () => {
+    await submitRentaCampanaRetract();
+    setRentaRetractOpen(false);
+  }, [submitRentaCampanaRetract]);
 
   const handleRentaEjercicioSave = useCallback(async () => {
     const n = parseInt(String(rentaEjercicioInput).trim(), 10);
@@ -1892,6 +2020,123 @@ const InicioPage = () => {
         currentUser={user}
       />
 
+      <Modal
+        isOpen={rentaCampanaConfirmOpen}
+        onClose={() => {
+          if (!rentaCampanaSubmitting) setRentaCampanaConfirmOpen(false);
+        }}
+        title={`Confirmar solicitud — Renta ${rentaEjercicioDisplay}`}
+        size="sm"
+        showCloseButton={false}
+        closeOnBackdrop={!rentaCampanaSubmitting}
+      >
+        <p className="mb-2 text-sm leading-relaxed text-gray-700">
+          ¿Seguro que quieres registrar tu solicitud para la renta{' '}
+          <strong>{rentaEjercicioDisplay}</strong> con la gestoría?
+        </p>
+        <p className="mb-6 text-xs leading-relaxed text-gray-600">
+          El servicio tiene un coste de <strong>40€ + IVA</strong>; el importe se descontará en la
+          próxima nómina. Esta acción evita pulsaciones accidentales: solo se envía al pulsar{' '}
+          <strong>Confirmar</strong>.
+        </p>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            disabled={rentaCampanaSubmitting}
+            onClick={() => setRentaCampanaConfirmOpen(false)}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={rentaCampanaSubmitting}
+            onClick={handleRentaCampanaModalConfirm}
+            className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {rentaCampanaSubmitting ? 'Registrando…' : 'Confirmar solicitud'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={rentaRetractOpen}
+        onClose={() => {
+          if (!rentaRetractSubmitting) setRentaRetractOpen(false);
+        }}
+        title={`Retirar solicitud — Renta ${rentaEjercicioDisplay}`}
+        size="sm"
+        showCloseButton={false}
+        closeOnBackdrop={!rentaRetractSubmitting}
+      >
+        <p className="mb-2 text-sm leading-relaxed text-gray-700">
+          Vas a <strong>eliminar tu solicitud</strong> para la renta{' '}
+          <strong>{rentaEjercicioDisplay}</strong> con la gestoría e indicar que fue un error.
+        </p>
+        <p className="mb-6 text-xs leading-relaxed text-gray-600">
+          Se enviará un aviso a la gestoría (email / Telegram si están configurados) para que no
+          tramiten tu caso. Si más adelante la necesitas, podrás volver a confirmar desde el aviso
+          del dashboard.
+        </p>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            disabled={rentaRetractSubmitting}
+            onClick={() => setRentaRetractOpen(false)}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={rentaRetractSubmitting}
+            onClick={handleRentaRetractModalConfirm}
+            className="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {rentaRetractSubmitting ? 'Procesando…' : 'Sí, retirar mi solicitud'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={rentaDeclinarOpen}
+        onClose={() => {
+          if (!rentaDeclinarSubmitting) setRentaDeclinarOpen(false);
+        }}
+        title={`No deseo el servicio — Renta ${rentaEjercicioDisplay}`}
+        size="sm"
+        showCloseButton={false}
+        closeOnBackdrop={!rentaDeclinarSubmitting}
+      >
+        <p className="mb-2 text-sm leading-relaxed text-gray-700">
+          Confirmas que <strong>no quieres</strong> la declaración de la renta{' '}
+          <strong>{rentaEjercicioDisplay}</strong> con la gestoría.
+        </p>
+        <p className="mb-6 text-xs leading-relaxed text-gray-600">
+          Se enviará un aviso a la gestoría <strong>solo por Telegram</strong> (no por email). Si más
+          adelante cambias de idea, podrás pulsar &quot;Sí, quiero…&quot; y se registrará la solicitud
+          con normalidad.
+        </p>
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            disabled={rentaDeclinarSubmitting}
+            onClick={() => setRentaDeclinarOpen(false)}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={rentaDeclinarSubmitting}
+            onClick={handleRentaDeclinarModalConfirm}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-400 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {rentaDeclinarSubmitting ? 'Registrando…' : 'Confirmar: no quiero'}
+          </button>
+        </div>
+      </Modal>
+
       {alertNotification && (
         <Notification
           type={alertNotification.type}
@@ -2056,9 +2301,13 @@ const InicioPage = () => {
       )}
 
       {/* Campaña Renta (ejercicio dinámico) – gestoría */}
-      {!rentaCampanaLoading && rentaCampanaStatus?.enabled === true && (
+      {/* Empleado: si ya respondió (sí o no), no mostrar el aviso. Developer: solo bloque de control. */}
+      {!rentaCampanaLoading &&
+        rentaCampanaStatus?.enabled === true &&
+        (!rentaUsuarioRespondio || isDeveloper) && (
         <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 shadow-lg overflow-hidden">
           <div className="p-4 md:p-6">
+            {(!rentaUsuarioRespondio || !isDeveloper) && (
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-2xl text-white shadow-md">
                 📢
@@ -2091,9 +2340,11 @@ const InicioPage = () => {
                     <button
                       type="button"
                       disabled={
-                        rentaCampanaSubmitting || rentaCampanaStatus?.solicited === true
+                        rentaCampanaSubmitting ||
+                        rentaCampanaStatus?.solicited === true ||
+                        rentaCampanaStatus?.declined === true
                       }
-                      onClick={handleRentaCampanaConfirm}
+                      onClick={() => setRentaCampanaConfirmOpen(true)}
                       title={
                         rentaCampanaStatus?.solicited
                           ? `Ya registraste tu solicitud para el ejercicio ${rentaEjercicioDisplay}`
@@ -2116,6 +2367,17 @@ const InicioPage = () => {
                         `Sí, quiero la renta ${rentaEjercicioDisplay} con la gestoría`
                       )}
                     </button>
+                    {!rentaCampanaStatus?.solicited &&
+                      !rentaCampanaStatus?.declined && (
+                        <button
+                          type="button"
+                          disabled={rentaDeclinarSubmitting || rentaCampanaSubmitting}
+                          onClick={() => setRentaDeclinarOpen(true)}
+                          className="inline-flex items-center justify-center rounded-lg border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          No, no quiero la renta con la gestoría
+                        </button>
+                      )}
                   </div>
                   {rentaCampanaStatus?.solicited && (
                     <p className="max-w-xl text-xs leading-relaxed text-gray-600">
@@ -2128,9 +2390,16 @@ const InicioPage = () => {
                 </div>
               </div>
             </div>
+            )}
 
             {isDeveloper && (
-              <div className="mt-5 border-t border-indigo-100 pt-4">
+              <div
+                className={
+                  !rentaUsuarioRespondio
+                    ? 'mt-5 border-t border-indigo-100 pt-4'
+                    : ''
+                }
+              >
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-indigo-800">
                   Developer – control del aviso
                 </p>
@@ -2147,6 +2416,12 @@ const InicioPage = () => {
                   {typeof rentaCampanaStatus?.totalSolicitudes === 'number' && (
                     <span className="text-sm text-gray-600">
                       Solicitudes: <strong>{rentaCampanaStatus.totalSolicitudes}</strong>
+                    </span>
+                  )}
+                  {typeof rentaCampanaStatus?.totalDeclinaciones === 'number' && (
+                    <span className="text-sm text-gray-600">
+                      Declinaciones:{' '}
+                      <strong>{rentaCampanaStatus.totalDeclinaciones}</strong>
                     </span>
                   )}
                   <button
@@ -2227,6 +2502,28 @@ const InicioPage = () => {
         </div>
       )}
 
+      {/* Renta: quien declinó puede volver a solicitar (el backend quita la declinación al confirmar sí) */}
+      {!rentaCampanaLoading &&
+        rentaCampanaStatus?.enabled === true &&
+        rentaCampanaStatus?.declined === true &&
+        !rentaCampanaStatus?.solicited &&
+        !isDeveloper && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-4 shadow-sm dark:border-indigo-900/40 dark:bg-indigo-950/20">
+            <p className="text-sm text-gray-800 dark:text-gray-200">
+              Si finalmente <strong>sí quieres</strong> la renta {rentaEjercicioDisplay} con la gestoría,
+              confirma aquí (se anulará tu respuesta anterior de &quot;no quiero&quot;).
+            </p>
+            <button
+              type="button"
+              disabled={rentaCampanaSubmitting}
+              onClick={() => setRentaCampanaConfirmOpen(true)}
+              className="mt-3 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {rentaCampanaSubmitting ? 'Registrando…' : `Sí, quiero la renta ${rentaEjercicioDisplay} con la gestoría`}
+            </button>
+          </div>
+        )}
+
       {/* Contacto emergencia – Developer: aviso desactivado */}
       {!contactoEmergenciaLoading && isDeveloper && contactoEmergenciaStatus?.enabled === false && (
         <div className="rounded-lg border border-dashed border-teal-300 bg-teal-50/40 p-4">
@@ -2288,13 +2585,42 @@ const InicioPage = () => {
       {!contactoEmergenciaLoading && contactoEmergenciaStatus?.enabled === true && (
         <div className="space-y-3">
           {contactoEmergenciaStatus?.complete && !ceEditMode ? (
-            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-semibold text-gray-800">
-                    Contacto de emergencia
-                  </h3>
-                  <dl className="mt-3 space-y-2 text-sm text-gray-800">
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => setContactoEmergenciaResumenOpen((o) => !o)}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left transition hover:bg-gray-50/90"
+                  aria-expanded={contactoEmergenciaResumenOpen}
+                >
+                  <ChevronDown
+                    className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${
+                      contactoEmergenciaResumenOpen ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden
+                  />
+                  <div className="min-w-0">
+                    <span className="text-sm font-semibold text-gray-800">
+                      Contacto de emergencia
+                    </span>
+                    {!contactoEmergenciaResumenOpen && (
+                      <span className="mt-0.5 block text-xs text-emerald-700">
+                        Datos guardados — pulsa para ver
+                      </span>
+                    )}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCeEditMode(true)}
+                  className="shrink-0 self-start rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 sm:self-center"
+                >
+                  Editar
+                </button>
+              </div>
+              {contactoEmergenciaResumenOpen && (
+                <div className="border-t border-gray-100 px-4 pb-4 pt-2">
+                  <dl className="space-y-2 text-sm text-gray-800">
                     <div>
                       <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Nombre
@@ -2326,14 +2652,7 @@ const InicioPage = () => {
                     </p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCeEditMode(true)}
-                  className="shrink-0 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
-                >
-                  Editar
-                </button>
-              </div>
+              )}
             </div>
           ) : (
             <div
@@ -2430,6 +2749,7 @@ const InicioPage = () => {
                             setCeParentesco(contactoEmergenciaStatus?.parentesco || '');
                             setCeTelefono(contactoEmergenciaStatus?.telefono || '');
                             setCeEditMode(false);
+                            setContactoEmergenciaResumenOpen(false);
                           }}
                           className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         >
@@ -2556,6 +2876,43 @@ const InicioPage = () => {
               <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
                 ¡Bienvenido, {userName}!
               </h1>
+              {!rentaCampanaLoading &&
+                rentaCampanaStatus?.enabled === true &&
+                rentaCampanaStatus?.solicited === true && (
+                  <div className="mx-auto flex max-w-full flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center md:mx-0">
+                    <p
+                      className="flex w-fit max-w-full items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/95 px-3 py-1.5 text-xs font-medium text-emerald-900 shadow-sm"
+                      role="status"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+                      <span>
+                        Renta <strong>{rentaEjercicioDisplay}</strong>: solicitud registrada en la
+                        campaña
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setRentaRetractOpen(true)}
+                      className="w-fit max-w-full rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-1.5 text-left text-[11px] font-medium leading-snug text-amber-950 shadow-sm transition hover:bg-amber-100 sm:text-xs"
+                    >
+                      Me equivoqué, no quiero la renta con la gestoría
+                    </button>
+                  </div>
+                )}
+              {!rentaCampanaLoading &&
+                rentaCampanaStatus?.enabled === true &&
+                rentaCampanaStatus?.declined === true &&
+                !rentaCampanaStatus?.solicited && (
+                  <p
+                    className="mx-auto flex w-fit max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100/95 px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm md:mx-0"
+                    role="status"
+                  >
+                    <span>
+                      Renta <strong>{rentaEjercicioDisplay}</strong>: indicaste que{' '}
+                      <strong>no deseas</strong> el servicio con la gestoría
+                    </span>
+                  </p>
+                )}
               <p className="mx-auto max-w-3xl text-sm leading-relaxed text-gray-600 sm:text-base md:mx-0">
                 Este es tu panel en{' '}
                 <span className="rounded-md bg-blue-50 px-2 py-1 font-semibold text-blue-700">
