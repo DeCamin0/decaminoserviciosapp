@@ -123,7 +123,11 @@ function descripcionAuxiliaresOfertaLinea(tituloServicio, calcAux) {
   const h = calcAux != null && calcAux.horasDiarias != null ? Number(calcAux.horasDiarias) : 0;
   const diasTxt = textoCalendarioAuxiliaresOferta(calcAux?.diasPorSemana);
   const sufijoFestivos = calcAux?.sinFestivos ? ', sin festivos' : '';
-  return `${tituloServicio} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
+  const titulo =
+    calcAux?.auxiliaresConLimpieza && !String(tituloServicio || '').toLowerCase().includes('y limpieza')
+      ? `${tituloServicio} y LIMPIEZA`
+      : tituloServicio;
+  return `${titulo} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
 }
 
 const DIAS_TIPOS_HORARIO_PISCINA = ['LV', 'SD', 'LD', 'PERS'];
@@ -248,6 +252,8 @@ export default function PresupuestosInformesPage() {
     diasPorSemana: 7,
     /** Si está marcado, la oferta indica explícitamente que no se incluyen festivos. */
     sinFestivos: false,
+    /** Incluye limpieza en el mismo presupuesto (oferta + PDF con ambas descripciones). */
+    auxiliaresConLimpieza: false,
     horasACubrirPorSemana: 168, // h/sem a cubrir → calculamos nº conserje necesarios
     aplicaNocturnidad: false,
     nocturnidad: { b: 0, c: 0.77 },
@@ -3603,6 +3609,29 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         />
                         <span className="font-medium">Sin festivos</span>
                         <span className="text-gray-500 font-normal">(se refleja en la descripción de la oferta económica)</span>
+                      </label>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={!!calculo.auxiliaresConLimpieza}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            const auxSvcs = selectedServiciosPresupuesto.filter((sv) => derivarTipoDesdeServicio(sv.nombre) === 'auxiliares');
+                            const baseNombre = servicioNombreTexto(auxSvcs[variantIndex]?.nombre) || 'SERVICIO DE AUXILIARES DE SERVICIOS';
+                            setAuxiliaresCalculoAt((prev) => ({ ...prev, auxiliaresConLimpieza: checked }));
+                            if (variantIndex === 0) {
+                              setPresupuestoCalculo((prev) => ({
+                                ...prev,
+                                nombre: checked ? `${baseNombre} y LIMPIEZA` : baseNombre,
+                              }));
+                            }
+                          }}
+                          className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        <span className="font-medium">Incluir limpieza en el mismo presupuesto</span>
+                        <span className="text-gray-500 font-normal">(misma cuota que auxiliares; en oferta una sola línea con nombre «… y LIMPIEZA»; en el PDF se detalla la limpieza sin sumar otro importe)</span>
                       </label>
                     </div>
                     <div className="md:col-span-2 flex flex-wrap items-center gap-4 text-sm">

@@ -654,7 +654,12 @@ function descripcionAuxiliaresOfertaLinea(
   const h = Number(calc?.horasDiarias ?? 0);
   const diasTxt = textoCalendarioAuxiliaresOferta(calc?.diasPorSemana);
   const sufijoFestivos = calc?.sinFestivos ? ', sin festivos' : '';
-  return `${tituloServicio} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
+  const t = String(tituloServicio || '');
+  const titulo =
+    calc?.auxiliaresConLimpieza && !t.toLowerCase().includes('y limpieza')
+      ? `${t} y LIMPIEZA`
+      : t;
+  return `${titulo} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
 }
 
 function bulletLineaAuxiliaresOferta(
@@ -664,6 +669,18 @@ function bulletLineaAuxiliaresOferta(
   const diasTxt = textoCalendarioAuxiliaresOferta(calc?.diasPorSemana);
   const sufijoFestivos = calc?.sinFestivos ? ', sin festivos' : '';
   return `${h}h/día ${diasTxt}${sufijoFestivos}`;
+}
+
+/** Misma línea resumen que en el bucle PDF “servicios ofertados” para limpieza. */
+function textoBulletLimpiezaPdf(
+  calc: Record<string, unknown> | undefined,
+): string {
+  const n = Number(calc?.numOperarias ?? 2);
+  const h = Number(calc?.horasPorDiaPorOperaria ?? 4);
+  const dias = Number(calc?.diasLaborablesSemana ?? 5);
+  const diasStr =
+    dias === 5 ? 'de lunes a viernes' : `${dias} días/semana`;
+  return `${n} personas, ${h} horas al día cada una, ${diasStr} - excepto festivos`;
 }
 
 /** Precio en formato español (miles con punto, decimal con coma), alineado con el front. */
@@ -1072,7 +1089,6 @@ export class PresupuestoDocumentoService {
               | Record<string, unknown>
               | undefined;
             descripcion = descripcionAuxiliaresOfertaLinea(title, calc);
-            // Sin cálculo COSTE en backend, dejamos 0 o se rellena desde front
           } else if (tipo === 'limpieza') {
             const calc = limpiezaAll[iL++] as
               | Record<string, unknown>
@@ -1149,6 +1165,17 @@ export class PresupuestoDocumentoService {
             derivarTipoDesdeServicio(r.descripcion || ''),
           ),
         );
+      }
+      const presupuestoCalculoParaAuxLimp = (payload.presupuestoCalculo ||
+        {}) as Record<string, unknown>;
+      const presupuestoCalculoAuxiliaresRestParaAuxLimp = (payload.presupuestoCalculoAuxiliaresRest ||
+        []) as Record<string, unknown>[];
+      if (
+        [presupuestoCalculoParaAuxLimp, ...presupuestoCalculoAuxiliaresRestParaAuxLimp].some(
+          (c) => c && c.auxiliaresConLimpieza,
+        )
+      ) {
+        tiposIncluidos.add('limpieza');
       }
       const descripcionOperativaLineas: string[] = [];
       let sub = 1;
@@ -1264,10 +1291,17 @@ export class PresupuestoDocumentoService {
             `${n} personas, ${h} horas al día cada una, ${diasStr} - excepto festivos`,
           );
         } else if (tipo === 'auxiliares') {
+          const auxIdx = idxAux;
           const calc = auxiliaresAll[idxAux++] as
             | Record<string, unknown>
             | undefined;
           bullets.push(bulletLineaAuxiliaresOferta(calc));
+          if (calc?.auxiliaresConLimpieza) {
+            const calcL = limpiezaAll[auxIdx] as
+              | Record<string, unknown>
+              | undefined;
+            bullets.push(`Limpieza incluida: ${textoBulletLimpiezaPdf(calcL)}`);
+          }
         } else if (tipo === 'jardineria') {
           const calc = jardineriaAll[idxJard++] as
             | Record<string, unknown>
