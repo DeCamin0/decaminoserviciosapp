@@ -1291,18 +1291,12 @@ export class PresupuestoDocumentoService {
             `${n} personas, ${h} horas al día cada una, ${diasStr} - excepto festivos`,
           );
         } else if (tipo === 'auxiliares') {
-          const auxIdx = idxAux;
           const calc = auxiliaresAll[idxAux++] as
             | Record<string, unknown>
             | undefined;
           if (calc?.auxiliaresConLimpieza) {
-            const calcL = limpiezaAll[auxIdx] as
-              | Record<string, unknown>
-              | undefined;
             title = `${serviceTitles.auxiliares} y LIMPIEZA`;
-            const auxTxt = bulletLineaAuxiliaresOferta(calc);
-            const limpTxt = textoBulletLimpiezaPdf(calcL);
-            bullets.push(`${auxTxt}. (${limpTxt}).`);
+            bullets.push(bulletLineaAuxiliaresOferta(calc));
           } else {
             bullets.push(bulletLineaAuxiliaresOferta(calc));
           }

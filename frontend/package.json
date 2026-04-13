@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.04.13.2126",
+  "version": "2026.04.13.2147",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/fix-quill-vulnerability.cjs",
