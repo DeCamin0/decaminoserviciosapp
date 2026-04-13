@@ -12,9 +12,12 @@ import {
   Query,
   Req,
   BadRequestException,
+  ForbiddenException,
   Logger,
   Res,
+  Headers,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import {
   FileFieldsInterceptor,
@@ -29,6 +32,10 @@ import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { NotificationsService } from '../services/notifications.service';
 import { SentEmailsService } from '../services/sent-emails.service';
 import { EmployeeExportService } from '../services/employee-export.service';
+import {
+  EmpleadoGrupoScopeService,
+  type EmpleadoGrupoScopeFilter,
+} from '../services/empleado-grupo-scope.service';
 
 @Controller('api/empleados')
 export class EmpleadosController {
@@ -43,6 +50,8 @@ export class EmpleadosController {
     private readonly sentEmailsService: SentEmailsService,
     private readonly employeeExportService: EmployeeExportService,
     private readonly configService: ConfigService,
+    private readonly jwtService: JwtService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
   ) {}
 
   private getCompany() {
@@ -67,6 +76,39 @@ export class EmpleadosController {
           .map((e) => e.trim())
           .filter(Boolean)
       : [];
+  }
+
+  private extractBearerToken(authorization?: string): string | null {
+    if (!authorization || typeof authorization !== 'string') return null;
+    const t = authorization.trim();
+    if (!t.toLowerCase().startsWith('bearer ')) return null;
+    const token = t.slice(7).trim();
+    return token || null;
+  }
+
+  /**
+   * Lista GET /empleados: con Bearer válido + filas en user_empleado_grupo_scope → filtrar.
+   * Sin Bearer o token inválido → lista completa (compat. n8n / llamadas legacy).
+   */
+  private async resolveScopeFilterFromAuthHeader(
+    authorization?: string,
+  ): Promise<EmpleadoGrupoScopeFilter | null> {
+    const token = this.extractBearerToken(authorization);
+    if (!token) return null;
+    try {
+      const payload = this.jwtService.verify(token) as {
+        userId?: string;
+        role?: string;
+        grupo?: string;
+      };
+      return await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: payload.userId,
+        role: payload.role,
+        grupo: payload.grupo,
+      });
+    } catch {
+      return null;
+    }
   }
 
   @Get('me')
@@ -112,14 +154,23 @@ export class EmpleadosController {
 
   @Get('estadisticas')
   @UseGuards(JwtAuthGuard)
-  async getEstadisticasEmpleados(@Query('mes') mes?: string) {
+  async getEstadisticasEmpleados(
+    @CurrentUser() user: any,
+    @Query('mes') mes?: string,
+  ) {
     try {
       this.logger.log(
         `📊 Get estadísticas empleados request${mes ? ` for mes: ${mes}` : ' (current month)'}`,
       );
-      // Nu trebuie să verificăm RBAC aici - doar managerii pot accesa tab-ul în frontend
-      const estadisticas =
-        await this.empleadosService.getEstadisticasEmpleados(mes);
+      const scope = await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
+      const estadisticas = await this.empleadosService.getEstadisticasEmpleados(
+        mes,
+        scope,
+      );
       return { success: true, estadisticas };
     } catch (error: any) {
       this.logger.error('❌ Error getting estadísticas empleados:', error);
@@ -131,13 +182,32 @@ export class EmpleadosController {
 
   @Get('estadisticas/export-excel')
   @UseGuards(JwtAuthGuard)
-  async exportEstadisticasExcel(@Query('mes') mes: string, @Res() res: any) {
+  async exportEstadisticasExcel(
+    @Query('mes') mes: string,
+    @Res() res: any,
+    @CurrentUser() user: any,
+  ) {
     try {
+      const scope = await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
+      if (!scope) {
+        await this.empleadoGrupoScopeService.assertNotMassExportRestricted({
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        });
+      }
       this.logger.log(
         `📊 Export estadísticas empleados Excel request${mes ? ` for mes: ${mes}` : ''}`,
       );
       const buffer =
-        await this.empleadosService.exportEstadisticasEmpleadosExcel(mes);
+        await this.empleadosService.exportEstadisticasEmpleadosExcel(
+          mes,
+          scope,
+        );
 
       const mesSuffix = mes ? `_${mes}` : '';
       res.set({
@@ -149,6 +219,7 @@ export class EmpleadosController {
 
       res.send(buffer);
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       this.logger.error('❌ Error exporting estadísticas Excel:', error);
       throw new BadRequestException(
         `Error al exportar Excel: ${error.message}`,
@@ -158,13 +229,31 @@ export class EmpleadosController {
 
   @Get('estadisticas/export-pdf')
   @UseGuards(JwtAuthGuard)
-  async exportEstadisticasPDF(@Query('mes') mes: string, @Res() res: any) {
+  async exportEstadisticasPDF(
+    @Query('mes') mes: string,
+    @Res() res: any,
+    @CurrentUser() user: any,
+  ) {
     try {
+      const scope = await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
+      if (!scope) {
+        await this.empleadoGrupoScopeService.assertNotMassExportRestricted({
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        });
+      }
       this.logger.log(
         `📊 Export estadísticas empleados PDF request${mes ? ` for mes: ${mes}` : ''}`,
       );
-      const buffer =
-        await this.empleadosService.exportEstadisticasEmpleadosPDF(mes);
+      const buffer = await this.empleadosService.exportEstadisticasEmpleadosPDF(
+        mes,
+        scope,
+      );
 
       const mesSuffix = mes ? `_${mes}` : '';
       res.set({
@@ -175,6 +264,7 @@ export class EmpleadosController {
 
       res.send(buffer);
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       this.logger.error('❌ Error exporting estadísticas PDF:', error);
       throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
@@ -182,8 +272,13 @@ export class EmpleadosController {
 
   @Get('lista-iban/export-pdf')
   @UseGuards(JwtAuthGuard)
-  async exportListaIbanPDF(@Res() res: any) {
+  async exportListaIbanPDF(@Res() res: any, @CurrentUser() user: any) {
     try {
+      await this.empleadoGrupoScopeService.assertNotMassExportRestricted({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
       this.logger.log('📄 Export lista IBAN PDF request');
       const buffer = await this.empleadosService.exportListaIbanPDF();
 
@@ -195,14 +290,61 @@ export class EmpleadosController {
 
       res.send(buffer);
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       this.logger.error('❌ Error exporting lista IBAN PDF:', error);
       throw new BadRequestException(`Error al exportar PDF: ${error.message}`);
     }
   }
 
+  /** Ámbito de empleados del usuario autenticado (solo lectura). */
+  @Get('scope/me')
+  @UseGuards(JwtAuthGuard)
+  async getMyEmpleadoGrupoScope(@CurrentUser() user: any) {
+    const userId = user?.userId || user?.CODIGO || '';
+    const grupos =
+      await this.empleadoGrupoScopeService.listGruposForUserCodigo(userId);
+    return { userCodigo: userId, grupos };
+  }
+
+  /** Admin/Developer: ver ámbito de otro usuario. */
+  @Get('scope/:userCodigo')
+  @UseGuards(JwtAuthGuard)
+  async getEmpleadoGrupoScopeForUser(
+    @CurrentUser() user: any,
+    @Param('userCodigo') userCodigo: string,
+  ) {
+    this.empleadoGrupoScopeService.assertCanManageScopesInAdmin(user);
+    const grupos = await this.empleadoGrupoScopeService.listGruposForUserCodigo(
+      (userCodigo || '').trim(),
+    );
+    return { userCodigo: (userCodigo || '').trim(), grupos };
+  }
+
+  /** Admin/Developer: reemplazar lista de GRUPO gestionables (vacío = sin restricción). */
+  @Put('scope/:userCodigo')
+  @UseGuards(JwtAuthGuard)
+  async putEmpleadoGrupoScopeForUser(
+    @CurrentUser() user: any,
+    @Param('userCodigo') userCodigo: string,
+    @Body() body: { grupos?: string[] },
+  ) {
+    this.empleadoGrupoScopeService.assertCanManageScopesInAdmin(user);
+    const codigo = (userCodigo || '').trim();
+    if (!codigo) {
+      throw new BadRequestException('userCodigo requerido');
+    }
+    const grupos = Array.isArray(body?.grupos) ? body.grupos : [];
+    const saved = await this.empleadoGrupoScopeService.replaceScopesForUser(
+      codigo,
+      grupos,
+    );
+    return { success: true, userCodigo: codigo, grupos: saved };
+  }
+
   @Get()
-  async getAll() {
-    const empleados = await this.empleadosService.getAllEmpleados();
+  async getAll(@Headers('authorization') authorization?: string) {
+    const scope = await this.resolveScopeFilterFromAuthHeader(authorization);
+    const empleados = await this.empleadosService.getAllEmpleados(scope);
     return empleados;
   }
 
@@ -221,6 +363,7 @@ export class EmpleadosController {
       archivosGestoria?: Express.Multer.File[];
     },
     @Body() body: any,
+    @CurrentUser() user: any,
   ) {
     const pdfFile = files?.pdf?.[0];
     const archivosGestoria = files?.archivosGestoria || [];
@@ -264,6 +407,18 @@ export class EmpleadosController {
       if (!empleadoData.CODIGO) {
         throw new BadRequestException('CODIGO is required');
       }
+
+      const scopeFilter =
+        await this.empleadoGrupoScopeService.resolveScopeFilter({
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        });
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeFilter,
+        empleadoData.CODIGO,
+        empleadoData.GRUPO,
+      );
 
       // Adăugăm empleado în baza de date
       const result = await this.empleadosService.addEmpleado(empleadoData);
@@ -1189,6 +1344,29 @@ export class EmpleadosController {
       if (includePassword) {
         empleadoData.Contraseña = contraseña;
       }
+
+      const prevGrupo =
+        empleadoAnterior?.GRUPO ?? empleadoAnterior?.grupo ?? '';
+      const newGrupo =
+        body.GRUPO !== undefined && body.GRUPO !== null
+          ? String(body.GRUPO)
+          : prevGrupo;
+      const scopeFilterUpd =
+        await this.empleadoGrupoScopeService.resolveScopeFilter({
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        });
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeFilterUpd,
+        body.CODIGO,
+        prevGrupo,
+      );
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeFilterUpd,
+        body.CODIGO,
+        newGrupo,
+      );
 
       const result = await this.empleadosService.updateEmpleado(
         body.CODIGO,
@@ -2198,6 +2376,14 @@ export class EmpleadosController {
         );
       }
 
+      const scopeMail = await this.empleadoGrupoScopeService.resolveScopeFilter(
+        {
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        },
+      );
+
       let emailRecipients: Array<{
         email: string;
         nombre: string;
@@ -2208,6 +2394,11 @@ export class EmpleadosController {
         // Trimite la un angajat specific
         const empleado =
           await this.empleadosService.getEmpleadoByCodigo(codigo);
+        this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+          scopeMail,
+          codigo,
+          empleado?.GRUPO ?? empleado?.grupo,
+        );
         const email =
           empleado['CORREO ELECTRONICO'] || empleado.CORREO_ELECTRONICO;
         const nombre = this.empleadosService.getFormattedNombre(empleado);
@@ -2223,7 +2414,8 @@ export class EmpleadosController {
         ];
       } else if (destinatar === 'toti') {
         // Trimite la TOȚI angajații ACTIVI (indiferent de grup)
-        const empleados = await this.empleadosService.getAllEmpleados();
+        const empleados =
+          await this.empleadosService.getAllEmpleados(scopeMail);
         const empleadosActivos = empleados.filter(
           (e) => (e.ESTADO || e.estado) === 'ACTIVO',
         );
@@ -2246,8 +2438,17 @@ export class EmpleadosController {
           `📧 Trimite email la TOȚI angajații activi: ${emailRecipients.length} destinatari`,
         );
       } else if (grup) {
+        if (
+          scopeMail &&
+          !this.empleadoGrupoScopeService.grupoMatches(grup, scopeMail.grupos)
+        ) {
+          throw new ForbiddenException(
+            'No puede enviar correo a un grupo fuera de su ámbito.',
+          );
+        }
         // Trimite la toți angajații dintr-un grup (doar cei activi)
-        const empleados = await this.empleadosService.getAllEmpleados();
+        const empleados =
+          await this.empleadosService.getAllEmpleados(scopeMail);
         const empleadosGrupo = empleados.filter(
           (e) =>
             (e.GRUPO || e.grupo) === grup &&
@@ -2480,6 +2681,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error sending email:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -2501,12 +2703,25 @@ export class EmpleadosController {
       APELLIDO2?: string;
       NOMBRE_SPLIT_CONFIANZA?: number;
     },
+    @CurrentUser() user: any,
   ) {
     try {
       const codigo = (body as any).CODIGO || (body as any).codigo;
       if (!codigo) {
         throw new BadRequestException('CODIGO is required');
       }
+
+      const empNs = await this.empleadosService.getEmpleadoByCodigo(codigo);
+      const scNs = await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scNs,
+        codigo,
+        empNs?.GRUPO ?? empNs?.grupo,
+      );
 
       this.logger.log(
         `📝 Actualizare câmpuri separate pentru empleado ${codigo}`,
@@ -2526,6 +2741,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error updating nombre split:', error);
+      if (error instanceof ForbiddenException) throw error;
       throw new BadRequestException(
         `Error al actualizar campos separados: ${error.message}`,
       );
@@ -2677,6 +2893,20 @@ export class EmpleadosController {
         );
       }
 
+      if (codigo !== userCodigo) {
+        const empPwd = await this.empleadosService.getEmpleadoByCodigo(codigo);
+        const scPwd = await this.empleadoGrupoScopeService.resolveScopeFilter({
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        });
+        this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+          scPwd,
+          codigo,
+          empPwd?.GRUPO ?? empPwd?.grupo,
+        );
+      }
+
       const password = await this.empleadosService.getPassword(codigo);
 
       return {
@@ -2714,6 +2944,20 @@ export class EmpleadosController {
       if (codigo !== userCodigo && !isManager && !isDeveloper) {
         throw new BadRequestException(
           'No tienes permiso para resetear la contraseña de otro usuario',
+        );
+      }
+
+      if (codigo !== userCodigo) {
+        const empRs = await this.empleadosService.getEmpleadoByCodigo(codigo);
+        const scRs = await this.empleadoGrupoScopeService.resolveScopeFilter({
+          userId: user?.userId,
+          role: user?.role,
+          grupo: user?.grupo,
+        });
+        this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+          scRs,
+          codigo,
+          empRs?.GRUPO ?? empRs?.grupo,
         );
       }
 
@@ -2796,8 +3040,13 @@ export class EmpleadosController {
    */
   @Get('export-all')
   @UseGuards(JwtAuthGuard)
-  async exportAllEmployeesDocuments(@Res() res: any) {
+  async exportAllEmployeesDocuments(@Res() res: any, @CurrentUser() user: any) {
     try {
+      await this.empleadoGrupoScopeService.assertNotMassExportRestricted({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
       this.logger.log(`📦 Export request for all employees`);
 
       const { stream, filename } =
@@ -2832,8 +3081,20 @@ export class EmpleadosController {
   async exportEmployeeDocuments(
     @Param('codigo') codigo: string,
     @Res() res: any,
+    @CurrentUser() user: any,
   ) {
     try {
+      const emp = await this.empleadosService.getEmpleadoByCodigo(codigo);
+      const scopeOne = await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: user?.userId,
+        role: user?.role,
+        grupo: user?.grupo,
+      });
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeOne,
+        codigo,
+        emp?.GRUPO ?? emp?.grupo,
+      );
       this.logger.log(`📦 Export request for empleado: ${codigo}`);
 
       const { stream, filename } =

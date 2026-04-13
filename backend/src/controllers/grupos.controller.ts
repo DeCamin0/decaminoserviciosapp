@@ -10,6 +10,7 @@ import {
   UseGuards,
   Logger,
   ParseIntPipe,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   GruposService,
@@ -17,22 +18,49 @@ import {
   UpdateGrupoDto,
 } from '../services/grupos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import type { JwtUserLike } from '../services/empleado-grupo-scope.service';
 
 @Controller('api/grupos')
 @UseGuards(JwtAuthGuard)
 export class GruposController {
   private readonly logger = new Logger(GruposController.name);
 
-  constructor(private readonly gruposService: GruposService) {}
+  constructor(
+    private readonly gruposService: GruposService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+  ) {}
 
+  private payloadFromRequestUser(user: any): JwtUserLike {
+    return {
+      userId: String(user?.userId ?? user?.CODIGO ?? '').trim(),
+      role: user?.role,
+      grupo: user?.grupo ?? user?.GRUPO,
+    };
+  }
+
+  /** Lista nombres GRUPO para dropdowns: con ámbito RRHH solo grupos permitidos. */
   @Get()
-  async getGrupos() {
+  async getGrupos(@CurrentUser() user: any) {
     try {
       this.logger.log('📝 Get grupos request (nombres only)');
 
-      const grupos = await this.gruposService.getGrupos();
-
-      return grupos;
+      const all = await this.gruposService.getGrupos();
+      const allowed =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.payloadFromRequestUser(user),
+        );
+      if (!allowed?.length) {
+        return all;
+      }
+      const filtered = all.filter((g) =>
+        this.empleadoGrupoScopeService.grupoMatches(g, allowed),
+      );
+      if (filtered.length > 0) {
+        return filtered;
+      }
+      return [...allowed].sort((a, b) => a.localeCompare(b, 'es'));
     } catch (error: any) {
       this.logger.error('❌ Error getting grupos:', error);
       throw error;
@@ -72,8 +100,20 @@ export class GruposController {
   }
 
   @Post()
-  async createGrupo(@Body() body: CreateGrupoDto | { nombre: string }) {
+  async createGrupo(
+    @Body() body: CreateGrupoDto | { nombre: string },
+    @CurrentUser() user: any,
+  ) {
     try {
+      const allowed =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.payloadFromRequestUser(user),
+        );
+      if (allowed?.length) {
+        throw new ForbiddenException(
+          'No puede crear grupos con ámbito de empleados restringido.',
+        );
+      }
       // Backward compatibility: dacă primește doar { nombre }, convertește la CreateGrupoDto
       const dto: CreateGrupoDto =
         'nombre' in body && Object.keys(body).length === 1
@@ -95,8 +135,18 @@ export class GruposController {
   async updateGrupo(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateGrupoDto,
+    @CurrentUser() user: any,
   ) {
     try {
+      const allowed =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.payloadFromRequestUser(user),
+        );
+      if (allowed?.length) {
+        throw new ForbiddenException(
+          'No puede modificar el catálogo de grupos con ámbito restringido.',
+        );
+      }
       this.logger.log(`📝 Update grupo request: ${id}`);
 
       const grupo = await this.gruposService.updateGrupo(id, body);
@@ -109,8 +159,20 @@ export class GruposController {
   }
 
   @Delete(':id')
-  async deleteGrupo(@Param('id', ParseIntPipe) id: number) {
+  async deleteGrupo(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: any,
+  ) {
     try {
+      const allowed =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.payloadFromRequestUser(user),
+        );
+      if (allowed?.length) {
+        throw new ForbiddenException(
+          'No puede eliminar grupos con ámbito de empleados restringido.',
+        );
+      }
       this.logger.log(`📝 Delete grupo request: ${id}`);
 
       await this.gruposService.deleteGrupo(id);

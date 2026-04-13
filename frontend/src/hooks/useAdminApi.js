@@ -668,6 +668,39 @@ export const useAdminApi = () => {
     }
   };
 
+  const authHeadersJson = () => {
+    const token = localStorage.getItem('auth_token');
+    const h = { 'Content-Type': 'application/json' };
+    if (token) h.Authorization = `Bearer ${token}`;
+    return h;
+  };
+
+  /** Lista de GRUPO (DatosEmpleados) que el usuario objetivo puede gestionar. Vacío = sin restricción. */
+  const getEmpleadoGrupoScope = async (userCodigo) => {
+    const url = routes.empleadoGrupoScopeUser(userCodigo);
+    const res = await fetch(url, { headers: authHeadersJson(), credentials: 'include' });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || `HTTP ${res.status}`);
+    }
+    return res.json();
+  };
+
+  const saveEmpleadoGrupoScope = async (userCodigo, grupos) => {
+    const url = routes.empleadoGrupoScopeUser(userCodigo);
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: authHeadersJson(),
+      credentials: 'include',
+      body: JSON.stringify({ grupos: Array.isArray(grupos) ? grupos : [] }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || `HTTP ${res.status}`);
+    }
+    return res.json();
+  };
+
   return {
     getAdminStats,
     getPermissions,
@@ -676,6 +709,8 @@ export const useAdminApi = () => {
     savePermissions,
     deleteUnusedGroups,
     getActivityLog,
-    getAllUsers
+    getAllUsers,
+    getEmpleadoGrupoScope,
+    saveEmpleadoGrupoScope,
   };
 }; 

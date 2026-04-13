@@ -1,4 +1,11 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import * as crypto from 'crypto';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -1079,5 +1086,255 @@ export class ClientesService {
         `Error al eliminar contrato: ${error.message}`,
       );
     }
+  }
+
+  private normalizeContactEmail(
+    email: string | null | undefined,
+  ): string | null {
+    if (!email || !String(email).trim()) return null;
+    return String(email).trim().toLowerCase();
+  }
+
+  private async assertClienteExists(clienteId: number) {
+    const c = await this.prisma.clientes.findUnique({
+      where: { id: clienteId },
+      select: { id: true },
+    });
+    if (!c) {
+      throw new NotFoundException(`Cliente con id ${clienteId} no encontrado`);
+    }
+  }
+
+  /** Mismo email + acceso portal no duplicado dentro de la misma comunidad (el enlace del portal acota el cliente). */
+  private async assertPortalEmailUniquePerCliente(
+    clienteId: number,
+    email: string | null,
+    accesoPortal: boolean,
+    excludeContactoId?: number,
+  ) {
+    if (!accesoPortal) return;
+    const norm = this.normalizeContactEmail(email);
+    if (!norm) {
+      throw new BadRequestException(
+        'Email obligatorio cuando el contacto tiene acceso al portal',
+      );
+    }
+    const candidatos = await this.prisma.clienteContacto.findMany({
+      where: {
+        cliente_id: clienteId,
+        acceso_portal: true,
+        estado: 'activo',
+        email: { not: null },
+      },
+      select: { id: true, email: true },
+    });
+    const conflict = candidatos.find(
+      (row) =>
+        row.id !== excludeContactoId &&
+        row.email &&
+        this.normalizeContactEmail(row.email) === norm,
+    );
+    if (conflict) {
+      throw new ConflictException(
+        'Ya existe otro contacto con este email y acceso al portal en esta comunidad.',
+      );
+    }
+  }
+
+  private async clearOtherPrincipalContactos(
+    clienteId: number,
+    keepId: number,
+  ) {
+    await this.prisma.clienteContacto.updateMany({
+      where: {
+        cliente_id: clienteId,
+        id: { not: keepId },
+        es_principal: true,
+      },
+      data: { es_principal: false },
+    });
+  }
+
+  async listClienteContactos(clienteId: number) {
+    await this.assertClienteExists(clienteId);
+    return this.prisma.clienteContacto.findMany({
+      where: { cliente_id: clienteId },
+      orderBy: [{ es_principal: 'desc' }, { id: 'asc' }],
+    });
+  }
+
+  async createClienteContacto(
+    clienteId: number,
+    body: Record<string, unknown>,
+  ) {
+    await this.assertClienteExists(clienteId);
+    const acceso_portal = Boolean(body.acceso_portal);
+    const emailRaw = body.email != null ? String(body.email).trim() : '';
+    const email = emailRaw || null;
+    if (acceso_portal) {
+      await this.assertPortalEmailUniquePerCliente(clienteId, email, true);
+    }
+    const nombre = String(body.nombre || '').trim() || 'Sin nombre';
+    const row = await this.prisma.clienteContacto.create({
+      data: {
+        cliente_id: clienteId,
+        nombre,
+        cargo_codigo: body.cargo_codigo
+          ? String(body.cargo_codigo).trim().slice(0, 80)
+          : null,
+        cargo_libre: body.cargo_libre
+          ? String(body.cargo_libre).trim().slice(0, 200)
+          : null,
+        email,
+        telefono: body.telefono
+          ? String(body.telefono).trim().slice(0, 50)
+          : null,
+        acceso_portal,
+        recibe_notificaciones: Boolean(body.recibe_notificaciones),
+        es_principal: Boolean(body.es_principal),
+        estado:
+          String(body.estado || 'activo').toLowerCase() === 'inactivo'
+            ? 'inactivo'
+            : 'activo',
+      },
+    });
+    if (row.es_principal) {
+      await this.clearOtherPrincipalContactos(clienteId, row.id);
+    }
+    return { success: true as const, data: row };
+  }
+
+  async updateClienteContacto(
+    clienteId: number,
+    contactoId: number,
+    body: Record<string, unknown>,
+  ) {
+    await this.assertClienteExists(clienteId);
+    const existing = await this.prisma.clienteContacto.findFirst({
+      where: { id: contactoId, cliente_id: clienteId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Contacto no encontrado');
+    }
+    const acceso_portal =
+      body.acceso_portal !== undefined
+        ? Boolean(body.acceso_portal)
+        : existing.acceso_portal;
+    const email =
+      body.email !== undefined
+        ? String(body.email || '').trim() || null
+        : existing.email;
+    if (acceso_portal) {
+      await this.assertPortalEmailUniquePerCliente(
+        clienteId,
+        email,
+        true,
+        contactoId,
+      );
+    }
+    const row = await this.prisma.clienteContacto.update({
+      where: { id: contactoId },
+      data: {
+        nombre:
+          body.nombre !== undefined
+            ? String(body.nombre || '').trim() || 'Sin nombre'
+            : existing.nombre,
+        cargo_codigo:
+          body.cargo_codigo !== undefined
+            ? body.cargo_codigo
+              ? String(body.cargo_codigo).trim().slice(0, 80)
+              : null
+            : existing.cargo_codigo,
+        cargo_libre:
+          body.cargo_libre !== undefined
+            ? body.cargo_libre
+              ? String(body.cargo_libre).trim().slice(0, 200)
+              : null
+            : existing.cargo_libre,
+        email,
+        telefono:
+          body.telefono !== undefined
+            ? body.telefono
+              ? String(body.telefono).trim().slice(0, 50)
+              : null
+            : existing.telefono,
+        acceso_portal,
+        recibe_notificaciones:
+          body.recibe_notificaciones !== undefined
+            ? Boolean(body.recibe_notificaciones)
+            : existing.recibe_notificaciones,
+        es_principal:
+          body.es_principal !== undefined
+            ? Boolean(body.es_principal)
+            : existing.es_principal,
+        estado:
+          body.estado !== undefined
+            ? String(body.estado).toLowerCase() === 'inactivo'
+              ? 'inactivo'
+              : 'activo'
+            : existing.estado,
+      },
+    });
+    if (row.es_principal) {
+      await this.clearOtherPrincipalContactos(clienteId, row.id);
+    }
+    return { success: true as const, data: row };
+  }
+
+  async deleteClienteContacto(clienteId: number, contactoId: number) {
+    await this.assertClienteExists(clienteId);
+    const existing = await this.prisma.clienteContacto.findFirst({
+      where: { id: contactoId, cliente_id: clienteId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Contacto no encontrado');
+    }
+    await this.prisma.clienteContacto.delete({ where: { id: contactoId } });
+    return { success: true as const };
+  }
+
+  /**
+   * Crea `portal_invite_token` si no existe (enlace único / QR por comunidad).
+   */
+  async ensurePortalInviteToken(
+    clienteId: number,
+    rotate = false,
+  ): Promise<{
+    token: string;
+    nombre: string | null;
+  }> {
+    await this.assertClienteExists(clienteId);
+    const row = await this.prisma.clientes.findUnique({
+      where: { id: clienteId },
+      select: {
+        portal_invite_token: true,
+        NOMBRE_O_RAZON_SOCIAL: true,
+      },
+    });
+    if (!row) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
+    if (!rotate && row.portal_invite_token) {
+      return {
+        token: row.portal_invite_token,
+        nombre: row.NOMBRE_O_RAZON_SOCIAL,
+      };
+    }
+    for (let i = 0; i < 5; i++) {
+      const token = crypto.randomBytes(32).toString('hex');
+      try {
+        await this.prisma.clientes.update({
+          where: { id: clienteId },
+          data: { portal_invite_token: token },
+        });
+        return { token, nombre: row.NOMBRE_O_RAZON_SOCIAL };
+      } catch (e: any) {
+        if (e?.code === 'P2002') continue;
+        throw e;
+      }
+    }
+    throw new BadRequestException(
+      'No se pudo generar el enlace del portal; reintente.',
+    );
   }
 }

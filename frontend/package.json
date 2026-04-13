@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.04.01.1919",
+  "version": "2026.04.13.1527",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/fix-quill-vulnerability.cjs",
@@ -26,6 +26,7 @@
     "version:bump:minor": "node scripts/versioning.js minor",
     "version:bump:major": "node scripts/versioning.js major",
     "release:notes": "node scripts/changelog-from-commits.js",
+    "legal-pdfs:borrador": "node scripts/generate-legal-pdfs.mjs",
     "preflight": "node scripts/preflight.js",
     "lint": "node scripts/lint-incremental.js",
     "lint:resume": "node scripts/lint-incremental.js --resume",
@@ -111,7 +112,7 @@
     "stream-browserify": "^3.0.0",
     "tailwindcss": "^3.2.7",
     "util": "^0.12.5",
-    "vite": "^7.1.5",
+    "vite": "^7.3.2",
     "vite-plugin-node-polyfills": "^0.25.0",
     "vite-plugin-pwa": "^1.0.3",
     "workbox-window": "^7.3.0"

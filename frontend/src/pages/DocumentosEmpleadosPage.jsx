@@ -22,6 +22,7 @@ import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } fro
 import activityLogger from '../utils/activityLogger';
 import NominasMatrixTab from '../components/gestoria/NominasMatrixTab';
 import CostePersonalTab from '../components/gestoria/CostePersonalTab';
+import CertificadosRetencionesTab from '../components/gestoria/CertificadosRetencionesTab';
 import { exportToExcelWithHeader } from '../utils/exportExcel';
 import { config } from '../config/env.js';
 import { getPdfMake } from '../utils/getPdfMake';
@@ -417,7 +418,7 @@ export default function DocumentosEmpleadosPage() {
     });
   }, [bulkAvatarsLoaded, empleados, enqueueAvatar]);
 
-  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas'
+  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas', 'certificados-retenciones'
   const [activeEmpleadoTab, setActiveEmpleadoTab] = useState('documentos'); // 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
 
   const [uploading, setUploading] = useState(false);
@@ -3293,8 +3294,8 @@ export default function DocumentosEmpleadosPage() {
             method: 'POST',
             headers,
             body: JSON.stringify({
-              nombre: empleado['NOMBRE / APELLIDOS'],
-              codigo: empleado['CODIGO']
+              nombre: String(empleado['NOMBRE / APELLIDOS'] || '').trim(),
+              codigo: String(empleado['CODIGO'] ?? '').trim(),
             })
           });
 
@@ -3348,15 +3349,20 @@ export default function DocumentosEmpleadosPage() {
         // Verificar si el objeto contiene campos reales de documento oficial
 
         const hasValidFields = item && (
-
-          item.id || item.documento_id || item.documentoId ||
-
-          item.nombre_archivo || item.fileName || item.archivo || item.nombre ||
-
-          item.fecha_creacion || item.uploadDate || item.created_at || item.fecha ||
-
-          item.tipo_documento || item.tipo
-
+          (item.doc_id !== undefined && item.doc_id !== null && item.doc_id !== '') ||
+          item.id ||
+          item.documento_id ||
+          item.documentoId ||
+          item.nombre_archivo ||
+          item.fileName ||
+          item.archivo ||
+          item.nombre ||
+          item.fecha_creacion ||
+          item.uploadDate ||
+          item.created_at ||
+          item.fecha ||
+          item.tipo_documento ||
+          item.tipo
         );
 
         
@@ -3376,13 +3382,11 @@ export default function DocumentosEmpleadosPage() {
       
 
       if (Array.isArray(data)) {
-
         documentosOficialesValidos = data.filter(isValidDocumentoOficial);
-
-      } else if (data.success && data.documentos) {
-
+      } else if (data?.success && Array.isArray(data?.data)) {
+        documentosOficialesValidos = data.data.filter(isValidDocumentoOficial);
+      } else if (data?.success && Array.isArray(data?.documentos)) {
         documentosOficialesValidos = data.documentos.filter(isValidDocumentoOficial);
-
       }
 
       
@@ -3419,179 +3423,55 @@ export default function DocumentosEmpleadosPage() {
 
       
 
-      // Procesar solo los documentos oficiales válidos
+      // Procesar documentos válidos (misma lógica para array, { success, data } o { success, documentos })
+      const documentosOficialesProcesados = documentosOficialesValidos.map((doc, idx) => ({
+        id: doc.id,
+        doc_id: doc.doc_id,
+        fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
+        fileSize: doc.fileSize || doc.tamaño || doc.size || doc.file_size || doc.tamano || doc.tamanio || doc.filesize || doc.size_bytes || 0,
+        uploadDate:
+          doc.fecha_creacion ||
+          doc.uploadDate ||
+          doc.created_at ||
+          doc.fecha ||
+          doc.fecha_subida ||
+          doc.upload_date ||
+          doc.creation_date ||
+          doc.fecha_autor ||
+          new Date().toISOString(),
+        tipo: doc.tipo_documento || doc.tipo || doc.categoria || doc.document_type || doc.type || doc.category || 'Documento Oficial',
+        empleadoId: empleado['CODIGO'],
+        empleadoEmail: empleado['CORREO ELECTRONICO'],
+        status: 'disponible',
+        correo_electronico: doc.correo_electronico,
+        permisso_para_empleado: doc.permisso_para_empleado || null,
+        necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1',
+        originalData: doc,
+      }));
 
-      if (Array.isArray(data)) {
+      const documentosOficialesOrdenados = documentosOficialesProcesados.sort((a, b) => {
+        const fechaA = new Date(a.uploadDate || 0);
+        const fechaB = new Date(b.uploadDate || 0);
+        return fechaB - fechaA;
+      });
 
-        // Si la respuesta es directamente un array
+      setDocumentosOficiales(documentosOficialesOrdenados);
+      console.log('✅ Documentos oficiales procesados y ordenados:', documentosOficialesOrdenados);
 
-        const documentosOficialesProcesados = documentosOficialesValidos.map((doc, idx) => {
-          // Debug: Log mapping-ul pentru fiecare document
-          console.log(`🔍 Mapeando documento ${idx + 1}:`);
-          console.log(`  - doc.id (id din backend): ${doc.id}`);
-          console.log(`  - doc.doc_id (doc_id din backend): ${doc.doc_id}`);
-          console.log(`  - ID final asignado: ${doc.id}`);
-          console.log(`  - Doc ID final asignado: ${doc.doc_id}`);
-          
-          return {
-            id: doc.id, // id din backend
-            doc_id: doc.doc_id, // doc_id din backend
-            fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
-            fileSize: doc.fileSize || doc.tamaño || doc.size || doc.file_size || doc.tamano || doc.tamanio || doc.filesize || doc.size_bytes || 0,
-            uploadDate: doc.fecha_creacion || doc.uploadDate || doc.created_at || doc.fecha || doc.fecha_subida || doc.upload_date || doc.creation_date || doc.fecha_autor || new Date().toISOString(),
-            tipo: doc.tipo_documento || doc.tipo || doc.categoria || doc.document_type || doc.type || doc.category || 'Documento Oficial',
-            empleadoId: empleado['CODIGO'],
-            empleadoEmail: empleado['CORREO ELECTRONICO'],
-            status: 'disponible',
-            // Câmpuri suplimentare din backend - păstrăm toate câmpurile originale
-            correo_electronico: doc.correo_electronico,
-            permisso_para_empleado: doc.permisso_para_empleado || null, // Câmp pentru vizibilitate
-            necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1', // Câmp pentru necesita firma
-            // Adăugăm și alte câmpuri care pot fi utile
-            originalData: doc // Păstrăm întregul obiect original pentru debugging
-          };
-        });
-
-
-        // Ordenar documentos oficiales de más reciente a más antiguo
-
-        const documentosOficialesOrdenados = documentosOficialesProcesados.sort((a, b) => {
-
-          const fechaA = new Date(a.uploadDate || 0);
-
-          const fechaB = new Date(b.uploadDate || 0);
-
-          return fechaB - fechaA; // Orden descendente (más reciente primero)
-
-        });
-
-        
-
-        setDocumentosOficiales(documentosOficialesOrdenados);
-
-        console.log('✅ Documentos oficiales procesados y ordenados:', documentosOficialesOrdenados);
-        
-        // Debug: Log un document procesat pentru a vedea mapping-ul
-        if (documentosOficialesOrdenados.length > 0) {
-          console.log('🔍 Ejemplo de documento procesado:', documentosOficialesOrdenados[0]);
-          console.log('🔍 Campos mapeados:', Object.keys(documentosOficialesOrdenados[0]));
-          console.log('🔍 Verificación de IDs:');
-          console.log('  - documento.id (principal):', documentosOficialesOrdenados[0].id);
-          console.log('  - documento.doc_id:', documentosOficialesOrdenados[0].doc_id);
-          console.log('  - documento.id (empleado):', documentosOficialesOrdenados[0].id);
-        }
-
-        
-
-        // NU sincronizăm documentos oficiales con empleadoDocumentos
-        // Documentele oficiale rămân doar în documentosOficiales și sunt afișate doar în tab-ul "documentos-empresa"
-        // Eliminăm orice documente oficiale care ar putea fi în empleadoDocumentos pentru a preveni duplicarea
-        setEmpleadoDocumentos(prev => {
-          // Eliminăm doar documentele oficiale din empleadoDocumentos (nu documentele normale din CarpetasDocumentos)
-          return prev.filter(doc => {
-            const tipo = doc.tipo || doc.tipo_documento || '';
-            // Verificăm dacă este document oficial: tipuri specifice (sello, alta, contrato) sau originalData
-            // NU excludem ficha_empleado care este un document normal
-            const isDocumentoOficial = 
-              tipo === 'Documento Oficial' || 
-              (tipo.toLowerCase() === 'sello') ||
-              (tipo.toLowerCase() === 'alta') ||
-              (tipo.toLowerCase() === 'contrato') ||
-              (tipo.toLowerCase() === 'liquidacion') ||
-              (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
-              (doc.originalData && doc.originalData.tipo_documento); // Documentele oficiale au originalData cu tipo_documento
-            return !isDocumentoOficial;
-          });
-        });
-
-      } else if (data.success && data.documentos) {
-
-        // Si la respuesta tiene estructura {success: true, documentos: [...]}
-
-        const documentosOficialesProcesados = documentosOficialesValidos.map((doc, idx) => ({
-          id: doc.id, // id din backend
-          doc_id: doc.doc_id, // doc_id din backend
-          fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
-          fileSize: doc.fileSize || doc.tamaño || doc.size || doc.file_size || doc.tamano || doc.tamanio || doc.filesize || doc.size_bytes || 0,
-          uploadDate: doc.uploadDate || doc.fecha_creacion || doc.created_at || doc.fecha || doc.fecha_subida || doc.upload_date || doc.creation_date || doc.fecha_autor || new Date().toISOString(),
-          tipo: doc.tipo_documento || doc.tipo || doc.categoria || doc.document_type || doc.type || doc.category || 'Documento Oficial',
-          empleadoId: empleado['CODIGO'],
-          empleadoEmail: empleado['CORREO ELECTRONICO'],
-          status: 'disponible',
-          necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1', // Câmp pentru necesita firma
-          // Câmpuri suplimentare din backend - păstrăm toate câmpurile originale
-          correo_electronico: doc.correo_electronico,
-          permisso_para_empleado: doc.permisso_para_empleado || null, // Câmp pentru vizibilitate
-          // Adăugăm și alte câmpuri care pot fi utile
-          originalData: doc // Păstrăm întregul obiect original pentru debugging
-        }));
-
-
-
-        // Ordenar documentos oficiales de más reciente a más antiguo
-
-        const documentosOficialesOrdenados = documentosOficialesProcesados.sort((a, b) => {
-
-          const fechaA = new Date(a.uploadDate || 0);
-
-          const fechaB = new Date(b.uploadDate || 0);
-
-          return fechaB - fechaA; // Orden descendente (más reciente primero)
-
-        });
-
-        
-
-        setDocumentosOficiales(documentosOficialesOrdenados);
-
-        console.log('✅ Documentos oficiales procesados y ordenados (estructura success):', documentosOficialesOrdenados);
-        
-        // Debug: Log un document procesat pentru a vedea mapping-ul
-        if (documentosOficialesOrdenados.length > 0) {
-          console.log('🔍 Ejemplo de documento procesado:', documentosOficialesOrdenados[0]);
-          console.log('🔍 Campos mapeados:', Object.keys(documentosOficialesOrdenados[0]));
-          console.log('🔍 Verificación de IDs:');
-          console.log('  - documento.id (principal):', documentosOficialesOrdenados[0].id);
-          console.log('  - documento.doc_id:', documentosOficialesOrdenados[0].doc_id);
-          console.log('  - documento.id (empleado):', documentosOficialesOrdenados[0].id);
-        }
-
-        
-
-        // NU sincronizăm documentos oficiales con empleadoDocumentos
-        // Documentele oficiale rămân doar în documentosOficiales și sunt afișate doar în tab-ul "documentos-empresa"
-        // Eliminăm orice documente oficiale care ar putea fi în empleadoDocumentos pentru a preveni duplicarea
-        setEmpleadoDocumentos(prev => {
-          // Eliminăm doar documentele oficiale din empleadoDocumentos (nu documentele normale din CarpetasDocumentos)
-          return prev.filter(doc => {
-            const tipo = doc.tipo || doc.tipo_documento || '';
-            // Verificăm dacă este document oficial: tipuri specifice (sello, alta, contrato) sau originalData
-            // NU excludem ficha_empleado care este un document normal
-            const isDocumentoOficial = 
-              tipo === 'Documento Oficial' || 
-              (tipo.toLowerCase() === 'sello') ||
-              (tipo.toLowerCase() === 'alta') ||
-              (tipo.toLowerCase() === 'contrato') ||
-              (tipo.toLowerCase() === 'liquidacion') ||
-              (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
-              (doc.originalData && doc.originalData.tipo_documento); // Documentele oficiale au originalData cu tipo_documento
-            return !isDocumentoOficial;
-          });
-        });
-
-      } else {
-
-        setDocumentosOficiales([]);
-
-        console.log('ℹ️ No se encontraron documentos oficiales o respuesta inválida');
-
-        
-
-        // Eliminar documentos oficiales de empleadoDocumentos cuando no hay documentos oficiales
-
-        setEmpleadoDocumentos(prev => prev.filter(doc => doc.tipo !== 'Documento Oficial'));
-
-      }
+      setEmpleadoDocumentos((prev) =>
+        prev.filter((doc) => {
+          const tipo = doc.tipo || doc.tipo_documento || '';
+          const isDocumentoOficial =
+            tipo === 'Documento Oficial' ||
+            tipo.toLowerCase() === 'sello' ||
+            tipo.toLowerCase() === 'alta' ||
+            tipo.toLowerCase() === 'contrato' ||
+            tipo.toLowerCase() === 'liquidacion' ||
+            (tipo.toLowerCase().includes('oficial') && !tipo.toLowerCase().includes('ficha_empleado')) ||
+            (doc.originalData && doc.originalData.tipo_documento);
+          return !isDocumentoOficial;
+        }),
+      );
 
     } catch (error) {
 
@@ -5159,6 +5039,27 @@ export default function DocumentosEmpleadosPage() {
                   <span>Diplomas</span>
                 </div>
               </button>
+
+              {/* Tab Certificados retenciones */}
+              <button
+                onClick={() => {
+                  setActiveTab('certificados-retenciones');
+                  setSelectedEmpleado(null);
+                }}
+                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                  activeTab === 'certificados-retenciones'
+                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-200'
+                    : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50/50'
+                }`}
+              >
+                {activeTab === 'certificados-retenciones' && (
+                  <div className="absolute inset-0 bg-emerald-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                )}
+                <div className="relative flex items-center gap-2">
+                  <span className="text-base">📑</span>
+                  <span className="whitespace-nowrap">CERTIFICADOS RETENCIONES</span>
+                </div>
+              </button>
             </div>
           </div>
 
@@ -5822,6 +5723,10 @@ export default function DocumentosEmpleadosPage() {
           {/* Tab Coste Personal */}
           {activeTab === 'coste-personal' && (
             <CostePersonalTab />
+          )}
+
+          {activeTab === 'certificados-retenciones' && (
+            <CertificadosRetencionesTab showNotification={showNotification} />
           )}
 
           {activeTab === 'diplomas' && (

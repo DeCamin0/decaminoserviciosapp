@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import { HorasPermitidasService } from '../services/horas-permitidas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
 
 @Controller('api/horas-permitidas')
 @UseGuards(JwtAuthGuard)
@@ -20,14 +22,27 @@ export class HorasPermitidasController {
 
   constructor(
     private readonly horasPermitidasService: HorasPermitidasService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
   ) {}
 
+  private scopePayload(user: any) {
+    return {
+      userId: user?.userId,
+      role: user?.role,
+      grupo: user?.grupo,
+    };
+  }
+
   @Get()
-  async getAll() {
+  async getAll(@CurrentUser() user: any) {
     try {
       this.logger.log('📝 Get all horas permitidas request');
 
-      const result = await this.horasPermitidasService.getAll();
+      const allowedGrupos =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.scopePayload(user),
+        );
+      const result = await this.horasPermitidasService.getAll(allowedGrupos);
 
       return result;
     } catch (error: any) {
@@ -38,6 +53,7 @@ export class HorasPermitidasController {
 
   @Post()
   async create(
+    @CurrentUser() user: any,
     @Body()
     body: {
       grupo: string;
@@ -50,11 +66,19 @@ export class HorasPermitidasController {
         `📝 Create horas permitidas request - grupo: ${body.grupo || 'missing'}`,
       );
 
-      const result = await this.horasPermitidasService.create({
-        grupo: body.grupo,
-        horasAnuales: body.horasAnuales,
-        horasMensuales: body.horasMensuales,
-      });
+      const allowedGrupos =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.scopePayload(user),
+        );
+
+      const result = await this.horasPermitidasService.create(
+        {
+          grupo: body.grupo,
+          horasAnuales: body.horasAnuales,
+          horasMensuales: body.horasMensuales,
+        },
+        allowedGrupos,
+      );
 
       return {
         status: 'success',
@@ -69,6 +93,7 @@ export class HorasPermitidasController {
 
   @Put(':id')
   async update(
+    @CurrentUser() user: any,
     @Param('id', ParseIntPipe) id: number,
     @Body()
     body: { grupo: string; horasAnuales: number; horasMensuales: number },
@@ -78,11 +103,20 @@ export class HorasPermitidasController {
         `📝 Update horas permitidas request - id: ${id}, grupo: ${body.grupo || 'missing'}`,
       );
 
-      const result = await this.horasPermitidasService.update(id, {
-        grupo: body.grupo,
-        horasAnuales: body.horasAnuales,
-        horasMensuales: body.horasMensuales,
-      });
+      const allowedGrupos =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.scopePayload(user),
+        );
+
+      const result = await this.horasPermitidasService.update(
+        id,
+        {
+          grupo: body.grupo,
+          horasAnuales: body.horasAnuales,
+          horasMensuales: body.horasMensuales,
+        },
+        allowedGrupos,
+      );
 
       return {
         status: 'success',
@@ -96,11 +130,22 @@ export class HorasPermitidasController {
   }
 
   @Delete(':id')
-  async delete(@Param('id', ParseIntPipe) id: number) {
+  async delete(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     try {
       this.logger.log(`📝 Delete horas permitidas request - id: ${id}`);
 
-      const result = await this.horasPermitidasService.delete(id);
+      const allowedGrupos =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.scopePayload(user),
+        );
+
+      const result = await this.horasPermitidasService.delete(
+        id,
+        allowedGrupos,
+      );
 
       return {
         status: 'success',

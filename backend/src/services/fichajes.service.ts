@@ -1,12 +1,14 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   Logger,
   Inject,
   forwardRef,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FichajeRegularizacionService } from './fichaje-regularizacion.service';
+import { EmpleadoGrupoScopeService } from './empleado-grupo-scope.service';
 
 @Injectable()
 export class FichajesService {
@@ -14,9 +16,23 @@ export class FichajesService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
     @Inject(forwardRef(() => FichajeRegularizacionService))
     private readonly regularizacionService?: FichajeRegularizacionService,
   ) {}
+
+  /** Restricción por ámbito: filtro SQL sobre CODIGO; sin ámbito = 1=1. */
+  private buildCodigoInFilter(
+    tableAlias: string,
+    allowedCodigos: string[] | null | undefined,
+  ): string {
+    if (!allowedCodigos) return '1=1';
+    const list = allowedCodigos
+      .map((c) => String(c).trim())
+      .filter((c) => c.length > 0);
+    if (list.length === 0) return '1=0';
+    return `${tableAlias}.CODIGO IN (${list.map((c) => this.escapeSql(c)).join(', ')})`;
+  }
 
   /**
    * Escapă un string pentru SQL
@@ -313,7 +329,10 @@ export class FichajesService {
    * Obtine toate registros (fichajes) pentru TOȚI angajații pentru o lună specifică
    * Folosit pentru manageri/supervisori pentru a vedea toate marcajele dintr-o lună
    */
-  async getRegistrosEmpleados(mes: string): Promise<any[]> {
+  async getRegistrosEmpleados(
+    mes: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<any[]> {
     try {
       if (!mes || mes.trim() === '') {
         throw new BadRequestException('mes is required');
@@ -391,6 +410,7 @@ export class FichajesService {
           AND fr_any.status IN ('CONFIRMED', 'REJECTED')
         WHERE f.FECHA >= STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d')
           AND f.FECHA < DATE_ADD(STR_TO_DATE(CONCAT(${this.escapeSql(mesClean)}, '-01'), '%Y-%m-%d'), INTERVAL 1 MONTH)
+          AND (${this.buildCodigoInFilter('f', allowedCodigos)})
         ORDER BY f.FECHA DESC, f.HORA DESC
       `;
 
@@ -466,6 +486,7 @@ export class FichajesService {
     fechaInicio: string,
     fechaFin: string,
     codigo?: string,
+    allowedCodigos?: string[] | null,
   ): Promise<any[]> {
     try {
       if (!fechaInicio || fechaInicio.trim() === '') {
@@ -566,6 +587,8 @@ export class FichajesService {
       // Dacă este specificat codigo, adăugăm filtrare
       if (codigoClean && codigoClean !== '') {
         query += ` AND f.CODIGO = ${this.escapeSql(codigoClean)}`;
+      } else if (allowedCodigos) {
+        query += ` AND (${this.buildCodigoInFilter('f', allowedCodigos)})`;
       }
 
       query += ` ORDER BY f.FECHA DESC, f.HORA DESC`;
@@ -592,12 +615,13 @@ export class FichajesService {
    * Obtine TOATE registros (fichajes) fără filtrare
    * Folosit pentru paginile de statistici (accesibil doar pentru manageri/supervisori/admins)
    */
-  async getAllFichajes(): Promise<any[]> {
+  async getAllFichajes(allowedCodigos?: string[] | null): Promise<any[]> {
     try {
-      // Query SQL: toate registros fără filtrare
+      // Query SQL: toate registros fără filtrare (o filtrados por ámbito)
       const query = `
         SELECT *
         FROM Fichaje
+        WHERE (${this.buildCodigoInFilter('Fichaje', allowedCodigos)})
         ORDER BY FECHA DESC, HORA DESC
       `;
 
@@ -617,18 +641,21 @@ export class FichajesService {
   /**
    * Adaugă un nou marcaje (fichaje) în baza de date
    */
-  async addFichaje(fichajeData: {
-    id: string;
-    codigo: string;
-    nombre: string;
-    email: string;
-    tipo: string;
-    hora: string;
-    address: string | null;
-    modificatDe: string;
-    data: string;
-    motivo: string;
-  }): Promise<{
+  async addFichaje(
+    fichajeData: {
+      id: string;
+      codigo: string;
+      nombre: string;
+      email: string;
+      tipo: string;
+      hora: string;
+      address: string | null;
+      modificatDe: string;
+      data: string;
+      motivo: string;
+    },
+    allowedCodigos?: string[] | null,
+  ): Promise<{
     success: true;
     id: string;
     needs_confirmation?: boolean;
@@ -672,6 +699,11 @@ export class FichajesService {
       if (!fichajeData.data || fichajeData.data.trim() === '') {
         throw new BadRequestException('FECHA (data) is required');
       }
+
+      this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+        allowedCodigos ?? null,
+        fichajeData.codigo,
+      );
 
       // Construiește query-ul INSERT (EXACT ca n8n: Entrada_Salida-para registros registrados manual.json)
       // n8n folosește ON DUPLICATE KEY UPDATE pentru a actualiza dacă ID-ul există deja
@@ -850,7 +882,10 @@ export class FichajesService {
       };
     } catch (error: any) {
       this.logger.error('❌ Error adding fichaje:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
 
@@ -888,6 +923,7 @@ export class FichajesService {
       data?: string;
       duration?: string;
     },
+    allowedCodigos?: string[] | null,
   ): Promise<{ success: true; id: string; message: string }> {
     try {
       // Validări
@@ -914,8 +950,17 @@ export class FichajesService {
       const currentFecha = currentFichaje.FECHA;
       const currentHora = currentFichaje.HORA;
 
+      this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+        allowedCodigos ?? null,
+        String(currentCodigo),
+      );
+
       const newTipo = fichajeData.tipo?.trim();
       const newCodigo = fichajeData.codigo?.trim() || currentCodigo;
+      this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+        allowedCodigos ?? null,
+        String(newCodigo),
+      );
       const newFecha = fichajeData.data?.trim() || currentFecha;
       const newHora = fichajeData.hora?.trim() || currentHora;
 
@@ -1055,7 +1100,10 @@ export class FichajesService {
       };
     } catch (error: any) {
       this.logger.error('❌ Error updating fichaje:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -1067,7 +1115,10 @@ export class FichajesService {
   /**
    * Șterge un marcaje (fichaje) din baza de date
    */
-  async deleteFichaje(id: string): Promise<{ success: true; message: string }> {
+  async deleteFichaje(
+    id: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<{ success: true; message: string }> {
     try {
       // Validări
       if (!id || id.trim() === '') {
@@ -1075,12 +1126,17 @@ export class FichajesService {
       }
 
       // Verifică dacă marcajele există
-      const checkQuery = `SELECT ID FROM Fichaje WHERE ID = ${this.escapeSql(id.trim())} LIMIT 1`;
+      const checkQuery = `SELECT ID, CODIGO FROM Fichaje WHERE ID = ${this.escapeSql(id.trim())} LIMIT 1`;
       const existing = await this.prisma.$queryRawUnsafe<any[]>(checkQuery);
 
       if (!existing || existing.length === 0) {
         throw new BadRequestException(`Fichaje with ID ${id} not found`);
       }
+
+      this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+        allowedCodigos ?? null,
+        String(existing[0].CODIGO),
+      );
 
       // Construiește query-ul DELETE
       const deleteQuery = `
@@ -1098,7 +1154,10 @@ export class FichajesService {
       };
     } catch (error: any) {
       this.logger.error('❌ Error deleting fichaje:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(

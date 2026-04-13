@@ -37,6 +37,10 @@ export const routes = {
   superAdminTenantRetry: (id) =>
     `${BACKEND_BASE}/api/super-admin/tenants/${id}/retry`,
   getEmpleados: `${BACKEND_BASE}/api/empleados`,
+  /** Ámbito RRHH: grupos de empleado que puede gestionar un usuario (Admin/Developer). */
+  empleadoGrupoScopeMe: `${BACKEND_BASE}/api/empleados/scope/me`,
+  empleadoGrupoScopeUser: (codigo) =>
+    `${BACKEND_BASE}/api/empleados/scope/${encodeURIComponent(codigo)}`,
   getEmpleadoMe: `${BACKEND_BASE}/api/empleados/me`,
   confirmarCertificadoHandicap: `${BACKEND_BASE}/api/empleados/confirmar-certificado-handicap`,
   getEstadisticasEmpleados: `${BACKEND_BASE}/api/empleados/estadisticas`,
@@ -251,6 +255,40 @@ export const routes = {
   // POST cu action: 'add'|'edit'|'delete'
   crudProveedor: `${BACKEND_BASE}/api/clientes/proveedores`,
   // GET /api/clientes/:nif/contracts
+  /** CRUD contactos (JWT). clienteId = id numérico Clientes */
+  clienteContactos: (clienteId) =>
+    `${BACKEND_BASE}/api/clientes/${encodeURIComponent(clienteId)}/contactos`,
+  clientePortalInviteToken: (clienteId) =>
+    `${BACKEND_BASE}/api/clientes/${encodeURIComponent(clienteId)}/portal-invite-token`,
+  portalPublicComunidad: (token) =>
+    `${BACKEND_BASE}/api/portal/public/comunidad/${encodeURIComponent(token)}`,
+  /** Sesión portal: comunidad activa (nombre fiscal, NIF, ids). */
+  portalMe: `${BACKEND_BASE}/api/portal/me`,
+  portalAuthRequestCode: `${BACKEND_BASE}/api/portal/auth/request-code`,
+  portalAuthVerifyCode: `${BACKEND_BASE}/api/portal/auth/verify-code`,
+  portalAuthRequestAdminCode: `${BACKEND_BASE}/api/portal/auth/request-admin-code`,
+  portalAuthVerifyAdminCode: `${BACKEND_BASE}/api/portal/auth/verify-admin-code`,
+  portalAuthSelectAdminComunidad: `${BACKEND_BASE}/api/portal/auth/select-admin-comunidad`,
+  /** Documentación empresa (portal): misma lista para todos los contactos; no filtra por comunidad. */
+  portalDocumentosGenerales: `${BACKEND_BASE}/api/portal/documentos/generales`,
+  portalDocumentoGeneralArchivo: (id) =>
+    `${BACKEND_BASE}/api/portal/documentos/generales/${encodeURIComponent(id)}/archivo`,
+  /** Personal vinculado a la comunidad (horario_multicentro + empleados). JWT portal. */
+  portalTrabajadores: `${BACKEND_BASE}/api/portal/trabajadores`,
+  /** Contratos laborales en DocumentosOficiales (Permiso empleado = SI), solo personal de la comunidad. */
+  portalEmpleadosContratos: `${BACKEND_BASE}/api/portal/empleados/contratos`,
+  portalEmpleadoContratoPdf: (docId) =>
+    `${BACKEND_BASE}/api/portal/empleados/contratos/${encodeURIComponent(docId)}/pdf`,
+  /** Presupuestos guardados del cliente (portal JWT, por cliente_id). */
+  portalPresupuestos: `${BACKEND_BASE}/api/portal/presupuestos`,
+  portalPresupuestoPdfFirmado: (id) =>
+    `${BACKEND_BASE}/api/portal/presupuestos/${encodeURIComponent(id)}/pdf-firmado`,
+  /** Panel interno: documentación general del portal (JWT app). */
+  adminPortalDocumentosGenerales: `${BACKEND_BASE}/api/admin/portal-documentos-generales`,
+  adminPortalDocumentoGeneralArchivo: (id) =>
+    `${BACKEND_BASE}/api/admin/portal-documentos-generales/${encodeURIComponent(id)}/archivo`,
+  adminPortalDocumentoGeneralEstado: (id) =>
+    `${BACKEND_BASE}/api/admin/portal-documentos-generales/${encodeURIComponent(id)}/estado`,
   getContratosCliente: (nif) => `${BACKEND_BASE}/api/clientes/${encodeURIComponent(nif)}/contracts`,
   // POST /api/clientes/contracts cu action: 'upload'|'delete'
   crudContract: `${BACKEND_BASE}/api/clientes/contracts`,
@@ -482,4 +520,17 @@ export const routes = {
   diplomasListarEmpleado: (empleadoId) => `${BACKEND_BASE}/api/diplomas/empleado/${empleadoId}`,
   diplomasListarTodas: `${BACKEND_BASE}/api/diplomas/todas`,
   diplomasDescargar: (diplomaId) => `${BACKEND_BASE}/api/diplomas/${diplomaId}/descargar`,
+
+  // Certificados de retenciones (IRPF / nómina)
+  certificadosRetencionesUploadZipPreview: `${BACKEND_BASE}/api/certificados-retenciones/upload-zip-preview`,
+  certificadosRetencionesUploadZipConfirmar: `${BACKEND_BASE}/api/certificados-retenciones/upload-zip-confirmar`,
+  certificadosRetencionesUploadPdfsPreview: `${BACKEND_BASE}/api/certificados-retenciones/upload-pdfs-preview`,
+  certificadosRetencionesUploadPdfsConfirmar: `${BACKEND_BASE}/api/certificados-retenciones/upload-pdfs-confirmar`,
+  certificadosRetencionesListarEmpleado: (empleadoId) =>
+    `${BACKEND_BASE}/api/certificados-retenciones/empleado/${empleadoId}`,
+  certificadosRetencionesListarTodas: `${BACKEND_BASE}/api/certificados-retenciones/todas`,
+  certificadosRetencionesDescargar: (id) =>
+    `${BACKEND_BASE}/api/certificados-retenciones/${id}/descargar`,
+  certificadosRetencionesCompuestoPreview: `${BACKEND_BASE}/api/certificados-retenciones/upload-compuesto-preview`,
+  certificadosRetencionesCompuestoConfirmar: `${BACKEND_BASE}/api/certificados-retenciones/upload-compuesto-confirmar`,
 };

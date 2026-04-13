@@ -37,24 +37,36 @@ export class DocumentosOficialesService {
     nombre?: string,
   ): Promise<any[]> {
     try {
-      if (!codigo && !nombre) {
+      const codigoNorm =
+        codigo != null && String(codigo).trim() !== ''
+          ? String(codigo).trim()
+          : '';
+      const nombreNorm =
+        nombre != null && String(nombre).trim() !== ''
+          ? String(nombre).trim()
+          : '';
+
+      if (!codigoNorm && !nombreNorm) {
         throw new BadRequestException('Se requiere al menos codigo o nombre');
       }
 
-      // Construim condițiile WHERE
-      // IMPORTANT: Verificăm atât `id` cât și `detected_empleado_id` pentru că documentele
-      // din folder ingestion pot fi salvate cu `id = 'PENDING'` dacă angajatul nu a fost identificat corect
+      // WHERE aliniat cu portal (`listContratosEmpleadosPortal`): potrivire după CODIGO pe `id`,
+      // `detected_empleado_id` sau `confirmed_empleado_id`, cu TRIM (spații / tipuri diferite în UI vs BD).
+      // Dacă există `codigo`, nu filtrăm și după `nombre_empleado` — în BD numele poate diferi de
+      // `NOMBRE / APELLIDOS` din listă; portalul nu folosește `nombre_empleado` pentru legare.
       const conditions: string[] = [];
 
-      if (codigo) {
-        // Căutăm în ambele câmpuri: id (pentru documente salvate manual) și detected_empleado_id (pentru documente din ingestion)
+      if (codigoNorm) {
+        const esc = this.escapeSql(codigoNorm);
         conditions.push(
-          `(\`id\` = ${this.escapeSql(codigo)} OR \`detected_empleado_id\` = ${this.escapeSql(codigo)})`,
+          `(TRIM(CAST(\`id\` AS CHAR)) = ${esc} OR TRIM(COALESCE(\`detected_empleado_id\`,'')) = ${esc} OR TRIM(COALESCE(\`confirmed_empleado_id\`,'')) = ${esc})`,
         );
       }
 
-      if (nombre) {
-        conditions.push(`\`nombre_empleado\` = ${this.escapeSql(nombre)}`);
+      if (nombreNorm && !codigoNorm) {
+        conditions.push(
+          `TRIM(\`nombre_empleado\`) = ${this.escapeSql(nombreNorm)}`,
+        );
       }
 
       const whereClause = conditions.join(' AND ');
@@ -78,18 +90,21 @@ export class DocumentosOficialesService {
       `;
 
       this.logger.log(
-        `📝 Get documentos oficiales query: ${query}... (codigo: ${codigo || 'N/A'}, nombre: ${nombre || 'N/A'})`,
+        `📝 Get documentos oficiales query: ${query}... (codigo: ${codigoNorm || 'N/A'}, nombre: ${nombreNorm || 'N/A'})`,
       );
 
       const documentos = await this.prisma.$queryRawUnsafe<any[]>(query);
 
       this.logger.log(
-        `✅ Documentos oficiales retrieved: ${documentos.length} records (codigo: ${codigo || 'N/A'}, nombre: ${nombre || 'N/A'})`,
+        `✅ Documentos oficiales retrieved: ${documentos.length} records (codigo: ${codigoNorm || 'N/A'}, nombre: ${nombreNorm || 'N/A'})`,
       );
 
       // Mapăm rezultatele la formatul așteptat de frontend
       return documentos.map((doc) => ({
-        doc_id: doc.doc_id,
+        doc_id:
+          doc.doc_id !== undefined && doc.doc_id !== null
+            ? Number(doc.doc_id)
+            : doc.doc_id,
         id: doc.id,
         correo_electronico: doc.correo_electronico,
         tipo_documento: doc.tipo_documento,

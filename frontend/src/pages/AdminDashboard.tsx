@@ -7,6 +7,7 @@ import UserStats from '../components/admin/UserStats';
 import ActivityLog from '../components/admin/ActivityLog';
 import PushSubscribersList from '../components/admin/PushSubscribersList';
 import EmpleadosStatusList from '../components/admin/EmpleadosStatusList';
+import PortalDocumentosGeneralesAdmin from '../components/admin/PortalDocumentosGeneralesAdmin';
 // ServerMonitor eliminat
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { useAdminApi } from '../hooks/useAdminApi';
@@ -24,7 +25,13 @@ export default function AdminDashboard() {
   const isAdmin = authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin';
   const isDeveloper = authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer';
   const isManager = authUser?.isManager || false;
+  const isSupervisor =
+    authUser?.GRUPO === 'Supervisor' || authUser?.grupo === 'Supervisor';
   const userGrupo = authUser?.GRUPO || authUser?.grupo || '';
+  /** Mismo criterio que el backend para /api/admin/portal-documentos-generales */
+  const canPortalDocsAdmin = ['Developer', 'Admin', 'Manager', 'Supervisor'].includes(
+    String(userGrupo).trim(),
+  );
 
   // Funcție helper pentru a găsi cheia corectă a grupului în permisiuni
   const findGrupoKey = useCallback((grupo, permissions) => {
@@ -89,8 +96,18 @@ export default function AdminDashboard() {
     }
 
     // Fallback: verifică GRUPO (pentru cazuri vechi sau când backend-ul nu returnează permisiuni)
-    return isAdmin || isDeveloper || isManager;
-  }, [userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission, isAdmin, isDeveloper, isManager]);
+    return isAdmin || isDeveloper || isManager || isSupervisor;
+  }, [
+    userPermissions,
+    loadingPermissions,
+    userGrupo,
+    findGrupoKey,
+    hasPermission,
+    isAdmin,
+    isDeveloper,
+    isManager,
+    isSupervisor,
+  ]);
 
   useEffect(() => {
     // Așteaptă până când authUser este încărcat complet
@@ -186,7 +203,8 @@ export default function AdminDashboard() {
                 'permissions': 'Permisos',
                 'activity': 'Activity Logs',
                 'push': 'Push Subscribers',
-                'empleados': 'Estado Empleados'
+                'empleados': 'Estado Empleados',
+                'portal-docs': 'Docs portal (empresa)',
               };
               
               const pageData = {
@@ -233,7 +251,7 @@ export default function AdminDashboard() {
 
         {/* Tabs de navigare */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-3 mb-8">
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
             <button
               onClick={() => setActiveTab('stats')}
               className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 ${
@@ -284,6 +302,18 @@ export default function AdminDashboard() {
             >
               👥 Estado Empleados
             </button>
+            {canPortalDocsAdmin && (
+              <button
+                onClick={() => setActiveTab('portal-docs')}
+                className={`w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 ${
+                  activeTab === 'portal-docs'
+                    ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg'
+                    : 'text-gray-700 bg-gray-50 hover:bg-gray-100'
+                }`}
+              >
+                📁 Docs portal (empresa)
+              </button>
+            )}
             {/* Servere eliminat */}
           </div>
         </div>
@@ -305,6 +335,10 @@ export default function AdminDashboard() {
           {activeTab === 'push-subscribers' && <PushSubscribersList />}
 
           {activeTab === 'empleados-status' && <EmpleadosStatusList />}
+
+          {activeTab === 'portal-docs' && canPortalDocsAdmin && (
+            <PortalDocumentosGeneralesAdmin />
+          )}
 
           {/* Conținut pentru tabul Servere a fost eliminat */}
         </div>

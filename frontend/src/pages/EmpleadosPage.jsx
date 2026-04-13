@@ -893,6 +893,19 @@ export default function EmpleadosPage() {
 
   // Estado para lista de grupuri (din backend)
   const [gruposList, setGruposList] = useState([]);
+
+  /** Usuario con filas en user_empleado_grupo_scope (y no Admin/Developer): sin «crear grupo» ni catálogo completo en UI. */
+  const [empleadoGrupoScopeActivo, setEmpleadoGrupoScopeActivo] = useState(false);
+  const bypassesEmpleadoGrupoScopeUI = useMemo(() => {
+    const g = (authUser?.GRUPO || authUser?.grupo || '').trim();
+    const r = (authUser?.role || '').toString().trim().toUpperCase();
+    return (
+      r === 'ADMIN' ||
+      r === 'DEVELOPER' ||
+      g === 'Admin' ||
+      g === 'Developer'
+    );
+  }, [authUser?.GRUPO, authUser?.grupo, authUser?.role]);
   
   // State pentru modal-ul de creare grup nou
   const [showCreateGrupoModal, setShowCreateGrupoModal] = useState(false);
@@ -1848,6 +1861,42 @@ export default function EmpleadosPage() {
     
     activityLogger.logPageAccess('empleados', authUser);
   }, [activeTab, authUser, fetchUsers, fetchClientes, fetchContractTypes, fetchGrupos, setOperationLoading]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (authUser?.isDemo) {
+      setEmpleadoGrupoScopeActivo(false);
+      return undefined;
+    }
+    if (bypassesEmpleadoGrupoScopeUI) {
+      setEmpleadoGrupoScopeActivo(false);
+      return undefined;
+    }
+    const token = authToken || localStorage.getItem('auth_token');
+    if (!token) {
+      setEmpleadoGrupoScopeActivo(false);
+      return undefined;
+    }
+    (async () => {
+      try {
+        const res = await fetch(routes.empleadoGrupoScopeMe, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const j = await res.json();
+        if (!cancelled) {
+          setEmpleadoGrupoScopeActivo(
+            Array.isArray(j.grupos) && j.grupos.length > 0,
+          );
+        }
+      } catch {
+        if (!cancelled) setEmpleadoGrupoScopeActivo(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.isDemo, authToken, bypassesEmpleadoGrupoScopeUI]);
 
   // Separate useEffect pentru estadísticas - doar când se schimbă tab-ul
   useEffect(() => {
@@ -5580,9 +5629,11 @@ export default function EmpleadosPage() {
                             {gruposList.map((grupo) => (
                               <option key={grupo} value={grupo}>{stripHtml(grupo)}</option>
                             ))}
-                            <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
-                              ➕ Agregar nuevo grupo...
-                            </option>
+                            {!empleadoGrupoScopeActivo && (
+                              <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
+                                ➕ Agregar nuevo grupo...
+                              </option>
+                            )}
                           </>
                         )}
                       </select>
@@ -7036,9 +7087,11 @@ export default function EmpleadosPage() {
                           {gruposList.map((grupo) => (
                             <option key={grupo} value={grupo}>{stripHtml(grupo)}</option>
                           ))}
-                          <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
-                            ➕ Agregar nuevo grupo...
-                          </option>
+                          {!empleadoGrupoScopeActivo && (
+                            <option value="__CREATE_NEW__" className="font-semibold text-blue-600">
+                              ➕ Agregar nuevo grupo...
+                            </option>
+                          )}
                         </>
                       )}
                     </select>

@@ -85,5 +85,49 @@ export const config = {
     'false',
 };
 
+/**
+ * URL pública de acceso al portal de una comunidad (enlace dedicado + QR).
+ * Usa VITE_APP_URL en producción si está definida; si no, `window.location.origin`.
+ */
+export function buildPortalClienteUrl(portalToken) {
+  const t = String(portalToken || '').trim();
+  if (!t) return '';
+  const origin =
+    config.APP_URL && /^https?:\/\//i.test(String(config.APP_URL).trim())
+      ? String(config.APP_URL).trim().replace(/\/$/, '')
+      : typeof window !== 'undefined'
+        ? window.location.origin
+        : '';
+  const rawBase =
+    typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL
+      ? String(import.meta.env.BASE_URL)
+      : '/';
+  const baseSeg =
+    rawBase === '/' ? '' : `/${rawBase.replace(/^\/+|\/+$/g, '')}`;
+  if (!origin) {
+    return `${baseSeg ? `${baseSeg}` : ''}/portal/${t}`.replace(/^\/{2,}/, '/');
+  }
+  return `${origin}${baseSeg}/portal/${t}`.replace(/([^:])\/{2,}/g, '$1/');
+}
+
+/** URL del portal para administradores con varias comunidades (sin token en la ruta). */
+export function buildPortalGestoresUrl() {
+  const origin =
+    config.APP_URL && /^https?:\/\//i.test(String(config.APP_URL).trim())
+      ? String(config.APP_URL).trim().replace(/\/$/, '')
+      : typeof window !== 'undefined'
+        ? window.location.origin
+        : '';
+  const rawBase =
+    typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL
+      ? String(import.meta.env.BASE_URL)
+      : '/';
+  const baseSeg =
+    rawBase === '/' ? '' : `/${rawBase.replace(/^\/+|\/+$/g, '')}`;
+  const path = `${baseSeg}/portal/gestores`.replace(/^\/{2,}/, '/');
+  if (!origin) return path.startsWith('/') ? path : `/${path}`;
+  return `${origin}${path}`.replace(/([^:])\/{2,}/g, '$1/');
+}
+
 export const isEInvoiceXMLEnabled = () => config.ENABLE_EINVOICE_XML;
 export const getApiUrl = (endpoint) => `${config.API_BASE}${endpoint}`;

@@ -3,28 +3,48 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { useEffect, useRef } from 'react';
 import { usePermissions } from '../hooks/usePermissions';
 
-// Mapare rute -> module pentru permisiuni
+// Mapare rute -> module pentru permisiuni (aliniat cu AccessMatrix + App.jsx)
 const ROUTE_TO_MODULE = {
   '/empleados': 'empleados',
   '/fichar': 'fichar',
   '/cuadrantes': 'cuadrantes',
   '/estadisticas': 'estadisticas',
+  '/estadisticas-cuadrantes': 'estadisticas',
+  '/estadisticas-empleados': 'estadisticas',
+  '/estadisticas-fichajes': 'estadisticas',
   '/clientes': 'clientes',
   '/documentos': 'documentos',
   '/solicitudes': 'solicitudes',
   '/aprobaciones': 'aprobaciones',
   '/cuadernos': 'cuadernos',
+  '/cuadernos-centro': 'cuadernos',
   '/admin': 'admin',
+  '/superadmin/tenants': 'admin',
   '/inspecciones': 'inspecciones',
   '/pedidos': 'pedidos',
+  '/empleado-pedidos': 'pedidos',
   '/proveedores': 'proveedores',
   '/comunicados': 'comunicados',
   '/hall-of-fame': 'hall-of-fame',
   '/documentos-empleados': 'documentos-empleados',
+  '/prl-documentos': 'prl-documentos',
+  '/presupuestos-informes': 'presupuestos-informes',
+  '/mensajes-enviados': 'admin',
   '/datos': 'datos',
   '/inicio': 'dashboard',
   '/': 'dashboard',
 };
+
+/** Acceso estricto desde matriz; PRL hereda documentos-empleados si no hay clave explícita. */
+function hasStrictModuleAccess(module, getCurrentGroupPermissions) {
+  const cur = getCurrentGroupPermissions();
+  if (module === 'prl-documentos') {
+    if (cur['prl-documentos'] === true) return true;
+    if (cur['prl-documentos'] === false) return false;
+    return cur['documentos-empleados'] === true;
+  }
+  return cur[module] === true;
+}
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading, user } = useAuth();
@@ -114,15 +134,12 @@ const ProtectedRoute = ({ children }) => {
     } else if (module === 'fichar') {
       // Pentru fichar, verifică ambele variante noi și vechea permisiune
       hasAccess = hasPermission('fichar-empleados') || hasPermission('fichar-admin') || hasPermission('fichar');
-    } else if (module === 'datos' || module === 'empleados' || module === 'documentos' || module === 'cuadrantes-empleado' || module === 'cuadrantes' || module === 'mis-inspecciones' || module === 'inspecciones' || module === 'aprobaciones' || module === 'clientes' || module === 'proveedores' || module === 'comunicados') {
-      // Pentru datos, empleados, documentos, cuadrantes-empleado, cuadrantes, mis-inspecciones, inspecciones, aprobaciones, clientes, proveedores și comunicados, folosim DOAR permisiunile din backend (fără fallback)
-      // Dacă nu există permisiuni în backend, nu permitem accesul
+    } else if (module === 'datos' || module === 'empleados' || module === 'documentos' || module === 'cuadrantes-empleado' || module === 'cuadrantes' || module === 'mis-inspecciones' || module === 'inspecciones' || module === 'aprobaciones' || module === 'clientes' || module === 'proveedores' || module === 'comunicados' || module === 'prl-documentos' || module === 'presupuestos-informes') {
+      // Matriz: permiso explícito (PRL: ver hasStrictModuleAccess)
       if (!hasBackendPermissions) {
         hasAccess = false;
       } else {
-        // Verifică direct din permisiunile din backend, fără fallback
-        const currentPermissions = getCurrentGroupPermissions();
-        hasAccess = currentPermissions[module] === true;
+        hasAccess = hasStrictModuleAccess(module, getCurrentGroupPermissions);
       }
     } else {
       hasAccess = hasPermission(module);

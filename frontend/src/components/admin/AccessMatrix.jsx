@@ -6,7 +6,13 @@ import activityLogger from '../../utils/activityLogger';
 import { routes } from '../../utils/routes';
 
 export default function AccessMatrix() {
-  const { getAllPermissions, savePermissions, deleteUnusedGroups } = useAdminApi();
+  const {
+    getAllPermissions,
+    savePermissions,
+    deleteUnusedGroups,
+    getEmpleadoGrupoScope,
+    saveEmpleadoGrupoScope,
+  } = useAdminApi();
   const { user: authUser } = useAuth();
   const [permissions, setPermissions] = useState({});
   const [loading, setLoading] = useState(true);
@@ -43,6 +49,7 @@ export default function AccessMatrix() {
     { id: 'solicitudes-admin', name: 'Solicitudes Admin', icon: '📝', description: 'Solicitudes completas (todas las solicitudes y estadísticas)' },
     { id: 'documentos', name: 'Documentos', icon: '📄', description: 'Documentos y nóminas' },
     { id: 'documentos-empleados', name: 'Documentos Empleados', icon: '📂', description: 'Archivos por empleado' },
+    { id: 'prl-documentos', name: 'Documentos PRL', icon: '🛡️', description: 'PRL: plantillas, envíos y firma por grupo' },
     { id: 'cuadrantes', name: 'Cuadrantes', icon: '📅', description: 'Gestión de horarios' },
     { id: 'cuadrantes-empleado', name: 'Mi Horario', icon: '📅', description: 'Cuadrante personal' },
     { id: 'mis-inspecciones', name: 'Mis Inspecciones', icon: '👷‍♂️', description: 'Inspecciones asignadas' },
@@ -92,6 +99,7 @@ export default function AccessMatrix() {
         'solicitudes-admin': true,
         documentos: true,
         'documentos-empleados': true,
+        'prl-documentos': true,
         cuadrantes: true,
         'cuadrantes-empleado': true,
         'mis-inspecciones': true,
@@ -99,6 +107,7 @@ export default function AccessMatrix() {
         aprobaciones: true,
         estadisticas: true,
         clientes: true,
+        'presupuestos-informes': true,
         'pedidos-empleados': false,
         'pedidos-admin': true,
         cuadernos: true,
@@ -119,6 +128,7 @@ export default function AccessMatrix() {
         'solicitudes-admin': true,
         documentos: true,
         'documentos-empleados': true,
+        'prl-documentos': true,
         cuadrantes: true,
         'cuadrantes-empleado': true,
         'mis-inspecciones': true,
@@ -126,6 +136,7 @@ export default function AccessMatrix() {
         aprobaciones: false,
         estadisticas: true,
         clientes: true,
+        'presupuestos-informes': true,
         'pedidos-empleados': false,
         'pedidos-admin': true,
         cuadernos: true,
@@ -146,6 +157,7 @@ export default function AccessMatrix() {
         'solicitudes-admin': false,
         documentos: true,
         'documentos-empleados': false,
+        'prl-documentos': false,
         cuadrantes: false,
         'cuadrantes-empleado': true,
         'mis-inspecciones': false,
@@ -153,6 +165,7 @@ export default function AccessMatrix() {
         aprobaciones: false,
         estadisticas: false,
         clientes: false,
+        'presupuestos-informes': false,
         'pedidos-empleados': false,
         'pedidos-admin': false,
         cuadernos: true, // Public - toți pot accesa cuadernos
@@ -361,6 +374,64 @@ export default function AccessMatrix() {
 
   // Modernizare UI: căutare + toggles de rând/coloană
   const [groupSearch, setGroupSearch] = useState('');
+  const [scopeUserCodigo, setScopeUserCodigo] = useState('');
+  const [scopeGruposInput, setScopeGruposInput] = useState('');
+  const [scopeBusy, setScopeBusy] = useState(false);
+
+  const canManageEmpleadoScope =
+    authUser?.GRUPO === 'Developer' ||
+    authUser?.GRUPO === 'Admin' ||
+    authUser?.grupo === 'Developer' ||
+    authUser?.grupo === 'Admin';
+
+  const loadEmpleadoScope = async () => {
+    const c = (scopeUserCodigo || '').trim();
+    if (!c) {
+      alert('Introduce el CODIGO del usuario');
+      return;
+    }
+    setScopeBusy(true);
+    try {
+      const data = await getEmpleadoGrupoScope(c);
+      const list = Array.isArray(data?.grupos) ? data.grupos : [];
+      setScopeGruposInput(list.join(', '));
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || 'Error al cargar ámbito');
+    } finally {
+      setScopeBusy(false);
+    }
+  };
+
+  const saveEmpleadoScope = async () => {
+    const c = (scopeUserCodigo || '').trim();
+    if (!c) {
+      alert('Introduce el CODIGO del usuario');
+      return;
+    }
+    const grupos = scopeGruposInput
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (
+      !confirm(
+        `¿Guardar ámbito para ${c}?\n\nGrupos: ${grupos.length ? grupos.join(', ') : '(ninguno — acceso completo a empleados)'}`,
+      )
+    ) {
+      return;
+    }
+    setScopeBusy(true);
+    try {
+      await saveEmpleadoGrupoScope(c, grupos);
+      alert('Ámbito guardado. El usuario debe volver a iniciar sesión para refrescar la lista.');
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || 'Error al guardar');
+    } finally {
+      setScopeBusy(false);
+    }
+  };
+
   const filteredGroups = useMemo(() => userGroups.filter(g => (
     (g.name || '').toLowerCase().includes(groupSearch.toLowerCase()) ||
     (g.id || '').toLowerCase().includes(groupSearch.toLowerCase())
@@ -636,6 +707,62 @@ export default function AccessMatrix() {
           </table>
         </div>
       </Card>
+
+      {canManageEmpleadoScope && (
+        <Card>
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+            Ámbito de empleados por GRUPO
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Limita qué filas de <strong>DatosEmpleados.GRUPO</strong> puede ver y editar un usuario con
+            permiso Empleados. Debe coincidir exactamente el texto del grupo (ej. Socorrista). Vacío =
+            sin restricción (comportamiento anterior). Admin/Developer no se limitan.
+          </p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                CODIGO usuario
+              </label>
+              <input
+                type="text"
+                className="px-3 py-2 border border-gray-300 rounded-lg w-48"
+                value={scopeUserCodigo}
+                onChange={(e) => setScopeUserCodigo(e.target.value)}
+                placeholder="ej. 12345"
+              />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Grupos (separados por coma)
+              </label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                value={scopeGruposInput}
+                onChange={(e) => setScopeGruposInput(e.target.value)}
+                placeholder="Socorrista"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={scopeBusy}
+              onClick={loadEmpleadoScope}
+            >
+              Cargar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={scopeBusy}
+              onClick={saveEmpleadoScope}
+            >
+              {scopeBusy ? '…' : 'Guardar ámbito'}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Modal pentru adăugare grup */}
       {showAddGroupModal && (

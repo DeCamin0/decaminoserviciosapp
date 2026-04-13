@@ -65,6 +65,18 @@ model Permissions {
   @@map("Permissions")
 }
 
+/// Ámbito: un user (CODIGO) solo gestiona empleados cuyo GRUPO está en esta lista. Sin filas = sin restricción (comportamiento histórico).
+model UserEmpleadoGrupoScope {
+  id          Int      @id @default(autoincrement())
+  user_codigo String   @map("user_codigo") @db.VarChar(50)
+  grupo       String   @db.VarChar(200)
+  created_at  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@unique([user_codigo, grupo], map: "uniq_user_empleado_grupo_scope")
+  @@index([user_codigo], map: "idx_user_empleado_grupo_scope_user")
+  @@map("user_empleado_grupo_scope")
+}
+
 model Notification {
   id        String    @id @default(uuid()) @db.VarChar(36)
   senderId  String?   @map("sender_id") @db.VarChar(50)
@@ -344,8 +356,128 @@ model Clientes {
   CuantoPuedeGastar        String?             @db.VarChar(100)
   SERVICIO_ENTREGA         String?             @map("SERVICIO ENTREGA") @db.VarChar(255)
   TELEFONO_ENTREGA         String?             @map("TELEFON ENTREGA") @db.VarChar(100)
+  /// Enlace único área clientes (/portal/{token}); no exponer en listados públicos.
+  portal_invite_token      String?             @unique @map("portal_invite_token") @db.VarChar(64)
   ContratosClientes        ContratosClientes[]
   PermisosProductos        PermisosProductos[]
+  contactos                ClienteContacto[]
+  facturasManuales         ClienteFacturaManual[]
+  inspeccionDocumentos     ClienteInspeccionDocumento[]
+}
+
+/// Personas de contacto por comunidad/cliente (roles flexibles; portal y notificaciones por contacto).
+model ClienteContacto {
+  id                     Int      @id @default(autoincrement())
+  cliente_id             Int      @map("cliente_id")
+  nombre                 String   @db.VarChar(255)
+  /// Valores sugeridos: administrador | presidente | vicepresidente | vocal | junta | otro (libre en cargo_libre).
+  cargo_codigo           String?  @map("cargo_codigo") @db.VarChar(80)
+  cargo_libre            String?  @map("cargo_libre") @db.VarChar(200)
+  email                  String?  @db.VarChar(255)
+  telefono               String?  @map("telefono") @db.VarChar(50)
+  acceso_portal          Boolean  @default(false) @map("acceso_portal")
+  recibe_notificaciones  Boolean  @default(false) @map("recibe_notificaciones")
+  /// Referencia principal para UI y reglas por defecto (máx. uno activo por cliente recomendado en aplicación).
+  es_principal           Boolean  @default(false) @map("es_principal")
+  estado                 String   @default("activo") @db.VarChar(50)
+  created_at             DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at             DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  cliente Clientes @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_cliente_contacto_cliente")
+  otpChallenges PortalOtpChallenge[]
+
+  @@index([cliente_id], map: "idx_cliente_contacto_cliente")
+  @@index([cliente_id, estado], map: "idx_cliente_contacto_cliente_estado")
+  @@index([email], map: "idx_cliente_contacto_email")
+  @@map("cliente_contactos")
+}
+
+/// OTP enviado solo por email (portal gestores: administrador en varias comunidades).
+model PortalOtpEmailChallenge {
+  id          Int       @id @default(autoincrement())
+  email_norm  String    @map("email_norm") @db.VarChar(255)
+  code_hash   String    @map("code_hash") @db.VarChar(64)
+  expires_at  DateTime  @map("expires_at") @db.Timestamp(0)
+  consumed_at DateTime? @map("consumed_at") @db.Timestamp(0)
+  created_at  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@index([email_norm, consumed_at], map: "idx_portal_otp_email_consumed")
+  @@map("portal_otp_email_challenges")
+}
+
+/// Códigos OTP para acceso al portal de clientes (un solo uso; invalidar anteriores al pedir uno nuevo).
+model PortalOtpChallenge {
+  id          Int       @id @default(autoincrement())
+  contacto_id Int     @map("contacto_id")
+  code_hash   String    @map("code_hash") @db.VarChar(64)
+  expires_at  DateTime  @map("expires_at") @db.Timestamp(0)
+  consumed_at DateTime? @map("consumed_at") @db.Timestamp(0)
+  created_at  DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+
+  contacto ClienteContacto @relation(fields: [contacto_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_portal_otp_contacto")
+
+  @@index([contacto_id, consumed_at], map: "idx_portal_otp_contacto_consumed")
+  @@map("portal_otp_challenges")
+}
+
+/// Documentación general de empresa (visible para todos los contactos del portal). Histórico vía estado.
+model PortalDocumentoGeneral {
+  id               Int       @id @default(autoincrement())
+  tipo_documento   String    @map("tipo_documento") @db.VarChar(120)
+  nombre_documento String    @map("nombre_documento") @db.VarChar(500)
+  mime_type        String?   @map("mime_type") @db.VarChar(100)
+  archivo          Bytes
+  fecha_subida     DateTime  @default(now()) @map("fecha_subida") @db.Timestamp(0)
+  fecha_validez    DateTime? @map("fecha_validez") @db.Date
+  estado           String    @default("activo") @db.VarChar(50)
+  created_by       String?   @map("created_by") @db.VarChar(50)
+  updated_at       DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@index([estado, tipo_documento], map: "idx_portal_doc_gen_estado_tipo")
+  @@map("portal_documentos_generales")
+}
+
+/// Facturas subidas manualmente por cliente (MVP portal hasta integración contable).
+model ClienteFacturaManual {
+  id                Int       @id @default(autoincrement())
+  cliente_id        Int       @map("cliente_id")
+  numero_factura    String?   @map("numero_factura") @db.VarChar(100)
+  nombre_archivo    String    @map("nombre_archivo") @db.VarChar(255)
+  mime_type         String?   @map("mime_type") @db.VarChar(100)
+  archivo           Bytes
+  fecha_emision     DateTime  @map("fecha_emision") @db.Date
+  fecha_vencimiento DateTime? @map("fecha_vencimiento") @db.Date
+  importe           Decimal?  @map("importe") @db.Decimal(12, 2)
+  estado            String    @default("pendiente") @db.VarChar(50)
+  observaciones     String?   @db.Text
+  created_at        DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at        DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  cliente Clientes @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_cliente_fact_manual_cliente")
+
+  @@index([cliente_id, estado], map: "idx_cliente_fact_manual_cli_estado")
+  @@map("cliente_facturas_manuales")
+}
+
+/// Informes de inspección asociados a una comunidad (MVP). Alternativa futura: añadir cliente_id a InspeccionesDocumentos.
+model ClienteInspeccionDocumento {
+  id              Int       @id @default(autoincrement())
+  cliente_id      Int       @map("cliente_id")
+  titulo          String    @db.VarChar(500)
+  centro_trabajo  String?   @map("centro_trabajo") @db.VarChar(500)
+  nombre_archivo  String    @map("nombre_archivo") @db.VarChar(255)
+  mime_type       String?   @map("mime_type") @db.VarChar(100)
+  archivo         Bytes
+  fecha_informe   DateTime? @map("fecha_informe") @db.Date
+  estado          String    @default("activo") @db.VarChar(50)
+  observaciones   String?   @db.Text
+  created_at      DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at      DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  cliente Clientes @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_cli_insp_doc_cliente")
+
+  @@index([cliente_id, estado], map: "idx_cli_insp_doc_cli_est")
+  @@map("cliente_inspeccion_documentos")
 }
 
 model ContratosClientes {
@@ -1816,6 +1948,25 @@ model Diploma {
   @@index([empleado_id], map: "idx_diploma_empleado")
   @@index([fecha_subida], map: "idx_diploma_fecha")
   @@map("diplomas")
+}
+
+// ============================================
+// CERTIFICADOS RETENCIONES (IRPF / nómina) — PDF por empleado
+// ============================================
+
+model CertificadoRetencion {
+  id              Int      @id @default(autoincrement())
+  empleado_id     String   @map("empleado_id") @db.VarChar(50)
+  nombre_empleado String   @map("nombre_empleado") @db.VarChar(500)
+  nombre_archivo  String   @map("nombre_archivo") @db.VarChar(255)
+  archivo         Bytes
+  fecha_subida    DateTime @default(now()) @map("fecha_subida") @db.Timestamp(0)
+  subido_por      String   @map("subido_por") @db.VarChar(50)
+  notas           String?  @db.Text
+
+  @@index([empleado_id], map: "idx_cert_retencion_empleado")
+  @@index([fecha_subida], map: "idx_cert_retencion_fecha")
+  @@map("certificados_retenciones")
 }
 
 // ============================================

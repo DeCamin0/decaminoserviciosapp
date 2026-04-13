@@ -2,8 +2,11 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Delete,
   Body,
   Param,
+  ParseIntPipe,
   UseGuards,
   Logger,
   BadRequestException,
@@ -31,26 +34,31 @@ export class ClientesController {
       });
 
       // Mapează câmpurile pentru compatibilitate cu frontend-ul/n8n
-      const mapped = clientes.map((c: any) => ({
-        ...c,
-        // n8n trimitea `tipo` cu lowercase - păstrăm același nume de câmp
-        tipo: c.TIPO ?? c.tipo ?? null,
-        // Frontend-ul așteaptă câmpul cu spații, nu cu underscore
-        'NOMBRE O RAZON SOCIAL':
-          c.NOMBRE_O_RAZON_SOCIAL ?? c['NOMBRE O RAZON SOCIAL'] ?? null,
-        // Păstrăm și varianta cu underscore pentru compatibilitate
-        NOMBRE_O_RAZON_SOCIAL: c.NOMBRE_O_RAZON_SOCIAL ?? null,
-        // Frontend-ul așteaptă 'CODIGO POSTAL' (cu spațiu) în loc de CODIGO_POSTAL (cu underscore)
-        'CODIGO POSTAL': c.CODIGO_POSTAL ?? c['CODIGO POSTAL'] ?? null,
-        // Păstrăm și varianta cu underscore pentru compatibilitate
-        CODIGO_POSTAL: c.CODIGO_POSTAL ?? null,
-        // Servicio entrega
-        'SERVICIO ENTREGA': c.SERVICIO_ENTREGA ?? c['SERVICIO ENTREGA'] ?? null,
-        SERVICIO_ENTREGA: c.SERVICIO_ENTREGA ?? null,
-        // Telefon entrega
-        'TELEFON ENTREGA': c.TELEFONO_ENTREGA ?? c['TELEFON ENTREGA'] ?? null,
-        TELEFONO_ENTREGA: c.TELEFONO_ENTREGA ?? null,
-      }));
+      const mapped = clientes.map((c: any) => {
+        const rest = { ...c };
+        delete rest.portal_invite_token;
+        return {
+          ...rest,
+          // n8n trimitea `tipo` cu lowercase - păstrăm același nume de câmp
+          tipo: c.TIPO ?? c.tipo ?? null,
+          // Frontend-ul așteaptă câmpul cu spații, nu cu underscore
+          'NOMBRE O RAZON SOCIAL':
+            c.NOMBRE_O_RAZON_SOCIAL ?? c['NOMBRE O RAZON SOCIAL'] ?? null,
+          // Păstrăm și varianta cu underscore pentru compatibilitate
+          NOMBRE_O_RAZON_SOCIAL: c.NOMBRE_O_RAZON_SOCIAL ?? null,
+          // Frontend-ul așteaptă 'CODIGO POSTAL' (cu spațiu) în loc de CODIGO_POSTAL (cu underscore)
+          'CODIGO POSTAL': c.CODIGO_POSTAL ?? c['CODIGO POSTAL'] ?? null,
+          // Păstrăm și varianta cu underscore pentru compatibilitate
+          CODIGO_POSTAL: c.CODIGO_POSTAL ?? null,
+          // Servicio entrega
+          'SERVICIO ENTREGA':
+            c.SERVICIO_ENTREGA ?? c['SERVICIO ENTREGA'] ?? null,
+          SERVICIO_ENTREGA: c.SERVICIO_ENTREGA ?? null,
+          // Telefon entrega
+          'TELEFON ENTREGA': c.TELEFONO_ENTREGA ?? c['TELEFON ENTREGA'] ?? null,
+          TELEFONO_ENTREGA: c.TELEFONO_ENTREGA ?? null,
+        };
+      });
 
       return mapped;
     } catch (error: any) {
@@ -160,6 +168,62 @@ export class ClientesController {
         `Error en operación CRUD proveedor: ${error.message}`,
       );
     }
+  }
+
+  /** Genera o devuelve el token de invitación al portal (enlace + QR por comunidad). */
+  @Post(':clienteId/portal-invite-token')
+  @UseGuards(JwtAuthGuard)
+  async ensurePortalInviteToken(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Body() body?: { rotate?: boolean },
+  ) {
+    const data = await this.clientesService.ensurePortalInviteToken(
+      clienteId,
+      Boolean(body?.rotate),
+    );
+    return { success: true, data };
+  }
+
+  /** Contactos por comunidad (portal / notificaciones). `clienteId` = id numérico en tabla Clientes. */
+  @Get(':clienteId/contactos')
+  @UseGuards(JwtAuthGuard)
+  async listClienteContactos(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+  ) {
+    const data = await this.clientesService.listClienteContactos(clienteId);
+    return { success: true, data };
+  }
+
+  @Post(':clienteId/contactos')
+  @UseGuards(JwtAuthGuard)
+  async createClienteContacto(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.clientesService.createClienteContacto(clienteId, body);
+  }
+
+  @Put(':clienteId/contactos/:contactoId')
+  @UseGuards(JwtAuthGuard)
+  async updateClienteContacto(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Param('contactoId', ParseIntPipe) contactoId: number,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.clientesService.updateClienteContacto(
+      clienteId,
+      contactoId,
+      body,
+    );
+  }
+
+  @Delete(':clienteId/contactos/:contactoId')
+  @UseGuards(JwtAuthGuard)
+  async deleteClienteContacto(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Param('contactoId', ParseIntPipe) contactoId: number,
+  ) {
+    return this.clientesService.deleteClienteContacto(clienteId, contactoId);
   }
 
   /**

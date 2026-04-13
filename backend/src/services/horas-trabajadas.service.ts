@@ -50,6 +50,15 @@ export class HorasTrabajadasService {
     };
   }
 
+  private filterByEmpleadoScope<T extends { empleadoId?: unknown }>(
+    rows: T[],
+    allowedCodigos: string[] | null | undefined,
+  ): T[] {
+    if (!allowedCodigos?.length) return rows;
+    const set = new Set(allowedCodigos.map((c) => String(c).trim()));
+    return rows.filter((r) => set.has(String(r.empleadoId ?? '').trim()));
+  }
+
   /**
    * Helper pentru a extrage rândurile de date din rezultatul mysql2
    */
@@ -87,7 +96,11 @@ export class HorasTrabajadasService {
    * Resumen mensual - toți angajații ACTIVO sau un singur angajat dacă codigo este furnizat
    * Replică logica din n8n: "luna" query + "Code in JavaScript2"
    */
-  async getResumenMensual(mes: string, codigo?: string): Promise<any[]> {
+  async getResumenMensual(
+    mes: string,
+    codigo?: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<any[]> {
     try {
       if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
         throw new BadRequestException('mes must be in format YYYY-MM');
@@ -724,11 +737,16 @@ export class HorasTrabajadasService {
         // Procesare JavaScript (replică logica din "Code in JavaScript2" din n8n)
         const processedRows = this.processMensualData(rows, mes);
 
-        this.logger.log(
-          `✅ Resumen mensual retrieved: ${processedRows.length} empleados (mes: ${mes})`,
+        const scoped = this.filterByEmpleadoScope(
+          processedRows,
+          allowedCodigos,
         );
 
-        return processedRows;
+        this.logger.log(
+          `✅ Resumen mensual retrieved: ${scoped.length} empleados (mes: ${mes})`,
+        );
+
+        return scoped;
       } finally {
         await connection.end();
       }
@@ -904,7 +922,11 @@ export class HorasTrabajadasService {
    * Pentru anii anteriori (care nu se mai schimbă), recomandăm implementarea de caching pentru a reduce timpul de răspuns la <1s.
    * Pentru anul curent, query-ul trebuie să fie în timp real, dar optimizările SQL au redus timpul de la ~82s la ~78s.
    */
-  async getResumenAnual(ano: string, codigo?: string): Promise<any[]> {
+  async getResumenAnual(
+    ano: string,
+    codigo?: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<any[]> {
     try {
       if (!ano || !/^\d{4}$/.test(ano)) {
         throw new BadRequestException('ano must be in format YYYY');
@@ -1425,12 +1447,17 @@ export class HorasTrabajadasService {
           `⏱️  [Resumen Anual] JavaScript processing completed in ${processTime}ms`,
         );
 
-        const totalTime = Date.now() - startTime;
-        this.logger.log(
-          `✅ Resumen anual retrieved: ${processedRows.length} empleados (ano: ${ano}) - Total time: ${totalTime}ms (SQL: ${sqlTime}ms, Extract: ${extractTime}ms, Process: ${processTime}ms)`,
+        const scoped = this.filterByEmpleadoScope(
+          processedRows,
+          allowedCodigos,
         );
 
-        return processedRows;
+        const totalTime = Date.now() - startTime;
+        this.logger.log(
+          `✅ Resumen anual retrieved: ${scoped.length} empleados (ano: ${ano}) - Total time: ${totalTime}ms (SQL: ${sqlTime}ms, Extract: ${extractTime}ms, Process: ${processTime}ms)`,
+        );
+
+        return scoped;
       } finally {
         await connection.end();
       }

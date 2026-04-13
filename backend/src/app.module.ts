@@ -104,11 +104,15 @@ import { PrlDocumentsController } from './controllers/prl-documents.controller';
 import { PrlDocumentsService } from './services/prl-documents.service';
 import { DiplomasController } from './controllers/diplomas.controller';
 import { DiplomasService } from './services/diplomas.service';
+import { CertificadosRetencionesController } from './controllers/certificados-retenciones.controller';
+import { CertificadosRetencionesService } from './services/certificados-retenciones.service';
 import { PedidosNotasController } from './controllers/pedidos-notas.controller';
 import { PedidosNotasService } from './services/pedidos-notas.service';
 import { SuperAdminTenantsModule } from './super-admin-tenants/super-admin-tenants.module';
 import { LeadsController } from './controllers/leads.controller';
 import { LeadsService } from './services/leads.service';
+import { EmpleadoGrupoScopeService } from './services/empleado-grupo-scope.service';
+import { PortalModule } from './portal/portal.module';
 
 @Module({
   imports: [
@@ -141,6 +145,7 @@ import { LeadsService } from './services/leads.service';
     AssistantModule,
     EmailIngestionModule,
     SuperAdminTenantsModule,
+    PortalModule,
   ],
   controllers: [
     AppController,
@@ -189,6 +194,7 @@ import { LeadsService } from './services/leads.service';
     MonitoringController,
     PrlDocumentsController,
     DiplomasController,
+    CertificadosRetencionesController,
     PedidosNotasController,
     LeadsController,
     // AssistantController se importa din AssistantModule
@@ -246,8 +252,10 @@ import { LeadsService } from './services/leads.service';
     EmployeeExportService,
     PrlDocumentsService,
     DiplomasService,
+    CertificadosRetencionesService,
     PedidosNotasService,
     LeadsService,
+    EmpleadoGrupoScopeService,
   ],
 })
 export class AppModule {}

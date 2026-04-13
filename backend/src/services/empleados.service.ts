@@ -6,7 +6,9 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import type { EmpleadoGrupoScopeFilter } from './empleado-grupo-scope.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -56,10 +58,12 @@ export class EmpleadosService {
 
   /**
    * Obtiene estadísticas completas de empleados (cuadrante, horario, centro)
-   * Nota: Acest endpoint este accesibil doar pentru manageri (protejat în frontend cu canManageEmployees)
+   * Con `scope` (user_empleado_grupo_scope): mismos empleados que GET /empleados con ámbito.
    */
-  async getEstadisticasEmpleados(mes?: string): Promise<any[]> {
-    // Nu aplicăm RBAC aici - doar managerii pot accesa tab-ul în frontend
+  async getEstadisticasEmpleados(
+    mes?: string,
+    scope?: EmpleadoGrupoScopeFilter | null,
+  ): Promise<any[]> {
     // Validăm și normalizăm parametrul mes (format: YYYY-MM)
     let mesParam = mes?.trim();
     if (!mesParam || !/^\d{4}-\d{2}$/.test(mesParam)) {
@@ -70,6 +74,22 @@ export class EmpleadosService {
 
     // Escape SQL pentru siguranță
     const mesEscaped = this.escapeSql(mesParam);
+
+    let scopeWhere = '';
+    if (scope?.grupos?.length) {
+      const gruposEsc = [
+        ...new Set(
+          scope.grupos
+            .map((g) => String(g || '').trim())
+            .filter((g) => g.length > 0),
+        ),
+      ].map((g) => this.escapeSql(g));
+      if (gruposEsc.length === 0) {
+        scopeWhere = ' WHERE 1=0';
+      } else {
+        scopeWhere = ` WHERE (TRIM(de.\`GRUPO\`) IN (${gruposEsc.join(', ')}) OR CAST(de.CODIGO AS CHAR) = ${this.escapeSql(scope.includeSelfCodigo)})`;
+      }
+    }
 
     const query = `
       SELECT
@@ -127,6 +147,7 @@ export class EmpleadosService {
           CASE WHEN de.\`SEG. SOCIAL\` IS NULL OR TRIM(de.\`SEG. SOCIAL\`) = '' THEN 'Sin seg. social' ELSE NULL END
         ) AS detalles_faltantes
       FROM DatosEmpleados de
+      ${scopeWhere}
       ORDER BY de.\`NOMBRE / APELLIDOS\`
     `;
 
@@ -147,9 +168,12 @@ export class EmpleadosService {
     }
   }
 
-  async exportEstadisticasEmpleadosExcel(mes?: string): Promise<Buffer> {
+  async exportEstadisticasEmpleadosExcel(
+    mes?: string,
+    scope?: EmpleadoGrupoScopeFilter | null,
+  ): Promise<Buffer> {
     try {
-      const estadisticas = await this.getEstadisticasEmpleados(mes);
+      const estadisticas = await this.getEstadisticasEmpleados(mes, scope);
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Estadísticas Empleados');
@@ -208,9 +232,12 @@ export class EmpleadosService {
     }
   }
 
-  async exportEstadisticasEmpleadosPDF(mes?: string): Promise<Buffer> {
+  async exportEstadisticasEmpleadosPDF(
+    mes?: string,
+    scope?: EmpleadoGrupoScopeFilter | null,
+  ): Promise<Buffer> {
     try {
-      const estadisticas = await this.getEstadisticasEmpleados(mes);
+      const estadisticas = await this.getEstadisticasEmpleados(mes, scope);
 
       return new Promise((resolve, reject) => {
         const doc = new PDFDocument({
@@ -566,8 +593,12 @@ export class EmpleadosService {
     return normalized;
   }
 
-  async getAllEmpleados() {
-    const rows = await this.prisma.$queryRaw<any[]>`
+  /**
+   * Lista empleados. `scope` solo desde HTTP autenticado con filas en user_empleado_grupo_scope.
+   * Sin scope o sin filas en tabla = mismo comportamiento histórico (todos).
+   */
+  async getAllEmpleados(scope?: EmpleadoGrupoScopeFilter | null) {
+    const selectSql = Prisma.sql`
       SELECT 
         CODIGO,
         \`NOMBRE / APELLIDOS\`,
@@ -601,13 +632,25 @@ export class EmpleadosService {
         fecha_baja_programada,
         VACACIONES_RESTANTES_ANO_ANTERIOR
       FROM DatosEmpleados
-      ORDER BY \`NOMBRE / APELLIDOS\` ASC
     `;
 
-    // Mapăm câmpurile pentru compatibilitate cu frontend-ul
+    let rows: any[];
+    if (scope?.grupos?.length) {
+      const inList = Prisma.join(scope.grupos.map((g) => Prisma.sql`${g}`));
+      rows = await this.prisma.$queryRaw<any[]>`
+        ${selectSql}
+        WHERE (TRIM(\`GRUPO\`) IN (${inList}) OR CODIGO = ${scope.includeSelfCodigo})
+        ORDER BY \`NOMBRE / APELLIDOS\` ASC
+      `;
+    } else {
+      rows = await this.prisma.$queryRaw<any[]>`
+        ${selectSql}
+        ORDER BY \`NOMBRE / APELLIDOS\` ASC
+      `;
+    }
+
     return rows.map((empleado) => ({
       ...empleado,
-      // Alias-uri pentru compatibilitate
       NOMBRE_APELLIDOS:
         empleado['NOMBRE / APELLIDOS'] ?? empleado.NOMBRE_APELLIDOS ?? null,
       ['NOMBRE / APELLIDOS']:

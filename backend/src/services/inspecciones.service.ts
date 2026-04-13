@@ -2,10 +2,12 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
+import { EmpleadoGrupoScopeService } from './empleado-grupo-scope.service';
 
 @Injectable()
 export class InspeccionesService {
@@ -14,13 +16,30 @@ export class InspeccionesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
   ) {}
+
+  /** Filtro SQL sobre codigo_empleado; sin ámbito = sin filtro. */
+  private buildCodigoEmpleadoScopeSql(
+    columnExpr: string,
+    allowedCodigos: string[] | null | undefined,
+  ): string {
+    if (!allowedCodigos) return '1=1';
+    const list = allowedCodigos
+      .map((c) => String(c).trim())
+      .filter((c) => c.length > 0);
+    if (list.length === 0) return '1=0';
+    return `${columnExpr} IN (${list.map((c) => this.escapeSql(c)).join(', ')})`;
+  }
 
   /**
    * Get inspecciones for a specific empleado by codigo_empleado
    * @param codigoEmpleado - CODIGO of the empleado
    */
-  async getMisInspecciones(codigoEmpleado: string): Promise<
+  async getMisInspecciones(
+    codigoEmpleado: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<
     Array<{
       id: string;
       tipo_inspeccion: string | null;
@@ -44,6 +63,11 @@ export class InspeccionesService {
 
       this.logger.log(
         `📝 Get mis inspecciones request - codigo_empleado: ${codigoEmpleado}`,
+      );
+
+      this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+        allowedCodigos ?? null,
+        codigoEmpleado,
       );
 
       // Execute query matching n8n snapshot logic (using Prisma escape for security)
@@ -104,7 +128,10 @@ export class InspeccionesService {
       return mappedResults;
     } catch (error: any) {
       this.logger.error('❌ Error getting mis inspecciones:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -117,7 +144,7 @@ export class InspeccionesService {
    * Get all inspecciones (lista completă) - pentru manageri/supervizori
    * Similar cu snapshot-ul extraerinspeciones.json
    */
-  async getAllInspecciones(): Promise<
+  async getAllInspecciones(allowedCodigos?: string[] | null): Promise<
     Array<{
       id: string;
       tipo_inspeccion: string | null;
@@ -135,6 +162,10 @@ export class InspeccionesService {
     try {
       this.logger.log('📝 Get all inspecciones request (lista completă)');
 
+      const scopeWhere = this.buildCodigoEmpleadoScopeSql(
+        'codigo_empleado',
+        allowedCodigos,
+      );
       const query = `
         SELECT
           id,
@@ -149,6 +180,7 @@ export class InspeccionesService {
           observaciones,
           scor_total
         FROM InspeccionesDocumentos
+        WHERE (${scopeWhere})
         ORDER BY fecha_subida DESC
       `;
 
@@ -200,6 +232,7 @@ export class InspeccionesService {
    */
   async createInspeccion(
     body: any,
+    allowedCodigos?: string[] | null,
   ): Promise<{ success: boolean; message: string; id?: string }> {
     try {
       this.logger.log('📝 Create inspeccion request');
@@ -247,6 +280,19 @@ export class InspeccionesService {
       if (!pdfBuffer) {
         throw new BadRequestException(
           'Se requiere "pdfBase64" o "pdf" en el body',
+        );
+      }
+
+      const codigoEmpTrim = String(codigoEmpleado || '').trim();
+      if (allowedCodigos) {
+        if (!codigoEmpTrim) {
+          throw new ForbiddenException(
+            'Con ámbito restringido se requiere codigo_empleado del inspeccionado.',
+          );
+        }
+        this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+          allowedCodigos,
+          codigoEmpTrim,
         );
       }
 
@@ -430,7 +476,10 @@ export class InspeccionesService {
       };
     } catch (error: any) {
       this.logger.error('❌ Error creating inspeccion:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -444,15 +493,18 @@ export class InspeccionesService {
    * This is used when a manager wants to request an inspection for an employee
    * @param body - Request body with empleado data and optional notes
    */
-  async createSolicitudInspeccion(body: {
-    codigo_empleado: string;
-    nombre_empleado: string;
-    tipo_inspeccion?: string;
-    centro?: string;
-    observaciones?: string;
-    solicitado_por?: string;
-    codigo_solicitante?: string;
-  }): Promise<{ success: boolean; message: string; id: string }> {
+  async createSolicitudInspeccion(
+    body: {
+      codigo_empleado: string;
+      nombre_empleado: string;
+      tipo_inspeccion?: string;
+      centro?: string;
+      observaciones?: string;
+      solicitado_por?: string;
+      codigo_solicitante?: string;
+    },
+    allowedCodigos?: string[] | null,
+  ): Promise<{ success: boolean; message: string; id: string }> {
     try {
       this.logger.log('📝 Create solicitud inspeccion request');
 
@@ -472,6 +524,11 @@ export class InspeccionesService {
         );
       }
 
+      this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+        allowedCodigos ?? null,
+        codigo_empleado,
+      );
+
       // Generate unique ID for the solicitud
       const solicitudId = `SOL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const timestamp = new Date().toISOString();
@@ -486,9 +543,12 @@ export class InspeccionesService {
           `⚠️ Solicitud with ID ${solicitudId} already exists, generating new ID`,
         );
         // Generate new ID if collision - recursive call will generate a new ID
-        return this.createSolicitudInspeccion({
-          ...body,
-        });
+        return this.createSolicitudInspeccion(
+          {
+            ...body,
+          },
+          allowedCodigos,
+        );
       }
 
       // Insert solicitud into database (without PDF, archivo is NULL)
@@ -613,7 +673,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
         'Error in InspeccionesService.createSolicitudInspeccion:',
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       const errorMessage =
@@ -628,7 +691,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
    * Get material documents for an inspection
    * @param inspeccionId - Inspeccion ID (string)
    */
-  async getMaterialesDocumentos(inspeccionId: string): Promise<
+  async getMaterialesDocumentos(
+    inspeccionId: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<
     Array<{
       doc_id: number;
       material_index: number;
@@ -648,6 +714,11 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       );
 
       const escapedId = this.escapeSql(inspeccionId.trim());
+
+      await this.assertInspeccionCodigoEnAmbito(
+        inspeccionId.trim(),
+        allowedCodigos,
+      );
 
       // Query pentru a obține documentele materialelor (fără archivo pentru performanță)
       const query = `
@@ -681,7 +752,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       return result;
     } catch (error: any) {
       this.logger.error('❌ Error getting materiales documentos:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -694,7 +768,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
    * Download material document by doc_id
    * @param docId - Document ID (number)
    */
-  async downloadMaterialDocumento(docId: number): Promise<{
+  async downloadMaterialDocumento(
+    docId: number,
+    allowedCodigos?: string[] | null,
+  ): Promise<{
     archivo: Buffer;
     tipo_mime: string;
     nombre_archivo: string;
@@ -707,6 +784,16 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       this.logger.log(
         `📥 Download material document request - docId: ${docId}`,
       );
+
+      const linkRows = await this.prisma.$queryRawUnsafe<
+        Array<{ inspeccion_id: string | null }>
+      >(
+        `SELECT inspeccion_id FROM MaterialesDocumentos WHERE doc_id = ${docId} LIMIT 1`,
+      );
+      const inspId = linkRows?.[0]?.inspeccion_id;
+      if (inspId) {
+        await this.assertInspeccionCodigoEnAmbito(inspId, allowedCodigos);
+      }
 
       // Query pentru a obține documentul
       const query = `
@@ -766,7 +853,8 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       this.logger.error('❌ Error downloading material document:', error);
       if (
         error instanceof BadRequestException ||
-        error instanceof NotFoundException
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException
       ) {
         throw error;
       }
@@ -780,7 +868,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
    * Download inspeccion PDF by id
    * @param id - Inspeccion ID (string)
    */
-  async downloadInspeccion(id: string): Promise<{
+  async downloadInspeccion(
+    id: string,
+    allowedCodigos?: string[] | null,
+  ): Promise<{
     archivo: Buffer;
     tipo_mime: string;
     nombre_archivo: string;
@@ -793,6 +884,8 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       this.logger.log(`📥 Download inspeccion request - id: ${id}`);
 
       const escapedId = this.escapeSql(id.trim());
+
+      await this.assertInspeccionCodigoEnAmbito(id.trim(), allowedCodigos);
 
       // Query matching n8n snapshot logic
       const query = `
@@ -1023,7 +1116,8 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       this.logger.error('❌ Error downloading inspeccion:', error);
       if (
         error instanceof BadRequestException ||
-        error instanceof NotFoundException
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException
       ) {
         throw error;
       }
@@ -1031,6 +1125,32 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
         `Error al descargar la inspección: ${error.message}`,
       );
     }
+  }
+
+  /** Comprueba que la inspección pertenezca a un CODIGO permitido (si hay ámbito). */
+  private async assertInspeccionCodigoEnAmbito(
+    inspeccionId: string,
+    allowedCodigos: string[] | null | undefined,
+  ): Promise<void> {
+    if (!allowedCodigos) return;
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ codigo_empleado: string | null }>
+    >(
+      `SELECT codigo_empleado FROM InspeccionesDocumentos WHERE id = ${this.escapeSql(inspeccionId)} LIMIT 1`,
+    );
+    if (!rows?.length) {
+      throw new NotFoundException(
+        `Inspección no encontrada para id=${inspeccionId}`,
+      );
+    }
+    const codigo = rows[0].codigo_empleado;
+    if (codigo == null || String(codigo).trim() === '') {
+      throw new ForbiddenException('No puede acceder a esta inspección.');
+    }
+    this.empleadoGrupoScopeService.assertCodigoEnAmbito(
+      allowedCodigos,
+      String(codigo),
+    );
   }
 
   private escapeSql(value: string | null | undefined): string {

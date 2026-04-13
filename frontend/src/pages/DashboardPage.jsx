@@ -1178,8 +1178,11 @@ const InicioPage = () => {
       });
     }
 
-    // PRL Documentos - doar pentru manageri/admini
-    if ((!useBackendPermissions && isManager) || canManageDocuments) {
+    // Documentos PRL — permiso matriz `prl-documentos` (migración: igual que documentos-empleados si no hay clave)
+    const canAccessPRL = shouldUseBackend
+      ? hasPermission('prl-documentos')
+      : isManager;
+    if (canAccessPRL) {
       list.push({
         id: 'prl-documentos',
         label: 'Documentos PRL',

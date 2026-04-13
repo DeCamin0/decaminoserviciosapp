@@ -12,14 +12,27 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { InspeccionesService } from '../services/inspecciones.service';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
 
 @Controller('api/inspecciones')
 @UseGuards(JwtAuthGuard)
 export class InspeccionesController {
   private readonly logger = new Logger(InspeccionesController.name);
 
-  constructor(private readonly inspeccionesService: InspeccionesService) {}
+  constructor(
+    private readonly inspeccionesService: InspeccionesService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+  ) {}
+
+  private scopePayload(user: any) {
+    return {
+      userId: user?.userId,
+      role: user?.role,
+      grupo: user?.grupo,
+    };
+  }
 
   /**
    * GET endpoint pentru inspecciones
@@ -27,16 +40,26 @@ export class InspeccionesController {
    * - GET /api/inspecciones -> "Todas las Inspecciones" (lista completă pentru manageri/supervizori)
    */
   @Get()
-  async getInspecciones(@Query('codigo_empleado') codigoEmpleado?: string) {
+  async getInspecciones(
+    @CurrentUser() user: any,
+    @Query('codigo_empleado') codigoEmpleado?: string,
+  ) {
     try {
+      const allowed =
+        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+          this.scopePayload(user),
+        );
+
       // Dacă există codigo_empleado, returnează inspecțiile pentru acel empleado
       if (codigoEmpleado) {
         this.logger.log(
           `📝 Get mis inspecciones request - codigo_empleado: ${codigoEmpleado}`,
         );
 
-        const inspecciones =
-          await this.inspeccionesService.getMisInspecciones(codigoEmpleado);
+        const inspecciones = await this.inspeccionesService.getMisInspecciones(
+          codigoEmpleado,
+          allowed,
+        );
 
         return inspecciones; // Return array directly (matching n8n response format)
       }
@@ -44,7 +67,8 @@ export class InspeccionesController {
       // Dacă nu există codigo_empleado, returnează lista completă
       this.logger.log('📝 Get all inspecciones request (lista completă)');
 
-      const inspecciones = await this.inspeccionesService.getAllInspecciones();
+      const inspecciones =
+        await this.inspeccionesService.getAllInspecciones(allowed);
 
       return inspecciones; // Return array directly (matching n8n response format)
     } catch (error: any) {
@@ -64,11 +88,19 @@ export class InspeccionesController {
    * POST /api/inspecciones
    */
   @Post()
-  async createInspeccion(@Body() body: any) {
+  async createInspeccion(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log('📝 Create inspeccion request received');
 
-      const result = await this.inspeccionesService.createInspeccion(body);
+      const allowed =
+        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+          this.scopePayload(user),
+        );
+
+      const result = await this.inspeccionesService.createInspeccion(
+        body,
+        allowed,
+      );
 
       return result;
     } catch (error: any) {
@@ -88,12 +120,19 @@ export class InspeccionesController {
    * POST /api/inspecciones/solicitud
    */
   @Post('solicitud')
-  async createSolicitudInspeccion(@Body() body: any) {
+  async createSolicitudInspeccion(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log('📝 Create solicitud inspeccion request received');
 
-      const result =
-        await this.inspeccionesService.createSolicitudInspeccion(body);
+      const allowed =
+        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+          this.scopePayload(user),
+        );
+
+      const result = await this.inspeccionesService.createSolicitudInspeccion(
+        body,
+        allowed,
+      );
 
       return result;
     } catch (error: any) {
@@ -115,12 +154,21 @@ export class InspeccionesController {
    * GET /api/inspecciones/download?id=xxx
    */
   @Get('download')
-  async downloadInspeccion(@Query('id') id: string, @Res() res: Response) {
+  async downloadInspeccion(
+    @CurrentUser() user: any,
+    @Query('id') id: string,
+    @Res() res: Response,
+  ) {
     try {
       this.logger.log(`📥 Download inspeccion request - id: ${id}`);
 
+      const allowed =
+        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+          this.scopePayload(user),
+        );
+
       const { archivo, tipo_mime, nombre_archivo } =
-        await this.inspeccionesService.downloadInspeccion(id);
+        await this.inspeccionesService.downloadInspeccion(id, allowed);
 
       // Setează headers pentru download
       res.setHeader('Content-Type', tipo_mime);
@@ -152,14 +200,24 @@ export class InspeccionesController {
    * GET /api/inspecciones/materiales?inspeccion_id=xxx
    */
   @Get('materiales')
-  async getMaterialesDocumentos(@Query('inspeccion_id') inspeccionId: string) {
+  async getMaterialesDocumentos(
+    @CurrentUser() user: any,
+    @Query('inspeccion_id') inspeccionId: string,
+  ) {
     try {
       this.logger.log(
         `📦 Get materiales documentos request - inspeccion_id: ${inspeccionId}`,
       );
 
-      const documentos =
-        await this.inspeccionesService.getMaterialesDocumentos(inspeccionId);
+      const allowed =
+        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+          this.scopePayload(user),
+        );
+
+      const documentos = await this.inspeccionesService.getMaterialesDocumentos(
+        inspeccionId,
+        allowed,
+      );
 
       return documentos;
     } catch (error: any) {
@@ -182,6 +240,7 @@ export class InspeccionesController {
    */
   @Get('materiales/download')
   async downloadMaterialDocumento(
+    @CurrentUser() user: any,
     @Query('doc_id') docId: string,
     @Res() res: Response,
   ) {
@@ -195,8 +254,16 @@ export class InspeccionesController {
         throw new BadRequestException('doc_id debe ser un número válido');
       }
 
+      const allowed =
+        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+          this.scopePayload(user),
+        );
+
       const { archivo, tipo_mime, nombre_archivo } =
-        await this.inspeccionesService.downloadMaterialDocumento(docIdNumber);
+        await this.inspeccionesService.downloadMaterialDocumento(
+          docIdNumber,
+          allowed,
+        );
 
       // Setează headers pentru download
       res.setHeader('Content-Type', tipo_mime);

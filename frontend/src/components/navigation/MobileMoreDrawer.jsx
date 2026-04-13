@@ -61,7 +61,13 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     const grupoKey = findGrupoKey(userGrupo, userPermissions);
     if (!grupoKey) return false;
     const grupoPermissions = userPermissions[grupoKey];
-    return grupoPermissions && grupoPermissions[module] === true;
+    if (!grupoPermissions) return false;
+    if (module === 'prl-documentos') {
+      if (grupoPermissions['prl-documentos'] === true) return true;
+      if (grupoPermissions['prl-documentos'] === false) return false;
+      return grupoPermissions['documentos-empleados'] === true;
+    }
+    return grupoPermissions[module] === true;
   }, [userPermissions, userGrupo, findGrupoKey]);
 
   // Încarcă permisiunile
@@ -244,6 +250,9 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     }
     if (canManageDocuments) {
       list.push({ id: 'documentos-empleados', label: 'Documentos empleados', hint: 'Archivos por empleado', icon: Folder, href: '/documentos-empleados', role: 'manager', gradient: 'from-teal-500 via-cyan-500 to-sky-500' });
+    }
+    const canAccessPRL = shouldUseBackend ? hasPermission('prl-documentos') : isManager;
+    if (canAccessPRL) {
       list.push({ id: 'prl-documentos', label: 'Documentos PRL', hint: 'Gestión documentos PRL por puesto', icon: ShieldCheck, href: '/prl-documentos', role: 'manager', gradient: 'from-red-500 via-rose-500 to-pink-500' });
     }
     if (canManageCuadrantes) {

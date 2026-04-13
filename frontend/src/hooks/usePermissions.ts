@@ -154,6 +154,7 @@ export const usePermissions = () => {
     // Modulele care necesită manager/supervisor
     if (module === 'admin' && !isAdmin) return false;
     if (module === 'empleados' && !isManager && !isSupervisor) return false;
+    if (module === 'prl-documentos' && !isManager && !isSupervisor) return false;
     if (module === 'cuadrantes' && !isManager && !isSupervisor) return false;
     if (module === 'estadisticas' && !isManager && !isSupervisor) return false;
     if (module === 'clientes' && !isManager && !isSupervisor) return false;
@@ -196,7 +197,19 @@ export const usePermissions = () => {
       }
       
       const grupoPermissions = userPermissions[grupoKey];
-      const newResult = grupoPermissions && grupoPermissions[module] === true;
+      /** PRL: până există rând explicit în DB, păstrăm comportamentul vechi (ca documentos-empleados). */
+      let newResult = false;
+      if (grupoPermissions && module === 'prl-documentos') {
+        if (grupoPermissions['prl-documentos'] === true) {
+          newResult = true;
+        } else if (grupoPermissions['prl-documentos'] === false) {
+          newResult = false;
+        } else {
+          newResult = grupoPermissions['documentos-empleados'] === true;
+        }
+      } else {
+        newResult = !!(grupoPermissions && grupoPermissions[module] === true);
+      }
       
       // 🔍 LOGGING COMPARATIV - compară cu sistemul vechi (doar în development)
       // ⚠️ IGNORĂ modulele noi care nu există în sistemul vechi (nu are sens să comparăm)
@@ -204,6 +217,7 @@ export const usePermissions = () => {
         'fichar-admin', 'fichar-empleados',
         'pedidos-admin', 'pedidos-empleados',
         'solicitudes-admin', 'solicitudes-empleados',
+        'prl-documentos',
       ];
       const isNewModule = newModules.includes(module);
       

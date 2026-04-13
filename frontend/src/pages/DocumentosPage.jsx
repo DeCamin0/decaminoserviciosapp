@@ -459,14 +459,7 @@ export default function DocumentosPage() {
       console.log('🔍 Documentos oficiales válidos encontrados:', documentosOficialesValidos.length);
       console.log('🔍 Data original:', data);
       console.log('🔍 Data filtrada:', documentosOficialesValidos);
-      
-      if (documentosOficialesValidos.length === 0) {
-        console.log('ℹ️ No se encontraron documentos oficiales válidos');
-        setDocumentosOficiales([]);
-        setDocumentosOficialesLoading(false);
-        return;
-      }
-      
+
       // Procesar solo los documentos oficiales válidos
       // Filtrar solo los documentos visibles para el empleado (Permisso_Para_Empleado = 'SI')
       const documentosVisibles = documentosOficialesValidos.filter(doc => 
@@ -503,6 +496,55 @@ export default function DocumentosPage() {
           status: 'disponible',
           necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'
         }));
+      }
+
+      // Certificados de retenciones (IRPF): mismos PDF que sube gestoría, visibles aquí como documento oficial
+      const codigoEmpleado = authUser?.CODIGO || authUser?.id;
+      if (codigoEmpleado) {
+        try {
+          const tokenCr = localStorage.getItem('auth_token');
+          const headersCr = {};
+          if (tokenCr) {
+            headersCr['Authorization'] = `Bearer ${tokenCr}`;
+          }
+          const crRes = await fetch(
+            routes.certificadosRetencionesListarEmpleado(String(codigoEmpleado)),
+            { headers: headersCr },
+          );
+          if (crRes.ok) {
+            const crData = await crRes.json();
+            if (crData.success && Array.isArray(crData.certificados)) {
+              crData.certificados.forEach((c) => {
+                documentosOficialesProcesados.push({
+                  id: `cr-${c.id}`,
+                  certificadoRetencionId: c.id,
+                  es_certificado_retencion: true,
+                  doc_id: null,
+                  fileName: c.nombre_archivo || `certificado_retenciones_${c.id}.pdf`,
+                  fileSize: 0,
+                  uploadDate: c.fecha_subida || new Date().toISOString(),
+                  tipo: c.notas
+                    ? `Certificado de retenciones (IRPF) · ${c.notas}`
+                    : 'Certificado de retenciones (IRPF)',
+                  empleadoId: codigoEmpleado,
+                  empleadoEmail: email,
+                  status: 'disponible',
+                  necesita_firma: false,
+                });
+              });
+            }
+          }
+        } catch (crErr) {
+          console.warn('Certificados retenciones (empleado):', crErr);
+        }
+      }
+
+      if (documentosOficialesProcesados.length === 0) {
+        console.log('ℹ️ No hay documentos oficiales ni certificados de retenciones');
+        setDocumentosOficiales([]);
+        setDocumentosOficialesNecesitanFirmaCount(0);
+        setDocumentosOficialesLoading(false);
+        return;
       }
 
       // Ordenar documentos oficiales de más reciente a más antiguo
@@ -1459,6 +1501,44 @@ export default function DocumentosPage() {
   const handleDownloadDocumentOficial = async (documento) => {
     try {
       console.log('📥 Descargando documento oficial:', documento);
+
+      if (documento.es_certificado_retencion && documento.certificadoRetencionId != null) {
+        const downloadUrl = routes.certificadosRetencionesDescargar(
+          documento.certificadoRetencionId,
+        );
+        const token = localStorage.getItem('auth_token');
+        const fetchHeaders = { Accept: 'application/pdf, application/json, */*' };
+        if (token) {
+          fetchHeaders['Authorization'] = `Bearer ${token}`;
+        }
+        const response = await fetch(downloadUrl, { headers: fetchHeaders });
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = documento.fileName || `certificado_retenciones_${documento.certificadoRetencionId}.pdf`;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          await activityLogger.logAction('certificado_retencion_downloaded', {
+            certificado_id: documento.certificadoRetencionId,
+            fileName: documento.fileName,
+            user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.name,
+            email,
+          });
+          setNotification({
+            type: 'success',
+            title: 'Descarga exitosa',
+            message: 'Certificado de retenciones descargado',
+          });
+        } else {
+          throw new Error(`Error HTTP: ${response.status}`);
+        }
+        return;
+      }
       
       // Construir URL para descarga
       const downloadUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
@@ -1524,23 +1604,57 @@ export default function DocumentosPage() {
   const handlePreviewDocumentOficial = async (documento) => {
     try {
       console.log('📄 Abriendo preview para documento oficial:', documento);
-      
-      // Construir URL para preview
-      const previewUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
-      
-      console.log('🔍 URL de preview:', previewUrl);
-      
-      // Helper function pentru a obține headers cu JWT token
+
       const getAuthHeaders = () => {
         const token = localStorage.getItem('auth_token');
         const headers = {
-          'Accept': 'application/pdf, application/json, image/*, */*',
+          Accept: 'application/pdf, application/json, image/*, */*',
         };
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
         return headers;
       };
+
+      if (documento.es_certificado_retencion && documento.certificadoRetencionId != null) {
+        const pdfUrl = routes.certificadosRetencionesDescargar(
+          documento.certificadoRetencionId,
+        );
+        setShowPreviewModal(true);
+        setPreviewLoading(true);
+        setPreviewError(null);
+        try {
+          const response = await fetch(pdfUrl, { headers: getAuthHeaders() });
+          if (response.ok && response.headers.get('content-type')?.includes('application/pdf')) {
+            const blob = await response.blob();
+            if (blob.size > 0) {
+              const url = isIOS
+                ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+                : URL.createObjectURL(blob);
+              setPreviewDocument({
+                ...documento,
+                previewUrl: url,
+                esOficial: true,
+                isPdf: true,
+              });
+            } else {
+              throw new Error('PDF vacío');
+            }
+          } else {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        } catch (e) {
+          console.error('Preview certificado retenciones:', e);
+          setPreviewError('No se pudo cargar el certificado de retenciones');
+        }
+        setPreviewLoading(false);
+        return;
+      }
+      
+      // Construir URL para preview
+      const previewUrl = `${routes.downloadDocumentoOficial}?id=${documento.id}&documentId=${documento.doc_id}&email=${encodeURIComponent(email)}&fileName=${encodeURIComponent(documento.fileName || '')}`;
+      
+      console.log('🔍 URL de preview:', previewUrl);
       
       setShowPreviewModal(true);
       setPreviewLoading(true);
@@ -1673,6 +1787,15 @@ export default function DocumentosPage() {
   const handleFirmarDocumentoOficial = async (documento) => {
     try {
       console.log('✍️ Abriendo sistema de firma para documento oficial:', documento);
+
+      if (documento.es_certificado_retencion) {
+        setNotification({
+          type: 'info',
+          title: 'No aplica',
+          message: 'Los certificados de retenciones no se firman desde esta pantalla.',
+        });
+        return;
+      }
       
       if (!documento.fileName?.toLowerCase().endsWith('.pdf')) {
         setNotification({
@@ -2109,6 +2232,15 @@ export default function DocumentosPage() {
   const handleSignWithAutoFirmaOficial = async (documento) => {
     console.log('🚀 FUNCIÓN handleSignWithAutoFirmaOficial HA SIDO LLAMADA!');
     console.log('📄 Documento recibido:', documento);
+
+    if (documento.es_certificado_retencion) {
+      setNotification({
+        type: 'info',
+        title: 'No aplica',
+        message: 'Los certificados de retenciones no se firman con AutoFirma desde aquí.',
+      });
+      return;
+    }
     
     // Verificar si es dispositivo móvil
     if (isMobileDevice()) {
@@ -3301,7 +3433,9 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
                         <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 border-b border-purple-200">
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300">
-                              <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">📋</span>
+                              <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">
+                                {documento.es_certificado_retencion ? '🧾' : '📋'}
+                              </span>
                             </div>
                             <div className="flex-1">
                               <h3 className="text-sm font-bold text-gray-900 group-hover:text-purple-800 transition-colors duration-300 break-all overflow-wrap-anywhere leading-tight max-w-full" style={{wordBreak: 'break-all', overflowWrap: 'anywhere'}} title={documento.fileName || `Documento Oficial ${idx + 1}`}>
@@ -3335,13 +3469,15 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
                               <div className="flex-1">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">🆔 ID:</label>
                                 <p className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border">
-                                  {documento.id || 'N/A'}
+                                  {documento.es_certificado_retencion
+                                    ? documento.certificadoRetencionId ?? documento.id
+                                    : documento.id || 'N/A'}
                                 </p>
                               </div>
                               <div className="flex-1">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">📋 Doc ID:</label>
                                 <p className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border">
-                                  {documento.doc_id || 'N/A'}
+                                  {documento.es_certificado_retencion ? '—' : documento.doc_id || 'N/A'}
                                 </p>
                               </div>
                             </div>
@@ -3413,6 +3549,7 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
                             </button>
                           </div>
                           
+                          {!documento.es_certificado_retencion && (
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleFirmarDocumentoOficial(documento)}
@@ -3439,6 +3576,7 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
                               </div>
                             </button>
                           </div>
+                          )}
                         </div>
                       </div>
                     ))}

@@ -32,6 +32,8 @@ if (typeof document !== 'undefined') {
 
 // Import doar paginile mici (non-lazy)
 import LoginPage from './pages/LoginPage';
+import PortalAccesoPage from './pages/PortalAccesoPage';
+import PortalGestoresAccesoPage from './pages/PortalGestoresAccesoPage';
 import InicioPage from './pages/DashboardPage';
 import DatosPage from './pages/DatosPage';
 
@@ -214,6 +216,9 @@ function AppRoutes() {
             isAuthenticated ? <Navigate to="/inicio" replace /> : <LoginPage />
           } 
         />
+
+        <Route path="/portal/gestores" element={<PortalGestoresAccesoPage />} />
+        <Route path="/portal/:token" element={<PortalAccesoPage />} />
       
       {/* Rute protejate - folosesc ResponsiveLayout */}
       <Route

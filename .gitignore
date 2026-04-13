@@ -50,6 +50,27 @@ backend/coverage/
 # Frontend specific
 frontend/dist/
 frontend/.eslintcache
+# Vite env locales (no subir secretos; sí versionar .env.example)
+frontend/.env.decamino
+frontend/.env.hera
+frontend/.eslint-progress.json
+
+# Exportaciones locales / datos sensibles
+backend/exports/
+
+# Archivos sueltos en la raíz del repo (no código)
+/*.xlsx
+/*.xlsm
+/*.pdf
+/*.PDF
+/*.jpeg
+/*.jpg
+/*.json
+/leads*.txt
+/leads*.xlsm
+
+# PDFs borrador legales (generados localmente con npm run legal-pdfs:borrador)
+frontend/legal-pdfs-borrador/
 
 # n8n snapshots (may contain secrets)
 backend/n8n-snapshots/
