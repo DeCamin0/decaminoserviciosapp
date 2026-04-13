@@ -636,6 +636,36 @@ function derivarTipoDesdeServicio(
   return 'auxiliares';
 }
 
+/** Calendario en texto para auxiliares (alineado con PresupuestosInformesPage.jsx). */
+function textoCalendarioAuxiliaresOferta(diasPorSemana: unknown): string {
+  const d = Math.min(7, Math.max(0, Number(diasPorSemana) || 0));
+  if (d === 7) return 'los 7 días de la semana (calendario anual)';
+  if (d === 5) return 'de lunes a viernes (5 días por semana)';
+  if (d === 6) return 'de lunes a sábado (6 días por semana)';
+  if (d <= 0) return 'según días por semana indicados';
+  if (d === 1) return '1 día por semana';
+  return `${d} días por semana`;
+}
+
+function descripcionAuxiliaresOfertaLinea(
+  tituloServicio: string,
+  calc: Record<string, unknown> | undefined,
+): string {
+  const h = Number(calc?.horasDiarias ?? 0);
+  const diasTxt = textoCalendarioAuxiliaresOferta(calc?.diasPorSemana);
+  const sufijoFestivos = calc?.sinFestivos ? ', sin festivos' : '';
+  return `${tituloServicio} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
+}
+
+function bulletLineaAuxiliaresOferta(
+  calc: Record<string, unknown> | undefined,
+): string {
+  const h = Number(calc?.horasDiarias ?? 8);
+  const diasTxt = textoCalendarioAuxiliaresOferta(calc?.diasPorSemana);
+  const sufijoFestivos = calc?.sinFestivos ? ', sin festivos' : '';
+  return `${h}h/día ${diasTxt}${sufijoFestivos}`;
+}
+
 /** Precio en formato español (miles con punto, decimal con coma), alineado con el front. */
 function parsePrecioEurosEs(val: unknown): number {
   if (val == null || val === '') return 0;
@@ -1041,8 +1071,7 @@ export class PresupuestoDocumentoService {
             const calc = auxiliaresAll[iA++] as
               | Record<string, unknown>
               | undefined;
-            const h = Number(calc?.horasDiarias ?? 8);
-            descripcion = `${title} – ${h}h/día los 365 días`;
+            descripcion = descripcionAuxiliaresOfertaLinea(title, calc);
             // Sin cálculo COSTE en backend, dejamos 0 o se rellena desde front
           } else if (tipo === 'limpieza') {
             const calc = limpiezaAll[iL++] as
@@ -1238,8 +1267,7 @@ export class PresupuestoDocumentoService {
           const calc = auxiliaresAll[idxAux++] as
             | Record<string, unknown>
             | undefined;
-          const h = Number(calc?.horasDiarias ?? 8);
-          bullets.push(`${h}h/día los 365 días`);
+          bullets.push(bulletLineaAuxiliaresOferta(calc));
         } else if (tipo === 'jardineria') {
           const calc = jardineriaAll[idxJard++] as
             | Record<string, unknown>

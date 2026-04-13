@@ -107,6 +107,25 @@ function countDiasEnRangoPorDiasTipo(fechaDesde, fechaHasta, diasTipo) {
   return n;
 }
 
+/** Texto calendario para oferta auxiliares (evita "365 días" fijo si solo son 5 días/semana, etc.). */
+function textoCalendarioAuxiliaresOferta(diasPorSemana) {
+  const d = Math.min(7, Math.max(0, Number(diasPorSemana) || 0));
+  if (d === 7) return 'los 7 días de la semana (calendario anual)';
+  if (d === 5) return 'de lunes a viernes (5 días por semana)';
+  if (d === 6) return 'de lunes a sábado (6 días por semana)';
+  if (d <= 0) return 'según días por semana indicados';
+  if (d === 1) return '1 día por semana';
+  return `${d} días por semana`;
+}
+
+/** Línea DESCRIPCION oferta económica para servicio auxiliares (una variante). */
+function descripcionAuxiliaresOfertaLinea(tituloServicio, calcAux) {
+  const h = calcAux != null && calcAux.horasDiarias != null ? Number(calcAux.horasDiarias) : 0;
+  const diasTxt = textoCalendarioAuxiliaresOferta(calcAux?.diasPorSemana);
+  const sufijoFestivos = calcAux?.sinFestivos ? ', sin festivos' : '';
+  return `${tituloServicio} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
+}
+
 const DIAS_TIPOS_HORARIO_PISCINA = ['LV', 'SD', 'LD', 'PERS'];
 
 /** Un periodo de horario piscina (PDF 2.7). diasTipo: L-V | S-D | L-D | PERS */
@@ -227,6 +246,8 @@ export default function PresupuestosInformesPage() {
     convenioBase: 1221,
     horasDiarias: 8,
     diasPorSemana: 7,
+    /** Si está marcado, la oferta indica explícitamente que no se incluyen festivos. */
+    sinFestivos: false,
     horasACubrirPorSemana: 168, // h/sem a cubrir → calculamos nº conserje necesarios
     aplicaNocturnidad: false,
     nocturnidad: { b: 0, c: 0.77 },
@@ -664,7 +685,7 @@ export default function PresupuestosInformesPage() {
         const calcAux = presupuestoCalculoAuxiliaresAll[variantIndexAuxiliares];
         const resAux = presupuestoResultadoAuxiliares[variantIndexAuxiliares];
         const extraAux = (calcAux && calcAux.extra) ?? 0;
-        descripcion = `${servicioNombreTexto(s.nombre)} – ${(calcAux && calcAux.horasDiarias) || 0}h/día los 365 días`;
+        descripcion = descripcionAuxiliaresOfertaLinea(servicioNombreTexto(s.nombre), calcAux);
         mensualidadSinIva = (resAux ? resAux.D52 : 0) + extraAux;
         anualidadSinIva = (resAux ? resAux.precioFinalACliente : 0) + extraAux * 12;
         mensualidadConIva = mensualidadSinIva * 1.21;
@@ -3572,6 +3593,18 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         placeholder="Ej: 7"
                       />
                     </div>
+                    <div className="md:col-span-2">
+                      <label className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={!!calculo.sinFestivos}
+                          onChange={(e) => setAuxiliaresCalculoAt(prev => ({ ...prev, sinFestivos: e.target.checked }))}
+                          className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        <span className="font-medium">Sin festivos</span>
+                        <span className="text-gray-500 font-normal">(se refleja en la descripción de la oferta económica)</span>
+                      </label>
+                    </div>
                     <div className="md:col-span-2 flex flex-wrap items-center gap-4 text-sm">
                       <span className="text-gray-600">Total horas/semana (B4):</span>
                       <span className="font-semibold text-gray-900">{resultado.B4 ?? 0} h</span>
@@ -5376,7 +5409,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 const calcAux = presupuestoCalculoAuxiliaresAll[variantIndexAuxiliares];
                                 const resAux = presupuestoResultadoAuxiliares[variantIndexAuxiliares];
                                 const extraAux = (calcAux && calcAux.extra) ?? 0; // €/mes
-                                descripcion = `${servicioNombreTexto(s.nombre)} – ${(calcAux && calcAux.horasDiarias) || 0}h/día los 365 días`;
+                                descripcion = descripcionAuxiliaresOfertaLinea(servicioNombreTexto(s.nombre), calcAux);
                                 mensualidadSinIva = (resAux ? resAux.D52 : 0) + extraAux;
                                 anualidadSinIva = (resAux ? resAux.precioFinalACliente : 0) + extraAux * 12;
                                 mensualidadConIva = mensualidadSinIva * 1.21;
@@ -5605,7 +5638,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                           const calcAux = presupuestoCalculoAuxiliaresAll[variantIndexAuxiliares];
                           const resAux = presupuestoResultadoAuxiliares[variantIndexAuxiliares];
                           const extraAux = (calcAux && calcAux.extra) ?? 0;
-                          descripcion = `${servicioNombreTexto(s.nombre)} – ${(calcAux && calcAux.horasDiarias) || 0}h/día los 365 días`;
+                          descripcion = descripcionAuxiliaresOfertaLinea(servicioNombreTexto(s.nombre), calcAux);
                           mensualidadSinIva = (resAux ? resAux.D52 : 0) + extraAux;
                           anualidadSinIva = (resAux ? resAux.precioFinalACliente : 0) + extraAux * 12;
                           mensualidadConIva = mensualidadSinIva * 1.21;

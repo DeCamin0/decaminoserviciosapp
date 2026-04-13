@@ -1,10 +1,4 @@
-// ⚠️ CRITICAL: Save original fetch BEFORE any imports or interceptors
-// This must be the FIRST thing we do to ensure we have a clean fetch reference
-if (typeof window !== 'undefined') {
-  window.__originalFetchForLocation = window.fetch;
-}
-
-// ⚠️ CRITICAL: Error handlers MUST be set up BEFORE any imports
+// ⚠️ CRITICAL: Error handlers MUST be set up BEFORE other imports (după bootstrap-fetch-native)
 // Suppress Google Maps vendor bundle errors and other undefined 'get' errors
 (function() {
   'use strict';
@@ -102,6 +96,9 @@ if (typeof window !== 'undefined') {
   };
 })();
 
+/** PRIMUL import: salvează window.fetch nativ înainte de App → useComunicadosApi etc. */
+import './bootstrap-fetch-native.js';
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
@@ -116,8 +113,7 @@ import { isDemoMode } from './utils/demo'
 import './utils/consoleOverride' // Dezactivează console.log-urile în production
 import { installRegulatedFetch } from './utils/regulatedFetch'
 
-// Note: window.__originalFetchForLocation is already saved at the very top of the file
-// before any imports to ensure it's not intercepted
+// window.__originalFetchForLocation: vezi ./bootstrap-fetch-native.js (primul import).
 
 // Polyfills pentru ExcelJS în browser
 import { Buffer } from 'buffer'

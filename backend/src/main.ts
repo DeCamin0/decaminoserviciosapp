@@ -75,8 +75,60 @@ import { json, urlencoded } from 'express';
 import { GlobalExceptionFilter } from './filters/global-exception.filter';
 import { TelegramService } from './services/telegram.service';
 
+/**
+ * Lista finală de origini permise pentru CORS.
+ * - CORS_ORIGINS / CORS_ORIGIN (separate prin virgulă)
+ * - FRONTEND_APP_URL și APP_URL (doar scheme://host, fără path) — evită 500 când lipsește un domeniu din listă explicită
+ * - În dev, dacă nu e nimic în env: localhost:5173
+ */
+function buildUniqueCorsOrigins(): string[] {
+  const fromList = (s?: string) =>
+    s?.trim()
+      ? s
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : [];
+
+  const explicit = fromList(
+    process.env.CORS_ORIGINS || process.env.CORS_ORIGIN,
+  );
+  const implicitDefaults =
+    explicit.length > 0
+      ? []
+      : process.env.NODE_ENV === 'production'
+        ? []
+        : ['http://localhost:5173'];
+
+  const originFromBaseUrl = (raw?: string): string[] => {
+    const u = raw?.trim();
+    if (!u) return [];
+    try {
+      const parsed = new URL(u);
+      return [`${parsed.protocol}//${parsed.host}`];
+    } catch {
+      return [];
+    }
+  };
+
+  return [
+    ...new Set([
+      ...explicit,
+      ...implicitDefaults,
+      ...originFromBaseUrl(process.env.FRONTEND_APP_URL),
+      ...originFromBaseUrl(process.env.APP_URL),
+    ]),
+  ];
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const uniqueCorsOrigins = buildUniqueCorsOrigins();
+  if (process.env.NODE_ENV === 'production' && uniqueCorsOrigins.length === 0) {
+    console.warn(
+      '[Main] CORS: lista goală. Setează CORS_ORIGINS sau FRONTEND_APP_URL / APP_URL.',
+    );
+  }
 
   // Global exception filter pentru alerting Telegram
   // Obținem instanța TelegramService din context
@@ -95,19 +147,6 @@ async function bootstrap() {
       const origin = req.headers.origin;
       console.log(`[Main] OPTIONS preflight request from origin: ${origin}`);
 
-      // Multi-client: doar din env. În producție CORS_ORIGINS obligatoriu.
-      const corsOriginsEnv =
-        process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
-      const corsOrigins = corsOriginsEnv?.trim()
-        ? corsOriginsEnv
-            .split(',')
-            .map((o) => o.trim())
-            .filter(Boolean)
-        : process.env.NODE_ENV === 'production'
-          ? []
-          : ['http://localhost:5173'];
-
-      const uniqueCorsOrigins = [...new Set(corsOrigins)];
       const isAllowed =
         !origin ||
         uniqueCorsOrigins.includes(origin) ||
@@ -191,20 +230,7 @@ async function bootstrap() {
   // Parse URL-encoded bodies
   app.use(urlencoded({ extended: true, limit: '500mb' }));
 
-  // Enable CORS – multi-client: doar din env. În producție setați CORS_ORIGINS.
-  const corsOriginsEnv = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
-  const corsOrigins = corsOriginsEnv?.trim()
-    ? corsOriginsEnv
-        .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean)
-    : process.env.NODE_ENV === 'production'
-      ? []
-      : ['http://localhost:5173'];
-
-  // Elimină duplicate-urile
-  const uniqueCorsOrigins = [...new Set(corsOrigins)];
-
+  // Enable CORS – aceeași listă ca la OPTIONS (inclusiv FRONTEND_APP_URL / APP_URL).
   app.enableCors({
     origin: (origin, callback) => {
       // Permite requests fără origin (mobile apps, Postman, etc.)
@@ -219,7 +245,11 @@ async function bootstrap() {
         if (process.env.NODE_ENV !== 'production') {
           callback(null, true);
         } else {
-          callback(new Error('Not allowed by CORS'));
+          // Nu arunca Error: ajunge la GlobalExceptionFilter → 500 + Telegram la fiecare respingere CORS
+          console.warn(
+            `[Main] CORS: origin respinsă „${origin}” (permise: ${uniqueCorsOrigins.join(', ') || '(nimic)'})`,
+          );
+          callback(null, false);
         }
       }
     },
