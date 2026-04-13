@@ -1276,7 +1276,7 @@ export class PresupuestoDocumentoService {
       let idxPiscina = 0;
       for (const s of selectedServicios) {
         const tipo = derivarTipoDesdeServicio(s.nombre || '');
-        const title = serviceTitles[tipo] || tipo;
+        let title = serviceTitles[tipo] || tipo;
         const bullets: string[] = [];
         if (tipo === 'limpieza') {
           const calc = limpiezaAll[idxLimp++] as
@@ -1295,12 +1295,16 @@ export class PresupuestoDocumentoService {
           const calc = auxiliaresAll[idxAux++] as
             | Record<string, unknown>
             | undefined;
-          bullets.push(bulletLineaAuxiliaresOferta(calc));
           if (calc?.auxiliaresConLimpieza) {
             const calcL = limpiezaAll[auxIdx] as
               | Record<string, unknown>
               | undefined;
-            bullets.push(`Limpieza incluida: ${textoBulletLimpiezaPdf(calcL)}`);
+            title = `${serviceTitles.auxiliares} y LIMPIEZA`;
+            const auxTxt = bulletLineaAuxiliaresOferta(calc);
+            const limpTxt = textoBulletLimpiezaPdf(calcL);
+            bullets.push(`${auxTxt}. (${limpTxt}).`);
+          } else {
+            bullets.push(bulletLineaAuxiliaresOferta(calc));
           }
         } else if (tipo === 'jardineria') {
           const calc = jardineriaAll[idxJard++] as
