@@ -130,6 +130,58 @@ function descripcionAuxiliaresOfertaLinea(tituloServicio, calcAux) {
   return `${titulo} – ${h}h/día ${diasTxt}${sufijoFestivos}`;
 }
 
+function roundOfertaMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * Añade al final una línea negativa equivalente a `pct` % sobre la suma de importes
+ * sin IVA (mensualidad / anualidad) de las filas anteriores.
+ */
+function aplicarDescuentoGlobalOfertaRows(rows, pctRaw) {
+  const rounded = Math.round(Number(pctRaw));
+  const pct = Math.min(100, Math.max(0, Number.isFinite(rounded) ? rounded : 0));
+  if (!pct || !Array.isArray(rows) || rows.length === 0) return rows;
+  let sumM = 0;
+  let sumA = 0;
+  for (const r of rows) {
+    sumM += Number(r.mensualidadSinIva) || 0;
+    sumA += Number(r.anualidadSinIva) || 0;
+  }
+  const descM = roundOfertaMoney(sumM * (pct / 100));
+  const descA = roundOfertaMoney(sumA * (pct / 100));
+  if (descM === 0 && descA === 0) return rows;
+  return [
+    ...rows,
+    {
+      descripcion: `Descuento por fidelidad (${pct}%)`,
+      mensualidadSinIva: -descM,
+      mensualidadConIva: roundOfertaMoney(-descM * 1.21),
+      anualidadSinIva: -descA,
+      anualidadConIva: roundOfertaMoney(-descA * 1.21),
+    },
+  ];
+}
+
+function esFilaDescuentoPorFidelidadOferta(row) {
+  return String(row?.descripcion || '').startsWith('Descuento por fidelidad');
+}
+
+/** Importes netos por línea coherentes con el % global (misma proporción que la fila negativa). */
+function importesOfertaLineaTrasFidelidadPct(row, pctRaw) {
+  const p = Math.min(100, Math.max(0, Math.round(Number(pctRaw)) || 0));
+  if (!p) return null;
+  const f = 1 - p / 100;
+  const mSin = roundOfertaMoney((Number(row.mensualidadSinIva) || 0) * f);
+  const aSin = roundOfertaMoney((Number(row.anualidadSinIva) || 0) * f);
+  return {
+    mensualidadSinIva: mSin,
+    mensualidadConIva: roundOfertaMoney(mSin * 1.21),
+    anualidadSinIva: aSin,
+    anualidadConIva: roundOfertaMoney(aSin * 1.21),
+  };
+}
+
 const DIAS_TIPOS_HORARIO_PISCINA = ['LV', 'SD', 'LD', 'PERS'];
 
 /** Un periodo de horario piscina (PDF 2.7). diasTipo: L-V | S-D | L-D | PERS */
@@ -243,6 +295,11 @@ export default function PresupuestosInformesPage() {
   const [presupuestoClienteCodigoPostal, setPresupuestoClienteCodigoPostal] = useState('');
   const [presupuestoClientePoblacion, setPresupuestoClientePoblacion] = useState('');
   const [presupuestoClienteProvincia, setPresupuestoClienteProvincia] = useState('');
+  /** Bonificación % en páginas PDF del portal (0–100). 100 = texto «sin coste». */
+  const [presupuestoBonificacionPortalPct, setPresupuestoBonificacionPortalPct] = useState(100);
+  const [presupuestoBonificacionVecindarioPct, setPresupuestoBonificacionVecindarioPct] = useState(100);
+  /** Descuento global por fidelidad (0–100 %) sobre la suma de líneas de la oferta (sin IVA); se refleja en OFERTA ECONOMICA y en el PDF guardado. */
+  const [presupuestoDescuentoGlobalPct, setPresupuestoDescuentoGlobalPct] = useState(0);
   // Tipo(s) de servicio: se deducen de los elegidos → 'auxiliares' | 'limpieza' | 'jardineria'
   const [, setTipoServicioPresupuesto] = useState('auxiliares');
   const [presupuestoCalculo, setPresupuestoCalculo] = useState({
@@ -325,6 +382,7 @@ export default function PresupuestosInformesPage() {
     horas: '',
     dias: '',
     precioSinIva: '',
+    extra: 0, // €/mes; se suma a la línea de oferta (como auxiliares/limpieza)
     horarioPeriodos: [],
     horarioPorPeriodos: [],
   });
@@ -628,12 +686,14 @@ export default function PresupuestosInformesPage() {
         horario,
       };
     }).filter((h) => h.fechaDesde || h.fechaHasta || h.horario);
+    const extraNum = Number(p.extra);
     return {
       ...p,
       precioSinIva: precioStr,
       concepto: p.concepto ?? 'Mantenimiento integral en piscina comunitaria',
       horas: horas,
       dias: dias,
+      extra: Number.isFinite(extraNum) && extraNum >= 0 ? extraNum : 0,
       horarioPeriodos,
       horarioPorPeriodos: serializeHorarioPorPeriodosForPayload(p.horarioPorPeriodos),
     };
@@ -680,7 +740,7 @@ export default function PresupuestosInformesPage() {
   };
 
   const buildOfertaEconomica = () => {
-    return selectedServiciosPresupuesto.map((s, index) => {
+    const rows = selectedServiciosPresupuesto.map((s, index) => {
       const tipo = derivarTipoDesdeServicio(s.nombre);
       const variantIndexAuxiliares = tipo === 'auxiliares'
         ? selectedServiciosPresupuesto.slice(0, index).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'auxiliares').length
@@ -728,11 +788,12 @@ export default function PresupuestosInformesPage() {
         const variantIndexPiscina = selectedServiciosPresupuesto.slice(0, index).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length;
         const calcPiscina = presupuestoCalculoPiscinaAll[variantIndexPiscina];
         const precioSinIvaMes = parsePrecioEurosSpanish(calcPiscina?.precioSinIva);
+        const extraPiscina = (calcPiscina && calcPiscina.extra) ?? 0;
         descripcion = `Piscina - ${descripcionPiscina(calcPiscina)}`;
-        mensualidadSinIva = precioSinIvaMes;
-        mensualidadConIva = precioSinIvaMes * 1.21;
-        anualidadSinIva = precioSinIvaMes * 12;
-        anualidadConIva = precioSinIvaMes * 12 * 1.21;
+        mensualidadSinIva = precioSinIvaMes + extraPiscina;
+        mensualidadConIva = mensualidadSinIva * 1.21;
+        anualidadSinIva = precioSinIvaMes * 12 + extraPiscina * 12;
+        anualidadConIva = anualidadSinIva * 1.21;
       }
       return { descripcion, mensualidadSinIva, mensualidadConIva, anualidadSinIva, anualidadConIva };
     }).concat(
@@ -762,6 +823,91 @@ export default function PresupuestosInformesPage() {
         }
         return filas;
       })(),
+    );
+    return aplicarDescuentoGlobalOfertaRows(rows, presupuestoDescuentoGlobalPct);
+  };
+
+  const renderOfertaEconomicaTbody = (ofertaSoloPiscina) => {
+    const rows = buildOfertaEconomica();
+    const pct = Math.min(100, Math.max(0, Math.round(Number(presupuestoDescuentoGlobalPct)) || 0));
+    const fmt = (n) => (n ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const sumM = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.mensualidadSinIva) || 0), 0));
+    const sumMc = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.mensualidadConIva) || 0), 0));
+    const sumA = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.anualidadSinIva) || 0), 0));
+    const sumAc = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.anualidadConIva) || 0), 0));
+    return (
+      <>
+        {rows.map((row, idx) => {
+          const esDesc = esFilaDescuentoPorFidelidadOferta(row);
+          const net = pct > 0 && !esDesc ? importesOfertaLineaTrasFidelidadPct(row, pct) : null;
+          return (
+            <tr key={idx} className="border-b border-gray-200">
+              <td className="border border-gray-300 px-3 py-2 text-gray-800">{row.descripcion}</td>
+              <td className="border border-gray-300 px-3 py-2 align-top">
+                {!net ? (
+                  <>
+                    <div>{fmt(row.mensualidadSinIva)} €+IVA</div>
+                    <div className="text-gray-600">{fmt(row.mensualidadConIva)} € IVA incluido</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                      <span className="line-through decoration-2 decoration-gray-600 text-gray-700 tabular-nums">{fmt(row.mensualidadSinIva)} €+IVA</span>
+                      <span className="text-gray-500">→</span>
+                      <span className="font-semibold text-gray-900 tabular-nums">{fmt(net.mensualidadSinIva)} €+IVA</span>
+                    </div>
+                    <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-sm mt-0.5">
+                      <span className="line-through decoration-2 decoration-gray-600 text-gray-700 tabular-nums">{fmt(row.mensualidadConIva)} €</span>
+                      <span className="text-gray-500">→</span>
+                      <span className="font-semibold text-emerald-800 tabular-nums">{fmt(net.mensualidadConIva)} € IVA incluido</span>
+                    </div>
+                  </>
+                )}
+              </td>
+              {!ofertaSoloPiscina && (
+                <td className="border border-gray-300 px-3 py-2 align-top">
+                  {!net ? (
+                    <>
+                      <div>{fmt(row.anualidadSinIva)} €+IVA</div>
+                      <div className="text-gray-600">{fmt(row.anualidadConIva)} € IVA incluido</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                        <span className="line-through decoration-2 decoration-gray-600 text-gray-700 tabular-nums">{fmt(row.anualidadSinIva)} €+IVA</span>
+                        <span className="text-gray-500">→</span>
+                        <span className="font-semibold text-gray-900 tabular-nums">{fmt(net.anualidadSinIva)} €+IVA</span>
+                      </div>
+                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-sm mt-0.5">
+                        <span className="line-through decoration-2 decoration-gray-600 text-gray-700 tabular-nums">{fmt(row.anualidadConIva)} €</span>
+                        <span className="text-gray-500">→</span>
+                        <span className="font-semibold text-emerald-800 tabular-nums">{fmt(net.anualidadConIva)} € IVA incluido</span>
+                      </div>
+                    </>
+                  )}
+                </td>
+              )}
+            </tr>
+          );
+        })}
+        {pct > 0 && (
+          <tr key="total-neto-oferta" className="bg-emerald-50/90 border-t-2 border-emerald-300 font-semibold">
+            <td className="border border-gray-300 px-3 py-2 text-gray-900">
+              TOTAL (importe neto a pagar, incl. descuento por fidelidad)
+            </td>
+            <td className="border border-gray-300 px-3 py-2 text-gray-900">
+              <div>{fmt(sumM)} €+IVA</div>
+              <div className="text-emerald-900">{fmt(sumMc)} € IVA incluido</div>
+            </td>
+            {!ofertaSoloPiscina && (
+              <td className="border border-gray-300 px-3 py-2 text-gray-900">
+                <div>{fmt(sumA)} €+IVA</div>
+                <div className="text-emerald-900">{fmt(sumAc)} € IVA incluido</div>
+              </td>
+            )}
+          </tr>
+        )}
+      </>
     );
   };
 
@@ -794,6 +940,9 @@ export default function PresupuestosInformesPage() {
     presupuestoClienteCodigoPostal: presupuestoClienteCodigoPostal?.trim() || '',
     presupuestoClientePoblacion: presupuestoClientePoblacion?.trim() || '',
     presupuestoClienteProvincia: presupuestoClienteProvincia?.trim() || '',
+    presupuestoBonificacionPortalPct,
+    presupuestoBonificacionVecindarioPct,
+    presupuestoDescuentoGlobalPct,
     ofertaEconomica: buildOfertaEconomica(),
   });
 
@@ -839,6 +988,7 @@ export default function PresupuestosInformesPage() {
         setShowNuevoPresupuestoForm(false);
         setSelectedServiciosPresupuesto([]);
         setPresupuestoGuardadoEditarId(null);
+        setPresupuestoDescuentoGlobalPct(0);
       }
     } catch (error) {
       setNotification({ message: error.message || 'Error al guardar presupuesto', type: 'error' });
@@ -945,11 +1095,13 @@ export default function PresupuestosInformesPage() {
         const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
         const hpPi = hydrateHorarioPorPeriodosFromSaved(pi.horarioPorPeriodos);
         const horarioPorPeriodosMerged = hpPi.length > 0 ? hpPi : hydrateHorarioPorPeriodosFromSaved(legacyHorarioPiscinaSaved);
+        const extraPi = Number(pi.extra);
         setPresupuestoCalculoPiscina({
           concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
           horas: pi.horas ?? '',
           dias: pi.dias ?? '',
           precioSinIva: precioStr,
+          extra: Number.isFinite(extraPi) && extraPi >= 0 ? extraPi : 0,
           horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
           const turns = parseHorarioString(h.horario);
           return {
@@ -965,11 +1117,13 @@ export default function PresupuestosInformesPage() {
       if (Array.isArray(p.presupuestoCalculoPiscinaRest)) {
         setPresupuestoCalculoPiscinaRest(p.presupuestoCalculoPiscinaRest.map((pi) => {
           const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
+          const extraR = Number(pi.extra);
           return {
             concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
             horas: pi.horas ?? '',
             dias: pi.dias ?? '',
             precioSinIva: precioStr,
+            extra: Number.isFinite(extraR) && extraR >= 0 ? extraR : 0,
             horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
           const turns = parseHorarioString(h.horario);
           return {
@@ -993,6 +1147,7 @@ export default function PresupuestosInformesPage() {
             horas: pi.horas ?? '',
             dias: pi.dias ?? '',
             precioSinIva: precioStr,
+            extra: 0,
             horarioPeriodos: [],
             horarioPorPeriodos: [],
           })));
@@ -1015,6 +1170,26 @@ export default function PresupuestosInformesPage() {
       if (p.presupuestoClienteCodigoPostal !== undefined) setPresupuestoClienteCodigoPostal(p.presupuestoClienteCodigoPostal || '');
       if (p.presupuestoClientePoblacion !== undefined) setPresupuestoClientePoblacion(p.presupuestoClientePoblacion || '');
       if (p.presupuestoClienteProvincia !== undefined) setPresupuestoClienteProvincia(p.presupuestoClienteProvincia || '');
+      const pctOk = (v, fallback) => {
+        const n = Math.round(Number(v));
+        if (!Number.isFinite(n)) return fallback;
+        return Math.min(100, Math.max(0, n));
+      };
+      setPresupuestoBonificacionPortalPct(
+        p.presupuestoBonificacionPortalPct !== undefined && p.presupuestoBonificacionPortalPct !== null && String(p.presupuestoBonificacionPortalPct).trim() !== ''
+          ? pctOk(p.presupuestoBonificacionPortalPct, 100)
+          : 100,
+      );
+      setPresupuestoBonificacionVecindarioPct(
+        p.presupuestoBonificacionVecindarioPct !== undefined && p.presupuestoBonificacionVecindarioPct !== null && String(p.presupuestoBonificacionVecindarioPct).trim() !== ''
+          ? pctOk(p.presupuestoBonificacionVecindarioPct, 100)
+          : 100,
+      );
+      setPresupuestoDescuentoGlobalPct(
+        p.presupuestoDescuentoGlobalPct !== undefined && p.presupuestoDescuentoGlobalPct !== null && String(p.presupuestoDescuentoGlobalPct).trim() !== ''
+          ? pctOk(p.presupuestoDescuentoGlobalPct, 0)
+          : 0,
+      );
       // Si el cliente es existente (no nuevo), cargar dirección desde API clientes para mostrarla
       const clienteId = p.presupuestoClienteId != null && p.presupuestoClienteId !== '' ? Number(p.presupuestoClienteId) : null;
       if (clienteId != null && !p.presupuestoClienteEsNuevo) {
@@ -1284,11 +1459,13 @@ export default function PresupuestosInformesPage() {
         const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
         const hpPi = hydrateHorarioPorPeriodosFromSaved(pi.horarioPorPeriodos);
         const horarioPorPeriodosMerged = hpPi.length > 0 ? hpPi : hydrateHorarioPorPeriodosFromSaved(legacyHorarioPiscinaSaved);
+        const extraPi = Number(pi.extra);
         setPresupuestoCalculoPiscina({
           concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
           horas: pi.horas ?? '',
           dias: pi.dias ?? '',
           precioSinIva: precioStr,
+          extra: Number.isFinite(extraPi) && extraPi >= 0 ? extraPi : 0,
           horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
           const turns = parseHorarioString(h.horario);
           return {
@@ -1304,11 +1481,13 @@ export default function PresupuestosInformesPage() {
       if (Array.isArray(p.presupuestoCalculoPiscinaRest)) {
         setPresupuestoCalculoPiscinaRest(p.presupuestoCalculoPiscinaRest.map((pi) => {
           const precioStr = typeof pi.precioSinIva === 'number' ? (Number.isInteger(pi.precioSinIva) ? String(pi.precioSinIva) : pi.precioSinIva.toFixed(2)) : (String(pi.precioSinIva ?? '').trim());
+          const extraR = Number(pi.extra);
           return {
             concepto: pi.concepto ?? 'Mantenimiento integral en piscina comunitaria',
             horas: pi.horas ?? '',
             dias: pi.dias ?? '',
             precioSinIva: precioStr,
+            extra: Number.isFinite(extraR) && extraR >= 0 ? extraR : 0,
             horarioPeriodos: Array.isArray(pi.horarioPeriodos) ? pi.horarioPeriodos.map((h) => {
           const turns = parseHorarioString(h.horario);
           return {
@@ -1332,6 +1511,7 @@ export default function PresupuestosInformesPage() {
             horas: pi.horas ?? '',
             dias: pi.dias ?? '',
             precioSinIva: precioStr,
+            extra: 0,
             horarioPeriodos: [],
             horarioPorPeriodos: [],
           })));
@@ -1350,6 +1530,26 @@ export default function PresupuestosInformesPage() {
       if (p.presupuestoClienteNombre !== undefined) setPresupuestoClienteNombre(p.presupuestoClienteNombre);
       if (p.presupuestoClienteEsNuevo !== undefined) setPresupuestoClienteEsNuevo(p.presupuestoClienteEsNuevo);
       if (p.presupuestoClienteNuevoNombre !== undefined) setPresupuestoClienteNuevoNombre(p.presupuestoClienteNuevoNombre);
+      const pctOkPrev = (v, fallback) => {
+        const n = Math.round(Number(v));
+        if (!Number.isFinite(n)) return fallback;
+        return Math.min(100, Math.max(0, n));
+      };
+      setPresupuestoBonificacionPortalPct(
+        p.presupuestoBonificacionPortalPct !== undefined && p.presupuestoBonificacionPortalPct !== null && String(p.presupuestoBonificacionPortalPct).trim() !== ''
+          ? pctOkPrev(p.presupuestoBonificacionPortalPct, 100)
+          : 100,
+      );
+      setPresupuestoBonificacionVecindarioPct(
+        p.presupuestoBonificacionVecindarioPct !== undefined && p.presupuestoBonificacionVecindarioPct !== null && String(p.presupuestoBonificacionVecindarioPct).trim() !== ''
+          ? pctOkPrev(p.presupuestoBonificacionVecindarioPct, 100)
+          : 100,
+      );
+      setPresupuestoDescuentoGlobalPct(
+        p.presupuestoDescuentoGlobalPct !== undefined && p.presupuestoDescuentoGlobalPct !== null && String(p.presupuestoDescuentoGlobalPct).trim() !== ''
+          ? pctOkPrev(p.presupuestoDescuentoGlobalPct, 0)
+          : 0,
+      );
       setPreviewPresupuestoNombre(item.nombre || '');
       setShowPresupuestoPreviewModal(true);
     } catch (error) {
@@ -3333,6 +3533,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       setShowNuevoPresupuestoForm(false);
                       setSelectedServiciosPresupuesto([]);
                       setPresupuestoGuardadoEditarId(null);
+                      setPresupuestoDescuentoGlobalPct(0);
                     }}
                   >
                     Volver a la lista
@@ -3387,6 +3588,42 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                           </div>
                         </div>
                       )}
+                      <div className="border-t border-red-100 pt-3 mt-2 space-y-2">
+                        <p className="text-sm font-medium text-gray-800">PDF — Bonificación plataforma (0–100 %)</p>
+                        <p className="text-xs text-gray-500">100 % = acceso bonificado al 100 % (sin coste) en el texto legal del PDF. Otro valor = se muestra el % y el importe mensual resultante (+ IVA).</p>
+                        <div className="flex flex-wrap gap-4 items-end">
+                          <label className="text-xs text-gray-600 flex flex-col gap-1" htmlFor="bonif-portal-pct">
+                            Portal empresarial
+                            <Input
+                              id="bonif-portal-pct"
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={presupuestoBonificacionPortalPct}
+                              onChange={(e) => {
+                                const n = Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0)));
+                                setPresupuestoBonificacionPortalPct(Number.isFinite(n) ? n : 100);
+                              }}
+                              className="w-24 border-gray-300 bg-white text-sm"
+                            />
+                          </label>
+                          <label className="text-xs text-gray-600 flex flex-col gap-1" htmlFor="bonif-vecindario-pct">
+                            App Vecindario
+                            <Input
+                              id="bonif-vecindario-pct"
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={presupuestoBonificacionVecindarioPct}
+                              onChange={(e) => {
+                                const n = Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0)));
+                                setPresupuestoBonificacionVecindarioPct(Number.isFinite(n) ? n : 100);
+                              }}
+                              className="w-24 border-gray-300 bg-white text-sm"
+                            />
+                          </label>
+                        </div>
+                      </div>
                       <p className="text-sm text-gray-600">Presupuesto para:</p>
                       <div className="flex flex-wrap items-center gap-2">
                         {selectedServiciosPresupuesto.map((s, idx) => {
@@ -5411,6 +5648,71 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     </div>
                   )}
 
+                  {/* Extra piscina verano (€/mes) — junto a invernal y recuperación; misma lógica que auxiliares/limpieza en oferta */}
+                  {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') && (
+                    <div className="p-5 bg-sky-50/90 border border-sky-200 rounded-lg shadow-sm mt-4 space-y-3">
+                      <p className="text-sm font-semibold text-sky-900">Mantenimiento piscina — extra en oferta</p>
+                      <p className="text-xs text-gray-600">
+                        Importe mensual sin IVA que se <strong>suma</strong> a la línea de temporada de verano en OFERTA ECONOMICA (mismo criterio que «Extra» en auxiliares y limpieza).
+                      </p>
+                      {presupuestoCalculoPiscinaAll.map((calculo, variantIndex) => {
+                        const setPiscinaCalculoAtExtra = (updater) => {
+                          if (variantIndex === 0) setPresupuestoCalculoPiscina((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+                          else setPresupuestoCalculoPiscinaRest((prev) => prev.map((c, j) => (j === variantIndex - 1 ? (typeof updater === 'function' ? updater(c) : updater) : c)));
+                        };
+                        return (
+                          <div
+                            key={`piscina-extra-bloque-${variantIndex}`}
+                            className="p-4 bg-white border border-sky-200 rounded-lg flex flex-wrap items-center justify-between gap-3"
+                          >
+                            <p className="text-sm font-medium text-gray-800">
+                              Extra (€/mes, se suma a totales en oferta económica)
+                              {presupuestoCalculoPiscinaAll.length > 1 && (
+                                <span className="ml-1 font-normal text-sky-700">— variante {variantIndex + 1}</span>
+                              )}
+                            </p>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={calculo.extra ?? 0}
+                              onChange={(e) => setPiscinaCalculoAtExtra((prev) => ({ ...prev, extra: +e.target.value || 0 }))}
+                              className="w-32 border-sky-200"
+                              aria-label={presupuestoCalculoPiscinaAll.length > 1 ? `Extra piscina variante ${variantIndex + 1}` : 'Extra piscina euros por mes'}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {selectedServiciosPresupuesto.length > 0 && (
+                    <div className="p-4 bg-white border border-amber-200 rounded-lg shadow-sm mt-4">
+                      <p className="text-sm font-medium text-gray-800 mb-2">Descuento por fidelidad sobre la oferta económica</p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label htmlFor="presupuesto-descuento-global-pct" className="text-sm text-gray-700">
+                          Porcentaje (0–100 %, sobre la suma de líneas sin IVA antes del descuento):
+                        </label>
+                        <Input
+                          id="presupuesto-descuento-global-pct"
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={presupuestoDescuentoGlobalPct}
+                          onChange={(e) => {
+                            const v = Math.round(Number(e.target.value));
+                            setPresupuestoDescuentoGlobalPct(Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0);
+                          }}
+                          className="w-24"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Se añade una línea «Descuento por fidelidad» en OFERTA ECONOMICA y en el PDF guardado; en la firma («servicios contratados») se usan los mismos importes del presupuesto.
+                      </p>
+                    </div>
+                  )}
+
                   {/* OFERTA ECONOMICA — tabla con todos los servicios seleccionados; solo 2 columnas (DESCRIPCION, MENSUALIDAD) si todo es piscina */}
                   {selectedServiciosPresupuesto.length > 0 && (() => {
                     const ofertaSoloPiscina = selectedServiciosPresupuesto.every((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina');
@@ -5428,111 +5730,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                             </tr>
                           </thead>
                           <tbody>
-                            {selectedServiciosPresupuesto.map((s, idx) => {
-                              const tipo = derivarTipoDesdeServicio(s.nombre);
-                              const variantIndexAuxiliares = tipo === 'auxiliares' ? selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'auxiliares').length : 0;
-                              const fmt = (n) => (n ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                              let descripcion = servicioNombreTexto(s.nombre);
-                              let mensualidadSinIva = 0, mensualidadConIva = 0, anualidadSinIva = 0, anualidadConIva = 0;
-                              if (tipo === 'auxiliares') {
-                                const calcAux = presupuestoCalculoAuxiliaresAll[variantIndexAuxiliares];
-                                const resAux = presupuestoResultadoAuxiliares[variantIndexAuxiliares];
-                                const extraAux = (calcAux && calcAux.extra) ?? 0; // €/mes
-                                descripcion = descripcionAuxiliaresOfertaLinea(servicioNombreTexto(s.nombre), calcAux);
-                                mensualidadSinIva = (resAux ? resAux.D52 : 0) + extraAux;
-                                anualidadSinIva = (resAux ? resAux.precioFinalACliente : 0) + extraAux * 12;
-                                mensualidadConIva = mensualidadSinIva * 1.21;
-                                anualidadConIva = mensualidadSinIva * 1.21;
-                              } else if (tipo === 'limpieza') {
-                                const variantIndexLimpieza = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'limpieza').length;
-                                const resLimp = presupuestoResultadoLimpiezaAll[variantIndexLimpieza];
-                                const calcLimp = presupuestoCalculoLimpiezaAll[variantIndexLimpieza];
-                                const extraLimp = (calcLimp && calcLimp.extra) ?? 0; // €/mes
-                                descripcion = `Limpieza - ${(resLimp && resLimp.descripcionLimpieza) || ''}`;
-                                mensualidadSinIva = (resLimp ? resLimp.D48 : 0) + extraLimp;
-                                anualidadSinIva = (resLimp ? resLimp.D48 : 0) * 12 + extraLimp * 12;
-                                mensualidadConIva = mensualidadSinIva * 1.21;
-                                anualidadConIva = anualidadSinIva * 1.21;
-                              } else if (tipo === 'jardineria') {
-                                const variantIndexJardineria = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'jardineria').length;
-                                const calcJard = presupuestoCalculoJardineriaAll[variantIndexJardineria];
-                                const precioSinIvaMes = parseFloat(calcJard?.precioSinIva) || 0; // €/mes
-                                descripcion = calcJard?.concepto ? `Jardinería - ${calcJard.concepto}` : 'Jardinería';
-                                mensualidadSinIva = precioSinIvaMes;
-                                mensualidadConIva = precioSinIvaMes * 1.21;
-                                anualidadSinIva = precioSinIvaMes * 12;
-                                anualidadConIva = precioSinIvaMes * 12 * 1.21;
-                              } else if (tipo === 'cubos') {
-                                const variantIndexCubos = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'cubos').length;
-                                const calcCubos = presupuestoCalculoCubosAll[variantIndexCubos];
-                                const precioSinIvaMes = parseFloat(calcCubos?.precioSinIva) || 0;
-                                descripcion = calcCubos?.concepto ? `Gestión cubos - ${calcCubos.concepto}` : 'Gestión cubos de basura';
-                                mensualidadSinIva = precioSinIvaMes;
-                                mensualidadConIva = precioSinIvaMes * 1.21;
-                                anualidadSinIva = precioSinIvaMes * 12;
-                                anualidadConIva = precioSinIvaMes * 12 * 1.21;
-                              } else if (tipo === 'piscina') {
-                                const variantIndexPiscina = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length;
-                                const calcPiscina = presupuestoCalculoPiscinaAll[variantIndexPiscina];
-                                const precioSinIvaMes = parsePrecioEurosSpanish(calcPiscina?.precioSinIva);
-                                descripcion = `Piscina - ${descripcionPiscina(calcPiscina)}`;
-                                mensualidadSinIva = precioSinIvaMes;
-                                mensualidadConIva = precioSinIvaMes * 1.21;
-                                anualidadSinIva = precioSinIvaMes * 12;
-                                anualidadConIva = precioSinIvaMes * 12 * 1.21;
-                              }
-                              return (
-                                <tr key={`${s.id}-${idx}`} className="border-b border-gray-200">
-                                  <td className="border border-gray-300 px-3 py-2 text-gray-800">{descripcion}</td>
-                                  <td className="border border-gray-300 px-3 py-2">
-                                    <div>{fmt(mensualidadSinIva)} €+IVA</div>
-                                    <div className="text-gray-600">{fmt(mensualidadConIva)} € IVA incluido</div>
-                                  </td>
-                                  {!ofertaSoloPiscina && (
-                                    <td className="border border-gray-300 px-3 py-2">
-                                      <div>{fmt(anualidadSinIva)} €+IVA</div>
-                                      <div className="text-gray-600">{fmt(anualidadConIva)} € IVA incluido</div>
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })}
-                            {selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina') &&
-                              (() => {
-                                const mi = mantenimientoInvernalPiscina;
-                                const pCon = parsePrecioEurosSpanish(mi.precioConLona ?? mi.precio);
-                                const pSin = parsePrecioEurosSpanish(mi.precioSinLona ?? mi.precio);
-                                const filasInv = [];
-                                if (pCon > 0) {
-                                  filasInv.push({
-                                    key: 'inv-con',
-                                    desc: 'Piscina - Mantenimiento invernal instalaciones y agua (con lona)',
-                                    p: pCon,
-                                  });
-                                }
-                                if (pSin > 0) {
-                                  filasInv.push({
-                                    key: 'inv-sin',
-                                    desc: 'Piscina - Mantenimiento invernal instalaciones y agua (sin lona)',
-                                    p: pSin,
-                                  });
-                                }
-                                return filasInv.map((row) => (
-                                  <tr key={row.key} className="border-b border-gray-200">
-                                    <td className="border border-gray-300 px-3 py-2 text-gray-800">{row.desc}</td>
-                                    <td className="border border-gray-300 px-3 py-2">
-                                      <div>{row.p.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
-                                      <div className="text-gray-600">{(row.p * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
-                                    </td>
-                                    {!ofertaSoloPiscina && (
-                                      <td className="border border-gray-300 px-3 py-2">
-                                        <div>{row.p.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €+IVA</div>
-                                        <div className="text-gray-600">{(row.p * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € IVA incluido</div>
-                                      </td>
-                                    )}
-                                  </tr>
-                                ));
-                              })()}
+                            {renderOfertaEconomicaTbody(ofertaSoloPiscina)}
                           </tbody>
                         </table>
                       </div>
@@ -5559,6 +5757,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                               setPresupuestoGuardadoEditarId(null);
                               setShowNuevoPresupuestoForm(false);
                               setSelectedServiciosPresupuesto([]);
+                              setPresupuestoDescuentoGlobalPct(0);
                             }}
                             disabled={savingPresupuesto}
                             className="flex items-center gap-2"
@@ -5657,75 +5856,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedServiciosPresupuesto.map((s, idx) => {
-                        const tipo = derivarTipoDesdeServicio(s.nombre);
-                        const variantIndexAuxiliares = tipo === 'auxiliares' ? selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'auxiliares').length : 0;
-                        const fmt = (n) => (n ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        let descripcion = servicioNombreTexto(s.nombre);
-                        let mensualidadSinIva = 0, mensualidadConIva = 0, anualidadSinIva = 0, anualidadConIva = 0;
-                        if (tipo === 'auxiliares') {
-                          const calcAux = presupuestoCalculoAuxiliaresAll[variantIndexAuxiliares];
-                          const resAux = presupuestoResultadoAuxiliares[variantIndexAuxiliares];
-                          const extraAux = (calcAux && calcAux.extra) ?? 0;
-                          descripcion = descripcionAuxiliaresOfertaLinea(servicioNombreTexto(s.nombre), calcAux);
-                          mensualidadSinIva = (resAux ? resAux.D52 : 0) + extraAux;
-                          anualidadSinIva = (resAux ? resAux.precioFinalACliente : 0) + extraAux * 12;
-                          mensualidadConIva = mensualidadSinIva * 1.21;
-                          anualidadConIva = mensualidadSinIva * 1.21;
-                        } else if (tipo === 'limpieza') {
-                          const variantIndexLimpieza = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'limpieza').length;
-                          const resLimp = presupuestoResultadoLimpiezaAll[variantIndexLimpieza];
-                          const calcLimp = presupuestoCalculoLimpiezaAll[variantIndexLimpieza];
-                          const extraLimp = (calcLimp && calcLimp.extra) ?? 0;
-                          descripcion = `Limpieza - ${(resLimp && resLimp.descripcionLimpieza) || ''}`;
-                          mensualidadSinIva = (resLimp ? resLimp.D48 : 0) + extraLimp;
-                          anualidadSinIva = (resLimp ? resLimp.D48 : 0) * 12 + extraLimp * 12;
-                          mensualidadConIva = mensualidadSinIva * 1.21;
-                          anualidadConIva = anualidadSinIva * 1.21;
-                        } else if (tipo === 'jardineria') {
-                          const variantIndexJardineria = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'jardineria').length;
-                          const calcJard = presupuestoCalculoJardineriaAll[variantIndexJardineria];
-                          const precioSinIvaMes = parseFloat(calcJard?.precioSinIva) || 0;
-                          descripcion = calcJard?.concepto ? `Jardinería - ${calcJard.concepto}` : 'Jardinería';
-                          mensualidadSinIva = precioSinIvaMes;
-                          mensualidadConIva = precioSinIvaMes * 1.21;
-                          anualidadSinIva = precioSinIvaMes * 12;
-                          anualidadConIva = precioSinIvaMes * 12 * 1.21;
-                        } else if (tipo === 'cubos') {
-                          const variantIndexCubos = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'cubos').length;
-                          const calcCubos = presupuestoCalculoCubosAll[variantIndexCubos];
-                          const precioSinIvaMes = parseFloat(calcCubos?.precioSinIva) || 0;
-                          descripcion = calcCubos?.concepto ? `Gestión cubos - ${calcCubos.concepto}` : 'Gestión cubos de basura';
-                          mensualidadSinIva = precioSinIvaMes;
-                          mensualidadConIva = precioSinIvaMes * 1.21;
-                          anualidadSinIva = precioSinIvaMes * 12;
-                          anualidadConIva = precioSinIvaMes * 12 * 1.21;
-                        } else if (tipo === 'piscina') {
-                          const variantIndexPiscina = selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length;
-                          const calcPiscina = presupuestoCalculoPiscinaAll[variantIndexPiscina];
-                          const precioSinIvaMes = parsePrecioEurosSpanish(calcPiscina?.precioSinIva);
-                          descripcion = `Piscina - ${descripcionPiscina(calcPiscina)}`;
-                          mensualidadSinIva = precioSinIvaMes;
-                          mensualidadConIva = precioSinIvaMes * 1.21;
-                          anualidadSinIva = precioSinIvaMes * 12;
-                          anualidadConIva = precioSinIvaMes * 12 * 1.21;
-                        }
-                        return (
-                          <tr key={`${s.id}-${idx}`} className="border-b border-gray-200">
-                            <td className="border border-gray-300 px-3 py-2 text-gray-800">{descripcion}</td>
-                            <td className="border border-gray-300 px-3 py-2">
-                              <div>{fmt(mensualidadSinIva)} €+IVA</div>
-                              <div className="text-gray-600">{fmt(mensualidadConIva)} € IVA incluido</div>
-                            </td>
-                            {!ofertaSoloPiscina && (
-                              <td className="border border-gray-300 px-3 py-2">
-                                <div>{fmt(anualidadSinIva)} €+IVA</div>
-                                <div className="text-gray-600">{fmt(anualidadConIva)} € IVA incluido</div>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })}
+                      {renderOfertaEconomicaTbody(ofertaSoloPiscina)}
                     </tbody>
                   </table>
                 </div>
@@ -6080,6 +6211,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                               horas: '',
                               dias: '',
                               precioSinIva: '',
+                              extra: 0,
                               horarioPeriodos: [],
                               horarioPorPeriodos: [],
                             },

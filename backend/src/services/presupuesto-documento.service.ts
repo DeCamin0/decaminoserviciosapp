@@ -636,6 +636,156 @@ function derivarTipoDesdeServicio(
   return 'auxiliares';
 }
 
+function esFilaDescuentoFidelidadOfertaPdf(descripcion: string): boolean {
+  return String(descripcion || '').startsWith('Descuento por fidelidad');
+}
+
+function redondeOfertaImportePdf(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Separador entre precio tachado y precio final (ASCII: Helvetica WinAnsi no
+ * dibuja bien U+2192 y en algunos visores aparece basura tipo !' encima del número).
+ */
+const ARROW_OFERTA_PDF = ' -> ';
+/** Espacio horizontal entre segmentos (pt). */
+const GAP_X_OFERTA_PDF = 3;
+
+type PdfDocOferta = InstanceType<typeof PDFDocument>;
+
+/** Ajusta tamaños de fuente si la línea no cabe en el ancho de celda. */
+function encajarFuentesCeldaPrecioDescuentoPdf(
+  doc: PdfDocOferta,
+  maxW: number,
+  s1a: string,
+  s1n: string,
+  s2a: string,
+  s2n: string,
+): { fs1: number; fs2: number } {
+  const inner = Math.max(32, Math.min(Number(maxW) || 0, 800));
+  let fs1 = 9;
+  let fs2 = 8;
+  for (let i = 0; i < 20; i++) {
+    doc.font('Helvetica').fontSize(fs1);
+    doc.font('Helvetica-Bold').fontSize(fs1);
+    const w1n = doc.widthOfString(s1n);
+    doc.font('Helvetica').fontSize(fs1);
+    const w1 =
+      doc.widthOfString(s1a) +
+      GAP_X_OFERTA_PDF * 2 +
+      doc.widthOfString(ARROW_OFERTA_PDF) +
+      w1n;
+    doc.font('Helvetica').fontSize(fs2);
+    doc.font('Helvetica-Bold').fontSize(fs2);
+    const w2n = doc.widthOfString(s2n);
+    doc.font('Helvetica').fontSize(fs2);
+    const w2 =
+      doc.widthOfString(s2a) +
+      GAP_X_OFERTA_PDF * 2 +
+      doc.widthOfString(ARROW_OFERTA_PDF) +
+      w2n;
+    if (w1 <= inner && w2 <= inner) return { fs1, fs2 };
+    fs1 = Math.max(5.5, fs1 - 0.5);
+    fs2 = Math.max(5, fs2 - 0.5);
+  }
+  return { fs1, fs2 };
+}
+
+function alturaCeldaPreciosDescuentoOfertaPdf(
+  doc: PdfDocOferta,
+  fs1: number,
+  fs2: number,
+  gapVert = 4,
+): number {
+  doc.save();
+  const f1 = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : 9;
+  const f2 = Number.isFinite(fs2) && fs2 >= 5 ? fs2 : 8;
+  doc.font('Helvetica').fontSize(f1);
+  const lh1 = doc.currentLineHeight(true) || f1 * 1.2;
+  doc.font('Helvetica').fontSize(f2);
+  const lh2 = doc.currentLineHeight(true) || f2 * 1.2;
+  doc.restore();
+  const topPad = lh1 * 0.92;
+  return topPad + lh1 + gapVert + lh2 + 4;
+}
+
+/**
+ * Dibuja mensualidad/anualidad: precio anterior (gris) -> precio final (negrita).
+ * Sin línea tachada en PDF (evita artefactos y el usuario prefiere sin rayas).
+ */
+function pintarCeldaPreciosDescuentoOfertaPdf(
+  doc: PdfDocOferta,
+  x: number,
+  y: number,
+  maxW: number,
+  fmtNum: (n: number) => string,
+  antesSin: number,
+  netoSin: number,
+  antesCon: number,
+  netoCon: number,
+): void {
+  const x0 = Number.isFinite(x) ? x : MARGIN;
+  const y0 = Number.isFinite(y) ? y : 0;
+  const innerW = Math.max(32, Math.min(Number(maxW) || 0, 800));
+  const aSin = Number.isFinite(Number(antesSin)) ? Number(antesSin) : 0;
+  const nSin = Number.isFinite(Number(netoSin)) ? Number(netoSin) : 0;
+  const aCon = Number.isFinite(Number(antesCon)) ? Number(antesCon) : 0;
+  const nCon = Number.isFinite(Number(netoCon)) ? Number(netoCon) : 0;
+  const s1a = `${fmtNum(aSin)}€+IVA`;
+  const s1n = `${fmtNum(nSin)}€+IVA`;
+  const s2a = `${fmtNum(aCon)}€`;
+  const s2n = `${fmtNum(nCon)}€ IVA incluido`;
+  const gap = 4;
+  const { fs1, fs2 } = encajarFuentesCeldaPrecioDescuentoPdf(
+    doc,
+    innerW,
+    s1a,
+    s1n,
+    s2a,
+    s2n,
+  );
+  const fs1s = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : 9;
+  const fs2s = Number.isFinite(fs2) && fs2 >= 5 ? fs2 : 8;
+
+  doc.save();
+  doc.font('Helvetica').fontSize(fs1s);
+  const lh1 = doc.currentLineHeight(true) || fs1s * 1.2;
+  doc.restore();
+
+  const drawPrecioAnteriorFlechaNeto = (
+    antesStr: string,
+    netoStr: string,
+    fs: number,
+    netoColor: string,
+    yBaseline: number,
+  ): void => {
+    let cx = x0;
+    doc.font('Helvetica').fontSize(fs).fillColor('#6b7280');
+    const wAntes = doc.widthOfString(antesStr);
+    doc.text(antesStr, cx, yBaseline, { lineBreak: false });
+    cx += wAntes + GAP_X_OFERTA_PDF;
+    doc.font('Helvetica').fontSize(fs).fillColor('#6b7280');
+    doc.text(ARROW_OFERTA_PDF, cx, yBaseline, { lineBreak: false });
+    cx += doc.widthOfString(ARROW_OFERTA_PDF) + GAP_X_OFERTA_PDF;
+    doc.font('Helvetica-Bold').fontSize(fs).fillColor(netoColor);
+    doc.text(netoStr, cx, yBaseline, { lineBreak: false });
+  };
+
+  const yBase1 = y0 + lh1 * 0.92;
+  const yBase2 = yBase1 + lh1 + gap;
+  if (!Number.isFinite(yBase1) || !Number.isFinite(yBase2)) {
+    doc.font('Helvetica').fontSize(9).fillColor('#1a1a1a');
+    doc.text(`${s1a} -> ${s1n}\n${s2a} -> ${s2n}`, x0, y0, {
+      width: innerW,
+      lineGap: 2,
+    });
+    return;
+  }
+  drawPrecioAnteriorFlechaNeto(s1a, s1n, fs1s, '#111827', yBase1);
+  drawPrecioAnteriorFlechaNeto(s2a, s2n, fs2s, '#065f46', yBase2);
+}
+
 /** Calendario en texto para auxiliares (alineado con PresupuestosInformesPage.jsx). */
 function textoCalendarioAuxiliaresOferta(diasPorSemana: unknown): string {
   const d = Math.min(7, Math.max(0, Number(diasPorSemana) || 0));
@@ -671,16 +821,55 @@ function bulletLineaAuxiliaresOferta(
   return `${h}h/día ${diasTxt}${sufijoFestivos}`;
 }
 
-/** Misma línea resumen que en el bucle PDF “servicios ofertados” para limpieza. */
-function textoBulletLimpiezaPdf(
-  calc: Record<string, unknown> | undefined,
+/** Bonificación % en PDF apps (0–100). Vacío → 100 (incluido sin coste). */
+function clampBonificacionPct(v: unknown): number {
+  if (v === undefined || v === null || v === '') return 100;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return 100;
+  return Math.min(100, Math.max(0, n));
+}
+
+function formatEuroDosDecEs(n: number): string {
+  const x = Math.round(n * 100) / 100;
+  return x.toFixed(2).replace('.', ',');
+}
+
+/**
+ * Párrafo tras la línea «Precio de referencia: X €/mes (+ IVA)» (página unificada portal + RR.HH.).
+ */
+function textoBonificacionPlataformaUnificada(
+  precioLista: number,
+  pctBonificacion: number,
 ): string {
-  const n = Number(calc?.numOperarias ?? 2);
-  const h = Number(calc?.horasPorDiaPorOperaria ?? 4);
-  const dias = Number(calc?.diasLaborablesSemana ?? 5);
-  const diasStr =
-    dias === 5 ? 'de lunes a viernes' : `${dias} días/semana`;
-  return `${n} personas, ${h} horas al día cada una, ${diasStr} - excepto festivos`;
+  const pct = clampBonificacionPct(pctBonificacion);
+  if (pct >= 100) {
+    return 'Incluido sin coste adicional dentro del servicio contratado con la presente propuesta (bonificación del 100 %).';
+  }
+  if (pct <= 0) {
+    return 'La plataforma digital se factura según la tarifa de referencia indicada, sin bonificación en este presupuesto, salvo acuerdo comercial distinto conste por escrito.';
+  }
+  const neto = (precioLista * (100 - pct)) / 100;
+  const pn = formatEuroDosDecEs(neto);
+  return `Con la presente propuesta se aplica una bonificación del ${pct} % sobre el precio de referencia, quedando ${pn} €/mes (+ IVA) para la comunidad.`;
+}
+
+/**
+ * Párrafo tras «Precio de referencia: X €/mes (+ IVA)» (página Vecindario).
+ */
+function textoBonificacionVecindarioUnificada(
+  precioLista: number,
+  pctBonificacion: number,
+): string {
+  const pct = clampBonificacionPct(pctBonificacion);
+  if (pct >= 100) {
+    return 'Incluido sin coste adicional dentro del servicio contratado para la comunidad.';
+  }
+  if (pct <= 0) {
+    return 'La aplicación Vecindario se factura según la tarifa de referencia indicada, sin bonificación en este presupuesto, salvo acuerdo comercial distinto conste por escrito.';
+  }
+  const neto = (precioLista * (100 - pct)) / 100;
+  const pn = formatEuroDosDecEs(neto);
+  return `Con la presente propuesta se aplica una bonificación del ${pct} % sobre el precio de referencia, quedando ${pn} €/mes (+ IVA) para la comunidad.`;
 }
 
 /** Precio en formato español (miles con punto, decimal con coma), alineado con el front. */
@@ -701,7 +890,7 @@ function isOfertaRowInvernalPiscina(descripcion: string): boolean {
 }
 
 /**
- * En 3.1 OFERTA ECONÓMICA: el payload guardado puede traer una sola fila invernal (antigua);
+ * En 3.1 Propuesta económica: el payload guardado puede traer una sola fila invernal (antigua);
  * reconstruimos siempre con lona + sin lona desde `mantenimientoInvernalPiscina` cuando hay precios.
  */
 export function expandOfertaInvernalPiscinaDesdePayload(
@@ -865,6 +1054,371 @@ export class PresupuestoDocumentoService {
   private getPresentacionParas(): string[] {
     const key = this.getPresupuestoKey();
     return key === 'hera' ? [...PRESENTACION_HERA] : [...PRESENTACION_DECAMINO];
+  }
+
+  private getPresupuestoDigitalPdfConfig(payload: Record<string, unknown>) {
+    const cs = this.configService;
+    const p = payload;
+    const key = this.getPresupuestoKey();
+    const defaultAppOrigin =
+      key === 'hera'
+        ? 'https://app.herafs.com'
+        : 'https://app.decaminoservicios.com';
+    /** App vecinos / portal comunidad (PDF): distinto del app principal salvo override. */
+    const defaultVecindarioOrigin =
+      key === 'hera'
+        ? 'https://vecindario.herafs.com'
+        : 'https://vecindario.decaminoservicios.com';
+    const defaultPortalGestores = `${defaultAppOrigin.replace(/\/$/, '')}/portal/gestores`;
+
+    const frontendEnv = String(cs.get<string>('FRONTEND_APP_URL') ?? '').trim();
+    const frontendIsProduction =
+      frontendEnv &&
+      /^https:\/\//i.test(frontendEnv) &&
+      !/localhost|127\.0\.0\.1/i.test(frontendEnv);
+
+    const numOr = (v: unknown, envKey: string, def: number) => {
+      const x = Number(v);
+      if (Number.isFinite(x) && x > 0) return x;
+      const e = Number(cs.get<string>(envKey));
+      if (Number.isFinite(e) && e > 0) return e;
+      return def;
+    };
+    const precioPortal = numOr(
+      p.presupuestoPrecioPortalMensual,
+      'PRESUPUESTO_PRECIO_PORTAL_MENSUAL',
+      25,
+    );
+    const precioVecindario = numOr(
+      p.presupuestoPrecioVecindarioMensual,
+      'PRESUPUESTO_PRECIO_VECINDARIO_MENSUAL',
+      30,
+    );
+
+    const urlPortalGestores =
+      String(p.presupuestoUrlPortalAdmin ?? '').trim() ||
+      String(cs.get<string>('PRESUPUESTO_URL_PORTAL_ADMIN') ?? '').trim() ||
+      defaultPortalGestores;
+
+    const urlAplicacion =
+      String(p.presupuestoUrlAppPrincipal ?? '').trim() ||
+      String(cs.get<string>('PRESUPUESTO_URL_APP') ?? '').trim() ||
+      String(cs.get<string>('PRESUPUESTO_URL_APP_RRHH') ?? '').trim() ||
+      (frontendIsProduction
+        ? frontendEnv.replace(/\/$/, '')
+        : defaultAppOrigin);
+
+    const urlVecindario =
+      String(p.presupuestoUrlVecindario ?? '').trim() ||
+      String(cs.get<string>('PRESUPUESTO_URL_VECINDARIO') ?? '').trim() ||
+      defaultVecindarioOrigin;
+
+    const pctPortal = clampBonificacionPct(p.presupuestoBonificacionPortalPct);
+    const pctVecindario = clampBonificacionPct(
+      p.presupuestoBonificacionVecindarioPct,
+    );
+    return {
+      precioPortal,
+      precioVecindario,
+      urlPortalGestores,
+      urlAplicacion,
+      urlVecindario,
+      pctPortal,
+      pctVecindario,
+    };
+  }
+
+  /**
+   * Dos páginas tras 1.1 Presentación: portal/RRHH y Vecindario (enlaces, precios de referencia, bonificación desde payload).
+   */
+  private drawPresupuestoPlataformaDigitalAnexo(
+    doc: InstanceType<typeof PDFDocument>,
+    payload: Record<string, unknown>,
+    logoPath: string | null,
+  ): void {
+    const brandRed = (this.getCompany() as { brandRed?: string }).brandRed;
+    const stroke = brandRed || '#c8102e';
+    const cfg = this.getPresupuestoDigitalPdfConfig(payload);
+    const isHera = this.getPresupuestoKey() === 'hera';
+    const empresaLargo = isHera
+      ? 'HERA Facility'
+      : 'De Camino Servicios Auxiliares S.L.';
+    const legalFooter = this.getCompany().legalRegistryText;
+
+    const drawWatermarkHeader = (titulo: string): number => {
+      if (logoPath) {
+        try {
+          doc.opacity(0.1);
+          doc.image(logoPath, (PAGE_WIDTH - 400) / 2, (PAGE_HEIGHT - 400) / 2, {
+            width: 400,
+            height: 400,
+          });
+          doc.opacity(1);
+          doc.image(logoPath, MARGIN, 40, { width: 56, height: 56 });
+        } catch {
+          /* skip */
+        }
+      }
+      const titleY = 100;
+      const titleW = PAGE_WIDTH - MARGIN * 2;
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(22);
+      const titleH = doc.heightOfString(titulo, {
+        width: titleW,
+        align: 'center',
+      });
+      doc.text(titulo, MARGIN, titleY, {
+        width: titleW,
+        align: 'center',
+      });
+      let y = titleY + titleH + 14;
+      const lineW = titleW * 0.72;
+      doc.strokeColor(stroke).lineWidth(3);
+      doc
+        .moveTo((PAGE_WIDTH - lineW) / 2, y)
+        .lineTo((PAGE_WIDTH - lineW) / 2 + lineW, y)
+        .stroke();
+      y += 22;
+      return y;
+    };
+
+    const contentW = 400;
+    const contentX = (PAGE_WIDTH - contentW) / 2;
+
+    const addFooter = () => {
+      doc.fontSize(7).fillColor('#333333').font('Helvetica');
+      doc.text(legalFooter, MARGIN, FOOTER_Y, {
+        width: PAGE_WIDTH - MARGIN * 2,
+        align: 'center',
+        height: PAGE_HEIGHT - FOOTER_Y - 12,
+        ellipsis: true,
+      });
+    };
+
+    const addPara = (text: string, y: number, size = 10): number => {
+      doc.fillColor('#1a1a1a').font('Helvetica').fontSize(size);
+      doc.text(text, contentX, y, { width: contentW, align: 'justify' });
+      return y + doc.heightOfString(text, { width: contentW }) + 14;
+    };
+
+    const escapeRePdf = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    /** Párrafo justificado con términos en negrita (p. ej. razón social o «Vecindario»). */
+    const addParaBoldPhrases = (
+      yy: number,
+      text: string,
+      phrases: string[],
+      size = 10,
+    ): number => {
+      const cleaned = phrases.filter((x) => String(x || '').trim().length > 0);
+      if (!cleaned.length) {
+        return addPara(text, yy, size);
+      }
+      const sorted = [...cleaned].sort((a, b) => b.length - a.length);
+      const rx = new RegExp(`(${sorted.map(escapeRePdf).join('|')})`, 'gi');
+      const parts = text.split(rx).filter((p) => p.length > 0);
+      let first = true;
+      doc.fontSize(size);
+      for (let i = 0; i < parts.length; i++) {
+        const rawPart = parts[i];
+        const isBold = sorted.some(
+          (t) => rawPart.trim().toLowerCase() === t.toLowerCase(),
+        );
+        let part = rawPart;
+        if (i > 0) {
+          part = part.replace(/^\s+/, '');
+          if (!part.length) continue;
+        }
+        const isLast = i === parts.length - 1;
+        /* PDFKit elimina espacios al inicio del siguiente trozo con continued:true → «S.L.dispone», «Vecindarioes».
+           Forzamos separación con un espacio normal al final de cada trozo que no sea el último (no basta \u00A0 al inicio del siguiente). */
+        let out = part;
+        if (!isLast && out.length > 0 && !/\s$/.test(out)) {
+          out = `${out} `;
+        }
+        doc.fillColor('#1a1a1a');
+        doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica');
+        const opt = {
+          width: contentW,
+          align: 'justify' as const,
+          continued: !isLast,
+        };
+        if (first) {
+          doc.text(out, contentX, yy, opt);
+          first = false;
+        } else {
+          doc.text(out, opt);
+        }
+      }
+      return doc.y + 12;
+    };
+
+    const addLinkLine = (
+      label: string,
+      url: string,
+      yy: number,
+      msgSinUrl?: string,
+    ): number => {
+      let z = yy;
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
+      doc.text(`${label}:`, contentX, z, { width: contentW });
+      z += 16;
+      if (url && /^https?:\/\//i.test(url)) {
+        doc.fillColor('#003366').font('Helvetica').fontSize(10);
+        doc.text(url, contentX, z, {
+          width: contentW,
+          link: url,
+          underline: true,
+        });
+        z += doc.heightOfString(url, { width: contentW }) + 12;
+      } else {
+        doc.fillColor('#666666').font('Helvetica').fontSize(10);
+        const msg =
+          msgSinUrl?.trim() ||
+          '(Enlace no configurado: defina URL en el presupuesto o en el servidor.)';
+        doc.text(msg, contentX, z, { width: contentW });
+        z += doc.heightOfString(msg, { width: contentW }) + 12;
+      }
+      return z;
+    };
+
+    const addSubheading = (title: string, yy: number): number => {
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(11);
+      doc.text(title, contentX, yy, { width: contentW, align: 'left' });
+      return yy + doc.heightOfString(title, { width: contentW }) + 8;
+    };
+
+    const addBullets = (lines: string[], yy: number): number => {
+      let z = yy;
+      doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
+      for (const line of lines) {
+        const t = `• ${line}`;
+        doc.text(t, contentX + 10, z, { width: contentW - 10, align: 'left' });
+        z += doc.heightOfString(t, { width: contentW - 10 }) + 4;
+      }
+      return z + 10;
+    };
+
+    const addPrecioPlataformaYBonificacion = (yy: number): number => {
+      let z = yy;
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
+      const lineaPrecio = `Precio de referencia: ${formatEuroDosDecEs(cfg.precioPortal)} €/mes (+ IVA)`;
+      doc.text(lineaPrecio, contentX, z, { width: contentW, align: 'left' });
+      z += doc.heightOfString(lineaPrecio, { width: contentW }) + 8;
+      doc.font('Helvetica').fontSize(10);
+      const cond = textoBonificacionPlataformaUnificada(
+        cfg.precioPortal,
+        cfg.pctPortal,
+      );
+      doc.text(cond, contentX, z, { width: contentW, align: 'justify' });
+      return z + doc.heightOfString(cond, { width: contentW }) + 14;
+    };
+
+    const addPrecioVecindarioYBonificacion = (yy: number): number => {
+      let z = yy;
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
+      const lineaPrecio = `Precio de referencia: ${formatEuroDosDecEs(cfg.precioVecindario)} €/mes (+ IVA)`;
+      doc.text(lineaPrecio, contentX, z, { width: contentW, align: 'left' });
+      z += doc.heightOfString(lineaPrecio, { width: contentW }) + 8;
+      doc.font('Helvetica').fontSize(10);
+      const cond = textoBonificacionVecindarioUnificada(
+        cfg.precioVecindario,
+        cfg.pctVecindario,
+      );
+      doc.text(cond, contentX, z, { width: contentW, align: 'justify' });
+      return z + doc.heightOfString(cond, { width: contentW }) + 14;
+    };
+
+    // ——— Página A ———
+    doc.addPage({ size: 'A4', margin: MARGIN });
+    let y = drawWatermarkHeader('PLATAFORMA DIGITAL Y PORTAL EMPRESARIAL');
+    y = addParaBoldPhrases(
+      y,
+      `${empresaLargo} dispone de una plataforma digital propia diseñada para optimizar la gestión diaria de comunidades y servicios.`,
+      [empresaLargo],
+    );
+    y = addPara('Permite centralizar en un solo entorno:', y);
+    y = addBullets(
+      [
+        'gestión de presupuestos y documentación',
+        'comunicación directa con administradores y comunidades',
+        'seguimiento de servicios y operativa diaria',
+      ],
+      y,
+    );
+    y = addSubheading('Portal empresarial:', y);
+    y = addPara(
+      'Espacio web exclusivo para administradores y empresas, donde se puede acceder a toda la información del servicio con trazabilidad completa y control en tiempo real.',
+      y,
+    );
+    y = addSubheading('Aplicación de recursos humanos (RR.HH.):', y);
+    y = addPara(
+      'El personal vinculado al servicio dispone de acceso a su área personal, donde puede:',
+      y,
+    );
+    y = addBullets(
+      [
+        'consultar horarios y turnos',
+        'registrar fichajes',
+        'acceder a documentación laboral',
+      ],
+      y,
+    );
+    y = addPara(
+      'Todo el sistema está unificado, facilitando la coordinación entre empresa, empleados y comunidades.',
+      y,
+    );
+    y = addLinkLine(
+      'Portal para administradores (producción)',
+      cfg.urlPortalGestores,
+      y,
+    );
+    y = addLinkLine(
+      'Aplicación — acceso empleados y área personal (producción)',
+      cfg.urlAplicacion,
+      y,
+    );
+    y = addPrecioPlataformaYBonificacion(y);
+    addFooter();
+
+    // ——— Página B ———
+    doc.addPage({ size: 'A4', margin: MARGIN });
+    y = drawWatermarkHeader('APLICACIÓN VECINDARIO');
+    y = addParaBoldPhrases(
+      y,
+      'Vecindario es la aplicación web (instalable como PWA) desarrollada para residentes: concentra en un solo producto las gestiones cotidianas de la finca, según los módulos que la comunidad tenga activos. No es el portal de administración de empresa ni la app de empleados.',
+      ['Vecindario'],
+    );
+    y = addParaBoldPhrases(
+      y,
+      'Funcionalidades que incluye la aplicación Vecindario (según configuración de cada comunidad):',
+      ['Vecindario'],
+    );
+    y = addBullets(
+      [
+        'Inicio con resumen de la comunidad y accesos a los módulos habilitados para esa finca',
+        'Servicios: crear y seguir solicitudes de servicio para la comunidad (listado, detalle y seguimiento)',
+        'Incidencias: registro de incidencias en la finca, con estado y posibilidad de adjuntar imágenes',
+        'Reservas: gestión de reservas de espacios o recursos comunes cuando el módulo está activo',
+        'Acceso a piscina: información de uso, autoregistro del vecino y, para personal autorizado, validación mediante escaneo de código QR',
+        'Paquetería: listado y registro de paquetes en portería cuando la comunidad activa el módulo',
+        'Actividad: historial de acciones relevantes en la cuenta del residente',
+        'Perfil y datos del hogar (vivienda); notificaciones en la app y avisos push en el navegador cuando están soportados',
+        'Acceso por enlace o identificador propio de la comunidad e inicio de sesión del residente (sesión independiente del resto de herramientas de la empresa)',
+      ],
+      y,
+    );
+    y = addParaBoldPhrases(
+      y,
+      'En conjunto, Vecindario cubre el día a día del vecino en su comunidad, sin mezclar pantallas de contratación, nómina ni documentación interna de la empresa.',
+      ['Vecindario'],
+    );
+    y = addLinkLine(
+      'Acceso a la aplicación Vecindario',
+      cfg.urlVecindario,
+      y,
+      '(Enlace a definir en entorno de producción o demostración)',
+    );
+    addPrecioVecindarioYBonificacion(y);
+    addFooter();
   }
 
   /** Număr de presupuesto asociat la ID: dacă e deja salvat îl folosim, altfel îl generăm (MAD+an+ID) și îl salvăm. */
@@ -1168,12 +1722,16 @@ export class PresupuestoDocumentoService {
       }
       const presupuestoCalculoParaAuxLimp = (payload.presupuestoCalculo ||
         {}) as Record<string, unknown>;
-      const presupuestoCalculoAuxiliaresRestParaAuxLimp = (payload.presupuestoCalculoAuxiliaresRest ||
-        []) as Record<string, unknown>[];
+      const presupuestoCalculoAuxiliaresRestParaAuxLimp =
+        (payload.presupuestoCalculoAuxiliaresRest || []) as Record<
+          string,
+          unknown
+        >[];
       if (
-        [presupuestoCalculoParaAuxLimp, ...presupuestoCalculoAuxiliaresRestParaAuxLimp].some(
-          (c) => c && c.auxiliaresConLimpieza,
-        )
+        [
+          presupuestoCalculoParaAuxLimp,
+          ...presupuestoCalculoAuxiliaresRestParaAuxLimp,
+        ].some((c) => c && c.auxiliaresConLimpieza)
       ) {
         tiposIncluidos.add('limpieza');
       }
@@ -1683,6 +2241,17 @@ export class PresupuestoDocumentoService {
           width: contentWidth - subIndent,
         });
         indiceY += lineH;
+        doc.text(
+          '1.1a  Plataforma digital (portal y RR.HH.)',
+          contentX + subIndent,
+          indiceY,
+          { width: contentWidth - subIndent },
+        );
+        indiceY += lineH;
+        doc.text('1.1b  Aplicación Vecindario', contentX + subIndent, indiceY, {
+          width: contentWidth - subIndent,
+        });
+        indiceY += lineH;
         doc.text('1.2  Servicios Ofertados', contentX + subIndent, indiceY, {
           width: contentWidth - subIndent,
         });
@@ -1714,12 +2283,12 @@ export class PresupuestoDocumentoService {
         indiceY += sectionGap;
 
         doc.font('Helvetica-Bold').fontSize(sectionTitleSize);
-        doc.text('3.  OFERTA ECONÓMICA', contentX, indiceY, {
+        doc.text('3.  Propuesta económica', contentX, indiceY, {
           width: contentWidth,
         });
         indiceY += lineH + gapAfterTitle;
         doc.font('Helvetica').fontSize(subsectionSize);
-        doc.text('3.1  Oferta Económica', contentX + subIndent, indiceY, {
+        doc.text('3.1  Propuesta económica', contentX + subIndent, indiceY, {
           width: contentWidth - subIndent,
         });
         indiceY += sectionGap;
@@ -1929,7 +2498,9 @@ export class PresupuestoDocumentoService {
           ellipsis: true,
         });
 
-        // ——— PÁGINA 4: SERVICIOS OFERTADOS (același stil — titlu mare, dungă roșie, conținut centrat)
+        this.drawPresupuestoPlataformaDigitalAnexo(doc, payload, logoPath);
+
+        // ——— PÁGINA: SERVICIOS OFERTADOS (tras plataforma digital)
         doc.addPage({ size: 'A4', margin: MARGIN });
         if (logoPath) {
           try {
@@ -3746,13 +4317,17 @@ export class PresupuestoDocumentoService {
           });
         }
 
-        // ——— PÁGINA(S): 3.1 OFERTA ECONÓMICA ———
+        // ——— PÁGINA(S): 3.1 Propuesta económica ———
         const ofertaParaTablaPdf =
           tiposIncluidos.size > 0
-            ? ofertaEconomica.filter((row) =>
-                tiposIncluidos.has(
-                  derivarTipoDesdeServicio(row.descripcion || ''),
-                ),
+            ? ofertaEconomica.filter(
+                (row) =>
+                  esFilaDescuentoFidelidadOfertaPdf(
+                    String(row.descripcion || ''),
+                  ) ||
+                  tiposIncluidos.has(
+                    derivarTipoDesdeServicio(row.descripcion || ''),
+                  ),
               )
             : ofertaEconomica;
         let filasOfertaPdf = ofertaParaTablaPdf.length
@@ -3816,6 +4391,9 @@ export class PresupuestoDocumentoService {
           filasOfertaPdf.length > 0 &&
           filasOfertaPdf.every(
             (row) =>
+              esFilaDescuentoFidelidadOfertaPdf(
+                String(row.descripcion || ''),
+              ) ||
               derivarTipoDesdeServicio(row.descripcion || '') === 'piscina',
           );
         const fmtNum = (n: number) =>
@@ -3846,7 +4424,7 @@ export class PresupuestoDocumentoService {
         const ofertaFullWidth = PAGE_WIDTH - MARGIN * 2;
         let ofertaY = 100;
         doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(26);
-        const tituloOferta = '3.1  OFERTA ECONÓMICA';
+        const tituloOferta = '3.1  Propuesta económica';
         doc.text(tituloOferta, MARGIN, ofertaY, {
           width: ofertaFullWidth,
           align: 'center',
@@ -3861,11 +4439,19 @@ export class PresupuestoDocumentoService {
           .stroke();
         ofertaY += 36;
 
-        const colDescW = 228;
-        const colMensW = 168;
-        const colAnualW = ofertaSoloPiscinaPdf
-          ? 0
-          : ofertaFullWidth - colDescW - colMensW;
+        /** Anchos de tabla: antes DESCRIPCIÓN fija 228 + MENS 168 dejaba ANUAL ~99 pt (muy estrecho → desbordamiento). */
+        let colDescW: number;
+        let colMensW: number;
+        let colAnualW: number;
+        if (ofertaSoloPiscinaPdf) {
+          colAnualW = 0;
+          colDescW = Math.round(ofertaFullWidth * 0.4);
+          colMensW = ofertaFullWidth - colDescW;
+        } else {
+          colAnualW = Math.round(ofertaFullWidth * 0.34);
+          colMensW = Math.round(ofertaFullWidth * 0.3);
+          colDescW = ofertaFullWidth - colMensW - colAnualW;
+        }
         const rowH = 46;
         const cellPad = 6;
 
@@ -4011,18 +4597,6 @@ export class PresupuestoDocumentoService {
               }) + lineGapPagos;
           }
         } else {
-          doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
-          doc.text(
-            'El precio de los servicios descritos es el siguiente:',
-            MARGIN,
-            ofertaY,
-            {
-              width: ofertaFullWidth,
-              align: 'left',
-            },
-          );
-          ofertaY += 22;
-
           const tableTop = ofertaY;
           const tieneColAnual = colAnualW > 0;
           // Encabezados: fondo gris y texto oscuro
@@ -4059,7 +4633,25 @@ export class PresupuestoDocumentoService {
 
           ofertaY = tableTop + rowH;
           doc.font('Helvetica').fontSize(10);
+          const pctFidelidadPdf = Math.min(
+            100,
+            Math.max(
+              0,
+              Math.round(
+                Number(
+                  (payload as Record<string, unknown>)
+                    .presupuestoDescuentoGlobalPct,
+                ) || 0,
+              ),
+            ),
+          );
+          const wDescOferta = colDescW - cellPad * 2;
+          const wMensOferta =
+            (tieneColAnual ? colMensW : ofertaFullWidth - colDescW) -
+            cellPad * 2;
+          const wAnualOferta = colAnualW - cellPad * 2;
           for (const row of filasOfertaPdf) {
+            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
             const desc =
               (row.descripcion != null ? String(row.descripcion) : '').trim() ||
               '—';
@@ -4067,45 +4659,223 @@ export class PresupuestoDocumentoService {
             const mensCon = Number(row.mensualidadConIva) || 0;
             const anualSin = Number(row.anualidadSinIva) || 0;
             const anualCon = Number(row.anualidadConIva) || 0;
-            const mens1 = `${fmtNum(mensSin)}€+IVA`;
-            const mens2 = `${fmtNum(mensCon)}€ IVA incluido`;
-            const anual1 = `${fmtNum(anualSin)}€+IVA`;
-            const anual2 = `${fmtNum(anualCon)}€ IVA incluido`;
-            doc.rect(MARGIN, ofertaY, colDescW, rowH).stroke('#333');
+            const esDesc = esFilaDescuentoFidelidadOfertaPdf(desc);
+            let mensCell: string;
+            let anualCell: string;
+            let netMS = mensSin;
+            let netMC = mensCon;
+            let netAS = anualSin;
+            let netAC = anualCon;
+            let usaCeldaTachadoFlecha = false;
+            if (pctFidelidadPdf > 0 && !esDesc) {
+              const f = 1 - pctFidelidadPdf / 100;
+              netMS = redondeOfertaImportePdf(mensSin * f);
+              netMC = redondeOfertaImportePdf(netMS * 1.21);
+              netAS = redondeOfertaImportePdf(anualSin * f);
+              netAC = redondeOfertaImportePdf(netAS * 1.21);
+              usaCeldaTachadoFlecha = true;
+              mensCell = '';
+              anualCell = '';
+            } else {
+              mensCell = `${fmtNum(mensSin)}€+IVA\n${fmtNum(mensCon)}€ IVA incluido`;
+              anualCell = `${fmtNum(anualSin)}€+IVA\n${fmtNum(anualCon)}€ IVA incluido`;
+            }
+            const hDesc = doc.heightOfString(desc, {
+              width: wDescOferta,
+              lineGap: 2,
+            });
+            let hMens: number;
+            let hAnual = 0;
+            if (usaCeldaTachadoFlecha) {
+              const s1aM = `${fmtNum(mensSin)}€+IVA`;
+              const s1nM = `${fmtNum(netMS)}€+IVA`;
+              const s2aM = `${fmtNum(mensCon)}€`;
+              const s2nM = `${fmtNum(netMC)}€ IVA incluido`;
+              const { fs1: fs1m, fs2: fs2m } =
+                encajarFuentesCeldaPrecioDescuentoPdf(
+                  doc,
+                  wMensOferta,
+                  s1aM,
+                  s1nM,
+                  s2aM,
+                  s2nM,
+                );
+              hMens = alturaCeldaPreciosDescuentoOfertaPdf(doc, fs1m, fs2m);
+              if (tieneColAnual) {
+                const s1aA = `${fmtNum(anualSin)}€+IVA`;
+                const s1nA = `${fmtNum(netAS)}€+IVA`;
+                const s2aA = `${fmtNum(anualCon)}€`;
+                const s2nA = `${fmtNum(netAC)}€ IVA incluido`;
+                const { fs1: fs1a, fs2: fs2a } =
+                  encajarFuentesCeldaPrecioDescuentoPdf(
+                    doc,
+                    wAnualOferta,
+                    s1aA,
+                    s1nA,
+                    s2aA,
+                    s2nA,
+                  );
+                hAnual = alturaCeldaPreciosDescuentoOfertaPdf(doc, fs1a, fs2a);
+              }
+            } else {
+              hMens = doc.heightOfString(mensCell, {
+                width: wMensOferta,
+                lineGap: 2,
+              });
+              if (tieneColAnual) {
+                hAnual = doc.heightOfString(anualCell, {
+                  width: wAnualOferta,
+                  lineGap: 2,
+                });
+              }
+            }
+            const rowDyn = Math.max(
+              rowH,
+              hDesc + cellPad * 2,
+              hMens + cellPad * 2,
+              hAnual + cellPad * 2,
+            );
+            doc.rect(MARGIN, ofertaY, colDescW, rowDyn).stroke('#333');
             doc
               .rect(
                 MARGIN + colDescW,
                 ofertaY,
                 tieneColAnual ? colMensW : ofertaFullWidth - colDescW,
-                rowH,
+                rowDyn,
               )
               .stroke('#333');
             if (tieneColAnual)
               doc
-                .rect(MARGIN + colDescW + colMensW, ofertaY, colAnualW, rowH)
+                .rect(MARGIN + colDescW + colMensW, ofertaY, colAnualW, rowDyn)
                 .stroke('#333');
             doc.text(desc, MARGIN + cellPad, ofertaY + cellPad, {
-              width: colDescW - cellPad * 2,
+              width: wDescOferta,
+              lineGap: 2,
             });
-            doc.text(
-              `${mens1}\n${mens2}`,
-              MARGIN + colDescW + cellPad,
-              ofertaY + cellPad,
-              {
-                width:
-                  (tieneColAnual ? colMensW : ofertaFullWidth - colDescW) -
-                  cellPad * 2,
-                lineGap: 4,
-              },
+            if (usaCeldaTachadoFlecha) {
+              pintarCeldaPreciosDescuentoOfertaPdf(
+                doc,
+                MARGIN + colDescW + cellPad,
+                ofertaY + cellPad,
+                wMensOferta,
+                fmtNum,
+                mensSin,
+                netMS,
+                mensCon,
+                netMC,
+              );
+              if (tieneColAnual) {
+                pintarCeldaPreciosDescuentoOfertaPdf(
+                  doc,
+                  MARGIN + colDescW + colMensW + cellPad,
+                  ofertaY + cellPad,
+                  wAnualOferta,
+                  fmtNum,
+                  anualSin,
+                  netAS,
+                  anualCon,
+                  netAC,
+                );
+              }
+            } else {
+              doc.text(
+                mensCell,
+                MARGIN + colDescW + cellPad,
+                ofertaY + cellPad,
+                {
+                  width: wMensOferta,
+                  lineGap: 2,
+                },
+              );
+              if (tieneColAnual)
+                doc.text(
+                  anualCell,
+                  MARGIN + colDescW + colMensW + cellPad,
+                  ofertaY + cellPad,
+                  { width: wAnualOferta, lineGap: 2 },
+                );
+            }
+            ofertaY += rowDyn;
+          }
+
+          if (pctFidelidadPdf > 0 && filasOfertaPdf.length > 0) {
+            const tMS = redondeOfertaImportePdf(
+              filasOfertaPdf.reduce(
+                (acc, r) => acc + (Number(r.mensualidadSinIva) || 0),
+                0,
+              ),
             );
+            const tMC = redondeOfertaImportePdf(
+              filasOfertaPdf.reduce(
+                (acc, r) => acc + (Number(r.mensualidadConIva) || 0),
+                0,
+              ),
+            );
+            const tAS = redondeOfertaImportePdf(
+              filasOfertaPdf.reduce(
+                (acc, r) => acc + (Number(r.anualidadSinIva) || 0),
+                0,
+              ),
+            );
+            const tAC = redondeOfertaImportePdf(
+              filasOfertaPdf.reduce(
+                (acc, r) => acc + (Number(r.anualidadConIva) || 0),
+                0,
+              ),
+            );
+            const totDesc =
+              'TOTAL (importe neto a pagar, incl. descuento por fidelidad)';
+            const totM = `${fmtNum(tMS)}€+IVA\n${fmtNum(tMC)}€ IVA incluido`;
+            const totA = `${fmtNum(tAS)}€+IVA\n${fmtNum(tAC)}€ IVA incluido`;
+            const hTotD = doc.heightOfString(totDesc, {
+              width: wDescOferta,
+              lineGap: 2,
+            });
+            const hTotM = doc.heightOfString(totM, {
+              width: wMensOferta,
+              lineGap: 2,
+            });
+            const hTotA = tieneColAnual
+              ? doc.heightOfString(totA, { width: wAnualOferta, lineGap: 2 })
+              : 0;
+            const rowTot = Math.max(
+              rowH,
+              hTotD + cellPad * 2,
+              hTotM + cellPad * 2,
+              hTotA + cellPad * 2,
+            );
+            doc.fillColor('#ecfdf5').strokeColor('#059669');
+            doc.rect(MARGIN, ofertaY, colDescW, rowTot).fillAndStroke();
+            doc
+              .rect(
+                MARGIN + colDescW,
+                ofertaY,
+                tieneColAnual ? colMensW : ofertaFullWidth - colDescW,
+                rowTot,
+              )
+              .fillAndStroke();
+            if (tieneColAnual)
+              doc
+                .rect(MARGIN + colDescW + colMensW, ofertaY, colAnualW, rowTot)
+                .fillAndStroke();
+            doc.fillColor('#064e3b').font('Helvetica-Bold').fontSize(10);
+            doc.text(totDesc, MARGIN + cellPad, ofertaY + cellPad, {
+              width: wDescOferta,
+              lineGap: 2,
+            });
+            doc.text(totM, MARGIN + colDescW + cellPad, ofertaY + cellPad, {
+              width: wMensOferta,
+              lineGap: 2,
+            });
             if (tieneColAnual)
               doc.text(
-                `${anual1}\n${anual2}`,
+                totA,
                 MARGIN + colDescW + colMensW + cellPad,
                 ofertaY + cellPad,
-                { width: colAnualW - cellPad * 2, lineGap: 4 },
+                { width: wAnualOferta, lineGap: 2 },
               );
-            ofertaY += rowH;
+            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
+            ofertaY += rowTot;
           }
 
           ofertaY += 20;
@@ -4162,6 +4932,19 @@ export class PresupuestoDocumentoService {
           }
           // Condiciones económicas, Revisión de precios y Formalización solo para presupuestos normales (no piscina)
           if (!ofertaSoloPiscinaPdf) {
+            if (pctFidelidadPdf > 0) {
+              const notaFidelidadBloque =
+                'Incluye descuento por fidelidad aplicado automáticamente.';
+              doc.font('Helvetica-Bold').fontSize(10).fillColor('#047857');
+              doc.text(notaFidelidadBloque, MARGIN, ofertaY, {
+                width: ofertaFullWidth,
+                align: 'left',
+              });
+              ofertaY +=
+                doc.heightOfString(notaFidelidadBloque, {
+                  width: ofertaFullWidth,
+                }) + 10;
+            }
             doc.font('Helvetica').fontSize(9).fillColor('#333333');
             doc.text(
               'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.',

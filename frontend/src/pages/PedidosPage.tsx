@@ -180,9 +180,20 @@ type ComunidadDetalle = {
     PAIS?: string;
     LATITUD?: number | null;
     LONGITUD?: number | null;
+    CuantoPuedeGastar?: string | number | null;
+    limite_gasto?: string | number | null;
   };
   [key: string]: unknown;
 };
+
+function parseLimiteGastoCliente(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+  if (s === '') return null;
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
 
 // ===== API ENDPOINT PENTRU PRODUSE =====
 // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
@@ -1401,6 +1412,18 @@ const TabNuevoPedido: React.FC<{
 
   // Adăugare produs în pedido
   const agregarProducto = (producto: Producto) => {
+    const limite = getLimiteGastoCliente();
+    if (limite != null) {
+      const nuevoSub = subtotal + producto.precio;
+      if (Math.round(nuevoSub * 100) / 100 > Math.round(limite * 100) / 100) {
+        addToast(
+          'error',
+          'Límite excedido',
+          `No se puede añadir: el subtotal superaría el límite de gasto (${limite.toFixed(2)} €).`,
+        );
+        return;
+      }
+    }
     const nuevaLinea: LineaPedido = {
       producto_id: producto.id,
       cantidad: 1,
@@ -1415,6 +1438,23 @@ const TabNuevoPedido: React.FC<{
   const actualizarLinea = (index: number, campo: keyof LineaPedido, valor: number) => {
     const nuevasLineas = [...lineasPedido];
     nuevasLineas[index] = { ...nuevasLineas[index], [campo]: valor };
+    if (campo === 'cantidad' || campo === 'precio_unitario') {
+      const limite = getLimiteGastoCliente();
+      if (limite != null) {
+        const nuevosSub = nuevasLineas.reduce(
+          (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
+          0,
+        );
+        if (Math.round(nuevosSub * 100) / 100 > Math.round(limite * 100) / 100) {
+          addToast(
+            'error',
+            'Límite excedido',
+            'No se puede superar el límite de gasto del cliente.',
+          );
+          return;
+        }
+      }
+    }
     setLineasPedido(nuevasLineas);
   };
 
@@ -1450,6 +1490,15 @@ const TabNuevoPedido: React.FC<{
 
   const total = subtotal + impuestosCalculados;
 
+  const getLimiteGastoCliente = (): number | null => {
+    const c = comunidades.find((x) => x.id === comunidadSeleccionada) as
+      | { datosCompletos?: Record<string, unknown> }
+      | undefined;
+    const d = c?.datosCompletos;
+    const raw = d?.CuantoPuedeGastar ?? d?.limite_gasto;
+    return parseLimiteGastoCliente(raw);
+  };
+
   // Guardar borrador
   const guardarBorrador = async () => {
     if (!comunidadSeleccionada) {
@@ -1470,6 +1519,18 @@ const TabNuevoPedido: React.FC<{
     if (!telefonoEntrega || telefonoEntrega.trim() === '') {
       addToast('error', 'Teléfono de entrega requerido', 'Por favor introduce el teléfono de entrega antes de guardar el pedido.');
       return;
+    }
+
+    const limiteClienteGuardar = getLimiteGastoCliente();
+    if (limiteClienteGuardar != null) {
+      if (Math.round(subtotal * 100) / 100 > Math.round(limiteClienteGuardar * 100) / 100) {
+        addToast(
+          'error',
+          'Límite excedido',
+          `El subtotal (${subtotal.toFixed(2)} €) supera el límite de gasto (${limiteClienteGuardar.toFixed(2)} €).`,
+        );
+        return;
+      }
     }
 
     // Verificare: Limita de 2 pedidos per centru (doar pendiente și aprobado, enviados nu se numără)
@@ -1523,7 +1584,8 @@ const TabNuevoPedido: React.FC<{
 
     const comunidadNombre = comunidades.find(c => c.id === comunidadSeleccionada)?.nombre || 'Sin comunidad';
     const comunidadDetalle = comunidades.find(c => c.id === comunidadSeleccionada);
-    
+    const limiteClientePayload = getLimiteGastoCliente();
+
     const payload = {
       // Datele angajatului
       empleado: {
@@ -1545,7 +1607,7 @@ const TabNuevoPedido: React.FC<{
         telefono: comunidadDetalle?.datosCompletos?.TELEFONO || 'N/A',
         email: comunidadDetalle?.datosCompletos?.EMAIL || 'N/A',
         nif: comunidadDetalle?.datosCompletos?.NIF || 'N/A',
-        limite_gasto: 0
+        limite_gasto: limiteClientePayload ?? 0
       },
       
       // Comanda cerută
@@ -1558,8 +1620,10 @@ const TabNuevoPedido: React.FC<{
         subtotal: subtotal,
         iva_total: impuestosCalculados,
         total: total,
-        limite_excedido: false,
-        exceso_limite: 0,
+        limite_excedido:
+          limiteClientePayload != null ? subtotal > limiteClientePayload : false,
+        exceso_limite:
+          limiteClientePayload != null ? (subtotal > limiteClientePayload ? 1 : 0) : 0,
         estado: 'pendiente',
         horario_entrega: horarioEntrega.trim(),
         telefono_entrega: telefonoEntrega.trim(),

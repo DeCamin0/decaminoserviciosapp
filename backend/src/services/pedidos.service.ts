@@ -44,6 +44,63 @@ export class PedidosService {
     return `'${str.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
   }
 
+  /** Límite de gasto (EUR) desde Clientes; null = sin límite configurado. */
+  private async getClienteLimiteGastoEur(
+    clienteId: number | null,
+  ): Promise<number | null> {
+    if (clienteId == null || !Number.isFinite(clienteId)) {
+      return null;
+    }
+    try {
+      const row = await this.prisma.clientes.findUnique({
+        where: { id: clienteId },
+        select: { CuantoPuedeGastar: true },
+      });
+      const raw = row?.CuantoPuedeGastar;
+      if (raw === null || raw === undefined) return null;
+      const s = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+      if (s === '') return null;
+      const n = parseFloat(s);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return Math.round(n * 100) / 100;
+    } catch (e) {
+      this.logger.warn(
+        `⚠️ getClienteLimiteGastoEur failed for cliente ${clienteId}:`,
+        e,
+      );
+      return null;
+    }
+  }
+
+  private computeSubtotalFromPedidoItems(
+    items: Array<{ cantidad?: number; precio_unitario?: number }>,
+  ): number {
+    let sum = 0;
+    for (const it of items) {
+      const c = Number(it.cantidad);
+      const p = Number(it.precio_unitario);
+      if (Number.isFinite(c) && Number.isFinite(p)) {
+        sum += c * p;
+      }
+    }
+    return Math.round(sum * 100) / 100;
+  }
+
+  /** Compara subtotal (sin IVA) con el límite actual del cliente en BD. */
+  private assertPedidoSubtotalWithinLimite(
+    limite: number | null,
+    subtotal: number,
+  ): void {
+    if (limite == null) return;
+    const roundedSub = Math.round(subtotal * 100) / 100;
+    if (roundedSub - limite > 0.02) {
+      throw new BadRequestException(
+        `El subtotal del pedido (${roundedSub.toFixed(2)} €) supera el límite de gasto del cliente (${limite.toFixed(2)} €). ` +
+          `Reduce cantidades o aumenta el límite en la ficha del cliente.`,
+      );
+    }
+  }
+
   /**
    * Generează un UID pentru pedido în format: =YYYYMMDDHHMMSS-ID
    */
@@ -185,6 +242,12 @@ export class PedidosService {
           : pedidoData.comunidad.id !== 'N/A'
             ? parseInt(String(pedidoData.comunidad.id), 10)
             : null;
+
+      const computedSubtotal = this.computeSubtotalFromPedidoItems(
+        pedidoData.pedido.items,
+      );
+      const limiteCliente = await this.getClienteLimiteGastoEur(comunidadId);
+      this.assertPedidoSubtotalWithinLimite(limiteCliente, computedSubtotal);
 
       // Salvează fiecare item ca un rând separat în PedidosTodos
       const insertQueries: string[] = [];
@@ -343,6 +406,7 @@ export class PedidosService {
           MAX(comunidad_telefono) as comunidad_telefono,
           MAX(comunidad_email) as comunidad_email,
           MAX(comunidad_nif) as comunidad_nif,
+          MAX(comunidad_limite_gasto) as comunidad_limite_gasto,
           MAX(fecha) as fecha,
           MAX(moneda) as moneda,
           MAX(descuento_global) as descuento_global,
@@ -447,6 +511,9 @@ export class PedidosService {
             telefono: row.comunidad_telefono,
             email: row.comunidad_email,
             nif: row.comunidad_nif,
+            limite_gasto: row.comunidad_limite_gasto
+              ? parseFloat(row.comunidad_limite_gasto.toString())
+              : null,
           },
           fecha: row.fecha,
           moneda: row.moneda,
@@ -829,6 +896,21 @@ export class PedidosService {
         throw new BadRequestException(`Pedido with UID ${pedidoUid} not found`);
       }
 
+      const comunidadIdEdicion =
+        typeof pedidoExistente.comunidad?.id === 'number'
+          ? pedidoExistente.comunidad.id
+          : pedidoExistente.comunidad?.id !== 'N/A' &&
+              pedidoExistente.comunidad?.id
+            ? parseInt(String(pedidoExistente.comunidad.id), 10)
+            : null;
+      const computedSubtotalItems = this.computeSubtotalFromPedidoItems(items);
+      const limiteEdicion =
+        await this.getClienteLimiteGastoEur(comunidadIdEdicion);
+      this.assertPedidoSubtotalWithinLimite(
+        limiteEdicion,
+        computedSubtotalItems,
+      );
+
       // Folosește tranzacție pentru a asigura atomicitatea (dacă INSERT eșuează, DELETE este rollback-uit)
       await this.prisma.$transaction(async (tx) => {
         // Șterge toate items-urile existente pentru această comandă
@@ -857,14 +939,7 @@ export class PedidosService {
           }
         }
 
-        // Parsează comunidad_id
-        const comunidadId =
-          typeof pedidoExistente.comunidad?.id === 'number'
-            ? pedidoExistente.comunidad.id
-            : pedidoExistente.comunidad?.id !== 'N/A' &&
-                pedidoExistente.comunidad?.id
-              ? parseInt(String(pedidoExistente.comunidad.id), 10)
-              : null;
+        const comunidadId = comunidadIdEdicion;
 
         for (const item of items) {
           // Validează și normalizează toate valorile pentru a evita `undefined` în SQL

@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.04.13.2147",
+  "version": "2026.04.14.1156",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/fix-quill-vulnerability.cjs",
@@ -113,7 +113,7 @@
     "tailwindcss": "^3.2.7",
     "util": "^0.12.5",
     "vite": "^7.3.2",
-    "vite-plugin-node-polyfills": "^0.25.0",
+    "vite-plugin-node-polyfills": "^0.26.0",
     "vite-plugin-pwa": "^1.0.3",
     "workbox-window": "^7.3.0"
   },

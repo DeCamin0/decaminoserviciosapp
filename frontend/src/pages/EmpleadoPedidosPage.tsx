@@ -97,6 +97,55 @@ type LineaPedido = {
   total_linea?: number;
 };
 
+function parseLimiteGastoCliente(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+  if (s === '') return null;
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** Igual que al guardar: fusiona líneas existentes con productos nuevos (suma cantidades si coincide). */
+function mergePedidoItemsConProductosNuevos(
+  itemsExistentesIn: LineaPedido[],
+  productosNuevos: LineaPedido[],
+): LineaPedido[] {
+  const itemsExistentes: LineaPedido[] = itemsExistentesIn.map((i) => ({ ...i }));
+  const itemsNuevosSinDuplicados: LineaPedido[] = [];
+  productosNuevos.forEach((productoNuevo: LineaPedido) => {
+    const productoId = productoNuevo.producto_id;
+    const numeroArticulo = productoNuevo.numero_articulo;
+    const itemExistenteIndex = itemsExistentes.findIndex(
+      (item: LineaPedido) =>
+        (item.producto_id === productoId || item.numero_articulo === numeroArticulo) &&
+        (productoId || numeroArticulo),
+    );
+    if (itemExistenteIndex >= 0) {
+      const itemExistente = itemsExistentes[itemExistenteIndex];
+      itemExistente.cantidad = (itemExistente.cantidad || 0) + (productoNuevo.cantidad || 1);
+      itemExistente.subtotal_linea = itemExistente.precio_unitario * itemExistente.cantidad;
+      itemExistente.iva_linea = itemExistente.subtotal_linea * 0.21;
+      itemExistente.total_linea = itemExistente.subtotal_linea + itemExistente.iva_linea;
+    } else {
+      itemsNuevosSinDuplicados.push(productoNuevo);
+    }
+  });
+  return [...itemsExistentes, ...itemsNuevosSinDuplicados];
+}
+
+function subtotalPedidoItemsSinIva(items: LineaPedido[]): number {
+  const s = items.reduce(
+    (sum, item) =>
+      sum +
+      (item.subtotal_linea != null && !Number.isNaN(item.subtotal_linea)
+        ? item.subtotal_linea
+        : item.cantidad * item.precio_unitario),
+    0,
+  );
+  return Math.round(s * 100) / 100;
+}
+
 type Pedido = {
   pedido_uid: string;
   empleado?: {
@@ -112,6 +161,7 @@ type Pedido = {
     localidad?: string;
     provincia?: string;
     telefono?: string;
+    limite_gasto?: number | null;
   };
   fecha?: string;
   estado?: string;
@@ -1039,12 +1089,12 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     if (!limite) return true; // Dacă nu există limită, se poate adăuga
     
     const precioTotal = producto.precio * cantidad;
-    const totalActual = lineasPedido.reduce((sum, linea) => {
-      const prod = productos.find(p => p.id === linea.producto_id);
-      return sum + (prod ? prod.precio * linea.cantidad : 0);
-    }, 0);
+    const totalActual = lineasPedido.reduce(
+      (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
+      0,
+    );
     
-    return (totalActual + precioTotal) <= limite;
+    return totalActual + precioTotal <= limite + 0.02;
   };
 
   // Actualizează cantitatea pentru un produs (permite 0 pentru ștergere; onBlur pune 1)
@@ -1088,9 +1138,27 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
   // Actualizează cantitatea
   const actualizarCantidad = (index: number, cantidad: number) => {
-    setLineasPedido(prev => prev.map((linea, i) => 
-      i === index ? { ...linea, cantidad } : linea
-    ));
+    const limite = getLimiteGasto();
+    if (limite != null) {
+      const nuevas = lineasPedido.map((linea, i) =>
+        i === index ? { ...linea, cantidad } : linea,
+      );
+      const sub = nuevas.reduce(
+        (s, linea) => s + linea.cantidad * linea.precio_unitario,
+        0,
+      );
+      if (Math.round(sub * 100) / 100 > Math.round(limite * 100) / 100) {
+        addToast(
+          'error',
+          'Límite excedido',
+          'No se puede superar el límite de gasto del cliente.',
+        );
+        return;
+      }
+    }
+    setLineasPedido((prev) =>
+      prev.map((linea, i) => (i === index ? { ...linea, cantidad } : linea)),
+    );
   };
 
   // Calculează subtotalul (fără IVA)
@@ -1127,6 +1195,19 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     if (!telefonoEntrega || telefonoEntrega.trim() === '') {
       addToast('error', 'Teléfono de entrega requerido', 'Por favor introduce el teléfono de entrega antes de guardar el pedido.');
       return;
+    }
+
+    const limiteGuardar = getLimiteGasto();
+    if (limiteGuardar != null) {
+      const sub = calcularSubtotal();
+      if (Math.round(sub * 100) / 100 > Math.round(limiteGuardar * 100) / 100) {
+        addToast(
+          'error',
+          'Límite excedido',
+          `El subtotal (${sub.toFixed(2)} €) supera el límite de gasto (${limiteGuardar.toFixed(2)} €).`,
+        );
+        return;
+      }
     }
 
     // Verificare: Limita de 2 pedidos per centru (doar pendiente și aprobado, enviados nu se numără)
@@ -1782,6 +1863,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
   const [productosDisponibles, setProductosDisponibles] = useState<Producto[]>([]);
   const [productosNuevos, setProductosNuevos] = useState<LineaPedido[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
+  /** Límite actual del cliente (GET /clientes) al abrir edición; null = sin límite o no cargado. */
+  const [limiteGastoEdicion, setLimiteGastoEdicion] = useState<number | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
   const [albaranFiles, setAlbaranFiles] = useState<File[]>([]);
@@ -2174,6 +2257,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       return;
     }
 
+    setLimiteGastoEdicion(null);
     setPedidoEditando(pedido.pedido_uid);
     setProductosNuevos([]);
     
@@ -2220,6 +2304,23 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
           };
         });
         setProductosDisponibles(productosMapped);
+
+        try {
+          const cr = await fetch(routes.getClientes, { method: 'GET', headers });
+          if (cr.ok) {
+            const all = await cr.json();
+            const arr = Array.isArray(all) ? all : [];
+            const cid = Number(pedido.comunidad.id);
+            const cli = arr.find(
+              (x: Record<string, unknown>) => Number(x.id ?? x.ID) === cid,
+            );
+            setLimiteGastoEdicion(
+              parseLimiteGastoCliente(cli?.CuantoPuedeGastar ?? cli?.limite_gasto),
+            );
+          }
+        } catch {
+          setLimiteGastoEdicion(null);
+        }
       } catch (error) {
         console.error('❌ Error loading productos:', error);
         addToast('error', 'Error', 'No se pudieron cargar los productos disponibles.');
@@ -2231,6 +2332,9 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
 
   // Funcție pentru a adăuga un produs nou
   const agregarProductoNuevo = (producto: Producto) => {
+    const pedidoBase = pedidos.find((p) => p.pedido_uid === pedidoEditando);
+    if (!pedidoBase) return;
+
     const productoId = producto.id || producto.producto_id;
     const numeroArticulo = producto.numero || producto.numero_articulo || '';
     
@@ -2239,44 +2343,86 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       (item) => (item.producto_id === productoId || item.numero_articulo === numeroArticulo) && productoId && numeroArticulo
     );
     
+    let siguienteNuevos: LineaPedido[];
+
     if (productoExistenteIndex >= 0) {
-      // Actualizează cantitatea produsului existent
-      const nuevos = [...productosNuevos];
-      const item = nuevos[productoExistenteIndex];
+      siguienteNuevos = [...productosNuevos];
+      const item = { ...siguienteNuevos[productoExistenteIndex] };
       item.cantidad = (item.cantidad || 0) + 1;
       item.subtotal_linea = item.precio_unitario * item.cantidad;
       item.iva_linea = item.subtotal_linea * 0.21;
       item.total_linea = item.subtotal_linea + item.iva_linea;
-      setProductosNuevos(nuevos);
-      addToast('info', 'Cantidad actualizada', `Se ha incrementado la cantidad de "${numeroArticulo}"`);
+      siguienteNuevos[productoExistenteIndex] = item;
     } else {
-      // Adaugă produsul nou
+      const precio = parseFloat(String(producto.precio || 0));
       const nuevoItem: LineaPedido = {
         producto_id: productoId,
         numero_articulo: numeroArticulo,
         descripcion: producto.descripcion || '',
         cantidad: 1,
-        precio_unitario: parseFloat(String(producto.precio || 0)),
-        subtotal_linea: parseFloat(String(producto.precio || 0)),
+        precio_unitario: precio,
+        subtotal_linea: precio,
         descuento_linea: 0,
         iva_porcentaje: 21,
-        iva_linea: parseFloat(String(producto.precio || 0)) * 0.21,
-        total_linea: parseFloat(String(producto.precio || 0)) * 1.21,
+        iva_linea: precio * 0.21,
+        total_linea: precio * 1.21,
       };
-      setProductosNuevos([...productosNuevos, nuevoItem]);
+      siguienteNuevos = [...productosNuevos, nuevoItem];
+    }
+
+    if (limiteGastoEdicion != null) {
+      const merged = mergePedidoItemsConProductosNuevos(
+        [...(pedidoBase.items || [])],
+        siguienteNuevos,
+      );
+      const sub = subtotalPedidoItemsSinIva(merged);
+      if (sub > limiteGastoEdicion + 0.02) {
+        addToast(
+          'error',
+          'Límite excedido',
+          `El subtotal (${sub.toFixed(2)} €) superaría el límite de gasto (${limiteGastoEdicion.toFixed(2)} €).`,
+        );
+        return;
+      }
+    }
+
+    setProductosNuevos(siguienteNuevos);
+    if (productoExistenteIndex >= 0) {
+      addToast('info', 'Cantidad actualizada', `Se ha incrementado la cantidad de "${numeroArticulo}"`);
     }
   };
 
   // Funcție pentru a actualiza cantitatea unui produs nou (permite 0; onBlur pune 1)
   const actualizarCantidadProducto = (index: number, nuevaCantidad: number) => {
     if (nuevaCantidad < 0) return;
-    const nuevos = [...productosNuevos];
-    const item = nuevos[index];
+    const pedidoBase = pedidos.find((p) => p.pedido_uid === pedidoEditando);
+    if (!pedidoBase) return;
+
+    const siguienteNuevos = [...productosNuevos];
+    const item = { ...siguienteNuevos[index] };
     item.cantidad = nuevaCantidad;
     item.subtotal_linea = item.precio_unitario * nuevaCantidad;
     item.iva_linea = item.subtotal_linea * 0.21;
     item.total_linea = item.subtotal_linea + item.iva_linea;
-    setProductosNuevos(nuevos);
+    siguienteNuevos[index] = item;
+
+    if (limiteGastoEdicion != null) {
+      const merged = mergePedidoItemsConProductosNuevos(
+        [...(pedidoBase.items || [])],
+        siguienteNuevos,
+      );
+      const sub = subtotalPedidoItemsSinIva(merged);
+      if (sub > limiteGastoEdicion + 0.02) {
+        addToast(
+          'error',
+          'Límite excedido',
+          `El subtotal (${sub.toFixed(2)} €) superaría el límite de gasto (${limiteGastoEdicion.toFixed(2)} €).`,
+        );
+        return;
+      }
+    }
+
+    setProductosNuevos(siguienteNuevos);
   };
 
   // Funcție pentru a elimina un produs nou
@@ -2298,40 +2444,22 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
         throw new Error('Pedido no encontrado');
       }
 
-      // Combină items-urile existente cu cele noi, actualizând cantitatea pentru produsele duplicate
-      const itemsExistentes: LineaPedido[] = [...(pedido.items || [])];
-      const itemsNuevosSinDuplicados: LineaPedido[] = [];
-      
-      // Procesează fiecare produs nou
-      productosNuevos.forEach((productoNuevo: LineaPedido) => {
-        const productoId = productoNuevo.producto_id;
-        const numeroArticulo = productoNuevo.numero_articulo;
-        
-        // Caută dacă produsul există deja în items-urile existente
-        const itemExistenteIndex = itemsExistentes.findIndex(
-          (item: LineaPedido) => 
-            (item.producto_id === productoId || item.numero_articulo === numeroArticulo) && 
-            (productoId || numeroArticulo)
+      const todosItems = mergePedidoItemsConProductosNuevos(
+        [...(pedido.items || [])],
+        productosNuevos,
+      );
+
+      const subtotal = subtotalPedidoItemsSinIva(todosItems);
+      if (limiteGastoEdicion != null && subtotal > limiteGastoEdicion + 0.02) {
+        addToast(
+          'error',
+          'Límite excedido',
+          `El subtotal (${subtotal.toFixed(2)} €) supera el límite de gasto (${limiteGastoEdicion.toFixed(2)} €).`,
         );
-        
-        if (itemExistenteIndex >= 0) {
-          // Actualizează cantitatea produsului existent
-          const itemExistente = itemsExistentes[itemExistenteIndex];
-          itemExistente.cantidad = (itemExistente.cantidad || 0) + (productoNuevo.cantidad || 1);
-          itemExistente.subtotal_linea = itemExistente.precio_unitario * itemExistente.cantidad;
-          itemExistente.iva_linea = itemExistente.subtotal_linea * 0.21;
-          itemExistente.total_linea = itemExistente.subtotal_linea + itemExistente.iva_linea;
-        } else {
-          // Adaugă produsul nou (care nu există deja)
-          itemsNuevosSinDuplicados.push(productoNuevo);
-        }
-      });
-      
-      // Combină items-urile existente (actualizate) cu cele noi (care nu există deja)
-      const todosItems = [...itemsExistentes, ...itemsNuevosSinDuplicados];
+        return;
+      }
 
       // Calculează totalurile
-      const subtotal = todosItems.reduce((sum, item) => sum + (item.subtotal_linea || 0), 0);
       const iva_total = todosItems.reduce((sum, item) => sum + (item.iva_linea || 0), 0);
       const total = subtotal + iva_total;
 
@@ -2372,6 +2500,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
 
       addToast('success', 'Pedido actualizado', 'Los productos se han agregado correctamente al pedido');
       setPedidoEditando(null);
+      setLimiteGastoEdicion(null);
       setProductosNuevos([]);
       setProductosDisponibles([]);
       
@@ -2574,6 +2703,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                 <button
                   onClick={() => {
                     setPedidoEditando(null);
+                    setLimiteGastoEdicion(null);
                     setProductosNuevos([]);
                     setProductosDisponibles([]);
                   }}
@@ -2743,6 +2873,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                 <Button
                   onClick={() => {
                     setPedidoEditando(null);
+                    setLimiteGastoEdicion(null);
                     setProductosNuevos([]);
                     setProductosDisponibles([]);
                   }}

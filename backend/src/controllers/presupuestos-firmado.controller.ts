@@ -245,8 +245,20 @@ export class PresupuestosFirmadoController {
     }> = [];
     let es_solo_piscina = false;
     let recuperacion_agua_precio = 650;
+    let presupuesto_descuento_global_pct = 0;
     if (p.payload && typeof p.payload === 'object') {
       const payload = p.payload as Record<string, unknown>;
+      const rawPct = payload.presupuestoDescuentoGlobalPct;
+      if (
+        rawPct !== undefined &&
+        rawPct !== null &&
+        String(rawPct).trim() !== ''
+      ) {
+        const nd = Math.round(Number(rawPct));
+        if (Number.isFinite(nd)) {
+          presupuesto_descuento_global_pct = Math.min(100, Math.max(0, nd));
+        }
+      }
       const raw = payload.ofertaEconomica;
       if (Array.isArray(raw) && raw.length > 0) {
         oferta_economica = raw.map((row: any) => ({
@@ -303,6 +315,7 @@ export class PresupuestosFirmadoController {
       oferta_economica: oferta_economica.length ? oferta_economica : null,
       es_solo_piscina: oferta_economica.length > 0 ? es_solo_piscina : null,
       recuperacion_agua_precio,
+      presupuesto_descuento_global_pct,
       piscina_horarios_firma,
     };
   }
