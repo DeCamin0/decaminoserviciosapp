@@ -556,6 +556,35 @@
       function esFilaDescuentoFidelidad(desc) {
         return desc && String(desc).indexOf('Descuento por fidelidad') === 0;
       }
+      /** Compat presupuestos antiguos: quitar «(calendario anual)» en la columna DESCRIPCIÓN. */
+      function sanitizarDescripcionOfertaFirma(desc) {
+        if (desc == null || desc === '') return '';
+        var s = String(desc);
+        var cleaned = s.replace(/\(\s*calendario\s+anual\s*\)/gi, '').replace(/[ \t]{2,}/g, ' ').trim();
+        return cleaned || s;
+      }
+      function esFilaTotalBloqueOferta(row) {
+        return row && row.tipoOferta === '_blockTotal';
+      }
+      /** Incluye descuento + TOTAL de bloque tras cada línea de servicio seleccionada (variantes auxiliares u «otros servicios»). */
+      function expandIndicesConBloqueFidelidad(oferta, raw) {
+        var o = oferta || [];
+        var raws = Array.isArray(raw) ? raw.slice() : [];
+        var pct = pctFidelidadFirma || 0;
+        var set = {};
+        function add(j) {
+          if (typeof j === 'number' && !isNaN(j) && j >= 0 && j < o.length) set[String(j)] = true;
+        }
+        raws.forEach(function (i) {
+          add(i);
+          if (!pct) return;
+          if (i + 1 < o.length && esFilaDescuentoFidelidad(o[i + 1].descripcion)) {
+            add(i + 1);
+            if (i + 2 < o.length && esFilaTotalBloqueOferta(o[i + 2])) add(i + 2);
+          }
+        });
+        return Object.keys(set).map(function (k) { return parseInt(k, 10); }).sort(function (a, b) { return a - b; });
+      }
       function netImportesLineaFidelidad(row, pct) {
         if (!pct) return null;
         var f = 1 - pct / 100;
@@ -583,6 +612,7 @@
         } else {
           for (var k = 0; k < oferta.length; k++) {
             if (pctFidelidadFirma > 0 && esFilaDescuentoFidelidad(oferta[k].descripcion)) continue;
+            if (esFilaTotalBloqueOferta(oferta[k])) continue;
             indices.push(k);
           }
         }
@@ -613,6 +643,7 @@
           if (i < 0 || i >= oferta.length) return;
           var row = oferta[i];
           if (esFilaDescuentoFidelidad(row.descripcion)) return;
+          if (esFilaTotalBloqueOferta(row)) return;
           if (pct > 0) {
             var net = netImportesLineaFidelidad(row, pct);
             if (net) {
@@ -678,7 +709,13 @@
         ofertaEconomicaRows = oferta;
         esSoloPiscina = soloPiscina === true;
         section.style.display = 'block';
-        var hasVariantes = oferta.length > 1;
+        var filasSeleccionables = oferta.filter(function (r) {
+          if (pctFidelidadFirma > 0 && esFilaDescuentoFidelidad(r.descripcion)) return false;
+          if (esFilaTotalBloqueOferta(r)) return false;
+          if (r.descripcion === 'Recuperación de Agua') return false;
+          return true;
+        });
+        var hasVariantes = filasSeleccionables.length > 1;
         note.style.display = hasVariantes ? 'block' : 'none';
         document.getElementById('servicios-variante-note').textContent = hasVariantes
           ? 'Marque los servicios que acepta (al menos uno).'
@@ -696,7 +733,8 @@
           if (pct > 0 && esFilaDescuentoFidelidad(row.descripcion)) {
             return;
           }
-          var net = (pct > 0 && !esFilaDescuentoFidelidad(row.descripcion)) ? netImportesLineaFidelidad(row, pct) : null;
+          var isBlockTot = esFilaTotalBloqueOferta(row);
+          var net = (pct > 0 && !esFilaDescuentoFidelidad(row.descripcion) && !isBlockTot) ? netImportesLineaFidelidad(row, pct) : null;
           var mens = net
             ? ('<div><del class="precio-anterior-tachado">' + fmtNum(row.mensualidadSinIva) + '€+IVA</del> → <strong>' + fmtNum(net.mSin) + '€+IVA</strong></div>' +
                '<small><del class="precio-anterior-tachado">' + fmtNum(row.mensualidadConIva) + '€</del> → <strong>' + fmtNum(net.mCon) + '€ IVA incl.</strong></small>')
@@ -715,16 +753,17 @@
             piscinaVeranoSeq++;
           }
           var input = '';
-          if (hasVariantes && !isRecuperacion) {
+          if (hasVariantes && !isRecuperacion && !isBlockTot) {
             input = '<input type="checkbox" name="selected_oferta" value="' + idx + '" id="oferta_sel_' + idx + '" class="oferta-check"' + dataAttr + '>';
           } else if (isRecuperacion) {
             input = '<span class="recuperacion-incl" title="Incluido al renunciar al mantenimiento invernal">Incl.</span>';
           }
-          rowsHtml += '<tr class="radio-row' + (isRecuperacion ? ' recuperacion-row' : '') + '"' + piscinaVAttr + '><td class="col-radio">' + input + '</td><td>' + (row.descripcion || '-') + '</td><td class="precio-block">' + mens + '</td>';
+          rowsHtml += '<tr class="radio-row' + (isRecuperacion ? ' recuperacion-row' : '') + '"' + piscinaVAttr + '><td class="col-radio">' + input + '</td><td>' + (sanitizarDescripcionOfertaFirma(row.descripcion) || '-') + '</td><td class="precio-block">' + mens + '</td>';
           if (!esSoloPiscina) rowsHtml += '<td class="precio-block">' + anu + '</td>';
           rowsHtml += '</tr>';
         });
-        if (pct > 0 && oferta.length > 0) {
+        var tieneSubtotalesVarianteAux = oferta.some(function (r) { return esFilaTotalBloqueOferta(r); });
+        if (pct > 0 && oferta.length > 0 && !tieneSubtotalesVarianteAux) {
           rowsHtml += '<tr class="total-neto-firma bg-emerald-50 font-semibold border-t-2 border-emerald-300"><td class="col-radio"></td><td>TOTAL (importe neto a pagar, incl. descuento por fidelidad)</td><td class="precio-block" id="firma-total-mens">—</td>';
           if (!esSoloPiscina) rowsHtml += '<td class="precio-block" id="firma-total-anu">—</td>';
           rowsHtml += '</tr>';
@@ -961,6 +1000,7 @@
             recuperacionAgua = true;
             selectedOfertaIndices = selectedOfertaIndices.filter(function(i) { return i < ofertaOriginal.length; });
           }
+          selectedOfertaIndices = expandIndicesConBloqueFidelidad(ofertaEconomicaRows, selectedOfertaIndices);
         }
         if (selectedOfertaIndices.length === 0 && !recuperacionAgua && ofertaEconomicaRows && ofertaEconomicaRows.length > 1) {
           showMessage('Seleccione al menos un servicio de la lista.', true);

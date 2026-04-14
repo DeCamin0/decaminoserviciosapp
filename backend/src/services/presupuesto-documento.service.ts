@@ -13,6 +13,8 @@ export interface OfertaEconomicaRow {
   mensualidadConIva: number;
   anualidadSinIva: number;
   anualidadConIva: number;
+  /** p. ej. `_blockTotal` para subtotales por variante auxiliares (no aplicar de nuevo el % en PDF). */
+  tipoOferta?: string;
 }
 
 const MARGIN = 50;
@@ -640,6 +642,11 @@ function esFilaDescuentoFidelidadOfertaPdf(descripcion: string): boolean {
   return String(descripcion || '').startsWith('Descuento por fidelidad');
 }
 
+function esFilaTotalBloqueOfertaPdf(row: OfertaEconomicaRow): boolean {
+  return String((row as { tipoOferta?: string }).tipoOferta || '') ===
+    '_blockTotal';
+}
+
 function redondeOfertaImportePdf(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -780,16 +787,18 @@ function pintarCeldaPreciosDescuentoOfertaPdf(
       width: innerW,
       lineGap: 2,
     });
+    doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
     return;
   }
   drawPrecioAnteriorFlechaNeto(s1a, s1n, fs1s, '#111827', yBase1);
   drawPrecioAnteriorFlechaNeto(s2a, s2n, fs2s, '#065f46', yBase2);
+  doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
 }
 
 /** Calendario en texto para auxiliares (alineado con PresupuestosInformesPage.jsx). */
 function textoCalendarioAuxiliaresOferta(diasPorSemana: unknown): string {
   const d = Math.min(7, Math.max(0, Number(diasPorSemana) || 0));
-  if (d === 7) return 'los 7 días de la semana (calendario anual)';
+  if (d === 7) return 'los 7 días de la semana';
   if (d === 5) return 'de lunes a viernes (5 días por semana)';
   if (d === 6) return 'de lunes a sábado (6 días por semana)';
   if (d <= 0) return 'según días por semana indicados';
@@ -819,6 +828,174 @@ function bulletLineaAuxiliaresOferta(
   const diasTxt = textoCalendarioAuxiliaresOferta(calc?.diasPorSemana);
   const sufijoFestivos = calc?.sinFestivos ? ', sin festivos' : '';
   return `${h}h/día ${diasTxt}${sufijoFestivos}`;
+}
+
+/**
+ * Presupuestos guardados con «(calendario anual)» en la descripción: el PDF debe
+ * coincidir con el texto actual del frontend aunque no se vuelva a guardar.
+ */
+function normalizarDescripcionesOfertaEconomica(
+  oferta: OfertaEconomicaRow[],
+): OfertaEconomicaRow[] {
+  const re = /\(\s*calendario\s+anual\s*\)/gi;
+  return oferta.map((r) => {
+    const d = String(r.descripcion ?? '');
+    const cleaned = d.replace(re, '').replace(/[ \t]{2,}/g, ' ').trim();
+    return cleaned === d ? r : { ...r, descripcion: cleaned };
+  });
+}
+
+/** Un descuento global sobre la suma de filas (no aux multi-variante). */
+function aplicarDescuentoGlobalOfertaPdfForRows(
+  rows: OfertaEconomicaRow[],
+  pctRaw: unknown,
+): OfertaEconomicaRow[] {
+  const rounded = Math.round(Number(pctRaw));
+  const pct = Math.min(
+    100,
+    Math.max(0, Number.isFinite(rounded) ? rounded : 0),
+  );
+  if (!pct || !rows.length) return rows.map((r) => ({ ...r }));
+  let sumM = 0;
+  let sumA = 0;
+  for (const r of rows) {
+    sumM += Number(r.mensualidadSinIva) || 0;
+    sumA += Number(r.anualidadSinIva) || 0;
+  }
+  const descM = redondeOfertaImportePdf(sumM * (pct / 100));
+  const descA = redondeOfertaImportePdf(sumA * (pct / 100));
+  if (descM === 0 && descA === 0) return rows.map((r) => ({ ...r }));
+  return [
+    ...rows.map((r) => ({ ...r })),
+    {
+      descripcion: `Descuento por fidelidad (${pct}%)`,
+      mensualidadSinIva: -descM,
+      mensualidadConIva: redondeOfertaImportePdf(-descM * 1.21),
+      anualidadSinIva: -descA,
+      anualidadConIva: redondeOfertaImportePdf(-descA * 1.21),
+    },
+  ];
+}
+
+/**
+ * Payloads antiguos: varias líneas «auxiliares» + un solo «Descuento por fidelidad» sobre la suma.
+ * Convierte al mismo criterio que el frontend (descuento + TOTAL por variante auxiliar).
+ */
+function normalizarOfertaFidelidadMultiAuxDesdePayloadLegacy(
+  oferta: OfertaEconomicaRow[],
+  payload: Record<string, unknown>,
+): OfertaEconomicaRow[] {
+  if (!oferta.length) return oferta;
+  if (oferta.some((r) => esFilaTotalBloqueOfertaPdf(r))) return oferta;
+
+  const pct = Math.min(
+    100,
+    Math.max(0, Math.round(Number(payload.presupuestoDescuentoGlobalPct) || 0)),
+  );
+  if (!pct) return oferta;
+
+  const descRows = oferta.filter((r) =>
+    esFilaDescuentoFidelidadOfertaPdf(String(r.descripcion || '')),
+  );
+  if (descRows.length !== 1) return oferta;
+
+  const iD = oferta.findIndex((r) =>
+    esFilaDescuentoFidelidadOfertaPdf(String(r.descripcion || '')),
+  );
+  if (iD < 0) return oferta;
+
+  const selected = (payload.selectedServiciosPresupuesto || []) as Array<{
+    nombre?: string;
+  }>;
+  if (!selected.length) return oferta;
+
+  const nAux = selected.filter(
+    (s) => derivarTipoDesdeServicio(s.nombre || '') === 'auxiliares',
+  ).length;
+  if (nAux < 2) return oferta;
+
+  const before = oferta.slice(0, iD);
+  const afterDiscount = oferta.slice(iD + 1);
+
+  if (before.length < selected.length) return oferta;
+
+  let idx = 0;
+  const auxRows: OfertaEconomicaRow[] = [];
+  const otherSvcRows: OfertaEconomicaRow[] = [];
+  for (const s of selected) {
+    const row = before[idx];
+    if (!row) return oferta;
+    const tipo = derivarTipoDesdeServicio(s.nombre || '');
+    if (tipo === 'auxiliares') {
+      auxRows.push({ ...row, tipoOferta: 'auxiliares' });
+    } else {
+      otherSvcRows.push({ ...row, tipoOferta: tipo });
+    }
+    idx += 1;
+  }
+  const tailRest = before.slice(idx);
+
+  if (auxRows.length < 2) return oferta;
+
+  const out: OfertaEconomicaRow[] = [];
+  let variantNum = 0;
+  for (const r of auxRows) {
+    variantNum += 1;
+    out.push({ ...r, tipoOferta: 'auxiliares' });
+    const m0 = Number(r.mensualidadSinIva) || 0;
+    const a0 = Number(r.anualidadSinIva) || 0;
+    const descM = redondeOfertaImportePdf(m0 * (pct / 100));
+    const descA = redondeOfertaImportePdf(a0 * (pct / 100));
+    out.push({
+      descripcion: `Descuento por fidelidad (${pct}%)`,
+      mensualidadSinIva: -descM,
+      mensualidadConIva: redondeOfertaImportePdf(-descM * 1.21),
+      anualidadSinIva: -descA,
+      anualidadConIva: redondeOfertaImportePdf(-descA * 1.21),
+    });
+    const netM = redondeOfertaImportePdf(m0 - descM);
+    const netA = redondeOfertaImportePdf(a0 - descA);
+    out.push({
+      descripcion: `TOTAL (importe neto a pagar, incl. descuento por fidelidad) — variante ${variantNum}`,
+      mensualidadSinIva: netM,
+      mensualidadConIva: redondeOfertaImportePdf(netM * 1.21),
+      anualidadSinIva: netA,
+      anualidadConIva: redondeOfertaImportePdf(netA * 1.21),
+      tipoOferta: '_blockTotal',
+    });
+  }
+
+  const otherRows = [...otherSvcRows, ...tailRest.map((r) => ({ ...r }))];
+  if (otherRows.length) {
+    const tailWithDiscount = aplicarDescuentoGlobalOfertaPdfForRows(
+      otherRows,
+      pct,
+    );
+    out.push(...tailWithDiscount);
+    const netRestM = redondeOfertaImportePdf(
+      tailWithDiscount.reduce(
+        (acc, x) => acc + (Number(x.mensualidadSinIva) || 0),
+        0,
+      ),
+    );
+    const netRestA = redondeOfertaImportePdf(
+      tailWithDiscount.reduce(
+        (acc, x) => acc + (Number(x.anualidadSinIva) || 0),
+        0,
+      ),
+    );
+    out.push({
+      descripcion:
+        'TOTAL (importe neto a pagar, incl. descuento por fidelidad) — otros servicios',
+      mensualidadSinIva: netRestM,
+      mensualidadConIva: redondeOfertaImportePdf(netRestM * 1.21),
+      anualidadSinIva: netRestA,
+      anualidadConIva: redondeOfertaImportePdf(netRestA * 1.21),
+      tipoOferta: '_blockTotal',
+    });
+  }
+
+  return [...out, ...afterDiscount.map((r) => ({ ...r }))];
 }
 
 /** Bonificación % en PDF apps (0–100). Vacío → 100 (incluido sin coste). */
@@ -1447,6 +1624,8 @@ export class PresupuestoDocumentoService {
         signed_pdf_sha256?: string;
         signed_pdf_size_bytes?: number;
       };
+      /** Mezcla por clave sobre el payload guardado (p. ej. `ofertaEconomica` de la pantalla sin guardar). */
+      payloadSnapshot?: Record<string, unknown>;
     },
   ): Promise<{ buffer: Buffer; filename: string }> {
     const company = this.getCompany() as any;
@@ -1467,7 +1646,13 @@ export class PresupuestoDocumentoService {
         '-',
       );
       const numeroPresupuesto = await this.getOrAssignNumeroPresupuesto(id);
-      const payload = (presupuesto.payload || {}) as Record<string, unknown>;
+      const basePayload = (presupuesto.payload || {}) as Record<string, unknown>;
+      const snap = opciones?.payloadSnapshot;
+      const payload = (
+        snap && typeof snap === 'object'
+          ? ({ ...basePayload, ...snap } as Record<string, unknown>)
+          : basePayload
+      ) as Record<string, unknown>;
 
       let clienteDireccionLineas: string[] = [];
       let ibanCliente: string | null = null;
@@ -1703,6 +1888,11 @@ export class PresupuestoDocumentoService {
         });
       }
       ofertaEconomica = expandOfertaInvernalPiscinaDesdePayload(
+        ofertaEconomica,
+        payload,
+      );
+      ofertaEconomica = normalizarDescripcionesOfertaEconomica(ofertaEconomica);
+      ofertaEconomica = normalizarOfertaFidelidadMultiAuxDesdePayloadLegacy(
         ofertaEconomica,
         payload,
       );
@@ -4325,6 +4515,7 @@ export class PresupuestoDocumentoService {
                   esFilaDescuentoFidelidadOfertaPdf(
                     String(row.descripcion || ''),
                   ) ||
+                  esFilaTotalBloqueOfertaPdf(row) ||
                   tiposIncluidos.has(
                     derivarTipoDesdeServicio(row.descripcion || ''),
                   ),
@@ -4394,6 +4585,7 @@ export class PresupuestoDocumentoService {
               esFilaDescuentoFidelidadOfertaPdf(
                 String(row.descripcion || ''),
               ) ||
+              esFilaTotalBloqueOfertaPdf(row) ||
               derivarTipoDesdeServicio(row.descripcion || '') === 'piscina',
           );
         const fmtNum = (n: number) =>
@@ -4448,9 +4640,10 @@ export class PresupuestoDocumentoService {
           colDescW = Math.round(ofertaFullWidth * 0.4);
           colMensW = ofertaFullWidth - colDescW;
         } else {
-          colAnualW = Math.round(ofertaFullWidth * 0.34);
-          colMensW = Math.round(ofertaFullWidth * 0.3);
-          colDescW = ofertaFullWidth - colMensW - colAnualW;
+          // Proporciones alineadas con la tabla web (DESCRIPCIÓN más ancha; MENSUALIDAD y ANUALIDAD iguales).
+          colDescW = Math.round(ofertaFullWidth * 0.5);
+          colMensW = Math.round((ofertaFullWidth - colDescW) / 2);
+          colAnualW = ofertaFullWidth - colDescW - colMensW;
         }
         const rowH = 46;
         const cellPad = 6;
@@ -4650,8 +4843,11 @@ export class PresupuestoDocumentoService {
             (tieneColAnual ? colMensW : ofertaFullWidth - colDescW) -
             cellPad * 2;
           const wAnualOferta = colAnualW - cellPad * 2;
+          /** Misma tipografía para toda la columna DESCRIPCIÓN (servicio, descuento, total). */
+          const ofertaDescFont = 'Helvetica';
+          const ofertaDescSize = 9;
+          const ofertaDescColor = '#1a1a1a';
           for (const row of filasOfertaPdf) {
-            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
             const desc =
               (row.descripcion != null ? String(row.descripcion) : '').trim() ||
               '—';
@@ -4660,6 +4856,7 @@ export class PresupuestoDocumentoService {
             const anualSin = Number(row.anualidadSinIva) || 0;
             const anualCon = Number(row.anualidadConIva) || 0;
             const esDesc = esFilaDescuentoFidelidadOfertaPdf(desc);
+            const esBlockTot = esFilaTotalBloqueOfertaPdf(row);
             let mensCell: string;
             let anualCell: string;
             let netMS = mensSin;
@@ -4667,7 +4864,7 @@ export class PresupuestoDocumentoService {
             let netAS = anualSin;
             let netAC = anualCon;
             let usaCeldaTachadoFlecha = false;
-            if (pctFidelidadPdf > 0 && !esDesc) {
+            if (pctFidelidadPdf > 0 && !esDesc && !esBlockTot) {
               const f = 1 - pctFidelidadPdf / 100;
               netMS = redondeOfertaImportePdf(mensSin * f);
               netMC = redondeOfertaImportePdf(netMS * 1.21);
@@ -4680,6 +4877,10 @@ export class PresupuestoDocumentoService {
               mensCell = `${fmtNum(mensSin)}€+IVA\n${fmtNum(mensCon)}€ IVA incluido`;
               anualCell = `${fmtNum(anualSin)}€+IVA\n${fmtNum(anualCon)}€ IVA incluido`;
             }
+            doc
+              .fillColor(ofertaDescColor)
+              .font(ofertaDescFont)
+              .fontSize(ofertaDescSize);
             const hDesc = doc.heightOfString(desc, {
               width: wDescOferta,
               lineGap: 2,
@@ -4748,6 +4949,10 @@ export class PresupuestoDocumentoService {
               doc
                 .rect(MARGIN + colDescW + colMensW, ofertaY, colAnualW, rowDyn)
                 .stroke('#333');
+            doc
+              .fillColor(ofertaDescColor)
+              .font(ofertaDescFont)
+              .fontSize(ofertaDescSize);
             doc.text(desc, MARGIN + cellPad, ofertaY + cellPad, {
               width: wDescOferta,
               lineGap: 2,
@@ -4778,6 +4983,7 @@ export class PresupuestoDocumentoService {
                 );
               }
             } else {
+              doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
               doc.text(
                 mensCell,
                 MARGIN + colDescW + cellPad,
@@ -4795,10 +5001,19 @@ export class PresupuestoDocumentoService {
                   { width: wAnualOferta, lineGap: 2 },
                 );
             }
+            // pintarCelda deja Helvetica-Bold y color del neto; resetea para la siguiente fila
+            doc.fillColor(ofertaDescColor).font(ofertaDescFont).fontSize(10);
             ofertaY += rowDyn;
           }
 
-          if (pctFidelidadPdf > 0 && filasOfertaPdf.length > 0) {
+          const ofertaPdfTieneSubtotalesVarianteAux = filasOfertaPdf.some(
+            (r) => esFilaTotalBloqueOfertaPdf(r),
+          );
+          if (
+            pctFidelidadPdf > 0 &&
+            filasOfertaPdf.length > 0 &&
+            !ofertaPdfTieneSubtotalesVarianteAux
+          ) {
             const tMS = redondeOfertaImportePdf(
               filasOfertaPdf.reduce(
                 (acc, r) => acc + (Number(r.mensualidadSinIva) || 0),

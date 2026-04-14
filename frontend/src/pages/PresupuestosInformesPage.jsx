@@ -110,7 +110,7 @@ function countDiasEnRangoPorDiasTipo(fechaDesde, fechaHasta, diasTipo) {
 /** Texto calendario para oferta auxiliares (evita "365 días" fijo si solo son 5 días/semana, etc.). */
 function textoCalendarioAuxiliaresOferta(diasPorSemana) {
   const d = Math.min(7, Math.max(0, Number(diasPorSemana) || 0));
-  if (d === 7) return 'los 7 días de la semana (calendario anual)';
+  if (d === 7) return 'los 7 días de la semana';
   if (d === 5) return 'de lunes a viernes (5 días por semana)';
   if (d === 6) return 'de lunes a sábado (6 días por semana)';
   if (d <= 0) return 'según días por semana indicados';
@@ -165,6 +165,65 @@ function aplicarDescuentoGlobalOfertaRows(rows, pctRaw) {
 
 function esFilaDescuentoPorFidelidadOferta(row) {
   return String(row?.descripcion || '').startsWith('Descuento por fidelidad');
+}
+
+/** Subtotal al final de cada bloque (p. ej. variante auxiliares con descuento ya aplicado). */
+function esFilaTotalBloqueOferta(row) {
+  return row?.tipoOferta === '_blockTotal';
+}
+
+/**
+ * Con 2+ líneas «auxiliares» (variantes del mismo servicio), el descuento por fidelidad y el TOTAL
+ * deben mostrarse por variante, no sumando ambas en un solo total.
+ */
+function aplicarDescuentoGlobalOfertaRowsConVariantesAuxiliares(rows, pctRaw) {
+  const rounded = Math.round(Number(pctRaw));
+  const pct = Math.min(100, Math.max(0, Number.isFinite(rounded) ? rounded : 0));
+  const auxRows = rows.filter((r) => r.tipoOferta === 'auxiliares');
+  if (auxRows.length < 2 || !pct) {
+    return aplicarDescuentoGlobalOfertaRows(rows, pctRaw);
+  }
+  const otherRows = rows.filter((r) => r.tipoOferta !== 'auxiliares');
+  const out = [];
+  let variantNum = 0;
+  for (const r of auxRows) {
+    variantNum += 1;
+    out.push(r);
+    const descM = roundOfertaMoney((Number(r.mensualidadSinIva) || 0) * (pct / 100));
+    const descA = roundOfertaMoney((Number(r.anualidadSinIva) || 0) * (pct / 100));
+    out.push({
+      descripcion: `Descuento por fidelidad (${pct}%)`,
+      mensualidadSinIva: -descM,
+      mensualidadConIva: roundOfertaMoney(-descM * 1.21),
+      anualidadSinIva: -descA,
+      anualidadConIva: roundOfertaMoney(-descA * 1.21),
+    });
+    const netM = roundOfertaMoney((Number(r.mensualidadSinIva) || 0) - descM);
+    const netA = roundOfertaMoney((Number(r.anualidadSinIva) || 0) - descA);
+    out.push({
+      descripcion: `TOTAL (importe neto a pagar, incl. descuento por fidelidad) — variante ${variantNum}`,
+      mensualidadSinIva: netM,
+      mensualidadConIva: roundOfertaMoney(netM * 1.21),
+      anualidadSinIva: netA,
+      anualidadConIva: roundOfertaMoney(netA * 1.21),
+      tipoOferta: '_blockTotal',
+    });
+  }
+  if (otherRows.length) {
+    const tail = aplicarDescuentoGlobalOfertaRows(otherRows, pctRaw);
+    out.push(...tail);
+    const netRestM = roundOfertaMoney(tail.reduce((a, x) => a + (Number(x.mensualidadSinIva) || 0), 0));
+    const netRestA = roundOfertaMoney(tail.reduce((a, x) => a + (Number(x.anualidadSinIva) || 0), 0));
+    out.push({
+      descripcion: 'TOTAL (importe neto a pagar, incl. descuento por fidelidad) — otros servicios',
+      mensualidadSinIva: netRestM,
+      mensualidadConIva: roundOfertaMoney(netRestM * 1.21),
+      anualidadSinIva: netRestA,
+      anualidadConIva: roundOfertaMoney(netRestA * 1.21),
+      tipoOferta: '_blockTotal',
+    });
+  }
+  return out;
 }
 
 /** Importes netos por línea coherentes con el % global (misma proporción que la fila negativa). */
@@ -795,7 +854,14 @@ export default function PresupuestosInformesPage() {
         anualidadSinIva = precioSinIvaMes * 12 + extraPiscina * 12;
         anualidadConIva = anualidadSinIva * 1.21;
       }
-      return { descripcion, mensualidadSinIva, mensualidadConIva, anualidadSinIva, anualidadConIva };
+      return {
+        descripcion,
+        mensualidadSinIva,
+        mensualidadConIva,
+        anualidadSinIva,
+        anualidadConIva,
+        tipoOferta: tipo,
+      };
     }).concat(
       (() => {
         if (!selectedServiciosPresupuesto.some((s) => derivarTipoDesdeServicio(s.nombre) === 'piscina')) return [];
@@ -810,6 +876,7 @@ export default function PresupuestosInformesPage() {
             mensualidadConIva: precioCon * 1.21,
             anualidadSinIva: precioCon,
             anualidadConIva: precioCon * 1.21,
+            tipoOferta: 'piscina',
           });
         }
         if (precioSin > 0) {
@@ -819,18 +886,20 @@ export default function PresupuestosInformesPage() {
             mensualidadConIva: precioSin * 1.21,
             anualidadSinIva: precioSin,
             anualidadConIva: precioSin * 1.21,
+            tipoOferta: 'piscina',
           });
         }
         return filas;
       })(),
     );
-    return aplicarDescuentoGlobalOfertaRows(rows, presupuestoDescuentoGlobalPct);
+    return aplicarDescuentoGlobalOfertaRowsConVariantesAuxiliares(rows, presupuestoDescuentoGlobalPct);
   };
 
   const renderOfertaEconomicaTbody = (ofertaSoloPiscina) => {
     const rows = buildOfertaEconomica();
     const pct = Math.min(100, Math.max(0, Math.round(Number(presupuestoDescuentoGlobalPct)) || 0));
     const fmt = (n) => (n ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const tieneTotalesPorVarianteAux = rows.some((r) => esFilaTotalBloqueOferta(r));
     const sumM = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.mensualidadSinIva) || 0), 0));
     const sumMc = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.mensualidadConIva) || 0), 0));
     const sumA = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.anualidadSinIva) || 0), 0));
@@ -839,10 +908,11 @@ export default function PresupuestosInformesPage() {
       <>
         {rows.map((row, idx) => {
           const esDesc = esFilaDescuentoPorFidelidadOferta(row);
-          const net = pct > 0 && !esDesc ? importesOfertaLineaTrasFidelidadPct(row, pct) : null;
+          const esTotBloque = esFilaTotalBloqueOferta(row);
+          const net = pct > 0 && !esDesc && !esTotBloque ? importesOfertaLineaTrasFidelidadPct(row, pct) : null;
           return (
-            <tr key={idx} className="border-b border-gray-200">
-              <td className="border border-gray-300 px-3 py-2 text-gray-800">{row.descripcion}</td>
+            <tr key={idx} className={`border-b border-gray-200${esTotBloque ? ' bg-emerald-50/90 font-semibold' : ''}`}>
+              <td className="border border-gray-300 px-3 py-2 text-gray-800 break-words">{row.descripcion}</td>
               <td className="border border-gray-300 px-3 py-2 align-top">
                 {!net ? (
                   <>
@@ -890,7 +960,7 @@ export default function PresupuestosInformesPage() {
             </tr>
           );
         })}
-        {pct > 0 && (
+        {pct > 0 && !tieneTotalesPorVarianteAux && (
           <tr key="total-neto-oferta" className="bg-emerald-50/90 border-t-2 border-emerald-300 font-semibold">
             <td className="border border-gray-300 px-3 py-2 text-gray-900">
               TOTAL (importe neto a pagar, incl. descuento por fidelidad)
@@ -1233,9 +1303,17 @@ export default function PresupuestosInformesPage() {
   const handleGenerarPresupuesto = async (item) => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(routes.getPresupuestoGenerarDocumento(item.id, 'pdf', config.IS_HERA ? 'hera' : null), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const useLivePayload =
+        presupuestoGuardadoEditarId === item.id && selectedServiciosPresupuesto.length > 0;
+      const response = useLivePayload
+        ? await fetch(routes.postPresupuestoGenerarDocumento(item.id, config.IS_HERA ? 'hera' : null), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload: buildPayload() }),
+          })
+        : await fetch(routes.getPresupuestoGenerarDocumento(item.id, 'pdf', config.IS_HERA ? 'hera' : null), {
+            headers: { Authorization: `Bearer ${token}` },
+          });
       if (!response.ok) {
         const errText = await response.text();
         throw new Error(errText || 'Error al generar PDF');
@@ -5691,7 +5769,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       <p className="text-sm font-medium text-gray-800 mb-2">Descuento por fidelidad sobre la oferta económica</p>
                       <div className="flex flex-wrap items-center gap-3">
                         <label htmlFor="presupuesto-descuento-global-pct" className="text-sm text-gray-700">
-                          Porcentaje (0–100 %, sobre la suma de líneas sin IVA antes del descuento):
+                          Porcentaje (0–100 %; con varias variantes de auxiliares, el descuento y el TOTAL se calculan por cada variante):
                         </label>
                         <Input
                           id="presupuesto-descuento-global-pct"
@@ -5708,7 +5786,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         />
                       </div>
                       <p className="text-xs text-gray-500 mt-2">
-                        Se añade una línea «Descuento por fidelidad» en OFERTA ECONOMICA y en el PDF guardado; en la firma («servicios contratados») se usan los mismos importes del presupuesto.
+                        Se añade «Descuento por fidelidad» en OFERTA ECONOMICA y en el PDF guardado. Si hay dos o más variantes de auxiliares, cada una lleva su descuento y su TOTAL (no se suman entre sí). En la firma se usan los mismos importes del presupuesto.
                       </p>
                     </div>
                   )}
@@ -5721,7 +5799,12 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       <h3 className="text-xl font-semibold text-gray-800 mb-2">OFERTA ECONOMICA</h3>
                       <p className="text-gray-700 mb-4">El precio de los servicios, en base a todo lo anteriormente expuesto es el siguiente:</p>
                       <div className="overflow-x-auto">
-                        <table className="w-full border-collapse border border-gray-300 text-sm">
+                        <table className="w-full table-fixed border-collapse border border-gray-300 text-sm">
+                          <colgroup>
+                            <col style={{ width: ofertaSoloPiscina ? '40%' : '50%' }} />
+                            <col style={{ width: ofertaSoloPiscina ? '60%' : '25%' }} />
+                            {!ofertaSoloPiscina && <col style={{ width: '25%' }} />}
+                          </colgroup>
                           <thead>
                             <tr className="bg-gray-100">
                               <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-800">DESCRIPCION</th>
@@ -5847,7 +5930,12 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
               <>
                 <p className="text-gray-700">El precio de los servicios, en base a todo lo anteriormente expuesto es el siguiente:</p>
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-gray-300 text-sm">
+                  <table className="w-full table-fixed border-collapse border border-gray-300 text-sm">
+                    <colgroup>
+                      <col style={{ width: ofertaSoloPiscina ? '40%' : '50%' }} />
+                      <col style={{ width: ofertaSoloPiscina ? '60%' : '25%' }} />
+                      {!ofertaSoloPiscina && <col style={{ width: '25%' }} />}
+                    </colgroup>
                     <thead>
                       <tr className="bg-gray-100">
                         <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-800">DESCRIPCION</th>

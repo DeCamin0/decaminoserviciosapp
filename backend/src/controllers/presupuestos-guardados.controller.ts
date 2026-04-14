@@ -89,6 +89,36 @@ export class PresupuestosGuardadosController {
     res.send(buffer);
   }
 
+  /**
+   * Mismo PDF que GET, pero el body puede incluir `payload` (oferta en pantalla)
+   * para que coincida con el frontend sin guardar antes.
+   */
+  @Post(':id/generar-documento')
+  async generarDocumentoConPayload(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('company') company: string | undefined,
+    @Body() body: { payload?: Record<string, unknown> },
+    @Res() res: Response,
+  ) {
+    const companyKey =
+      company?.toLowerCase() === 'hera' ? ('hera' as const) : undefined;
+    const snap =
+      body?.payload && typeof body.payload === 'object' ? body.payload : undefined;
+    const { buffer, filename } =
+      await this.presupuestoDocumentoService.generarPdf(id, {
+        ...(companyKey && { companyKey }),
+        ...(snap ? { payloadSnapshot: snap } : {}),
+      });
+    const safeName = encodeURIComponent(filename);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"; filename*=UTF-8''${safeName}`,
+    );
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  }
+
   @Get()
   async getAll() {
     const data = await this.presupuestosGuardadosService.findAll();

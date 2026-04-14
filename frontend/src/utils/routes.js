@@ -321,6 +321,13 @@ export const routes = {
     const q = params.toString();
     return `${BACKEND_BASE}/api/presupuestos-guardados/${id}/generar-documento` + (q ? `?${q}` : '');
   },
+  /** PDF con payload en vivo (misma URL, POST) — alineado con la pantalla de edición. */
+  postPresupuestoGenerarDocumento: (id, company = null) => {
+    const params = new URLSearchParams();
+    if (company === 'hera') params.set('company', 'hera');
+    const q = params.toString();
+    return `${BACKEND_BASE}/api/presupuestos-guardados/${id}/generar-documento` + (q ? `?${q}` : '');
+  },
   getPresupuestoPdfFirmado: (id) => (`${BACKEND_BASE}/api/presupuestos-guardados/${id}/pdf-firmado`),
   enviarPresupuestoEmail: (id) => (`${BACKEND_BASE}/api/presupuestos-guardados/${id}/enviar-email`),
 
