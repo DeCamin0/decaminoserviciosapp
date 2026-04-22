@@ -6,6 +6,34 @@ import sizeOf from 'image-size';
 import PDFDocument from 'pdfkit';
 import { PresupuestosGuardadosService } from './presupuestos-guardados.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { clampPresupuestoDescuentoGlobalPct } from '../utils/presupuesto-descuento-pct';
+import {
+  AUXILIARES_OPERATIVA_IDS,
+  filterAuxiliaresOperativaLines,
+  type PresupuestoAuxiliaresOperativaPayload,
+} from '../utils/presupuesto-auxiliares-operativa';
+import {
+  LIMPIEZA_OPERATIVA_IDS,
+  filterLimpiezaOperativaLines,
+  type PresupuestoLimpiezaOperativaPayload,
+} from '../utils/presupuesto-limpieza-operativa';
+import {
+  JARDINERIA_OPERATIVA_IDS,
+  filterJardineriaOperativaLines,
+  type PresupuestoJardineriaOperativaPayload,
+} from '../utils/presupuesto-jardineria-operativa';
+import {
+  CUBOS_OPERATIVA_IDS,
+  filterCubosOperativaLines,
+  textoHorarioAplicableCubosOferta,
+  type PresupuestoCubosOperativaPayload,
+} from '../utils/presupuesto-cubos-operativa';
+import {
+  GARAJE_OPERATIVA_IDS,
+  filterGarajeOperativaLines,
+  tareasIdsGarajeParaVariantePdf,
+  type PresupuestoGarajeOperativaPayload,
+} from '../utils/presupuesto-garaje-operativa';
 
 export interface OfertaEconomicaRow {
   descripcion: string;
@@ -23,6 +51,38 @@ const PAGE_HEIGHT = 842;
 const FOOTER_Y = 808;
 /** Y pentru numerotare „Pag. x de y” – deasupra liniei De Camino (FOOTER_Y 808) ca să rămână pe pagină. */
 const PAGE_NUM_Y = 778;
+/**
+ * Margen inferior para la cola legal tras la tabla 3.1 (nota + condiciones + revisión + formalización).
+ * Con margen holgado se evita que PDFKit pagine solo un bullet en página nueva **sin** logo.
+ */
+const OFERTA_LEGAL_SAFE_BOTTOM_Y = PAGE_NUM_Y - 48;
+
+/** Nueva página con watermark y logo (misma apariencia que el inicio de 3.1). */
+function ofertaPdfNuevaPaginaConMarca(
+  doc: InstanceType<typeof PDFDocument>,
+  logoPath: string | null,
+): void {
+  doc.addPage({ size: 'A4', margin: MARGIN });
+  doc.opacity(1).fillColor('#1a1a1a');
+  if (logoPath) {
+    try {
+      doc.opacity(0.1);
+      doc.image(
+        logoPath,
+        (PAGE_WIDTH - 400) / 2,
+        (PAGE_HEIGHT - 400) / 2,
+        {
+          width: 400,
+          height: 400,
+        },
+      );
+      doc.opacity(1);
+      doc.image(logoPath, MARGIN, 40, { width: 56, height: 56 });
+    } catch {
+      // skip
+    }
+  }
+}
 /** Nombres de meses en español para formatear fechas. */
 const MESES_ES = [
   'enero',
@@ -332,6 +392,29 @@ const CUBOS_HERA = {
     'El servicio se prestará de acuerdo con los horarios y requisitos establecidos por la ordenanza municipal correspondiente.',
 };
 
+/** Limpieza de garajes (tareas operativas) – texto presupuesto Betania / Decamino. */
+const GARAJE_DECAMINO = {
+  seccionTareas: 'TAREAS OPERATIVAS',
+  tareasIntro:
+    'Los auxiliares de servicios tienen establecidas unas tareas por defecto, cualquiera de ellas puede ser sustituida por otras o modificadas a petición del cliente, entre dichas tareas se encuentran.',
+  tarea1: 'Desempolvado de paredes',
+  tarea2:
+    'Limpieza de tuberías, puntos de luz, extintores, elementos decorativos',
+  tareaSueloFregadora: 'Limpieza del suelo con máquina de hombre sentado',
+  tareaSueloKarcher: 'Limpieza del suelo con Karcher',
+  parrVehiculos:
+    'Para una limpieza más efectiva y segura no debe de haber ningún vehículo ni objeto en el interior del garaje en el momento de la limpieza. Se trabaja con maquinaria que produce salpicadura y proyección de pequeños objetos.',
+  parrAviso:
+    'Para la realización de trabajos se pasará aviso con mínimo 10 días naturales para que los usuarios puedan desalojar las plazas de garaje.',
+  notaPlazas:
+    'Nota Importante: las plazas ocupadas no se limpiarán después del día asignado a la limpieza.',
+  notaListado:
+    '(Se pasará a la administración un listado con las plazas ocupadas en el momento de realización de los servicios.)',
+};
+
+/** Misma estructura operativa (HERA). */
+const GARAJE_HERA: typeof GARAJE_DECAMINO = { ...GARAJE_DECAMINO };
+
 /** 5. CONDICIONES CONTRACTUALES – texto Decamino. */
 const CONDICIONES_CONTRACTUALES_DECAMINO = {
   intro:
@@ -559,6 +642,51 @@ function getPiscinaStripPaths(): [string | null, string | null, string | null] {
   return [find('PISCINA1.png'), find('PISCINA2.png'), find('PISCINA3.png')];
 }
 
+/**
+ * Foto máquina hombre sentado (página garaje en PDF, como presupuesto referencia).
+ * Coloca el archivo en backend/assets (o raíz assets junto al backend) con uno de estos nombres.
+ * Opcional: env GARAJE_MAQUINA_IMAGE con nombre de archivo o ruta absoluta.
+ */
+function getPresupuestoGarajeMaquinaImagePath(): string | null {
+  const envName = (process.env.GARAJE_MAQUINA_IMAGE || '').trim();
+  const bases = [
+    path.join(process.cwd(), 'assets'),
+    path.join(__dirname, '..', '..', 'assets'),
+    path.join(process.cwd(), '..', 'frontend', 'public'),
+  ];
+  const tryFile = (fileName: string): string | null => {
+    if (!fileName) return null;
+    if (path.isAbsolute(fileName) && fs.existsSync(fileName)) {
+      return fileName;
+    }
+    const baseName = path.basename(fileName);
+    for (const base of bases) {
+      const p = path.join(base, baseName);
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  };
+  if (envName) {
+    const fromEnv = tryFile(envName);
+    if (fromEnv) return fromEnv;
+  }
+  const names = [
+    'GARAJEMACHINA.jpeg',
+    'GARAJEMACHINA.jpg',
+    'GARAJEMACHINA.png',
+    'GARAJEMAQUINA.jpeg',
+    'GARAJEMAQUINA.jpg',
+    'GARAJEMAQUINA.png',
+  ];
+  for (const base of bases) {
+    for (const n of names) {
+      const p = path.join(base, n);
+      if (fs.existsSync(p)) return p;
+    }
+  }
+  return null;
+}
+
 /** Ruta ștampilă pentru chenarul EMPRESA (Aceptación). COMPANY_STAMP_PATH din env sau fallback la stampila*. */
 function getStampPath(): string | null {
   const envStamp = (process.env.COMPANY_STAMP_PATH || '').trim();
@@ -626,16 +754,94 @@ function getStampPathForCompany(
   return getStampPath();
 }
 
+type TipoServicioPresupuesto =
+  | 'auxiliares'
+  | 'limpieza'
+  | 'garaje'
+  | 'jardineria'
+  | 'cubos'
+  | 'piscina';
+
+type NumerosSeccionOperativa = {
+  aux?: number;
+  limp?: number;
+  garaje: number[];
+  jard?: number;
+  cubos?: number;
+  pisc?: number;
+};
+
+/** Índice 2.x + números de sección coherentes con el orden de páginas del PDF. */
+function buildDescripcionOperativaLineasYNumeros(
+  tiposIncluidos: Set<string>,
+  nServiciosGaraje: number,
+  /** Dos filas garaje + ambas tareas de suelo en PDF: títulos alineados con máquina / Karcher. */
+  garajeIndicePorMetodoSuelo?: boolean,
+): { lineas: string[]; nums: NumerosSeccionOperativa } {
+  const nums: NumerosSeccionOperativa = { garaje: [] };
+  const lineas: string[] = [];
+  let s = 1;
+  if (tiposIncluidos.has('auxiliares')) {
+    nums.aux = s;
+    lineas.push(`2.${s++}  Auxiliar de Servicios`);
+  }
+  if (tiposIncluidos.has('limpieza')) {
+    nums.limp = s;
+    lineas.push(`2.${s++}  Servicio de Limpieza`);
+  }
+  if (tiposIncluidos.has('garaje')) {
+    const c = Math.max(1, nServiciosGaraje || 1);
+    for (let i = 0; i < c; i++) {
+      nums.garaje.push(s);
+      let sufijoGarajeIndice = '';
+      if (c > 1) {
+        if (garajeIndicePorMetodoSuelo && c === 2) {
+          sufijoGarajeIndice =
+            i === 0 ? ' — máquina hombre sentado' : ' — Karcher';
+        } else {
+          sufijoGarajeIndice = ` (opción ${i + 1})`;
+        }
+      }
+      lineas.push(`2.${s++}  Limpieza de garaje${sufijoGarajeIndice}`);
+    }
+  }
+  if (tiposIncluidos.has('jardineria')) {
+    nums.jard = s;
+    lineas.push(`2.${s++}  Jardinería`);
+  }
+  if (tiposIncluidos.has('cubos')) {
+    nums.cubos = s;
+    lineas.push(`2.${s++}  Gestión Cubos de Basura`);
+  }
+  if (tiposIncluidos.has('piscina')) {
+    nums.pisc = s;
+    lineas.push(`2.${s++}  Mantenimiento integral piscina comunitaria`);
+  }
+  return { lineas, nums };
+}
+
 /** Deriva el tipo de servicio desde el nombre */
-function derivarTipoDesdeServicio(
-  nombre: string,
-): 'auxiliares' | 'limpieza' | 'jardineria' | 'cubos' | 'piscina' {
+function derivarTipoDesdeServicio(nombre: string): TipoServicioPresupuesto {
   const n = String(nombre || '').toLowerCase();
+  if (/garaje/.test(n)) return 'garaje';
   if (/limpieza/.test(n)) return 'limpieza';
   if (/jardin/.test(n)) return 'jardineria';
   if (/cubos|basura/.test(n)) return 'cubos';
   if (/piscina/.test(n)) return 'piscina';
   return 'auxiliares';
+}
+
+type ModoGarajePdf = 'fregadora' | 'karcher' | 'ambos';
+
+function normalizarModoGarajePayload(
+  calc: Record<string, unknown> | undefined,
+): ModoGarajePdf {
+  const raw = String(calc?.modoGaraje ?? 'fregadora')
+    .toLowerCase()
+    .trim();
+  if (raw === 'ambos' || raw === 'both') return 'ambos';
+  if (raw === 'karcher') return 'karcher';
+  return 'fregadora';
 }
 
 function esFilaDescuentoFidelidadOfertaPdf(descripcion: string): boolean {
@@ -659,10 +865,126 @@ function redondeOfertaImportePdf(n: number): number {
 const ARROW_OFERTA_PDF = ' -> ';
 /** Espacio horizontal entre segmentos (pt). */
 const GAP_X_OFERTA_PDF = 3;
+/** Cuerpo tabla 3.1 (propuesta económica): un punto más legible que 9 pt; el cálculo unificado baja hasta FS_MIN si no cabe. */
+const OFERTA_TABLA_FS_BASE = 10;
+const OFERTA_TABLA_FS_MIN = 6.5;
+const OFERTA_TABLA_FS_ENCABEZADO = 11;
 
 type PdfDocOferta = InstanceType<typeof PDFDocument>;
 
-/** Ajusta tamaños de fuente si la línea no cabe en el ancho de celda. */
+/** Comprueba si las dos líneas «antes -> neto» caben en maxW con Helvetica a fs. */
+function ofertaLineasFlechaCabenEnAncho(
+  doc: PdfDocOferta,
+  maxW: number,
+  s1a: string,
+  s1n: string,
+  s2a: string,
+  s2n: string,
+  fs: number,
+): boolean {
+  const inner = Math.max(32, Math.min(Number(maxW) || 0, 800));
+  doc.save();
+  doc.font('Helvetica').fontSize(fs);
+  const w1 =
+    doc.widthOfString(s1a) +
+    GAP_X_OFERTA_PDF * 2 +
+    doc.widthOfString(ARROW_OFERTA_PDF) +
+    doc.widthOfString(s1n);
+  const w2 =
+    doc.widthOfString(s2a) +
+    GAP_X_OFERTA_PDF * 2 +
+    doc.widthOfString(ARROW_OFERTA_PDF) +
+    doc.widthOfString(s2n);
+  doc.restore();
+  return w1 <= inner && w2 <= inner;
+}
+
+/**
+ * Una sola talla para todas las celdas de precio con flecha (evita fila servicio 6 pt y descuento 9 pt).
+ */
+function calcularFontUnificadoTablaOfertaEconomicaPdf(
+  doc: PdfDocOferta,
+  filas: OfertaEconomicaRow[],
+  wMens: number,
+  wAnual: number,
+  tieneColAnual: boolean,
+  pct: number,
+  fmtNum: (n: number) => string,
+): number {
+  const fMult = 1 - pct / 100;
+  for (
+    let fsTry = OFERTA_TABLA_FS_BASE;
+    fsTry >= OFERTA_TABLA_FS_MIN;
+    fsTry -= 0.5
+  ) {
+    let ok = true;
+    for (const row of filas) {
+      const desc =
+        (row.descripcion != null ? String(row.descripcion) : '').trim() ||
+        '—';
+      if (
+        esFilaDescuentoFidelidadOfertaPdf(desc) ||
+        esFilaTotalBloqueOfertaPdf(row)
+      ) {
+        continue;
+      }
+      const mensSin = Number(row.mensualidadSinIva) || 0;
+      const mensCon = Number(row.mensualidadConIva) || 0;
+      const anualSin = Number(row.anualidadSinIva) || 0;
+      const anualCon = Number(row.anualidadConIva) || 0;
+      const netMS = redondeOfertaImportePdf(mensSin * fMult);
+      const netMC = redondeOfertaImportePdf(netMS * 1.21);
+      const netAS = redondeOfertaImportePdf(anualSin * fMult);
+      const netAC = redondeOfertaImportePdf(netAS * 1.21);
+      const s1aM = `${fmtNum(mensSin)}€+IVA`;
+      const s1nM = `${fmtNum(netMS)}€+IVA`;
+      const s2aM = `${fmtNum(mensCon)}€`;
+      const s2nM = `${fmtNum(netMC)}€ IVA incluido`;
+      if (
+        !ofertaLineasFlechaCabenEnAncho(
+          doc,
+          wMens,
+          s1aM,
+          s1nM,
+          s2aM,
+          s2nM,
+          fsTry,
+        )
+      ) {
+        ok = false;
+        break;
+      }
+      if (tieneColAnual) {
+        const s1aA = `${fmtNum(anualSin)}€+IVA`;
+        const s1nA = `${fmtNum(netAS)}€+IVA`;
+        const s2aA = `${fmtNum(anualCon)}€`;
+        const s2nA = `${fmtNum(netAC)}€ IVA incluido`;
+        if (
+          !ofertaLineasFlechaCabenEnAncho(
+            doc,
+            wAnual,
+            s1aA,
+            s1nA,
+            s2aA,
+            s2nA,
+            fsTry,
+          )
+        ) {
+          ok = false;
+          break;
+        }
+      }
+    }
+    if (ok) return fsTry;
+  }
+  return OFERTA_TABLA_FS_MIN;
+}
+
+/**
+ * Misma talla de fuente en ambas líneas (oferta 3.1: sin mezclar 9 pt y 8 pt ni bold distinto).
+ * Reduce ambas a la vez si no caben en la celda.
+ * Si `uniformFs` está definido, fuerza esa talla (tabla completa alineada).
+ */
 function encajarFuentesCeldaPrecioDescuentoPdf(
   doc: PdfDocOferta,
   maxW: number,
@@ -670,34 +992,33 @@ function encajarFuentesCeldaPrecioDescuentoPdf(
   s1n: string,
   s2a: string,
   s2n: string,
+  uniformFs?: number,
 ): { fs1: number; fs2: number } {
+  if (uniformFs != null && Number.isFinite(uniformFs) && uniformFs >= 5.5) {
+    const fs = Math.min(12, Math.max(5.5, uniformFs));
+    return { fs1: fs, fs2: fs };
+  }
   const inner = Math.max(32, Math.min(Number(maxW) || 0, 800));
-  let fs1 = 9;
-  let fs2 = 8;
-  for (let i = 0; i < 20; i++) {
-    doc.font('Helvetica').fontSize(fs1);
-    doc.font('Helvetica-Bold').fontSize(fs1);
+  let fs = OFERTA_TABLA_FS_BASE;
+  for (let i = 0; i < 24; i++) {
+    doc.font('Helvetica').fontSize(fs);
     const w1n = doc.widthOfString(s1n);
-    doc.font('Helvetica').fontSize(fs1);
     const w1 =
       doc.widthOfString(s1a) +
       GAP_X_OFERTA_PDF * 2 +
       doc.widthOfString(ARROW_OFERTA_PDF) +
       w1n;
-    doc.font('Helvetica').fontSize(fs2);
-    doc.font('Helvetica-Bold').fontSize(fs2);
+    doc.font('Helvetica').fontSize(fs);
     const w2n = doc.widthOfString(s2n);
-    doc.font('Helvetica').fontSize(fs2);
     const w2 =
       doc.widthOfString(s2a) +
       GAP_X_OFERTA_PDF * 2 +
       doc.widthOfString(ARROW_OFERTA_PDF) +
       w2n;
-    if (w1 <= inner && w2 <= inner) return { fs1, fs2 };
-    fs1 = Math.max(5.5, fs1 - 0.5);
-    fs2 = Math.max(5, fs2 - 0.5);
+    if (w1 <= inner && w2 <= inner) return { fs1: fs, fs2: fs };
+    fs = Math.max(OFERTA_TABLA_FS_MIN, fs - 0.5);
   }
-  return { fs1, fs2 };
+  return { fs1: OFERTA_TABLA_FS_MIN, fs2: OFERTA_TABLA_FS_MIN };
 }
 
 function alturaCeldaPreciosDescuentoOfertaPdf(
@@ -707,8 +1028,8 @@ function alturaCeldaPreciosDescuentoOfertaPdf(
   gapVert = 4,
 ): number {
   doc.save();
-  const f1 = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : 9;
-  const f2 = Number.isFinite(fs2) && fs2 >= 5 ? fs2 : 8;
+  const f1 = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : OFERTA_TABLA_FS_BASE;
+  const f2 = Number.isFinite(fs2) && fs2 >= 5.5 ? fs2 : f1;
   doc.font('Helvetica').fontSize(f1);
   const lh1 = doc.currentLineHeight(true) || f1 * 1.2;
   doc.font('Helvetica').fontSize(f2);
@@ -732,6 +1053,8 @@ function pintarCeldaPreciosDescuentoOfertaPdf(
   netoSin: number,
   antesCon: number,
   netoCon: number,
+  /** Misma talla que el resto de filas de la tabla 3.1 (mensual/anual/descuento/total). */
+  uniformFs?: number,
 ): void {
   const x0 = Number.isFinite(x) ? x : MARGIN;
   const y0 = Number.isFinite(y) ? y : 0;
@@ -752,9 +1075,11 @@ function pintarCeldaPreciosDescuentoOfertaPdf(
     s1n,
     s2a,
     s2n,
+    uniformFs,
   );
-  const fs1s = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : 9;
-  const fs2s = Number.isFinite(fs2) && fs2 >= 5 ? fs2 : 8;
+  const fs1s = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : OFERTA_TABLA_FS_BASE;
+  const fs2s =
+    Number.isFinite(fs2) && fs2 >= 5.5 ? fs2 : fs1s;
 
   doc.save();
   doc.font('Helvetica').fontSize(fs1s);
@@ -776,24 +1101,24 @@ function pintarCeldaPreciosDescuentoOfertaPdf(
     doc.font('Helvetica').fontSize(fs).fillColor('#6b7280');
     doc.text(ARROW_OFERTA_PDF, cx, yBaseline, { lineBreak: false });
     cx += doc.widthOfString(ARROW_OFERTA_PDF) + GAP_X_OFERTA_PDF;
-    doc.font('Helvetica-Bold').fontSize(fs).fillColor(netoColor);
+    doc.font('Helvetica').fontSize(fs).fillColor(netoColor);
     doc.text(netoStr, cx, yBaseline, { lineBreak: false });
   };
 
   const yBase1 = y0 + lh1 * 0.92;
   const yBase2 = yBase1 + lh1 + gap;
   if (!Number.isFinite(yBase1) || !Number.isFinite(yBase2)) {
-    doc.font('Helvetica').fontSize(9).fillColor('#1a1a1a');
+    doc.font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE).fillColor('#1a1a1a');
     doc.text(`${s1a} -> ${s1n}\n${s2a} -> ${s2n}`, x0, y0, {
       width: innerW,
       lineGap: 2,
     });
-    doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
+    doc.fillColor('#1a1a1a').font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE);
     return;
   }
   drawPrecioAnteriorFlechaNeto(s1a, s1n, fs1s, '#111827', yBase1);
   drawPrecioAnteriorFlechaNeto(s2a, s2n, fs2s, '#065f46', yBase2);
-  doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
+  doc.fillColor('#1a1a1a').font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE);
 }
 
 /** Calendario en texto para auxiliares (alineado con PresupuestosInformesPage.jsx). */
@@ -892,9 +1217,8 @@ function normalizarOfertaFidelidadMultiAuxDesdePayloadLegacy(
   if (!oferta.length) return oferta;
   if (oferta.some((r) => esFilaTotalBloqueOfertaPdf(r))) return oferta;
 
-  const pct = Math.min(
-    100,
-    Math.max(0, Math.round(Number(payload.presupuestoDescuentoGlobalPct) || 0)),
+  const pct = clampPresupuestoDescuentoGlobalPct(
+    payload.presupuestoDescuentoGlobalPct,
   );
   if (!pct) return oferta;
 
@@ -1789,6 +2113,13 @@ export class PresupuestoDocumentoService {
             string,
             unknown
           >[];
+        const presupuestoCalculoGaraje = (payload.presupuestoCalculoGaraje ||
+          {}) as Record<string, unknown>;
+        const presupuestoCalculoGarajeRest =
+          (payload.presupuestoCalculoGarajeRest || []) as Record<
+            string,
+            unknown
+          >[];
         const limpiezaAll = [
           presupuestoCalculoLimpieza,
           ...presupuestoCalculoLimpiezaRest,
@@ -1809,14 +2140,42 @@ export class PresupuestoDocumentoService {
           presupuestoCalculoPiscina,
           ...presupuestoCalculoPiscinaRest,
         ];
+        const garajeAll = [
+          presupuestoCalculoGaraje,
+          ...presupuestoCalculoGarajeRest,
+        ];
+        const cubosHorarioOfertaTxt = textoHorarioAplicableCubosOferta(
+          payload.presupuestoCubosOperativa as
+            | PresupuestoCubosOperativaPayload
+            | undefined,
+        );
+        const nGarajeRowsOfertaRebuild = selectedServicios.filter(
+          (s) => derivarTipoDesdeServicio(s.nombre || '') === 'garaje',
+        ).length;
+        const garajeTareasIdsOfertaRebuild = (
+          payload.presupuestoGarajeOperativa as
+            | PresupuestoGarajeOperativaPayload
+            | undefined
+        )?.tareasIds;
+        const garajeCatalogIdsOfertaRebuild =
+          GARAJE_OPERATIVA_IDS[
+            this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino'
+          ].tareas;
+        const ofertaGarajeDosSuelos =
+          nGarajeRowsOfertaRebuild === 2 &&
+          Array.isArray(garajeTareasIdsOfertaRebuild) &&
+          garajeTareasIdsOfertaRebuild.includes(garajeCatalogIdsOfertaRebuild[2]) &&
+          garajeTareasIdsOfertaRebuild.includes(garajeCatalogIdsOfertaRebuild[3]);
         let iA = 0,
           iL = 0,
           iJ = 0,
           iC = 0,
-          iP = 0;
+          iP = 0,
+          iG = 0;
         const serviceTitles: Record<string, string> = {
           auxiliares: 'Auxiliar de Servicios',
           limpieza: 'Servicio de limpieza',
+          garaje: 'Limpieza de garaje',
           jardineria: 'Jardinería',
           cubos: 'Gestión cubos de basura',
           piscina: 'Mantenimiento integral piscina comunitaria',
@@ -1858,10 +2217,36 @@ export class PresupuestoDocumentoService {
           } else if (tipo === 'cubos') {
             const calc = cubosAll[iC++] as Record<string, unknown> | undefined;
             const precio = Number(calc?.precioSinIva) || 0;
-            descripcion =
+            const baseCubos =
               calc?.concepto && String(calc.concepto).trim()
                 ? `Gestión cubos - ${String(calc.concepto).trim()}`
                 : 'Gestión cubos de basura';
+            descripcion = cubosHorarioOfertaTxt
+              ? `${baseCubos} · Horario aplicable: ${cubosHorarioOfertaTxt}`
+              : baseCubos;
+            mensualidadSinIva = precio;
+            mensualidadConIva = precio * 1.21;
+            anualidadSinIva = precio * 12;
+            anualidadConIva = precio * 12 * 1.21;
+          } else if (tipo === 'garaje') {
+            const calc = garajeAll[iG] as Record<string, unknown> | undefined;
+            const gIdxOfertaRebuild = iG;
+            const opcionNum = iG + 1;
+            iG += 1;
+            const precio = Number(calc?.precioSinIva) || 0;
+            const sufConcepto =
+              calc?.concepto != null && String(calc.concepto).trim()
+                ? String(calc.concepto).trim()
+                : '';
+            descripcion = sufConcepto
+              ? `SERVICIO DE LIMPIEZA DE GARAJE – ${sufConcepto}`
+              : `SERVICIO DE LIMPIEZA DE GARAJE – OPCIÓN ${opcionNum}`;
+            if (ofertaGarajeDosSuelos) {
+              descripcion +=
+                gIdxOfertaRebuild === 0
+                  ? ' — suelo: máquina hombre sentado'
+                  : ' — suelo: Karcher';
+            }
             mensualidadSinIva = precio;
             mensualidadConIva = precio * 1.21;
             anualidadSinIva = precio * 12;
@@ -1932,19 +2317,31 @@ export class PresupuestoDocumentoService {
       ) {
         tiposIncluidos.add('limpieza');
       }
-      const descripcionOperativaLineas: string[] = [];
-      let sub = 1;
-      if (tiposIncluidos.has('auxiliares'))
-        descripcionOperativaLineas.push(`2.${sub++}  Auxiliar de Servicios`);
-      if (tiposIncluidos.has('limpieza'))
-        descripcionOperativaLineas.push(`2.${sub++}  Servicio de Limpieza`);
-      if (tiposIncluidos.has('jardineria'))
-        descripcionOperativaLineas.push(`2.${sub++}  Jardinería`);
-      if (tiposIncluidos.has('cubos'))
-        descripcionOperativaLineas.push(`2.${sub++}  Gestión Cubos de Basura`);
-      if (tiposIncluidos.has('piscina'))
-        descripcionOperativaLineas.push(
-          `2.${sub++}  Mantenimiento integral piscina comunitaria`,
+      const nGarajeSeleccionados = (
+        (payload.selectedServiciosPresupuesto || []) as Array<{
+          nombre?: string;
+        }>
+      ).filter((s) => derivarTipoDesdeServicio(s.nombre || '') === 'garaje')
+        .length;
+      const garajeTareasIdsIndice = (
+        payload.presupuestoGarajeOperativa as
+          | PresupuestoGarajeOperativaPayload
+          | undefined
+      )?.tareasIds;
+      const garajeCatalogIdsIndice =
+        GARAJE_OPERATIVA_IDS[
+          this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino'
+        ].tareas;
+      const garajeIndicePorMetodoSuelo =
+        nGarajeSeleccionados === 2 &&
+        Array.isArray(garajeTareasIdsIndice) &&
+        garajeTareasIdsIndice.includes(garajeCatalogIdsIndice[2]) &&
+        garajeTareasIdsIndice.includes(garajeCatalogIdsIndice[3]);
+      const { lineas: descripcionOperativaLineas, nums: NUM_SECCION } =
+        buildDescripcionOperativaLineasYNumeros(
+          tiposIncluidos,
+          nGarajeSeleccionados,
+          garajeIndicePorMetodoSuelo,
         );
       if (descripcionOperativaLineas.length === 0)
         descripcionOperativaLineas.push('2.1  (según servicios contratados)');
@@ -1992,6 +2389,13 @@ export class PresupuestoDocumentoService {
           string,
           unknown
         >[];
+      const presupuestoCalculoGaraje = (payload.presupuestoCalculoGaraje ||
+        {}) as Record<string, unknown>;
+      const presupuestoCalculoGarajeRest =
+        (payload.presupuestoCalculoGarajeRest || []) as Record<
+          string,
+          unknown
+        >[];
       const limpiezaAll = [
         presupuestoCalculoLimpieza,
         ...presupuestoCalculoLimpiezaRest,
@@ -2012,6 +2416,10 @@ export class PresupuestoDocumentoService {
         presupuestoCalculoPiscina,
         ...presupuestoCalculoPiscinaRest,
       ];
+      const garajeAll = [
+        presupuestoCalculoGaraje,
+        ...presupuestoCalculoGarajeRest,
+      ];
 
       const serviciosOfertadosParaPagina: {
         title: string;
@@ -2020,6 +2428,7 @@ export class PresupuestoDocumentoService {
       const serviceTitles: Record<string, string> = {
         auxiliares: 'Auxiliar de Servicios',
         limpieza: 'Servicio de limpieza',
+        garaje: 'Limpieza de garaje',
         jardineria: 'Jardinería',
         cubos: 'Gestión cubos de basura',
         piscina: 'Mantenimiento integral piscina comunitaria',
@@ -2029,6 +2438,7 @@ export class PresupuestoDocumentoService {
       let idxJard = 0;
       let idxCubos = 0;
       let idxPiscina = 0;
+      let idxGaraje = 0;
       for (const s of selectedServicios) {
         const tipo = derivarTipoDesdeServicio(s.nombre || '');
         let title = serviceTitles[tipo] || tipo;
@@ -2073,6 +2483,46 @@ export class PresupuestoDocumentoService {
               ? String(calc.concepto).trim()
               : 'Precio según oferta económica.';
           bullets.push(concepto);
+        } else if (tipo === 'garaje') {
+          const gVariantIdxOferta = idxGaraje;
+          const calc = garajeAll[idxGaraje++] as
+            | Record<string, unknown>
+            | undefined;
+          const modoFb = normalizarModoGarajePayload(calc);
+          const garajeOperKey =
+            this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino';
+          const garajeIds = GARAJE_OPERATIVA_IDS[garajeOperKey].tareas;
+          const garajeOperRaw = payload.presupuestoGarajeOperativa as
+            | PresupuestoGarajeOperativaPayload
+            | undefined;
+          const gBlockOferta =
+            this.getPresupuestoKey() === 'hera' ? GARAJE_HERA : GARAJE_DECAMINO;
+          const lineasOfertaGaraje = [
+            gBlockOferta.tarea1,
+            gBlockOferta.tarea2,
+            gBlockOferta.tareaSueloFregadora,
+            gBlockOferta.tareaSueloKarcher,
+          ];
+          const tareasIdsOfertaGaraje = tareasIdsGarajeParaVariantePdf(
+            garajeOperRaw?.tareasIds,
+            garajeIds,
+            gVariantIdxOferta,
+            garajeAll.length,
+          );
+          const tareasOfertaGaraje = filterGarajeOperativaLines(
+            lineasOfertaGaraje,
+            tareasIdsOfertaGaraje,
+            garajeIds,
+            modoFb,
+          );
+          for (const line of tareasOfertaGaraje) {
+            const t = String(line || '').trim();
+            if (!t) continue;
+            bullets.push(t.endsWith('.') ? t : `${t}.`);
+          }
+          if (calc?.concepto != null && String(calc.concepto).trim()) {
+            bullets.push(String(calc.concepto).trim());
+          }
         } else if (tipo === 'piscina') {
           const calc = piscinaAll[idxPiscina++] as
             | Record<string, unknown>
@@ -2164,6 +2614,7 @@ export class PresupuestoDocumentoService {
           const nombresServicios: Record<string, string> = {
             auxiliares: 'Auxiliares de Servicios',
             limpieza: 'Limpieza',
+            garaje: 'Limpieza de Garajes',
             jardineria: 'Jardinería',
             cubos: 'Gestión Cubos de Basura',
             piscina: 'Piscina',
@@ -3856,7 +4307,7 @@ export class PresupuestoDocumentoService {
           const auxContentX = (PAGE_WIDTH - auxContentWidth) / 2;
           let auxY = 100;
           doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(26);
-          const tituloAux = '2.1  SERVICIO DE AUXILIARES DE SERVICIOS';
+          const tituloAux = `2.${NUM_SECCION.aux ?? 1}  SERVICIO DE AUXILIARES DE SERVICIOS`;
           const auxTitleHeight = doc.heightOfString(tituloAux, {
             width: auxFullWidth,
           });
@@ -3880,6 +4331,22 @@ export class PresupuestoDocumentoService {
             this.getPresupuestoKey() === 'hera'
               ? AUXILIARES_HERA
               : AUXILIARES_DECAMINO;
+          const auxOperKey =
+            this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino';
+          const auxOperIds = AUXILIARES_OPERATIVA_IDS[auxOperKey];
+          const auxOperRaw = payload.presupuestoAuxiliaresOperativa as
+            | PresupuestoAuxiliaresOperativaPayload
+            | undefined;
+          const funcionesPdf = filterAuxiliaresOperativaLines(
+            auxBlock.funciones,
+            auxOperRaw?.funcionesIds,
+            auxOperIds.funciones,
+          );
+          const apoyoPdf = filterAuxiliaresOperativaLines(
+            auxBlock.apoyo,
+            auxOperRaw?.apoyoIds,
+            auxOperIds.apoyo,
+          );
 
           doc.font('Helvetica').fontSize(10);
           doc.text(auxBlock.intro1, auxContentX, auxY, {
@@ -3897,55 +4364,59 @@ export class PresupuestoDocumentoService {
             doc.heightOfString(auxBlock.intro2, { width: auxContentWidth }) +
             auxSectionSpacing;
 
-          doc.font('Helvetica-Bold').fontSize(11);
-          doc.text('Funciones principales', auxContentX, auxY, {
-            width: auxContentWidth,
-            align: 'left',
-          });
-          auxY += auxLineH + 4;
-          doc.font('Helvetica').fontSize(10);
-          auxBlock.funciones.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', auxContentX + 8, auxY, {
-              continued: true,
-              width: auxContentWidth - 8,
+          if (funcionesPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text('Funciones principales', auxContentX, auxY, {
+              width: auxContentWidth,
               align: 'left',
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: auxContentWidth - 8, align: 'left' });
-            auxY +=
-              doc.heightOfString(`• ${line}`, { width: auxContentWidth - 8 }) +
-              4;
-          });
-          auxY += auxSectionSpacing - 4;
+            auxY += auxLineH + 4;
+            doc.font('Helvetica').fontSize(10);
+            funcionesPdf.forEach((line) => {
+              doc
+                .fillColor(this.getCompany().brandRed)
+                .font('Helvetica-Bold')
+                .fontSize(10);
+              doc.text('• ', auxContentX + 8, auxY, {
+                continued: true,
+                width: auxContentWidth - 8,
+                align: 'left',
+              });
+              doc.fillColor('#1a1a1a').font('Helvetica');
+              doc.text(line, { width: auxContentWidth - 8, align: 'left' });
+              auxY +=
+                doc.heightOfString(`• ${line}`, { width: auxContentWidth - 8 }) +
+                4;
+            });
+            auxY += auxSectionSpacing - 4;
+          }
 
-          doc.font('Helvetica-Bold').fontSize(11);
-          doc.text('Apoyo al mantenimiento', auxContentX, auxY, {
-            width: auxContentWidth,
-            align: 'left',
-          });
-          auxY += auxLineH + 4;
-          doc.font('Helvetica').fontSize(10);
-          auxBlock.apoyo.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', auxContentX + 8, auxY, {
-              continued: true,
-              width: auxContentWidth - 8,
+          if (apoyoPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text('Apoyo al mantenimiento', auxContentX, auxY, {
+              width: auxContentWidth,
               align: 'left',
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: auxContentWidth - 8, align: 'left' });
-            auxY +=
-              doc.heightOfString(`• ${line}`, { width: auxContentWidth - 8 }) +
-              4;
-          });
-          auxY += auxSectionSpacing - 4;
+            auxY += auxLineH + 4;
+            doc.font('Helvetica').fontSize(10);
+            apoyoPdf.forEach((line) => {
+              doc
+                .fillColor(this.getCompany().brandRed)
+                .font('Helvetica-Bold')
+                .fontSize(10);
+              doc.text('• ', auxContentX + 8, auxY, {
+                continued: true,
+                width: auxContentWidth - 8,
+                align: 'left',
+              });
+              doc.fillColor('#1a1a1a').font('Helvetica');
+              doc.text(line, { width: auxContentWidth - 8, align: 'left' });
+              auxY +=
+                doc.heightOfString(`• ${line}`, { width: auxContentWidth - 8 }) +
+                4;
+            });
+            auxY += auxSectionSpacing - 4;
+          }
 
           doc.font('Helvetica-Bold').fontSize(11);
           doc.text('Beneficios para la comunidad', auxContentX, auxY, {
@@ -4016,7 +4487,7 @@ export class PresupuestoDocumentoService {
           const limpContentX = (PAGE_WIDTH - limpContentWidth) / 2;
           let limpY = 100;
           doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(26);
-          const tituloLimp = '2.2  SERVICIO DE LIMPIEZA DE COMUNIDADES';
+          const tituloLimp = `2.${NUM_SECCION.limp ?? 2}  SERVICIO DE LIMPIEZA DE COMUNIDADES`;
           const limpTitleHeight = doc.heightOfString(tituloLimp, {
             width: limpFullWidth,
           });
@@ -4040,6 +4511,22 @@ export class PresupuestoDocumentoService {
             this.getPresupuestoKey() === 'hera'
               ? LIMPIEZA_HERA
               : LIMPIEZA_DECAMINO;
+          const limpOperKey =
+            this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino';
+          const limpOperIds = LIMPIEZA_OPERATIVA_IDS[limpOperKey];
+          const limpOperRaw = payload.presupuestoLimpiezaOperativa as
+            | PresupuestoLimpiezaOperativaPayload
+            | undefined;
+          const diariaPdf = filterLimpiezaOperativaLines(
+            limpBlock.diaria,
+            limpOperRaw?.diariaIds,
+            limpOperIds.diaria,
+          );
+          const alternaPdf = filterLimpiezaOperativaLines(
+            limpBlock.alterna,
+            limpOperRaw?.alternaIds,
+            limpOperIds.alterna,
+          );
 
           doc.font('Helvetica').fontSize(10);
           doc.text(limpBlock.intro1, limpContentX, limpY, {
@@ -4079,60 +4566,70 @@ export class PresupuestoDocumentoService {
             doc.heightOfString(limpBlock.func2, { width: limpContentWidth }) +
             limpSectionSpacing;
 
-          doc.font('Helvetica-Bold').fontSize(11);
-          doc.text('Tareas habituales', limpContentX, limpY, {
-            width: limpContentWidth,
-            align: 'left',
-          });
-          limpY += limpLineH + 4;
-          doc.font('Helvetica-Bold').fontSize(10);
-          doc.text(limpBlock.freqDiaria, limpContentX + 8, limpY, {
-            width: limpContentWidth - 8,
-            align: 'left',
-          });
-          limpY += limpLineH + 2;
-          doc.font('Helvetica').fontSize(10);
-          limpBlock.diaria.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', limpContentX + 8, limpY, {
-              continued: true,
-              width: limpContentWidth - 8,
+          if (diariaPdf.length > 0 || alternaPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text('Tareas habituales', limpContentX, limpY, {
+              width: limpContentWidth,
               align: 'left',
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: limpContentWidth - 8, align: 'left' });
-            limpY +=
-              doc.heightOfString(`• ${line}`, { width: limpContentWidth - 8 }) +
-              4;
-          });
-          limpY += 8;
-          doc.font('Helvetica-Bold').fontSize(10);
-          doc.text(limpBlock.freqAlterna, limpContentX + 8, limpY, {
-            width: limpContentWidth - 8,
-            align: 'left',
-          });
-          limpY += limpLineH + 2;
-          doc.font('Helvetica').fontSize(10);
-          limpBlock.alterna.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', limpContentX + 8, limpY, {
-              continued: true,
-              width: limpContentWidth - 8,
-              align: 'left',
-            });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: limpContentWidth - 8, align: 'left' });
-            limpY +=
-              doc.heightOfString(`• ${line}`, { width: limpContentWidth - 8 }) +
-              4;
-          });
-          limpY += limpSectionSpacing - 4;
+            limpY += limpLineH + 4;
+            if (diariaPdf.length > 0) {
+              doc.font('Helvetica-Bold').fontSize(10);
+              doc.text(limpBlock.freqDiaria, limpContentX + 8, limpY, {
+                width: limpContentWidth - 8,
+                align: 'left',
+              });
+              limpY += limpLineH + 2;
+              doc.font('Helvetica').fontSize(10);
+              diariaPdf.forEach((line) => {
+                doc
+                  .fillColor(this.getCompany().brandRed)
+                  .font('Helvetica-Bold')
+                  .fontSize(10);
+                doc.text('• ', limpContentX + 8, limpY, {
+                  continued: true,
+                  width: limpContentWidth - 8,
+                  align: 'left',
+                });
+                doc.fillColor('#1a1a1a').font('Helvetica');
+                doc.text(line, { width: limpContentWidth - 8, align: 'left' });
+                limpY +=
+                  doc.heightOfString(`• ${line}`, {
+                    width: limpContentWidth - 8,
+                  }) + 4;
+              });
+            }
+            if (diariaPdf.length > 0 && alternaPdf.length > 0) {
+              limpY += 8;
+            }
+            if (alternaPdf.length > 0) {
+              doc.font('Helvetica-Bold').fontSize(10);
+              doc.text(limpBlock.freqAlterna, limpContentX + 8, limpY, {
+                width: limpContentWidth - 8,
+                align: 'left',
+              });
+              limpY += limpLineH + 2;
+              doc.font('Helvetica').fontSize(10);
+              alternaPdf.forEach((line) => {
+                doc
+                  .fillColor(this.getCompany().brandRed)
+                  .font('Helvetica-Bold')
+                  .fontSize(10);
+                doc.text('• ', limpContentX + 8, limpY, {
+                  continued: true,
+                  width: limpContentWidth - 8,
+                  align: 'left',
+                });
+                doc.fillColor('#1a1a1a').font('Helvetica');
+                doc.text(line, { width: limpContentWidth - 8, align: 'left' });
+                limpY +=
+                  doc.heightOfString(`• ${line}`, {
+                    width: limpContentWidth - 8,
+                  }) + 4;
+              });
+            }
+            limpY += limpSectionSpacing - 4;
+          }
 
           doc.font('Helvetica-Bold').fontSize(11);
           doc.text('Beneficios para la comunidad', limpContentX, limpY, {
@@ -4198,7 +4695,7 @@ export class PresupuestoDocumentoService {
           const descContentX = (PAGE_WIDTH - descContentWidth) / 2;
           let descY = 100;
           doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(26);
-          const tituloJardin = '2.3  SERVICIO DE JARDINERÍA';
+          const tituloJardin = `2.${NUM_SECCION.jard ?? 3}  SERVICIO DE JARDINERÍA`;
           const titleHeight = doc.heightOfString(tituloJardin, {
             width: descFullWidth,
           });
@@ -4222,6 +4719,22 @@ export class PresupuestoDocumentoService {
             this.getPresupuestoKey() === 'hera'
               ? JARDINERIA_HERA
               : JARDINERIA_DECAMINO;
+          const jardinOperKey =
+            this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino';
+          const jardinOperIds = JARDINERIA_OPERATIVA_IDS[jardinOperKey];
+          const jardinOperRaw = payload.presupuestoJardineriaOperativa as
+            | PresupuestoJardineriaOperativaPayload
+            | undefined;
+          const trabajosPdf = filterJardineriaOperativaLines(
+            jardinBlock.trabajos,
+            jardinOperRaw?.trabajosIds,
+            jardinOperIds.trabajos,
+          );
+          const tratamientosPdf = filterJardineriaOperativaLines(
+            jardinBlock.tratamientos,
+            jardinOperRaw?.tratamientosIds,
+            jardinOperIds.tratamientos,
+          );
 
           doc.font('Helvetica').fontSize(10);
           doc.text(jardinBlock.intro1, descContentX, descY, {
@@ -4241,55 +4754,61 @@ export class PresupuestoDocumentoService {
               width: descContentWidth,
             }) + sectionSpacing;
 
-          doc.font('Helvetica-Bold').fontSize(11);
-          doc.text('Trabajos de mantenimiento', descContentX, descY, {
-            width: descContentWidth,
-            align: 'left',
-          });
-          descY += lineHeight + 4;
-          doc.font('Helvetica').fontSize(10);
-          jardinBlock.trabajos.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', descContentX + 8, descY, {
-              continued: true,
-              width: descContentWidth - 8,
+          if (trabajosPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text('Trabajos de mantenimiento', descContentX, descY, {
+              width: descContentWidth,
               align: 'left',
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: descContentWidth - 8, align: 'left' });
-            descY +=
-              doc.heightOfString(`• ${line}`, { width: descContentWidth - 8 }) +
-              4;
-          });
-          descY += sectionSpacing - 4;
+            descY += lineHeight + 4;
+            doc.font('Helvetica').fontSize(10);
+            trabajosPdf.forEach((line) => {
+              doc
+                .fillColor(this.getCompany().brandRed)
+                .font('Helvetica-Bold')
+                .fontSize(10);
+              doc.text('• ', descContentX + 8, descY, {
+                continued: true,
+                width: descContentWidth - 8,
+                align: 'left',
+              });
+              doc.fillColor('#1a1a1a').font('Helvetica');
+              doc.text(line, { width: descContentWidth - 8, align: 'left' });
+              descY +=
+                doc.heightOfString(`• ${line}`, {
+                  width: descContentWidth - 8,
+                }) + 4;
+            });
+            descY += sectionSpacing - 4;
+          }
 
-          doc.font('Helvetica-Bold').fontSize(11);
-          doc.text('Tratamientos y conservación', descContentX, descY, {
-            width: descContentWidth,
-            align: 'left',
-          });
-          descY += lineHeight + 4;
-          doc.font('Helvetica').fontSize(10);
-          jardinBlock.tratamientos.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', descContentX + 8, descY, {
-              continued: true,
-              width: descContentWidth - 8,
+          if (tratamientosPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text('Tratamientos y conservación', descContentX, descY, {
+              width: descContentWidth,
               align: 'left',
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: descContentWidth - 8, align: 'left' });
-            descY +=
-              doc.heightOfString(`• ${line}`, { width: descContentWidth - 8 }) +
-              4;
-          });
-          descY += sectionSpacing - 4;
+            descY += lineHeight + 4;
+            doc.font('Helvetica').fontSize(10);
+            tratamientosPdf.forEach((line) => {
+              doc
+                .fillColor(this.getCompany().brandRed)
+                .font('Helvetica-Bold')
+                .fontSize(10);
+              doc.text('• ', descContentX + 8, descY, {
+                continued: true,
+                width: descContentWidth - 8,
+                align: 'left',
+              });
+              doc.fillColor('#1a1a1a').font('Helvetica');
+              doc.text(line, { width: descContentWidth - 8, align: 'left' });
+              descY +=
+                doc.heightOfString(`• ${line}`, {
+                  width: descContentWidth - 8,
+                }) + 4;
+            });
+            descY += sectionSpacing - 4;
+          }
 
           doc.font('Helvetica-Bold').fontSize(11);
           doc.text('Beneficios para la comunidad', descContentX, descY, {
@@ -4372,7 +4891,7 @@ export class PresupuestoDocumentoService {
           const cubosContentX = (PAGE_WIDTH - cubosContentWidth) / 2;
           let cubosY = 100;
           doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(26);
-          const tituloCubos = '2.4  GESTIÓN DE CUBOS DE BASURA';
+          const tituloCubos = `2.${NUM_SECCION.cubos ?? 4}  GESTIÓN DE CUBOS DE BASURA`;
           const cubosTitleHeight = doc.heightOfString(tituloCubos, {
             width: cubosFullWidth,
           });
@@ -4394,6 +4913,17 @@ export class PresupuestoDocumentoService {
           const cubosSectionSpacing = 16;
           const cubosBlock =
             this.getPresupuestoKey() === 'hera' ? CUBOS_HERA : CUBOS_DECAMINO;
+          const cubosOperKey =
+            this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino';
+          const cubosOperIds = CUBOS_OPERATIVA_IDS[cubosOperKey];
+          const cubosOperRaw = payload.presupuestoCubosOperativa as
+            | PresupuestoCubosOperativaPayload
+            | undefined;
+          const tareasPdf = filterCubosOperativaLines(
+            cubosBlock.tareas,
+            cubosOperRaw?.tareasIds,
+            cubosOperIds.tareas,
+          );
 
           doc.font('Helvetica').fontSize(10);
           doc.text(cubosBlock.intro1, cubosContentX, cubosY, {
@@ -4441,31 +4971,33 @@ export class PresupuestoDocumentoService {
             cubosY += cubosSectionSpacing;
           }
 
-          doc.font('Helvetica-Bold').fontSize(11);
-          doc.text('Tareas incluidas', cubosContentX, cubosY, {
-            width: cubosContentWidth,
-            align: 'left',
-          });
-          cubosY += cubosLineH + 4;
-          doc.font('Helvetica').fontSize(10);
-          cubosBlock.tareas.forEach((line) => {
-            doc
-              .fillColor(this.getCompany().brandRed)
-              .font('Helvetica-Bold')
-              .fontSize(10);
-            doc.text('• ', cubosContentX + 8, cubosY, {
-              continued: true,
-              width: cubosContentWidth - 8,
+          if (tareasPdf.length > 0) {
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text('Tareas incluidas', cubosContentX, cubosY, {
+              width: cubosContentWidth,
               align: 'left',
             });
-            doc.fillColor('#1a1a1a').font('Helvetica');
-            doc.text(line, { width: cubosContentWidth - 8, align: 'left' });
-            cubosY +=
-              doc.heightOfString(`• ${line}`, {
+            cubosY += cubosLineH + 4;
+            doc.font('Helvetica').fontSize(10);
+            tareasPdf.forEach((line) => {
+              doc
+                .fillColor(this.getCompany().brandRed)
+                .font('Helvetica-Bold')
+                .fontSize(10);
+              doc.text('• ', cubosContentX + 8, cubosY, {
+                continued: true,
                 width: cubosContentWidth - 8,
-              }) + 4;
-          });
-          cubosY += cubosSectionSpacing - 4;
+                align: 'left',
+              });
+              doc.fillColor('#1a1a1a').font('Helvetica');
+              doc.text(line, { width: cubosContentWidth - 8, align: 'left' });
+              cubosY +=
+                doc.heightOfString(`• ${line}`, {
+                  width: cubosContentWidth - 8,
+                }) + 4;
+            });
+            cubosY += cubosSectionSpacing - 4;
+          }
 
           doc.font('Helvetica-Bold').fontSize(11);
           doc.text('Beneficios para la comunidad', cubosContentX, cubosY, {
@@ -4512,6 +5044,214 @@ export class PresupuestoDocumentoService {
             height: PAGE_HEIGHT - FOOTER_Y - 12,
             ellipsis: true,
           });
+        }
+
+        // ——— PÁGINA(S): DESCRIPCIÓN OPERATIVA - LIMPIEZA DE GARAJE ———
+        if (tiposIncluidos.has('garaje')) {
+          const gBlock =
+            this.getPresupuestoKey() === 'hera' ? GARAJE_HERA : GARAJE_DECAMINO;
+          const nPagGaraje = Math.max(1, NUM_SECCION.garaje.length);
+          const garajeMaquinaImgPath = getPresupuestoGarajeMaquinaImagePath();
+          for (let gidx = 0; gidx < nPagGaraje; gidx++) {
+            const calc = (garajeAll[gidx] || {}) as Record<string, unknown>;
+            doc.addPage({ size: 'A4', margin: MARGIN });
+            if (logoPath) {
+              try {
+                doc.opacity(0.1);
+                doc.image(
+                  logoPath,
+                  (PAGE_WIDTH - 400) / 2,
+                  (PAGE_HEIGHT - 400) / 2,
+                  { width: 400, height: 400 },
+                );
+                doc.opacity(1);
+                doc.image(logoPath, MARGIN, 40, { width: 56, height: 56 });
+              } catch {
+                // skip
+              }
+            }
+            const gFullWidth = PAGE_WIDTH - MARGIN * 2;
+            const gContentWidth = 360;
+            const gContentX = (PAGE_WIDTH - gContentWidth) / 2;
+            let gY = 100;
+            const secNum = NUM_SECCION.garaje[gidx] ?? gidx + 1;
+            const tituloGaraje =
+              nPagGaraje > 1
+                ? `2.${secNum}  LIMPIEZA DE GARAJE (OPCIÓN ${gidx + 1})`
+                : `2.${secNum}  LIMPIEZA DE GARAJE`;
+            doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(26);
+            const gTitleHeight = doc.heightOfString(tituloGaraje, {
+              width: gFullWidth,
+            });
+            doc.text(tituloGaraje, MARGIN, gY, {
+              width: gFullWidth,
+              align: 'center',
+            });
+            gY += gTitleHeight + 14;
+            const gLineW = gFullWidth * 0.72;
+            doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
+            doc
+              .moveTo((PAGE_WIDTH - gLineW) / 2, gY)
+              .lineTo((PAGE_WIDTH - gLineW) / 2 + gLineW, gY)
+              .stroke();
+            gY += 36;
+
+            const gLineH = 14;
+            const gParaSpacing = 10;
+            const gSectionSpacing = 16;
+            const modoFbPdf = normalizarModoGarajePayload(calc);
+            const garajeOperKeyPdf =
+              this.getPresupuestoKey() === 'hera' ? 'hera' : 'decamino';
+            const garajeIdsPdf = GARAJE_OPERATIVA_IDS[garajeOperKeyPdf].tareas;
+            const garajeOperRawPdf = payload.presupuestoGarajeOperativa as
+              | PresupuestoGarajeOperativaPayload
+              | undefined;
+            const lineasPdfGaraje = [
+              gBlock.tarea1,
+              gBlock.tarea2,
+              gBlock.tareaSueloFregadora,
+              gBlock.tareaSueloKarcher,
+            ];
+            const tareasIdsPdfGaraje = tareasIdsGarajeParaVariantePdf(
+              garajeOperRawPdf?.tareasIds,
+              garajeIdsPdf,
+              gidx,
+              garajeAll.length,
+            );
+            const tareasGaraje = filterGarajeOperativaLines(
+              lineasPdfGaraje,
+              tareasIdsPdfGaraje,
+              garajeIdsPdf,
+              modoFbPdf,
+            );
+
+            doc.font('Helvetica-Bold').fontSize(11);
+            doc.text(gBlock.seccionTareas, gContentX, gY, {
+              width: gContentWidth,
+              align: 'left',
+            });
+            gY += gLineH + 4;
+            doc.font('Helvetica').fontSize(10);
+            doc.text(gBlock.tareasIntro, gContentX, gY, {
+              width: gContentWidth,
+              align: 'justify',
+            });
+            gY +=
+              doc.heightOfString(gBlock.tareasIntro, {
+                width: gContentWidth,
+              }) + gSectionSpacing;
+            doc.font('Helvetica').fontSize(10);
+            tareasGaraje.forEach((line) => {
+              doc
+                .fillColor(this.getCompany().brandRed)
+                .font('Helvetica-Bold')
+                .fontSize(10);
+              doc.text('• ', gContentX + 8, gY, {
+                continued: true,
+                width: gContentWidth - 8,
+                align: 'left',
+              });
+              doc.fillColor('#1a1a1a').font('Helvetica');
+              doc.text(line, { width: gContentWidth - 8, align: 'left' });
+              gY +=
+                doc.heightOfString(`• ${line}`, {
+                  width: gContentWidth - 8,
+                }) + 4;
+            });
+            gY += gSectionSpacing;
+
+            const fregTxtGarajeImg = String(gBlock.tareaSueloFregadora || '').trim();
+            const incluyeMaquinaEnTareas = tareasGaraje.some(
+              (ln) => String(ln).trim() === fregTxtGarajeImg,
+            );
+
+            doc.font('Helvetica').fontSize(10);
+            doc.text(gBlock.parrVehiculos, gContentX, gY, {
+              width: gContentWidth,
+              align: 'justify',
+            });
+            gY +=
+              doc.heightOfString(gBlock.parrVehiculos, {
+                width: gContentWidth,
+              }) + gParaSpacing;
+            doc.text(gBlock.parrAviso, gContentX, gY, {
+              width: gContentWidth,
+              align: 'justify',
+            });
+            gY +=
+              doc.heightOfString(gBlock.parrAviso, {
+                width: gContentWidth,
+              }) + gParaSpacing;
+            doc.font('Helvetica-Bold').fontSize(10);
+            doc.text(gBlock.notaPlazas, gContentX, gY, {
+              width: gContentWidth,
+              align: 'justify',
+            });
+            gY +=
+              doc.heightOfString(gBlock.notaPlazas, {
+                width: gContentWidth,
+              }) + gParaSpacing;
+            doc.font('Helvetica').fontSize(10);
+            doc.text(gBlock.notaListado, gContentX, gY, {
+              width: gContentWidth,
+              align: 'justify',
+            });
+            gY +=
+              doc.heightOfString(gBlock.notaListado, {
+                width: gContentWidth,
+              }) + gParaSpacing;
+
+            // Foto máquina: abajo de la página (como PDF referencia), no sobre el watermark central
+            if (garajeMaquinaImgPath && incluyeMaquinaEnTareas) {
+              try {
+                const maxImgW = Math.min(gContentWidth, 300);
+                const maxImgH = 150;
+                const dimsM = getLogoDimensions(garajeMaquinaImgPath);
+                let imgW = maxImgW;
+                let imgH = maxImgH;
+                if (dimsM && dimsM.width > 0 && dimsM.height > 0) {
+                  const scale = Math.min(
+                    maxImgW / dimsM.width,
+                    maxImgH / dimsM.height,
+                    1,
+                  );
+                  imgW = Math.round(dimsM.width * scale);
+                  imgH = Math.round(dimsM.height * scale);
+                }
+                const marginAboveLegal = 14;
+                const maxBottomY = FOOTER_Y - marginAboveLegal;
+                let imgY = maxBottomY - imgH;
+                const minTopY = gY + 8;
+                if (imgY < minTopY) {
+                  imgY = minTopY;
+                }
+                if (imgY + imgH > maxBottomY) {
+                  imgH = Math.max(48, maxBottomY - imgY);
+                  if (dimsM && dimsM.width > 0 && dimsM.height > 0) {
+                    imgW = Math.round(
+                      (dimsM.width * imgH) / Math.max(1, dimsM.height),
+                    );
+                    imgW = Math.min(imgW, maxImgW);
+                  }
+                }
+                const imgX = (PAGE_WIDTH - imgW) / 2;
+                doc.image(garajeMaquinaImgPath, imgX, imgY, {
+                  width: imgW,
+                  height: imgH,
+                });
+              } catch {
+                // imagen ausente o corrupta
+              }
+            }
+
+            doc.fontSize(7).fillColor('#333333').font('Helvetica');
+            doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
+              width: PAGE_WIDTH - MARGIN * 2,
+              align: 'center',
+              height: PAGE_HEIGHT - FOOTER_Y - 12,
+              ellipsis: true,
+            });
+          }
         }
 
         // ——— PÁGINA(S): 3.1 Propuesta económica ———
@@ -4652,7 +5392,7 @@ export class PresupuestoDocumentoService {
           colMensW = Math.round((ofertaFullWidth - colDescW) / 2);
           colAnualW = ofertaFullWidth - colDescW - colMensW;
         }
-        const rowH = 46;
+        const rowH = 50;
         const cellPad = 6;
 
         const tieneSeleccionFirma =
@@ -4690,14 +5430,15 @@ export class PresupuestoDocumentoService {
             )
             .fillAndStroke();
           doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
-          doc.text('DESCRIPCIÓN', MARGIN + cellPad, piscinaTableTop + 10, {
-            width: colDescW - cellPad * 2,
+          doc.text('DESCRIPCIÓN', MARGIN, piscinaTableTop + 10, {
+            width: colDescW,
+            align: 'center',
           });
           doc.text(
             'MENSUALIDAD',
-            MARGIN + colDescW + cellPad,
+            MARGIN + colDescW,
             piscinaTableTop + 10,
-            { width: ofertaFullWidth - colDescW - cellPad * 2 },
+            { width: ofertaFullWidth - colDescW, align: 'center' },
           );
 
           const piscinaRows: {
@@ -4814,46 +5555,53 @@ export class PresupuestoDocumentoService {
             doc
               .rect(MARGIN + colDescW + colMensW, tableTop, colAnualW, rowH)
               .fillAndStroke();
-          doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10);
-          doc.text('DESCRIPCIÓN', MARGIN + cellPad, tableTop + 10, {
-            width: colDescW - cellPad * 2,
+          doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(OFERTA_TABLA_FS_ENCABEZADO);
+          const ofertaHeaderTextY = tableTop + 11;
+          doc.text('DESCRIPCIÓN', MARGIN, ofertaHeaderTextY, {
+            width: colDescW,
+            align: 'center',
           });
-          doc.text('MENSUALIDAD', MARGIN + colDescW + cellPad, tableTop + 10, {
-            width:
-              (tieneColAnual ? colMensW : ofertaFullWidth - colDescW) -
-              cellPad * 2,
+          doc.text('MENSUALIDAD', MARGIN + colDescW, ofertaHeaderTextY, {
+            width: tieneColAnual ? colMensW : ofertaFullWidth - colDescW,
+            align: 'center',
           });
           if (tieneColAnual)
             doc.text(
               'ANUALIDAD',
-              MARGIN + colDescW + colMensW + cellPad,
-              tableTop + 10,
-              { width: colAnualW - cellPad * 2 },
+              MARGIN + colDescW + colMensW,
+              ofertaHeaderTextY,
+              { width: colAnualW, align: 'center' },
             );
 
           ofertaY = tableTop + rowH;
-          doc.font('Helvetica').fontSize(10);
-          const pctFidelidadPdf = Math.min(
-            100,
-            Math.max(
-              0,
-              Math.round(
-                Number(
-                  (payload as Record<string, unknown>)
-                    .presupuestoDescuentoGlobalPct,
-                ) || 0,
-              ),
-            ),
+          doc.font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE);
+          const pctFidelidadPdf = clampPresupuestoDescuentoGlobalPct(
+            (payload as Record<string, unknown>).presupuestoDescuentoGlobalPct,
           );
           const wDescOferta = colDescW - cellPad * 2;
           const wMensOferta =
             (tieneColAnual ? colMensW : ofertaFullWidth - colDescW) -
             cellPad * 2;
           const wAnualOferta = colAnualW - cellPad * 2;
-          /** Misma tipografía para toda la columna DESCRIPCIÓN (servicio, descuento, total). */
+          /** Tipografía cuerpo tabla; con % fidelidad, una sola talla para todas las filas (precios no «crecen» fila a fila). */
           const ofertaDescFont = 'Helvetica';
-          const ofertaDescSize = 9;
+          const ofertaDescSize = OFERTA_TABLA_FS_BASE;
+          const fontTablaOferta =
+            pctFidelidadPdf > 0
+              ? calcularFontUnificadoTablaOfertaEconomicaPdf(
+                  doc,
+                  filasOfertaPdf,
+                  wMensOferta,
+                  wAnualOferta,
+                  tieneColAnual,
+                  pctFidelidadPdf,
+                  fmtNum,
+                )
+              : ofertaDescSize;
           const ofertaDescColor = '#1a1a1a';
+          const ofertaDescuentoColor = String(
+            (this.getCompany() as { brandRed?: string }).brandRed || '#c40000',
+          );
           for (const row of filasOfertaPdf) {
             const desc =
               (row.descripcion != null ? String(row.descripcion) : '').trim() ||
@@ -4864,6 +5612,10 @@ export class PresupuestoDocumentoService {
             const anualCon = Number(row.anualidadConIva) || 0;
             const esDesc = esFilaDescuentoFidelidadOfertaPdf(desc);
             const esBlockTot = esFilaTotalBloqueOfertaPdf(row);
+            const rowBodyFont = esBlockTot
+              ? 'Helvetica-Bold'
+              : ofertaDescFont;
+            const rowTextColor = esDesc ? ofertaDescuentoColor : ofertaDescColor;
             let mensCell: string;
             let anualCell: string;
             let netMS = mensSin;
@@ -4885,9 +5637,9 @@ export class PresupuestoDocumentoService {
               anualCell = `${fmtNum(anualSin)}€+IVA\n${fmtNum(anualCon)}€ IVA incluido`;
             }
             doc
-              .fillColor(ofertaDescColor)
-              .font(ofertaDescFont)
-              .fontSize(ofertaDescSize);
+              .fillColor(rowTextColor)
+              .font(rowBodyFont)
+              .fontSize(fontTablaOferta);
             const hDesc = doc.heightOfString(desc, {
               width: wDescOferta,
               lineGap: 2,
@@ -4907,6 +5659,7 @@ export class PresupuestoDocumentoService {
                   s1nM,
                   s2aM,
                   s2nM,
+                  fontTablaOferta,
                 );
               hMens = alturaCeldaPreciosDescuentoOfertaPdf(doc, fs1m, fs2m);
               if (tieneColAnual) {
@@ -4922,10 +5675,12 @@ export class PresupuestoDocumentoService {
                     s1nA,
                     s2aA,
                     s2nA,
+                    fontTablaOferta,
                   );
                 hAnual = alturaCeldaPreciosDescuentoOfertaPdf(doc, fs1a, fs2a);
               }
             } else {
+              doc.font(rowBodyFont).fontSize(fontTablaOferta);
               hMens = doc.heightOfString(mensCell, {
                 width: wMensOferta,
                 lineGap: 2,
@@ -4957,9 +5712,9 @@ export class PresupuestoDocumentoService {
                 .rect(MARGIN + colDescW + colMensW, ofertaY, colAnualW, rowDyn)
                 .stroke('#333');
             doc
-              .fillColor(ofertaDescColor)
-              .font(ofertaDescFont)
-              .fontSize(ofertaDescSize);
+              .fillColor(rowTextColor)
+              .font(rowBodyFont)
+              .fontSize(fontTablaOferta);
             doc.text(desc, MARGIN + cellPad, ofertaY + cellPad, {
               width: wDescOferta,
               lineGap: 2,
@@ -4975,6 +5730,7 @@ export class PresupuestoDocumentoService {
                 netMS,
                 mensCon,
                 netMC,
+                fontTablaOferta,
               );
               if (tieneColAnual) {
                 pintarCeldaPreciosDescuentoOfertaPdf(
@@ -4987,10 +5743,14 @@ export class PresupuestoDocumentoService {
                   netAS,
                   anualCon,
                   netAC,
+                  fontTablaOferta,
                 );
               }
             } else {
-              doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
+              doc
+                .fillColor(rowTextColor)
+                .font(rowBodyFont)
+                .fontSize(fontTablaOferta);
               doc.text(
                 mensCell,
                 MARGIN + colDescW + cellPad,
@@ -5009,7 +5769,10 @@ export class PresupuestoDocumentoService {
                 );
             }
             // pintarCelda deja Helvetica-Bold y color del neto; resetea para la siguiente fila
-            doc.fillColor(ofertaDescColor).font(ofertaDescFont).fontSize(10);
+            doc
+              .fillColor(ofertaDescColor)
+              .font(ofertaDescFont)
+              .fontSize(fontTablaOferta);
             ofertaY += rowDyn;
           }
 
@@ -5049,6 +5812,8 @@ export class PresupuestoDocumentoService {
               'TOTAL (importe neto a pagar, incl. descuento por fidelidad)';
             const totM = `${fmtNum(tMS)}€+IVA\n${fmtNum(tMC)}€ IVA incluido`;
             const totA = `${fmtNum(tAS)}€+IVA\n${fmtNum(tAC)}€ IVA incluido`;
+            const totFs = fontTablaOferta;
+            doc.font('Helvetica-Bold').fontSize(totFs);
             const hTotD = doc.heightOfString(totDesc, {
               width: wDescOferta,
               lineGap: 2,
@@ -5080,7 +5845,7 @@ export class PresupuestoDocumentoService {
               doc
                 .rect(MARGIN + colDescW + colMensW, ofertaY, colAnualW, rowTot)
                 .fillAndStroke();
-            doc.fillColor('#064e3b').font('Helvetica-Bold').fontSize(10);
+            doc.fillColor('#064e3b').font('Helvetica-Bold').fontSize(totFs);
             doc.text(totDesc, MARGIN + cellPad, ofertaY + cellPad, {
               width: wDescOferta,
               lineGap: 2,
@@ -5096,7 +5861,7 @@ export class PresupuestoDocumentoService {
                 ofertaY + cellPad,
                 { width: wAnualOferta, lineGap: 2 },
               );
-            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10);
+            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(fontTablaOferta);
             ofertaY += rowTot;
           }
 
@@ -5154,9 +5919,86 @@ export class PresupuestoDocumentoService {
           }
           // Condiciones económicas, Revisión de precios y Formalización solo para presupuestos normales (no piscina)
           if (!ofertaSoloPiscinaPdf) {
+            const notaFidelidadBloque =
+              'Incluye descuento por fidelidad aplicado automáticamente.';
+            const textoPropuestaCondiciones =
+              'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.';
+            const revTextLegalOferta =
+              'Los precios están calculados conforme al convenio laboral aplicable y podrán actualizarse únicamente en caso de modificaciones legales obligatorias (SMI, convenio colectivo, normativa laboral o fiscal).';
+            const formTextLegalOferta =
+              'La prestación del servicio se formalizará mediante contrato tras la aprobación del presupuesto por la Comunidad.';
+            const gapTituloLegalOferta = 14;
+            const gapTrasRevisionOferta = 12;
+            const bulletLegalOferta = '• ';
+            const bulletFacturacion = `${bulletLegalOferta}Facturación mensual mediante recibo domiciliado.`;
+            const bulletPago = `${bulletLegalOferta}El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.`;
+            const bulletValidez = `${bulletLegalOferta}El presupuesto tiene una validez de 60 días desde su emisión.`;
+
+            let altoColaLegalOferta = 0;
             if (pctFidelidadPdf > 0) {
-              const notaFidelidadBloque =
-                'Incluye descuento por fidelidad aplicado automáticamente.';
+              doc.font('Helvetica-Bold').fontSize(10).fillColor('#047857');
+              altoColaLegalOferta +=
+                doc.heightOfString(notaFidelidadBloque, {
+                  width: ofertaFullWidth,
+                }) + 10;
+            }
+            doc.font('Helvetica').fontSize(9).fillColor('#333333');
+            altoColaLegalOferta +=
+              doc.heightOfString(textoPropuestaCondiciones, {
+                width: ofertaFullWidth,
+              }) + 14;
+            doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+            altoColaLegalOferta +=
+              doc.heightOfString('Condiciones económicas', {
+                width: ofertaFullWidth,
+              }) + 14;
+            doc.font('Helvetica').fontSize(9).fillColor('#333333');
+            altoColaLegalOferta +=
+              doc.heightOfString(bulletFacturacion, {
+                width: ofertaFullWidth,
+              }) + 3;
+            altoColaLegalOferta +=
+              doc.heightOfString(bulletPago, { width: ofertaFullWidth }) + 3;
+            altoColaLegalOferta +=
+              doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) + 12;
+
+            doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+            const hTitRev = doc.heightOfString('Revisión de precios', {
+              width: ofertaFullWidth,
+            });
+            doc.font('Helvetica').fontSize(9).fillColor('#333333');
+            const hParRev = doc.heightOfString(revTextLegalOferta, {
+              width: ofertaFullWidth,
+              align: 'justify',
+            });
+            doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+            const hTitForm = doc.heightOfString('Formalización', {
+              width: ofertaFullWidth,
+            });
+            doc.font('Helvetica').fontSize(9).fillColor('#333333');
+            const hParForm = doc.heightOfString(formTextLegalOferta, {
+              width: ofertaFullWidth,
+              align: 'justify',
+            });
+            altoColaLegalOferta +=
+              hTitRev +
+              gapTituloLegalOferta +
+              hParRev +
+              gapTrasRevisionOferta +
+              hTitForm +
+              gapTituloLegalOferta +
+              hParForm +
+              8;
+
+            if (
+              ofertaY + altoColaLegalOferta + 16 >
+              OFERTA_LEGAL_SAFE_BOTTOM_Y
+            ) {
+              ofertaPdfNuevaPaginaConMarca(doc, logoPath);
+              ofertaY = 100;
+            }
+
+            if (pctFidelidadPdf > 0) {
               doc.font('Helvetica-Bold').fontSize(10).fillColor('#047857');
               doc.text(notaFidelidadBloque, MARGIN, ofertaY, {
                 width: ofertaFullWidth,
@@ -5168,88 +6010,59 @@ export class PresupuestoDocumentoService {
                 }) + 10;
             }
             doc.font('Helvetica').fontSize(9).fillColor('#333333');
-            doc.text(
-              'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.',
-              MARGIN,
-              ofertaY,
-              { width: ofertaFullWidth, align: 'left' },
-            );
+            doc.text(textoPropuestaCondiciones, MARGIN, ofertaY, {
+              width: ofertaFullWidth,
+              align: 'left',
+            });
             ofertaY +=
-              doc.heightOfString(
-                'Los precios están calculados para las condiciones actuales del servicio descritas en la presente propuesta.',
-                { width: ofertaFullWidth },
-              ) + 14;
+              doc.heightOfString(textoPropuestaCondiciones, {
+                width: ofertaFullWidth,
+              }) + 14;
 
-            // Sub tabel: Condiciones económicas, Revisión de precios, Formalización (tot pe prima pagină Oferta)
             doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
             doc.text('Condiciones económicas', MARGIN, ofertaY, {
               width: ofertaFullWidth,
             });
             ofertaY += 14;
             doc.font('Helvetica').fontSize(9).fillColor('#333333');
-            const bullet = '• ';
-            doc.text(
-              bullet + 'Facturación mensual mediante recibo domiciliado.',
-              MARGIN,
-              ofertaY,
-              { width: ofertaFullWidth },
-            );
+            doc.text(bulletFacturacion, MARGIN, ofertaY, {
+              width: ofertaFullWidth,
+            });
             ofertaY +=
-              doc.heightOfString(
-                bullet + 'Facturación mensual mediante recibo domiciliado.',
-                { width: ofertaFullWidth },
-              ) + 3;
-            doc.text(
-              bullet +
-                'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
-              MARGIN,
-              ofertaY,
-              { width: ofertaFullWidth },
-            );
+              doc.heightOfString(bulletFacturacion, {
+                width: ofertaFullWidth,
+              }) + 3;
+            doc.text(bulletPago, MARGIN, ofertaY, { width: ofertaFullWidth });
             ofertaY +=
-              doc.heightOfString(
-                bullet +
-                  'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
-                { width: ofertaFullWidth },
-              ) + 3;
-            doc.text(
-              bullet +
-                'El presupuesto tiene una validez de 60 días desde su emisión.',
-              MARGIN,
-              ofertaY,
-              { width: ofertaFullWidth },
-            );
+              doc.heightOfString(bulletPago, { width: ofertaFullWidth }) + 3;
+            doc.text(bulletValidez, MARGIN, ofertaY, { width: ofertaFullWidth });
             ofertaY +=
-              doc.heightOfString(
-                bullet +
-                  'El presupuesto tiene una validez de 60 días desde su emisión.',
-                { width: ofertaFullWidth },
-              ) + 12;
+              doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) +
+              gapTrasRevisionOferta;
 
             doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
             doc.text('Revisión de precios', MARGIN, ofertaY, {
               width: ofertaFullWidth,
             });
-            ofertaY += 14;
+            ofertaY += gapTituloLegalOferta;
             doc.font('Helvetica').fontSize(9).fillColor('#333333');
-            const revText =
-              'Los precios están calculados conforme al convenio laboral aplicable y podrán actualizarse únicamente en caso de modificaciones legales obligatorias (SMI, convenio colectivo, normativa laboral o fiscal).';
-            doc.text(revText, MARGIN, ofertaY, {
+            doc.text(revTextLegalOferta, MARGIN, ofertaY, {
               width: ofertaFullWidth,
               align: 'justify',
             });
             ofertaY +=
-              doc.heightOfString(revText, { width: ofertaFullWidth }) + 12;
+              doc.heightOfString(revTextLegalOferta, {
+                width: ofertaFullWidth,
+                align: 'justify',
+              }) + gapTrasRevisionOferta;
 
             doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
             doc.text('Formalización', MARGIN, ofertaY, {
               width: ofertaFullWidth,
             });
-            ofertaY += 14;
+            ofertaY += gapTituloLegalOferta;
             doc.font('Helvetica').fontSize(9).fillColor('#333333');
-            const formText =
-              'La prestación del servicio se formalizará mediante contrato tras la aprobación del presupuesto por la Comunidad.';
-            doc.text(formText, MARGIN, ofertaY, {
+            doc.text(formTextLegalOferta, MARGIN, ofertaY, {
               width: ofertaFullWidth,
               align: 'justify',
             });
@@ -5393,8 +6206,9 @@ export class PresupuestoDocumentoService {
           },
           {
             titulo: '4.3  Certificado de Responsabilidad Civil',
+            // «De Camino» se sustituye una sola vez por legalName en negrita (drawGarantiaTextoWithBoldEmpresa); no anteponer el nombre legal completo aquí.
             texto:
-              'De Camino dispone de un seguro de RC con Mapfre Seguros en 600.000€, para dar atención a cualquier imprevisto.',
+              'De Camino dispone de un seguro de RC en 600.000€, para dar atención a cualquier imprevisto.',
             x: MARGIN,
             y: y2,
             w: garantiaFullWidth,

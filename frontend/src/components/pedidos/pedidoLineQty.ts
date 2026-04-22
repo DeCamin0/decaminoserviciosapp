@@ -29,18 +29,22 @@ export function lineasAfterSetProductQty(
   defaultIva = 21,
 ): LineaPedidoLike[] {
   const q = Math.max(0, Math.floor(Number(newQty) || 0));
+  const firstIdx = lineas.findIndex((l) => l.producto_id === producto.id);
   const rest = lineas.filter((l) => l.producto_id !== producto.id);
   if (q <= 0) return rest;
   const existing = lineas.find((l) => l.producto_id === producto.id);
   const precio = existing?.precio_unitario ?? producto.precio;
-  return [
-    ...rest,
-    {
-      producto_id: producto.id,
-      cantidad: q,
-      precio_unitario: precio,
-      descuento_linea: existing?.descuento_linea ?? 0,
-      iva_porcentaje: existing?.iva_porcentaje ?? defaultIva,
-    },
-  ];
+  const newLine: LineaPedidoLike = {
+    producto_id: producto.id,
+    cantidad: q,
+    precio_unitario: precio,
+    descuento_linea: existing?.descuento_linea ?? 0,
+    iva_porcentaje: existing?.iva_porcentaje ?? defaultIva,
+  };
+  if (firstIdx < 0) return [...lineas, newLine];
+  let insertAt = 0;
+  for (let i = 0; i < firstIdx; i++) {
+    if (lineas[i].producto_id !== producto.id) insertAt++;
+  }
+  return [...rest.slice(0, insertAt), newLine, ...rest.slice(insertAt)];
 }

@@ -13,6 +13,7 @@ import {
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { clampPresupuestoDescuentoGlobalPct } from '../utils/presupuesto-descuento-pct';
 import { EmailService } from '../services/email.service';
 import {
   PresupuestoDocumentoService,
@@ -254,10 +255,8 @@ export class PresupuestosFirmadoController {
         rawPct !== null &&
         String(rawPct).trim() !== ''
       ) {
-        const nd = Math.round(Number(rawPct));
-        if (Number.isFinite(nd)) {
-          presupuesto_descuento_global_pct = Math.min(100, Math.max(0, nd));
-        }
+        presupuesto_descuento_global_pct =
+          clampPresupuestoDescuentoGlobalPct(rawPct);
       }
       const raw = payload.ofertaEconomica;
       if (Array.isArray(raw) && raw.length > 0) {

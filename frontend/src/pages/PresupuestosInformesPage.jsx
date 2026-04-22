@@ -13,6 +13,34 @@ import QuillBetterTable from 'quill-better-table';
 import 'quill-better-table/dist/quill-better-table.css';
 import mammoth from 'mammoth';
 import { config } from '../config/env.js';
+import {
+  getAuxiliaresOperativaCatalog,
+  getDefaultAuxiliaresOperativaSelection,
+  mergeAuxiliaresOperativaFromPayload,
+} from '../constants/presupuestoAuxiliaresOperativa.js';
+import {
+  getLimpiezaOperativaCatalog,
+  getDefaultLimpiezaOperativaSelection,
+  mergeLimpiezaOperativaFromPayload,
+} from '../constants/presupuestoLimpiezaOperativa.js';
+import {
+  getJardineriaOperativaCatalog,
+  getDefaultJardineriaOperativaSelection,
+  mergeJardineriaOperativaFromPayload,
+} from '../constants/presupuestoJardineriaOperativa.js';
+import {
+  getCubosOperativaCatalog,
+  getDefaultCubosOperativaSelection,
+  mergeCubosOperativaFromPayload,
+  textoHorarioAplicableCubosOperativa,
+} from '../constants/presupuestoCubosOperativa.js';
+import {
+  getGarajeOperativaCatalog,
+  getDefaultGarajeOperativaSelection,
+  mergeGarajeOperativaFromPayload,
+  modoGarajeDesdeTareasIds,
+  garajeOperativaIdsSuelo,
+} from '../constants/presupuestoGarajeOperativa.js';
 
 // Register table module
 if (!ReactQuill.Quill.imports['modules/better-table']) {
@@ -134,92 +162,60 @@ function roundOfertaMoney(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
-/**
- * Añade al final una línea negativa equivalente a `pct` % sobre la suma de importes
- * sin IVA (mensualidad / anualidad) de las filas anteriores.
- */
-function aplicarDescuentoGlobalOfertaRows(rows, pctRaw) {
-  const rounded = Math.round(Number(pctRaw));
-  const pct = Math.min(100, Math.max(0, Number.isFinite(rounded) ? rounded : 0));
-  if (!pct || !Array.isArray(rows) || rows.length === 0) return rows;
-  let sumM = 0;
-  let sumA = 0;
-  for (const r of rows) {
-    sumM += Number(r.mensualidadSinIva) || 0;
-    sumA += Number(r.anualidadSinIva) || 0;
-  }
-  const descM = roundOfertaMoney(sumM * (pct / 100));
-  const descA = roundOfertaMoney(sumA * (pct / 100));
-  if (descM === 0 && descA === 0) return rows;
-  return [
-    ...rows,
-    {
-      descripcion: `Descuento por fidelidad (${pct}%)`,
-      mensualidadSinIva: -descM,
-      mensualidadConIva: roundOfertaMoney(-descM * 1.21),
-      anualidadSinIva: -descA,
-      anualidadConIva: roundOfertaMoney(-descA * 1.21),
-    },
-  ];
+/** % descuento fidelidad 0–100 con hasta 2 decimales (ej. 7.5, 8.25). Acepta «,» como decimal. */
+function clampPctFidelidad0to100(raw) {
+  const n = Number(String(raw ?? '').replace(',', '.'));
+  if (!Number.isFinite(n)) return 0;
+  const clamped = Math.min(100, Math.max(0, n));
+  return Math.round(clamped * 100) / 100;
 }
 
 function esFilaDescuentoPorFidelidadOferta(row) {
   return String(row?.descripcion || '').startsWith('Descuento por fidelidad');
 }
 
-/** Subtotal al final de cada bloque (p. ej. variante auxiliares con descuento ya aplicado). */
+/** Subtotal al final de cada bloque (tras descuento por fidelidad de esa línea). */
 function esFilaTotalBloqueOferta(row) {
   return row?.tipoOferta === '_blockTotal';
 }
 
 /**
- * Con 2+ líneas «auxiliares» (variantes del mismo servicio), el descuento por fidelidad y el TOTAL
- * deben mostrarse por variante, no sumando ambas en un solo total.
+ * Regla general: tras **cada** línea base de oferta (cada servicio o variante: auxiliares, garaje opc. 1/2, cubos, etc.),
+ * se inserta el descuento por fidelidad calculado solo sobre esa línea y el TOTAL neto de ese bloque.
  */
-function aplicarDescuentoGlobalOfertaRowsConVariantesAuxiliares(rows, pctRaw) {
-  const rounded = Math.round(Number(pctRaw));
-  const pct = Math.min(100, Math.max(0, Number.isFinite(rounded) ? rounded : 0));
-  const auxRows = rows.filter((r) => r.tipoOferta === 'auxiliares');
-  if (auxRows.length < 2 || !pct) {
-    return aplicarDescuentoGlobalOfertaRows(rows, pctRaw);
-  }
-  const otherRows = rows.filter((r) => r.tipoOferta !== 'auxiliares');
+function aplicarDescuentoGlobalOfertaRowsPorFilaServicio(rows, pctRaw) {
+  const pct = clampPctFidelidad0to100(pctRaw);
+  if (!pct || !Array.isArray(rows) || rows.length === 0) return rows;
   const out = [];
-  let variantNum = 0;
-  for (const r of auxRows) {
-    variantNum += 1;
+  for (const r of rows) {
+    if (r?.tipoOferta === '_blockTotal') {
+      out.push(r);
+      continue;
+    }
     out.push(r);
-    const descM = roundOfertaMoney((Number(r.mensualidadSinIva) || 0) * (pct / 100));
-    const descA = roundOfertaMoney((Number(r.anualidadSinIva) || 0) * (pct / 100));
+    const m0 = Number(r.mensualidadSinIva) || 0;
+    const a0 = Number(r.anualidadSinIva) || 0;
+    const descM = roundOfertaMoney(m0 * (pct / 100));
+    const descA = roundOfertaMoney(a0 * (pct / 100));
+    if (descM !== 0 || descA !== 0) {
+      out.push({
+        descripcion: `Descuento por fidelidad (${pct}%)`,
+        mensualidadSinIva: -descM,
+        mensualidadConIva: roundOfertaMoney(-descM * 1.21),
+        anualidadSinIva: -descA,
+        anualidadConIva: roundOfertaMoney(-descA * 1.21),
+      });
+    }
+    const netM = roundOfertaMoney(m0 - descM);
+    const netA = roundOfertaMoney(a0 - descA);
+    const pref = String(r.descripcion || 'Servicio').trim();
+    const suf = pref.length > 70 ? `${pref.slice(0, 70)}…` : pref;
     out.push({
-      descripcion: `Descuento por fidelidad (${pct}%)`,
-      mensualidadSinIva: -descM,
-      mensualidadConIva: roundOfertaMoney(-descM * 1.21),
-      anualidadSinIva: -descA,
-      anualidadConIva: roundOfertaMoney(-descA * 1.21),
-    });
-    const netM = roundOfertaMoney((Number(r.mensualidadSinIva) || 0) - descM);
-    const netA = roundOfertaMoney((Number(r.anualidadSinIva) || 0) - descA);
-    out.push({
-      descripcion: `TOTAL (importe neto a pagar, incl. descuento por fidelidad) — variante ${variantNum}`,
+      descripcion: `TOTAL (importe neto a pagar, incl. descuento por fidelidad) — ${suf}`,
       mensualidadSinIva: netM,
       mensualidadConIva: roundOfertaMoney(netM * 1.21),
       anualidadSinIva: netA,
       anualidadConIva: roundOfertaMoney(netA * 1.21),
-      tipoOferta: '_blockTotal',
-    });
-  }
-  if (otherRows.length) {
-    const tail = aplicarDescuentoGlobalOfertaRows(otherRows, pctRaw);
-    out.push(...tail);
-    const netRestM = roundOfertaMoney(tail.reduce((a, x) => a + (Number(x.mensualidadSinIva) || 0), 0));
-    const netRestA = roundOfertaMoney(tail.reduce((a, x) => a + (Number(x.anualidadSinIva) || 0), 0));
-    out.push({
-      descripcion: 'TOTAL (importe neto a pagar, incl. descuento por fidelidad) — otros servicios',
-      mensualidadSinIva: netRestM,
-      mensualidadConIva: roundOfertaMoney(netRestM * 1.21),
-      anualidadSinIva: netRestA,
-      anualidadConIva: roundOfertaMoney(netRestA * 1.21),
       tipoOferta: '_blockTotal',
     });
   }
@@ -228,7 +224,7 @@ function aplicarDescuentoGlobalOfertaRowsConVariantesAuxiliares(rows, pctRaw) {
 
 /** Importes netos por línea coherentes con el % global (misma proporción que la fila negativa). */
 function importesOfertaLineaTrasFidelidadPct(row, pctRaw) {
-  const p = Math.min(100, Math.max(0, Math.round(Number(pctRaw)) || 0));
+  const p = clampPctFidelidad0to100(pctRaw);
   if (!p) return null;
   const f = 1 - p / 100;
   const mSin = roundOfertaMoney((Number(row.mensualidadSinIva) || 0) * f);
@@ -359,6 +355,22 @@ export default function PresupuestosInformesPage() {
   const [presupuestoBonificacionVecindarioPct, setPresupuestoBonificacionVecindarioPct] = useState(100);
   /** Descuento global por fidelidad (0–100 %) sobre la suma de líneas de la oferta (sin IVA); se refleja en OFERTA ECONOMICA y en el PDF guardado. */
   const [presupuestoDescuentoGlobalPct, setPresupuestoDescuentoGlobalPct] = useState(0);
+  /** Párrafos operativos del PDF «Auxiliares»: qué bullets incluir en Funciones / Apoyo (ids estables). */
+  const [presupuestoAuxiliaresOperativa, setPresupuestoAuxiliaresOperativa] = useState(() =>
+    getDefaultAuxiliaresOperativaSelection(!!config.IS_HERA),
+  );
+  const [presupuestoLimpiezaOperativa, setPresupuestoLimpiezaOperativa] = useState(() =>
+    getDefaultLimpiezaOperativaSelection(!!config.IS_HERA),
+  );
+  const [presupuestoJardineriaOperativa, setPresupuestoJardineriaOperativa] = useState(() =>
+    getDefaultJardineriaOperativaSelection(!!config.IS_HERA),
+  );
+  const [presupuestoCubosOperativa, setPresupuestoCubosOperativa] = useState(() =>
+    getDefaultCubosOperativaSelection(!!config.IS_HERA),
+  );
+  const [presupuestoGarajeOperativa, setPresupuestoGarajeOperativa] = useState(() =>
+    getDefaultGarajeOperativaSelection(!!config.IS_HERA),
+  );
   // Tipo(s) de servicio: se deducen de los elegidos → 'auxiliares' | 'limpieza' | 'jardineria'
   const [, setTipoServicioPresupuesto] = useState('auxiliares');
   const [presupuestoCalculo, setPresupuestoCalculo] = useState({
@@ -435,6 +447,13 @@ export default function PresupuestosInformesPage() {
   });
   const [presupuestoCalculoCubosRest, setPresupuestoCalculoCubosRest] = useState([]);
 
+  const [presupuestoCalculoGaraje, setPresupuestoCalculoGaraje] = useState({
+    concepto: '',
+    precioSinIva: '',
+    modoGaraje: 'fregadora',
+  });
+  const [presupuestoCalculoGarajeRest, setPresupuestoCalculoGarajeRest] = useState([]);
+
   // Estado para Piscina (mantenimiento verano: horas, días, precio temporada; horarioPorPeriodos por variante; horarioPeriodos legacy)
   const [presupuestoCalculoPiscina, setPresupuestoCalculoPiscina] = useState({
     concepto: 'Mantenimiento integral en piscina comunitaria',
@@ -492,6 +511,7 @@ export default function PresupuestosInformesPage() {
   // Derivar tipo de cálculo desde el nombre del servicio
   const derivarTipoDesdeServicio = (nombre) => {
     const n = servicioNombreTexto(nombre).toLowerCase();
+    if (/garaje/.test(n)) return 'garaje';
     if (/limpieza/.test(n)) return 'limpieza';
     if (/jardin/.test(n)) return 'jardineria';
     if (/cubos|basura/.test(n)) return 'cubos';
@@ -626,6 +646,24 @@ export default function PresupuestosInformesPage() {
         ? (Number.isInteger(precio) ? String(precio) : precio.toFixed(2))
         : (precio ?? '');
     return { ...c, precioSinIva: precioStr, concepto: c.concepto ?? 'Gestión cubos de basura' };
+  };
+
+  const normalizarModoGarajeCliente = (raw) => {
+    const m = String(raw || '').toLowerCase().trim();
+    if (m === 'ambos' || m === 'both') return 'ambos';
+    if (m === 'karcher') return 'karcher';
+    return 'fregadora';
+  };
+
+  const normalizarGarajeParaPayload = (g) => {
+    if (!g) return g;
+    const precio = g.precioSinIva;
+    const precioStr =
+      typeof precio === 'number'
+        ? (Number.isInteger(precio) ? String(precio) : precio.toFixed(2))
+        : (precio ?? '');
+    const modo = normalizarModoGarajeCliente(g.modoGaraje);
+    return { ...g, precioSinIva: precioStr, concepto: g.concepto ?? '', modoGaraje: modo };
   };
   // Convierte YYYY-MM-DD (input date) a DD/MM para el PDF
   const dateToDDMM = (yyyyMmDd) => {
@@ -839,6 +877,36 @@ export default function PresupuestosInformesPage() {
         const calcCubos = presupuestoCalculoCubosAll[variantIndexCubos];
         const precioSinIvaMes = parseFloat(calcCubos?.precioSinIva) || 0;
         descripcion = calcCubos?.concepto ? `Gestión cubos - ${calcCubos.concepto}` : 'Gestión cubos de basura';
+        const horarioCubosTxt = textoHorarioAplicableCubosOperativa(presupuestoCubosOperativa);
+        if (horarioCubosTxt) {
+          descripcion = `${descripcion} · Horario aplicable: ${horarioCubosTxt}`;
+        }
+        mensualidadSinIva = precioSinIvaMes;
+        mensualidadConIva = precioSinIvaMes * 1.21;
+        anualidadSinIva = precioSinIvaMes * 12;
+        anualidadConIva = precioSinIvaMes * 12 * 1.21;
+      } else if (tipo === 'garaje') {
+        const variantIndexGaraje = selectedServiciosPresupuesto.slice(0, index).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'garaje').length;
+        const calcG = presupuestoCalculoGarajeAll[variantIndexGaraje];
+        const precioSinIvaMes = parseFloat(calcG?.precioSinIva) || 0;
+        const nOpcion = variantIndexGaraje + 1;
+        const sufConcepto = (calcG?.concepto || '').trim();
+        // Misma línea que presupuesto modelo (Betania): una fila por opción / variante con su precio.
+        descripcion = sufConcepto
+          ? `SERVICIO DE LIMPIEZA DE GARAJE – ${sufConcepto}`
+          : `SERVICIO DE LIMPIEZA DE GARAJE – OPCIÓN ${nOpcion}`;
+        const nGarajeFilas = selectedServiciosPresupuesto.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'garaje').length;
+        const idsG = presupuestoGarajeOperativa?.tareasIds ?? [];
+        const ofertaDosSuelos =
+          nGarajeFilas === 2 &&
+          idsG.includes(garajeSueloIds.idFregadora) &&
+          idsG.includes(garajeSueloIds.idKarcher);
+        if (ofertaDosSuelos) {
+          descripcion +=
+            variantIndexGaraje === 0
+              ? ' — suelo: máquina hombre sentado'
+              : ' — suelo: Karcher';
+        }
         mensualidadSinIva = precioSinIvaMes;
         mensualidadConIva = precioSinIvaMes * 1.21;
         anualidadSinIva = precioSinIvaMes * 12;
@@ -892,14 +960,14 @@ export default function PresupuestosInformesPage() {
         return filas;
       })(),
     );
-    return aplicarDescuentoGlobalOfertaRowsConVariantesAuxiliares(rows, presupuestoDescuentoGlobalPct);
+    return aplicarDescuentoGlobalOfertaRowsPorFilaServicio(rows, presupuestoDescuentoGlobalPct);
   };
 
   const renderOfertaEconomicaTbody = (ofertaSoloPiscina) => {
     const rows = buildOfertaEconomica();
-    const pct = Math.min(100, Math.max(0, Math.round(Number(presupuestoDescuentoGlobalPct)) || 0));
+    const pct = clampPctFidelidad0to100(presupuestoDescuentoGlobalPct);
     const fmt = (n) => (n ?? 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const tieneTotalesPorVarianteAux = rows.some((r) => esFilaTotalBloqueOferta(r));
+    const tieneTotalesPorBloqueOferta = rows.some((r) => esFilaTotalBloqueOferta(r));
     const sumM = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.mensualidadSinIva) || 0), 0));
     const sumMc = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.mensualidadConIva) || 0), 0));
     const sumA = roundOfertaMoney(rows.reduce((acc, r) => acc + (Number(r.anualidadSinIva) || 0), 0));
@@ -911,13 +979,13 @@ export default function PresupuestosInformesPage() {
           const esTotBloque = esFilaTotalBloqueOferta(row);
           const net = pct > 0 && !esDesc && !esTotBloque ? importesOfertaLineaTrasFidelidadPct(row, pct) : null;
           return (
-            <tr key={idx} className={`border-b border-gray-200${esTotBloque ? ' bg-emerald-50/90 font-semibold' : ''}`}>
-              <td className="border border-gray-300 px-3 py-2 text-gray-800 break-words">{row.descripcion}</td>
-              <td className="border border-gray-300 px-3 py-2 align-top">
+            <tr key={idx} className={`border-b border-gray-200${esTotBloque ? ' bg-emerald-50/90 font-bold' : ''}`}>
+              <td className={`border border-gray-300 px-3 py-2 break-words ${esTotBloque ? 'font-bold text-gray-900' : 'text-gray-800'}`}>{row.descripcion}</td>
+              <td className={`border border-gray-300 px-3 py-2 align-top ${esTotBloque ? 'font-bold' : ''}`}>
                 {!net ? (
                   <>
-                    <div>{fmt(row.mensualidadSinIva)} €+IVA</div>
-                    <div className="text-gray-600">{fmt(row.mensualidadConIva)} € IVA incluido</div>
+                    <div className={esTotBloque ? 'text-gray-900' : ''}>{fmt(row.mensualidadSinIva)} €+IVA</div>
+                    <div className={esTotBloque ? 'text-emerald-900' : 'text-gray-600'}>{fmt(row.mensualidadConIva)} € IVA incluido</div>
                   </>
                 ) : (
                   <>
@@ -935,11 +1003,11 @@ export default function PresupuestosInformesPage() {
                 )}
               </td>
               {!ofertaSoloPiscina && (
-                <td className="border border-gray-300 px-3 py-2 align-top">
+                <td className={`border border-gray-300 px-3 py-2 align-top ${esTotBloque ? 'font-bold' : ''}`}>
                   {!net ? (
                     <>
-                      <div>{fmt(row.anualidadSinIva)} €+IVA</div>
-                      <div className="text-gray-600">{fmt(row.anualidadConIva)} € IVA incluido</div>
+                      <div className={esTotBloque ? 'text-gray-900' : ''}>{fmt(row.anualidadSinIva)} €+IVA</div>
+                      <div className={esTotBloque ? 'text-emerald-900' : 'text-gray-600'}>{fmt(row.anualidadConIva)} € IVA incluido</div>
                     </>
                   ) : (
                     <>
@@ -960,8 +1028,8 @@ export default function PresupuestosInformesPage() {
             </tr>
           );
         })}
-        {pct > 0 && !tieneTotalesPorVarianteAux && (
-          <tr key="total-neto-oferta" className="bg-emerald-50/90 border-t-2 border-emerald-300 font-semibold">
+        {pct > 0 && !tieneTotalesPorBloqueOferta && (
+          <tr key="total-neto-oferta" className="bg-emerald-50/90 border-t-2 border-emerald-300 font-bold">
             <td className="border border-gray-300 px-3 py-2 text-gray-900">
               TOTAL (importe neto a pagar, incl. descuento por fidelidad)
             </td>
@@ -991,6 +1059,16 @@ export default function PresupuestosInformesPage() {
     presupuestoCalculoJardineriaRest: presupuestoCalculoJardineriaRest.map(normalizarJardineriaParaPayload),
     presupuestoCalculoCubos: normalizarCubosParaPayload(presupuestoCalculoCubos),
     presupuestoCalculoCubosRest: presupuestoCalculoCubosRest.map(normalizarCubosParaPayload),
+    presupuestoCalculoGaraje: normalizarGarajeParaPayload({
+      ...presupuestoCalculoGaraje,
+      modoGaraje: modoGarajeDesdeTareasIds(presupuestoGarajeOperativa.tareasIds, !!config.IS_HERA),
+    }),
+    presupuestoCalculoGarajeRest: presupuestoCalculoGarajeRest.map((row) =>
+      normalizarGarajeParaPayload({
+        ...row,
+        modoGaraje: modoGarajeDesdeTareasIds(presupuestoGarajeOperativa.tareasIds, !!config.IS_HERA),
+      }),
+    ),
     presupuestoCalculoPiscina: normalizarPiscinaParaPayload(presupuestoCalculoPiscina),
     presupuestoCalculoPiscinaRest: presupuestoCalculoPiscinaRest.map(normalizarPiscinaParaPayload),
     /** @deprecated compat PDF/backend: se rellena desde 1ª variante si aún hay clientes antiguos */
@@ -1013,6 +1091,11 @@ export default function PresupuestosInformesPage() {
     presupuestoBonificacionPortalPct,
     presupuestoBonificacionVecindarioPct,
     presupuestoDescuentoGlobalPct,
+    presupuestoAuxiliaresOperativa,
+    presupuestoLimpiezaOperativa,
+    presupuestoJardineriaOperativa,
+    presupuestoCubosOperativa,
+    presupuestoGarajeOperativa,
     ofertaEconomica: buildOfertaEconomica(),
   });
 
@@ -1059,6 +1142,13 @@ export default function PresupuestosInformesPage() {
         setSelectedServiciosPresupuesto([]);
         setPresupuestoGuardadoEditarId(null);
         setPresupuestoDescuentoGlobalPct(0);
+        setPresupuestoAuxiliaresOperativa(getDefaultAuxiliaresOperativaSelection(!!config.IS_HERA));
+        setPresupuestoLimpiezaOperativa(getDefaultLimpiezaOperativaSelection(!!config.IS_HERA));
+        setPresupuestoJardineriaOperativa(getDefaultJardineriaOperativaSelection(!!config.IS_HERA));
+        setPresupuestoCubosOperativa(getDefaultCubosOperativaSelection(!!config.IS_HERA));
+        setPresupuestoGarajeOperativa(getDefaultGarajeOperativaSelection(!!config.IS_HERA));
+        setPresupuestoCalculoGaraje({ concepto: '', precioSinIva: '', modoGaraje: 'fregadora' });
+        setPresupuestoCalculoGarajeRest([]);
       }
     } catch (error) {
       setNotification({ message: error.message || 'Error al guardar presupuesto', type: 'error' });
@@ -1159,6 +1249,56 @@ export default function PresupuestosInformesPage() {
           setPresupuestoCalculoCubosRest([]);
         }
       }
+      if (p.presupuestoCalculoGaraje) {
+        const g = p.presupuestoCalculoGaraje;
+        const precio = g.precioSinIva;
+        const precioStr =
+          typeof precio === 'number'
+            ? (Number.isInteger(precio) ? String(precio) : precio.toFixed(2))
+            : (String(precio ?? '').trim());
+        setPresupuestoCalculoGaraje({
+          concepto: g.concepto ?? '',
+          precioSinIva: precioStr,
+          modoGaraje: normalizarModoGarajeCliente(g.modoGaraje),
+        });
+      }
+      if (Array.isArray(p.presupuestoCalculoGarajeRest)) {
+        setPresupuestoCalculoGarajeRest(
+          p.presupuestoCalculoGarajeRest.map((g) => {
+            const precio = g.precioSinIva;
+            const precioStr =
+              typeof precio === 'number'
+                ? (Number.isInteger(precio) ? String(precio) : precio.toFixed(2))
+                : (String(precio ?? '').trim());
+            return {
+              concepto: g.concepto ?? '',
+              precioSinIva: precioStr,
+              modoGaraje: normalizarModoGarajeCliente(g.modoGaraje),
+            };
+          }),
+        );
+      } else {
+        const listG = p.selectedServiciosPresupuesto || [];
+        const nGaraje = listG.filter((s) => derivarTipoDesdeServicio(s.nombre) === 'garaje').length;
+        if (nGaraje > 1 && p.presupuestoCalculoGaraje) {
+          const g = p.presupuestoCalculoGaraje;
+          const precioStr =
+            typeof g.precioSinIva === 'number'
+              ? (Number.isInteger(g.precioSinIva) ? String(g.precioSinIva) : g.precioSinIva.toFixed(2))
+              : (String(g.precioSinIva ?? '').trim());
+          setPresupuestoCalculoGarajeRest(
+            Array(nGaraje - 1)
+              .fill(null)
+              .map(() => ({
+                concepto: g.concepto ?? '',
+                precioSinIva: precioStr,
+                modoGaraje: 'fregadora',
+              })),
+          );
+        } else {
+          setPresupuestoCalculoGarajeRest([]);
+        }
+      }
       const legacyHorarioPiscinaSaved = Array.isArray(p.presupuestoHorarioPiscina) ? p.presupuestoHorarioPiscina : [];
       if (p.presupuestoCalculoPiscina) {
         const pi = p.presupuestoCalculoPiscina;
@@ -1257,8 +1397,27 @@ export default function PresupuestosInformesPage() {
       );
       setPresupuestoDescuentoGlobalPct(
         p.presupuestoDescuentoGlobalPct !== undefined && p.presupuestoDescuentoGlobalPct !== null && String(p.presupuestoDescuentoGlobalPct).trim() !== ''
-          ? pctOk(p.presupuestoDescuentoGlobalPct, 0)
+          ? clampPctFidelidad0to100(p.presupuestoDescuentoGlobalPct)
           : 0,
+      );
+      setPresupuestoAuxiliaresOperativa(
+        mergeAuxiliaresOperativaFromPayload(p.presupuestoAuxiliaresOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoLimpiezaOperativa(
+        mergeLimpiezaOperativaFromPayload(p.presupuestoLimpiezaOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoJardineriaOperativa(
+        mergeJardineriaOperativaFromPayload(p.presupuestoJardineriaOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoCubosOperativa(
+        mergeCubosOperativaFromPayload(p.presupuestoCubosOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoGarajeOperativa(
+        mergeGarajeOperativaFromPayload(
+          p.presupuestoGarajeOperativa,
+          !!config.IS_HERA,
+          normalizarModoGarajeCliente(p.presupuestoCalculoGaraje?.modoGaraje),
+        ),
       );
       // Si el cliente es existente (no nuevo), cargar dirección desde API clientes para mostrarla
       const clienteId = p.presupuestoClienteId != null && p.presupuestoClienteId !== '' ? Number(p.presupuestoClienteId) : null;
@@ -1531,6 +1690,56 @@ export default function PresupuestosInformesPage() {
           setPresupuestoCalculoCubosRest([]);
         }
       }
+      if (p.presupuestoCalculoGaraje) {
+        const g = p.presupuestoCalculoGaraje;
+        const precio = g.precioSinIva;
+        const precioStr =
+          typeof precio === 'number'
+            ? (Number.isInteger(precio) ? String(precio) : precio.toFixed(2))
+            : (String(precio ?? '').trim());
+        setPresupuestoCalculoGaraje({
+          concepto: g.concepto ?? '',
+          precioSinIva: precioStr,
+          modoGaraje: normalizarModoGarajeCliente(g.modoGaraje),
+        });
+      }
+      if (Array.isArray(p.presupuestoCalculoGarajeRest)) {
+        setPresupuestoCalculoGarajeRest(
+          p.presupuestoCalculoGarajeRest.map((g) => {
+            const precio = g.precioSinIva;
+            const precioStr =
+              typeof precio === 'number'
+                ? (Number.isInteger(precio) ? String(precio) : precio.toFixed(2))
+                : (String(precio ?? '').trim());
+            return {
+              concepto: g.concepto ?? '',
+              precioSinIva: precioStr,
+              modoGaraje: normalizarModoGarajeCliente(g.modoGaraje),
+            };
+          }),
+        );
+      } else {
+        const listG = p.selectedServiciosPresupuesto || [];
+        const nGaraje = listG.filter((s) => derivarTipoDesdeServicio(s.nombre) === 'garaje').length;
+        if (nGaraje > 1 && p.presupuestoCalculoGaraje) {
+          const g = p.presupuestoCalculoGaraje;
+          const precioStr =
+            typeof g.precioSinIva === 'number'
+              ? (Number.isInteger(g.precioSinIva) ? String(g.precioSinIva) : g.precioSinIva.toFixed(2))
+              : (String(g.precioSinIva ?? '').trim());
+          setPresupuestoCalculoGarajeRest(
+            Array(nGaraje - 1)
+              .fill(null)
+              .map(() => ({
+                concepto: g.concepto ?? '',
+                precioSinIva: precioStr,
+                modoGaraje: 'fregadora',
+              })),
+          );
+        } else {
+          setPresupuestoCalculoGarajeRest([]);
+        }
+      }
       const legacyHorarioPiscinaSaved = Array.isArray(p.presupuestoHorarioPiscina) ? p.presupuestoHorarioPiscina : [];
       if (p.presupuestoCalculoPiscina) {
         const pi = p.presupuestoCalculoPiscina;
@@ -1625,8 +1834,27 @@ export default function PresupuestosInformesPage() {
       );
       setPresupuestoDescuentoGlobalPct(
         p.presupuestoDescuentoGlobalPct !== undefined && p.presupuestoDescuentoGlobalPct !== null && String(p.presupuestoDescuentoGlobalPct).trim() !== ''
-          ? pctOkPrev(p.presupuestoDescuentoGlobalPct, 0)
+          ? clampPctFidelidad0to100(p.presupuestoDescuentoGlobalPct)
           : 0,
+      );
+      setPresupuestoAuxiliaresOperativa(
+        mergeAuxiliaresOperativaFromPayload(p.presupuestoAuxiliaresOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoLimpiezaOperativa(
+        mergeLimpiezaOperativaFromPayload(p.presupuestoLimpiezaOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoJardineriaOperativa(
+        mergeJardineriaOperativaFromPayload(p.presupuestoJardineriaOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoCubosOperativa(
+        mergeCubosOperativaFromPayload(p.presupuestoCubosOperativa, !!config.IS_HERA),
+      );
+      setPresupuestoGarajeOperativa(
+        mergeGarajeOperativaFromPayload(
+          p.presupuestoGarajeOperativa,
+          !!config.IS_HERA,
+          normalizarModoGarajeCliente(p.presupuestoCalculoGaraje?.modoGaraje),
+        ),
       );
       setPreviewPresupuestoNombre(item.nombre || '');
       setShowPresupuestoPreviewModal(true);
@@ -2038,6 +2266,21 @@ export default function PresupuestosInformesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when piscina needed; createPiscinaServicio is stable enough
   }, [showModalSeleccionServicioPresupuesto, presupuestoPiscinaMode, servicios]);
 
+  // Presupuesto normal: asegurar servicio de garaje en catálogo (misma lista que el modal)
+  const garajeServiceEnsureRef = useRef(false);
+  useEffect(() => {
+    if (!showModalSeleccionServicioPresupuesto || presupuestoPiscinaMode) {
+      garajeServiceEnsureRef.current = false;
+      return;
+    }
+    const hasGaraje = servicios.some((s) => /garaje/.test(servicioNombreTexto(s.nombre).toLowerCase()));
+    if (hasGaraje) return;
+    if (garajeServiceEnsureRef.current) return;
+    garajeServiceEnsureRef.current = true;
+    createGarajeServicio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- igual que piscina; createGarajeServicio estable
+  }, [showModalSeleccionServicioPresupuesto, presupuestoPiscinaMode, servicios]);
+
   // Fin de semana B = horasDiarias×2×52 + horasDiarias×15 — actualizar B cuando cambian horas diarias (si está aplicado)
   useEffect(() => {
     if (!presupuestoCalculo.aplicaFinDeSemana) return;
@@ -2096,10 +2339,151 @@ export default function PresupuestosInformesPage() {
 
   const presupuestoCalculoAuxiliaresAll = useMemo(() => [presupuestoCalculo, ...presupuestoCalculoAuxiliaresRest], [presupuestoCalculo, presupuestoCalculoAuxiliaresRest]);
   const presupuestoResultadoAuxiliares = useMemo(() => presupuestoCalculoAuxiliaresAll.map(calcResultadoAuxiliares), [presupuestoCalculoAuxiliaresAll]);
+  const auxPdfOperativaCatalog = useMemo(
+    () => getAuxiliaresOperativaCatalog(!!config.IS_HERA),
+    [],
+  );
+  const limpPdfOperativaCatalog = useMemo(
+    () => getLimpiezaOperativaCatalog(!!config.IS_HERA),
+    [],
+  );
+  const jardinPdfOperativaCatalog = useMemo(
+    () => getJardineriaOperativaCatalog(!!config.IS_HERA),
+    [],
+  );
+  const cubosPdfOperativaCatalog = useMemo(
+    () => getCubosOperativaCatalog(!!config.IS_HERA),
+    [],
+  );
+  const garajePdfOperativaCatalog = useMemo(
+    () => getGarajeOperativaCatalog(!!config.IS_HERA),
+    [],
+  );
+  const garajeSueloIds = useMemo(
+    () => garajeOperativaIdsSuelo(garajePdfOperativaCatalog),
+    [garajePdfOperativaCatalog],
+  );
+  const garajeTareasSinSuelo = useMemo(
+    () =>
+      garajePdfOperativaCatalog.tareas.filter(
+        (row) => row.id !== garajeSueloIds.idFregadora && row.id !== garajeSueloIds.idKarcher,
+      ),
+    [garajePdfOperativaCatalog, garajeSueloIds.idFregadora, garajeSueloIds.idKarcher],
+  );
+
+  /**
+   * Garaje: con **las dos** tareas de suelo marcadas → hasta 2 filas de precio (máquina / Karcher).
+   * Si no están las dos → como máximo **1** fila de garaje en oferta (se quitan extras automáticamente).
+   */
+  const garajeSueloAutoRef = useRef({ editId: presupuestoGuardadoEditarId, combo: null });
+  useEffect(() => {
+    if (garajeSueloAutoRef.current.editId !== presupuestoGuardadoEditarId) {
+      garajeSueloAutoRef.current = { editId: presupuestoGuardadoEditarId, combo: null };
+    }
+    const hasGaraje = selectedServiciosPresupuesto.some(
+      (s) => derivarTipoDesdeServicio(s.nombre) === 'garaje',
+    );
+    if (!hasGaraje) {
+      garajeSueloAutoRef.current = { editId: presupuestoGuardadoEditarId, combo: null };
+      return;
+    }
+    const ids = presupuestoGarajeOperativa?.tareasIds ?? [];
+    const hasF = ids.includes(garajeSueloIds.idFregadora);
+    const hasK = ids.includes(garajeSueloIds.idKarcher);
+    const snap = `${hasF ? 1 : 0}${hasK ? 1 : 0}`;
+    const nGaraje = selectedServiciosPresupuesto.filter(
+      (s) => derivarTipoDesdeServicio(s.nombre) === 'garaje',
+    ).length;
+    const nowBoth = snap === '11';
+    const combo = `${snap}:${nGaraje}`;
+
+    if (!nowBoth && nGaraje > 1) {
+      setSelectedServiciosPresupuesto((prev) => {
+        let keptFirstGaraje = false;
+        return prev.filter((s) => {
+          if (derivarTipoDesdeServicio(s.nombre) !== 'garaje') return true;
+          if (!keptFirstGaraje) {
+            keptFirstGaraje = true;
+            return true;
+          }
+          return false;
+        });
+      });
+      setPresupuestoCalculoGarajeRest(() => []);
+      garajeSueloAutoRef.current = { editId: presupuestoGuardadoEditarId, combo: `${snap}:1` };
+      return;
+    }
+    if (nowBoth && nGaraje > 2) {
+      setSelectedServiciosPresupuesto((prev) => {
+        let g = 0;
+        return prev.filter((s) => {
+          if (derivarTipoDesdeServicio(s.nombre) !== 'garaje') return true;
+          g += 1;
+          return g <= 2;
+        });
+      });
+      setPresupuestoCalculoGarajeRest((r) => r.slice(0, 1));
+      garajeSueloAutoRef.current = { editId: presupuestoGuardadoEditarId, combo: '11:2' };
+      return;
+    }
+
+    const prevCombo = garajeSueloAutoRef.current.combo;
+    if (prevCombo === null) {
+      // Primera pasada (carga / montaje): si ya hay ambos suelos y una sola fila garaje, duplicar aquí
+      // (antes solo se hacía en transición 10→11 y al cargar con «11» nunca se añadía la 2ª opción).
+      if (nowBoth && nGaraje === 1) {
+        const prev = selectedServiciosPresupuesto;
+        let lastGaraje = null;
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (derivarTipoDesdeServicio(prev[i].nombre) === 'garaje') {
+            lastGaraje = prev[i];
+            break;
+          }
+        }
+        if (lastGaraje) {
+          setSelectedServiciosPresupuesto((p) => [...p, { ...lastGaraje }]);
+          setPresupuestoCalculoGarajeRest((r) => [
+            ...r,
+            { concepto: '', precioSinIva: '', modoGaraje: 'fregadora' },
+          ]);
+        }
+      }
+      garajeSueloAutoRef.current = { editId: presupuestoGuardadoEditarId, combo };
+      return;
+    }
+    const prevSnap = String(prevCombo).split(':')[0] ?? '';
+    const hadBothBefore = prevSnap === '11';
+    if (nowBoth && !hadBothBefore && nGaraje === 1) {
+      const prev = selectedServiciosPresupuesto;
+      let lastGaraje = null;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (derivarTipoDesdeServicio(prev[i].nombre) === 'garaje') {
+          lastGaraje = prev[i];
+          break;
+        }
+      }
+      if (lastGaraje) {
+        setSelectedServiciosPresupuesto((p) => [...p, { ...lastGaraje }]);
+        setPresupuestoCalculoGarajeRest((r) => [
+          ...r,
+          { concepto: '', precioSinIva: '', modoGaraje: 'fregadora' },
+        ]);
+      }
+    }
+    garajeSueloAutoRef.current = { editId: presupuestoGuardadoEditarId, combo };
+  }, [
+    presupuestoGuardadoEditarId,
+    selectedServiciosPresupuesto,
+    presupuestoGarajeOperativa.tareasIds,
+    garajeSueloIds.idFregadora,
+    garajeSueloIds.idKarcher,
+  ]);
 
   const presupuestoCalculoJardineriaAll = useMemo(() => [presupuestoCalculoJardineria, ...presupuestoCalculoJardineriaRest], [presupuestoCalculoJardineria, presupuestoCalculoJardineriaRest]);
 
   const presupuestoCalculoCubosAll = useMemo(() => [presupuestoCalculoCubos, ...presupuestoCalculoCubosRest], [presupuestoCalculoCubos, presupuestoCalculoCubosRest]);
+
+  const presupuestoCalculoGarajeAll = useMemo(() => [presupuestoCalculoGaraje, ...presupuestoCalculoGarajeRest], [presupuestoCalculoGaraje, presupuestoCalculoGarajeRest]);
 
   const presupuestoCalculoPiscinaAll = useMemo(() => [presupuestoCalculoPiscina, ...presupuestoCalculoPiscinaRest], [presupuestoCalculoPiscina, presupuestoCalculoPiscinaRest]);
 
@@ -2937,6 +3321,81 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
     }
   };
 
+  // Crear servicio LIMPIEZA DE GARAJE (el nombre debe contener «garaje» para el cálculo / PDF)
+  const createGarajeServicio = async () => {
+    try {
+      setLoadingServicios(true);
+      const token = localStorage.getItem('auth_token');
+
+      const nombreHTML = '<p><strong>SERVICIO DE LIMPIEZA DE GARAJES</strong></p>';
+
+      const descripcionHTML = `
+        <p><strong>TAREAS OPERATIVAS</strong></p>
+        <p>Los auxiliares de servicios tienen establecidas unas tareas por defecto, cualquiera de ellas puede ser sustituida por otras o modificadas a petición del cliente, entre dichas tareas se encuentran.</p>
+        <ul>
+          <li>Desempolvado de paredes</li>
+          <li>Limpieza de tuberías, puntos de luz, extintores, elementos decorativos</li>
+          <li>Limpieza del suelo con máquina de hombre sentado o con Karcher (según la opción elegida en el presupuesto)</li>
+        </ul>
+        <p><br></p>
+        <p>Para una limpieza más efectiva y segura no debe de haber ningún vehículo ni objeto en el interior del garaje en el momento de la limpieza. Se trabaja con maquinaria que produce salpicadura y proyección de pequeños objetos.</p>
+        <p>Para la realización de trabajos se pasará aviso con mínimo 10 días naturales para que los usuarios puedan desalojar las plazas de garaje.</p>
+        <p><br></p>
+        <p><strong>Nota Importante:</strong> las plazas ocupadas no se limpiarán después del día asignado a la limpieza.</p>
+        <p>(Se pasará a la administración un listado con las plazas ocupadas en el momento de realización de los servicios.)</p>
+      `;
+
+      const sanitizedNombre = DOMPurify.sanitize(nombreHTML, {
+        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u'],
+        ALLOWED_ATTR: [],
+      });
+
+      const sanitizedDescripcion = DOMPurify.sanitize(descripcionHTML, {
+        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3'],
+        ALLOWED_ATTR: [],
+      });
+
+      const payload = {
+        nombre: sanitizedNombre,
+        descripcion_operativa: sanitizedDescripcion,
+        tipo: 'servicio_presupuesto',
+        activo: true,
+      };
+
+      const response = await fetch(routes.createGrupo, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Error al crear servicio');
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setNotification({
+          message: 'Servicio LIMPIEZA DE GARAJES creado correctamente',
+          type: 'success',
+        });
+        fetchServicios();
+      }
+    } catch (error) {
+      console.error('Error creating GARAJE servicio:', error);
+      setNotification({
+        message: error.message || 'Error al crear servicio',
+        type: 'error',
+      });
+    } finally {
+      setLoadingServicios(false);
+    }
+  };
+
   const handleSaveServicio = async () => {
     if (!servicioForm.nombre.trim()) {
       setNotification({
@@ -3278,6 +3737,15 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                   >
                     <Plus className="h-4 w-4" />
                     Crear CUBOS BASURA
+                  </Button>
+                  <Button
+                    onClick={createGarajeServicio}
+                    className="flex items-center gap-2 bg-stone-600 hover:bg-stone-700"
+                    disabled={loadingServicios}
+                    title="Aparece en presupuestos como tipo garaje (precio, modo fregadora/Karcher, PDF)"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Crear GARAJE
                   </Button>
                 <Button
                   onClick={() => {
@@ -3718,6 +4186,9 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                           const cubosVariantIndex = tipo === 'cubos'
                             ? selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'cubos').length
                             : 0;
+                          const garajeVariantIndex = tipo === 'garaje'
+                            ? selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'garaje').length
+                            : 0;
                           const piscinaVariantIndex = tipo === 'piscina'
                             ? selectedServiciosPresupuesto.slice(0, idx).filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length
                             : 0;
@@ -3754,6 +4225,12 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                     ? presupuestoCalculoCubosRest[presupuestoCalculoCubosRest.length - 1]
                                     : presupuestoCalculoCubos;
                                   setPresupuestoCalculoCubosRest(prev => [...prev, { ...last }]);
+                                }
+                                if (tipo === 'garaje') {
+                                  const last = presupuestoCalculoGarajeRest.length > 0
+                                    ? presupuestoCalculoGarajeRest[presupuestoCalculoGarajeRest.length - 1]
+                                    : presupuestoCalculoGaraje;
+                                  setPresupuestoCalculoGarajeRest((prev) => [...prev, { ...last }]);
                                 }
                                 if (tipo === 'piscina') {
                                   const last = presupuestoCalculoPiscinaRest.length > 0
@@ -3821,6 +4298,16 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                     }
                                   } else {
                                     setPresupuestoCalculoCubosRest(prev => prev.filter((_, i) => i !== cubosVariantIndex - 1));
+                                  }
+                                }
+                                if (tipo === 'garaje') {
+                                  if (garajeVariantIndex === 0) {
+                                    if (presupuestoCalculoGarajeRest.length > 0) {
+                                      setPresupuestoCalculoGaraje(presupuestoCalculoGarajeRest[0]);
+                                      setPresupuestoCalculoGarajeRest((prev) => prev.slice(1));
+                                    }
+                                  } else {
+                                    setPresupuestoCalculoGarajeRest((prev) => prev.filter((_, i) => i !== garajeVariantIndex - 1));
                                   }
                                 }
                                 if (tipo === 'piscina') {
@@ -3896,7 +4383,8 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         id={`presupuesto-aux-horas-diarias-${variantIndex}`}
                         type="number"
                         min={0}
-                        step={0.5}
+                        step={0.01}
+                        inputMode="decimal"
                         value={calculo.horasDiarias}
                         onChange={(e) => setAuxiliaresCalculoAt(prev => ({ ...prev, horasDiarias: +e.target.value || 0 }))}
                         placeholder="Ej: 8"
@@ -3967,6 +4455,8 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                           id={`presupuesto-aux-horas-cubrir-${variantIndex}`}
                           type="number"
                           min={0}
+                          step={0.01}
+                          inputMode="decimal"
                           value={calculo.horasACubrirPorSemana}
                           onChange={(e) => setAuxiliaresCalculoAt(prev => ({ ...prev, horasACubrirPorSemana: +e.target.value || 0 }))}
                           placeholder="168"
@@ -4080,7 +4570,7 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     </label>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500">B (horas):</span>
-                      <Input type="number" min={0} placeholder="0" className="w-24" value={calculo.serviciosExtraHoras} onChange={(e) => setAuxiliaresCalculoAt(prev => ({ ...prev, serviciosExtraHoras: +e.target.value || 0 }))} disabled={!calculo.aplicaServiciosExtra} />
+                      <Input type="number" min={0} step={0.01} inputMode="decimal" placeholder="0" className="w-24" value={calculo.serviciosExtraHoras} onChange={(e) => setAuxiliaresCalculoAt(prev => ({ ...prev, serviciosExtraHoras: +e.target.value || 0 }))} disabled={!calculo.aplicaServiciosExtra} />
                       <span className="text-gray-400">×</span>
                       <span className="text-xs text-gray-500">C (D6÷156):</span>
                       <span className="font-mono text-sm text-gray-700 min-w-[4rem]">{(resultado.C16 ?? 0).toFixed(2)} €/h</span>
@@ -4486,10 +4976,121 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                   </div>
                   );
                   })}
+
+                  <div className="mt-4 p-5 bg-white border border-red-200 rounded-lg shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">PDF — Auxiliares: funciones y apoyo</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Elige qué puntos incluir en la página «2.1 SERVICIO DE AUXILIARES DE SERVICIOS» del PDF (solo «Funciones principales» y «Apoyo al mantenimiento»). Los párrafos de introducción, beneficios y marco legal no se modifican aquí.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-gray-800">Funciones principales</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-red-700 underline"
+                            onClick={() =>
+                              setPresupuestoAuxiliaresOperativa((prev) => ({
+                                ...prev,
+                                funcionesIds: auxPdfOperativaCatalog.funciones.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoAuxiliaresOperativa((prev) => ({ ...prev, funcionesIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {auxPdfOperativaCatalog.funciones.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 shrink-0"
+                                checked={presupuestoAuxiliaresOperativa.funcionesIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoAuxiliaresOperativa((prev) => {
+                                    const set = new Set(prev.funcionesIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, funcionesIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="space-y-2 pt-2 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-gray-800">Apoyo al mantenimiento</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-red-700 underline"
+                            onClick={() =>
+                              setPresupuestoAuxiliaresOperativa((prev) => ({
+                                ...prev,
+                                apoyoIds: auxPdfOperativaCatalog.apoyo.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoAuxiliaresOperativa((prev) => ({ ...prev, apoyoIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {auxPdfOperativaCatalog.apoyo.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 shrink-0"
+                                checked={presupuestoAuxiliaresOperativa.apoyoIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoAuxiliaresOperativa((prev) => {
+                                    const set = new Set(prev.apoyoIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, apoyoIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
                     </>
                   )}
 
-                  {[...new Set(selectedServiciosPresupuesto.map(s => derivarTipoDesdeServicio(s.nombre)))].includes('limpieza') && presupuestoCalculoLimpiezaAll.map((calculo, variantIndex) => {
+                  {[...new Set(selectedServiciosPresupuesto.map(s => derivarTipoDesdeServicio(s.nombre)))].includes('limpieza') && (
+                  <>
+                  {presupuestoCalculoLimpiezaAll.map((calculo, variantIndex) => {
                     const setLimpiezaCalculoAt = (updater) => {
                       if (variantIndex === 0) setPresupuestoCalculoLimpieza(prev => typeof updater === 'function' ? updater(prev) : updater);
                       else setPresupuestoCalculoLimpiezaRest(prev => prev.map((c, j) => j === variantIndex - 1 ? (typeof updater === 'function' ? updater(c) : updater) : c));
@@ -4534,7 +5135,8 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                             id={`presupuesto-lim-horas-dia-${variantIndex}`}
                             type="number"
                             min={0}
-                            step={0.5}
+                            step={0.01}
+                            inputMode="decimal"
                             value={calculo.horasPorDiaPorOperaria}
                             onChange={(e) => setLimpiezaCalculoAt(prev => ({ ...prev, horasPorDiaPorOperaria: +e.target.value || 0 }))}
                             placeholder="4"
@@ -4637,7 +5239,8 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                     id={`presupuesto-lim-horas-anual-c12-${variantIndex}`}
                                     type="number"
                                     min={0}
-                                    step={1}
+                                    step={0.01}
+                                    inputMode="decimal"
                                     className="w-20 h-8 text-sm"
                                     value={calculo.serviciosExtraHoras}
                                     onChange={(e) => setLimpiezaCalculoAt(prev => ({ ...prev, serviciosExtraHoras: +e.target.value || 0 }))}
@@ -5155,7 +5758,119 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                     );
                   })}
 
+                  <div className="mt-4 p-5 bg-white border border-amber-300 rounded-lg shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">PDF — Limpieza: tareas habituales</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Elige qué puntos incluir bajo «Tareas habituales» en la página «2.2 SERVICIO DE LIMPIEZA DE COMUNIDADES» (Frecuencia diaria y Frecuencia alterna / periódica). Introducción, funcionamiento, beneficios y cierre del PDF no se modifican aquí.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-amber-900">Frecuencia diaria</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-amber-800 underline"
+                            onClick={() =>
+                              setPresupuestoLimpiezaOperativa((prev) => ({
+                                ...prev,
+                                diariaIds: limpPdfOperativaCatalog.diaria.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoLimpiezaOperativa((prev) => ({ ...prev, diariaIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {limpPdfOperativaCatalog.diaria.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 shrink-0"
+                                checked={presupuestoLimpiezaOperativa.diariaIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoLimpiezaOperativa((prev) => {
+                                    const set = new Set(prev.diariaIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, diariaIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="space-y-2 pt-2 border-t border-amber-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-amber-900">Frecuencia alterna / periódica</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-amber-800 underline"
+                            onClick={() =>
+                              setPresupuestoLimpiezaOperativa((prev) => ({
+                                ...prev,
+                                alternaIds: limpPdfOperativaCatalog.alterna.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoLimpiezaOperativa((prev) => ({ ...prev, alternaIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {limpPdfOperativaCatalog.alterna.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 shrink-0"
+                                checked={presupuestoLimpiezaOperativa.alternaIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoLimpiezaOperativa((prev) => {
+                                    const set = new Set(prev.alternaIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, alternaIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  </>
+                  )}
+
                   {[...new Set(selectedServiciosPresupuesto.map(s => derivarTipoDesdeServicio(s.nombre)))].includes('jardineria') && (
+                    <>
                     <div className="space-y-4">
                       {presupuestoCalculoJardineriaAll.map((calculo, variantIndex) => {
                         const setJardineriaCalculoAt = (updater) => {
@@ -5220,9 +5935,120 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         );
                       })}
                     </div>
+
+                  <div className="mt-4 p-5 bg-white border border-emerald-300 rounded-lg shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">PDF — Jardinería: trabajos y tratamientos</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Elige qué puntos incluir en la página «2.3 SERVICIO DE JARDINERÍA»: «Trabajos de mantenimiento» y «Tratamientos y conservación». Introducción, beneficios y condiciones del PDF no se modifican aquí.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-emerald-900">Trabajos de mantenimiento</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-emerald-800 underline"
+                            onClick={() =>
+                              setPresupuestoJardineriaOperativa((prev) => ({
+                                ...prev,
+                                trabajosIds: jardinPdfOperativaCatalog.trabajos.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoJardineriaOperativa((prev) => ({ ...prev, trabajosIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {jardinPdfOperativaCatalog.trabajos.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                                checked={presupuestoJardineriaOperativa.trabajosIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoJardineriaOperativa((prev) => {
+                                    const set = new Set(prev.trabajosIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, trabajosIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="space-y-2 pt-2 border-t border-emerald-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-emerald-900">Tratamientos y conservación</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-emerald-800 underline"
+                            onClick={() =>
+                              setPresupuestoJardineriaOperativa((prev) => ({
+                                ...prev,
+                                tratamientosIds: jardinPdfOperativaCatalog.tratamientos.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoJardineriaOperativa((prev) => ({ ...prev, tratamientosIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {jardinPdfOperativaCatalog.tratamientos.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                                checked={presupuestoJardineriaOperativa.tratamientosIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoJardineriaOperativa((prev) => {
+                                    const set = new Set(prev.tratamientosIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, tratamientosIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                    </>
                   )}
 
                   {[...new Set(selectedServiciosPresupuesto.map(s => derivarTipoDesdeServicio(s.nombre)))].includes('cubos') && (
+                    <>
                     <div className="space-y-4">
                       {presupuestoCalculoCubosAll.map((calculo, variantIndex) => {
                         const setCubosCalculoAt = (updater) => {
@@ -5287,6 +6113,327 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                         );
                       })}
                     </div>
+
+                  <div className="mt-4 p-5 bg-white border border-amber-300 rounded-lg shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">PDF — Gestión cubos: tareas incluidas</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Elige qué puntos incluir en la página «2.4 GESTIÓN DE CUBOS DE BASURA», sección «Tareas incluidas». Introducción, funcionamiento, beneficios y condiciones del PDF no se modifican aquí.
+                      </p>
+                    </div>
+
+                    <details className="rounded-lg border border-amber-200 bg-amber-50/60 group">
+                      <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-amber-900 flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+                        <span className="text-amber-700 group-open:rotate-90 transition-transform inline-block">▸</span>
+                        Días (horario aplicable)
+                      </summary>
+                      <div className="px-3 pb-3 pt-0 space-y-2 border-t border-amber-100">
+                        <div className="flex flex-wrap items-center gap-2 pt-2">
+                          <label htmlFor="presupuesto-cubos-horario-dias-tipo" className="sr-only">Días (horario aplicable)</label>
+                          <select
+                            id="presupuesto-cubos-horario-dias-tipo"
+                            className="border border-gray-300 rounded px-2 py-1.5 text-sm min-w-[240px] max-w-full bg-white"
+                            value={presupuestoCubosOperativa.horarioDiasTipo || 'LV'}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setPresupuestoCubosOperativa((prev) => {
+                                const prevTipo = prev.horarioDiasTipo || 'LV';
+                                let diasSemana = normalizeDiasSemanaPayload(prev.horarioDiasSemana);
+                                if (v === 'PERS') {
+                                  diasSemana = prevTipo === 'PERS' ? diasSemana : diasPresetDesdeTipo(prevTipo);
+                                }
+                                return { ...prev, horarioDiasTipo: v, horarioDiasSemana: diasSemana };
+                              });
+                            }}
+                          >
+                            <option value="LV">Lunes a viernes (L-V)</option>
+                            <option value="SD">Sábado a domingo (S-D)</option>
+                            <option value="LD">Lunes a domingo (L-D)</option>
+                            <option value="PERS">Personalizada</option>
+                          </select>
+                        </div>
+                        {presupuestoCubosOperativa.horarioDiasTipo === 'PERS' && (
+                          <div className="w-full pt-2 border-t border-amber-100">
+                            <p className="text-xs text-gray-600 mb-2">Días con este horario (marca los que apliquen):</p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-2">
+                              {PRESUPUESTO_HORARIO_DIAS_SEMANA_ROWS.map(({ key, label }) => {
+                                const ds = normalizeDiasSemanaPayload(presupuestoCubosOperativa.horarioDiasSemana);
+                                return (
+                                  <label key={key} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!ds[key]}
+                                      onChange={(e) => {
+                                        const next = { ...normalizeDiasSemanaPayload(presupuestoCubosOperativa.horarioDiasSemana), [key]: e.target.checked };
+                                        setPresupuestoCubosOperativa((prev) => ({ ...prev, horarioDiasSemana: next }));
+                                      }}
+                                      className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                    />
+                                    <span>{label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-amber-900">Tareas incluidas</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-amber-800 underline"
+                            onClick={() =>
+                              setPresupuestoCubosOperativa((prev) => ({
+                                ...prev,
+                                tareasIds: cubosPdfOperativaCatalog.tareas.map((x) => x.id),
+                              }))
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoCubosOperativa((prev) => ({ ...prev, tareasIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {cubosPdfOperativaCatalog.tareas.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 shrink-0"
+                                checked={presupuestoCubosOperativa.tareasIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoCubosOperativa((prev) => {
+                                    const set = new Set(prev.tareasIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { ...prev, tareasIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                    </>
+                  )}
+
+                  {[...new Set(selectedServiciosPresupuesto.map(s => derivarTipoDesdeServicio(s.nombre)))].includes('garaje') && (
+                    <>
+                    <div className="space-y-4">
+                      {presupuestoCalculoGarajeAll.map((calculo, variantIndex) => {
+                        const setGarajeCalculoAt = (updater) => {
+                          if (variantIndex === 0) setPresupuestoCalculoGaraje(prev => typeof updater === 'function' ? updater(prev) : updater);
+                          else setPresupuestoCalculoGarajeRest(prev => prev.map((c, j) => j === variantIndex - 1 ? (typeof updater === 'function' ? updater(c) : updater) : c));
+                        };
+                        return (
+                        <div key={variantIndex} className="p-6 bg-stone-50 border border-stone-200 rounded-lg space-y-4">
+                          <h3 className="text-lg font-semibold text-stone-900">
+                            OPCIÓN {variantIndex + 1}
+                            <span className="block text-sm font-normal text-stone-600 mt-0.5">Limpieza de garaje — precio mensual propio de esta opción</span>
+                          </h3>
+                          <p className="text-sm font-medium text-gray-700 mb-1">Nombre presupuesto</p>
+                          <p className="py-2 px-3 bg-white border border-stone-200 rounded text-gray-900 font-medium mb-4">
+                            {servicioNombreTexto(selectedServiciosPresupuesto.filter(s => derivarTipoDesdeServicio(s.nombre) === 'garaje')[variantIndex]?.nombre) || '—'}
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white/80 rounded-lg border border-stone-200">
+                            <div>
+                              <label htmlFor={`presupuesto-garaje-concepto-${variantIndex}`} className="block text-sm font-medium text-gray-700 mb-1">Texto en oferta (opcional)</label>
+                              <p className="text-xs text-gray-500 mb-1">En oferta económica / PDF: «SERVICIO DE LIMPIEZA DE GARAJE – …». Si lo dejas vacío, se usa «OPCIÓN 1», «OPCIÓN 2»… por variante. Si escribes aquí, sale exactamente tras el guión (ej. OPCIÓN 1 o residencial norte).</p>
+                              <Input
+                                id={`presupuesto-garaje-concepto-${variantIndex}`}
+                                value={calculo.concepto}
+                                onChange={(e) => setGarajeCalculoAt((prev) => ({ ...prev, concepto: e.target.value }))}
+                                placeholder="Vacío = OPCIÓN n automático"
+                                className="border-stone-200"
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={`presupuesto-garaje-precio-${variantIndex}`} className="block text-sm font-medium text-gray-700 mb-1">Precio sin IVA (€/mes)</label>
+                              <Input
+                                id={`presupuesto-garaje-precio-${variantIndex}`}
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={calculo.precioSinIva}
+                                onChange={(e) => setGarajeCalculoAt((prev) => ({ ...prev, precioSinIva: e.target.value }))}
+                                placeholder="0"
+                                className="border-stone-200"
+                              />
+                            </div>
+                            <div className="md:col-span-2 flex flex-wrap items-center gap-4 text-sm py-2 px-3 bg-stone-50 border border-stone-200 rounded">
+                              <span className="text-gray-700">IVA (21%):</span>
+                              <span className="font-semibold text-gray-900">
+                                {((parseFloat(calculo.precioSinIva) || 0) * 0.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                              </span>
+                              <span className="text-gray-500">|</span>
+                              <span className="text-gray-700">Total con IVA (mensual):</span>
+                              <span className="font-bold text-stone-800">
+                                {((parseFloat(calculo.precioSinIva) || 0) * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                              </span>
+                            </div>
+                            <div className="md:col-span-2 flex flex-wrap items-center gap-4 text-sm py-2 px-3 bg-white border-2 border-stone-200 rounded">
+                              <span className="text-gray-700">Anual sin IVA:</span>
+                              <span className="font-semibold text-gray-900">
+                                {((parseFloat(calculo.precioSinIva) || 0) * 12).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                              </span>
+                              <span className="text-gray-500">|</span>
+                              <span className="text-gray-700">Anual con IVA:</span>
+                              <span className="font-bold text-stone-800">
+                                {((parseFloat(calculo.precioSinIva) || 0) * 12 * 1.21).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-stone-100 border border-stone-300 rounded-lg">
+                      <p className="text-sm text-stone-800">
+                        <strong>Precios garaje y suelo:</strong> <strong>una sola</strong> casilla de suelo (solo máquina o solo Karcher) → <strong>una</strong> fila de precio en oferta. <strong>Las dos</strong> casillas de suelo → <strong>dos</strong> filas (OPCIÓN 1 / 2), se añade la segunda automáticamente si hace falta. Si quitas una casilla y quedaban dos precios, la segunda fila se elimina sola. También puedes usar <strong>+ Añadir otra opción</strong> cuando apliquen dos suelos.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0 border-stone-600 text-stone-800 hover:bg-stone-200 inline-flex items-center gap-1.5"
+                        onClick={() => {
+                          const prev = selectedServiciosPresupuesto;
+                          let lastGaraje = null;
+                          for (let i = prev.length - 1; i >= 0; i--) {
+                            if (derivarTipoDesdeServicio(prev[i].nombre) === 'garaje') {
+                              lastGaraje = prev[i];
+                              break;
+                            }
+                          }
+                          if (!lastGaraje) return;
+                          setSelectedServiciosPresupuesto((p) => [...p, { ...lastGaraje }]);
+                          setPresupuestoCalculoGarajeRest((r) => [
+                            ...r,
+                            { concepto: '', precioSinIva: '', modoGaraje: 'fregadora' },
+                          ]);
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Añadir otra opción (otro precio)
+                      </Button>
+                    </div>
+
+                  <div className="mt-4 p-5 bg-white border border-stone-300 rounded-lg shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">PDF — Limpieza de garaje: tareas operativas</h3>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Elige qué puntos incluir en la página de garaje del PDF (lista bajo «TAREAS OPERATIVAS»). Texto legal, avisos y notas siguen fijos.
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-lg border-2 border-stone-400 bg-stone-50 space-y-3">
+                      <h4 className="text-sm font-semibold text-stone-900">Método de suelo (elegí una, las dos o ninguna)</h4>
+                      <p className="text-xs text-stone-700">
+                        Son <strong>independientes</strong>: podés marcar solo máquina de hombre sentado, solo Karcher, <strong>ambas</strong> a la vez, o ninguna (si no querés que aparezca ese punto en el PDF).
+                      </p>
+                      <div className="flex flex-col sm:flex-row flex-wrap gap-4">
+                        <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-900 font-medium">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 w-5 h-5 rounded border-stone-500 text-stone-700 focus:ring-stone-600 shrink-0"
+                            checked={presupuestoGarajeOperativa.tareasIds.includes(garajeSueloIds.idFregadora)}
+                            onChange={() => {
+                              setPresupuestoGarajeOperativa((prev) => {
+                                const set = new Set(prev.tareasIds);
+                                if (set.has(garajeSueloIds.idFregadora)) set.delete(garajeSueloIds.idFregadora);
+                                else set.add(garajeSueloIds.idFregadora);
+                                return { tareasIds: Array.from(set) };
+                              });
+                            }}
+                          />
+                          <span>Limpieza del suelo con máquina de hombre sentado</span>
+                        </label>
+                        <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-900 font-medium">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 w-5 h-5 rounded border-stone-500 text-stone-700 focus:ring-stone-600 shrink-0"
+                            checked={presupuestoGarajeOperativa.tareasIds.includes(garajeSueloIds.idKarcher)}
+                            onChange={() => {
+                              setPresupuestoGarajeOperativa((prev) => {
+                                const set = new Set(prev.tareasIds);
+                                if (set.has(garajeSueloIds.idKarcher)) set.delete(garajeSueloIds.idKarcher);
+                                else set.add(garajeSueloIds.idKarcher);
+                                return { tareasIds: Array.from(set) };
+                              });
+                            }}
+                          />
+                          <span>Limpieza del suelo con Karcher</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold text-stone-900">Otras tareas incluidas</h4>
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-stone-800 underline"
+                            onClick={() =>
+                              setPresupuestoGarajeOperativa({
+                                tareasIds: garajePdfOperativaCatalog.tareas.map((x) => x.id),
+                              })
+                            }
+                          >
+                            Marcar todas
+                          </button>
+                          <button
+                            type="button"
+                            className="text-gray-600 underline"
+                            onClick={() =>
+                              setPresupuestoGarajeOperativa((prev) => ({ ...prev, tareasIds: [] }))
+                            }
+                          >
+                            Desmarcar todas
+                          </button>
+                        </div>
+                      </div>
+                      <ul className="space-y-2 pl-0 list-none">
+                        {garajeTareasSinSuelo.map((row) => (
+                          <li key={row.id}>
+                            <label className="flex items-start gap-2 cursor-pointer text-sm text-gray-800">
+                              <input
+                                type="checkbox"
+                                className="mt-1 w-4 h-4 rounded border-gray-300 text-stone-600 focus:ring-stone-500 shrink-0"
+                                checked={presupuestoGarajeOperativa.tareasIds.includes(row.id)}
+                                onChange={() => {
+                                  setPresupuestoGarajeOperativa((prev) => {
+                                    const set = new Set(prev.tareasIds);
+                                    if (set.has(row.id)) set.delete(row.id);
+                                    else set.add(row.id);
+                                    return { tareasIds: Array.from(set) };
+                                  });
+                                }}
+                              />
+                              <span>{row.text}</span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                    </>
                   )}
 
                   {[...new Set(selectedServiciosPresupuesto.map(s => derivarTipoDesdeServicio(s.nombre)))].includes('piscina') && (
@@ -5324,7 +6471,8 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                                 id={`presupuesto-piscina-horas-${variantIndex}`}
                                 type="number"
                                 min={0}
-                                step={1}
+                                step={0.01}
+                                inputMode="decimal"
                                 value={calculo.horas ?? ''}
                                 onChange={(e) => setPiscinaCalculoAt(prev => ({ ...prev, horas: e.target.value }))}
                                 placeholder="Ej: 8"
@@ -5769,24 +6917,28 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       <p className="text-sm font-medium text-gray-800 mb-2">Descuento por fidelidad sobre la oferta económica</p>
                       <div className="flex flex-wrap items-center gap-3">
                         <label htmlFor="presupuesto-descuento-global-pct" className="text-sm text-gray-700">
-                          Porcentaje (0–100 %; con varias variantes de auxiliares, el descuento y el TOTAL se calculan por cada variante):
+                          Porcentaje (0–100 %, admite decimales ej. 7,5; el descuento y el TOTAL neto se calculan por cada servicio o variante en la tabla):
                         </label>
                         <Input
                           id="presupuesto-descuento-global-pct"
                           type="number"
                           min={0}
                           max={100}
-                          step={1}
+                          step={0.01}
                           value={presupuestoDescuentoGlobalPct}
                           onChange={(e) => {
-                            const v = Math.round(Number(e.target.value));
-                            setPresupuestoDescuentoGlobalPct(Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0);
+                            const raw = String(e.target.value ?? '').trim();
+                            if (raw === '') {
+                              setPresupuestoDescuentoGlobalPct(0);
+                              return;
+                            }
+                            setPresupuestoDescuentoGlobalPct(clampPctFidelidad0to100(raw.replace(',', '.')));
                           }}
                           className="w-24"
                         />
                       </div>
                       <p className="text-xs text-gray-500 mt-2">
-                        Se añade «Descuento por fidelidad» en OFERTA ECONOMICA y en el PDF guardado. Si hay dos o más variantes de auxiliares, cada una lleva su descuento y su TOTAL (no se suman entre sí). En la firma se usan los mismos importes del presupuesto.
+                        Se añade «Descuento por fidelidad» y el TOTAL neto debajo de cada línea de servicio (o variante: p. ej. cada opción de garaje, cada auxiliares, cubos, etc.). En el PDF guardado y en la firma se usan los mismos importes del presupuesto.
                       </p>
                     </div>
                   )}
@@ -6281,6 +7433,17 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                       } else if (tipo === 'auxiliares') {
                         const prevAux = newSelected.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'auxiliares').length;
                         if (prevAux > 1) setPresupuestoCalculoAuxiliaresRest((prev) => [...prev, { ...presupuestoCalculo }]);
+                      } else if (tipo === 'garaje') {
+                        const prevGaraje = newSelected.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'garaje').length;
+                        if (prevGaraje === 1) {
+                          setPresupuestoCalculoGaraje((p) => ({
+                            concepto: p?.concepto ?? '',
+                            precioSinIva: p?.precioSinIva ?? '',
+                            modoGaraje: normalizarModoGarajeCliente(p?.modoGaraje),
+                          }));
+                        } else {
+                          setPresupuestoCalculoGarajeRest((prev) => [...prev, { concepto: '', precioSinIva: '', modoGaraje: 'fregadora' }]);
+                        }
                       } else if (tipo === 'piscina') {
                         const prevPiscina = newSelected.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'piscina').length;
                         if (prevPiscina === 1) {
@@ -6314,6 +7477,32 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                   setSelectedServiciosPresupuesto(selectedFromModal);
                   setTipoServicioPresupuesto(derivarTipoDesdeServicio(selectedFromModal[0].nombre));
                   setPresupuestoCalculo((prev) => ({ ...prev, nombre: selectedFromModal.map((s) => servicioNombreTexto(s.nombre)).join(', ') }));
+                  if (selectedFromModal.some((s) => derivarTipoDesdeServicio(s.nombre) === 'auxiliares')) {
+                    setPresupuestoAuxiliaresOperativa(getDefaultAuxiliaresOperativaSelection(!!config.IS_HERA));
+                  }
+                  if (selectedFromModal.some((s) => derivarTipoDesdeServicio(s.nombre) === 'limpieza')) {
+                    setPresupuestoLimpiezaOperativa(getDefaultLimpiezaOperativaSelection(!!config.IS_HERA));
+                  }
+                  if (selectedFromModal.some((s) => derivarTipoDesdeServicio(s.nombre) === 'jardineria')) {
+                    setPresupuestoJardineriaOperativa(getDefaultJardineriaOperativaSelection(!!config.IS_HERA));
+                  }
+                  if (selectedFromModal.some((s) => derivarTipoDesdeServicio(s.nombre) === 'cubos')) {
+                    setPresupuestoCubosOperativa(getDefaultCubosOperativaSelection(!!config.IS_HERA));
+                  }
+                  if (selectedFromModal.some((s) => derivarTipoDesdeServicio(s.nombre) === 'garaje')) {
+                    const nGaraje = selectedFromModal.filter((x) => derivarTipoDesdeServicio(x.nombre) === 'garaje').length;
+                    setPresupuestoGarajeOperativa(getDefaultGarajeOperativaSelection(!!config.IS_HERA));
+                    setPresupuestoCalculoGaraje((p) => ({
+                      concepto: p?.concepto ?? '',
+                      precioSinIva: p?.precioSinIva ?? '',
+                      modoGaraje: normalizarModoGarajeCliente(p?.modoGaraje),
+                    }));
+                    setPresupuestoCalculoGarajeRest(
+                      nGaraje > 1
+                        ? Array.from({ length: nGaraje - 1 }, () => ({ concepto: '', precioSinIva: '', modoGaraje: 'fregadora' }))
+                        : [],
+                    );
+                  }
                   if (derivarTipoDesdeServicio(selectedFromModal[0].nombre) === 'piscina') {
                     setPresupuestoCalculoPiscina((p) => ({
                       ...p,
